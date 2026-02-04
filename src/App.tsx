@@ -1,66 +1,95 @@
-import { useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ProjectPicker } from "./components/ProjectPicker";
+import type { AppSettings } from "./types/bindings";
+import "./App.css";
 
 function App() {
-  const [connectionStatus, setConnectionStatus] = useState('Connecting...')
-  const [error, setError] = useState<string | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [projectSelected, setProjectSelected] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+  // Load settings on mount
   useEffect(() => {
-    // Test IPC connection on component mount
-    const testConnection = async () => {
+    async function loadSettings() {
       try {
-        console.log('Testing IPC connection...')
-        const result = await invoke('get_projects')
-        console.log('IPC response:', result)
-        setConnectionStatus('Connected')
-        setError(null)
+        const loaded = await invoke<AppSettings>("get_settings");
+        setSettings(loaded);
+        if (loaded.project_path) {
+          setProjectSelected(true);
+        }
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err)
-        console.error('IPC connection error:', errorMsg)
-        setError(errorMsg)
-        setConnectionStatus('Connection Error')
+        console.error("Failed to load settings:", err);
+        setSettings({
+          project_path: null,
+          recent_projects: [],
+          model_default: "claude-opus-4-5",
+          mcp_defaults: null,
+          skills_defaults: null,
+          updated_at: new Date().toISOString(),
+        });
+      } finally {
+        setLoading(false);
       }
     }
 
-    testConnection()
-  }, [])
+    loadSettings();
+  }, []);
+
+  async function handleProjectSelected(projectPath: string) {
+    try {
+      const newSettings: AppSettings = {
+        project_path: projectPath,
+        recent_projects: settings?.recent_projects || [],
+        model_default: settings?.model_default || "claude-opus-4-5",
+        mcp_defaults: settings?.mcp_defaults,
+        skills_defaults: settings?.skills_defaults,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Add to recent if not already there
+      if (!newSettings.recent_projects.includes(projectPath)) {
+        newSettings.recent_projects.unshift(projectPath);
+        newSettings.recent_projects = newSettings.recent_projects.slice(0, 5); // Keep last 5
+      }
+
+      await invoke("save_settings", { settings: newSettings });
+      setSettings(newSettings);
+      setProjectSelected(true);
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="app">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!projectSelected) {
+    return (
+      <ProjectPicker
+        onProjectSelected={handleProjectSelected}
+        recentProjects={settings?.recent_projects}
+      />
+    );
+  }
 
   return (
     <div className="app">
-      <h1>GSD Agent Orchestrator</h1>
-      <p>Desktop orchestration tool for managing autonomous AI coding agents</p>
-
-      <div className="app-status">
-        <span className={`status-indicator${error ? ' error' : ''}`}></span>
-        <span>Status: {connectionStatus}</span>
-      </div>
-
-      {error && (
-        <div style={{ margin: '10px 20px', padding: '8px 12px', backgroundColor: '#ffebee', borderRadius: '4px', color: '#c62828' }}>
-          <strong>Connection Error:</strong> {error}
-        </div>
-      )}
-
-      <button onClick={() => testConnection()}>
-        Test IPC Connection
-      </button>
+      <header className="app-header">
+        <h1>GSD Agent Orchestrator</h1>
+        <p>Project: {settings?.project_path}</p>
+      </header>
+      <main className="app-main">
+        <p>Status: Connected</p>
+        {/* Main UI components will be added in Phase 2 */}
+      </main>
     </div>
-  )
-
-  async function testConnection() {
-    try {
-      console.log('Testing IPC connection...')
-      const result = await invoke('get_projects')
-      console.log('IPC response:', result)
-      setConnectionStatus('Connected')
-      setError(null)
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      console.error('IPC connection error:', errorMsg)
-      setError(errorMsg)
-      setConnectionStatus('Connection Error')
-    }
-  }
+  );
 }
 
-export default App
+export default App;
