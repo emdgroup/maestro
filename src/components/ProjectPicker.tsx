@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { AppSettings } from "../types/bindings";
 import "../styles/ProjectPicker.css";
 
 interface ProjectPickerProps {

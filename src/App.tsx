@@ -42,8 +42,8 @@ function App() {
         project_path: projectPath,
         recent_projects: settings?.recent_projects || [],
         model_default: settings?.model_default || "claude-opus-4-5",
-        mcp_defaults: settings?.mcp_defaults,
-        skills_defaults: settings?.skills_defaults,
+        mcp_defaults: settings?.mcp_defaults || null,
+        skills_defaults: settings?.skills_defaults || null,
         updated_at: new Date().toISOString(),
       };
 
