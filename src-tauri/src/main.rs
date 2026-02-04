@@ -1,42 +1,60 @@
+// Tauri build script marker
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
+use gsd_demo::db::{init_db, AppState};
+use gsd_demo::error::AppError;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{AppHandle, State};
 
-/// Standalone CLI for database initialization (for testing)
-///
-/// In production, this will be integrated with Tauri's setup hook
+/// Get the app data directory path for the current platform
+fn get_app_data_dir() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/.local/share/gsd-demo", home))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/Library/Application Support/gsd-demo", home))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}\\gsd-demo", appdata))
+    }
+}
+
+/// IPC command: Get list of projects
+#[tauri::command]
+fn get_projects(app_state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+    // For now, return empty list as a stub
+    // In future phases, this will query the database
+    println!("get_projects called via IPC");
+    Ok(vec![])
+}
+
+/// Setup hook for Tauri initialization
+fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let app_data_dir = get_app_data_dir();
+    let db_path = app_data_dir.join("gsd-demo.db");
+
+    // Initialize database
+    let conn = init_db(db_path)
+        .map_err(|e| format!("Failed to initialize database: {}", e))?;
+
+    let app_state = Arc::new(AppState::new(conn));
+    app.manage(app_state);
+
+    println!("Tauri app initialized successfully");
+    Ok(())
+}
+
 fn main() {
-    println!("GSD Demo - Database Layer");
-    println!("========================\n");
-
-    // For standalone testing, create database in temp directory
-    let db_path = PathBuf::from("/tmp/gsd-demo/gsd-demo.db");
-
-    if let Some(parent) = db_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("Failed to create directory: {}", e);
-            std::process::exit(1);
-        }
-    }
-
-    match rusqlite::Connection::open(&db_path) {
-        Ok(conn) => {
-            println!("Database created at: {:?}", db_path);
-
-            if let Err(e) = gsd_demo::db::initialize_schema(&conn) {
-                eprintln!("Failed to initialize schema: {}", e);
-                std::process::exit(1);
-            }
-
-            println!("Schema initialized successfully");
-
-            // Verify schema
-            match conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)) {
-                Ok(version) => println!("Schema version: {}", version),
-                Err(e) => eprintln!("Error reading schema version: {}", e),
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to create database: {}", e);
-            std::process::exit(1);
-        }
-    }
+    tauri::Builder::default()
+        .setup(setup)
+        .invoke_handler(tauri::generate_handler![get_projects])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
