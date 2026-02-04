@@ -1,4 +1,8 @@
+use std::sync::Arc;
+use tauri::State;
+
 use crate::models::{Project, Task, AppSettings, ProjectStatus, TaskStatus};
+use crate::db::AppState;
 
 /// Get list of all projects
 /// DB queries will be added in Phase 2 when database schema is populated
@@ -35,20 +39,21 @@ pub fn create_task(name: String, description: String) -> Result<Task, String> {
     })
 }
 
-/// Get application settings
-/// Settings handlers will be implemented in Phase 01-04 with database integration
+/// Get application settings from database
 #[tauri::command]
-pub fn get_settings() -> Result<AppSettings, String> {
+pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
     println!("get_settings() called via IPC");
-    // Stub: return default AppSettings
-    Ok(AppSettings::default())
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    crate::db::settings::load_settings(&conn).map_err(|e| e.to_string())
 }
 
-/// Save application settings
-/// Settings handlers will be implemented in Phase 01-04 with database integration
+/// Save application settings to database
 #[tauri::command]
-pub fn save_settings(settings: AppSettings) -> Result<(), String> {
+pub fn save_settings(
+    app_state: State<Arc<AppState>>,
+    settings: AppSettings,
+) -> Result<(), String> {
     println!("save_settings() called via IPC with project_path: {:?}", settings.project_path);
-    // Stub: accept but don't persist yet
-    Ok(())
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    crate::db::settings::save_settings(&conn, &settings).map_err(|e| e.to_string())
 }
