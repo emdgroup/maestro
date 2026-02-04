@@ -3,6 +3,7 @@
 
 use gsd_demo::db::{init_db, AppState};
 use gsd_demo::error::AppError;
+use gsd_demo::ipc::{get_projects, get_tasks, create_task, get_settings, save_settings};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -26,15 +27,6 @@ fn get_app_data_dir() -> PathBuf {
     }
 }
 
-/// IPC command: Get list of projects
-#[tauri::command]
-fn get_projects(app_state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
-    // For now, return empty list as a stub
-    // In future phases, this will query the database
-    println!("get_projects called via IPC");
-    Ok(vec![])
-}
-
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -54,7 +46,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     tauri::Builder::default()
         .setup(setup)
-        .invoke_handler(tauri::generate_handler![get_projects])
+        .invoke_handler(tauri::generate_handler![
+            get_projects,
+            get_tasks,
+            create_task,
+            get_settings,
+            save_settings
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
