@@ -3,8 +3,16 @@
  * This allows the app to run in a browser without the Tauri runtime
  */
 
+import type { Task } from '../types/bindings';
+
 // Check if we're running in a real Tauri environment
 const isTauri = typeof (window as any).__TAURI__ !== 'undefined';
+
+// In-memory mock database for browser-only development
+const mockDB = {
+  tasks: [] as Task[],
+  nextTaskId: 1,
+};
 
 // Mock invoke function for browser-only mode
 export async function invoke<T>(cmd: string, args?: Record<string, any>): Promise<T> {
@@ -15,7 +23,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
   }
 
   // Mock responses for browser-only development
-  console.warn(`[MOCK] invoke('${cmd}', ${JSON.stringify(args)})`);
+  console.log(`[MOCK] invoke('${cmd}', ${JSON.stringify(args)})`);
 
   switch (cmd) {
     case 'get_settings':
@@ -37,11 +45,12 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
       } as T;
 
     case 'get_tasks':
-      return [] as T;
+      console.log(`[MOCK] Returning ${mockDB.tasks.length} tasks`);
+      return mockDB.tasks as T;
 
-    case 'create_task':
-      return {
-        id: Date.now(),
+    case 'create_task': {
+      const newTask: Task = {
+        id: mockDB.nextTaskId++,
         project_id: args?.project_id || 1,
         name: args?.name || 'New Task',
         description: args?.description || '',
@@ -53,12 +62,26 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
         import_source: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      } as T;
+      };
+      mockDB.tasks.push(newTask);
+      console.log(`[MOCK] Created task #${newTask.id}: ${newTask.name}`);
+      return newTask as T;
+    }
 
-    case 'update_task':
+    case 'update_task': {
+      const task = mockDB.tasks.find(t => t.id === args?.task_id);
+      if (task) {
+        if (args?.status) task.status = args.status;
+        if (args?.description) task.description = args.description;
+        task.updated_at = new Date().toISOString();
+        console.log(`[MOCK] Updated task #${task.id}: status=${task.status}`);
+        return task as T;
+      }
       return {} as T;
+    }
 
     case 'save_settings':
+      console.log('[MOCK] Settings saved (no persistence)');
       return undefined as T;
 
     default:
