@@ -17,7 +17,11 @@ export type Task = {
   project_id: number;
   name: string;
   description: string;
+  acceptance_criteria?: string;
   status: TaskStatus;
+  external_id?: string;
+  is_imported?: boolean;
+  import_source?: string;
   created_at: string;
   updated_at: string;
 };

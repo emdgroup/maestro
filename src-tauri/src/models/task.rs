@@ -8,7 +8,15 @@ pub struct Task {
     pub project_id: i32,
     pub name: String,
     pub description: String,
+    #[ts(optional)]
+    pub acceptance_criteria: Option<String>,
     pub status: TaskStatus,
+    #[ts(optional)]
+    pub external_id: Option<String>,
+    #[ts(optional)]
+    pub is_imported: Option<bool>,
+    #[ts(optional)]
+    pub import_source: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
