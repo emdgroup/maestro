@@ -27,9 +27,9 @@ Requirements for initial MVP release. Each maps to roadmap phases.
 - [ ] **EXEC-05**: User can detach from terminal while agent continues execution
 - [ ] **EXEC-06**: System pauses agent execution on failure and notifies user
 - [ ] **EXEC-07**: User can view agent output history (terminal logs, git diffs, errors) for completed tasks
-- [ ] **EXEC-08**: System automatically cleans up worktree and branch after successful merge
-- [ ] **EXEC-09**: User can run multiple agents in parallel on different tasks (hybrid worktree pool)
-- [ ] **EXEC-10**: System pre-creates 3-5 worktrees for instant allocation and expands dynamically if exhausted
+- [x] **EXEC-08**: System automatically cleans up worktree and branch after successful merge
+- [x] **EXEC-09**: User can run multiple agents in parallel on different tasks (hybrid worktree pool)
+- [x] **EXEC-10**: System pre-creates 3-5 worktrees for instant allocation and expands dynamically if exhausted
 
 ### Review & Merge
 
@@ -37,7 +37,7 @@ Requirements for initial MVP release. Each maps to roadmap phases.
 - [ ] **REV-02**: User can approve task in Review column to trigger merge
 - [ ] **REV-03**: User can reject task in Review column with feedback
 - [ ] **REV-04**: System automatically merges approved task branch to main
-- [ ] **REV-05**: System automatically deletes worktree and branch after merge completes
+- [x] **REV-05**: System automatically deletes worktree and branch after merge completes
 
 ### Configuration
 
@@ -115,14 +115,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXEC-05 | Phase 8 | Pending |
 | EXEC-06 | Phase 8 | Pending |
 | EXEC-07 | Phase 4 | Pending |
-| EXEC-08 | Phase 3 | Pending |
-| EXEC-09 | Phase 3 | Pending |
-| EXEC-10 | Phase 3 | Pending |
+| EXEC-08 | Phase 3 | Complete |
+| EXEC-09 | Phase 3 | Complete |
+| EXEC-10 | Phase 3 | Complete |
 | REV-01 | Phase 6 | Pending |
 | REV-02 | Phase 6 | Pending |
 | REV-03 | Phase 6 | Pending |
 | REV-04 | Phase 6 | Pending |
-| REV-05 | Phase 3 | Pending |
+| REV-05 | Phase 3 | Complete |
 | CFG-01 | Phase 1 | Complete |
 | CFG-02 | Phase 7 | Pending |
 | CFG-03 | Phase 7 | Pending |
@@ -140,4 +140,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-04*
-*Last updated: 2026-02-04 after roadmap creation*
+*Last updated: 2026-02-05 after Phase 3 completion*
