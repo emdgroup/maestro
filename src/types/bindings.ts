@@ -66,3 +66,9 @@ export type AppSettings = {
   skills_defaults: string | null;
   updated_at: string;
 };
+
+export type SyncResult = {
+  imported_count: number;
+  updated_count: number;
+  error_message?: string;
+};
