@@ -10,11 +10,11 @@ export function showSuccessToast(message: string): void {
   toast.success(message);
 }
 
-export function ToasterRoot(): JSX.Element {
+export function ToasterRoot() {
   return (
     <Toaster
       position="bottom-right"
-      max={3}
+      visibleToasts={3}
       duration={4000}
     />
   );

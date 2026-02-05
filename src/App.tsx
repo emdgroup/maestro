@@ -81,10 +81,17 @@ function App() {
     addTask(newTask);
   }
 
-  function handleSyncComplete() {
+  async function handleSyncComplete() {
     // Reload tasks from the database after sync
     if (currentProject) {
-      loadTasks(currentProject.id);
+      try {
+        const tasks = await invoke<Task[]>('get_tasks', {
+          project_id: currentProject.id,
+        });
+        loadTasks(tasks);
+      } catch (error) {
+        console.error('Failed to reload tasks after sync:', error);
+      }
     }
   }
 

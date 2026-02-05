@@ -12,6 +12,7 @@ const isTauri = typeof (window as any).__TAURI__ !== 'undefined';
 const mockDB = {
   tasks: [] as Task[],
   nextTaskId: 1,
+  importSettings: null as any,
 };
 
 // Mock invoke function for browser-only mode
@@ -83,6 +84,34 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
     case 'save_settings':
       console.log('[MOCK] Settings saved (no persistence)');
       return undefined as T;
+
+    case 'save_import_config':
+      mockDB.importSettings = {
+        provider: args?.provider,
+        config: args?.config,
+      };
+      console.log(`[MOCK] Import config saved: provider=${args?.provider}`);
+      return undefined as T;
+
+    case 'sync_github_issues': {
+      console.log('[MOCK] Syncing GitHub issues...');
+      // Mock response with 3 sample issues
+      return {
+        imported_count: 3,
+        updated_count: 1,
+        error_message: null,
+      } as T;
+    }
+
+    case 'sync_jira_issues': {
+      console.log('[MOCK] Syncing Jira issues...');
+      // Mock response with 2 sample issues
+      return {
+        imported_count: 2,
+        updated_count: 0,
+        error_message: null,
+      } as T;
+    }
 
     default:
       throw new Error(`Mock not implemented for command: ${cmd}`);
