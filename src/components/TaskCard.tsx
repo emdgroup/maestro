@@ -9,22 +9,24 @@ interface TaskCardProps {
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false }) => {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, isDragging: isActivelyDragging } = useDraggable({
     id: task.id,
   });
 
+  // If this is the overlay card, don't apply transform
+  // If this is being actively dragged, hide it (the overlay will show)
   const style = {
-    transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.5 : 1,
-    cursor: isDragging ? "grabbing" : "grab",
+    transform: isDragging ? undefined : CSS.Translate.toString(transform),
+    opacity: isActivelyDragging ? 0 : 1,
+    cursor: "grab",
   };
 
   return (
     <div
-      ref={setNodeRef}
+      ref={!isDragging ? setNodeRef : undefined}
       style={style}
-      {...listeners}
-      {...attributes}
+      {...(!isDragging ? listeners : {})}
+      {...(!isDragging ? attributes : {})}
       className="task-card"
     >
       <div className="task-card-title">{task.name}</div>
