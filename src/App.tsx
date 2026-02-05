@@ -4,6 +4,8 @@ import { ProjectPicker } from "./components/ProjectPicker";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskModal } from "./components/TaskModal";
 import { ToasterRoot } from "./components/ErrorToast";
+import { ImportSettings } from "./components/ImportSettings";
+import { SyncButton } from "./components/SyncButton";
 import { useBoardStore } from "./store/boardStore";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
@@ -14,7 +16,8 @@ function App() {
   const [projectSelected, setProjectSelected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const { addTask } = useBoardStore();
+  const [showImportSettings, setShowImportSettings] = useState(false);
+  const { addTask, loadTasks } = useBoardStore();
 
   // Load settings on mount
   useEffect(() => {
@@ -78,6 +81,18 @@ function App() {
     addTask(newTask);
   }
 
+  function handleSyncComplete() {
+    // Reload tasks from the database after sync
+    if (currentProject) {
+      loadTasks(currentProject.id);
+    }
+  }
+
+  function handleImportConfigSaved() {
+    // Settings saved, can now enable sync button
+    setShowImportSettings(false);
+  }
+
   if (loading) {
     return (
       <div className="app">
@@ -105,12 +120,27 @@ function App() {
         </div>
         <div className="header-right">
           {projectSelected && currentProject && (
-            <button
-              onClick={() => setShowNewTaskModal(true)}
-              className="btn-new-task"
-            >
-              + New Task
-            </button>
+            <>
+              <button
+                onClick={() => setShowImportSettings(true)}
+                className="btn-settings"
+                title="Import Settings"
+              >
+                ⚙️ Import Settings
+              </button>
+              {currentProject && (
+                <SyncButton
+                  projectId={currentProject.id}
+                  onSyncComplete={handleSyncComplete}
+                />
+              )}
+              <button
+                onClick={() => setShowNewTaskModal(true)}
+                className="btn-new-task"
+              >
+                + New Task
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -123,6 +153,11 @@ function App() {
               onClose={() => setShowNewTaskModal(false)}
               projectId={currentProject.id}
               onTaskCreated={handleTaskCreated}
+            />
+            <ImportSettings
+              isOpen={showImportSettings}
+              onClose={() => setShowImportSettings(false)}
+              onConfigSaved={handleImportConfigSaved}
             />
           </>
         )}
