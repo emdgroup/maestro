@@ -59,11 +59,11 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Kanban board UI with 5 columns, Zustand state management, React Beautiful DnD drag-drop integration
-- [ ] 02-02-PLAN.md — Backend task creation: create_task IPC handler and TypeScript bindings with skills field
-- [ ] 02-03-PLAN.md — Frontend task creation modal with React Hook Form, Radix Dialog, skills multi-select field
-- [ ] 02-04-PLAN.md — Backend GitHub/Jira sync: sync_github_issues, sync_jira_issues handlers with conflict detection
-- [ ] 02-05-PLAN.md — Frontend import settings: ImportSettings UI, SyncButton component, ErrorToast notifications, read-only protection
+- [x] 02-01-PLAN.md — Kanban board UI with 5 columns, Zustand state management, React Beautiful DnD drag-drop integration
+- [x] 02-02-PLAN.md — Backend task creation: create_task IPC handler and TypeScript bindings with skills field
+- [x] 02-03-PLAN.md — Frontend task creation modal with React Hook Form, Radix Dialog, skills multi-select field
+- [x] 02-04-PLAN.md — Backend GitHub/Jira sync: sync_github_issues, sync_jira_issues handlers with conflict detection
+- [x] 02-05-PLAN.md — Frontend import settings: ImportSettings UI, SyncButton component, ErrorToast notifications, read-only protection
 
 ### Phase 3: Git Worktree Infrastructure
 **Goal**: Establish isolated git worktrees for parallel agent execution with automatic cleanup.
@@ -81,9 +81,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Git manager (create, delete, reset worktrees via simple-git)
-- [ ] 03-02: Worktree pooling logic (lease, return, dynamic expansion)
-- [ ] 03-03: Automatic cleanup workflow (delete branch and worktree post-merge)
+- [ ] 03-01-PLAN.md — Node.js sidecar git manager (create, delete, reset worktrees via simple-git)
+- [ ] 03-02-PLAN.md — Worktree pooling logic (lease, return, dynamic expansion with state machine)
+- [ ] 03-03-PLAN.md — Automatic cleanup workflow (safe deletion, dirty-state recovery, prune stale metadata)
 
 ### Phase 4: Agent Execution
 **Goal**: Enable executing agents on tasks in isolated worktrees and capturing execution lifecycle.
@@ -216,21 +216,22 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
 | 1. Foundation | 4 | ✓ Complete | 2026-02-04 |
-| 2. Core Orchestration | 3 | Not started | - |
-| 3. Git Worktree Infrastructure | 3 | Not started | - |
-| 4. Agent Execution | 4 | Not started | - |
-| 5. Real-time Monitoring | 3 | Not started | - |
-| 6. Review & Merge Workflow | 3 | Not started | - |
-| 7. Configuration Management | 4 | Not started | - |
-| 8. Error Handling & Polish | 3 | Not started | - |
-| 9. Remote Project Support | 4 | Not started | - |
+| 2. Core Orchestration | 5 | In Progress | — |
+| 3. Git Worktree Infrastructure | 3 | Planned | — |
+| 4. Agent Execution | 4 | Not started | — |
+| 5. Real-time Monitoring | 3 | Not started | — |
+| 6. Review & Merge Workflow | 3 | Not started | — |
+| 7. Configuration Management | 4 | Not started | — |
+| 8. Error Handling & Polish | 3 | Not started | — |
+| 9. Remote Project Support | 4 | Not started | — |
 
 **Total Plans:** 31
-**Completed Plans:** 4/31
+**Completed Plans:** 5/31 (Phase 1: 4/4, Phase 2: 5/6)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
 
 *Roadmap created: 2026-02-04*
+*Phase 3 planned: 2026-02-05*
 *Depth: comprehensive (9 phases)*
 *Coverage: 100% — All 28 v1.0 requirements mapped*
