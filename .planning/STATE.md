@@ -11,35 +11,34 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 2 of 9 (Core Orchestration) - In Progress
-Plan: 02-04 complete (External Issue Sync)
-Status: Phase 2 plan 4 verified and complete, ready for 02-05
-Last activity: 2026-02-05 12:45:00Z — Completed 02-04-PLAN with GitHub/Jira sync handlers, external_id conflict detection, and import config persistence
+Plan: 02-05 complete (Import Configuration and Sync UI)
+Status: Phase 2 plan 5 verified and complete, 5/6 plans done in phase
+Last activity: 2026-02-05 13:41:30Z — Completed 02-05-PLAN with ImportSettings modal, SyncButton, ErrorToast, and read-only task protection
 
-Progress: [██░░░░░░░░] 8/31 plans (26%), 1/9 phases complete, Phase 2 in progress
+Progress: [██░░░░░░░░] 9/31 plans (29%), 0/9 phases complete, Phase 2 in progress
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 24 min
-- Total execution time: 2h 47m
+- Total plans completed: 8
+- Average duration: 22 min (improved)
+- Total execution time: 2h 57m
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4 | 63m | 15.75m |
-| 02-core-orchestration | 4 | 234m | 58.5m |
+| 02-core-orchestration | 5 | 244m | 48.8m |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (10m), 01-04 (6m), 02-01 (140m), 02-02 (12m), 02-03 (25m), 02-04 (45m)
-- Phase 2 backend API work: GitHub/Jira sync with async HTTP (45m for complex external integration)
-- Phase 2 frontend velocity improving (25m for modal + form)
-- Phase 2 backend work streamlined (12m for IPC handler, 45m for async external API)
-- Phase 1 velocity: Strong (all plans complete, zero blockers)
-- Phase 2 status: 02-04 complete with no blockers, ready for 02-05
+- Last 6 plans: 01-04 (6m), 02-01 (140m), 02-02 (12m), 02-03 (25m), 02-04 (45m), 02-05 (10m)
+- Phase 2 frontend velocity: Fast (10m for import UI + notifications)
+- Phase 2 backend work: Moderate complexity (12-45m depending on integrations)
+- Phase 2 status: 5/6 plans complete, one plan remaining (02-06)
+- Trend: Frontend UI work is faster than backend integration work
 
-*Updated: 2026-02-05 11:39:00Z*
+*Updated: 2026-02-05 13:41:30Z*
 
 ## Accumulated Context
 
@@ -112,6 +111,14 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Status preserved on update: existing tasks keep their status when synced with new data
 - Credentials stored plaintext in SQLite (MVP, Phase 7+ for encryption)
 
+**Phase 02-05 Decisions:**
+- Sonner toast library chosen for lightweight notifications (smaller bundle than react-toastify)
+- Modal-based import configuration (familiar pattern, keeps main UI clean)
+- Provider radio selection for GitHub vs Jira (simple, unambiguous choice)
+- Test Connection validates credentials before saving (immediate auth error feedback)
+- Disabled drag for imported tasks to prevent sync conflicts (read-only in UI layer)
+- Toast notifications for sync feedback (non-blocking, shows imported count)
+
 ### Pending Todos
 
 None yet.
@@ -128,8 +135,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-05 12:45:00Z
-Stopped at: Phase 02-04 complete (External Issue Sync)
+Last session: 2026-02-05 13:41:30Z
+Stopped at: Phase 02-05 complete (Import Configuration and Sync UI)
 Resume file: None
 
-Next: /gsd:execute-phase 02 or execute 02-05-PLAN — Import Configuration UI
+Next: Phase 2 plan 6 remaining (one plan left in phase) or Phase 3 when ready
