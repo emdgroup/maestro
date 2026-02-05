@@ -35,7 +35,7 @@ export type CreateTaskRequest = {
   skills: string[];
 };
 
-export type WorktreeStatus = "Available" | "Leased" | "Dirty";
+export type WorktreeStatus = "Available" | "Leased" | "InUse" | "Dirty";
 
 export type Worktree = {
   id: number;
@@ -45,6 +45,16 @@ export type Worktree = {
   status: WorktreeStatus;
   leased_at: string | null;
   returned_at: string | null;
+  created_at: string;
+};
+
+export type PoolStatus = {
+  total: number;
+  available: number;
+  leased: number;
+  in_use: number;
+  dirty: number;
+  utilization_percent: number;
 };
 
 export type ExecutionStatus = "Running" | "Success" | "Failed" | "Cancelled";

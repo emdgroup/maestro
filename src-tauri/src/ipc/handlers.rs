@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 use base64::Engine;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus};
 use crate::db::AppState;
 
 /// Get list of all projects
@@ -544,4 +544,184 @@ pub fn save_import_config(
     .map_err(|e| format!("Failed to save import config: {}", e))?;
 
     Ok(())
+}
+
+// ============================================================================
+// Worktree Pool Management
+// ============================================================================
+
+const POOL_MAX_SIZE: i32 = 5;
+
+/// Lease worktree from pool for task execution
+/// 
+/// Creates database record atomically, then invokes sidecar to create actual git worktree.
+/// If pool is empty, creates new worktree up to max pool size.
+#[tauri::command]
+pub async fn lease_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<Worktree, String> {
+    println!("lease_worktree(project={}, task={}) called", project_id, task_id);
+    
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    
+    // Try to find available worktree
+    let available: Result<Worktree, _> = conn.query_row(
+        "SELECT id, project_id, branch_name, path, status, leased_at, returned_at, created_at 
+         FROM worktrees WHERE project_id = ? AND status = 'Available' LIMIT 1",
+        [project_id],
+        |row| {
+            Ok(Worktree {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                branch_name: row.get(2)?,
+                path: row.get(3)?,
+                status: WorktreeStatus::Available,
+                leased_at: row.get(5)?,
+                returned_at: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        },
+    );
+    
+    if let Ok(mut worktree) = available {
+        // Lease existing worktree
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE worktrees SET status = 'Leased', leased_at = ? WHERE id = ?",
+            rusqlite::params![&now, worktree.id],
+        )
+        .map_err(|e| format!("Failed to lease worktree: {}", e))?;
+        
+        worktree.status = WorktreeStatus::Leased;
+        worktree.leased_at = Some(now);
+        
+        println!("✓ Leased existing worktree {}", worktree.id);
+        return Ok(worktree);
+    }
+    
+    // No available worktree, check if we can create new one
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ?",
+        [project_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to count worktrees: {}", e))?;
+    
+    if count >= POOL_MAX_SIZE {
+        return Err(format!("Pool exhausted: {} worktrees in use (max {})", count, POOL_MAX_SIZE));
+    }
+    
+    // Create new worktree
+    let worktree_id_str = format!("wt-{:03}", count + 1);
+    let branch_name = format!("pool/agent-task-{}", task_id);
+    let worktree_path = format!(".worktree-pool/{}", worktree_id_str);
+    let now = chrono::Utc::now().to_rfc3339();
+    
+    conn.execute(
+        "INSERT INTO worktrees (project_id, branch_name, path, status, leased_at, created_at) 
+         VALUES (?, ?, ?, 'Leased', ?, ?)",
+        rusqlite::params![project_id, &branch_name, &worktree_path, &now, &now],
+    )
+    .map_err(|e| format!("Failed to create worktree record: {}", e))?;
+    
+    let worktree_id = conn.last_insert_rowid() as i32;
+    
+    // Drop connection lock before async sidecar call
+    drop(conn);
+    
+    // Call sidecar to create actual git worktree
+    // NOTE: For now, sidecar invocation is stubbed (Phase 3-01 built sidecar, Phase 4 will integrate)
+    // TODO: Implement actual sidecar spawning in Phase 4
+    println!("TODO: Invoke sidecar createWorktree({}, {}, {})", repo_path, worktree_id_str, task_id);
+    
+    // For now, return the worktree without actual git creation
+    // Phase 4 will add: tokio::process::Command sidecar invocation
+    
+    Ok(Worktree {
+        id: worktree_id,
+        project_id,
+        branch_name,
+        path: worktree_path,
+        status: WorktreeStatus::Leased,
+        leased_at: Some(now.clone()),
+        returned_at: None,
+        created_at: now,
+    })
+}
+
+/// Return worktree to pool after task completion
+#[tauri::command]
+pub fn return_worktree(
+    app_state: State<Arc<AppState>>,
+    worktree_id: i32,
+) -> Result<(), String> {
+    println!("return_worktree({}) called", worktree_id);
+    
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = chrono::Utc::now().to_rfc3339();
+    
+    conn.execute(
+        "UPDATE worktrees SET status = 'Available', returned_at = ? WHERE id = ?",
+        rusqlite::params![&now, worktree_id],
+    )
+    .map_err(|e| format!("Failed to return worktree: {}", e))?;
+    
+    println!("✓ Returned worktree {} to pool", worktree_id);
+    Ok(())
+}
+
+/// Get current pool status for monitoring
+#[tauri::command]
+pub fn get_pool_status(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+) -> Result<PoolStatus, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    
+    let available: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ? AND status = 'Available'",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    let leased: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ? AND status = 'Leased'",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    let in_use: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ? AND status = 'InUse'",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    let dirty: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ? AND status = 'Dirty'",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    let total = available + leased + in_use + dirty;
+    let utilization_percent = if total > 0 {
+        ((leased + in_use) as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+    
+    Ok(PoolStatus {
+        total,
+        available,
+        leased,
+        in_use,
+        dirty,
+        utilization_percent,
+    })
 }

@@ -96,6 +96,32 @@ fn save_import_config(
     gsd_demo::ipc::handlers::save_import_config(app_state, project_id, provider, config)
 }
 
+#[tauri::command]
+async fn lease_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<gsd_demo::models::Worktree, String> {
+    gsd_demo::ipc::handlers::lease_worktree(app_state, project_id, task_id, repo_path).await
+}
+
+#[tauri::command]
+fn return_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::return_worktree(app_state, worktree_id)
+}
+
+#[tauri::command]
+fn get_pool_status(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<gsd_demo::models::PoolStatus, String> {
+    gsd_demo::ipc::handlers::get_pool_status(app_state, project_id)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -126,7 +152,10 @@ fn main() {
             save_settings,
             sync_github_issues,
             sync_jira_issues,
-            save_import_config
+            save_import_config,
+            lease_worktree,
+            return_worktree,
+            get_pool_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
