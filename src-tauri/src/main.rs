@@ -81,6 +81,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     tauri::Builder::default()
         .setup(setup)
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_projects,
             get_or_create_project,
