@@ -1,6 +1,6 @@
 import React from "react";
 import { Droppable } from "@hello-pangea/dnd";
-import { Task, TaskStatus } from "../types/bindings";
+import { Task } from "../types/bindings";
 import { TaskCard } from "./TaskCard";
 
 interface KanbanColumnProps {

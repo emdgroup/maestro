@@ -34,7 +34,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
   const { loadTasks, updateTaskStatus, getTasksByStatus } = useBoardStore();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
 
   // Load tasks on mount
   useEffect(() => {
@@ -66,14 +65,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
     return true;
   };
 
-  const handleDragStart = (start: DragStart) => {
-    const taskId = parseInt(start.draggableId, 10);
-    setDraggedTaskId(taskId);
+  const handleDragStart = (_start: DragStart) => {
+    // Reserved for future drag state tracking
   };
 
   const handleDragEnd = async (result: DropResult) => {
     const { source, destination, draggableId } = result;
-    setDraggedTaskId(null);
 
     // If no destination, card was dropped outside valid zone
     if (!destination) {
