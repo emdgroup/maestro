@@ -909,3 +909,110 @@ pub async fn recover_dirty_worktrees(
     println!("Recovery complete: {}/{} worktrees recovered", recovered_ids.len(), dirty_worktrees.len());
     Ok(recovered_ids)
 }
+
+// ============================================================================
+// Worktree Pool Pre-creation
+// ============================================================================
+
+const DEFAULT_POOL_SIZE: i32 = 3;
+
+// INTEGRATION POINT: App.tsx (Phase 2)
+// After user selects project and project loads:
+// 1. recover_dirty_worktrees() to retry any failed cleanups
+// 2. initialize_worktree_pool() to pre-create 3 available worktrees
+//
+// Sequence in App.tsx useEffect (when project changes):
+// useEffect(() => {
+//   if (project) {
+//     // Recover stuck worktrees
+//     invoke("recover_dirty_worktrees", { projectId: project.id, repoPath: project.path });
+//     // Pre-create pool for instant allocation
+//     invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
+//   }
+// }, [project]);
+
+/// Pre-create worktree pool on project open
+///
+/// Creates database entries for available worktrees to enable instant allocation.
+/// Actual git worktree creation happens lazily when worktree is leased for task execution.
+///
+/// Design:
+/// - Creates 3 database entries in 'available' state
+/// - Lazy git worktree creation on first lease (avoids slow disk I/O at startup)
+/// - If pool already initialized, returns current pool status
+/// - Idempotent: safe to call multiple times
+///
+/// # Arguments
+/// * `project_id` - Project to initialize pool for
+/// * `repo_path` - Path to git repository
+/// * `pool_size` - Optional pool size (default: 3). Override for testing.
+/// * `state` - Tauri app state with database connection
+///
+/// # Returns
+/// Current PoolStatus showing total, available, leased, dirty counts
+///
+/// # Integration
+/// Should be called in App.tsx useEffect after project is selected:
+/// ```typescript
+/// await invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
+/// ```
+#[tauri::command]
+pub fn initialize_worktree_pool(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+    _repo_path: String,
+    pool_size: Option<i32>,
+) -> Result<PoolStatus, String> {
+    let pool_size = pool_size.unwrap_or(DEFAULT_POOL_SIZE);
+    println!("initialize_worktree_pool(project={}, size={}) called", project_id, pool_size);
+    
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    
+    // Check existing available worktrees
+    let current_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ? AND status = 'Available'",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    if current_count >= pool_size {
+        println!("Pool already initialized ({} available)", current_count);
+        drop(conn);
+        return get_pool_status(app_state, project_id);
+    }
+    
+    // Create missing worktrees
+    let total_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM worktrees WHERE project_id = ?",
+        [project_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(0);
+    
+    let needed = pool_size - current_count;
+    println!("Creating {} worktrees (current: {}, target: {})", needed, current_count, pool_size);
+    
+    let now = chrono::Utc::now().to_rfc3339();
+    
+    for i in 1..=needed {
+        let worktree_num = total_count + i;
+        let worktree_id = format!("wt-{:03}", worktree_num);
+        let branch_name = format!("pool/reserved-{}", worktree_num);
+        let path = format!(".worktree-pool/{}", worktree_id);
+        
+        conn.execute(
+            "INSERT INTO worktrees (project_id, branch_name, path, status, created_at) 
+             VALUES (?, ?, ?, 'Available', ?)",
+            rusqlite::params![project_id, &branch_name, &path, &now],
+        )
+        .map_err(|e| format!("Failed to create worktree {}: {}", worktree_id, e))?;
+        
+        println!("✓ Created worktree {} (database entry)", worktree_id);
+    }
+    
+    drop(conn);
+    
+    println!("✓ Pool initialized with {} worktrees", pool_size);
+    get_pool_status(app_state, project_id)
+}
