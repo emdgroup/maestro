@@ -13,6 +13,7 @@ export function ProjectPicker({
 }: ProjectPickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualPath, setManualPath] = useState("");
 
   async function handleFolderPicker() {
     setLoading(true);
@@ -48,6 +49,23 @@ export function ProjectPicker({
     }
   }
 
+  async function handleManualPath(e: React.FormEvent) {
+    e.preventDefault();
+    if (!manualPath.trim()) {
+      setError("Please enter a project path");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      onProjectSelected(manualPath.trim());
+    } catch (err) {
+      setError(`Failed to open project: ${err}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="project-picker">
       <div className="project-picker-container">
@@ -61,6 +79,27 @@ export function ProjectPicker({
         >
           {loading ? "Loading..." : "Select Project Folder"}
         </button>
+
+        <div className="manual-path-section">
+          <p className="manual-path-label">Or enter path manually:</p>
+          <form onSubmit={handleManualPath} className="manual-path-form">
+            <input
+              type="text"
+              value={manualPath}
+              onChange={(e) => setManualPath(e.target.value)}
+              placeholder="/home/user/project-path"
+              className="manual-path-input"
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              className="project-picker-button primary"
+              disabled={loading || !manualPath.trim()}
+            >
+              Open
+            </button>
+          </form>
+        </div>
 
         {recentProjects.length > 0 && (
           <div className="recent-projects">
