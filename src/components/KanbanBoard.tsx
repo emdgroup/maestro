@@ -8,7 +8,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/tauri-mock";
 import { useBoardStore } from "../store/boardStore";
 import { Task, TaskStatus } from "../types/bindings";
 import { KanbanColumn } from "./KanbanColumn";
