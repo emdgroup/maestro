@@ -6,9 +6,6 @@
  *
  * Key constraints: Strict git operation ordering to prevent corruption.
  */
-
-import * as gitManager from "./git-manager.js";
-
 /**
  * Create git worktree in .worktree-pool/ directory
  *
@@ -22,14 +19,10 @@ import * as gitManager from "./git-manager.js";
  * console.log(wt.path); // .worktree-pool/wt-001
  * console.log(wt.branch); // pool/agent-task-42
  */
-export async function createWorktree(
-  repoPath: string,
-  worktreeId: string,
-  taskId: number
-): Promise<{ path: string; branch: string }> {
-  return gitManager.createWorktree(repoPath, worktreeId, taskId);
-}
-
+export declare function createWorktree(repoPath: string, worktreeId: string, taskId: number): Promise<{
+    path: string;
+    branch: string;
+}>;
 /**
  * Delete git worktree and associated branch
  *
@@ -45,14 +38,7 @@ export async function createWorktree(
  * @example
  * await deleteWorktree('/path/to/repo', 'wt-001', 'pool/agent-task-42');
  */
-export async function deleteWorktree(
-  repoPath: string,
-  worktreeId: string,
-  branchName: string
-): Promise<void> {
-  return gitManager.deleteWorktree(repoPath, worktreeId, branchName);
-}
-
+export declare function deleteWorktree(repoPath: string, worktreeId: string, branchName: string): Promise<void>;
 /**
  * Reset worktree to clean main branch state
  *
@@ -65,13 +51,7 @@ export async function deleteWorktree(
  * @example
  * await resetWorktree('/path/to/repo', 'wt-001');
  */
-export async function resetWorktree(
-  repoPath: string,
-  worktreeId: string
-): Promise<void> {
-  return gitManager.resetWorktree(repoPath, worktreeId);
-}
-
+export declare function resetWorktree(repoPath: string, worktreeId: string): Promise<void>;
 /**
  * Prune stale worktree metadata
  *
@@ -83,10 +63,7 @@ export async function resetWorktree(
  * @example
  * await pruneWorktrees('/path/to/repo');
  */
-export async function pruneWorktrees(repoPath: string): Promise<void> {
-  return gitManager.pruneWorktrees(repoPath);
-}
-
+export declare function pruneWorktrees(repoPath: string): Promise<void>;
 /**
  * Check if worktree exists and is usable
  *
@@ -101,9 +78,5 @@ export async function pruneWorktrees(repoPath: string): Promise<void> {
  *   console.log('Worktree needs recovery');
  * }
  */
-export async function isWorktreeHealthy(
-  repoPath: string,
-  worktreePath: string
-): Promise<boolean> {
-  return gitManager.isWorktreeHealthy(repoPath, worktreePath);
-}
+export declare function isWorktreeHealthy(repoPath: string, worktreePath: string): Promise<boolean>;
+//# sourceMappingURL=index.d.ts.map
