@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { KanbanBoard } from "./components/KanbanBoard";
-import type { AppSettings, Project } from "./types/bindings";
+import { TaskModal } from "./components/TaskModal";
+import { useBoardStore } from "./store/boardStore";
+import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
 
 function App() {
@@ -10,6 +12,8 @@ function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectSelected, setProjectSelected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const { addTask } = useBoardStore();
 
   // Load settings on mount
   useEffect(() => {
@@ -69,6 +73,10 @@ function App() {
     }
   }
 
+  function handleTaskCreated(newTask: Task) {
+    addTask(newTask);
+  }
+
   if (loading) {
     return (
       <div className="app">
@@ -89,12 +97,32 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>GSD Agent Orchestrator</h1>
-        <p>Project: {settings?.project_path}</p>
+        <div className="header-left">
+          <h1>GSD Agent Orchestrator</h1>
+          <p>Project: {settings?.project_path}</p>
+        </div>
+        <div className="header-right">
+          {projectSelected && currentProject && (
+            <button
+              onClick={() => setShowNewTaskModal(true)}
+              className="btn-new-task"
+            >
+              + New Task
+            </button>
+          )}
+        </div>
       </header>
       <main className="app-main">
         {currentProject && (
-          <KanbanBoard projectId={currentProject.id} />
+          <>
+            <KanbanBoard projectId={currentProject.id} />
+            <TaskModal
+              isOpen={showNewTaskModal}
+              onClose={() => setShowNewTaskModal(false)}
+              projectId={currentProject.id}
+              onTaskCreated={handleTaskCreated}
+            />
+          </>
         )}
       </main>
     </div>
