@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 2 of 9 (Core Orchestration) - In Progress
-Plan: 02-03 complete (Task Creation Modal)
-Status: Phase 2 plan 3 verified and complete, ready for 02-04
-Last activity: 2026-02-05 11:39:00Z — Completed 02-03-PLAN with task creation modal, form validation, and skills multi-select
+Plan: 02-04 complete (External Issue Sync)
+Status: Phase 2 plan 4 verified and complete, ready for 02-05
+Last activity: 2026-02-05 12:45:00Z — Completed 02-04-PLAN with GitHub/Jira sync handlers, external_id conflict detection, and import config persistence
 
-Progress: [██░░░░░░░░] 7/31 plans (23%), 1/9 phases complete, Phase 2 in progress
+Progress: [██░░░░░░░░] 8/31 plans (26%), 1/9 phases complete, Phase 2 in progress
 
 ## Performance Metrics
 
@@ -29,14 +29,15 @@ Progress: [██░░░░░░░░] 7/31 plans (23%), 1/9 phases complete
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4 | 63m | 15.75m |
-| 02-core-orchestration | 3 | 189m | 63m |
+| 02-core-orchestration | 4 | 234m | 58.5m |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (10m), 01-04 (6m), 02-01 (140m), 02-02 (12m), 02-03 (25m)
+- Last 5 plans: 01-03 (10m), 01-04 (6m), 02-01 (140m), 02-02 (12m), 02-03 (25m), 02-04 (45m)
+- Phase 2 backend API work: GitHub/Jira sync with async HTTP (45m for complex external integration)
 - Phase 2 frontend velocity improving (25m for modal + form)
-- Phase 2 backend work streamlined (12m for IPC handler)
+- Phase 2 backend work streamlined (12m for IPC handler, 45m for async external API)
 - Phase 1 velocity: Strong (all plans complete, zero blockers)
-- Phase 2 status: 02-03 complete with no blockers, ready for 02-04
+- Phase 2 status: 02-04 complete with no blockers, ready for 02-05
 
 *Updated: 2026-02-05 11:39:00Z*
 
@@ -103,6 +104,14 @@ Key decisions affecting current work (full log in PROJECT.md):
 - TaskModal handles IPC invocation and error display (error banner)
 - Zustand store updated immediately on task creation (no wait for modal close)
 
+**Phase 02-04 Decisions:**
+- Async IPC handlers for GitHub/Jira API calls using reqwest (better performance than blocking HTTP)
+- Transaction-based upserts for atomic consistency across task creation/updates
+- Non-fatal error handling: errors in SyncResult.error_message, not thrown (allows partial success)
+- External ID conflict detection: GitHub issue.number and Jira issue.key stored in external_id column
+- Status preserved on update: existing tasks keep their status when synced with new data
+- Credentials stored plaintext in SQLite (MVP, Phase 7+ for encryption)
+
 ### Pending Todos
 
 None yet.
@@ -119,8 +128,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-05 11:39:00Z
-Stopped at: Phase 02-03 complete (Task Creation Modal)
+Last session: 2026-02-05 12:45:00Z
+Stopped at: Phase 02-04 complete (External Issue Sync)
 Resume file: None
 
-Next: /gsd:execute-phase 02 or execute 02-04-PLAN — Task Editing Modal and Board Updates
+Next: /gsd:execute-phase 02 or execute 02-05-PLAN — Import Configuration UI
