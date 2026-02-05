@@ -22,8 +22,17 @@ export type Task = {
   external_id?: string;
   is_imported?: boolean;
   import_source?: string;
+  skills: string[];
   created_at: string;
   updated_at: string;
+};
+
+export type CreateTaskRequest = {
+  project_id: number;
+  name: string;
+  description: string;
+  acceptance_criteria: string;
+  skills: string[];
 };
 
 export type WorktreeStatus = "Available" | "Leased" | "Dirty";
