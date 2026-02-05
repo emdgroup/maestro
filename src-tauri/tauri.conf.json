@@ -1,12 +1,13 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "GSD Agent Orchestrator",
   "version": "0.1.0",
   "identifier": "com.gsd.orchestrator",
   "build": {
-    "frontendDist": "./gen/web",
+    "beforeDevCommand": "pnpm dev --host",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
@@ -15,8 +16,7 @@
         "width": 1200,
         "height": 800,
         "resizable": true,
-        "fullscreen": false,
-        "label": "main"
+        "fullscreen": false
       }
     ],
     "security": {
@@ -25,8 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage"],
-    "identifier": "com.gsd.orchestrator",
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

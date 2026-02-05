@@ -6,6 +6,7 @@ use gsd_demo::models::{Task, AppSettings};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Manager, State};
+use serde_json;
 
 /// Get the app data directory path for the current platform
 fn get_app_data_dir() -> PathBuf {
@@ -62,6 +63,39 @@ fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> Resu
     gsd_demo::ipc::handlers::save_settings(app_state, settings)
 }
 
+#[tauri::command]
+async fn sync_github_issues(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    owner: String,
+    repo: String,
+    token: String,
+) -> Result<gsd_demo::models::SyncResult, String> {
+    gsd_demo::ipc::handlers::sync_github_issues(app_state, project_id, owner, repo, token).await
+}
+
+#[tauri::command]
+async fn sync_jira_issues(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    host: String,
+    email: String,
+    api_token: String,
+    jql: String,
+) -> Result<gsd_demo::models::SyncResult, String> {
+    gsd_demo::ipc::handlers::sync_jira_issues(app_state, project_id, host, email, api_token, jql).await
+}
+
+#[tauri::command]
+fn save_import_config(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    provider: String,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::save_import_config(app_state, project_id, provider, config)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -89,7 +123,10 @@ fn main() {
             create_task,
             update_task,
             get_settings,
-            save_settings
+            save_settings,
+            sync_github_issues,
+            sync_jira_issues,
+            save_import_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

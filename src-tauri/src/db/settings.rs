@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use serde_json;
 
 use crate::models::AppSettings;
 use crate::error::AppError;
@@ -89,12 +89,15 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
 ///
 /// Serializes AppSettings to key-value pairs and performs INSERT OR REPLACE
 /// into the settings table.
-pub fn save_settings(conn: &Connection, settings: &AppSettings) -> Result<(), AppError> {
+pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<(), AppError> {
+    // Serialize recent_projects to a longer-lived binding
+    let recent_projects_json = serde_json::to_string(&settings.recent_projects)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to serialize recent_projects: {}", e)))?;
+
     // Build key-value pairs
     let pairs = vec![
         ("project_path", settings.project_path.as_ref().map(|s| s.as_str()).unwrap_or("null")),
-        ("recent_projects", &serde_json::to_string(&settings.recent_projects)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize recent_projects: {}", e)))?),
+        ("recent_projects", recent_projects_json.as_str()),
         ("model_default", &settings.model_default),
         ("mcp_defaults", settings.mcp_defaults.as_ref().map(|s| s.as_str()).unwrap_or("null")),
         ("skills_defaults", settings.skills_defaults.as_ref().map(|s| s.as_str()).unwrap_or("null")),
@@ -137,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_settings() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::db::initialize_schema(&conn).unwrap();
 
         let settings = AppSettings {
@@ -149,7 +152,7 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 
-        save_settings(&conn, &settings).unwrap();
+        save_settings(&mut conn, &settings).unwrap();
         let loaded = load_settings(&conn).unwrap();
 
         assert_eq!(loaded.project_path, settings.project_path);

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use tauri::State;
+use base64::Engine;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse};
 use crate::db::AppState;
 
 /// Get list of all projects
@@ -300,4 +301,247 @@ pub fn save_settings(
     println!("save_settings() called via IPC with project_path: {:?}", settings.project_path);
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
+}
+
+/// Sync issues from GitHub repository
+#[tauri::command]
+pub async fn sync_github_issues(
+    state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    owner: String,
+    repo: String,
+    token: String,
+) -> Result<SyncResult, String> {
+    println!("sync_github_issues() called: owner={}, repo={}, project_id={}", owner, repo, project_id);
+
+    // Construct GitHub API URL
+    let url = format!("https://api.github.com/repos/{}/{}/issues?state=open&per_page=100", owner, repo);
+
+    // Fetch from GitHub API
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch from GitHub: {}", e))?;
+
+    // Parse response
+    let issues: Vec<GitHubIssue> = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
+
+    let mut imported_count = 0;
+    let mut updated_count = 0;
+
+    // Get database connection
+    let mut conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Process each issue in a transaction
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let external_id_str = "github";
+
+    for issue in issues {
+        let external_id = issue.number.to_string();
+        let description = issue.body.unwrap_or_default();
+
+        // Check if task already exists
+        let existing_id: Option<i32> = tx
+            .query_row(
+                "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
+                rusqlite::params![&external_id, project_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(task_id) = existing_id {
+            // Update existing task
+            tx.execute(
+                "UPDATE tasks SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&issue.title, &description, &now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task: {}", e))?;
+            updated_count += 1;
+        } else {
+            // Insert new task
+            let skills_json = "[]";
+            tx.execute(
+                "INSERT INTO tasks (project_id, name, description, status, external_id, is_imported, import_source, skills, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    project_id,
+                    &issue.title,
+                    &description,
+                    "Backlog",
+                    &external_id,
+                    true,
+                    external_id_str,
+                    skills_json,
+                    &now,
+                    &now
+                ],
+            )
+            .map_err(|e| format!("Failed to insert task: {}", e))?;
+            imported_count += 1;
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+    Ok(SyncResult {
+        imported_count,
+        updated_count,
+        error_message: None,
+    })
+}
+
+/// Sync issues from Jira
+#[tauri::command]
+pub async fn sync_jira_issues(
+    state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    host: String,
+    email: String,
+    api_token: String,
+    jql: String,
+) -> Result<SyncResult, String> {
+    println!("sync_jira_issues() called: host={}, project_id={}", host, project_id);
+
+    // Construct Jira API URL
+    let url = format!("https://{}/rest/api/3/search", host);
+
+    // Create authorization header
+    let credentials = format!("{}:{}", email, api_token);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+
+    // Fetch from Jira API
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Basic {}", encoded))
+        .query(&[("jql", jql.as_str())])
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch from Jira: {}", e))?;
+
+    // Check for HTTP errors
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!("Jira API error: {}", status));
+    }
+
+    // Parse response
+    let search_response: JiraSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Jira response: {}", e))?;
+
+    let mut imported_count = 0;
+    let mut updated_count = 0;
+
+    // Get database connection
+    let mut conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Process each issue in a transaction
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let external_id_str = "jira";
+
+    for issue in search_response.issues {
+        let external_id = &issue.key;
+        let description = issue.fields.description.unwrap_or_default();
+
+        // Check if task already exists
+        let existing_id: Option<i32> = tx
+            .query_row(
+                "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
+                rusqlite::params![external_id, project_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(task_id) = existing_id {
+            // Update existing task
+            tx.execute(
+                "UPDATE tasks SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&issue.fields.summary, &description, &now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task: {}", e))?;
+            updated_count += 1;
+        } else {
+            // Insert new task
+            let skills_json = "[]";
+            tx.execute(
+                "INSERT INTO tasks (project_id, name, description, status, external_id, is_imported, import_source, skills, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    project_id,
+                    &issue.fields.summary,
+                    &description,
+                    "Backlog",
+                    external_id,
+                    true,
+                    external_id_str,
+                    skills_json,
+                    &now,
+                    &now
+                ],
+            )
+            .map_err(|e| format!("Failed to insert task: {}", e))?;
+            imported_count += 1;
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+    Ok(SyncResult {
+        imported_count,
+        updated_count,
+        error_message: None,
+    })
+}
+
+/// Save import configuration to settings
+#[tauri::command]
+pub fn save_import_config(
+    state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    provider: String,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    println!("save_import_config() called: provider={}, project_id={}", provider, project_id);
+
+    // Validate provider
+    if provider != "github" && provider != "jira" {
+        return Err(format!("Invalid provider: {}. Must be 'github' or 'jira'", provider));
+    }
+
+    let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Serialize config to JSON string
+    let config_json = serde_json::to_string(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Store in settings table
+    let key = format!("import_config_{}", provider);
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+        rusqlite::params![&key, &config_json, &now],
+    )
+    .map_err(|e| format!("Failed to save import config: {}", e))?;
+
+    Ok(())
 }

@@ -1,0 +1,186 @@
+/* Main Kanban board container */
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  width: 100%;
+  height: calc(100vh - 120px);
+  padding: 1rem;
+  background-color: var(--bg-secondary, #f5f5f5);
+}
+
+/* Column container */
+.kanban-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--bg-primary, #ffffff);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+/* Column header */
+.kanban-column-header {
+  padding: 1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary, #1f2937);
+  background-color: var(--bg-tertiary, #f9fafb);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Column count badge */
+.kanban-column-count {
+  color: var(--text-secondary, #6b7280);
+  font-weight: 500;
+}
+
+/* Drop zone (tasks container) */
+.kanban-drop-zone {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background-color: var(--bg-primary, #ffffff);
+  transition: background-color 0.2s ease;
+}
+
+/* When dragging over valid drop zone */
+.kanban-drop-zone.drag-over-valid {
+  background-color: var(--bg-hover, #f0f9ff);
+}
+
+/* When dragging over invalid drop zone */
+.kanban-drop-zone.drag-over-invalid {
+  background-color: var(--bg-error-light, #fee2e2);
+  opacity: 0.8;
+}
+
+/* Task card */
+.task-card {
+  background-color: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  cursor: move;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Task card hover */
+.task-card:hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-color: var(--border-hover, #d1d5db);
+}
+
+/* Task card being dragged */
+.task-card.dragging {
+  opacity: 0.5;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
+}
+
+/* Task card title */
+.task-card-title {
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-primary, #1f2937);
+  word-wrap: break-word;
+  margin: 0;
+}
+
+/* Task card status badge */
+.task-card-badge {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--bg-badge, #dbeafe);
+  color: var(--text-badge, #0369a1);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Task card imported indicator */
+.task-card-imported {
+  display: inline-block;
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--bg-imported, #d1fae5);
+  color: var(--text-imported, #065f46);
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Scrollbar styling for tasks container */
+.kanban-drop-zone::-webkit-scrollbar {
+  width: 6px;
+}
+
+.kanban-drop-zone::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kanban-drop-zone::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-color, #cbd5e1);
+  border-radius: 3px;
+}
+
+.kanban-drop-zone::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-hover, #94a3b8);
+}
+
+/* Responsive design for small screens */
+@media (max-width: 1400px) {
+  .kanban-board {
+    gap: 0.75rem;
+    padding: 0.75rem;
+    height: calc(100vh - 110px);
+  }
+
+  .kanban-column {
+    border-radius: 0.375rem;
+  }
+
+  .kanban-column-header {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .task-card {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .task-card-title {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 1000px) {
+  .kanban-board {
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .kanban-column-header {
+    padding: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .task-card {
+    padding: 0.5rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .task-card-title {
+    font-size: 0.85rem;
+  }
+}
