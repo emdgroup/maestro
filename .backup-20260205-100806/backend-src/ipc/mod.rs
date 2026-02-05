@@ -1,3 +1,0 @@
-pub mod handlers;
-
-pub use handlers::{get_projects, get_or_create_project, get_tasks, create_task, update_task, get_settings, save_settings};
