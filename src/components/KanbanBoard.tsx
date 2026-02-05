@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from "react";
 import {
-  DragDropContext,
-  DropResult,
-  DragStart,
-} from "@hello-pangea/dnd";
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { invoke } from "@tauri-apps/api/core";
 import { useBoardStore } from "../store/boardStore";
 import { Task, TaskStatus } from "../types/bindings";
 import { KanbanColumn } from "./KanbanColumn";
+import { TaskCard } from "./TaskCard";
 import "../styles/KanbanBoard.css";
 
 interface KanbanBoardProps {
@@ -31,9 +36,18 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
 };
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
-  const { loadTasks, updateTaskStatus, getTasksByStatus } = useBoardStore();
+  const { loadTasks, updateTaskStatus, getTasksByStatus, getTasks } = useBoardStore();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   // Load tasks on mount
   useEffect(() => {
@@ -65,29 +79,35 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
     return true;
   };
 
-  const handleDragStart = (_start: DragStart) => {
-    // Reserved for future drag state tracking
+  const handleDragStart = (event: { active: { id: string | number } }) => {
+    const taskId = typeof event.active.id === 'string'
+      ? parseInt(event.active.id, 10)
+      : event.active.id;
+    const task = getTasks().find((t) => t.id === taskId);
+    setActiveTask(task || null);
   };
 
-  const handleDragEnd = async (result: DropResult) => {
-    const { source, destination, draggableId } = result;
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
 
-    // If no destination, card was dropped outside valid zone
-    if (!destination) {
+    if (!over) {
       return;
     }
 
-    // If dropped in same position, no change needed
-    if (
-      source.droppableId === destination.droppableId &&
-      source.index === destination.index
-    ) {
+    const taskId = typeof active.id === 'string' ? parseInt(active.id, 10) : active.id;
+    const task = getTasks().find((t) => t.id === taskId);
+
+    if (!task) {
       return;
     }
 
-    const taskId = parseInt(draggableId, 10);
-    const fromStatus = source.droppableId as TaskStatus;
-    const toStatus = destination.droppableId as TaskStatus;
+    const fromStatus = task.status;
+    const toStatus = over.id as TaskStatus;
+
+    if (fromStatus === toStatus) {
+      return;
+    }
 
     // Validate the transition
     if (!isValidTransition(fromStatus, toStatus, taskId)) {
@@ -128,7 +148,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
           {errorMessage}
         </div>
       )}
-      <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
         <div className="kanban-board">
           {COLUMN_STATUSES.map((status) => (
             <KanbanColumn
@@ -139,7 +164,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId }) => {
             />
           ))}
         </div>
-      </DragDropContext>
+        <DragOverlay>
+          {activeTask ? (
+            <div style={{ opacity: 0.8 }}>
+              <TaskCard task={activeTask} isDragging />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 };
