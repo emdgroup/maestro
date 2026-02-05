@@ -56,10 +56,10 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
         description: args?.description || '',
         acceptance_criteria: args?.acceptance_criteria || '',
         skills: args?.skills || [],
-        status: 'backlog',
-        external_id: null,
+        status: 'Backlog',
+        external_id: undefined,
         is_imported: false,
-        import_source: null,
+        import_source: undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
