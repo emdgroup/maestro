@@ -122,6 +122,25 @@ fn get_pool_status(
     gsd_demo::ipc::handlers::get_pool_status(app_state, project_id)
 }
 
+#[tauri::command]
+async fn cleanup_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_id: i32,
+    repo_path: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::cleanup_worktree(app_state, project_id, worktree_id, repo_path).await
+}
+
+#[tauri::command]
+async fn recover_dirty_worktrees(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    repo_path: String,
+) -> Result<Vec<i32>, String> {
+    gsd_demo::ipc::handlers::recover_dirty_worktrees(app_state, project_id, repo_path).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -155,7 +174,9 @@ fn main() {
             save_import_config,
             lease_worktree,
             return_worktree,
-            get_pool_status
+            get_pool_status,
+            cleanup_worktree,
+            recover_dirty_worktrees
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
