@@ -2,11 +2,10 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 use gsd_demo::db::{init_db, AppState};
-use gsd_demo::error::AppError;
-use gsd_demo::ipc::{get_projects, get_or_create_project, get_tasks, create_task, update_task, get_settings, save_settings};
+use gsd_demo::models::{Task, AppSettings};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{Manager, State};
 
 /// Get the app data directory path for the current platform
 fn get_app_data_dir() -> PathBuf {
@@ -25,6 +24,42 @@ fn get_app_data_dir() -> PathBuf {
         let appdata = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
         PathBuf::from(format!("{}\\gsd-demo", appdata))
     }
+}
+
+// Tauri command wrappers that call the library functions
+#[tauri::command]
+fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<gsd_demo::models::Project>, String> {
+    gsd_demo::ipc::handlers::get_projects(app_state)
+}
+
+#[tauri::command]
+fn get_or_create_project(app_state: State<Arc<AppState>>, project_path: String) -> Result<gsd_demo::models::Project, String> {
+    gsd_demo::ipc::handlers::get_or_create_project(app_state, project_path)
+}
+
+#[tauri::command]
+fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
+    gsd_demo::ipc::handlers::get_tasks(app_state, project_id)
+}
+
+#[tauri::command]
+fn create_task(app_state: State<Arc<AppState>>, project_id: i32, name: String, description: String, acceptance_criteria: String, skills: Vec<String>) -> Result<Task, String> {
+    gsd_demo::ipc::handlers::create_task(app_state, project_id, name, description, acceptance_criteria, skills)
+}
+
+#[tauri::command]
+fn update_task(app_state: State<Arc<AppState>>, task_id: i32, status: Option<String>, description: Option<String>) -> Result<Task, String> {
+    gsd_demo::ipc::handlers::update_task(app_state, task_id, status, description)
+}
+
+#[tauri::command]
+fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
+    gsd_demo::ipc::handlers::get_settings(app_state)
+}
+
+#[tauri::command]
+fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> Result<(), String> {
+    gsd_demo::ipc::handlers::save_settings(app_state, settings)
 }
 
 /// Setup hook for Tauri initialization

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::models::{Project, Task, AppSettings, ProjectStatus, TaskStatus};
+use crate::models::{Project, Task, AppSettings, TaskStatus};
 use crate::db::AppState;
 
 /// Get list of all projects
@@ -92,7 +92,7 @@ pub fn get_tasks(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, project_id, name, description, status, created_at, updated_at
+            "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at
              FROM tasks WHERE project_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -104,19 +104,20 @@ pub fn get_tasks(
                 project_id: row.get(1)?,
                 name: row.get(2)?,
                 description: row.get(3)?,
-                acceptance_criteria: None,
-                status: match row.get::<_, String>(4)?.as_str() {
+                acceptance_criteria: row.get(4)?,
+                skills: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                status: match row.get::<_, String>(6)?.as_str() {
                     "Ready" => TaskStatus::Ready,
                     "InProgress" => TaskStatus::InProgress,
                     "Review" => TaskStatus::Review,
                     "Done" => TaskStatus::Done,
                     _ => TaskStatus::Backlog,
                 },
-                external_id: None,
-                is_imported: None,
-                import_source: None,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                external_id: row.get(7)?,
+                is_imported: row.get(8)?,
+                import_source: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -126,28 +127,49 @@ pub fn get_tasks(
     Ok(tasks)
 }
 
-/// Create a new task
+/// Create a new task with validation
 #[tauri::command]
 pub fn create_task(
     app_state: State<Arc<AppState>>,
     project_id: i32,
     name: String,
     description: String,
-    acceptance_criteria: Option<String>,
+    acceptance_criteria: String,
+    skills: Vec<String>,
 ) -> Result<Task, String> {
     println!("create_task() called via IPC with name: {}", name);
+
+    // Validate inputs
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() || trimmed_name.len() < 3 || trimmed_name.len() > 255 {
+        return Err("Name must be 3-255 characters".to_string());
+    }
+
+    let trimmed_description = description.trim();
+    if trimmed_description.is_empty() || trimmed_description.len() < 10 {
+        return Err("Description must be at least 10 characters".to_string());
+    }
+
+    let trimmed_criteria = acceptance_criteria.trim();
+    if trimmed_criteria.is_empty() || trimmed_criteria.len() < 10 {
+        return Err("Acceptance criteria must be at least 10 characters".to_string());
+    }
+
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let now = chrono::Utc::now().to_rfc3339();
+    let skills_json = serde_json::to_string(&skills)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
-        "INSERT INTO tasks (project_id, name, description, acceptance_criteria, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tasks (project_id, name, description, acceptance_criteria, skills, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             project_id,
             &name,
             &description,
-            acceptance_criteria,
+            &acceptance_criteria,
+            &skills_json,
             "Backlog",
             &now,
             &now
@@ -157,19 +179,38 @@ pub fn create_task(
 
     let task_id = conn.last_insert_rowid() as i32;
 
-    Ok(Task {
-        id: task_id,
-        project_id,
-        name,
-        description,
-        acceptance_criteria,
-        status: TaskStatus::Backlog,
-        external_id: None,
-        is_imported: None,
-        import_source: None,
-        created_at: now.clone(),
-        updated_at: now,
+    // Fetch and return created task
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at
+         FROM tasks WHERE id = ?"
+    )
+    .map_err(|e| e.to_string())?;
+
+    let task = stmt.query_row([task_id], |row| {
+        Ok(Task {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            name: row.get(2)?,
+            description: row.get(3)?,
+            acceptance_criteria: Some(row.get::<_, String>(4)?),
+            skills: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+            status: match row.get::<_, String>(6)?.as_str() {
+                "Ready" => TaskStatus::Ready,
+                "InProgress" => TaskStatus::InProgress,
+                "Review" => TaskStatus::Review,
+                "Done" => TaskStatus::Done,
+                _ => TaskStatus::Backlog,
+            },
+            external_id: row.get(7)?,
+            is_imported: row.get(8)?,
+            import_source: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        })
     })
+    .map_err(|e| e.to_string())?;
+
+    Ok(task)
 }
 
 /// Get application settings from database
@@ -194,7 +235,7 @@ pub fn update_task(
     let now = chrono::Utc::now().to_rfc3339();
 
     // Update status if provided
-    if let Some(new_status) = status {
+    if let Some(ref new_status) = status {
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
             rusqlite::params![&new_status, &now, task_id],
@@ -203,7 +244,7 @@ pub fn update_task(
     }
 
     // Update description if provided
-    if let Some(new_description) = description {
+    if let Some(ref new_description) = description {
         conn.execute(
             "UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?",
             rusqlite::params![&new_description, &now, task_id],
@@ -222,7 +263,7 @@ pub fn update_task(
 
     // Fetch and return updated task
     conn.query_row(
-        "SELECT id, project_id, name, description, status, created_at, updated_at FROM tasks WHERE id = ?",
+        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at FROM tasks WHERE id = ?",
         [task_id],
         |row| {
             Ok(Task {
@@ -230,19 +271,20 @@ pub fn update_task(
                 project_id: row.get(1)?,
                 name: row.get(2)?,
                 description: row.get(3)?,
-                acceptance_criteria: None,
-                status: match row.get::<_, String>(4)?.as_str() {
+                acceptance_criteria: row.get(4)?,
+                skills: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                status: match row.get::<_, String>(6)?.as_str() {
                     "Ready" => TaskStatus::Ready,
                     "InProgress" => TaskStatus::InProgress,
                     "Review" => TaskStatus::Review,
                     "Done" => TaskStatus::Done,
                     _ => TaskStatus::Backlog,
                 },
-                external_id: None,
-                is_imported: None,
-                import_source: None,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                external_id: row.get(7)?,
+                is_imported: row.get(8)?,
+                import_source: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         },
     )
@@ -256,6 +298,6 @@ pub fn save_settings(
     settings: AppSettings,
 ) -> Result<(), String> {
     println!("save_settings() called via IPC with project_path: {:?}", settings.project_path);
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    crate::db::settings::save_settings(&conn, &settings).map_err(|e| e.to_string())
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
 }

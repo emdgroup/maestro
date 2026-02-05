@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     external_id TEXT,
     is_imported INTEGER DEFAULT 0,
     import_source TEXT,
+    skills TEXT DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
