@@ -3,6 +3,7 @@ import { invoke } from "./lib/tauri-mock";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskModal } from "./components/TaskModal";
+import { ToasterRoot } from "./components/ErrorToast";
 import { useBoardStore } from "./store/boardStore";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
@@ -96,6 +97,7 @@ function App() {
 
   return (
     <div className="app">
+      <ToasterRoot />
       <header className="app-header">
         <div className="header-left">
           <h1>GSD Agent Orchestrator</h1>
