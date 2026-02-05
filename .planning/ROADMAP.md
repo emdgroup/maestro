@@ -12,7 +12,7 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 
 - [x] **Phase 1: Foundation** - Project setup, database schema, app shell, type definitions
 - [ ] **Phase 2: Core Orchestration** - Task management, Kanban board, column workflows
-- [ ] **Phase 3: Git Worktree Infrastructure** - Worktree creation, pooling, cleanup
+- [x] **Phase 3: Git Worktree Infrastructure** - Worktree creation, pooling, cleanup
 - [ ] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration
 - [ ] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
 - [ ] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
@@ -81,9 +81,10 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Node.js sidecar git manager (create, delete, reset worktrees via simple-git)
-- [ ] 03-02-PLAN.md — Worktree pooling logic (lease, return, dynamic expansion with state machine)
-- [ ] 03-03-PLAN.md — Automatic cleanup workflow (safe deletion, dirty-state recovery, prune stale metadata)
+- [x] 03-01-PLAN.md — Node.js sidecar git manager (create, delete, reset worktrees via simple-git)
+- [x] 03-02-PLAN.md — Worktree pooling logic (lease, return, dynamic expansion with state machine)
+- [x] 03-03-PLAN.md — Automatic cleanup workflow (safe deletion, dirty-state recovery, prune stale metadata)
+- [x] 03-04-PLAN.md — Pool pre-creation on project open (instant allocation, lazy git creation)
 
 ### Phase 4: Agent Execution
 **Goal**: Enable executing agents on tasks in isolated worktrees and capturing execution lifecycle.
@@ -216,8 +217,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
 | 1. Foundation | 4 | ✓ Complete | 2026-02-04 |
-| 2. Core Orchestration | 5 | In Progress | — |
-| 3. Git Worktree Infrastructure | 3 | Planned | — |
+| 2. Core Orchestration | 5 | ✓ Complete | 2026-02-05 |
+| 3. Git Worktree Infrastructure | 4 | ✓ Complete | 2026-02-05 |
 | 4. Agent Execution | 4 | Not started | — |
 | 5. Real-time Monitoring | 3 | Not started | — |
 | 6. Review & Merge Workflow | 3 | Not started | — |
@@ -226,7 +227,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Remote Project Support | 4 | Not started | — |
 
 **Total Plans:** 31
-**Completed Plans:** 5/31 (Phase 1: 4/4, Phase 2: 5/6)
+**Completed Plans:** 13/31 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---

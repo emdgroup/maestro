@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 ## Current Position
 
-Phase: 2 of 9 (Core Orchestration) - In Progress
-Plan: 02-05 complete (Import Configuration and Sync UI)
-Status: Phase 2 plan 5 verified and complete, 5/6 plans done in phase
-Last activity: 2026-02-05 13:41:30Z — Completed 02-05-PLAN with ImportSettings modal, SyncButton, ErrorToast, and read-only task protection
+Phase: 3 of 9 (Git Worktree Infrastructure) - Complete
+Plan: 03-04 complete (Pool Pre-creation)
+Status: Phase 3 complete, all 4 plans executed
+Last activity: 2026-02-05 16:50:00Z — Completed Phase 3: Node.js sidecar, worktree pooling, cleanup handlers, pool pre-creation
 
-Progress: [██░░░░░░░░] 9/31 plans (29%), 0/9 phases complete, Phase 2 in progress
+Progress: [████░░░░░░] 13/31 plans (42%), 3/9 phases complete
 
 ## Performance Metrics
 
@@ -118,6 +118,33 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Test Connection validates credentials before saving (immediate auth error feedback)
 - Disabled drag for imported tasks to prevent sync conflicts (read-only in UI layer)
 - Toast notifications for sync feedback (non-blocking, shows imported count)
+
+**Phase 03-01 Decisions:**
+- Node.js sidecar with simple-git 3.20+ for promise-based git operations
+- ES2020 modules (type: "module" in package.json)
+- Deletion safety: worktree remove → branch delete → prune (strict order prevents corruption)
+- TypeScript compilation to dist/index.js (committed to repo for Phase 4 integration)
+- All functions async/await based with descriptive error messages
+
+**Phase 03-02 Decisions:**
+- WorktreeStatus enum: Available, Leased, InUse, Dirty (4 states for full lifecycle)
+- Pool max size: 5 worktrees (balances parallelism with resource usage)
+- Database transactions in lease_worktree prevent race conditions
+- Sidecar invocation stubbed in lease_worktree (Phase 4 will add tokio::process::Command)
+- TypeScript bindings manually created (ts-rs regeneration issues encountered)
+
+**Phase 03-03 Decisions:**
+- Dirty-state recovery pattern: mark Dirty before cleanup (survives crashes)
+- Both cleanup handlers are async (prep for tokio::process::Command in Phase 4)
+- Sidecar invocation stubbed (same as Phase 3-02)
+- Integration point: App.tsx calls recover_dirty_worktrees on project open
+- Failed cleanups stay Dirty, don't block new executions
+
+**Phase 03-04 Decisions:**
+- Default pool size: 3 worktrees (instant allocation for first 3 tasks)
+- Lazy git creation: database entries only on init, actual git on lease
+- Idempotent: safe to call multiple times (checks existing count)
+- Configurable pool size via optional parameter (testing flexibility)
 
 ### Pending Todos
 
