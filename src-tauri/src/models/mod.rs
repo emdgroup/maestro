@@ -7,7 +7,7 @@ pub mod sync;
 
 pub use project::{Project, ProjectStatus};
 pub use task::{Task, TaskStatus, CreateTaskRequest};
-pub use worktree::{Worktree, WorktreeStatus};
+pub use worktree::{Worktree, WorktreeStatus, PoolStatus};
 pub use execution_log::{ExecutionLog, ExecutionStatus};
 pub use settings::AppSettings;
 pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraFields};
