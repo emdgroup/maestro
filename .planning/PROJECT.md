@@ -8,6 +8,19 @@ A desktop orchestration tool for managing autonomous AI coding agents. Users que
 
 Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control—eliminating blocking waits while maintaining safety through worktree isolation and human-in-the-loop review.
 
+## Current Milestone: v1.0 MVP
+
+**Goal:** Build complete AI agent orchestration platform with Kanban workflow, worktree isolation, real-time monitoring, and autonomous execution modes.
+
+**Target features:**
+- Kanban board for task management with GitHub/Jira integration
+- Git worktree isolation with hybrid pool management
+- Claude Code CLI integration with agent session execution
+- Real-time monitoring (terminal output, file diffs, embedded terminal)
+- Review and merge workflows with IDE integration
+- Autonomous mode with human review gates
+- Project and task-level configuration management
+
 ## Requirements
 
 ### Validated
@@ -93,4 +106,4 @@ The user has existing knowledge of the Claude Code ecosystem and evaluated these
 | Auto-sync issues on open | GitHub/Jira issues sync when opening project (simpler than webhooks, good-enough freshness) | — Pending |
 
 ---
-*Last updated: 2026-02-04 after initialization*
+*Last updated: 2026-02-04 after milestone v1.0 started*

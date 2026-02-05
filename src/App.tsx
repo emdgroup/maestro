@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectPicker } from "./components/ProjectPicker";
-import type { AppSettings } from "./types/bindings";
+import { KanbanBoard } from "./components/KanbanBoard";
+import type { AppSettings, Project } from "./types/bindings";
 import "./App.css";
 
 function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectSelected, setProjectSelected] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -38,6 +40,12 @@ function App() {
 
   async function handleProjectSelected(projectPath: string) {
     try {
+      // Get or create project in database
+      const project = await invoke<Project>("get_or_create_project", {
+        path: projectPath,
+      });
+      setCurrentProject(project);
+
       const newSettings: AppSettings = {
         project_path: projectPath,
         recent_projects: settings?.recent_projects || [],
@@ -85,8 +93,9 @@ function App() {
         <p>Project: {settings?.project_path}</p>
       </header>
       <main className="app-main">
-        <p>Status: Connected</p>
-        {/* Main UI components will be added in Phase 2 */}
+        {currentProject && (
+          <KanbanBoard projectId={currentProject.id} />
+        )}
       </main>
     </div>
   );

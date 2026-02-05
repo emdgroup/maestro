@@ -1,0 +1,1 @@
+/home/m306213/workspace/gsd-demo/src-tauri/target/debug/libgsd_demo.rlib: /home/m306213/workspace/gsd-demo/src-tauri/src/db/connection.rs /home/m306213/workspace/gsd-demo/src-tauri/src/db/mod.rs /home/m306213/workspace/gsd-demo/src-tauri/src/db/schema.rs /home/m306213/workspace/gsd-demo/src-tauri/src/error.rs /home/m306213/workspace/gsd-demo/src-tauri/src/lib.rs

@@ -3,7 +3,7 @@
 
 use gsd_demo::db::{init_db, AppState};
 use gsd_demo::error::AppError;
-use gsd_demo::ipc::{get_projects, get_tasks, create_task, get_settings, save_settings};
+use gsd_demo::ipc::{get_projects, get_or_create_project, get_tasks, create_task, update_task, get_settings, save_settings};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -48,8 +48,10 @@ fn main() {
         .setup(setup)
         .invoke_handler(tauri::generate_handler![
             get_projects,
+            get_or_create_project,
             get_tasks,
             create_task,
+            update_task,
             get_settings,
             save_settings
         ])

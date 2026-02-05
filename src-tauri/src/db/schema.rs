@@ -6,8 +6,8 @@ pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     project_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
-    status TEXT NOT NULL DEFAULT 'todo',
+    acceptance_criteria TEXT,
+    status TEXT NOT NULL DEFAULT 'Backlog',
+    external_id TEXT,
+    is_imported INTEGER DEFAULT 0,
+    import_source TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
