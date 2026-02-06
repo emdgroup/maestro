@@ -5,10 +5,11 @@ import '../styles/TaskDetail.css';
 
 interface TaskDetailProps {
   task: Task | null;
+  projectPath: string;
   onClose: () => void;
 }
 
-export function TaskDetail({ task, onClose }: TaskDetailProps) {
+export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'execution'>('info');
 
   if (!task) return null;
@@ -74,7 +75,11 @@ export function TaskDetail({ task, onClose }: TaskDetailProps) {
           )}
 
           {activeTab === 'execution' && (
-            <ExecutionHistory taskId={task.id} />
+            <ExecutionHistory
+              taskId={task.id}
+              projectId={task.project_id}
+              projectPath={projectPath}
+            />
           )}
         </div>
       </div>

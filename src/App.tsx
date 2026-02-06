@@ -169,6 +169,7 @@ function App() {
             />
             <TaskDetail
               task={selectedTask}
+              projectPath={currentProject.path}
               onClose={() => setSelectedTask(null)}
             />
             <ImportSettings

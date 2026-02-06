@@ -13,7 +13,7 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 - [x] **Phase 1: Foundation** - Project setup, database schema, app shell, type definitions
 - [ ] **Phase 2: Core Orchestration** - Task management, Kanban board, column workflows
 - [x] **Phase 3: Git Worktree Infrastructure** - Worktree creation, pooling, cleanup
-- [ ] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration
+- [~] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration (gaps found)
 - [ ] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
 - [ ] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
 - [ ] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
@@ -102,10 +102,12 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Create async process spawner module with tokio (non-blocking CLI execution)
-- [ ] 04-02-PLAN.md — Implement execution log persistence and spawn_agent_execution handler (background tasks)
-- [ ] 04-03-PLAN.md — Integrate agent execution into task UI with Execute button (status tracking)
-- [ ] 04-04-PLAN.md — Create execution history and task detail UI (output viewer, timestamps)
+- [x] 04-01-PLAN.md — Create async process spawner module with tokio (non-blocking CLI execution)
+- [x] 04-02-PLAN.md — Implement execution log persistence and spawn_agent_execution handler (background tasks)
+- [x] 04-03-PLAN.md — Integrate agent execution into task UI with Execute button (status tracking)
+- [x] 04-04-PLAN.md — Create execution history and task detail UI (output viewer, timestamps)
+
+**Verification**: 2/4 criteria met - Critical gaps: pause mechanism, notifications (see 04-VERIFICATION.md)
 
 ### Phase 5: Real-time Monitoring
 **Goal**: Stream real-time terminal output and enable interactive terminal access during execution.

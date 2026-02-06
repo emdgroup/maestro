@@ -3,6 +3,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Task } from "../types/bindings";
 import { useBoardStore } from "../store/boardStore";
+import { showErrorToast, showSuccessToast } from "./ErrorToast";
 
 interface TaskCardProps {
   task: Task;
@@ -38,12 +39,43 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         projectPath
       );
       console.log('Execution started:', executionLogId);
-      // Phase 5 will add terminal UI
+      showSuccessToast(`Execution started for "${task.name}"`);
     } catch (error) {
       console.error('Execution failed:', error);
-      // Phase 8 will add error notification UI
+      showErrorToast(`Failed to start execution: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsExecuting(false);
+    }
+  };
+
+  // Status badge colors
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'InProgress':
+        return { backgroundColor: '#fef3c7', color: '#92400e' }; // Yellow
+      case 'Review':
+        return { backgroundColor: '#dbeafe', color: '#0369a1' }; // Blue
+      case 'Done':
+        return { backgroundColor: '#dcfce7', color: '#166534' }; // Green
+      default:
+        return { backgroundColor: '#f3f4f6', color: '#374151' }; // Gray
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'InProgress':
+        return '🔄 Running';
+      case 'Review':
+        return '👀 Review';
+      case 'Done':
+        return '✅ Done';
+      case 'Backlog':
+        return '📋 Backlog';
+      case 'Ready':
+        return '🚀 Ready';
+      default:
+        return status;
     }
   };
 
@@ -62,11 +94,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       >
         {task.name}
       </div>
-      {task.is_imported && (
-        <div className="task-card-badges">
+      <div className="task-card-badges">
+        {task.status !== 'Backlog' && task.status !== 'Ready' && (
+          <span
+            className="task-card-badge"
+            style={getStatusBadgeStyle(task.status)}
+          >
+            {getStatusLabel(task.status)}
+          </span>
+        )}
+        {task.is_imported && (
           <span className="badge-readonly">🔒 Read-only (imported)</span>
-        </div>
-      )}
+        )}
+      </div>
       {task.status === 'Ready' && (
         <button
           onClick={handleExecute}

@@ -57,7 +57,7 @@ export type PoolStatus = {
   utilization_percent: number;
 };
 
-export type ExecutionStatus = "running" | "complete" | "failed" | "cancelled";
+export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled";
 
 export type ExecutionLog = {
   id: number;

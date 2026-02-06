@@ -19,5 +19,6 @@ pub enum ExecutionStatus {
     Running,
     Complete,
     Failed,
+    Paused,
     Cancelled,
 }

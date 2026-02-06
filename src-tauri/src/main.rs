@@ -169,6 +169,24 @@ fn get_execution_logs(
     gsd_demo::ipc::handlers::get_execution_logs(app_state, task_id)
 }
 
+#[tauri::command]
+async fn retry_execution(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    gsd_demo::ipc::handlers::retry_execution(app_state, project_id, task_id, repo_path).await
+}
+
+#[tauri::command]
+fn cancel_execution(
+    app_state: State<Arc<AppState>>,
+    log_id: i32,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::cancel_execution(app_state, log_id)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -207,7 +225,9 @@ fn main() {
             recover_dirty_worktrees,
             initialize_worktree_pool,
             spawn_agent_execution,
-            get_execution_logs
+            get_execution_logs,
+            retry_execution,
+            cancel_execution
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

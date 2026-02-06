@@ -1046,11 +1046,11 @@ pub fn initialize_worktree_pool(
 #[tauri::command]
 pub async fn spawn_agent_execution(
     app_state: State<'_, Arc<AppState>>,
-    _project_id: i32,
+    project_id: i32,
     task_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("spawn_agent_execution(project={}, task={}) called", _project_id, task_id);
+    println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
 
     // 1. Create execution log record
     let exec_log_id = {
@@ -1059,8 +1059,11 @@ pub async fn spawn_agent_execution(
     };
     println!("✓ Created execution log {}", exec_log_id);
 
-    // 2. Use placeholder worktree path for now (Phase 04-03 will lease from pool)
-    let worktree_path = format!("{}/pool/wt-001", repo_path);
+    // 2. Lease worktree from pool
+    let worktree = lease_worktree(app_state.clone(), project_id, task_id, repo_path.clone()).await?;
+    let worktree_id = worktree.id;
+    let worktree_path = format!("{}/{}", repo_path, worktree.path);
+    println!("✓ Leased worktree {} at path {}", worktree_id, worktree.path);
 
     // 3. Extract Arc<AppState> from State for background task
     // This allows the Arc to be moved into the tokio::spawn closure
@@ -1069,7 +1072,7 @@ pub async fn spawn_agent_execution(
 
     // 4. Spawn background task (returns immediately to caller)
     tokio::spawn(async move {
-        println!("[background] Starting agent execution for task {}", task_id);
+        println!("[background] Starting agent execution for task {} in worktree {}", task_id, worktree_id);
 
         // Run agent process via spawner module
         match spawn_agent_cli(
@@ -1104,6 +1107,21 @@ pub async fn spawn_agent_execution(
                         // Log EXEC-06 failure for pause-on-failure
                         if output.exit_code != 0 {
                             eprintln!("[EXEC-06] Agent failed with exit code {}, execution paused for user review", output.exit_code);
+
+                            // Mark worktree as dirty on failure (will be cleaned up later)
+                            let _ = conn.execute(
+                                "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                                rusqlite::params![worktree_id],
+                            );
+                            println!("✗ Marked worktree {} as dirty due to failure", worktree_id);
+                        } else {
+                            // Return worktree to pool on success
+                            let now = chrono::Utc::now().to_rfc3339();
+                            let _ = conn.execute(
+                                "UPDATE worktrees SET status = 'Available', returned_at = ? WHERE id = ?",
+                                rusqlite::params![&now, worktree_id],
+                            );
+                            println!("✓ Returned worktree {} to pool", worktree_id);
                         }
                     }
                     Err(e) => {
@@ -1114,12 +1132,19 @@ pub async fn spawn_agent_execution(
             Err(e) => {
                 eprintln!("[background] Agent process failed: {}", e);
 
-                // Log error to execution log
+                // Log error to execution log and mark worktree as dirty
                 match app_state_arc.db.lock() {
                     Ok(conn) => {
                         let error_msg = format!("\n[ERROR] {}", e);
                         let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
                         let _ = crate::db::execution_logs::mark_complete(&conn, exec_log_id, -1);
+
+                        // Mark worktree as dirty on error
+                        let _ = conn.execute(
+                            "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                            rusqlite::params![worktree_id],
+                        );
+                        println!("✗ Marked worktree {} as dirty due to error", worktree_id);
                     }
                     Err(lock_err) => {
                         eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
@@ -1157,6 +1182,7 @@ pub fn get_execution_logs(
         let status = match status_str.as_str() {
             "complete" => crate::models::ExecutionStatus::Complete,
             "failed" => crate::models::ExecutionStatus::Failed,
+            "paused" => crate::models::ExecutionStatus::Paused,
             "cancelled" => crate::models::ExecutionStatus::Cancelled,
             _ => crate::models::ExecutionStatus::Running,
         };
@@ -1175,4 +1201,39 @@ pub fn get_execution_logs(
         result.push(log.map_err(|e| e.to_string())?);
     }
     Ok(result)
+}
+
+/// Retry a paused execution
+#[tauri::command]
+pub async fn retry_execution(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    println!("retry_execution(project={}, task={}) called", project_id, task_id);
+
+    // Simply spawn a new execution for the same task
+    spawn_agent_execution(app_state, project_id, task_id, repo_path).await
+}
+
+/// Cancel a paused execution
+#[tauri::command]
+pub fn cancel_execution(
+    app_state: State<Arc<AppState>>,
+    log_id: i32,
+) -> Result<(), String> {
+    println!("cancel_execution({}) called", log_id);
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE execution_logs SET status = 'cancelled', completed_at = ? WHERE id = ?",
+        rusqlite::params![&now, log_id],
+    )
+    .map_err(|e| format!("Failed to cancel execution: {}", e))?;
+
+    println!("✓ Cancelled execution log {}", log_id);
+    Ok(())
 }

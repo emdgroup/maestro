@@ -62,7 +62,7 @@ pub fn append_output(
 ///
 /// # Behavior
 /// - If exit_code == 0: status set to "complete"
-/// - If exit_code != 0: status set to "failed" (EXEC-06 failure detection)
+/// - If exit_code != 0: status set to "paused" (EXEC-06 failure detection, awaits user action)
 /// - Appends exit code to output
 /// - Sets completed_at timestamp
 pub fn mark_complete(
@@ -71,7 +71,7 @@ pub fn mark_complete(
     exit_code: i32,
 ) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
-    let status = if exit_code == 0 { "complete" } else { "failed" };
+    let status = if exit_code == 0 { "complete" } else { "paused" };
 
     conn.execute(
         "UPDATE execution_logs SET status = ?, completed_at = ?, output = output || ? WHERE id = ?",
