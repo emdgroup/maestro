@@ -117,7 +117,7 @@ Plans:
 **Requirements**: EXEC-02 (real-time terminal output), EXEC-04 (attach to terminal), EXEC-05 (detach while agent continues)
 
 **Success Criteria** (what must be TRUE):
-  1. User can see live terminal output while agent executes (streamed via WebSocket)
+  1. User can see live terminal output while agent executes (streamed via Tauri channels)
   2. User can attach to embedded terminal and send input (Ctrl+C, manual commands)
   3. User can detach from terminal while agent continues running in background
   4. Terminal output is captured and searchable in execution history
@@ -125,9 +125,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: WebSocket server and terminal streaming (localhost, ephemeral port)
-- [ ] 05-02: xterm.js terminal UI component with attach/detach (React integration)
-- [ ] 05-03: Terminal output buffering and broadcast (backpressure, reconnection)
+- [ ] 05-01-PLAN.md — PTY spawning and backend streaming infrastructure (portable-pty + Tauri channels)
+- [ ] 05-02-PLAN.md — xterm.js terminal UI component with attach/detach (React integration)
+- [ ] 05-03-PLAN.md — Terminal output persistence, resizing, and memory management (CircularBuffer)
 
 ### Phase 6: Review & Merge Workflow
 **Goal**: Implement human-in-the-loop approval gate with file diffs and automatic merge.
