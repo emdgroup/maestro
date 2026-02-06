@@ -63,6 +63,7 @@ export type ExecutionLog = {
   id: number;
   task_id: number;
   output: string;
+  terminal_output: string | null;
   status: ExecutionStatus;
   started_at: string;
   completed_at: string | null;
