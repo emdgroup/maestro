@@ -2,6 +2,7 @@ pub mod db;
 pub mod error;
 pub mod models;
 pub mod ipc;
+pub mod process;
 
 pub use db::{init_db, AppState};
 pub use error::AppError;
