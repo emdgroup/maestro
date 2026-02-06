@@ -161,6 +161,14 @@ async fn spawn_agent_execution(
     gsd_demo::ipc::handlers::spawn_agent_execution(app_state, project_id, task_id, repo_path).await
 }
 
+#[tauri::command]
+fn get_execution_logs(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+) -> Result<Vec<gsd_demo::models::ExecutionLog>, String> {
+    gsd_demo::ipc::handlers::get_execution_logs(app_state, task_id)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -198,7 +206,8 @@ fn main() {
             cleanup_worktree,
             recover_dirty_worktrees,
             initialize_worktree_pool,
-            spawn_agent_execution
+            spawn_agent_execution,
+            get_execution_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

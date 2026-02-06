@@ -1135,3 +1135,44 @@ pub async fn spawn_agent_execution(
     println!("✓ Spawned background agent task, execution log id: {}", exec_log_id);
     Ok(exec_log_id)
 }
+
+/// Get execution logs for a task
+#[tauri::command]
+pub fn get_execution_logs(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+) -> Result<Vec<crate::models::ExecutionLog>, String> {
+    println!("get_execution_logs({}) called", task_id);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, task_id, status, output, started_at, completed_at
+         FROM execution_logs
+         WHERE task_id = ?
+         ORDER BY started_at DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let logs = stmt.query_map(rusqlite::params![task_id], |row| {
+        let status_str: String = row.get(2)?;
+        let status = match status_str.as_str() {
+            "complete" => crate::models::ExecutionStatus::Complete,
+            "failed" => crate::models::ExecutionStatus::Failed,
+            "cancelled" => crate::models::ExecutionStatus::Cancelled,
+            _ => crate::models::ExecutionStatus::Running,
+        };
+        Ok(crate::models::ExecutionLog {
+            id: row.get(0)?,
+            task_id: row.get(1)?,
+            status,
+            output: row.get(3)?,
+            started_at: row.get(4)?,
+            completed_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut result = Vec::new();
+    for log in logs {
+        result.push(log.map_err(|e| e.to_string())?);
+    }
+    Ok(result)
+}
