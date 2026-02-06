@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id INTEGER NOT NULL,
     output TEXT,
+    terminal_output TEXT,
     status TEXT NOT NULL DEFAULT 'running',
     started_at TEXT NOT NULL,
     completed_at TEXT,
@@ -77,8 +78,17 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
     // If schema needs initialization
     if current_version < SCHEMA_VERSION {
-        // Execute schema DDL
+        // Execute schema DDL (v1 base schema)
         conn.execute_batch(SCHEMA_V1)?;
+
+        // Apply migrations based on current version
+        if current_version < 2 {
+            // Migration from v1 to v2: add terminal_output column to execution_logs
+            conn.execute(
+                "ALTER TABLE execution_logs ADD COLUMN terminal_output TEXT;",
+                [],
+            )?;
+        }
 
         // Update schema version
         conn.execute(

@@ -1,6 +1,54 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::sync::Arc;
+use std::collections::VecDeque;
 use tokio::sync::Mutex;
+
+/// Circular buffer for storing PTY output history
+///
+/// Stores the most recent lines of PTY output (up to max_lines).
+/// When capacity is reached, oldest lines are dropped.
+pub struct CircularBuffer {
+    max_lines: usize,
+    lines: VecDeque<String>,
+}
+
+impl CircularBuffer {
+    /// Create a new circular buffer with specified capacity
+    ///
+    /// # Arguments
+    /// * `max_lines` - Maximum number of lines to store
+    pub fn new(max_lines: usize) -> Self {
+        CircularBuffer {
+            max_lines,
+            lines: VecDeque::with_capacity(max_lines),
+        }
+    }
+
+    /// Append a line to the buffer
+    ///
+    /// If buffer is at capacity, removes the oldest line first.
+    pub fn append(&mut self, line: String) {
+        if self.lines.len() >= self.max_lines {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(line);
+    }
+
+    /// Get all lines as a single string (joined with newlines)
+    pub fn get_all(&self) -> String {
+        self.lines.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+
+    /// Get number of lines currently in buffer
+    pub fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    /// Check if buffer is empty
+    pub fn is_empty(&self) -> bool {
+        self.lines.is_empty()
+    }
+}
 
 /// Represents a PTY session with a spawned process
 ///
