@@ -8,6 +8,7 @@ interface KanbanColumnProps {
   columnTitle: string;
   tasks: Task[];
   projectPath?: string;
+  onTaskClick?: (task: Task) => void;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -15,6 +16,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   columnTitle,
   tasks,
   projectPath = "",
+  onTaskClick,
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: columnId,
@@ -30,7 +32,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         className={`kanban-drop-zone ${isOver ? "drag-over-valid" : ""}`}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} projectPath={projectPath} />
+          <TaskCard key={task.id} task={task} projectPath={projectPath} onTaskClick={onTaskClick} />
         ))}
       </div>
     </div>

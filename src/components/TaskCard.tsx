@@ -8,9 +8,10 @@ interface TaskCardProps {
   task: Task;
   isDragging?: boolean;
   projectPath?: string;
+  onTaskClick?: (task: Task) => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "" }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick }) => {
   const [isExecuting, setIsExecuting] = useState(false);
   const store = useBoardStore();
 
@@ -54,7 +55,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       {...(!isDragging && !task.is_imported ? attributes : {})}
       className={`task-card ${task.is_imported ? 'task-card-imported' : ''}`}
     >
-      <div className="task-card-title">{task.name}</div>
+      <div
+        className="task-card-title"
+        onClick={() => onTaskClick?.(task)}
+        style={{ cursor: 'pointer' }}
+      >
+        {task.name}
+      </div>
       {task.is_imported && (
         <div className="task-card-badges">
           <span className="badge-readonly">🔒 Read-only (imported)</span>

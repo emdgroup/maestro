@@ -18,6 +18,7 @@ import "../styles/KanbanBoard.css";
 interface KanbanBoardProps {
   projectId: number;
   projectPath?: string;
+  onTaskClick?: (task: Task) => void;
 }
 
 const COLUMN_STATUSES: Array<TaskStatus> = [
@@ -36,7 +37,7 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   Done: "Done",
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath = "" }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath = "", onTaskClick }) => {
   const { loadTasks, updateTaskStatus, getTasksByStatus, getTasks } = useBoardStore();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -163,6 +164,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
               columnTitle={COLUMN_TITLES[status]}
               tasks={getTasksByStatus(status)}
               projectPath={projectPath}
+              onTaskClick={onTaskClick}
             />
           ))}
         </div>

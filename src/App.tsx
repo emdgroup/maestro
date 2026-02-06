@@ -3,6 +3,7 @@ import { invoke } from "./lib/tauri-mock";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskModal } from "./components/TaskModal";
+import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
 import { SyncButton } from "./components/SyncButton";
@@ -17,6 +18,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { addTask, loadTasks } = useBoardStore();
 
   // Load settings on mount
@@ -154,12 +156,20 @@ function App() {
       <main className="app-main">
         {currentProject && (
           <>
-            <KanbanBoard projectId={currentProject.id} projectPath={currentProject.path} />
+            <KanbanBoard
+              projectId={currentProject.id}
+              projectPath={currentProject.path}
+              onTaskClick={setSelectedTask}
+            />
             <TaskModal
               isOpen={showNewTaskModal}
               onClose={() => setShowNewTaskModal(false)}
               projectId={currentProject.id}
               onTaskCreated={handleTaskCreated}
+            />
+            <TaskDetail
+              task={selectedTask}
+              onClose={() => setSelectedTask(null)}
             />
             <ImportSettings
               isOpen={showImportSettings}
