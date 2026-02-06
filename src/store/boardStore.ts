@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import produce from "immer";
 import { invoke } from "@tauri-apps/api/core";
 import { Task, TaskStatus } from "../types/bindings";
 
@@ -53,15 +52,13 @@ export const useBoardStore = create<BoardState>()(
           repo_path: repoPath,
         });
 
-        // Update task status to InProgress
-        set((state) =>
-          produce(state, (draft) => {
-            const task = draft.tasks.find((t) => t.id === taskId);
-            if (task) {
-              task.status = "InProgress";
-            }
-          })
-        );
+        // Update task status to InProgress using immer middleware
+        set((state) => {
+          const task = state.tasks.find((t) => t.id === taskId);
+          if (task) {
+            task.status = "InProgress";
+          }
+        });
 
         return executionLogId;
       } catch (error) {
