@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Task } from '../types/bindings';
 import { ExecutionHistory } from './ExecutionHistory';
+import { TerminalComponent } from './Terminal';
 import '../styles/TaskDetail.css';
 
 interface TaskDetailProps {
@@ -10,7 +11,7 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'execution'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'execution' | 'terminal'>('info');
 
   if (!task) return null;
 
@@ -34,12 +35,20 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
             Details
           </button>
           {showExecutionTab && (
-            <button
-              className={`tab-button ${activeTab === 'execution' ? 'active' : ''}`}
-              onClick={() => setActiveTab('execution')}
-            >
-              Execution
-            </button>
+            <>
+              <button
+                className={`tab-button ${activeTab === 'execution' ? 'active' : ''}`}
+                onClick={() => setActiveTab('execution')}
+              >
+                Execution
+              </button>
+              <button
+                className={`tab-button ${activeTab === 'terminal' ? 'active' : ''}`}
+                onClick={() => setActiveTab('terminal')}
+              >
+                Terminal
+              </button>
+            </>
           )}
         </div>
 
@@ -80,6 +89,12 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
               projectId={task.project_id}
               projectPath={projectPath}
             />
+          )}
+
+          {activeTab === 'terminal' && (
+            <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
+              <TerminalComponent taskId={task.id} />
+            </div>
           )}
         </div>
       </div>
