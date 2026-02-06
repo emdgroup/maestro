@@ -1338,3 +1338,67 @@ pub async fn attach_terminal(
     println!("[attach] ✓ Streaming started for task {}", task_id);
     Ok(())
 }
+
+/// Send input to a PTY session
+///
+/// Writes data to the PTY master, which is delivered to the child process stdin.
+/// Used for keyboard input and other terminal interactions.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with PTY sessions
+/// * `task_id` - Task ID of the PTY session
+/// * `input` - Data to send to the PTY
+///
+/// # Returns
+/// `Result<(), String>` - Ok if input sent, Err if session not found or write failed
+#[tauri::command]
+pub async fn send_terminal_input(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    input: String,
+) -> Result<(), String> {
+    println!("send_terminal_input({}) called", task_id);
+
+    let sessions = app_state.pty_sessions.lock().await;
+    let session = sessions
+        .get(&task_id)
+        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
+        .clone();
+    drop(sessions);
+
+    let session_lock = session.lock().await;
+    session_lock.write_input(input.as_bytes()).await
+}
+
+/// Resize a PTY session to new dimensions
+///
+/// Changes the terminal size and sends SIGWINCH to the PTY process.
+/// Used when the frontend terminal is resized.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with PTY sessions
+/// * `task_id` - Task ID of the PTY session
+/// * `cols` - New column width
+/// * `rows` - New row height
+///
+/// # Returns
+/// `Result<(), String>` - Ok if resized, Err if session not found or resize failed
+#[tauri::command]
+pub async fn resize_terminal(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    println!("resize_terminal({}) called with {}x{}", task_id, cols, rows);
+
+    let sessions = app_state.pty_sessions.lock().await;
+    let session = sessions
+        .get(&task_id)
+        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
+        .clone();
+    drop(sessions);
+
+    let session_lock = session.lock().await;
+    session_lock.resize_pty(cols, rows).await
+}
