@@ -11,10 +11,10 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 - Decimal phases (X.1, X.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Foundation** - Project setup, database schema, app shell, type definitions
-- [ ] **Phase 2: Core Orchestration** - Task management, Kanban board, column workflows
+- [x] **Phase 2: Core Orchestration** - Task management, Kanban board, column workflows
 - [x] **Phase 3: Git Worktree Infrastructure** - Worktree creation, pooling, cleanup
 - [~] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration (gaps found)
-- [ ] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
+- [x] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
 - [ ] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
 - [ ] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
 - [ ] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
@@ -125,9 +125,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — PTY spawning and backend streaming infrastructure (portable-pty + Tauri channels)
-- [ ] 05-02-PLAN.md — xterm.js terminal UI component with attach/detach (React integration)
-- [ ] 05-03-PLAN.md — Terminal output persistence, resizing, and memory management (CircularBuffer)
+- [x] 05-01-PLAN.md — PTY spawning and backend streaming infrastructure (portable-pty + Tauri channels)
+- [x] 05-02-PLAN.md — xterm.js terminal UI component with attach/detach (React integration)
+- [x] 05-03-PLAN.md — Terminal output persistence, resizing, and memory management (CircularBuffer)
 
 ### Phase 6: Review & Merge Workflow
 **Goal**: Implement human-in-the-loop approval gate with file diffs and automatic merge.
@@ -145,9 +145,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: File diff viewer (parse git diff, display hunks in UI)
-- [ ] 06-02: Approval/rejection workflow (state transitions, feedback capture)
-- [ ] 06-03: Automatic merge and cleanup (git merge command, worktree return to pool)
+- [ ] 06-01-PLAN.md — Diff viewer infrastructure with @git-diff-view/react and file tree navigation
+- [ ] 06-02-PLAN.md — Approval workflow with feedback capture and request-changes state transition
+- [ ] 06-03-PLAN.md — Automatic squash merge, conflict detection, and worktree cleanup
 
 ### Phase 7: Configuration Management
 **Goal**: Enable users to control agent capabilities through task and project-level configuration.
@@ -221,15 +221,15 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Foundation | 4 | ✓ Complete | 2026-02-04 |
 | 2. Core Orchestration | 5 | ✓ Complete | 2026-02-05 |
 | 3. Git Worktree Infrastructure | 4 | ✓ Complete | 2026-02-05 |
-| 4. Agent Execution | 4 | Not started | — |
-| 5. Real-time Monitoring | 3 | Not started | — |
+| 4. Agent Execution | 4 | ✓ Complete | 2026-02-06 |
+| 5. Real-time Monitoring | 3 | ✓ Complete | 2026-02-06 |
 | 6. Review & Merge Workflow | 3 | Not started | — |
 | 7. Configuration Management | 4 | Not started | — |
 | 8. Error Handling & Polish | 3 | Not started | — |
 | 9. Remote Project Support | 4 | Not started | — |
 
 **Total Plans:** 31
-**Completed Plans:** 13/31 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4)
+**Completed Plans:** 20/31 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
