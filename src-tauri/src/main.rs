@@ -215,6 +215,15 @@ async fn resize_terminal(
     gsd_demo::ipc::handlers::resize_terminal(app_state, task_id, cols, rows).await
 }
 
+#[tauri::command]
+async fn append_terminal_output(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    output: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::append_terminal_output(app_state, task_id, output).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -258,7 +267,8 @@ fn main() {
             cancel_execution,
             attach_terminal,
             send_terminal_input,
-            resize_terminal
+            resize_terminal,
+            append_terminal_output
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
