@@ -1152,7 +1152,7 @@ pub fn get_execution_logs(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, task_id, status, output, started_at, completed_at
+        "SELECT id, task_id, status, output, terminal_output, started_at, completed_at
          FROM execution_logs
          WHERE task_id = ?
          ORDER BY started_at DESC"
@@ -1172,8 +1172,9 @@ pub fn get_execution_logs(
             task_id: row.get(1)?,
             status,
             output: row.get(3)?,
-            started_at: row.get(4)?,
-            completed_at: row.get(5)?,
+            terminal_output: row.get(4)?,
+            started_at: row.get(5)?,
+            completed_at: row.get(6)?,
         })
     }).map_err(|e| e.to_string())?;
 

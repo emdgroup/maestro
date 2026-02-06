@@ -10,12 +10,36 @@ interface ExecutionHistoryProps {
   projectPath: string;
 }
 
+/// Calculate human-readable duration between two ISO 8601 timestamps
+function calculateDuration(startedAt: string, completedAt: string): string {
+  try {
+    const start = new Date(startedAt).getTime();
+    const end = new Date(completedAt).getTime();
+    const diffMs = end - start;
+
+    if (diffMs < 0) return 'invalid';
+    if (diffMs < 1000) return `${diffMs}ms`;
+
+    const seconds = Math.floor(diffMs / 1000);
+    if (seconds < 60) return `${seconds}s`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+  } catch {
+    return 'unknown';
+  }
+}
+
 export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHistoryProps) {
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const previousLogsRef = useRef<ExecutionLog[]>([]);
 
   useEffect(() => {
@@ -159,8 +183,62 @@ export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHi
           </div>
 
           <div className="log-output">
-            <h4>Output</h4>
-            <pre className="terminal-output">{selectedLog.output || '(no output)'}</pre>
+            <h4>Terminal Output</h4>
+
+            {/* Search/filter input */}
+            <div className="search-container">
+              <input
+                type="text"
+                placeholder="Search logs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="clear-search-button"
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Display terminal output with search filtering */}
+            <div className="terminal-output-container">
+              {selectedLog.terminal_output ? (
+                <pre className="terminal-output">
+                  {searchTerm
+                    ? selectedLog.terminal_output
+                        .split('\n')
+                        .filter(line =>
+                          line.toLowerCase().includes(searchTerm.toLowerCase())
+                        )
+                        .join('\n') || '(no matching lines)'
+                    : selectedLog.terminal_output}
+                </pre>
+              ) : (
+                <pre className="terminal-output">(no terminal output captured)</pre>
+              )}
+            </div>
+
+            {/* Timestamp information */}
+            <div className="execution-timestamps">
+              <div className="timestamp-info">
+                <span className="label">Execution Time:</span>
+                <span>{new Date(selectedLog.started_at).toLocaleString()}</span>
+              </div>
+              {selectedLog.completed_at && (
+                <div className="timestamp-info">
+                  <span className="label">Completed:</span>
+                  <span>{new Date(selectedLog.completed_at).toLocaleString()}</span>
+                  <span className="duration">
+                    ({calculateDuration(selectedLog.started_at, selectedLog.completed_at)})
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

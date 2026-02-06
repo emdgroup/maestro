@@ -7,6 +7,7 @@ pub struct ExecutionLog {
     pub id: i32,
     pub task_id: i32,
     pub output: String,
+    pub terminal_output: Option<String>,
     pub status: ExecutionStatus,
     pub started_at: String,
     pub completed_at: Option<String>,
