@@ -1,12 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::process::Stdio;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use ts_rs::TS;
 
-/// Result of process execution with captured output and exit status
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone)]
 pub struct ProcessOutput {
     pub stdout: String,
     pub stderr: String,
@@ -14,59 +10,92 @@ pub struct ProcessOutput {
     pub success: bool,
 }
 
-/// Spawn a Node.js sidecar process to execute an agent CLI command
+/// Spawns an agent CLI process via Node.js sidecar with non-blocking async execution.
 ///
 /// # Arguments
-/// * `working_dir` - Working directory for the spawned process
+/// * `working_dir` - Working directory for the process
 /// * `sidecar_path` - Path to the Node.js sidecar script
 /// * `task_id` - Task ID to pass to the sidecar
 ///
 /// # Returns
-/// ProcessOutput containing stdout, stderr, exit code, and success status
-///
-/// # Behavior
-/// - Uses tokio::process::Command for non-blocking async execution
-/// - Sets kill_on_drop(true) to ensure proper cleanup
-/// - Pipes stdout and stderr for capture
-/// - Waits for process completion and captures exit code
+/// `Result<ProcessOutput, String>` containing stdout, stderr, exit code, and success status
 pub async fn spawn_agent_cli(
     working_dir: &str,
     sidecar_path: &str,
     task_id: i32,
 ) -> Result<ProcessOutput, String> {
     let mut cmd = Command::new("node");
-    cmd.arg(sidecar_path)
-        .arg("run-agent")
+    cmd.current_dir(working_dir)
+        .arg(sidecar_path)
+        .arg("--task-id")
         .arg(task_id.to_string())
-        .current_dir(working_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to open stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to open stderr".to_string())?;
 
-    let mut stdout_reader = BufReader::new(stdout);
-    let mut stderr_reader = BufReader::new(stderr);
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
 
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
+    let stdout_handle = tokio::spawn(async move {
+        let mut reader = stdout_reader;
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        while let Ok(n) = reader.read_line(&mut line).await {
+            if n == 0 {
+                break;
+            }
+            lines.push(line.clone());
+            line.clear();
+        }
+        lines.join("")
+    });
 
-    // Read both streams concurrently (non-blocking)
-    let stdout_fut = stdout_reader.read_to_string(&mut stdout_buf);
-    let stderr_fut = stderr_reader.read_to_string(&mut stderr_buf);
+    let stderr_handle = tokio::spawn(async move {
+        let mut reader = stderr_reader;
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        while let Ok(n) = reader.read_line(&mut line).await {
+            if n == 0 {
+                break;
+            }
+            lines.push(line.clone());
+            line.clear();
+        }
+        lines.join("")
+    });
 
-    let _ = tokio::join!(stdout_fut, stderr_fut);
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for child process: {}", e))?;
 
-    let status = child.wait().await.map_err(|e| e.to_string())?;
+    let stdout_result = stdout_handle
+        .await
+        .unwrap_or_default();
+
+    let stderr_result = stderr_handle
+        .await
+        .unwrap_or_default();
+
     let exit_code = status.code().unwrap_or(-1);
     let success = status.success();
 
     Ok(ProcessOutput {
-        stdout: stdout_buf,
-        stderr: stderr_buf,
+        stdout: stdout_result,
+        stderr: stderr_result,
         exit_code,
         success,
     })
