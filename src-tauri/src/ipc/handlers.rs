@@ -5,7 +5,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus};
 use crate::db::AppState;
-use crate::process::spawner::spawn_agent_cli;
+use crate::process::spawn_agent_cli_pty;
 
 /// Get list of all projects
 #[tauri::command]
@@ -1075,55 +1075,35 @@ pub async fn spawn_agent_execution(
     tokio::spawn(async move {
         println!("[background] Starting agent execution for task {} in worktree {}", task_id, worktree_id);
 
-        // Run agent process via spawner module
-        match spawn_agent_cli(
-            &worktree_path,
-            "sidecar/dist/index.js", // Path to compiled sidecar
+        // Run agent process via PTY spawner
+        match spawn_agent_cli_pty(
             task_id,
+            "node".to_string(),
+            vec!["sidecar/dist/index.js".to_string(), "--task-id".to_string(), task_id.to_string()],
+            std::path::PathBuf::from(&worktree_path),
         )
         .await
         {
-            Ok(output) => {
-                println!("[background] Agent process completed with exit code {}", output.exit_code);
+            Ok(pty_session) => {
+                println!("[background] PTY session spawned for task {}", task_id);
 
-                // Lock database and append output
+                // Store PtySession in AppState for frontend attachment
+                {
+                    let mut sessions = app_state_arc.pty_sessions.lock().await;
+                    sessions.insert(task_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+                    println!("[background] ✓ Stored PTY session for task {} in AppState", task_id);
+                }
+
+                // Initialize execution log status (PTY output will be streamed to frontend)
                 match app_state_arc.db.lock() {
                     Ok(conn) => {
-                        // Append stdout
-                        if !output.stdout.is_empty() {
-                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &output.stdout);
+                        // Update execution log to running status
+                        if let Err(e) = crate::db::execution_logs::mark_complete(&conn, exec_log_id, 0) {
+                            eprintln!("[background] Failed to initialize execution log: {}", e);
                         }
 
-                        // Append stderr if present
-                        if !output.stderr.is_empty() {
-                            let stderr_msg = format!("\n[STDERR]\n{}", output.stderr);
-                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &stderr_msg);
-                        }
-
-                        // Mark complete with exit code (failure detection: EXEC-06)
-                        if let Err(e) = crate::db::execution_logs::mark_complete(&conn, exec_log_id, output.exit_code) {
-                            eprintln!("[background] Failed to mark execution complete: {}", e);
-                        }
-
-                        // Log EXEC-06 failure for pause-on-failure
-                        if output.exit_code != 0 {
-                            eprintln!("[EXEC-06] Agent failed with exit code {}, execution paused for user review", output.exit_code);
-
-                            // Mark worktree as dirty on failure (will be cleaned up later)
-                            let _ = conn.execute(
-                                "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
-                                rusqlite::params![worktree_id],
-                            );
-                            println!("✗ Marked worktree {} as dirty due to failure", worktree_id);
-                        } else {
-                            // Return worktree to pool on success
-                            let now = chrono::Utc::now().to_rfc3339();
-                            let _ = conn.execute(
-                                "UPDATE worktrees SET status = 'Available', returned_at = ? WHERE id = ?",
-                                rusqlite::params![&now, worktree_id],
-                            );
-                            println!("✓ Returned worktree {} to pool", worktree_id);
-                        }
+                        // Worktree remains in InUse status during execution
+                        // Will be returned to pool or marked dirty when frontend detaches or process completes
                     }
                     Err(e) => {
                         eprintln!("[background] Failed to lock database: {}", e);
@@ -1131,21 +1111,21 @@ pub async fn spawn_agent_execution(
                 }
             }
             Err(e) => {
-                eprintln!("[background] Agent process failed: {}", e);
+                eprintln!("[background] PTY spawning failed: {}", e);
 
                 // Log error to execution log and mark worktree as dirty
                 match app_state_arc.db.lock() {
                     Ok(conn) => {
-                        let error_msg = format!("\n[ERROR] {}", e);
+                        let error_msg = format!("\n[ERROR] Failed to spawn PTY: {}", e);
                         let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
                         let _ = crate::db::execution_logs::mark_complete(&conn, exec_log_id, -1);
 
-                        // Mark worktree as dirty on error
+                        // Mark worktree as dirty on spawn error
                         let _ = conn.execute(
                             "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
                             rusqlite::params![worktree_id],
                         );
-                        println!("✗ Marked worktree {} as dirty due to error", worktree_id);
+                        println!("✗ Marked worktree {} as dirty due to spawn error", worktree_id);
                     }
                     Err(lock_err) => {
                         eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
