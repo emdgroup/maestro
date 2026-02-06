@@ -14,10 +14,10 @@ pub struct ExecutionLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "lowercase")]
 pub enum ExecutionStatus {
     Running,
-    Success,
+    Complete,
     Failed,
     Cancelled,
 }

@@ -4,6 +4,7 @@ use base64::Engine;
 
 use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus};
 use crate::db::AppState;
+use crate::process::spawner::spawn_agent_cli;
 
 /// Get list of all projects
 #[tauri::command]
@@ -1015,4 +1016,122 @@ pub fn initialize_worktree_pool(
     
     println!("✓ Pool initialized with {} worktrees", pool_size);
     get_pool_status(app_state, project_id)
+}
+
+// ============================================================================
+// Agent Execution
+// ============================================================================
+
+/// Spawn an agent execution for a task in a background task
+///
+/// This handler creates an execution log record, spawns the agent CLI process
+/// in a background tokio task, and returns immediately with the execution log ID.
+/// The process continues running after the IPC returns.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with database connection
+/// * `project_id` - Project ID (for context)
+/// * `task_id` - Task ID to execute
+/// * `repo_path` - Repository path for the agent
+///
+/// # Returns
+/// Execution log ID that tracks the execution
+///
+/// # Async Behavior
+/// - Creates execution log synchronously
+/// - Spawns background task with tokio::spawn
+/// - Returns immediately (process continues in background)
+/// - Background task captures output and marks completion
+/// - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
+#[tauri::command]
+pub async fn spawn_agent_execution(
+    app_state: State<'_, Arc<AppState>>,
+    _project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    println!("spawn_agent_execution(project={}, task={}) called", _project_id, task_id);
+
+    // 1. Create execution log record
+    let exec_log_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::db::execution_logs::create_execution_log(&conn, task_id, 0)?
+    };
+    println!("✓ Created execution log {}", exec_log_id);
+
+    // 2. Use placeholder worktree path for now (Phase 04-03 will lease from pool)
+    let worktree_path = format!("{}/pool/wt-001", repo_path);
+
+    // 3. Extract Arc<AppState> from State for background task
+    // This allows the Arc to be moved into the tokio::spawn closure
+    // State<'_, Arc<AppState>> dereferences to &Arc<AppState>, so we clone to own it
+    let app_state_arc = (*app_state).clone();
+
+    // 4. Spawn background task (returns immediately to caller)
+    tokio::spawn(async move {
+        println!("[background] Starting agent execution for task {}", task_id);
+
+        // Run agent process via spawner module
+        match spawn_agent_cli(
+            &worktree_path,
+            "sidecar/dist/index.js", // Path to compiled sidecar
+            task_id,
+        )
+        .await
+        {
+            Ok(output) => {
+                println!("[background] Agent process completed with exit code {}", output.exit_code);
+
+                // Lock database and append output
+                match app_state_arc.db.lock() {
+                    Ok(conn) => {
+                        // Append stdout
+                        if !output.stdout.is_empty() {
+                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &output.stdout);
+                        }
+
+                        // Append stderr if present
+                        if !output.stderr.is_empty() {
+                            let stderr_msg = format!("\n[STDERR]\n{}", output.stderr);
+                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &stderr_msg);
+                        }
+
+                        // Mark complete with exit code (failure detection: EXEC-06)
+                        if let Err(e) = crate::db::execution_logs::mark_complete(&conn, exec_log_id, output.exit_code) {
+                            eprintln!("[background] Failed to mark execution complete: {}", e);
+                        }
+
+                        // Log EXEC-06 failure for pause-on-failure
+                        if output.exit_code != 0 {
+                            eprintln!("[EXEC-06] Agent failed with exit code {}, execution paused for user review", output.exit_code);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[background] Failed to lock database: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[background] Agent process failed: {}", e);
+
+                // Log error to execution log
+                match app_state_arc.db.lock() {
+                    Ok(conn) => {
+                        let error_msg = format!("\n[ERROR] {}", e);
+                        let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+                        let _ = crate::db::execution_logs::mark_complete(&conn, exec_log_id, -1);
+                    }
+                    Err(lock_err) => {
+                        eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
+                    }
+                }
+            }
+        }
+
+        println!("[background] Agent execution complete for task {}", task_id);
+    });
+
+    // 5. Return execution_log id immediately (process runs in background)
+    println!("✓ Spawned background agent task, execution log id: {}", exec_log_id);
+    Ok(exec_log_id)
 }

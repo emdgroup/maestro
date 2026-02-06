@@ -151,6 +151,16 @@ fn initialize_worktree_pool(
     gsd_demo::ipc::handlers::initialize_worktree_pool(app_state, project_id, repo_path, pool_size)
 }
 
+#[tauri::command]
+async fn spawn_agent_execution(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    gsd_demo::ipc::handlers::spawn_agent_execution(app_state, project_id, task_id, repo_path).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -187,7 +197,8 @@ fn main() {
             get_pool_status,
             cleanup_worktree,
             recover_dirty_worktrees,
-            initialize_worktree_pool
+            initialize_worktree_pool,
+            spawn_agent_execution
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
