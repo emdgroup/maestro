@@ -102,10 +102,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 04-01: Claude Code CLI integration via Node.js sidecar (spawn, lifecycle)
-- [ ] 04-02: Process manager (spawn child process, capture output, manage lifecycle)
-- [ ] 04-03: Agent status tracking and state transitions (running → complete/failed)
-- [ ] 04-04: Execution history persistence (logs, diffs, error capture)
+- [ ] 04-01-PLAN.md — Create async process spawner module with tokio (non-blocking CLI execution)
+- [ ] 04-02-PLAN.md — Implement execution log persistence and spawn_agent_execution handler (background tasks)
+- [ ] 04-03-PLAN.md — Integrate agent execution into task UI with Execute button (status tracking)
+- [ ] 04-04-PLAN.md — Create execution history and task detail UI (output viewer, timestamps)
 
 ### Phase 5: Real-time Monitoring
 **Goal**: Stream real-time terminal output and enable interactive terminal access during execution.
