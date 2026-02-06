@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 ## Current Position
 
-Phase: 4 of 9 (Agent Execution) - Gaps Found
-Plan: All 4 plans complete, verification revealed gaps
-Status: Phase 4 verification complete, 2/4 success criteria verified
-Last activity: 2026-02-06 12:00:00Z — Phase 4 verification: gaps found (pause/notify missing)
+Phase: 5 of 9 (Real-time Monitoring)
+Plan: 1 of 4 complete
+Status: Phase 5 Plan 01 execution complete
+Last activity: 2026-02-06 — Executed 05-01-PLAN.md (PTY infrastructure)
 
-Progress: [████░░░░░░] 17/31 plans (55%), 3/9 phases complete, Phase 4 has gaps
+Progress: [█████░░░░░] 18/31 plans (58%), 4/9 phases started (Phase 4 closed, Phase 5 active)
 
 ## Performance Metrics
 
@@ -26,20 +26,21 @@ Progress: [████░░░░░░] 17/31 plans (55%), 3/9 phases complet
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan | Verified |
-|-------|-------|-------|----------|----------|
-| 01-foundation | 4 | 63m | 15.75m | N/A |
-| 02-core-orchestration | 5 | 244m | 48.8m | N/A |
-| 03-git-worktree-infrastructure | 4 | 134m | 33.5m | N/A |
-| 04-agent-execution | 4 | 120m | 30m | 2/4 criteria (gaps) |
+| Phase | Plans | Total | Avg/Plan | Status |
+|-------|-------|-------|----------|--------|
+| 01-foundation | 4 | 63m | 15.75m | Complete |
+| 02-core-orchestration | 5 | 244m | 48.8m | Complete |
+| 03-git-worktree-infrastructure | 4 | 134m | 33.5m | Complete |
+| 04-agent-execution | 4 | 120m | 30m | Complete (gaps noted) |
+| 05-real-time-monitoring | 1/4 | 35m | 35m | In Progress |
 
 **Recent Trend:**
-- Last 7 plans: 03-03 (37m), 03-04 (12m), 04-01 (28m), 04-02 (34m), 04-03 (37m), 04-04 (5m)
-- Phase 4: All 4 plans executed, verification found critical gaps
-- Gap summary: Pause mechanism (FAILED), notifications (FAILED), worktree leasing (PARTIAL), status badge (PARTIAL)
-- Next: Decision point - close gaps or proceed to Phase 5
+- Last 6 plans: 04-01 (28m), 04-02 (34m), 04-03 (37m), 04-04 (5m), 05-01 (35m)
+- Phase 4: All 4 plans executed and committed (gaps addressed in Phase 4 fix commits)
+- Phase 5: Executing real-time terminal streaming infrastructure
+- Current: PTY spawning, session management, three terminal handlers complete
 
-*Updated: 2026-02-06 12:05:00Z*
+*Updated: 2026-02-06 (after 05-01 execution)*
 
 ## Accumulated Context
 
@@ -155,6 +156,15 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Keep spawner simple in Phase 4-01 - streaming and database persistence deferred to Phase 4-02+
 - Fixed import to use AsyncReadExt instead of AsyncBufReadExt for stream reading
 
+**Phase 05-01 Decisions:**
+- Use portable-pty for cross-platform PTY management (handles Windows ConPTY and Unix PTY)
+- Wrap PTY master in Arc<Mutex> (tokio::sync variant) for async-safe thread sharing
+- Use Tauri channels for streaming instead of standalone WebSocket server (better integration)
+- Bounded mpsc channel (100 messages) provides backpressure for fast PTY output
+- Use UTF-8 lossy decoding to handle mid-sequence UTF-8 bytes safely
+- Integrate spawn_agent_cli_pty into spawn_agent_execution (critical Phase 5 foundation)
+- Store PtySession in AppState HashMap for frontend attachment and lifecycle management
+
 ### Pending Todos
 
 None yet.
@@ -171,8 +181,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-06 12:05:00Z
-Stopped at: Phase 4 verification complete with gaps found
+Last session: 2026-02-06 (current)
+Stopped at: Phase 5 Plan 01 execution complete
 Resume file: None
-
-Next: User decision - plan gap closure (/gsd:plan-phase 4 --gaps) or proceed to Phase 5
+Next: Execute Phase 5 Plan 02 (Frontend Terminal Component)
