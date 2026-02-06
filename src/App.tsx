@@ -154,7 +154,7 @@ function App() {
       <main className="app-main">
         {currentProject && (
           <>
-            <KanbanBoard projectId={currentProject.id} />
+            <KanbanBoard projectId={currentProject.id} projectPath={currentProject.path} />
             <TaskModal
               isOpen={showNewTaskModal}
               onClose={() => setShowNewTaskModal(false)}
