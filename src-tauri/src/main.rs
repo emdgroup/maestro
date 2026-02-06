@@ -187,6 +187,15 @@ fn cancel_execution(
     gsd_demo::ipc::handlers::cancel_execution(app_state, log_id)
 }
 
+#[tauri::command]
+async fn attach_terminal(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    output_channel: tauri::ipc::Channel<String>,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::attach_terminal(app_state, task_id, output_channel).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -227,7 +236,8 @@ fn main() {
             spawn_agent_execution,
             get_execution_logs,
             retry_execution,
-            cancel_execution
+            cancel_execution,
+            attach_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

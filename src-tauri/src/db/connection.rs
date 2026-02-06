@@ -1,9 +1,11 @@
 use rusqlite::Connection;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 use crate::db::schema::initialize_schema;
 use crate::error::AppError;
+use crate::process::PtySession;
 
 /// Initialize the SQLite database
 ///
@@ -39,9 +41,10 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
     Ok(conn)
 }
 
-/// Application state containing the database connection
+/// Application state containing the database connection and PTY sessions
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
 }
 
 impl AppState {
@@ -49,6 +52,7 @@ impl AppState {
     pub fn new(db: Connection) -> Self {
         AppState {
             db: Mutex::new(db),
+            pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 }

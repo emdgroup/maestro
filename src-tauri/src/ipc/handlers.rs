@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 use base64::Engine;
+use tokio::io::AsyncReadExt;
 
 use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus};
 use crate::db::AppState;
@@ -1235,5 +1236,105 @@ pub fn cancel_execution(
     .map_err(|e| format!("Failed to cancel execution: {}", e))?;
 
     println!("✓ Cancelled execution log {}", log_id);
+    Ok(())
+}
+
+/// Attach to a PTY session and stream output to frontend
+///
+/// Opens a Tauri channel and begins streaming PTY output to the frontend.
+/// The streaming continues until the PTY process ends or the channel is closed.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with PTY sessions
+/// * `task_id` - Task ID to attach to
+/// * `output_channel` - Tauri IPC channel for streaming output
+///
+/// # Returns
+/// `Result<(), String>` - Ok if streaming started, Err if task not found
+#[tauri::command]
+pub async fn attach_terminal(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    output_channel: tauri::ipc::Channel<String>,
+) -> Result<(), String> {
+    println!("attach_terminal({}) called", task_id);
+
+    // Get PTY session from AppState
+    let sessions = app_state.pty_sessions.lock().await;
+    let session = sessions
+        .get(&task_id)
+        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
+        .clone();
+    drop(sessions); // Release lock
+
+    println!("[attach] Starting output streaming for task {}", task_id);
+
+    // Spawn background task to stream PTY output
+    tokio::spawn(async move {
+        // Create bounded channel for buffering between PTY reader and frontend sender
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+
+        // Spawn PTY reader task
+        let session_reader = session.clone();
+        let reader_task = tokio::spawn(async move {
+            loop {
+                // Try to get a reader from the PTY master
+                let mut session_lock = session_reader.lock().await;
+                let mut reader = match session_lock.master.lock().await.try_clone_reader() {
+                    Ok(r) => r,
+                    Err(_) => {
+                        println!("[PTY reader] Failed to clone reader, stopping");
+                        break;
+                    }
+                };
+                drop(session_lock);
+
+                // Read from PTY in 4096-byte chunks
+                let mut buf = [0u8; 4096];
+                match reader.read(&mut buf) {
+                    Ok(0) => {
+                        println!("[PTY reader] EOF reached, stopping");
+                        break;
+                    }
+                    Ok(n) => {
+                        // Decode UTF-8, using lossy conversion to handle mid-sequence bytes
+                        let output = String::from_utf8_lossy(&buf[..n]).to_string();
+                        if tx.send(output).await.is_err() {
+                            println!("[PTY reader] Channel closed by receiver, stopping");
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        println!("[PTY reader] Read error: {}, stopping", e);
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Spawn frontend sender task
+        let sender_task = tokio::spawn(async move {
+            while let Some(output) = rx.recv().await {
+                if output_channel.send(output).is_err() {
+                    println!("[frontend sender] Channel closed, stopping");
+                    break;
+                }
+            }
+        });
+
+        // Wait for either task to complete
+        tokio::select! {
+            _ = reader_task => {
+                println!("[attach] Reader task completed");
+            }
+            _ = sender_task => {
+                println!("[attach] Sender task completed");
+            }
+        }
+
+        println!("[attach] Output streaming ended for task {}", task_id);
+    });
+
+    println!("[attach] ✓ Streaming started for task {}", task_id);
     Ok(())
 }
