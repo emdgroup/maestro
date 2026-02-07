@@ -16,7 +16,7 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 - [~] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration (gaps found)
 - [x] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
 - [x] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
-- [ ] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
+- [x] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
 - [ ] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
 - [ ] **Phase 9: Remote Project Support** - SSH tunneling, remote git operations, remote execution
 
@@ -167,9 +167,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Data model + database schema + IPC handlers for project and task configuration
-- [ ] 07-02-PLAN.md — Project settings UI (model dropdown, MCP checkboxes, Skills checkboxes via gear icon)
-- [ ] 07-03-PLAN.md — Task settings UI (model/MCP/Skills overrides via context menu, separate modal)
+- [x] 07-01-PLAN.md — Data model + database schema + IPC handlers for project and task configuration
+- [x] 07-02-PLAN.md — Project settings UI (model dropdown, MCP checkboxes, Skills checkboxes via gear icon)
+- [x] 07-03-PLAN.md — Task settings UI (model/MCP/Skills overrides via context menu, separate modal)
 
 ### Phase 8: Error Handling & Polish
 **Goal**: Detect failures, pause execution, and enable user recovery actions and interactive debugging.
@@ -187,9 +187,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: Error detection and pause logic (process exit code, stderr parsing)
-- [ ] 08-02: Terminal attach/detach functionality (PTY management, signal handling)
-- [ ] 08-03: Recovery UI (resume, skip, abort actions with user feedback)
+- [ ] 08-01-PLAN.md — Error detection and pause logic (process exit code, stderr parsing, categorization, auto-retry)
+- [ ] 08-02-PLAN.md — Terminal attach/detach functionality (PTY management, signal handling, interactive input)
+- [ ] 08-03-PLAN.md — Recovery UI (resume, abort actions, error notifications, execution history display)
 
 ### Phase 9: Remote Project Support
 **Goal**: Enable users to work with remote projects via SSH where all operations execute on remote machine.
@@ -225,18 +225,19 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Agent Execution | 4 | ✓ Complete | 2026-02-06 |
 | 5. Real-time Monitoring | 3 | ✓ Complete | 2026-02-06 |
 | 6. Review & Merge Workflow | 5 (3 main + 2 gap closure) | ✓ Complete | 2026-02-07 |
-| 7. Configuration Management | 3 | Not started | — |
-| 8. Error Handling & Polish | 3 | Not started | — |
+| 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
+| 8. Error Handling & Polish | 3 | Planned | — |
 | 9. Remote Project Support | 4 | Not started | — |
 
-**Total Plans:** 33 (31 main + 2 gap closure plans for Phase 6)
-**Completed Plans:** 25/33 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5 including gap closure)
+**Total Plans:** 36 (33 main + 2 gap closure plans for Phase 6)
+**Completed Plans:** 28/36 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3)
+**Planned Plans:** 3/36 (Phase 8: 3/3)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
 
 *Roadmap created: 2026-02-04*
-*Phase 3 planned: 2026-02-05*
-*Phase 7 planned: 2026-02-07*
+*Phase 7 completed: 2026-02-07*
+*Phase 8 planned: 2026-02-07*
 *Depth: comprehensive (9 phases)*
 *Coverage: 100% — All 28 v1.0 requirements mapped*
