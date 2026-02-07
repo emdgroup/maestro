@@ -62,8 +62,8 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
       const perFileCommentsArray = Array.from(perFileComments.entries());
 
       if (decision === "Approve") {
-        // Call save_task_review with Approve decision
-        const response = await invoke<{ success: boolean; review_id: number }>(
+        // 1. Save review feedback first
+        const reviewResponse = await invoke<{ success: boolean; review_id: number }>(
           "save_task_review",
           {
             task_id: taskId,
@@ -74,11 +74,21 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
           }
         );
 
-        if (response.success) {
-          toast.success("Approval submitted. Merge will start soon...");
-          // Wait a moment then trigger onApprove callback for Plan 06-03
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          onApprove();
+        if (reviewResponse.success) {
+          // 2. Initiate merge process
+          const mergeResponse = await invoke<{ merging: boolean; message: string }>(
+            "approve_task_and_merge",
+            {
+              task_id: taskId,
+            }
+          );
+
+          if (mergeResponse.merging) {
+            toast.success("Approval submitted. Merge starting...");
+            // Wait a moment then trigger onApprove callback to close modal
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            onApprove();
+          }
         }
       } else if (decision === "RequestChanges") {
         // Call request_changes handler
