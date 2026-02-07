@@ -6,16 +6,16 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control—eliminating blocking waits while maintaining safety through worktree isolation and human-in-the-loop review.
 
-**Current focus:** Phase 6 - Review & Merge Workflow
+**Current focus:** Phase 8 - Error Handling & Polish (Wave 2: Terminal Attach/Detach)
 
 ## Current Position
 
 Phase: 8 of 9 (Error Handling & Polish)
-Plan: 1 of 3 complete
-Status: Error detection and database layer implemented
-Last activity: 2026-02-07 — Completed Plan 08-01 (Error Detection and Pause Logic)
+Plan: 2 of 3 complete (Wave 1: 08-01 Error Detection, Wave 2: 08-02 Terminal Attach/Detach)
+Status: Terminal interactive debugging fully implemented
+Last activity: 2026-02-07 — Completed Plan 08-02 (Terminal Attach/Detach)
 
-Progress: [████████░░] 29/33 plans (87.8%), 7/9 phases complete (8 in progress)
+Progress: [████████░░] 30/33 plans (90.9%), 8/9 phases complete (8 in progress)
 
 ## Performance Metrics
 
@@ -35,19 +35,26 @@ Progress: [████████░░] 29/33 plans (87.8%), 7/9 phases compl
 | 05-real-time-monitoring | 3 | 78m | 26m | Complete ✓ |
 | 06-review-merge-workflow | 5 | 120m | 24m | Complete ✓✓ (gap closure + merge ops) |
 | 07-configuration-management | 3 | 80m | 26.7m | Complete ✓ (data model + UI) |
-| 08-error-handling-polish | 3 | [1/3 in progress] | — | Wave 1: Error detection (45m) |
+| 08-error-handling-polish | 3 | [2/3 complete] | ~45m | Wave 1: Error detection ✓, Wave 2: Terminal attach/detach ✓ |
 
 **Recent Trend:**
 - Phase 6 complete: Full review & merge workflow (diff viewer → approval → squash merge → status transitions)
 - Phase 7 complete ✓ (80m total): Configuration data models + UI (project and task-level)
-- Phase 8 Wave 1 (08-01): Error detection & database layer (45m)
+- Phase 8 Wave 1 (08-01): Error detection & database layer (45m) ✓ COMPLETE
   - ErrorEvent struct with error categorization and suggestions
   - Error detection logic analyzing stderr patterns
   - Database persistence with append_error_event, mark_failed, get_error_event
   - Schema migration to v5 with error_event column
-- Current: Phase 8 Plan 1 COMPLETE ✓ (45m), error detection backend ready for 08-02 UI
+- Phase 8 Wave 2 (08-02): Terminal attach/detach (45m) ✓ COMPLETE
+  - Enhanced attach_terminal handler with history prepending
+  - Enhanced send_terminal_input with signal handling (Ctrl+C, Ctrl+Z)
+  - New detach_terminal handler for graceful streaming cleanup
+  - ExecutionTerminal React component (250+ lines) with interactive input
+  - Zustand store integration for terminal lifecycle management
+  - KanbanBoard modal rendering with one-terminal constraint
+- Next: Phase 8 Plan 3 (Error Display UI in ExecutionHistory)
 
-*Updated: 2026-02-07 (after Plan 08-01 error detection implementation)*
+*Updated: 2026-02-07 (after Plan 08-02 terminal attach/detach implementation)*
 
 ## Accumulated Context
 
