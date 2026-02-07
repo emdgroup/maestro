@@ -31,6 +31,15 @@ function App() {
         setSettings(loaded);
         if (loaded.project_path) {
           setProjectSelected(true);
+          // Load the current project from database
+          try {
+            const project = await invoke<Project>("get_or_create_project", {
+              path: loaded.project_path,
+            });
+            setCurrentProject(project);
+          } catch (projectErr) {
+            console.error("Failed to load current project:", projectErr);
+          }
         }
       } catch (err) {
         console.error("Failed to load settings:", err);
