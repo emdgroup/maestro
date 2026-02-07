@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -61,6 +61,30 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TEXT NOT NULL
 );
 
+-- Task reviews table: stores approval feedback and decisions
+CREATE TABLE IF NOT EXISTS task_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL UNIQUE,
+    decision TEXT NOT NULL,
+    general_feedback TEXT,
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Review comments table: stores per-file comments on reviews
+CREATE TABLE IF NOT EXISTS review_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (review_id) REFERENCES task_reviews(id) ON DELETE CASCADE
+);
+
+-- Index for fast task_reviews lookups
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
+
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 "#;
@@ -86,6 +110,39 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             // Migration from v1 to v2: add terminal_output column to execution_logs
             conn.execute(
                 "ALTER TABLE execution_logs ADD COLUMN terminal_output TEXT;",
+                [],
+            )?;
+        }
+
+        if current_version < 3 {
+            // Migration from v2 to v3: add task_reviews and review_comments tables
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS task_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL UNIQUE,
+                    decision TEXT NOT NULL,
+                    general_feedback TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS review_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id INTEGER NOT NULL,
+                    file_path TEXT NOT NULL,
+                    comment TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (review_id) REFERENCES task_reviews(id) ON DELETE CASCADE
+                );",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);",
                 [],
             )?;
         }
@@ -125,6 +182,8 @@ mod tests {
         assert!(tables.contains(&"worktrees".to_string()));
         assert!(tables.contains(&"execution_logs".to_string()));
         assert!(tables.contains(&"settings".to_string()));
+        assert!(tables.contains(&"task_reviews".to_string()));
+        assert!(tables.contains(&"review_comments".to_string()));
 
         // Verify foreign keys are enabled
         let fk_enabled: u32 = conn
