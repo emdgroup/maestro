@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -11,6 +11,7 @@ import {
 import { invoke } from "../lib/tauri-mock";
 import { useBoardStore } from "../store/boardStore";
 import { Task, TaskStatus } from "../types/bindings";
+import { toast } from "sonner";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import "../styles/KanbanBoard.css";
@@ -52,6 +53,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
     })
   );
 
+  const previousTasksRef = useRef<Map<number, TaskStatus>>(new Map());
+
   // Load tasks on mount
   useEffect(() => {
     const fetchTasks = async () => {
@@ -60,6 +63,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
         const tasks = await invoke<Task[]>("get_tasks", { project_id: projectId });
         loadTasks(tasks);
         setErrorMessage(null);
+
+        // Update previous state for merge detection
+        const taskStatusMap = new Map(tasks.map(t => [t.id, t.status]));
+        previousTasksRef.current = taskStatusMap;
       } catch (err) {
         console.error("Failed to load tasks:", err);
         setErrorMessage("Failed to load tasks. Please try again.");
@@ -69,6 +76,31 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
     };
 
     fetchTasks();
+
+    // Set up periodic refresh to detect merge completion
+    const interval = setInterval(async () => {
+      try {
+        const tasks = await invoke<Task[]>("get_tasks", { project_id: projectId });
+        loadTasks(tasks);
+
+        // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
+        for (const task of tasks) {
+          const prevStatus = previousTasksRef.current.get(task.id);
+          if (prevStatus === "Merging" && task.status === "Done") {
+            toast.success(`✓ Merge complete: "${task.name}" is Done`);
+          } else if (prevStatus === "Merging" && task.status === "InProgress") {
+            toast.error(`Merge conflict for "${task.name}", task returned to In Progress`);
+          }
+        }
+
+        const taskStatusMap = new Map(tasks.map(t => [t.id, t.status]));
+        previousTasksRef.current = taskStatusMap;
+      } catch (err) {
+        console.error("Failed to refresh tasks:", err);
+      }
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
   }, [projectId, loadTasks]);
 
   const isValidTransition = (
