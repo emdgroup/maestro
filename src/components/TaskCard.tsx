@@ -55,6 +55,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         return { backgroundColor: '#fef3c7', color: '#92400e' }; // Yellow
       case 'Review':
         return { backgroundColor: '#dbeafe', color: '#0369a1' }; // Blue
+      case 'Merging':
+        return { backgroundColor: '#e9d5ff', color: '#7e22ce' }; // Purple
       case 'Done':
         return { backgroundColor: '#dcfce7', color: '#166534' }; // Green
       default:
@@ -68,6 +70,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         return '🔄 Running';
       case 'Review':
         return '👀 Review';
+      case 'Merging':
+        return '⚙️ Merging';
       case 'Done':
         return '✅ Done';
       case 'Backlog':
@@ -102,6 +106,17 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           >
             {getStatusLabel(task.status)}
           </span>
+        )}
+        {task.status === 'Merging' && (
+          <div style={{
+            marginTop: '8px',
+            fontSize: '12px',
+            fontStyle: 'italic',
+            color: '#666',
+            animation: 'pulse 1.5s infinite'
+          }}>
+            Merge in progress...
+          </div>
         )}
         {task.is_imported && (
           <span className="badge-readonly">🔒 Read-only (imported)</span>
