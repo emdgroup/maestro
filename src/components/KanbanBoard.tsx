@@ -14,6 +14,7 @@ import { Task, TaskStatus } from "../types/bindings";
 import { toast } from "sonner";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
+import { ReviewModal } from "./ReviewModal";
 import "../styles/KanbanBoard.css";
 
 interface KanbanBoardProps {
@@ -44,6 +45,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedTaskName, setSelectedTaskName] = useState<string>("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -211,6 +215,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
               tasks={getTasksForColumn(status)}
               projectPath={projectPath}
               onTaskClick={onTaskClick}
+              onReviewClick={(taskId, taskName) => {
+                setSelectedTaskId(taskId);
+                setSelectedTaskName(taskName);
+                setReviewModalOpen(true);
+              }}
             />
           ))}
         </div>
@@ -222,6 +231,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
           ) : null}
         </DragOverlay>
       </DndContext>
+      {reviewModalOpen && selectedTaskId && (
+        <ReviewModal
+          taskId={selectedTaskId}
+          taskName={selectedTaskName}
+          isOpen={reviewModalOpen}
+          onClose={() => {
+            setReviewModalOpen(false);
+            setSelectedTaskId(null);
+            setSelectedTaskName("");
+          }}
+        />
+      )}
     </div>
   );
 };

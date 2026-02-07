@@ -10,9 +10,10 @@ interface TaskCardProps {
   isDragging?: boolean;
   projectPath?: string;
   onTaskClick?: (task: Task) => void;
+  onReviewClick?: (taskId: number, taskName: string) => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick, onReviewClick }) => {
   const [isExecuting, setIsExecuting] = useState(false);
   const store = useBoardStore();
 
@@ -140,6 +141,26 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           }}
         >
           {isExecuting ? 'Executing...' : 'Execute'}
+        </button>
+      )}
+      {task.status === 'Review' && (
+        <button
+          onClick={() => onReviewClick?.(task.id, task.name)}
+          style={{
+            padding: '6px 12px',
+            marginTop: '8px',
+            backgroundColor: '#2563eb',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            width: '100%',
+            fontSize: '12px',
+            fontWeight: 'bold',
+          }}
+          title="View diff and approve/reject changes"
+        >
+          Review
         </button>
       )}
     </div>
