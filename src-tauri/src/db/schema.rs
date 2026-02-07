@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -143,6 +143,25 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);",
+                [],
+            )?;
+        }
+
+        if current_version < 4 {
+            // Migration from v3 to v4: add configuration columns to tasks table
+            // These columns store task-level configuration overrides
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN model_override TEXT;",
+                [],
+            )?;
+
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN mcp_allowlist TEXT;",
+                [],
+            )?;
+
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN skills_override TEXT;",
                 [],
             )?;
         }
