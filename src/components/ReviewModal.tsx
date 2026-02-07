@@ -1,10 +1,11 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../store/reviewStore";
 import { parseDiffString } from "../utils/diffParser";
 import { FileTree } from "./FileTree";
 import { DiffViewer } from "./DiffViewer";
+import { ApprovalForm } from "./ApprovalForm";
 import "./ReviewModal.css";
 
 interface ReviewModalProps {
@@ -21,6 +22,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   onClose,
 }) => {
   const store = useReviewStore();
+  const [showApprovalForm, setShowApprovalForm] = useState(false);
 
   // Fetch diff when modal opens
   useEffect(() => {
@@ -134,14 +136,34 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
             )}
           </div>
 
-          <div className="review-modal-footer">
-            <button className="review-modal-button review-modal-button-secondary" onClick={handleClose}>
-              Close
-            </button>
-            <button className="review-modal-button review-modal-button-primary" disabled>
-              Approve (Plan 06-02)
-            </button>
-          </div>
+          {!showApprovalForm && (
+            <div className="review-modal-footer">
+              <button
+                className="review-modal-button review-modal-button-secondary"
+                onClick={handleClose}
+              >
+                Close
+              </button>
+              <button
+                className="review-modal-button review-modal-button-primary"
+                onClick={() => setShowApprovalForm(true)}
+              >
+                Proceed to Approval
+              </button>
+            </div>
+          )}
+
+          {showApprovalForm && (
+            <ApprovalForm
+              taskId={taskId}
+              diffFiles={store.diffData}
+              onApprove={() => {
+                setShowApprovalForm(false);
+                handleClose();
+              }}
+              onClose={() => setShowApprovalForm(false)}
+            />
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
