@@ -47,7 +47,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
 
     case 'get_tasks':
       console.log(`[MOCK] Returning ${mockDB.tasks.length} tasks`);
-      return mockDB.tasks as T;
+      // Return a deep clone to prevent React from freezing the array
+      return JSON.parse(JSON.stringify(mockDB.tasks)) as T;
 
     case 'create_task': {
       const newTask: Task = {
@@ -56,17 +57,20 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
         name: args?.name || 'New Task',
         description: args?.description || '',
         acceptance_criteria: args?.acceptance_criteria || '',
-        skills: args?.skills || [],
+        skills: Array.isArray(args?.skills) ? [...args.skills] : [],
         status: 'Backlog',
         external_id: undefined,
         is_imported: false,
         import_source: undefined,
+        model_override: undefined,
+        mcp_allowlist: undefined,
+        skills_override: undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       mockDB.tasks.push(newTask);
       console.log(`[MOCK] Created task #${newTask.id}: ${newTask.name}`);
-      return newTask as T;
+      return JSON.parse(JSON.stringify(newTask)) as T;
     }
 
     case 'update_task': {
