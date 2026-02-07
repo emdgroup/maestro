@@ -49,3 +49,30 @@ pub enum TaskStatus {
     Merging,
     Done,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProjectConfigResponse {
+    pub model_default: String,
+    pub mcp_allowlist: Vec<String>,
+    pub skills_default: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProjectConfigRequest {
+    pub model_default: String,
+    pub mcp_allowlist: Vec<String>,
+    pub skills_default: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TaskConfigRequest {
+    #[ts(optional)]
+    pub model_override: Option<String>,
+    #[ts(optional)]
+    pub mcp_allowlist: Option<Vec<String>>,
+    #[ts(optional)]
+    pub skills_override: Option<Vec<String>>,
+}

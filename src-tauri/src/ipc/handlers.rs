@@ -1876,3 +1876,149 @@ async fn reject_merge_on_conflict(
 
     Ok(())
 }
+
+/// Get project-level configuration (model default, MCP allowlist, skills default)
+#[tauri::command]
+pub fn get_project_settings(
+    app_state: State<Arc<AppState>>,
+    _project_id: i32,
+) -> Result<crate::models::ProjectConfigResponse, String> {
+    println!("get_project_settings() called via IPC");
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Query settings table for configuration keys
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM settings WHERE key IN ('model_default', 'mcp_allowlist', 'skills_default')")
+        .map_err(|e| e.to_string())?;
+
+    let mut settings_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    let settings_iter = stmt
+        .query_map([], |row| {
+            let key: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            Ok((key, value))
+        })
+        .map_err(|e| e.to_string())?;
+
+    for result in settings_iter {
+        let (key, value) = result.map_err(|e| e.to_string())?;
+        settings_map.insert(key, value);
+    }
+
+    // Extract values with defaults
+    let model_default = settings_map
+        .get("model_default")
+        .cloned()
+        .unwrap_or_else(|| "claude-opus-4-5".to_string());
+
+    let mcp_allowlist: Vec<String> = settings_map
+        .get("mcp_allowlist")
+        .and_then(|v| serde_json::from_str(v).ok())
+        .unwrap_or_default();
+
+    let skills_default: Vec<String> = settings_map
+        .get("skills_default")
+        .and_then(|v| serde_json::from_str(v).ok())
+        .unwrap_or_default();
+
+    Ok(crate::models::ProjectConfigResponse {
+        model_default,
+        mcp_allowlist,
+        skills_default,
+    })
+}
+
+/// Update project-level configuration
+#[tauri::command]
+pub fn update_project_settings(
+    app_state: State<Arc<AppState>>,
+    _project_id: i32,
+    settings: crate::models::ProjectConfigRequest,
+) -> Result<(), String> {
+    println!("update_project_settings() called via IPC");
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Serialize arrays to JSON
+    let mcp_allowlist_json = serde_json::to_string(&settings.mcp_allowlist)
+        .map_err(|e| format!("Failed to serialize mcp_allowlist: {}", e))?;
+
+    let skills_default_json = serde_json::to_string(&settings.skills_default)
+        .map_err(|e| format!("Failed to serialize skills_default: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Use transaction for atomic writes
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+    // Upsert each setting
+    tx.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('model_default', ?, ?)",
+        rusqlite::params![&settings.model_default, &now],
+    )
+    .map_err(|e| format!("Failed to update model_default: {}", e))?;
+
+    tx.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('mcp_allowlist', ?, ?)",
+        rusqlite::params![&mcp_allowlist_json, &now],
+    )
+    .map_err(|e| format!("Failed to update mcp_allowlist: {}", e))?;
+
+    tx.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('skills_default', ?, ?)",
+        rusqlite::params![&skills_default_json, &now],
+    )
+    .map_err(|e| format!("Failed to update skills_default: {}", e))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+    println!("✓ Project settings updated");
+    Ok(())
+}
+
+/// Update task-level configuration overrides
+#[tauri::command]
+pub fn update_task_settings(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+    settings: crate::models::TaskConfigRequest,
+) -> Result<(), String> {
+    println!("update_task_settings({}) called via IPC", task_id);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Serialize optional arrays to JSON or NULL
+    let mcp_allowlist_value = settings
+        .mcp_allowlist
+        .as_ref()
+        .map(|v| serde_json::to_string(v))
+        .transpose()
+        .map_err(|e| format!("Failed to serialize mcp_allowlist: {}", e))?;
+
+    let skills_override_value = settings
+        .skills_override
+        .as_ref()
+        .map(|v| serde_json::to_string(v))
+        .transpose()
+        .map_err(|e| format!("Failed to serialize skills_override: {}", e))?;
+
+    // Update task with configuration overrides
+    conn.execute(
+        "UPDATE tasks SET model_override = ?, mcp_allowlist = ?, skills_override = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![
+            &settings.model_override,
+            &mcp_allowlist_value,
+            &skills_override_value,
+            &now,
+            task_id
+        ],
+    )
+    .map_err(|e| format!("Failed to update task settings: {}", e))?;
+
+    println!("✓ Task {} settings updated", task_id);
+    Ok(())
+}

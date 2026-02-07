@@ -8,7 +8,7 @@ pub mod review;
 pub mod merge_outcome;
 
 pub use project::{Project, ProjectStatus};
-pub use task::{Task, TaskStatus, CreateTaskRequest};
+pub use task::{Task, TaskStatus, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
 pub use worktree::{Worktree, WorktreeStatus, PoolStatus};
 pub use execution_log::{ExecutionLog, ExecutionStatus};
 pub use settings::AppSettings;
