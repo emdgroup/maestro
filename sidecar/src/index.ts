@@ -128,18 +128,35 @@ export async function getDiffBetweenBranches(
 }
 
 /**
- * Attempt squash merge of branch to main
+ * Attempt squash merge of branch to main with task context
  *
  * @param repoPath - Path to git repository
- * @param branchName - Branch to merge
- * @returns Object with success boolean and conflicts
+ * @param taskId - Task ID for commit message
+ * @param taskBranchName - Branch name to merge
+ * @param taskName - Task name for commit message
+ * @returns MergeOutcome with success flag and conflict details
  */
 export async function squashMergeToMain(
   repoPath: string,
-  branchName: string
-): Promise<{ success: boolean; conflicts: string[] }> {
-  return mergeManager.squashMergeToMain(repoPath, branchName);
+  taskId: number,
+  taskBranchName: string,
+  taskName: string
+): Promise<mergeManager.MergeOutcome> {
+  return mergeManager.squashMergeToMain(repoPath, taskId, taskBranchName, taskName);
 }
+
+/**
+ * Abort a merge operation
+ *
+ * @param repoPath - Path to git repository
+ * @returns true if abort succeeded, false otherwise
+ */
+export async function abortMergeOnConflict(repoPath: string): Promise<boolean> {
+  return mergeManager.abortMergeOnConflict(repoPath);
+}
+
+// Export MergeOutcome type for Rust usage
+export type { MergeOutcome } from "./merge-manager.js";
 
 /**
  * CLI entry point for sidecar execution

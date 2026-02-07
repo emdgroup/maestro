@@ -58,34 +58,66 @@ export async function getDiffBetweenBranches(
 }
 
 /**
- * Attempt squash merge of branch to main
+ * Merge outcome result from squash merge operation
+ */
+export interface MergeOutcome {
+  success: boolean;
+  conflicts: string[];
+  conflictFiles?: string[];
+  mergeCommitSha?: string;
+  message?: string;
+}
+
+/**
+ * Attempt squash merge of branch to main with task context
  *
  * @param repoPath - Path to git repository
- * @param branchName - Branch to merge
- * @returns Object with success boolean and conflict info
- * @throws Error on fatal git errors (not conflicts)
+ * @param taskId - Task ID for commit message and logging
+ * @param taskBranchName - Branch name to merge (e.g., pool/agent-task-1)
+ * @param taskName - Task name for commit message
+ * @returns MergeOutcome with success flag and conflict details
  */
 export async function squashMergeToMain(
   repoPath: string,
-  branchName: string
-): Promise<{ success: boolean; conflicts: string[] }> {
+  taskId: number,
+  taskBranchName: string,
+  taskName: string
+): Promise<MergeOutcome> {
   const git: SimpleGit = simpleGit(repoPath);
 
   try {
-    console.log(`Attempting squash merge of ${branchName} to main`);
+    console.log(`Attempting squash merge of ${taskBranchName} to main (task: ${taskId})`);
+
+    // First, ensure we're on main branch
+    await git.checkout("main");
+    console.log(`✓ Switched to main branch`);
 
     // Attempt squash merge without committing
     // This allows us to check for conflicts before committing
-    const result = await git.merge([branchName, "--squash", "--no-commit"]);
+    const result = await git.merge([
+      taskBranchName,
+      "--squash",
+      "--no-commit",
+    ]);
 
-    console.log(`✓ Merge completed`);
+    console.log(`✓ Merge completed without conflicts`);
 
-    // If merge succeeded, create commit
-    const commitMsg = `Merge branch '${branchName}' into main (squash merge)\n\nAll agent commits squashed into single commit.`;
+    // If merge succeeded, create commit with task reference
+    const commitMsg = `Merge task #${taskId}: ${taskName}\n\nAll agent commits squashed into single commit.`;
     await git.commit(commitMsg);
 
     console.log(`✓ Created merge commit`);
-    return { success: true, conflicts: [] };
+
+    // Get commit SHA for verification
+    const logResult = await git.log(["-1", "--format=%H"]);
+    const commitSha = logResult.latest?.hash || "unknown";
+
+    return {
+      success: true,
+      conflicts: [],
+      mergeCommitSha: commitSha,
+      message: "Merge successful",
+    };
   } catch (error) {
     // Check if merge failed due to conflicts
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -108,7 +140,9 @@ export async function squashMergeToMain(
 
         return {
           success: false,
-          conflicts: status.conflicted,
+          conflicts: [`Merge conflict in ${status.conflicted.join(", ")}`],
+          conflictFiles: status.conflicted,
+          message: "Merge conflict detected. Aborting merge.",
         };
       }
     } catch (statusErr) {
@@ -116,9 +150,30 @@ export async function squashMergeToMain(
     }
 
     // Non-conflict merge error
-    throw new Error(
-      `Failed to merge ${branchName} to main: ${errorMsg}`
-    );
+    return {
+      success: false,
+      conflicts: [`Merge error: ${errorMsg}`],
+      message: errorMsg,
+    };
+  }
+}
+
+/**
+ * Abort a merge operation that failed due to conflicts
+ *
+ * @param repoPath - Path to git repository
+ * @returns true if abort succeeded, false otherwise
+ */
+export async function abortMergeOnConflict(repoPath: string): Promise<boolean> {
+  const git: SimpleGit = simpleGit(repoPath);
+
+  try {
+    await git.merge(["--abort"]);
+    console.log(`✓ Merge aborted successfully`);
+    return true;
+  } catch (error) {
+    console.error("Failed to abort merge:", error);
+    return false;
   }
 }
 
