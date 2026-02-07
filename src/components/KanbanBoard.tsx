@@ -16,6 +16,7 @@ import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "./ReviewModal";
 import { TaskSettingsModal } from "./TaskSettingsModal";
+import { ExecutionTerminal } from "./ExecutionTerminal";
 import "../styles/KanbanBoard.css";
 
 interface KanbanBoardProps {
@@ -42,7 +43,7 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
 };
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath = "", onTaskClick }) => {
-  const { loadTasks, updateTaskStatus, getTasksByStatus, getTasks } = useBoardStore();
+  const { loadTasks, updateTaskStatus, getTasksByStatus, getTasks, activeTerminalTaskId, isTerminalOpen, closeTerminal } = useBoardStore();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -252,6 +253,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
           onClose={() => setSelectedTaskForSettings(null)}
           task={selectedTaskForSettings}
           projectId={projectId}
+        />
+      )}
+      {isTerminalOpen && activeTerminalTaskId !== null && (
+        <ExecutionTerminal
+          taskId={activeTerminalTaskId}
+          taskName={getTasks().find((t) => t.id === activeTerminalTaskId)?.name || `Task ${activeTerminalTaskId}`}
+          isActive={true}
+          onClose={closeTerminal}
         />
       )}
     </div>

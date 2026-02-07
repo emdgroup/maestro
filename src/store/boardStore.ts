@@ -5,17 +5,23 @@ import { Task, TaskStatus } from "../types/bindings";
 
 export interface BoardState {
   tasks: Task[];
+  activeTerminalTaskId: number | null;
+  isTerminalOpen: boolean;
   loadTasks: (tasks: Task[]) => void;
   updateTaskStatus: (taskId: number, newStatus: TaskStatus) => void;
   addTask: (task: Task) => void;
   getTasks: () => Task[];
   getTasksByStatus: (status: TaskStatus) => Task[];
   executeTask: (projectId: number, taskId: number, repoPath: string) => Promise<number>;
+  openTerminal: (taskId: number) => void;
+  closeTerminal: () => Promise<void>;
 }
 
 export const useBoardStore = create<BoardState>()(
   immer((set, get) => ({
     tasks: [],
+    activeTerminalTaskId: null,
+    isTerminalOpen: false,
 
     loadTasks: (tasks: Task[]) =>
       set((state) => {
@@ -65,6 +71,31 @@ export const useBoardStore = create<BoardState>()(
         console.error("Execute task failed:", error);
         throw error;
       }
+    },
+
+    openTerminal: (taskId: number) => {
+      set((state) => {
+        state.activeTerminalTaskId = taskId;
+        state.isTerminalOpen = true;
+      });
+    },
+
+    closeTerminal: async () => {
+      // Close current terminal gracefully
+      const state = get();
+      if (state.activeTerminalTaskId !== null) {
+        try {
+          await invoke("detach_terminal", { task_id: state.activeTerminalTaskId });
+        } catch (err) {
+          console.error("Error detaching terminal:", err);
+        }
+      }
+
+      // Update state
+      set((state) => {
+        state.isTerminalOpen = false;
+        state.activeTerminalTaskId = null;
+      });
     },
   }))
 );
