@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 8 of 9 (Error Handling & Polish)
-Plan: 2 of 3 complete (Wave 1: 08-01 Error Detection, Wave 2: 08-02 Terminal Attach/Detach)
-Status: Terminal interactive debugging fully implemented
-Last activity: 2026-02-07 — Completed Plan 08-02 (Terminal Attach/Detach)
+Plan: 3 of 3 complete (Wave 1: 08-01 Error Detection, Wave 2: 08-02 Terminal Attach/Detach, Wave 3: 08-03 Recovery UI)
+Status: Complete error handling pipeline fully implemented
+Last activity: 2026-02-07 — Completed Plan 08-03 (Recovery UI)
 
-Progress: [████████░░] 30/33 plans (90.9%), 8/9 phases complete (8 in progress)
+Progress: [██████████] 33/33 plans (100%), 8/9 phases complete (Phase 8 complete, moving to Phase 9)
 
 ## Performance Metrics
 
@@ -35,7 +35,7 @@ Progress: [████████░░] 30/33 plans (90.9%), 8/9 phases compl
 | 05-real-time-monitoring | 3 | 78m | 26m | Complete ✓ |
 | 06-review-merge-workflow | 5 | 120m | 24m | Complete ✓✓ (gap closure + merge ops) |
 | 07-configuration-management | 3 | 80m | 26.7m | Complete ✓ (data model + UI) |
-| 08-error-handling-polish | 3 | [2/3 complete] | ~45m | Wave 1: Error detection ✓, Wave 2: Terminal attach/detach ✓ |
+| 08-error-handling-polish | 3 | 135m | 45m | Complete ✓✓✓ (full pipeline: detection + terminal + recovery UI) |
 
 **Recent Trend:**
 - Phase 6 complete: Full review & merge workflow (diff viewer → approval → squash merge → status transitions)
@@ -52,9 +52,32 @@ Progress: [████████░░] 30/33 plans (90.9%), 8/9 phases compl
   - ExecutionTerminal React component (250+ lines) with interactive input
   - Zustand store integration for terminal lifecycle management
   - KanbanBoard modal rendering with one-terminal constraint
-- Next: Phase 8 Plan 3 (Error Display UI in ExecutionHistory)
+- Phase 8 Wave 3 (08-03): Recovery UI Implementation (45m) ✓ COMPLETE
+  - TaskStatus enum extended with "Failed" status (Rust + TypeScript)
+  - TaskCard displays Failed status with red badge (#fee2e2 background, #991b1b text)
+  - Error detail preview shown below task name for Failed tasks
+  - Recovery action buttons: Resume (green), Abort (red), Terminal (purple)
+  - ExecutionHistory displays error details section with:
+    - Error type as colored badge (CompilationError orange, Timeout yellow, etc.)
+    - Full error message in scrollable box
+    - Suggestions as bulleted list with checkmarks
+    - Copy to clipboard buttons for message and suggestions
+    - Detected timestamp
+  - Zustand store actions: resumeExecution() and abortExecution()
+  - resumeExecution retries with same parameters, updates task to InProgress
+  - abortExecution marks task Done, stops recovery attempts
+  - Loading states tracked via retryingTaskIds and abortingTaskIds Sets
+  - Toast notifications on all user actions
+  - Data persistence: error details survive app restarts via database
 
-*Updated: 2026-02-07 (after Plan 08-02 terminal attach/detach implementation)*
+**Phase 8 Complete - Full Error Handling Pipeline:**
+The complete error handling workflow is now implemented:
+1. Backend (08-01): Detects errors, categorizes them, generates suggestions
+2. Terminal (08-02): Users can attach to debug interactively
+3. Frontend (08-03): Shows errors clearly, enables recovery actions
+Users can see failures immediately, understand causes, and recover gracefully.
+
+*Updated: 2026-02-07 (after Plan 08-03 recovery UI completion)*
 
 ## Accumulated Context
 
@@ -234,6 +257,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-07 (current)
-Stopped at: Plan 08-01 complete (Error Detection and Pause Logic)
+Stopped at: Plan 08-03 complete (Recovery UI Implementation)
 Resume file: None
-Next: Plan 08-02 (Error Display UI - frontend consumption of error_event)
+Next: Phase 9 (final polish and deployment preparation)
