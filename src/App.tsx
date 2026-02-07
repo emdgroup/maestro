@@ -7,6 +7,7 @@ import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
 import { SyncButton } from "./components/SyncButton";
+import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
 import { useBoardStore } from "./store/boardStore";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
@@ -18,6 +19,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { addTask, loadTasks } = useBoardStore();
 
@@ -36,8 +38,8 @@ function App() {
           project_path: null,
           recent_projects: [],
           model_default: "claude-opus-4-5",
-          mcp_defaults: null,
-          skills_defaults: null,
+          mcp_allowlist: [],
+          skills_default: [],
           updated_at: new Date().toISOString(),
         });
       } finally {
@@ -60,8 +62,8 @@ function App() {
         project_path: projectPath,
         recent_projects: settings?.recent_projects || [],
         model_default: settings?.model_default || "claude-opus-4-5",
-        mcp_defaults: settings?.mcp_defaults || null,
-        skills_defaults: settings?.skills_defaults || null,
+        mcp_allowlist: settings?.mcp_allowlist || [],
+        skills_default: settings?.skills_default || [],
         updated_at: new Date().toISOString(),
       };
 
@@ -131,6 +133,13 @@ function App() {
           {projectSelected && currentProject && (
             <>
               <button
+                onClick={() => setShowProjectSettings(true)}
+                className="btn-gear"
+                title="Project Settings"
+              >
+                ⚙️
+              </button>
+              <button
                 onClick={() => setShowImportSettings(true)}
                 className="btn-settings"
                 title="Import Settings"
@@ -166,6 +175,11 @@ function App() {
               onClose={() => setShowNewTaskModal(false)}
               projectId={currentProject.id}
               onTaskCreated={handleTaskCreated}
+            />
+            <ProjectSettingsModal
+              isOpen={showProjectSettings}
+              onClose={() => setShowProjectSettings(false)}
+              projectId={currentProject.id}
             />
             <TaskDetail
               task={selectedTask}
