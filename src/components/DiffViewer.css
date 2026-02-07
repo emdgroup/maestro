@@ -1,0 +1,80 @@
+.diff-viewer-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--background, #ffffff);
+  border-left: 1px solid var(--border-color, #e5e7eb);
+}
+
+.diff-viewer-loading,
+.diff-viewer-empty,
+.diff-viewer-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary, #6b7280);
+  font-size: 14px;
+}
+
+.diff-viewer-error {
+  color: var(--error-color, #dc2626);
+  padding: 20px;
+  text-align: center;
+}
+
+.diff-viewer-container > div[class*="diffView"] {
+  height: 100%;
+  overflow: auto;
+}
+
+/* Override @git-diff-view/react styles for consistency */
+.diff-view-wrapper {
+  font-family: var(--font-family-mono, "Monaco", "Courier New", monospace);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Line number styling */
+.diff-view-line-number {
+  background-color: var(--background-secondary, #f9fafb);
+  color: var(--text-secondary, #9ca3af);
+  padding: 0 12px;
+  user-select: none;
+}
+
+/* Added line styling */
+.diff-view-line-added {
+  background-color: #ecfdf5;
+}
+
+.diff-view-line-added .diff-view-line-content {
+  color: #065f46;
+}
+
+/* Removed line styling */
+.diff-view-line-removed {
+  background-color: #fee2e2;
+}
+
+.diff-view-line-removed .diff-view-line-content {
+  color: #7f1d1d;
+}
+
+/* Context line styling */
+.diff-view-line-context {
+  background-color: transparent;
+}
+
+.diff-view-line-context .diff-view-line-content {
+  color: var(--text-primary, #1f2937);
+}
+
+/* Hunk header styling */
+.diff-view-line-hunk-header {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  padding-left: 12px;
+  font-weight: 600;
+}

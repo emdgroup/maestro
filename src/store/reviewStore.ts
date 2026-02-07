@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { DiffFile } from "../types/review";
+import { DiffFileWithName } from "../types/review";
 
 export interface ReviewState {
   currentTaskId: number | null;
-  diffData: DiffFile[];
+  diffData: DiffFileWithName[];
   selectedFile: string | null;
   loading: boolean;
   error: string | null;
@@ -12,7 +12,7 @@ export interface ReviewState {
   openReview: (taskId: number) => void;
   closeReview: () => void;
   selectFile: (fileName: string) => void;
-  setDiffData: (files: DiffFile[]) => void;
+  setDiffData: (files: DiffFileWithName[]) => void;
   setError: (msg: string | null) => void;
   setLoading: (loading: boolean) => void;
 }
@@ -46,7 +46,7 @@ export const useReviewStore = create<ReviewState>()(
         state.selectedFile = fileName;
       }),
 
-    setDiffData: (files: DiffFile[]) =>
+    setDiffData: (files: DiffFileWithName[]) =>
       set((state) => {
         state.diffData = files;
         state.loading = false;
