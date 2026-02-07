@@ -62,6 +62,13 @@ export type PoolStatus = {
 
 export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled";
 
+export type ErrorEvent = {
+  error_type: string;
+  message: string;
+  suggestions: string[];
+  detected_at: string;
+};
+
 export type ExecutionLog = {
   id: number;
   task_id: number;
@@ -70,6 +77,7 @@ export type ExecutionLog = {
   status: ExecutionStatus;
   started_at: string;
   completed_at: string | null;
+  error_event: ErrorEvent | null;
 };
 
 export type AppSettings = {

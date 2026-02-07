@@ -10,7 +10,7 @@ pub mod merge_outcome;
 pub use project::{Project, ProjectStatus};
 pub use task::{Task, TaskStatus, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
 pub use worktree::{Worktree, WorktreeStatus, PoolStatus};
-pub use execution_log::{ExecutionLog, ExecutionStatus};
+pub use execution_log::{ExecutionLog, ExecutionStatus, ErrorEvent};
 pub use settings::AppSettings;
 pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraFields};
 pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest};

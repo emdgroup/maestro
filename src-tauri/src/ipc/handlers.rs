@@ -1164,7 +1164,7 @@ pub fn get_execution_logs(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, task_id, status, output, terminal_output, started_at, completed_at
+        "SELECT id, task_id, status, output, terminal_output, started_at, completed_at, error_event
          FROM execution_logs
          WHERE task_id = ?
          ORDER BY started_at DESC"
@@ -1179,6 +1179,11 @@ pub fn get_execution_logs(
             "cancelled" => crate::models::ExecutionStatus::Cancelled,
             _ => crate::models::ExecutionStatus::Running,
         };
+
+        // Parse error_event from JSON if present
+        let error_event = row.get::<_, Option<String>>(7)?
+            .and_then(|s| serde_json::from_str(&s).ok());
+
         Ok(crate::models::ExecutionLog {
             id: row.get(0)?,
             task_id: row.get(1)?,
@@ -1187,6 +1192,7 @@ pub fn get_execution_logs(
             terminal_output: row.get(4)?,
             started_at: row.get(5)?,
             completed_at: row.get(6)?,
+            error_event,
         })
     }).map_err(|e| e.to_string())?;
 

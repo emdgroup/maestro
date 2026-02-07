@@ -3,6 +3,15 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct ErrorEvent {
+    pub error_type: String,
+    pub message: String,
+    pub suggestions: Vec<String>,
+    pub detected_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ExecutionLog {
     pub id: i32,
     pub task_id: i32,
@@ -11,6 +20,7 @@ pub struct ExecutionLog {
     pub status: ExecutionStatus,
     pub started_at: String,
     pub completed_at: Option<String>,
+    pub error_event: Option<ErrorEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

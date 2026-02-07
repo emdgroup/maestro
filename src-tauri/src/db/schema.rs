@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -162,6 +162,15 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
             conn.execute(
                 "ALTER TABLE tasks ADD COLUMN skills_override TEXT;",
+                [],
+            )?;
+        }
+
+        if current_version < 5 {
+            // Migration from v4 to v5: add error_event column to execution_logs table
+            // Stores ErrorEvent struct as JSON for error detection and suggestions
+            conn.execute(
+                "ALTER TABLE execution_logs ADD COLUMN error_event TEXT;",
                 [],
             )?;
         }
