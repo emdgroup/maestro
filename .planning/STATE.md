@@ -6,14 +6,14 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control—eliminating blocking waits while maintaining safety through worktree isolation and human-in-the-loop review.
 
-**Current focus:** Phase 8 - Error Handling & Polish (Wave 2: Terminal Attach/Detach)
+**Current focus:** Phase 9 - Remote Project Support
 
 ## Current Position
 
-Phase: 8 of 9 (Error Handling & Polish)
-Plan: 3 of 3 complete (Wave 1: 08-01 Error Detection, Wave 2: 08-02 Terminal Attach/Detach, Wave 3: 08-03 Recovery UI)
-Status: Complete error handling pipeline fully implemented
-Last activity: 2026-02-07 — Completed Plan 08-03 (Recovery UI)
+Phase: 9 of 9 (Remote Project Support - Ready to Plan)
+Plan: Phase 8 complete with all 3 plans verified
+Status: Phase 8 VERIFIED ✓ (21/21 must-haves passed)
+Last activity: 2026-02-07 — Completed Phase 8 verification and state updates
 
 Progress: [██████████] 33/33 plans (100%), 8/9 phases complete (Phase 8 complete, moving to Phase 9)
 
@@ -239,6 +239,32 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Three separate IPC handlers (get_project_settings, update_project_settings, update_task_settings) for clear concerns separation
 - Optional fields for task configuration (model_override, mcp_allowlist, skills_override) allow partial/incremental configuration
 - TypeScript bindings manually maintained (ts-rs export incomplete in this setup, manual update acceptable for committed types)
+
+**Phase 08-01 Decisions:**
+- ErrorEvent struct with error_type, message, suggestions, detected_at fields for structured error tracking
+- Error categorization: CompilationError, MissingDependency, RuntimeError, Timeout, ProcessCrash, Unknown
+- Type-specific suggestions generated per error category (e.g., "Run: npm install" for MissingDependency)
+- Auto-retry logic for transient errors (Timeout, ProcessCrash) with max 3 attempts
+- Schema migration to v5 adds error_event TEXT column to execution_logs
+- Database functions: append_error_event, mark_failed, get_error_event
+
+**Phase 08-02 Decisions:**
+- send_terminal_input handler writes to PTY master with signal handling (Ctrl+C → SIGINT, Ctrl+Z → SIGTSTP)
+- detach_terminal handler preserves PTY session while stopping stream (execution continues in background)
+- attach_terminal enhanced with include_history parameter to prepend terminal_output from database
+- ExecutionTerminal component (283 lines) with interactive input field and command history
+- One-terminal-at-a-time constraint enforced via activeTerminalTaskId state in boardStore
+- Terminal lifecycle: attach (load history + stream) → interact (send commands) → detach (preserve PTY)
+
+**Phase 08-03 Decisions:**
+- TaskStatus enum extended with "Failed" variant (Rust + TypeScript synchronization)
+- Failed status styling: red badge (#fee2e2 background, #991b1b text)
+- Recovery action buttons: Resume (green, retries execution), Abort (red, marks Done), Terminal (purple, opens debug)
+- ExecutionHistory error details section with color-coded error type badges
+- Copy to clipboard functionality for error messages and suggestions
+- resumeExecution and abortExecution actions in boardStore with loading state tracking
+- Loading states tracked via retryingTaskIds and abortingTaskIds Sets for button state management
+- Critical bug fixes: white screen (currentProject loading) and task creation (mock object freezing)
 
 ### Pending Todos
 

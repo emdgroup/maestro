@@ -23,9 +23,9 @@ Requirements for initial MVP release. Each maps to roadmap phases.
 - [ ] **EXEC-01**: User can execute agent on task in isolated git worktree
 - [ ] **EXEC-02**: User can view real-time terminal output while agent executes
 - [ ] **EXEC-03**: User can see agent status indicators (running/paused/failed/complete)
-- [ ] **EXEC-04**: User can attach to embedded terminal to send input (Ctrl+C, manual commands)
-- [ ] **EXEC-05**: User can detach from terminal while agent continues execution
-- [ ] **EXEC-06**: System pauses agent execution on failure and notifies user
+- [x] **EXEC-04**: User can attach to embedded terminal to send input (Ctrl+C, manual commands)
+- [x] **EXEC-05**: User can detach from terminal while agent continues execution
+- [x] **EXEC-06**: System pauses agent execution on failure and notifies user
 - [ ] **EXEC-07**: User can view agent output history (terminal logs, git diffs, errors) for completed tasks
 - [x] **EXEC-08**: System automatically cleans up worktree and branch after successful merge
 - [x] **EXEC-09**: User can run multiple agents in parallel on different tasks (hybrid worktree pool)
@@ -111,9 +111,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXEC-01 | Phase 4 | Pending |
 | EXEC-02 | Phase 5 | Pending |
 | EXEC-03 | Phase 4 | Pending |
-| EXEC-04 | Phase 8 | Pending |
-| EXEC-05 | Phase 8 | Pending |
-| EXEC-06 | Phase 8 | Pending |
+| EXEC-04 | Phase 8 | Complete |
+| EXEC-05 | Phase 8 | Complete |
+| EXEC-06 | Phase 8 | Complete |
 | EXEC-07 | Phase 4 | Pending |
 | EXEC-08 | Phase 3 | Complete |
 | EXEC-09 | Phase 3 | Complete |
@@ -140,4 +140,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-04*
-*Last updated: 2026-02-05 after Phase 3 completion*
+*Last updated: 2026-02-07 after Phase 8 completion*

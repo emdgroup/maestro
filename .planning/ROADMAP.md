@@ -17,7 +17,7 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 - [x] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
 - [x] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
 - [x] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
-- [ ] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
+- [x] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
 - [ ] **Phase 9: Remote Project Support** - SSH tunneling, remote git operations, remote execution
 
 ## Phase Details
@@ -187,9 +187,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Error detection and pause logic (process exit code, stderr parsing, categorization, auto-retry)
-- [ ] 08-02-PLAN.md — Terminal attach/detach functionality (PTY management, signal handling, interactive input)
-- [ ] 08-03-PLAN.md — Recovery UI (resume, abort actions, error notifications, execution history display)
+- [x] 08-01-PLAN.md — Error detection and pause logic (process exit code, stderr parsing, categorization, auto-retry)
+- [x] 08-02-PLAN.md — Terminal attach/detach functionality (PTY management, signal handling, interactive input)
+- [x] 08-03-PLAN.md — Recovery UI (resume, abort actions, error notifications, execution history display)
 
 ### Phase 9: Remote Project Support
 **Goal**: Enable users to work with remote projects via SSH where all operations execute on remote machine.
