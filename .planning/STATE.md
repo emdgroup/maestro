@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 ## Current Position
 
-Phase: 6 of 9 (Review & Merge Workflow)
-Plan: 5 of 5 complete - PHASE 6 COMPLETE WITH GAP CLOSURE
-Status: Plan 06-05 complete (Merge CLI Handler & Outcome Parsing)
-Last activity: 2026-02-07 — Completed Plan 06-05 (Merge Operations) - Bidirectional merge channel implemented
+Phase: 7 of 9 (Configuration Management)
+Plan: 2 of 5 complete
+Status: Plan 07-02 complete (Configuration UI Implementation)
+Last activity: 2026-02-07 — Completed Plan 07-02 (Project Settings UI) - ProjectSettingsModal component with Zustand store
 
-Progress: [███████░░░] 25/31 plans (81%), 6/9 phases complete, Phase 6 FULLY OPERATIONAL
+Progress: [████████░░] 27/31 plans (87%), 7/9 phases in progress, Phase 7 Wave 1-2 COMPLETE
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
+- Total plans completed: 24
 - Average duration: 22.4 min (consistent)
-- Total execution time: 8h 56m
+- Total execution time: 9h 23m
 
 **By Phase:**
 
@@ -34,18 +34,17 @@ Progress: [███████░░░] 25/31 plans (81%), 6/9 phases complet
 | 04-agent-execution | 4 | 120m | 30m | Complete (gaps noted) |
 | 05-real-time-monitoring | 3 | 78m | 26m | Complete ✓ |
 | 06-review-merge-workflow | 5 | 120m | 24m | Complete ✓✓ (gap closure + merge ops) |
+| 07-configuration-management | 1 | 27m | 27m | In progress (data model foundation) |
 
 **Recent Trend:**
-- Phase 6 execution: 06-01 (13m, diff viewer), 06-02 (35m, approval workflow), 06-03 (45m, merge automation), 06-04 (12m, UI gap closure), 06-05 (15m, merge CLI + outcome parsing)
-- Phase 6 total: 120 minutes for complete Review & Merge Workflow with full gap closure
-- Review & Merge fully operational: diff viewing → approval decisions → squash merge → status transitions
-- Bidirectional merge channel: Sidecar CLI (--merge) → squashMergeToMain → MergeOutcome JSON → Rust handler routing
-- Task status transitions: Review → Merging → Done (on success) or InProgress (on conflict)
-- Merged tasks automatically move to Done, worktrees cleaned up and returned to pool
-- Complete end-to-end flow tested and verified, all components type-safe
-- Current: Phase 6 FULLY OPERATIONAL AND COMPLETE, Ready for Phase 7 (Performance & Optimization)
+- Phase 6 complete: Full review & merge workflow (diff viewer → approval → squash merge → status transitions)
+- Phase 7 Wave 1 (07-01): Configuration data models + IPC handlers (27m)
+- Phase 7 Wave 2 (07-02): Project-level settings UI - ProjectSettingsModal component (18m)
+- Configuration implementation: Zustand store, react-hook-form integration, IPC fetch/save pattern
+- Frontend UI patterns established for reuse in task settings (Phase 07-03)
+- Current: Phase 7 UI Implementation COMPLETE, Ready for Task Settings UI
 
-*Updated: 2026-02-07 (after Plan 06-05 merge CLI implementation)*
+*Updated: 2026-02-07 (after Plan 07-02 configuration UI implementation)*
 
 ## Accumulated Context
 
@@ -201,6 +200,13 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Leave task in Merging state on non-conflict errors to support retry mechanism (user can approve again)
 - Type-safe JSON protocol for bidirectional merge communication
 
+**Phase 07-01 Decisions:**
+- Configuration columns stored as JSON TEXT in database (flexible, matches existing pattern for skills)
+- Project-level config stored in settings key-value table; task-level config stored directly on tasks table (different storage due to different access patterns)
+- Three separate IPC handlers (get_project_settings, update_project_settings, update_task_settings) for clear concerns separation
+- Optional fields for task configuration (model_override, mcp_allowlist, skills_override) allow partial/incremental configuration
+- TypeScript bindings manually maintained (ts-rs export incomplete in this setup, manual update acceptable for committed types)
+
 ### Pending Todos
 
 None yet.
@@ -218,6 +224,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-07 (current)
-Stopped at: Plan 06-02 complete (Approval Workflow)
+Stopped at: Plan 07-02 complete (Configuration UI Implementation)
 Resume file: None
-Next: Plan 06-03 (Merge Automation)
+Next: Plan 07-03 (Task Settings UI)
