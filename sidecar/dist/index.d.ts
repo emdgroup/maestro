@@ -6,6 +6,7 @@
  *
  * Key constraints: Strict git operation ordering to prevent corruption.
  */
+import * as mergeManager from "./merge-manager.js";
 /**
  * Create git worktree in .worktree-pool/ directory
  *
@@ -90,14 +91,21 @@ export declare function isWorktreeHealthy(repoPath: string, worktreePath: string
  */
 export declare function getDiffBetweenBranches(repoPath: string, fromBranch: string, toBranch: string, contextLines?: number): Promise<string>;
 /**
- * Attempt squash merge of branch to main
+ * Attempt squash merge of branch to main with task context
  *
  * @param repoPath - Path to git repository
- * @param branchName - Branch to merge
- * @returns Object with success boolean and conflicts
+ * @param taskId - Task ID for commit message
+ * @param taskBranchName - Branch name to merge
+ * @param taskName - Task name for commit message
+ * @returns MergeOutcome with success flag and conflict details
  */
-export declare function squashMergeToMain(repoPath: string, branchName: string): Promise<{
-    success: boolean;
-    conflicts: string[];
-}>;
+export declare function squashMergeToMain(repoPath: string, taskId: number, taskBranchName: string, taskName: string): Promise<mergeManager.MergeOutcome>;
+/**
+ * Abort a merge operation
+ *
+ * @param repoPath - Path to git repository
+ * @returns true if abort succeeded, false otherwise
+ */
+export declare function abortMergeOnConflict(repoPath: string): Promise<boolean>;
+export type { MergeOutcome } from "./merge-manager.js";
 //# sourceMappingURL=index.d.ts.map

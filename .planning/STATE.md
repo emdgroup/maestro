@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 6 of 9 (Review & Merge Workflow)
-Plan: 3 of 3 complete - PHASE 6 COMPLETE
-Status: Plan 06-03 complete (Merge Automation)
-Last activity: 2026-02-07 — Completed Plan 06-03 (Merge Automation) - Phase 6 fully operational
+Plan: 5 of 5 complete - PHASE 6 COMPLETE WITH GAP CLOSURE
+Status: Plan 06-05 complete (Merge CLI Handler & Outcome Parsing)
+Last activity: 2026-02-07 — Completed Plan 06-05 (Merge Operations) - Bidirectional merge channel implemented
 
-Progress: [███████░░░] 23/31 plans (74%), 6/9 phases complete, Phase 6 DONE
+Progress: [███████░░░] 25/31 plans (81%), 6/9 phases complete, Phase 6 FULLY OPERATIONAL
 
 ## Performance Metrics
 
@@ -33,16 +33,19 @@ Progress: [███████░░░] 23/31 plans (74%), 6/9 phases complet
 | 03-git-worktree-infrastructure | 4 | 134m | 33.5m | Complete |
 | 04-agent-execution | 4 | 120m | 30m | Complete (gaps noted) |
 | 05-real-time-monitoring | 3 | 78m | 26m | Complete ✓ |
-| 06-review-merge-workflow | 3 | 93m | 31m | Complete ✓ |
+| 06-review-merge-workflow | 5 | 120m | 24m | Complete ✓✓ (gap closure + merge ops) |
 
 **Recent Trend:**
-- Phase 6 execution: 06-01 (13m, diff viewer), 06-02 (35m, approval workflow), 06-03 (45m, merge automation)
-- Phase 6 total: 93 minutes for complete Review & Merge Workflow
-- Review & Merge fully operational with diff viewing, approval decisions, automatic merge, conflict handling
+- Phase 6 execution: 06-01 (13m, diff viewer), 06-02 (35m, approval workflow), 06-03 (45m, merge automation), 06-04 (12m, UI gap closure), 06-05 (15m, merge CLI + outcome parsing)
+- Phase 6 total: 120 minutes for complete Review & Merge Workflow with full gap closure
+- Review & Merge fully operational: diff viewing → approval decisions → squash merge → status transitions
+- Bidirectional merge channel: Sidecar CLI (--merge) → squashMergeToMain → MergeOutcome JSON → Rust handler routing
+- Task status transitions: Review → Merging → Done (on success) or InProgress (on conflict)
 - Merged tasks automatically move to Done, worktrees cleaned up and returned to pool
-- Current: Phase 6 complete, Ready for Phase 7 (Performance & Optimization)
+- Complete end-to-end flow tested and verified, all components type-safe
+- Current: Phase 6 FULLY OPERATIONAL AND COMPLETE, Ready for Phase 7 (Performance & Optimization)
 
-*Updated: 2026-02-07 (after Plan 06-03 completion)*
+*Updated: 2026-02-07 (after Plan 06-05 merge CLI implementation)*
 
 ## Accumulated Context
 
@@ -191,6 +194,12 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Frontend IPC → Rust async handler → Node.js sidecar CLI pattern for diff generation
 - ReviewModal uses @radix-ui/react-dialog for accessible modal container
 - Error recovery via retry button for failed diff fetches
+
+**Phase 06-05 Decisions:**
+- MergeOutcome fields use camelCase with serde rename for JSON compatibility between TypeScript (sidecar) and Rust
+- Parse stdout as JSON from sidecar process; errors logged to stderr, success exits with code 0
+- Leave task in Merging state on non-conflict errors to support retry mechanism (user can approve again)
+- Type-safe JSON protocol for bidirectional merge communication
 
 ### Pending Todos
 

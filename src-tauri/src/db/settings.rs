@@ -54,21 +54,15 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
         .cloned()
         .unwrap_or_else(|| "claude-opus-4-5".to_string());
 
-    let mcp_defaults = settings_map.get("mcp_defaults").and_then(|v| {
-        if v == "null" || v.is_empty() {
-            None
-        } else {
-            Some(v.clone())
-        }
-    });
+    let mcp_allowlist: Vec<String> = settings_map
+        .get("mcp_allowlist")
+        .and_then(|v| serde_json::from_str(v).ok())
+        .unwrap_or_default();
 
-    let skills_defaults = settings_map.get("skills_defaults").and_then(|v| {
-        if v == "null" || v.is_empty() {
-            None
-        } else {
-            Some(v.clone())
-        }
-    });
+    let skills_default: Vec<String> = settings_map
+        .get("skills_default")
+        .and_then(|v| serde_json::from_str(v).ok())
+        .unwrap_or_default();
 
     let updated_at = settings_map
         .get("updated_at")
@@ -79,8 +73,8 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
         project_path,
         recent_projects,
         model_default,
-        mcp_defaults,
-        skills_defaults,
+        mcp_allowlist,
+        skills_default,
         updated_at,
     })
 }
@@ -94,13 +88,19 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let recent_projects_json = serde_json::to_string(&settings.recent_projects)
         .map_err(|e| AppError::DatabaseError(format!("Failed to serialize recent_projects: {}", e)))?;
 
+    let mcp_allowlist_json = serde_json::to_string(&settings.mcp_allowlist)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to serialize mcp_allowlist: {}", e)))?;
+
+    let skills_default_json = serde_json::to_string(&settings.skills_default)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to serialize skills_default: {}", e)))?;
+
     // Build key-value pairs
     let pairs = vec![
         ("project_path", settings.project_path.as_ref().map(|s| s.as_str()).unwrap_or("null")),
         ("recent_projects", recent_projects_json.as_str()),
         ("model_default", &settings.model_default),
-        ("mcp_defaults", settings.mcp_defaults.as_ref().map(|s| s.as_str()).unwrap_or("null")),
-        ("skills_defaults", settings.skills_defaults.as_ref().map(|s| s.as_str()).unwrap_or("null")),
+        ("mcp_allowlist", mcp_allowlist_json.as_str()),
+        ("skills_default", skills_default_json.as_str()),
         ("updated_at", &settings.updated_at),
     ];
 
@@ -147,8 +147,8 @@ mod tests {
             project_path: Some("/path/to/project".to_string()),
             recent_projects: vec!["/path/to/project".to_string(), "/another/path".to_string()],
             model_default: "claude-opus-4-5".to_string(),
-            mcp_defaults: Some("mcp_config".to_string()),
-            skills_defaults: None,
+            mcp_allowlist: vec!["filesystem".to_string(), "web".to_string()],
+            skills_default: vec!["javascript".to_string()],
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -158,6 +158,7 @@ mod tests {
         assert_eq!(loaded.project_path, settings.project_path);
         assert_eq!(loaded.recent_projects, settings.recent_projects);
         assert_eq!(loaded.model_default, settings.model_default);
-        assert_eq!(loaded.mcp_defaults, settings.mcp_defaults);
+        assert_eq!(loaded.mcp_allowlist, settings.mcp_allowlist);
+        assert_eq!(loaded.skills_default, settings.skills_default);
     }
 }

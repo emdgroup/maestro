@@ -95,7 +95,7 @@ pub fn get_tasks(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at
+            "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, model_override, mcp_allowlist, skills_override, created_at, updated_at
              FROM tasks WHERE project_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -114,13 +114,17 @@ pub fn get_tasks(
                     "InProgress" => TaskStatus::InProgress,
                     "Review" => TaskStatus::Review,
                     "Done" => TaskStatus::Done,
+                    "Merging" => TaskStatus::Merging,
                     _ => TaskStatus::Backlog,
                 },
                 external_id: row.get(7)?,
                 is_imported: row.get(8)?,
                 import_source: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                model_override: row.get(10)?,
+                mcp_allowlist: row.get::<_, Option<String>>(11)?.and_then(|s| serde_json::from_str(&s).ok()),
+                skills_override: row.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str(&s).ok()),
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -184,7 +188,7 @@ pub fn create_task(
 
     // Fetch and return created task
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at
+        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, model_override, mcp_allowlist, skills_override, created_at, updated_at
          FROM tasks WHERE id = ?"
     )
     .map_err(|e| e.to_string())?;
@@ -202,13 +206,17 @@ pub fn create_task(
                 "InProgress" => TaskStatus::InProgress,
                 "Review" => TaskStatus::Review,
                 "Done" => TaskStatus::Done,
+                "Merging" => TaskStatus::Merging,
                 _ => TaskStatus::Backlog,
             },
             external_id: row.get(7)?,
             is_imported: row.get(8)?,
             import_source: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
+            model_override: row.get(10)?,
+            mcp_allowlist: row.get::<_, Option<String>>(11)?.and_then(|s| serde_json::from_str(&s).ok()),
+            skills_override: row.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str(&s).ok()),
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
         })
     })
     .map_err(|e| e.to_string())?;
@@ -266,7 +274,7 @@ pub fn update_task(
 
     // Fetch and return updated task
     conn.query_row(
-        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, created_at, updated_at FROM tasks WHERE id = ?",
+        "SELECT id, project_id, name, description, acceptance_criteria, skills, status, external_id, is_imported, import_source, model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks WHERE id = ?",
         [task_id],
         |row| {
             Ok(Task {
@@ -281,13 +289,17 @@ pub fn update_task(
                     "InProgress" => TaskStatus::InProgress,
                     "Review" => TaskStatus::Review,
                     "Done" => TaskStatus::Done,
+                    "Merging" => TaskStatus::Merging,
                     _ => TaskStatus::Backlog,
                 },
                 external_id: row.get(7)?,
                 is_imported: row.get(8)?,
                 import_source: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                model_override: row.get(10)?,
+                mcp_allowlist: row.get::<_, Option<String>>(11)?.and_then(|s| serde_json::from_str(&s).ok()),
+                skills_override: row.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str(&s).ok()),
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         },
     )

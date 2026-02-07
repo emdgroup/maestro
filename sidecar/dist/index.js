@@ -101,14 +101,25 @@ export async function getDiffBetweenBranches(repoPath, fromBranch, toBranch, con
     return mergeManager.getDiffBetweenBranches(repoPath, fromBranch, toBranch, contextLines);
 }
 /**
- * Attempt squash merge of branch to main
+ * Attempt squash merge of branch to main with task context
  *
  * @param repoPath - Path to git repository
- * @param branchName - Branch to merge
- * @returns Object with success boolean and conflicts
+ * @param taskId - Task ID for commit message
+ * @param taskBranchName - Branch name to merge
+ * @param taskName - Task name for commit message
+ * @returns MergeOutcome with success flag and conflict details
  */
-export async function squashMergeToMain(repoPath, branchName) {
-    return mergeManager.squashMergeToMain(repoPath, branchName);
+export async function squashMergeToMain(repoPath, taskId, taskBranchName, taskName) {
+    return mergeManager.squashMergeToMain(repoPath, taskId, taskBranchName, taskName);
+}
+/**
+ * Abort a merge operation
+ *
+ * @param repoPath - Path to git repository
+ * @returns true if abort succeeded, false otherwise
+ */
+export async function abortMergeOnConflict(repoPath) {
+    return mergeManager.abortMergeOnConflict(repoPath);
 }
 /**
  * CLI entry point for sidecar execution
@@ -137,6 +148,27 @@ async function main() {
             process.exit(1);
         }
     }
+    else if (args.includes("--merge")) {
+        // Parse: --merge <repoPath> <taskId> <branchName> <taskName>
+        const mergeIndex = args.indexOf("--merge") + 1;
+        const repoPath = args[mergeIndex];
+        const taskId = parseInt(args[mergeIndex + 1], 10);
+        const branchName = args[mergeIndex + 2];
+        const taskName = args[mergeIndex + 3];
+        if (!repoPath || isNaN(taskId) || !branchName || !taskName) {
+            console.error("Usage: node index.js --merge <repoPath> <taskId> <branchName> <taskName>");
+            process.exit(1);
+        }
+        try {
+            const outcome = await squashMergeToMain(repoPath, taskId, branchName, taskName);
+            console.log(JSON.stringify(outcome));
+            process.exit(0);
+        }
+        catch (error) {
+            console.error("Merge failed:", error instanceof Error ? error.message : String(error));
+            process.exit(1);
+        }
+    }
     else if (args.includes("--task-id")) {
         // Original task execution mode (for agent execution)
         console.log("Task execution mode not yet implemented in index.ts");
@@ -147,6 +179,7 @@ async function main() {
         console.log("GSD Sidecar - git worktree and merge operations");
         console.log("Usage:");
         console.log("  --get-diff <repoPath> <fromBranch> <toBranch> [contextLines]");
+        console.log("  --merge <repoPath> <taskId> <branchName> <taskName>");
         console.log("  --task-id <taskId>  (agent execution)");
         process.exit(0);
     }

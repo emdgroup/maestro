@@ -18,6 +18,12 @@ pub struct Task {
     #[ts(optional)]
     pub import_source: Option<String>,
     pub skills: Vec<String>,
+    #[ts(optional)]
+    pub model_override: Option<String>,
+    #[ts(optional)]
+    pub mcp_allowlist: Option<Vec<String>>,
+    #[ts(optional)]
+    pub skills_override: Option<Vec<String>>,
     pub created_at: String,
     pub updated_at: String,
 }
