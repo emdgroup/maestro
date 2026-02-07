@@ -34,6 +34,7 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   Ready: "Ready",
   InProgress: "In Progress",
   Review: "Review",
+  Merging: "Review",
   Done: "Done",
 };
 
@@ -137,6 +138,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
     return <div className="kanban-board">Loading tasks...</div>;
   }
 
+  // Helper: Get tasks for column, including Merging tasks in Review column
+  const getTasksForColumn = (status: TaskStatus): Task[] => {
+    const tasks = getTasksByStatus(status);
+
+    // Include Merging tasks in the Review column
+    if (status === "Review") {
+      const mergingTasks = getTasksByStatus("Merging");
+      return [...tasks, ...mergingTasks];
+    }
+
+    return tasks;
+  };
+
   return (
     <div>
       {errorMessage && (
@@ -162,7 +176,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
               key={status}
               columnId={status}
               columnTitle={COLUMN_TITLES[status]}
-              tasks={getTasksByStatus(status)}
+              tasks={getTasksForColumn(status)}
               projectPath={projectPath}
               onTaskClick={onTaskClick}
             />
