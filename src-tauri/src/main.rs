@@ -253,6 +253,14 @@ async fn request_changes(
     gsd_demo::ipc::handlers::request_changes(app_state, task_id, general_feedback, per_file_comments).await
 }
 
+#[tauri::command]
+async fn approve_task_and_merge(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<serde_json::Value, String> {
+    gsd_demo::ipc::handlers::approve_task_and_merge(app_state, task_id).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -300,7 +308,8 @@ fn main() {
             append_terminal_output,
             get_diff_for_review,
             save_task_review,
-            request_changes
+            request_changes,
+            approve_task_and_merge
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

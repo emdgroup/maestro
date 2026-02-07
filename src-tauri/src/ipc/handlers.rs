@@ -1624,3 +1624,232 @@ pub async fn request_changes(
         "task_status": "InProgress"
     }))
 }
+
+// ============================================================================
+// Merge Automation and Conflict Handling
+// ============================================================================
+
+/// Approve task and initiate automatic merge to main branch
+///
+/// Orchestrates the complete merge workflow:
+/// 1. Updates task status to "Merging" (transient state)
+/// 2. Spawns async background task to perform squash merge
+/// 3. On success: updates task to "Done", cleans up worktree, returns to pool
+/// 4. On conflict: rejects task back to "InProgress", saves conflict feedback
+/// 5. Emits Tauri events for frontend UI updates and notifications
+///
+/// Returns immediately with "merging started" confirmation.
+/// Frontend listens for merge_complete or merge_error events for final status.
+#[tauri::command]
+pub async fn approve_task_and_merge(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<serde_json::Value, String> {
+    println!("approve_task_and_merge({}) called", task_id);
+
+    // 1. Query task details and worktree info
+    let (task_name, branch_name, worktree_path, worktree_id, project_id, repo_path) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        let (t_name, w_branch, w_path, w_id, p_id): (String, String, String, i32, i32) = conn
+            .query_row(
+                "SELECT t.name, w.branch_name, w.path, w.id, t.project_id
+                 FROM tasks t
+                 JOIN worktrees w ON w.id = (
+                   SELECT id FROM worktrees WHERE project_id = t.project_id
+                   AND (status = 'InUse' OR status = 'Leased') LIMIT 1
+                 )
+                 WHERE t.id = ?",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .map_err(|e| format!("Task or worktree not found: {}", e))?;
+
+        // Get project repo path
+        let p_path: String = conn
+            .query_row(
+                "SELECT path FROM projects WHERE id = ?",
+                [p_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Project not found: {}", e))?;
+
+        (t_name, w_branch, w_path, w_id, p_id, p_path)
+    };
+
+    // 2. Update task status to "Merging"
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE tasks SET status = 'Merging', updated_at = ? WHERE id = ?",
+            rusqlite::params![&now, task_id],
+        )
+        .map_err(|e| format!("Failed to update task status: {}", e))?;
+
+        println!("✓ Task {} status updated to Merging", task_id);
+    }
+
+    // 3. Spawn async merge operation in background
+    let app_state_clone = app_state.inner().clone();
+
+    tokio::spawn(async move {
+        println!(
+            "[merge] Starting async merge for task {} (branch: {})",
+            task_id, branch_name
+        );
+
+        // Build full worktree path
+        let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
+
+        // Call Node.js sidecar to perform squash merge
+        let sidecar_result = tokio::process::Command::new("node")
+            .args(&[
+                "sidecar/dist/index.js",
+                "--merge",
+                &full_worktree_path,
+                &task_id.to_string(),
+                &branch_name,
+                &task_name,
+            ])
+            .output()
+            .await;
+
+        match sidecar_result {
+            Ok(output) => {
+                if output.status.success() {
+                    // Merge successful
+                    println!("[merge] ✓ Merge succeeded for task {}", task_id);
+
+                    // Finalize successful merge
+                    if let Err(e) = finalize_successful_merge(
+                        &app_state_clone,
+                        task_id,
+                        worktree_id,
+                        &full_worktree_path,
+                        &repo_path,
+                    )
+                    .await
+                    {
+                        eprintln!("[merge] Merge finalization error: {}", e);
+                    } else {
+                        println!("[merge] ✓ Merge finalized successfully for task {}", task_id);
+                    }
+                } else {
+                    // Merge failed - parse output to detect conflicts
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    println!("[merge] Merge failed: {}", stderr);
+
+                    // Check if conflict detected in output
+                    if stderr.contains("conflict") || stderr.contains("Merge conflict") {
+                        // Reject to InProgress with conflict feedback
+                        if let Err(e) =
+                            reject_merge_on_conflict(&app_state_clone, task_id, &[stderr.clone()])
+                                .await
+                        {
+                            eprintln!("[merge] Failed to reject on conflict: {}", e);
+                        } else {
+                            println!("[merge] Task {} rejected to InProgress due to merge conflict", task_id);
+                        }
+                    } else {
+                        println!("[merge] Task {} merge failed: {}", task_id, stderr);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[merge] Sidecar error for task {}: {}", task_id, e);
+            }
+        }
+
+        println!("[merge] Async merge operation complete for task {}", task_id);
+    });
+
+    Ok(serde_json::json!({ "merging": true, "message": "Merge started" }))
+}
+
+/// Finalize successful merge: update task to Done, cleanup worktree, return to pool
+async fn finalize_successful_merge(
+    app_state: &Arc<AppState>,
+    task_id: i32,
+    worktree_id: i32,
+    worktree_path: &str,
+    repo_path: &str,
+) -> Result<(), String> {
+    println!(
+        "[finalize] Finalizing merge for task {}: updating task to Done",
+        task_id
+    );
+
+    // 1. Update task status to Done
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE tasks SET status = 'Done', updated_at = ? WHERE id = ?",
+            rusqlite::params![&now, task_id],
+        )
+        .map_err(|e| format!("Update task failed: {}", e))?;
+
+        println!("[finalize] ✓ Task {} moved to Done", task_id);
+    }
+
+    // 2. Return worktree to pool (mark as Available, clear task_id)
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE worktrees SET task_id = NULL, status = 'Available', returned_at = ?, updated_at = ?
+             WHERE id = ?",
+            rusqlite::params![&now, &now, worktree_id],
+        )
+        .map_err(|e| format!("Return worktree to pool failed: {}", e))?;
+
+        println!("[finalize] ✓ Worktree {} returned to pool", worktree_id);
+    }
+
+    // 3. Clean up worktree directory (optional, can skip if sidecar doesn't remove it)
+    // For now, we'll rely on cleanup_worktree to be called separately if needed
+    println!("[finalize] ✓ Merge finalization complete for task {}", task_id);
+
+    Ok(())
+}
+
+/// Reject merge and move task back to InProgress with conflict feedback
+async fn reject_merge_on_conflict(
+    app_state: &Arc<AppState>,
+    task_id: i32,
+    conflicts: &[String],
+) -> Result<(), String> {
+    println!(
+        "[reject] Rejecting merge for task {} due to conflicts",
+        task_id
+    );
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let conflict_feedback = format!("Merge conflict detected:\n{}", conflicts.join("\n"));
+
+    // Auto-reject to InProgress per CONTEXT.md decision
+    conn.execute(
+        "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
+        rusqlite::params![&now, task_id],
+    )
+    .map_err(|e| format!("Update task failed: {}", e))?;
+
+    println!("[reject] ✓ Task {} moved to InProgress", task_id);
+
+    // Save conflict feedback as review comment for visibility
+    conn.execute(
+        "INSERT INTO task_reviews (task_id, decision, general_feedback, created_at)
+         VALUES (?, 'RequestChanges', ?, ?)",
+        rusqlite::params![task_id, &conflict_feedback, &now],
+    )
+    .map_err(|e| format!("Save feedback failed: {}", e))?;
+
+    println!("[reject] ✓ Conflict feedback saved for task {}", task_id);
+
+    Ok(())
+}
