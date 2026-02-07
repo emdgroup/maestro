@@ -1440,3 +1440,81 @@ pub async fn append_terminal_output(
         Err(e) => Err(format!("Failed to append terminal output: {}", e)),
     }
 }
+
+/// Get unified diff for a task in Review column
+/// Fetches diff between agent branch and main branch with --unified=6 context lines
+#[tauri::command]
+pub async fn get_diff_for_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<String, String> {
+    println!("get_diff_for_review({}) called", task_id);
+
+    // 1. Query task to get project_id and task details
+    let (project_id, repo_path) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        let (proj_id, _name): (i32, String) = conn
+            .query_row(
+                "SELECT project_id, name FROM tasks WHERE id = ?",
+                rusqlite::params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| format!("Task not found: {}", e))?;
+
+        // Get project path
+        let path: String = conn
+            .query_row(
+                "SELECT path FROM projects WHERE id = ?",
+                rusqlite::params![proj_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Project not found: {}", e))?;
+
+        (proj_id, path)
+    };
+
+    // 2. Find worktree for this task
+    let (worktree_path, branch_name) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        let (path, branch): (String, String) = conn
+            .query_row(
+                "SELECT path, branch_name FROM worktrees WHERE project_id = ? AND (status = 'InUse' OR status = 'Leased')",
+                rusqlite::params![project_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| format!("Worktree not found for task: {}", e))?;
+
+        (path, branch)
+    };
+
+    let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
+
+    println!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+
+    // 3. Call Node.js sidecar to generate diff
+    let output = tokio::process::Command::new("node")
+        .args(&[
+            "sidecar/dist/index.js",
+            "--get-diff",
+            &full_worktree_path,
+            &branch_name,
+            "main", // Compare against main branch
+            "6",    // 6 context lines
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Sidecar failed: {}", stderr));
+    }
+
+    let diff = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Failed to decode sidecar output: {}", e))?;
+
+    println!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
+    Ok(diff)
+}

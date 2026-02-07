@@ -224,6 +224,14 @@ async fn append_terminal_output(
     gsd_demo::ipc::handlers::append_terminal_output(app_state, task_id, output).await
 }
 
+#[tauri::command]
+async fn get_diff_for_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<String, String> {
+    gsd_demo::ipc::handlers::get_diff_for_review(app_state, task_id).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -268,7 +276,8 @@ fn main() {
             attach_terminal,
             send_terminal_input,
             resize_terminal,
-            append_terminal_output
+            append_terminal_output,
+            get_diff_for_review
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
