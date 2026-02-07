@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "./ReviewModal";
+import { TaskSettingsModal } from "./TaskSettingsModal";
 import "../styles/KanbanBoard.css";
 
 interface KanbanBoardProps {
@@ -48,6 +49,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
+  const [selectedTaskForSettings, setSelectedTaskForSettings] = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -220,6 +222,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
                 setSelectedTaskName(taskName);
                 setReviewModalOpen(true);
               }}
+              onSettingsClick={(task) => setSelectedTaskForSettings(task)}
             />
           ))}
         </div>
@@ -241,6 +244,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
             setSelectedTaskId(null);
             setSelectedTaskName("");
           }}
+        />
+      )}
+      {selectedTaskForSettings && (
+        <TaskSettingsModal
+          isOpen={selectedTaskForSettings !== null}
+          onClose={() => setSelectedTaskForSettings(null)}
+          task={selectedTaskForSettings}
+          projectId={projectId}
         />
       )}
     </div>

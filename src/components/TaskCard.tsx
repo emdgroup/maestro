@@ -4,6 +4,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Task } from "../types/bindings";
 import { useBoardStore } from "../store/boardStore";
 import { showErrorToast, showSuccessToast } from "./ErrorToast";
+import { TaskContextMenu } from "./TaskContextMenu";
 
 interface TaskCardProps {
   task: Task;
@@ -11,10 +12,12 @@ interface TaskCardProps {
   projectPath?: string;
   onTaskClick?: (task: Task) => void;
   onReviewClick?: (taskId: number, taskName: string) => void;
+  onSettingsClick?: (task: Task) => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick, onReviewClick }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick, onReviewClick, onSettingsClick }) => {
   const [isExecuting, setIsExecuting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
 
   // Don't make imported tasks draggable - they are read-only
@@ -91,13 +94,49 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       {...(!isDragging && !task.is_imported ? listeners : {})}
       {...(!isDragging && !task.is_imported ? attributes : {})}
       className={`task-card ${task.is_imported ? 'task-card-imported' : ''}`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuOpen(true);
+      }}
+      onMouseLeave={() => setMenuOpen(false)}
     >
-      <div
-        className="task-card-title"
-        onClick={() => onTaskClick?.(task)}
-        style={{ cursor: 'pointer' }}
-      >
-        {task.name}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px' }}>
+        <div
+          className="task-card-title"
+          onClick={() => onTaskClick?.(task)}
+          style={{ cursor: 'pointer', flex: 1 }}
+        >
+          {task.name}
+        </div>
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontSize: '18px',
+              color: 'var(--text-secondary, #6b7280)',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              (e.target as HTMLButtonElement).style.color = 'var(--text-primary, #1f2937)';
+            }}
+            onMouseLeave={(e) => {
+              (e.target as HTMLButtonElement).style.color = 'var(--text-secondary, #6b7280)';
+            }}
+            title="Task menu"
+          >
+            ⋮
+          </button>
+          <TaskContextMenu
+            task={task}
+            isOpen={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            onEditSettings={() => onSettingsClick?.(task)}
+          />
+        </div>
       </div>
       <div className="task-card-badges">
         {task.status !== 'Backlog' && task.status !== 'Ready' && (
