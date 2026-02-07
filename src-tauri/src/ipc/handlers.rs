@@ -3,7 +3,7 @@ use tauri::State;
 use base64::Engine;
 use tokio::io::AsyncReadExt;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome};
 use crate::db::AppState;
 use crate::process::spawn_agent_cli_pty;
 
@@ -1719,42 +1719,53 @@ pub async fn approve_task_and_merge(
         match sidecar_result {
             Ok(output) => {
                 if output.status.success() {
-                    // Merge successful
-                    println!("[merge] ✓ Merge succeeded for task {}", task_id);
+                    // Parse stdout as JSON to extract MergeOutcome
+                    let stdout = String::from_utf8_lossy(&output.stdout);
 
-                    // Finalize successful merge
-                    if let Err(e) = finalize_successful_merge(
-                        &app_state_clone,
-                        task_id,
-                        worktree_id,
-                        &full_worktree_path,
-                        &repo_path,
-                    )
-                    .await
-                    {
-                        eprintln!("[merge] Merge finalization error: {}", e);
-                    } else {
-                        println!("[merge] ✓ Merge finalized successfully for task {}", task_id);
+                    match serde_json::from_str::<MergeOutcome>(&stdout) {
+                        Ok(merge_outcome) => {
+                            if merge_outcome.success {
+                                // Merge succeeded - cleanup and mark task Done
+                                println!("[merge] ✓ Merge succeeded for task {}", task_id);
+
+                                if let Err(e) = finalize_successful_merge(
+                                    &app_state_clone,
+                                    task_id,
+                                    worktree_id,
+                                    &full_worktree_path,
+                                    &repo_path,
+                                ).await {
+                                    eprintln!("[merge] Merge finalization error: {}", e);
+                                } else {
+                                    println!("[merge] ✓ Merge finalized successfully for task {}", task_id);
+                                }
+                            } else if !merge_outcome.conflicts.is_empty() {
+                                // Merge had conflicts - reject and move back to InProgress
+                                println!("[merge] Merge conflict detected for task {}", task_id);
+
+                                if let Err(e) = reject_merge_on_conflict(
+                                    &app_state_clone,
+                                    task_id,
+                                    &merge_outcome.conflicts,
+                                ).await {
+                                    eprintln!("[merge] Failed to reject on conflict: {}", e);
+                                } else {
+                                    println!("[merge] Task {} rejected to InProgress due to merge conflict", task_id);
+                                }
+                            } else {
+                                // Other error - leave task in Merging state and log
+                                eprintln!("[merge] Merge error: {}", merge_outcome.message.unwrap_or_default());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[merge] Failed to parse merge outcome JSON: {}", e);
+                            eprintln!("[merge] stdout: {}", stdout);
+                        }
                     }
                 } else {
-                    // Merge failed - parse output to detect conflicts
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    println!("[merge] Merge failed: {}", stderr);
-
-                    // Check if conflict detected in output
-                    if stderr.contains("conflict") || stderr.contains("Merge conflict") {
-                        // Reject to InProgress with conflict feedback
-                        if let Err(e) =
-                            reject_merge_on_conflict(&app_state_clone, task_id, &[stderr.clone()])
-                                .await
-                        {
-                            eprintln!("[merge] Failed to reject on conflict: {}", e);
-                        } else {
-                            println!("[merge] Task {} rejected to InProgress due to merge conflict", task_id);
-                        }
-                    } else {
-                        println!("[merge] Task {} merge failed: {}", task_id, stderr);
-                    }
+                    // Merge process exited with error
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    eprintln!("[merge] Sidecar exited with error for task {}: {}", task_id, stderr);
                 }
             }
             Err(e) => {
