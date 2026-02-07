@@ -3,7 +3,7 @@ use tauri::State;
 use base64::Engine;
 use tokio::io::AsyncReadExt;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision};
 use crate::db::AppState;
 use crate::process::spawn_agent_cli_pty;
 
@@ -1517,4 +1517,110 @@ pub async fn get_diff_for_review(
 
     println!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
     Ok(diff)
+}
+
+/// Save task review with feedback and per-file comments
+#[tauri::command]
+pub async fn save_task_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    decision: String,
+    general_feedback: Option<String>,
+    per_file_comments: Option<Vec<(String, String)>>,
+) -> Result<serde_json::Value, String> {
+    println!("save_task_review({}, decision={}) called", task_id, decision);
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Insert into task_reviews
+    conn.execute(
+        "INSERT INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at)
+         VALUES (?, ?, ?, ?, ?)",
+        rusqlite::params![task_id, &decision, &general_feedback, &now, &now],
+    )
+    .map_err(|e| format!("Insert review failed: {}", e))?;
+
+    // Get review_id
+    let review_id: i32 = conn
+        .query_row(
+            "SELECT id FROM task_reviews WHERE task_id = ?",
+            [task_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    // Insert per-file comments if provided
+    if let Some(comments) = per_file_comments {
+        for (file_path, comment) in comments {
+            conn.execute(
+                "INSERT INTO review_comments (review_id, file_path, comment, created_at)
+                 VALUES (?, ?, ?, ?)",
+                rusqlite::params![review_id, file_path, comment, &now],
+            )
+            .map_err(|e| format!("Insert comment failed: {}", e))?;
+        }
+    }
+
+    println!("✓ Saved review for task {}: review_id={}", task_id, review_id);
+    Ok(serde_json::json!({ "success": true, "review_id": review_id }))
+}
+
+/// Request changes on a task (saves feedback and moves task back to InProgress)
+#[tauri::command]
+pub async fn request_changes(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    general_feedback: Option<String>,
+    per_file_comments: Option<Vec<(String, String)>>,
+) -> Result<serde_json::Value, String> {
+    println!("request_changes({}) called", task_id);
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Save feedback with RequestChanges decision
+    conn.execute(
+        "INSERT INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at)
+         VALUES (?, 'RequestChanges', ?, ?, ?)",
+        rusqlite::params![task_id, general_feedback, &now, &now],
+    )
+    .map_err(|e| format!("Insert review failed: {}", e))?;
+
+    // Get review_id and save per-file comments
+    let review_id: i32 = conn
+        .query_row(
+            "SELECT id FROM task_reviews WHERE task_id = ?",
+            [task_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if let Some(comments) = per_file_comments {
+        for (file_path, comment) in comments {
+            conn.execute(
+                "INSERT INTO review_comments (review_id, file_path, comment, created_at)
+                 VALUES (?, ?, ?, ?)",
+                rusqlite::params![review_id, file_path, comment, &now],
+            )
+            .map_err(|e| format!("Insert comment failed: {}", e))?;
+        }
+    }
+
+    // Update task status to InProgress
+    conn.execute(
+        "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
+        rusqlite::params![&now, task_id],
+    )
+    .map_err(|e| format!("Update task status failed: {}", e))?;
+
+    println!(
+        "✓ Requested changes for task {}: review_id={}, status=InProgress",
+        task_id, review_id
+    );
+    Ok(serde_json::json!({
+        "success": true,
+        "review_id": review_id,
+        "task_status": "InProgress"
+    }))
 }

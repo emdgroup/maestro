@@ -232,6 +232,27 @@ async fn get_diff_for_review(
     gsd_demo::ipc::handlers::get_diff_for_review(app_state, task_id).await
 }
 
+#[tauri::command]
+async fn save_task_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    decision: String,
+    general_feedback: Option<String>,
+    per_file_comments: Option<Vec<(String, String)>>,
+) -> Result<serde_json::Value, String> {
+    gsd_demo::ipc::handlers::save_task_review(app_state, task_id, decision, general_feedback, per_file_comments).await
+}
+
+#[tauri::command]
+async fn request_changes(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    general_feedback: Option<String>,
+    per_file_comments: Option<Vec<(String, String)>>,
+) -> Result<serde_json::Value, String> {
+    gsd_demo::ipc::handlers::request_changes(app_state, task_id, general_feedback, per_file_comments).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -277,7 +298,9 @@ fn main() {
             send_terminal_input,
             resize_terminal,
             append_terminal_output,
-            get_diff_for_review
+            get_diff_for_review,
+            save_task_review,
+            request_changes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
