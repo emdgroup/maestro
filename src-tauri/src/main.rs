@@ -192,8 +192,9 @@ async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     output_channel: tauri::ipc::Channel<String>,
+    include_history: Option<bool>,
 ) -> Result<(), String> {
-    gsd_demo::ipc::handlers::attach_terminal(app_state, task_id, output_channel).await
+    gsd_demo::ipc::handlers::attach_terminal(app_state, task_id, output_channel, include_history).await
 }
 
 #[tauri::command]
@@ -213,6 +214,14 @@ async fn resize_terminal(
     rows: u16,
 ) -> Result<(), String> {
     gsd_demo::ipc::handlers::resize_terminal(app_state, task_id, cols, rows).await
+}
+
+#[tauri::command]
+async fn detach_terminal(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::detach_terminal(app_state, task_id).await
 }
 
 #[tauri::command]

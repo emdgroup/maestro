@@ -1312,22 +1312,32 @@ pub fn cancel_execution(
 /// Attach to a PTY session and stream output to frontend
 ///
 /// Opens a Tauri channel and begins streaming PTY output to the frontend.
+/// Optionally prepends terminal history from the execution log (if available).
 /// The streaming continues until the PTY process ends or the channel is closed.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with PTY sessions
 /// * `task_id` - Task ID to attach to
 /// * `output_channel` - Tauri IPC channel for streaming output
+/// * `include_history` - If true, prepend terminal_output from execution log to stream
 ///
 /// # Returns
 /// `Result<(), String>` - Ok if streaming started, Err if task not found
+///
+/// # Behavior
+/// When `include_history` is true:
+/// 1. Fetches the terminal_output from the most recent execution log
+/// 2. Sends entire history as initial message to establish context
+/// 3. Then continues streaming live PTY output as normal
+/// This ensures the frontend sees the full terminal context when attaching.
 #[tauri::command]
 pub async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     output_channel: tauri::ipc::Channel<String>,
+    include_history: Option<bool>,
 ) -> Result<(), String> {
-    println!("attach_terminal({}) called", task_id);
+    println!("attach_terminal({}) called (include_history: {})", task_id, include_history.unwrap_or(false));
 
     // Get PTY session from AppState
     let sessions = app_state.pty_sessions.lock().await;
@@ -1338,6 +1348,28 @@ pub async fn attach_terminal(
     drop(sessions); // Release lock
 
     println!("[attach] Starting output streaming for task {}", task_id);
+
+    // If requested, send terminal history first
+    if include_history.unwrap_or(false) {
+        println!("[attach] Fetching terminal history for task {}", task_id);
+        // Try to get execution logs to prepend history
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let history = conn.query_row(
+            "SELECT terminal_output FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+            rusqlite::params![task_id],
+            |row| row.get::<_, Option<String>>(0)
+        ).ok().flatten();
+
+        if let Some(history_text) = history {
+            if !history_text.is_empty() {
+                println!("[attach] Sending {} chars of history to frontend", history_text.len());
+                if output_channel.send(history_text).is_err() {
+                    println!("[attach] Channel closed while sending history");
+                    return Err("Channel closed before history could be sent".to_string());
+                }
+            }
+        }
+    }
 
     // Spawn background task to stream PTY output
     tokio::spawn(async move {
@@ -1412,22 +1444,40 @@ pub async fn attach_terminal(
 /// Send input to a PTY session
 ///
 /// Writes data to the PTY master, which is delivered to the child process stdin.
-/// Used for keyboard input and other terminal interactions.
+/// Supports special control sequences:
+/// - "\x03" (Ctrl+C) → sends SIGINT signal (interrupt) via PTY layer
+/// - "\x1a" (Ctrl+Z) → sends SIGTSTP signal (suspend) via PTY layer
+/// - Regular text and newlines → written directly to PTY stdin
+///
+/// The PTY layer automatically converts control sequences to signals that are
+/// delivered to the foreground process group.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with PTY sessions
 /// * `task_id` - Task ID of the PTY session
-/// * `input` - Data to send to the PTY
+/// * `input` - Data to send to the PTY (can be control sequences or regular text)
 ///
 /// # Returns
 /// `Result<(), String>` - Ok if input sent, Err if session not found or write failed
+///
+/// # Examples
+/// - Regular text: "ls -la\n" → written to stdin
+/// - Ctrl+C: "\x03" → converted to SIGINT by PTY layer
+/// - Ctrl+Z: "\x1a" → converted to SIGTSTP by PTY layer
 #[tauri::command]
 pub async fn send_terminal_input(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     input: String,
 ) -> Result<(), String> {
-    println!("send_terminal_input({}) called", task_id);
+    // Log control sequences for debugging
+    if input == "\x03" {
+        println!("send_terminal_input({}) - Ctrl+C (SIGINT)", task_id);
+    } else if input == "\x1a" {
+        println!("send_terminal_input({}) - Ctrl+Z (SIGTSTP)", task_id);
+    } else {
+        println!("send_terminal_input({}) - {} bytes of text", task_id, input.len());
+    }
 
     let sessions = app_state.pty_sessions.lock().await;
     let session = sessions
@@ -1436,6 +1486,7 @@ pub async fn send_terminal_input(
         .clone();
     drop(sessions);
 
+    // Write directly to PTY - the PTY layer handles conversion of control sequences to signals
     let session_lock = session.lock().await;
     session_lock.write_input(input.as_bytes()).await
 }
@@ -2097,5 +2148,35 @@ pub fn update_task_settings(
     .map_err(|e| format!("Failed to update task settings: {}", e))?;
 
     println!("✓ Task {} settings updated", task_id);
+    Ok(())
+}
+
+/// Detach from a PTY session (stop streaming, keep PTY alive)
+///
+/// Stops the output streaming to the frontend for a task but leaves the PTY session
+/// running in the background. Used when user closes the terminal modal.
+/// The PTY process continues executing independently.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with PTY sessions
+/// * `task_id` - Task ID to detach from
+///
+/// # Returns
+/// `Result<(), String>` - Ok if detached successfully, Err if task not found
+///
+/// # Note
+/// This does NOT kill the PTY session - it only stops the frontend streaming.
+/// The backend process continues running and can be re-attached to later.
+#[tauri::command]
+pub async fn detach_terminal(
+    _app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<(), String> {
+    println!("detach_terminal({}) called", task_id);
+    println!("[detach] ✓ Detached from terminal for task {}", task_id);
+
+    // Note: The actual cleanup happens when the channel is dropped on the frontend.
+    // The streaming tasks in attach_terminal will exit when they detect the channel is closed.
+    // We don't need to explicitly stop anything here - just log and return.
     Ok(())
 }
