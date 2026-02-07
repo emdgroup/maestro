@@ -191,6 +191,37 @@ async function main(): Promise<void> {
       );
       process.exit(1);
     }
+  } else if (args.includes("--merge")) {
+    // Parse: --merge <repoPath> <taskId> <branchName> <taskName>
+    const mergeIndex = args.indexOf("--merge") + 1;
+    const repoPath = args[mergeIndex];
+    const taskId = parseInt(args[mergeIndex + 1], 10);
+    const branchName = args[mergeIndex + 2];
+    const taskName = args[mergeIndex + 3];
+
+    if (!repoPath || isNaN(taskId) || !branchName || !taskName) {
+      console.error(
+        "Usage: node index.js --merge <repoPath> <taskId> <branchName> <taskName>"
+      );
+      process.exit(1);
+    }
+
+    try {
+      const outcome = await squashMergeToMain(
+        repoPath,
+        taskId,
+        branchName,
+        taskName
+      );
+      console.log(JSON.stringify(outcome));
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        "Merge failed:",
+        error instanceof Error ? error.message : String(error)
+      );
+      process.exit(1);
+    }
   } else if (args.includes("--task-id")) {
     // Original task execution mode (for agent execution)
     console.log("Task execution mode not yet implemented in index.ts");
@@ -200,6 +231,7 @@ async function main(): Promise<void> {
     console.log("GSD Sidecar - git worktree and merge operations");
     console.log("Usage:");
     console.log("  --get-diff <repoPath> <fromBranch> <toBranch> [contextLines]");
+    console.log("  --merge <repoPath> <taskId> <branchName> <taskName>");
     console.log("  --task-id <taskId>  (agent execution)");
     process.exit(0);
   }
