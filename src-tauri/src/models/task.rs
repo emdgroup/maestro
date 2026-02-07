@@ -40,5 +40,6 @@ pub enum TaskStatus {
     Ready,
     InProgress,
     Review,
+    Merging,
     Done,
 }

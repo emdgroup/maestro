@@ -10,7 +10,7 @@ export type Project = {
   created_at: string;
 };
 
-export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done";
+export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Merging" | "Done";
 
 export type Task = {
   id: number;
