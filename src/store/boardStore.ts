@@ -7,12 +7,16 @@ export interface BoardState {
   tasks: Task[];
   activeTerminalTaskId: number | null;
   isTerminalOpen: boolean;
+  retryingTaskIds: Set<number>;
+  abortingTaskIds: Set<number>;
   loadTasks: (tasks: Task[]) => void;
   updateTaskStatus: (taskId: number, newStatus: TaskStatus) => void;
   addTask: (task: Task) => void;
   getTasks: () => Task[];
   getTasksByStatus: (status: TaskStatus) => Task[];
   executeTask: (projectId: number, taskId: number, repoPath: string) => Promise<number>;
+  resumeExecution: (projectId: number, taskId: number, repoPath: string) => Promise<number>;
+  abortExecution: (projectId: number, taskId: number) => Promise<void>;
   openTerminal: (taskId: number) => void;
   closeTerminal: () => Promise<void>;
 }
@@ -22,6 +26,8 @@ export const useBoardStore = create<BoardState>()(
     tasks: [],
     activeTerminalTaskId: null,
     isTerminalOpen: false,
+    retryingTaskIds: new Set<number>(),
+    abortingTaskIds: new Set<number>(),
 
     loadTasks: (tasks: Task[]) =>
       set((state) => {
@@ -70,6 +76,69 @@ export const useBoardStore = create<BoardState>()(
       } catch (error) {
         console.error("Execute task failed:", error);
         throw error;
+      }
+    },
+
+    resumeExecution: async (projectId: number, taskId: number, repoPath: string) => {
+      try {
+        // Track retrying state
+        set((state) => {
+          state.retryingTaskIds.add(taskId);
+        });
+
+        // Invoke spawn_agent_execution to retry
+        const executionLogId = await invoke<number>("spawn_agent_execution", {
+          project_id: projectId,
+          task_id: taskId,
+          repo_path: repoPath,
+        });
+
+        // Update task status to InProgress
+        set((state) => {
+          const task = state.tasks.find((t) => t.id === taskId);
+          if (task) {
+            task.status = "InProgress";
+          }
+        });
+
+        return executionLogId;
+      } catch (error) {
+        console.error("Resume execution failed:", error);
+        throw error;
+      } finally {
+        set((state) => {
+          state.retryingTaskIds.delete(taskId);
+        });
+      }
+    },
+
+    abortExecution: async (_projectId: number, taskId: number) => {
+      try {
+        set((state) => {
+          state.abortingTaskIds.add(taskId);
+        });
+
+        // Call cancel_execution handler if available, otherwise just mark as Done
+        try {
+          await invoke("cancel_execution", { task_id: taskId });
+        } catch (err) {
+          console.warn("cancel_execution handler not available, marking task manually");
+        }
+
+        // Update task status to Done
+        set((state) => {
+          const task = state.tasks.find((t) => t.id === taskId);
+          if (task) {
+            task.status = "Done";
+          }
+        });
+      } catch (error) {
+        console.error("Abort execution failed:", error);
+        throw error;
+      } finally {
+        set((state) => {
+          state.abortingTaskIds.delete(taskId);
+        });
       }
     },
 

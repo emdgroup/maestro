@@ -17,6 +17,8 @@ interface TaskCardProps {
 
 export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, projectPath = "", onTaskClick, onReviewClick, onSettingsClick }) => {
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isAborting, setIsAborting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
 
@@ -63,6 +65,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         return { backgroundColor: '#e9d5ff', color: '#7e22ce' }; // Purple
       case 'Done':
         return { backgroundColor: '#dcfce7', color: '#166534' }; // Green
+      case 'Failed':
+        return { backgroundColor: '#fee2e2', color: '#991b1b' }; // Red
       default:
         return { backgroundColor: '#f3f4f6', color: '#374151' }; // Gray
     }
@@ -78,6 +82,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         return '⚙️ Merging';
       case 'Done':
         return '✅ Done';
+      case 'Failed':
+        return '❌ Failed';
       case 'Backlog':
         return '📋 Backlog';
       case 'Ready':
@@ -87,13 +93,43 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
     }
   };
 
+  const handleResume = async () => {
+    setIsRetrying(true);
+    try {
+      showSuccessToast(`Retrying: ${task.name}`);
+      await store.resumeExecution(task.project_id, task.id, projectPath);
+    } catch (error) {
+      showErrorToast(`Resume failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const handleAbort = async () => {
+    setIsAborting(true);
+    try {
+      showSuccessToast(`Task aborted: ${task.name}`);
+      await store.abortExecution(task.project_id, task.id);
+    } catch (error) {
+      showErrorToast(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsAborting(false);
+    }
+  };
+
   return (
     <div
       ref={!isDragging ? setNodeRef : undefined}
-      style={style}
-      {...(!isDragging && !task.is_imported ? listeners : {})}
-      {...(!isDragging && !task.is_imported ? attributes : {})}
-      className={`task-card ${task.is_imported ? 'task-card-imported' : ''}`}
+      style={{
+        ...style,
+        ...(task.status === 'Failed' && {
+          backgroundColor: '#fef2f2',
+          border: '1px solid #fecaca',
+        }),
+      }}
+      {...(!isDragging && !task.is_imported && task.status !== 'Failed' ? listeners : {})}
+      {...(!isDragging && !task.is_imported && task.status !== 'Failed' ? attributes : {})}
+      className={`task-card ${task.is_imported ? 'task-card-imported' : ''} ${task.status === 'Failed' ? 'task-card-failed' : ''}`}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenuOpen(true);
@@ -162,6 +198,27 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           <span className="badge-readonly">🔒 Read-only (imported)</span>
         )}
       </div>
+
+      {task.status === 'Failed' && (
+        <div style={{
+          marginTop: '8px',
+          padding: '6px 8px',
+          backgroundColor: '#fff5f5',
+          border: '1px solid #feb2b2',
+          borderRadius: '4px',
+          fontSize: '11px',
+          color: '#742a2a',
+          maxHeight: '60px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'normal',
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>Error Details:</div>
+          <div style={{ fontSize: '10px', opacity: 0.8 }}>
+            Click task to view full error details and suggestions
+          </div>
+        </div>
+      )}
       {task.status === 'Ready' && (
         <button
           onClick={handleExecute}
@@ -201,6 +258,67 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         >
           Review
         </button>
+      )}
+      {task.status === 'Failed' && (
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleResume}
+            disabled={isRetrying || isAborting}
+            style={{
+              flex: 1,
+              minWidth: '60px',
+              padding: '6px 8px',
+              backgroundColor: isRetrying ? '#ccc' : '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isRetrying ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              fontWeight: 'bold',
+            }}
+            title="Retry execution with same command"
+          >
+            {isRetrying ? '⏳' : '🔄 Resume'}
+          </button>
+          <button
+            onClick={handleAbort}
+            disabled={isAborting || isRetrying}
+            style={{
+              flex: 1,
+              minWidth: '60px',
+              padding: '6px 8px',
+              backgroundColor: isAborting ? '#ccc' : '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isAborting ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              fontWeight: 'bold',
+            }}
+            title="Mark task as failed and stop recovery"
+          >
+            {isAborting ? '⏳' : '⏹️ Abort'}
+          </button>
+          <button
+            onClick={() => onTaskClick?.(task)}
+            disabled={isRetrying || isAborting}
+            style={{
+              flex: 1,
+              minWidth: '80px',
+              padding: '6px 8px',
+              backgroundColor: (isRetrying || isAborting) ? '#ccc' : '#8b5cf6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: (isRetrying || isAborting) ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              fontWeight: 'bold',
+            }}
+            title="Attach terminal to debug"
+          >
+            🔌 Terminal
+          </button>
+        </div>
       )}
     </div>
   );

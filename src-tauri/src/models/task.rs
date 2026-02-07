@@ -47,6 +47,7 @@ pub enum TaskStatus {
     InProgress,
     Review,
     Merging,
+    Failed,
     Done,
 }
 

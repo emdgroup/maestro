@@ -39,6 +39,7 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   InProgress: "In Progress",
   Review: "Review",
   Merging: "Review",
+  Failed: "Failed",
   Done: "Done",
 };
 
