@@ -142,12 +142,14 @@ Plans:
   3. System automatically merges approved branch to main
   4. System automatically cleans up worktree and branch after successful merge
 
-**Plans**: 3 plans
+**Plans**: 5 plans (3 main + 2 gap closure)
 
 Plans:
-- [ ] 06-01-PLAN.md — Diff viewer infrastructure with @git-diff-view/react and file tree navigation
-- [ ] 06-02-PLAN.md — Approval workflow with feedback capture and request-changes state transition
-- [ ] 06-03-PLAN.md — Automatic squash merge, conflict detection, and worktree cleanup
+- [x] 06-01-PLAN.md — Diff viewer infrastructure with @git-diff-view/react and file tree navigation
+- [x] 06-02-PLAN.md — Approval workflow with feedback capture and request-changes state transition
+- [x] 06-03-PLAN.md — Automatic squash merge, conflict detection, and worktree cleanup
+- [ ] 06-04-PLAN.md (gap closure) — Integrate ReviewModal into UI (Review button on TaskCard)
+- [ ] 06-05-PLAN.md (gap closure) — Implement sidecar --merge CLI handler and merge outcome parsing
 
 ### Phase 7: Configuration Management
 **Goal**: Enable users to control agent capabilities through task and project-level configuration.
@@ -223,13 +225,14 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Git Worktree Infrastructure | 4 | ✓ Complete | 2026-02-05 |
 | 4. Agent Execution | 4 | ✓ Complete | 2026-02-06 |
 | 5. Real-time Monitoring | 3 | ✓ Complete | 2026-02-06 |
-| 6. Review & Merge Workflow | 3 | Not started | — |
+| 6. Review & Merge Workflow | 5 (3 main + 2 gap closure) | Gap closure in progress | — |
 | 7. Configuration Management | 4 | Not started | — |
 | 8. Error Handling & Polish | 3 | Not started | — |
 | 9. Remote Project Support | 4 | Not started | — |
 
-**Total Plans:** 31
-**Completed Plans:** 20/31 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3)
+**Total Plans:** 33 (31 main + 2 gap closure plans for Phase 6)
+**Completed Plans:** 20/33 main (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 3/3 main)
+**Gap Closure Plans:** 2/2 pending (06-04, 06-05)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
