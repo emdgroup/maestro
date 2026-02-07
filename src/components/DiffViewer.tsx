@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
+import { DiffView, DiffModeEnum } from "@git-diff-view/react";
 import { getDiffViewHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
-import { DiffFile as DiffFileData } from "../types/review";
+import { DiffFile } from "../types/review";
 import "./DiffViewer.css";
 
 interface DiffViewerProps {
-  diffFile: DiffFileData | null;
+  diffFile: DiffFile | null;
   loading: boolean;
   error?: string;
 }
@@ -18,7 +18,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 }) => {
   const [highlighter, setHighlighter] = useState<any>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
-  const [diffViewFile, setDiffViewFile] = useState<DiffFile | null>(null);
 
   // Load syntax highlighter on mount
   useEffect(() => {
@@ -36,16 +35,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
     loadHighlighter();
   }, []);
-
-  // Convert DiffFileData to DiffView-compatible format when diffFile changes
-  useEffect(() => {
-    if (diffFile) {
-      const viewFile = DiffFile.createInstance(diffFile);
-      setDiffViewFile(viewFile);
-    } else {
-      setDiffViewFile(null);
-    }
-  }, [diffFile]);
 
   if (highlighterError) {
     return (
@@ -73,7 +62,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     );
   }
 
-  if (!diffViewFile) {
+  if (!diffFile) {
     return (
       <div className="diff-viewer-container">
         <div className="diff-viewer-empty">
@@ -96,7 +85,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   return (
     <div className="diff-viewer-container">
       <DiffView
-        diffFile={diffViewFile}
+        data={diffFile}
         diffViewMode={DiffModeEnum.Unified}
         diffViewTheme="light"
         diffViewHighlight
