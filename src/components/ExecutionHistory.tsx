@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ExecutionLog } from '../types/bindings';
-import { showErrorToast } from './ErrorToast';
+import { showErrorToast, showSuccessToast } from './ErrorToast';
+import { useBoardStore } from '../store/boardStore';
 import '../styles/ExecutionHistory.css';
 
 interface ExecutionHistoryProps {
@@ -41,6 +42,7 @@ export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHi
   const [retrying, setRetrying] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const previousLogsRef = useRef<ExecutionLog[]>([]);
+  const store = useBoardStore();
 
   useEffect(() => {
     loadExecutionLogs();
@@ -113,6 +115,31 @@ export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHi
     }
   };
 
+  const getErrorTypeColor = (errorType: string): string => {
+    switch (errorType) {
+      case 'CompilationError':
+        return '#f97316'; // Orange
+      case 'MissingDependency':
+        return '#ef4444'; // Red
+      case 'RuntimeError':
+        return '#ef4444'; // Red
+      case 'Timeout':
+        return '#eab308'; // Yellow
+      case 'ProcessCrash':
+        return '#ef4444'; // Red
+      default:
+        return '#6b7280'; // Gray
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      showSuccessToast('Copied to clipboard');
+    }).catch(() => {
+      showErrorToast('Failed to copy');
+    });
+  };
+
   if (loading) {
     return <div className="execution-history">Loading execution history...</div>;
   }
@@ -180,7 +207,141 @@ export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHi
                 </button>
               </div>
             )}
+
+            {selectedLog.status === 'failed' && (
+              <button
+                onClick={() => {
+                  try {
+                    store.resumeExecution(projectId, taskId, projectPath);
+                    showSuccessToast('Retrying execution...');
+                  } catch (err) {
+                    showErrorToast(`Failed to resume: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                }}
+                className="retry-button"
+                disabled={retrying}
+                style={{ marginTop: '12px', width: '100%' }}
+              >
+                {retrying ? '⏳ Retrying...' : '🔄 Resume Execution'}
+              </button>
+            )}
           </div>
+
+          {selectedLog.error_event && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '6px',
+              marginBottom: '12px',
+            }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#991b1b' }}>Error Details</h4>
+
+              <div style={{ marginBottom: '8px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: '4px 8px',
+                    backgroundColor: getErrorTypeColor(selectedLog.error_event.error_type),
+                    color: 'white',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {selectedLog.error_event.error_type}
+                </span>
+              </div>
+
+              <div style={{
+                marginBottom: '8px',
+                padding: '8px',
+                backgroundColor: '#fffbeb',
+                border: '1px solid #fcd34d',
+                borderRadius: '4px',
+                fontSize: '12px',
+                color: '#404000',
+                maxHeight: '100px',
+                overflow: 'auto',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>
+                {selectedLog.error_event.message}
+                <button
+                  onClick={() => copyToClipboard(selectedLog.error_event?.message || '')}
+                  style={{
+                    marginLeft: '8px',
+                    padding: '2px 6px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #fcd34d',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                    fontSize: '10px',
+                  }}
+                  title="Copy error message"
+                >
+                  📋
+                </button>
+              </div>
+
+              {selectedLog.error_event.suggestions && selectedLog.error_event.suggestions.length > 0 && (
+                <div style={{
+                  marginBottom: '8px',
+                  padding: '8px',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '4px',
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    color: '#166534',
+                    marginBottom: '6px',
+                  }}>
+                    Suggested Actions:
+                  </div>
+                  <ul style={{
+                    margin: '0',
+                    paddingLeft: '20px',
+                    fontSize: '12px',
+                    color: '#15803d',
+                  }}>
+                    {selectedLog.error_event.suggestions.map((suggestion, idx) => (
+                      <li key={idx} style={{ marginBottom: '4px' }}>
+                        ✓ {suggestion}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => copyToClipboard(selectedLog.error_event?.suggestions.join('\n') || '')}
+                    style={{
+                      marginTop: '6px',
+                      padding: '2px 6px',
+                      backgroundColor: 'transparent',
+                      border: '1px solid #86efac',
+                      borderRadius: '2px',
+                      cursor: 'pointer',
+                      fontSize: '10px',
+                      color: '#166534',
+                    }}
+                    title="Copy suggestions"
+                  >
+                    📋 Copy
+                  </button>
+                </div>
+              )}
+
+              <div style={{
+                fontSize: '11px',
+                color: '#666',
+                marginTop: '6px',
+              }}>
+                Detected: {new Date(selectedLog.error_event.detected_at).toLocaleString()}
+              </div>
+            </div>
+          )}
 
           <div className="log-output">
             <h4>Terminal Output</h4>
