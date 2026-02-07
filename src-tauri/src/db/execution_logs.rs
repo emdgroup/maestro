@@ -1,5 +1,6 @@
 use chrono::Utc;
 use rusqlite::{Connection, params};
+use crate::models::ErrorEvent;
 
 /// Create a new execution log record in the database
 ///
@@ -80,4 +81,82 @@ pub fn mark_complete(
     .map_err(|e| format!("Failed to mark execution complete: {}", e))?;
 
     Ok(())
+}
+
+/// Append an error event to an execution log
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `log_id` - ID of the execution log to update
+/// * `error_event` - ErrorEvent to store
+///
+/// # Returns
+/// Ok(()) on success, Err(String) on database error
+pub fn append_error_event(
+    conn: &Connection,
+    log_id: i32,
+    error_event: &ErrorEvent,
+) -> Result<(), String> {
+    let error_json = serde_json::to_string(&error_event)
+        .map_err(|e| format!("Failed to serialize error event: {}", e))?;
+
+    conn.execute(
+        "UPDATE execution_logs SET error_event = ? WHERE id = ?",
+        params![&error_json, log_id],
+    )
+    .map_err(|e| format!("Failed to append error event: {}", e))?;
+
+    Ok(())
+}
+
+/// Mark execution as failed with error details
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `log_id` - ID of the execution log to mark as failed
+/// * `error_event` - ErrorEvent with error details
+///
+/// # Returns
+/// Ok(()) on success, Err(String) on database error
+pub fn mark_failed(
+    conn: &Connection,
+    log_id: i32,
+    error_event: &ErrorEvent,
+) -> Result<(), String> {
+    let now = Utc::now().to_rfc3339();
+    let error_json = serde_json::to_string(&error_event)
+        .map_err(|e| format!("Failed to serialize error event: {}", e))?;
+
+    conn.execute(
+        "UPDATE execution_logs SET status = 'failed', error_event = ?, completed_at = ? WHERE id = ?",
+        params![&error_json, &now, log_id],
+    )
+    .map_err(|e| format!("Failed to mark execution failed: {}", e))?;
+
+    Ok(())
+}
+
+/// Get error event for an execution log
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `log_id` - ID of the execution log
+///
+/// # Returns
+/// Ok(Option<ErrorEvent>) - the error event if present, or None
+pub fn get_error_event(
+    conn: &Connection,
+    log_id: i32,
+) -> Result<Option<ErrorEvent>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT error_event FROM execution_logs WHERE id = ?"
+    ).map_err(|e| e.to_string())?;
+
+    let error_event = stmt.query_row([log_id], |row| {
+        let error_json: Option<String> = row.get(0)?;
+        Ok(error_json.and_then(|s| serde_json::from_str(&s).ok()))
+    })
+    .map_err(|e| e.to_string())?;
+
+    Ok(error_event)
 }

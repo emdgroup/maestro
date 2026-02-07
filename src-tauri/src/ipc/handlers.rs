@@ -2,8 +2,9 @@ use std::sync::Arc;
 use tauri::State;
 use base64::Engine;
 use tokio::io::AsyncReadExt;
+use chrono::Utc;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome, ErrorEvent};
 use crate::db::AppState;
 use crate::process::spawn_agent_cli_pty;
 
@@ -1037,6 +1038,64 @@ pub fn initialize_worktree_pool(
 
 /// Spawn an agent execution for a task in a background task
 ///
+/// Detect and categorize error from stderr output and exit code
+///
+/// Analyzes error patterns in stderr to categorize error type and generate suggestions
+fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (String, Vec<String>) {
+    let stderr_lower = stderr.to_lowercase();
+
+    // Pattern matching for error types
+    if stderr_lower.contains("error ts") ||
+       stderr_lower.contains("syntaxerror") ||
+       stderr_lower.contains("referenceerror") {
+        return ("CompilationError".to_string(), vec![
+            "Run: npm install".to_string(),
+            "Check syntax in source files".to_string(),
+        ]);
+    }
+
+    if stderr_lower.contains("not found") ||
+       stderr_lower.contains("cannot find module") ||
+       stderr_lower.contains("npm err") ||
+       stderr_lower.contains("package.json") {
+        return ("MissingDependency".to_string(), vec![
+            "Run: npm install".to_string(),
+            "Check package.json dependencies".to_string(),
+        ]);
+    }
+
+    if stderr_lower.contains("error:") ||
+       stderr_lower.contains("exception") ||
+       stderr_lower.contains("panic") ||
+       stderr_lower.contains("segmentation fault") {
+        return ("RuntimeError".to_string(), vec![
+            "Check task acceptance criteria".to_string(),
+            "Review error in terminal history".to_string(),
+        ]);
+    }
+
+    if exit_code < 0 || stderr_lower.contains("signal") {
+        return ("ProcessCrash".to_string(), vec![
+            "Check system resources".to_string(),
+            "Review agent logs".to_string(),
+        ]);
+    }
+
+    // Default to Unknown
+    ("Unknown".to_string(), vec![
+        "Review full terminal output".to_string(),
+        "Check error details".to_string(),
+    ])
+}
+
+/// Determine if an error is retry-able (transient) or fatal (permanent)
+fn is_retriable_error(error_type: &str) -> bool {
+    match error_type {
+        "Timeout" | "ProcessCrash" => true,
+        _ => false,
+    }
+}
+
 /// This handler creates an execution log record, spawns the agent CLI process
 /// in a background tokio task, and returns immediately with the execution log ID.
 /// The process continues running after the IPC returns.
@@ -1125,19 +1184,31 @@ pub async fn spawn_agent_execution(
             Err(e) => {
                 eprintln!("[background] PTY spawning failed: {}", e);
 
-                // Log error to execution log and mark worktree as dirty
+                // Log error to execution log and mark as failed with error details
                 match app_state_arc.db.lock() {
                     Ok(conn) => {
                         let error_msg = format!("\n[ERROR] Failed to spawn PTY: {}", e);
                         let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
-                        let _ = crate::db::execution_logs::mark_complete(&conn, exec_log_id, -1);
+
+                        // Detect error type and generate suggestions
+                        let (error_type, suggestions) = detect_error_type_and_suggestions(&e, -1);
+                        let now = Utc::now().to_rfc3339();
+                        let error_event = ErrorEvent {
+                            error_type: error_type.clone(),
+                            message: e.clone(),
+                            suggestions,
+                            detected_at: now,
+                        };
+
+                        // Mark as failed with error event
+                        let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
 
                         // Mark worktree as dirty on spawn error
                         let _ = conn.execute(
                             "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
                             rusqlite::params![worktree_id],
                         );
-                        println!("✗ Marked worktree {} as dirty due to spawn error", worktree_id);
+                        println!("✗ Marked worktree {} as dirty due to spawn error. Error type: {}", worktree_id, error_type);
                     }
                     Err(lock_err) => {
                         eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
