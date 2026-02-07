@@ -69,3 +69,14 @@ export interface ReviewFeedback {
     comment: string;
   }>;
 }
+
+export interface SaveReviewResponse {
+  success: boolean;
+  review_id: number;
+}
+
+export interface RequestChangesResponse {
+  success: boolean;
+  review_id: number;
+  task_status: string;
+}
