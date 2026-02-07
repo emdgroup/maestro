@@ -23,6 +23,9 @@ export type Task = {
   is_imported?: boolean;
   import_source?: string;
   skills: string[];
+  model_override?: string;
+  mcp_allowlist?: string[];
+  skills_override?: string[];
   created_at: string;
   updated_at: string;
 };
@@ -73,9 +76,27 @@ export type AppSettings = {
   project_path: string | null;
   recent_projects: Array<string>;
   model_default: string;
-  mcp_defaults: string | null;
-  skills_defaults: string | null;
+  mcp_allowlist: Array<string>;
+  skills_default: Array<string>;
   updated_at: string;
+};
+
+export type ProjectConfigResponse = {
+  model_default: string;
+  mcp_allowlist: string[];
+  skills_default: string[];
+};
+
+export type ProjectConfigRequest = {
+  model_default: string;
+  mcp_allowlist: string[];
+  skills_default: string[];
+};
+
+export type TaskConfigRequest = {
+  model_override?: string;
+  mcp_allowlist?: string[];
+  skills_override?: string[];
 };
 
 export type SyncResult = {
