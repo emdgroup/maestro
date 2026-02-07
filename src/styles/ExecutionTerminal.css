@@ -1,0 +1,237 @@
+.execution-terminal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.execution-terminal.modal-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.execution-terminal-container {
+  display: flex;
+  flex-direction: column;
+  width: 90%;
+  height: 85vh;
+  max-width: 1200px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 10px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  padding: 16px;
+  border-bottom: 1px solid #ddd;
+  background: linear-gradient(to right, #f9fafb, #ffffff);
+}
+
+.terminal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.terminal-close-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 24px;
+  color: #6b7280;
+  padding: 4px 8px;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.terminal-close-button:hover {
+  color: #111827;
+}
+
+.terminal-error-banner {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 4px;
+  font-size: 13px;
+  border-left: 3px solid #dc2626;
+}
+
+.terminal-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  position: relative;
+}
+
+.terminal-output-area {
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: none;
+  outline: none;
+}
+
+.terminal-output-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.terminal-output-area::-webkit-scrollbar-track {
+  background: #2d2d30;
+}
+
+.terminal-output-area::-webkit-scrollbar-thumb {
+  background: #464647;
+  border-radius: 4px;
+}
+
+.terminal-output-area::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+.loading-state,
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: #6b7280;
+}
+
+.error-state {
+  flex-direction: column;
+  gap: 16px;
+}
+
+.error-message {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.retry-button {
+  padding: 8px 16px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.retry-button:hover {
+  background: #1d4ed8;
+}
+
+.terminal-input-area {
+  padding: 12px;
+  background: #f3f4f6;
+  border-top: 1px solid #e5e7eb;
+}
+
+.input-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.terminal-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  background: white;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.terminal-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.terminal-input:disabled {
+  background: #f9fafb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.send-button,
+.ctrl-c-button {
+  padding: 8px 12px;
+  background: #2563eb;
+  color: white;
+  border: 1px solid #1d4ed8;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.send-button:hover:not(:disabled),
+.ctrl-c-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.send-button:disabled,
+.ctrl-c-button:disabled {
+  background: #d1d5db;
+  border-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.send-button:active:not(:disabled),
+.ctrl-c-button:active:not(:disabled) {
+  background: #1e40af;
+}
+
+.input-help {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 0 4px;
+}
+
+/* Terminal syntax highlighting colors */
+.terminal-output-area .error {
+  color: #f87171;
+}
+
+.terminal-output-area .success {
+  color: #86efac;
+}
+
+.terminal-output-area .warning {
+  color: #fbbf24;
+}
+
+.terminal-output-area .info {
+  color: #60a5fa;
+}
