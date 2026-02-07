@@ -261,6 +261,32 @@ async fn approve_task_and_merge(
     gsd_demo::ipc::handlers::approve_task_and_merge(app_state, task_id).await
 }
 
+#[tauri::command]
+fn get_project_settings(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+) -> Result<gsd_demo::models::ProjectConfigResponse, String> {
+    gsd_demo::ipc::handlers::get_project_settings(app_state, project_id)
+}
+
+#[tauri::command]
+fn update_project_settings(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+    settings: gsd_demo::models::ProjectConfigRequest,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::update_project_settings(app_state, project_id, settings)
+}
+
+#[tauri::command]
+fn update_task_settings(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+    settings: gsd_demo::models::TaskConfigRequest,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::update_task_settings(app_state, task_id, settings)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -309,7 +335,10 @@ fn main() {
             get_diff_for_review,
             save_task_review,
             request_changes,
-            approve_task_and_merge
+            approve_task_and_merge,
+            get_project_settings,
+            update_project_settings,
+            update_task_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
