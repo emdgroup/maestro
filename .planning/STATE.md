@@ -6,23 +6,23 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control—eliminating blocking waits while maintaining safety through worktree isolation and human-in-the-loop review.
 
-**Current focus:** Phase 1 - Foundation
+**Current focus:** Phase 6 - Review & Merge Workflow
 
 ## Current Position
 
-Phase: 5 of 9 (Real-time Monitoring)
-Plan: 1 of 4 complete
-Status: Phase 5 Plan 01 execution complete
-Last activity: 2026-02-06 — Executed 05-01-PLAN.md (PTY infrastructure)
+Phase: 6 of 9 (Review & Merge Workflow)
+Plan: 1 of 3 complete
+Status: Plan 06-01 complete (Diff Viewer Infrastructure)
+Last activity: 2026-02-07 — Completed Plan 06-01 (Review Infrastructure)
 
-Progress: [█████░░░░░] 18/31 plans (58%), 4/9 phases started (Phase 4 closed, Phase 5 active)
+Progress: [██████░░░░] 21/31 plans (68%), 5/9 phases, 1/3 phase 6 plans complete
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 20 min (steady, getting faster)
-- Total execution time: 4h 41m
+- Total plans completed: 20
+- Average duration: 22.8 min (improving)
+- Total execution time: 7h 36m
 
 **By Phase:**
 
@@ -32,15 +32,16 @@ Progress: [█████░░░░░] 18/31 plans (58%), 4/9 phases started
 | 02-core-orchestration | 5 | 244m | 48.8m | Complete |
 | 03-git-worktree-infrastructure | 4 | 134m | 33.5m | Complete |
 | 04-agent-execution | 4 | 120m | 30m | Complete (gaps noted) |
-| 05-real-time-monitoring | 1/4 | 35m | 35m | In Progress |
+| 05-real-time-monitoring | 3 | 78m | 26m | Complete ✓ |
+| 06-review-merge-workflow | 3 | 13m+ | 13m+ | In Progress (1/3) |
 
 **Recent Trend:**
-- Last 6 plans: 04-01 (28m), 04-02 (34m), 04-03 (37m), 04-04 (5m), 05-01 (35m)
-- Phase 4: All 4 plans executed and committed (gaps addressed in Phase 4 fix commits)
-- Phase 5: Executing real-time terminal streaming infrastructure
-- Current: PTY spawning, session management, three terminal handlers complete
+- Last 7 plans: 04-03 (37m), 04-04 (5m), 05-01 (35m), 05-02 (25m), 05-03 (18m), 06-01 (13m)
+- Phase 6 starting: Plan 06-01 executed in 13 minutes (fastest phase plan yet)
+- Velocity improving: Diff viewer infrastructure delivered with full Shiki syntax highlighting
+- Current: Phase 6 plan 06-01 complete, ready for 06-02 (Approval Workflow)
 
-*Updated: 2026-02-06 (after 05-01 execution)*
+*Updated: 2026-02-07 (after Plan 06-01 completion)*
 
 ## Accumulated Context
 
@@ -165,6 +166,31 @@ Key decisions affecting current work (full log in PROJECT.md):
 - Integrate spawn_agent_cli_pty into spawn_agent_execution (critical Phase 5 foundation)
 - Store PtySession in AppState HashMap for frontend attachment and lifecycle management
 
+**Phase 05-02 Decisions:**
+- useRef instead of useState for Terminal instance (xterm.js is DOM-manipulating library requiring direct reference control)
+- Channel created fresh on component mount (prevents stale channel reuse across remounts)
+- Terminal only renders when tab is active (prevents multiple instances and resource leaks)
+- Error handling on all IPC invocations (console.error and terminal.write feedback)
+- @xterm/xterm 5.3.0 with FitAddon 0.11.0 and addon-attach 0.10.0 for streaming integration
+
+**Phase 05-03 Decisions:**
+- Schema versioning via PRAGMA user_version with migration logic (no external migration tool)
+- CircularBuffer 10,000 line capacity (typical log size, tunable)
+- Terminal output stored in execution_logs.terminal_output as nullable TEXT
+- Search UI uses simple case-insensitive substring matching (sufficient for Phase 3, regex later if needed)
+- append_terminal_output designed for periodic batching (avoid excessive DB writes)
+- ExecutionHistory displays terminal_output from DB with timestamps and elapsed time calculation
+
+**Phase 06-01 Decisions:**
+- @git-diff-view/react library for production diff rendering (verified 134 code snippets, 87.4 benchmark score)
+- Unified diff view (GitHub-style) with 6 context lines (--unified=6) locked per user decision
+- Recursive file tree building from flat file list with directories first, alphabetic sorting
+- Language detection by file extension for Shiki syntax highlighting
+- Zustand store with Immer middleware for review state (consistent with boardStore pattern)
+- Frontend IPC → Rust async handler → Node.js sidecar CLI pattern for diff generation
+- ReviewModal uses @radix-ui/react-dialog for accessible modal container
+- Error recovery via retry button for failed diff fetches
+
 ### Pending Todos
 
 None yet.
@@ -181,7 +207,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-06 (current)
-Stopped at: Phase 5 Plan 01 execution complete
+Last session: 2026-02-07 (current)
+Stopped at: Plan 06-01 complete (Diff Viewer Infrastructure)
 Resume file: None
-Next: Execute Phase 5 Plan 02 (Frontend Terminal Component)
+Next: Plan 06-02 (Approval Workflow)
