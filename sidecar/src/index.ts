@@ -8,6 +8,7 @@
  */
 
 import * as gitManager from "./git-manager.js";
+import * as mergeManager from "./merge-manager.js";
 
 /**
  * Create git worktree in .worktree-pool/ directory
@@ -106,4 +107,91 @@ export async function isWorktreeHealthy(
   worktreePath: string
 ): Promise<boolean> {
   return gitManager.isWorktreeHealthy(repoPath, worktreePath);
+}
+
+/**
+ * Get unified diff between two branches
+ *
+ * @param repoPath - Path to git repository
+ * @param fromBranch - Source branch
+ * @param toBranch - Target branch
+ * @param contextLines - Number of context lines
+ * @returns Raw unified diff string
+ */
+export async function getDiffBetweenBranches(
+  repoPath: string,
+  fromBranch: string,
+  toBranch: string,
+  contextLines: number = 6
+): Promise<string> {
+  return mergeManager.getDiffBetweenBranches(repoPath, fromBranch, toBranch, contextLines);
+}
+
+/**
+ * Attempt squash merge of branch to main
+ *
+ * @param repoPath - Path to git repository
+ * @param branchName - Branch to merge
+ * @returns Object with success boolean and conflicts
+ */
+export async function squashMergeToMain(
+  repoPath: string,
+  branchName: string
+): Promise<{ success: boolean; conflicts: string[] }> {
+  return mergeManager.squashMergeToMain(repoPath, branchName);
+}
+
+/**
+ * CLI entry point for sidecar execution
+ * Handles --get-diff and other command-line arguments
+ */
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("--get-diff")) {
+    // Parse: --get-diff <repoPath> <branchName> <targetBranch> <contextLines>
+    const repoIndex = args.indexOf("--get-diff") + 1;
+    const repoPath = args[repoIndex];
+    const fromBranch = args[repoIndex + 1];
+    const toBranch = args[repoIndex + 2];
+    const contextLines = parseInt(args[repoIndex + 3] || "6", 10);
+
+    if (!repoPath || !fromBranch || !toBranch) {
+      console.error(
+        "Usage: node index.js --get-diff <repoPath> <fromBranch> <toBranch> [contextLines]"
+      );
+      process.exit(1);
+    }
+
+    try {
+      const diff = await getDiffBetweenBranches(repoPath, fromBranch, toBranch, contextLines);
+      console.log(diff);
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        "Error:",
+        error instanceof Error ? error.message : String(error)
+      );
+      process.exit(1);
+    }
+  } else if (args.includes("--task-id")) {
+    // Original task execution mode (for agent execution)
+    console.log("Task execution mode not yet implemented in index.ts");
+    process.exit(1);
+  } else {
+    // No recognized arguments
+    console.log("GSD Sidecar - git worktree and merge operations");
+    console.log("Usage:");
+    console.log("  --get-diff <repoPath> <fromBranch> <toBranch> [contextLines]");
+    console.log("  --task-id <taskId>  (agent execution)");
+    process.exit(0);
+  }
+}
+
+// Run main if this is the entry point
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });
 }

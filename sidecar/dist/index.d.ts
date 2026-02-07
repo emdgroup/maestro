@@ -79,4 +79,25 @@ export declare function pruneWorktrees(repoPath: string): Promise<void>;
  * }
  */
 export declare function isWorktreeHealthy(repoPath: string, worktreePath: string): Promise<boolean>;
+/**
+ * Get unified diff between two branches
+ *
+ * @param repoPath - Path to git repository
+ * @param fromBranch - Source branch
+ * @param toBranch - Target branch
+ * @param contextLines - Number of context lines
+ * @returns Raw unified diff string
+ */
+export declare function getDiffBetweenBranches(repoPath: string, fromBranch: string, toBranch: string, contextLines?: number): Promise<string>;
+/**
+ * Attempt squash merge of branch to main
+ *
+ * @param repoPath - Path to git repository
+ * @param branchName - Branch to merge
+ * @returns Object with success boolean and conflicts
+ */
+export declare function squashMergeToMain(repoPath: string, branchName: string): Promise<{
+    success: boolean;
+    conflicts: string[];
+}>;
 //# sourceMappingURL=index.d.ts.map
