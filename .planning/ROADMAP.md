@@ -213,10 +213,65 @@ Plans:
 - [x] 09-04-PLAN.md — Remote terminal streaming + UI integration (project creation flow, status indicators)
 - [x] 09-05-PLAN.md (gap closure) — Complete terminal streaming integration (SSH PTY polling, WebSocket bridge, handler wiring)
 
+### Phase 10: Documentation Completeness
+**Goal**: Complete administrative documentation for all phases.
+
+**Depends on**: Phase 2
+
+**Tech Debt Closure**: Phase 2 - Core Orchestration
+
+**Success Criteria** (what must be TRUE):
+  1. Phase 2 has a VERIFICATION.md file documenting all implemented features
+  2. All phase verification files are present and complete
+  3. Audit can verify Phase 2 from documentation rather than code inspection
+
+**Plans**: 1 plan
+
+Plans:
+- [ ] 10-01-PLAN.md — Generate Phase 2 VERIFICATION.md file documenting Kanban board, task creation, GitHub/Jira import, drag-drop persistence with full evidence chain
+
+### Phase 11: Agent Execution UX Polish
+**Goal**: Complete all UX features for agent execution workflow.
+
+**Depends on**: Phase 4
+
+**Tech Debt Closure**: Phase 4 - Agent Execution
+
+**Success Criteria** (what must be TRUE):
+  1. TaskCard displays visual status badge showing agent execution state
+  2. Agent execution uses actual worktree leasing instead of placeholder path
+  3. Users can pause and resume agent execution with proper state management
+  4. Users receive notifications when agents fail with actionable information
+
+**Plans**: 4 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — Wire status badge rendering in TaskCard JSX component
+- [ ] 11-02-PLAN.md — Replace placeholder worktree path with lease_worktree integration
+- [ ] 11-03-PLAN.md — Implement pause/resume mechanism with state management
+- [ ] 11-04-PLAN.md — Add user notification system on agent failure
+
+### Phase 12: Worktree Disk Cleanup
+**Goal**: Ensure worktrees are fully cleaned from disk after merge.
+
+**Depends on**: Phase 6
+
+**Tech Debt Closure**: Phase 6 - Review & Merge Workflow
+
+**Success Criteria** (what must be TRUE):
+  1. After successful merge, worktree is deleted from disk (not just returned to pool)
+  2. Disk space is reclaimed after worktree cleanup
+  3. No stale worktree directories accumulate over time
+
+**Plans**: 1 plan
+
+Plans:
+- [ ] 12-01-PLAN.md — Add disk cleanup to finalize_successful_merge handler
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
@@ -229,9 +284,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
 | 8. Error Handling & Polish | 3 | ✓ Complete | 2026-02-07 |
 | 9. Remote Project Support | 5 (4 main + 1 gap closure) | ✓ Complete | 2026-02-08 |
+| 10. Documentation Completeness | 1 | Pending | — |
+| 11. Agent Execution UX Polish | 4 | Pending | — |
+| 12. Worktree Disk Cleanup | 1 | Pending | — |
 
-**Total Plans:** 38 (37 main + 1 gap closure)
-**Completed Plans:** 38/38 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5)
+**Total Plans:** 44 (37 main + 1 gap closure + 6 tech debt)
+**Completed Plans:** 38/44 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5, Phase 10: 0/1, Phase 11: 0/4, Phase 12: 0/1)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
@@ -239,5 +297,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 *Roadmap created: 2026-02-04*
 *Phase 8 completed: 2026-02-07*
 *Phase 9 completed: 2026-02-08*
-*Depth: comprehensive (9 phases)*
-*Coverage: 100% — All 28 v1.0 requirements mapped*
+*Tech debt phases added: 2026-02-08*
+*Depth: comprehensive (12 phases including tech debt closure)*
+*Coverage: 100% — All 28 v1.0 requirements mapped + tech debt closure*
