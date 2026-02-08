@@ -88,6 +88,7 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
               taskId={task.id}
               projectId={task.project_id}
               projectPath={projectPath}
+              taskName={task.name}
             />
           )}
 

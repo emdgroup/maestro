@@ -3,12 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { ExecutionLog } from '../types/bindings';
 import { showErrorToast, showSuccessToast } from './ErrorToast';
 import { useBoardStore } from '../store/boardStore';
+import { toast } from 'sonner';
 import '../styles/ExecutionHistory.css';
 
 interface ExecutionHistoryProps {
   taskId: number;
   projectId: number;
   projectPath: string;
+  taskName?: string;
 }
 
 /// Calculate human-readable duration between two ISO 8601 timestamps
@@ -34,7 +36,7 @@ function calculateDuration(startedAt: string, completedAt: string): string {
   }
 }
 
-export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHistoryProps) {
+export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: ExecutionHistoryProps) {
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,23 @@ export function ExecutionHistory({ taskId, projectId, projectPath }: ExecutionHi
       if (newPausedLogs.length > 0 && previousLogs.length > 0) {
         // Only show notification if this isn't the initial load
         showErrorToast(`Execution failed! ${newPausedLogs.length} task(s) paused for review.`);
+      }
+
+      // Detect NEW failures (logs that are 'failed' now but weren't 'failed' before)
+      const newFailedLogs = logs.filter(
+        (log) =>
+          log.status === 'failed' &&
+          !previousLogs.find((prevLog) => prevLog.id === log.id && prevLog.status === 'failed')
+      );
+
+      // Show toast for each new failure (only if this isn't the initial load)
+      if (newFailedLogs.length > 0 && previousLogs.length > 0) {
+        newFailedLogs.forEach((log) => {
+          const errorType = log.error_event?.error_type || 'Unknown Error';
+          const displayName = taskName || `Task ${taskId}`;
+          const message = `Failed: ${displayName} — ${errorType}`;
+          toast.error(message, { duration: 10000 }); // 10s auto-dismiss
+        });
       }
 
       previousLogsRef.current = logs;
