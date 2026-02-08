@@ -47,6 +47,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
   const [isExecuting, setIsExecuting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
+  const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("0s");
   const [executionLog, setExecutionLog] = useState<ExecutionLog | null>(null);
@@ -178,6 +179,30 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       showErrorToast(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsAborting(false);
+    }
+  };
+
+  const handlePause = async () => {
+    setIsPauseLoading(true);
+    try {
+      await store.pauseExecution(task.id);
+      showSuccessToast(`Task paused: ${task.name}`);
+    } catch (error) {
+      showErrorToast(`Failed to pause: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsPauseLoading(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setIsPauseLoading(true);
+    try {
+      await store.resumeExecution(task.project_id, task.id, projectPath);
+      showSuccessToast(`Task resumed: ${task.name}`);
+    } catch (error) {
+      showErrorToast(`Failed to resume: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsPauseLoading(false);
     }
   };
 
@@ -408,6 +433,52 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           >
             🔌 Terminal
           </button>
+        </div>
+      )}
+      {task.status === 'InProgress' && executionLog && (
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+          {executionLog.status === 'running' && (
+            <button
+              onClick={handlePause}
+              disabled={isPauseLoading}
+              style={{
+                flex: 1,
+                minWidth: '80px',
+                padding: '6px 8px',
+                backgroundColor: isPauseLoading ? '#ccc' : '#f59e0b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
+                fontSize: '11px',
+                fontWeight: 'bold',
+              }}
+              title="Pause execution without terminating process"
+            >
+              {isPauseLoading ? '⏳' : '⏸️ Pause'}
+            </button>
+          )}
+          {executionLog.status === 'paused' && (
+            <button
+              onClick={handleResume}
+              disabled={isPauseLoading}
+              style={{
+                flex: 1,
+                minWidth: '80px',
+                padding: '6px 8px',
+                backgroundColor: isPauseLoading ? '#ccc' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
+                fontSize: '11px',
+                fontWeight: 'bold',
+              }}
+              title="Resume paused execution"
+            >
+              {isPauseLoading ? '⏳' : '▶️ Resume'}
+            </button>
+          )}
         </div>
       )}
     </div>
