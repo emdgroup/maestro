@@ -3,11 +3,25 @@
 
 export type ProjectStatus = "Active" | "Archived";
 
+export type SshAuthMethod =
+  | { KeyFile: { path: string } }
+  | "Agent";
+
+export type SshConfig = {
+  host: string;
+  port: number;
+  username: string;
+  auth_method: SshAuthMethod;
+  remote_path: string;
+};
+
 export type Project = {
   id: number;
   name: string;
   path: string;
   created_at: string;
+  is_remote: boolean;
+  ssh_config: SshConfig | null;
 };
 
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Merging" | "Failed" | "Done";
