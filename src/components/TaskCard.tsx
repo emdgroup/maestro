@@ -1,10 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Task } from "../types/bindings";
+import { invoke } from "@tauri-apps/api/core";
+import { Task, ExecutionLog } from "../types/bindings";
 import { useBoardStore } from "../store/boardStore";
 import { showErrorToast, showSuccessToast } from "./ErrorToast";
 import { TaskContextMenu } from "./TaskContextMenu";
+import "../styles/TaskCard.css";
+
+/// Format elapsed time from a start timestamp to human-readable string
+/// Returns format: "Xm Ys", "Xs", or "Xh Ym"
+function formatElapsedTime(startedAt?: string): string {
+  if (!startedAt) return "0s";
+
+  try {
+    const startTime = new Date(startedAt).getTime();
+    const now = Date.now();
+    const diffMs = now - startTime;
+
+    if (diffMs < 0) return "0s";
+    if (diffMs < 1000) return `${Math.floor(diffMs / 100) * 100}ms`;
+
+    const seconds = Math.floor(diffMs / 1000);
+    if (seconds < 60) return `${seconds}s`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+  } catch {
+    return "0s";
+  }
+}
 
 interface TaskCardProps {
   task: Task;
@@ -20,7 +48,43 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
   const [isRetrying, setIsRetrying] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState("0s");
+  const [executionLog, setExecutionLog] = useState<ExecutionLog | null>(null);
   const store = useBoardStore();
+
+  // Load latest execution log for this task
+  useEffect(() => {
+    if (task.status !== "InProgress") {
+      setExecutionLog(null);
+      return;
+    }
+
+    const loadExecutionLog = async () => {
+      try {
+        const logs = await invoke<ExecutionLog[]>("get_execution_logs", { task_id: task.id });
+        if (logs.length > 0) {
+          setExecutionLog(logs[0]); // Get most recent log
+        }
+      } catch (error) {
+        console.error("Failed to load execution log:", error);
+      }
+    };
+
+    loadExecutionLog();
+  }, [task.id, task.status]);
+
+  // Update elapsed time every 1 second for running tasks
+  useEffect(() => {
+    if (task.status !== "InProgress" || !executionLog?.started_at) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setElapsedTime(formatElapsedTime(executionLog.started_at));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [task.status, executionLog?.started_at]);
 
   // Don't make imported tasks draggable - they are read-only
   const { attributes, listeners, setNodeRef, transform, isDragging: isActivelyDragging } = useDraggable({
@@ -136,6 +200,32 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       }}
       onMouseLeave={() => setMenuOpen(false)}
     >
+      {/* Status badge with elapsed time */}
+      {task.status === 'InProgress' && executionLog && (
+        <div className={`badge-container ${
+          executionLog.status === 'running' ? 'badge-running' :
+          executionLog.status === 'failed' ? 'badge-failed' :
+          executionLog.status === 'complete' ? 'badge-success' :
+          ''
+        }`}>
+          {executionLog.status === 'running' && (
+            <>
+              <span className="spinner-icon"></span>
+              <span>{elapsedTime}</span>
+            </>
+          )}
+          {executionLog.status === 'failed' && (
+            <span>Failed</span>
+          )}
+          {executionLog.status === 'complete' && (
+            <>
+              <span>✓</span>
+              <span>Done</span>
+            </>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px' }}>
         <div
           className="task-card-title"
