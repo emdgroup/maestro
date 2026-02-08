@@ -7,6 +7,7 @@ use chrono::Utc;
 use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection, ConnectionStatus, SshConfig};
 use crate::db::{AppState, get_git_connection};
 use crate::process::{spawn_agent_cli_pty, ExecutionConfig};
+use crate::process::spawn_agent_execution as spawn_agent_execution_dispatcher;
 use crate::websocket::attach_remote_stream_listener;
 use crate::git;
 
@@ -1385,34 +1386,134 @@ pub async fn spawn_agent_execution(
                 }
             }
         } else {
-            // For remote execution: Remote execution placeholder
-            // Note: Full remote execution requires getting SSH session from AppState
-            // which is complex to implement inside async task without Send issues
-            eprintln!("[background] Remote execution is not yet fully implemented");
+            // For remote execution: Get SSH session and call dispatcher
 
-            match app_state_arc.db.lock() {
-                Ok(conn) => {
-                    let error_msg = "[ERROR] Remote execution not yet implemented in this phase".to_string();
-                    let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
-
-                    let (error_type, suggestions) = detect_error_type_and_suggestions(&error_msg, -1);
-                    let now = Utc::now().to_rfc3339();
-                    let error_event = ErrorEvent {
-                        error_type: error_type.clone(),
-                        message: error_msg.clone(),
-                        suggestions,
-                        detected_at: now,
+            // Get SSH session from AppState
+            match app_state_arc.get_ssh_session(project_id as i64).await {
+                Some(ssh_session) => {
+                    // 2. Build GitConnection for dispatcher
+                    let git_conn = GitConnection::Remote {
+                        ssh: std::sync::Arc::new(ssh_session),
+                        remote_path: worktree_path.clone(), // Use the leased worktree path as remote root
                     };
 
-                    let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+                    // 3. Call dispatcher which handles remote execution
+                    match spawn_agent_execution_dispatcher(&git_conn, &worktree, &task, &config).await {
+                        Ok((output, Some(handle))) => {
+                            // 4. Attach streaming to the remote handle
+                            // Create broadcast_sender callback that forwards to execution log
+                            let exec_log_id_for_streaming = exec_log_id;
+                            let app_state_for_streaming = app_state_arc.clone();
+                            let broadcast_sender = move |bytes: Vec<u8>| {
+                                // Forward bytes to execution log terminal_output
+                                if let Ok(conn) = app_state_for_streaming.db.lock() {
+                                    let output_str = String::from_utf8_lossy(&bytes);
+                                    let _ = crate::db::execution_logs::append_output(&conn, exec_log_id_for_streaming, &output_str);
+                                }
+                            };
 
-                    let _ = conn.execute(
-                        "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
-                        rusqlite::params![worktree_id],
-                    );
+                            // 5. Call attach_remote_stream_listener to start streaming background task
+                            if let Err(e) = attach_remote_stream_listener(&handle, broadcast_sender).await {
+                                eprintln!("[background] Failed to attach stream listener: {}", e);
+                            }
+
+                            println!("[background] ✓ Remote execution spawned with streaming (PID: {})", handle.remote_pid);
+
+                            // 6. Initialize execution log status
+                            match app_state_arc.db.lock() {
+                                Ok(conn) => {
+                                    let _ = crate::db::execution_logs::mark_complete(&conn, exec_log_id, 0);
+                                }
+                                Err(e) => {
+                                    eprintln!("[background] Failed to initialize execution log: {}", e);
+                                }
+                            }
+                        }
+                        Ok((output, None)) => {
+                            eprintln!("[background] Remote execution returned no handle");
+
+                            match app_state_arc.db.lock() {
+                                Ok(conn) => {
+                                    let error_msg = "[ERROR] Remote execution returned no handle".to_string();
+                                    let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+
+                                    let (error_type, suggestions) = detect_error_type_and_suggestions(&error_msg, -1);
+                                    let now = Utc::now().to_rfc3339();
+                                    let error_event = ErrorEvent {
+                                        error_type,
+                                        message: error_msg,
+                                        suggestions,
+                                        detected_at: now,
+                                    };
+
+                                    let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+                                    let _ = conn.execute(
+                                        "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                                        rusqlite::params![worktree_id],
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("[background] Failed to lock database: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[background] Remote execution dispatcher failed: {}", e);
+
+                            match app_state_arc.db.lock() {
+                                Ok(conn) => {
+                                    let error_msg = format!("[ERROR] Remote execution failed: {}", e);
+                                    let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+
+                                    let (error_type, suggestions) = detect_error_type_and_suggestions(&error_msg, -1);
+                                    let now = Utc::now().to_rfc3339();
+                                    let error_event = ErrorEvent {
+                                        error_type,
+                                        message: error_msg,
+                                        suggestions,
+                                        detected_at: now,
+                                    };
+
+                                    let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+                                    let _ = conn.execute(
+                                        "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                                        rusqlite::params![worktree_id],
+                                    );
+                                }
+                                Err(lock_err) => {
+                                    eprintln!("[background] Failed to lock database: {}", lock_err);
+                                }
+                            }
+                        }
+                    }
                 }
-                Err(lock_err) => {
-                    eprintln!("[background] Failed to lock database: {}", lock_err);
+                None => {
+                    eprintln!("[background] SSH session not available for remote project");
+
+                    match app_state_arc.db.lock() {
+                        Ok(conn) => {
+                            let error_msg = "[ERROR] SSH session not available for remote project".to_string();
+                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+
+                            let (error_type, suggestions) = detect_error_type_and_suggestions(&error_msg, -1);
+                            let now = Utc::now().to_rfc3339();
+                            let error_event = ErrorEvent {
+                                error_type,
+                                message: error_msg,
+                                suggestions,
+                                detected_at: now,
+                            };
+
+                            let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+                            let _ = conn.execute(
+                                "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                                rusqlite::params![worktree_id],
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[background] Failed to lock database: {}", e);
+                        }
+                    }
                 }
             }
         }
