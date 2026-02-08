@@ -81,18 +81,84 @@ pub async fn spawn_remote_agent_execution(
 /// Reads from SSH channel in a loop and forwards bytes to callback
 /// Continues until channel EOF or error
 pub async fn stream_remote_output(
-    _handle: &RemoteProcessHandle,
-    _output_sender: impl Fn(Vec<u8>) + Send + 'static,
+    handle: &RemoteProcessHandle,
+    output_sender: impl Fn(Vec<u8>) + Send + 'static,
 ) -> Result<(), String> {
-    // 1. Read from SSH channel in loop
-    //    - Read available bytes from PTY channel
-    //    - Send bytes to output_sender callback
-    // 2. output_sender forwards to WebSocket broadcaster
-    //    - Bytes appear in real-time on frontend xterm.js
-    // 3. Continue reading until channel EOF or process exit
-    // 4. Handle SSH channel errors gracefully
+    // Clone handle for background task
+    let handle_clone = handle.clone();
 
-    // Placeholder implementation
+    // Spawn background task to stream output
+    tokio::spawn(async move {
+        // Poll the remote log file and forward output to callback
+        let log_file = format!("/tmp/claude-code-{}.log", handle_clone.remote_pid);
+
+        // Keep track of bytes already read to avoid re-reading
+        let mut last_read_pos: u64 = 0;
+
+        loop {
+            // Read from remote log file using SSH cat command
+            let cat_cmd = format!("cat {} 2>/dev/null | wc -c", log_file);
+            let output = match handle_clone.ssh_session.execute_command(&cat_cmd).await {
+                Ok(out) => out,
+                Err(e) => {
+                    eprintln!("[stream_remote_output] Failed to check log file size: {}", e);
+                    break;
+                }
+            };
+
+            let file_size: u64 = output.trim().parse().unwrap_or(0);
+
+            // If file has grown, read the new data
+            if file_size > last_read_pos {
+                let read_cmd = format!(
+                    "tail -c +{} {} 2>/dev/null",
+                    last_read_pos + 1,
+                    log_file
+                );
+
+                match handle_clone.ssh_session.execute_command(&read_cmd).await {
+                    Ok(new_data) => {
+                        if !new_data.is_empty() {
+                            println!("[stream_remote_output] Forwarding {} bytes", new_data.len());
+                            output_sender(new_data.into_bytes());
+                            last_read_pos = file_size;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[stream_remote_output] Failed to read log file: {}", e);
+                        break;
+                    }
+                }
+            }
+
+            // Check if process is still running
+            let ps_cmd = format!("ps -p {} > /dev/null 2>&1 && echo 1 || echo 0", handle_clone.remote_pid);
+            let ps_output = match handle_clone.ssh_session.execute_command(&ps_cmd).await {
+                Ok(out) => out.trim().to_string(),
+                Err(_) => "0".to_string(),
+            };
+
+            if ps_output == "0" {
+                // Process has exited, read any remaining data
+                let final_cmd = format!("tail -c +{} {} 2>/dev/null", last_read_pos + 1, log_file);
+                if let Ok(final_data) = handle_clone.ssh_session.execute_command(&final_cmd).await {
+                    if !final_data.is_empty() {
+                        println!("[stream_remote_output] Final forwarding of {} bytes", final_data.len());
+                        output_sender(final_data.into_bytes());
+                    }
+                }
+
+                println!("[stream_remote_output] ✓ Process {} completed", handle_clone.remote_pid);
+                break;
+            }
+
+            // Poll interval: 500ms
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
+
+        println!("[stream_remote_output] Background task stopped");
+    });
+
     Ok(())
 }
 
