@@ -8,6 +8,8 @@ pub struct ProcessOutput {
     pub stderr: String,
     pub exit_code: i32,
     pub success: bool,
+    pub remote_pid: Option<u32>,  // PID of remote process (for SSH execution)
+    pub is_remote: bool,           // Flag indicating remote execution
 }
 
 /// Spawns an agent CLI process via Node.js sidecar with non-blocking async execution.
@@ -98,5 +100,7 @@ pub async fn spawn_agent_cli(
         stderr: stderr_result,
         exit_code,
         success,
+        remote_pid: None,   // Local execution has no remote PID
+        is_remote: false,   // This is local execution
     })
 }
