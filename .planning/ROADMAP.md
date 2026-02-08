@@ -18,7 +18,10 @@ Build a complete AI agent orchestration platform that enables users to queue tas
 - [x] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
 - [x] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
 - [x] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
-- [ ] **Phase 9: Remote Project Support** - SSH tunneling, remote git operations, remote execution
+- [x] **Phase 9: Remote Project Support** - SSH tunneling, remote git operations, remote execution
+- [x] **Phase 10: Documentation Completeness** - Tech debt closure with verification documentation
+- [ ] **Phase 11: Agent Execution UX Polish** - Status badges, worktree integration, pause/resume, notifications
+- [ ] **Phase 12: Worktree Disk Cleanup** - Ensure worktrees are fully cleaned from disk after merge
 
 ## Phase Details
 
@@ -228,7 +231,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md — Generate Phase 2 VERIFICATION.md file documenting Kanban board, task creation, GitHub/Jira import, drag-drop persistence with full evidence chain
+- [x] 10-01-PLAN.md — Generate Phase 2 VERIFICATION.md file documenting Kanban board, task creation, GitHub/Jira import, drag-drop persistence with full evidence chain
 
 ### Phase 11: Agent Execution UX Polish
 **Goal**: Complete all UX features for agent execution workflow.
@@ -246,10 +249,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — Wire status badge rendering in TaskCard JSX component
-- [ ] 11-02-PLAN.md — Replace placeholder worktree path with lease_worktree integration
-- [ ] 11-03-PLAN.md — Implement pause/resume mechanism with state management
-- [ ] 11-04-PLAN.md — Add user notification system on agent failure
+- [ ] 11-01-PLAN.md — Status badge with elapsed time in top-right corner of TaskCard (running/failed/success states with animations)
+- [ ] 11-02-PLAN.md — Worktree leasing integration in spawn_agent_execution handler (automatic retry with pool expansion)
+- [ ] 11-03-PLAN.md — Pause/resume mechanism with state management (soft pause via SIGSTOP, resume creates new execution)
+- [ ] 11-04-PLAN.md — Failure notifications (toast alerts + persistent badges, error type extraction from database)
 
 ### Phase 12: Worktree Disk Cleanup
 **Goal**: Ensure worktrees are fully cleaned from disk after merge.
@@ -284,12 +287,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
 | 8. Error Handling & Polish | 3 | ✓ Complete | 2026-02-07 |
 | 9. Remote Project Support | 5 (4 main + 1 gap closure) | ✓ Complete | 2026-02-08 |
-| 10. Documentation Completeness | 1 | Pending | — |
-| 11. Agent Execution UX Polish | 4 | Pending | — |
+| 10. Documentation Completeness | 1 | ✓ Complete | 2026-02-08 |
+| 11. Agent Execution UX Polish | 4 | Planning Complete | — |
 | 12. Worktree Disk Cleanup | 1 | Pending | — |
 
 **Total Plans:** 44 (37 main + 1 gap closure + 6 tech debt)
-**Completed Plans:** 38/44 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5, Phase 10: 0/1, Phase 11: 0/4, Phase 12: 0/1)
+**Completed Plans:** 39/44 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5, Phase 10: 1/1, Phase 11: 4/4 planned, Phase 12: 0/1)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
@@ -297,6 +300,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 *Roadmap created: 2026-02-04*
 *Phase 8 completed: 2026-02-07*
 *Phase 9 completed: 2026-02-08*
+*Phase 10 completed: 2026-02-08*
+*Phase 11 planning complete: 2026-02-08*
 *Tech debt phases added: 2026-02-08*
 *Depth: comprehensive (12 phases including tech debt closure)*
 *Coverage: 100% — All 28 v1.0 requirements mapped + tech debt closure*
