@@ -127,11 +127,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-02 | Phase 7 | Pending |
 | CFG-03 | Phase 7 | Pending |
 | CFG-04 | Phase 7 | Pending |
-| REM-01 | Phase 9 | Pending |
-| REM-02 | Phase 9 | Pending |
-| REM-03 | Phase 9 | Pending |
-| REM-04 | Phase 9 | Pending |
-| REM-05 | Phase 9 | Pending |
+| REM-01 | Phase 9 | Complete |
+| REM-02 | Phase 9 | Complete |
+| REM-03 | Phase 9 | Complete |
+| REM-04 | Phase 9 | Complete |
+| REM-05 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 28 total
@@ -140,4 +140,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-04*
-*Last updated: 2026-02-07 after Phase 8 completion*
+*Last updated: 2026-02-08 after Phase 9 completion (including gap closure)*

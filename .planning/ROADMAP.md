@@ -204,13 +204,14 @@ Plans:
   3. Agent execution, terminal streaming, and file diffs all work over SSH tunnel
   4. User is unaware of local vs remote — UI experience is identical
 
-**Plans**: 4 plans
+**Plans**: 5 plans (4 main + 1 gap closure)
 
 Plans:
-- [ ] 09-01-PLAN.md — SSH connection infrastructure + RemoteSshSession + host key verification
-- [ ] 09-02-PLAN.md — Remote git operations dispatcher (routes git commands to local or remote)
-- [ ] 09-03-PLAN.md — Remote process execution (spawn Claude Code CLI on remote via SSH PTY)
-- [ ] 09-04-PLAN.md — Remote terminal streaming + UI integration (project creation flow, status indicators)
+- [x] 09-01-PLAN.md — SSH connection infrastructure + RemoteSshSession + host key verification
+- [x] 09-02-PLAN.md — Remote git operations dispatcher (routes git commands to local or remote)
+- [x] 09-03-PLAN.md — Remote process execution (spawn Claude Code CLI on remote via SSH PTY)
+- [x] 09-04-PLAN.md — Remote terminal streaming + UI integration (project creation flow, status indicators)
+- [x] 09-05-PLAN.md (gap closure) — Complete terminal streaming integration (SSH PTY polling, WebSocket bridge, handler wiring)
 
 ## Progress
 
@@ -227,17 +228,16 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Review & Merge Workflow | 5 (3 main + 2 gap closure) | ✓ Complete | 2026-02-07 |
 | 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
 | 8. Error Handling & Polish | 3 | ✓ Complete | 2026-02-07 |
-| 9. Remote Project Support | 4 | Planned | — |
+| 9. Remote Project Support | 5 (4 main + 1 gap closure) | ✓ Complete | 2026-02-08 |
 
-**Total Plans:** 36 (33 main + 3 gap closure plans)
-**Completed Plans:** 31/36 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3)
-**Planned Plans:** 4/36 (Phase 9: 4/4)
+**Total Plans:** 38 (37 main + 1 gap closure)
+**Completed Plans:** 38/38 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
 
 *Roadmap created: 2026-02-04*
 *Phase 8 completed: 2026-02-07*
-*Phase 9 planned: 2026-02-08*
+*Phase 9 completed: 2026-02-08*
 *Depth: comprehensive (9 phases)*
 *Coverage: 100% — All 28 v1.0 requirements mapped*
