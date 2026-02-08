@@ -169,6 +169,26 @@ async function main() {
             process.exit(1);
         }
     }
+    else if (args.includes("--delete-worktree")) {
+        // Parse: --delete-worktree <repoPath> <worktreePath> <branchName>
+        const deleteIndex = args.indexOf("--delete-worktree") + 1;
+        const repoPath = args[deleteIndex];
+        const worktreePath = args[deleteIndex + 1];
+        const branchName = args[deleteIndex + 2];
+        if (!repoPath || !worktreePath || !branchName) {
+            console.error("Usage: node index.js --delete-worktree <repoPath> <worktreePath> <branchName>");
+            process.exit(1);
+        }
+        try {
+            await deleteWorktree(repoPath, worktreePath.split("/").pop() || "", branchName);
+            console.log(JSON.stringify({ success: true, worktreeId: worktreePath.split("/").pop() }));
+            process.exit(0);
+        }
+        catch (error) {
+            console.error("Cleanup failed:", error instanceof Error ? error.message : String(error));
+            process.exit(1);
+        }
+    }
     else if (args.includes("--task-id")) {
         // Original task execution mode (for agent execution)
         console.log("Task execution mode not yet implemented in index.ts");
@@ -180,6 +200,7 @@ async function main() {
         console.log("Usage:");
         console.log("  --get-diff <repoPath> <fromBranch> <toBranch> [contextLines]");
         console.log("  --merge <repoPath> <taskId> <branchName> <taskName>");
+        console.log("  --delete-worktree <repoPath> <worktreePath> <branchName>");
         console.log("  --task-id <taskId>  (agent execution)");
         process.exit(0);
     }
