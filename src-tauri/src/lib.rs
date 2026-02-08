@@ -5,6 +5,7 @@ pub mod ipc;
 pub mod process;
 pub mod ssh;
 pub mod git;
+pub mod websocket;
 
 pub use db::{init_db, AppState, get_git_connection};
 pub use error::AppError;
