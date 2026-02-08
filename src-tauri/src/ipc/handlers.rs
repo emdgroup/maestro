@@ -675,10 +675,13 @@ pub fn save_import_config(
 
 const POOL_MAX_SIZE: i32 = 5;
 
-/// Lease worktree from pool for task execution
-/// 
-/// Creates database record atomically, then invokes sidecar to create actual git worktree.
-/// If pool is empty, creates new worktree up to max pool size.
+/// Lease worktree from pool for task execution with automatic retry and pool expansion
+///
+/// When no worktrees are available:
+/// 1. Retries up to 3 times with exponential backoff (500ms, 1s, 1.5s)
+/// 2. On each retry, checks again for available worktrees
+/// 3. After retries exhausted, attempts pool expansion (creates new worktree)
+/// 4. Returns error only if all retries and expansion fail
 #[tauri::command]
 pub async fn lease_worktree(
     app_state: State<'_, Arc<AppState>>,
@@ -687,92 +690,105 @@ pub async fn lease_worktree(
     repo_path: String,
 ) -> Result<Worktree, String> {
     println!("lease_worktree(project={}, task={}) called", project_id, task_id);
-    
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    
-    // Try to find available worktree
-    let available: Result<Worktree, _> = conn.query_row(
-        "SELECT id, project_id, branch_name, path, status, leased_at, returned_at, created_at 
-         FROM worktrees WHERE project_id = ? AND status = 'Available' LIMIT 1",
-        [project_id],
-        |row| {
-            Ok(Worktree {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                branch_name: row.get(2)?,
-                path: row.get(3)?,
-                status: WorktreeStatus::Available,
-                leased_at: row.get(5)?,
-                returned_at: row.get(6)?,
-                created_at: row.get(7)?,
-            })
-        },
-    );
-    
-    if let Ok(mut worktree) = available {
-        // Lease existing worktree
-        let now = chrono::Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE worktrees SET status = 'Leased', leased_at = ? WHERE id = ?",
-            rusqlite::params![&now, worktree.id],
-        )
-        .map_err(|e| format!("Failed to lease worktree: {}", e))?;
-        
-        worktree.status = WorktreeStatus::Leased;
-        worktree.leased_at = Some(now);
-        
-        println!("✓ Leased existing worktree {}", worktree.id);
-        return Ok(worktree);
+
+    const MAX_RETRIES: u32 = 3;
+    const RETRY_BASE_MS: u64 = 500;
+
+    // Try to lease with retry loop
+    for attempt in 0..=MAX_RETRIES {
+        // Attempt to lease available worktree
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+            let available: Result<Worktree, _> = conn.query_row(
+                "SELECT id, project_id, branch_name, path, status, leased_at, returned_at, created_at
+                 FROM worktrees WHERE project_id = ? AND status = 'Available' LIMIT 1",
+                [project_id],
+                |row| {
+                    Ok(Worktree {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        branch_name: row.get(2)?,
+                        path: row.get(3)?,
+                        status: WorktreeStatus::Available,
+                        leased_at: row.get(5)?,
+                        returned_at: row.get(6)?,
+                        created_at: row.get(7)?,
+                    })
+                },
+            );
+
+            if let Ok(mut worktree) = available {
+                // Lease existing worktree
+                let now = chrono::Utc::now().to_rfc3339();
+                conn.execute(
+                    "UPDATE worktrees SET status = 'Leased', leased_at = ? WHERE id = ?",
+                    rusqlite::params![&now, worktree.id],
+                )
+                .map_err(|e| format!("Failed to lease worktree: {}", e))?;
+
+                worktree.status = WorktreeStatus::Leased;
+                worktree.leased_at = Some(now);
+
+                println!("✓ Leased existing worktree {}", worktree.id);
+                return Ok(worktree);
+            }
+        } // Drop lock before sleep
+
+        // No available worktree, check if we can create new one
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+            let count: i32 = conn.query_row(
+                "SELECT COUNT(*) FROM worktrees WHERE project_id = ?",
+                [project_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to count worktrees: {}", e))?;
+
+            if count < POOL_MAX_SIZE {
+                // Create new worktree
+                let worktree_id_str = format!("wt-{:03}", count + 1);
+                let branch_name = format!("pool/agent-task-{}", task_id);
+                let worktree_path = format!(".worktree-pool/{}", worktree_id_str);
+                let now = chrono::Utc::now().to_rfc3339();
+
+                conn.execute(
+                    "INSERT INTO worktrees (project_id, branch_name, path, status, leased_at, created_at)
+                     VALUES (?, ?, ?, 'Leased', ?, ?)",
+                    rusqlite::params![project_id, &branch_name, &worktree_path, &now, &now],
+                )
+                .map_err(|e| format!("Failed to create worktree record: {}", e))?;
+
+                let worktree_id = conn.last_insert_rowid() as i32;
+
+                println!("✓ Created new worktree {} (pool expansion)", worktree_id);
+
+                // Return without waiting for sidecar (Phase 4 will integrate actual git creation)
+                return Ok(Worktree {
+                    id: worktree_id,
+                    project_id,
+                    branch_name,
+                    path: worktree_path,
+                    status: WorktreeStatus::Leased,
+                    leased_at: Some(now.clone()),
+                    returned_at: None,
+                    created_at: now,
+                });
+            }
+        } // Drop lock before sleep
+
+        // Pool is at max size and no available worktrees
+        if attempt < MAX_RETRIES {
+            // Calculate exponential backoff: 500ms * 2^attempt = 500ms, 1s, 1.5s
+            let backoff_ms = RETRY_BASE_MS * (1 << attempt); // 2^attempt
+            println!("[retry] Attempt {}: No available worktrees, retrying in {}ms (pool at max)", attempt + 1, backoff_ms);
+            tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
+        }
     }
-    
-    // No available worktree, check if we can create new one
-    let count: i32 = conn.query_row(
-        "SELECT COUNT(*) FROM worktrees WHERE project_id = ?",
-        [project_id],
-        |row| row.get(0),
-    )
-    .map_err(|e| format!("Failed to count worktrees: {}", e))?;
-    
-    if count >= POOL_MAX_SIZE {
-        return Err(format!("Pool exhausted: {} worktrees in use (max {})", count, POOL_MAX_SIZE));
-    }
-    
-    // Create new worktree
-    let worktree_id_str = format!("wt-{:03}", count + 1);
-    let branch_name = format!("pool/agent-task-{}", task_id);
-    let worktree_path = format!(".worktree-pool/{}", worktree_id_str);
-    let now = chrono::Utc::now().to_rfc3339();
-    
-    conn.execute(
-        "INSERT INTO worktrees (project_id, branch_name, path, status, leased_at, created_at) 
-         VALUES (?, ?, ?, 'Leased', ?, ?)",
-        rusqlite::params![project_id, &branch_name, &worktree_path, &now, &now],
-    )
-    .map_err(|e| format!("Failed to create worktree record: {}", e))?;
-    
-    let worktree_id = conn.last_insert_rowid() as i32;
-    
-    // Drop connection lock before async sidecar call
-    drop(conn);
-    
-    // Call sidecar to create actual git worktree
-    // NOTE: For now, sidecar invocation is stubbed (Phase 3-01 built sidecar, Phase 4 will integrate)
-    // TODO: Implement actual sidecar spawning in Phase 4
-    println!("TODO: Invoke sidecar createWorktree({}, {}, {})", repo_path, worktree_id_str, task_id);
-    
-    // For now, return the worktree without actual git creation
-    // Phase 4 will add: tokio::process::Command sidecar invocation
-    
-    Ok(Worktree {
-        id: worktree_id,
-        project_id,
-        branch_name,
-        path: worktree_path,
-        status: WorktreeStatus::Leased,
-        leased_at: Some(now.clone()),
-        returned_at: None,
-        created_at: now,
-    })
+
+    // All retries exhausted, pool still full
+    Err(format!("Failed to lease or create worktree: pool exhausted and creation failed after {} retries", MAX_RETRIES))
 }
 
 /// Return worktree to pool after task completion
