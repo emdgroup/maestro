@@ -1534,6 +1534,23 @@ pub async fn spawn_agent_execution(
             }
         }
 
+        // Finalize: Return worktree to pool after execution completes (success or failure)
+        {
+            match app_state_arc.db.lock() {
+                Ok(conn) => {
+                    let now = chrono::Utc::now().to_rfc3339();
+                    match conn.execute(
+                        "UPDATE worktrees SET status = 'Available', returned_at = ? WHERE id = ?",
+                        rusqlite::params![&now, worktree_id],
+                    ) {
+                        Ok(_) => println!("[finalize] ✓ Returned worktree {} to pool", worktree_id),
+                        Err(e) => eprintln!("[finalize] ✗ Failed to return worktree to pool: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("[finalize] ✗ Failed to lock database to return worktree: {}", e),
+            }
+        }
+
         println!("[background] Agent execution complete for task {}", task_id);
     });
 
