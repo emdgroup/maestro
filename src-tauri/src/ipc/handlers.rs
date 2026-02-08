@@ -101,6 +101,97 @@ pub fn get_or_create_project(
     })
 }
 
+/// Create a new project (local or remote)
+#[tauri::command]
+pub async fn create_project(
+    app_state: State<'_, Arc<AppState>>,
+    name: String,
+    path: String,
+    is_remote: bool,
+    ssh_config: Option<SshConfig>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Project, String> {
+    println!("create_project({}, is_remote={}) called via IPC", name, is_remote);
+
+    // Validate name
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() || trimmed_name.len() > 255 {
+        return Err("Project name must be 1-255 characters".to_string());
+    }
+
+    // Validate remote projects have SSH config
+    if is_remote && ssh_config.is_none() {
+        return Err("SSH config required for remote projects".to_string());
+    }
+
+    // For remote projects, establish connection BEFORE acquiring lock
+    if is_remote {
+        if let Some(config) = &ssh_config {
+            use crate::ssh::RemoteSshSession;
+            let session = RemoteSshSession::new(config.clone());
+
+            // Test connection before creating project
+            session.connect().await.map_err(|e| {
+                format!("Failed to connect to remote project: {}", e)
+            })?;
+
+            // NOW acquire lock and store in database
+            let now = chrono::Utc::now().to_rfc3339();
+            let ssh_config_json = serde_json::to_string(config)
+                .map_err(|e| format!("Failed to serialize SSH config: {}", e))?;
+
+            let project_id: i32 = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+                // Insert project
+                conn.execute(
+                    "INSERT INTO projects (name, path, created_at, updated_at, is_remote, ssh_config) VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![&trimmed_name, &path, &now, &now, true, &ssh_config_json],
+                )
+                .map_err(|e| e.to_string())?;
+
+                conn.last_insert_rowid() as i32
+            };
+
+            // Store SSH session in app state (AFTER releasing lock)
+            state.set_ssh_session(project_id as i64, session).await;
+
+            Ok(Project {
+                id: project_id,
+                name: trimmed_name.to_string(),
+                path,
+                created_at: now,
+                is_remote: true,
+                ssh_config: Some(config.clone()),
+            })
+        } else {
+            Err("SSH config required for remote projects".to_string())
+        }
+    } else {
+        // Local project
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO projects (name, path, created_at, updated_at, is_remote, ssh_config) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![&trimmed_name, &path, &now, &now, false, None::<String>],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let project_id = conn.last_insert_rowid() as i32;
+
+        Ok(Project {
+            id: project_id,
+            name: trimmed_name.to_string(),
+            path,
+            created_at: now,
+            is_remote: false,
+            ssh_config: None,
+        })
+    }
+}
+
 /// Get list of all tasks for a project
 #[tauri::command]
 pub fn get_tasks(

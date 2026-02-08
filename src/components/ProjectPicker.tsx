@@ -87,12 +87,12 @@ export function ProjectPicker({
     setLoading(true);
     setError(null);
     try {
-      // Verify connection again before creating project
-      await invoke<boolean>("test_remote_connection", { config });
-
       // Create project with remote config
-      const project = await invoke<{ path: string }>("get_or_create_project", {
+      const project = await invoke<{ path: string }>("create_project", {
+        name: config.host,
         path: config.remote_path,
+        is_remote: true,
+        ssh_config: config,
       });
 
       onProjectSelected(project.path);

@@ -41,6 +41,17 @@ fn get_or_create_project(app_state: State<Arc<AppState>>, project_path: String) 
 }
 
 #[tauri::command]
+async fn create_project(
+    name: String,
+    path: String,
+    is_remote: bool,
+    ssh_config: Option<gsd_demo::models::SshConfig>,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<gsd_demo::models::Project, String> {
+    gsd_demo::ipc::handlers::create_project(app_state.clone(), name, path, is_remote, ssh_config, app_state).await
+}
+
+#[tauri::command]
 fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
     gsd_demo::ipc::handlers::get_tasks(app_state, project_id)
 }
@@ -386,6 +397,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_projects,
             get_or_create_project,
+            create_project,
             get_tasks,
             create_task,
             update_task,
