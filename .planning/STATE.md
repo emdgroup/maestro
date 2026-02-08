@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 ## Current Position
 
-Phase: 9 of 9 (Remote Project Support - Ready to Plan)
-Plan: Phase 8 complete with all 3 plans verified
-Status: Phase 8 VERIFIED ✓ (21/21 must-haves passed)
-Last activity: 2026-02-07 — Completed Phase 8 verification and state updates
+Phase: 9 of 9 (Remote Project Support - In Progress)
+Plan: 1 of 3 complete (SSH Connection Infrastructure)
+Status: Phase 9 Plan 1 COMPLETE ✓
+Last activity: 2026-02-08 — Completed Plan 09-01 with SSH infrastructure foundation
 
-Progress: [██████████] 33/33 plans (100%), 8/9 phases complete (Phase 8 complete, moving to Phase 9)
+Progress: [██████████░] 34/36 plans (94%), 9/9 phases started (Plan 09-01 complete)
 
 ## Performance Metrics
 
@@ -36,6 +36,7 @@ Progress: [██████████] 33/33 plans (100%), 8/9 phases comple
 | 06-review-merge-workflow | 5 | 120m | 24m | Complete ✓✓ (gap closure + merge ops) |
 | 07-configuration-management | 3 | 80m | 26.7m | Complete ✓ (data model + UI) |
 | 08-error-handling-polish | 3 | 135m | 45m | Complete ✓✓✓ (full pipeline: detection + terminal + recovery UI) |
+| 09-remote-project-support | 3 | In Progress | - | Plan 1 Complete (SSH infrastructure) |
 
 **Recent Trend:**
 - Phase 6 complete: Full review & merge workflow (diff viewer → approval → squash merge → status transitions)
@@ -78,6 +79,18 @@ The complete error handling workflow is now implemented:
 Users can see failures immediately, understand causes, and recover gracefully.
 
 *Updated: 2026-02-07 (after Plan 08-03 recovery UI completion)*
+
+**Phase 9 Plan 1 Complete - SSH Connection Infrastructure:**
+Established remote project support foundation with:
+1. SSH module (ssh2 crate 0.9.5) with connection state machine
+2. RemoteSshSession persistent connection manager
+3. Authentication support (key file + agent, no password)
+4. Error categorization (transient vs permanent)
+5. Host key verification with known_hosts storage
+6. AppState integration with lazy connection on app startup
+7. Database schema v6 with is_remote and ssh_config fields
+
+*Updated: 2026-02-08 (after Plan 09-01 SSH infrastructure completion)*
 
 ## Accumulated Context
 
