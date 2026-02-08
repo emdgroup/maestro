@@ -47,7 +47,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
   const [isExecuting, setIsExecuting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
-  const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("0s");
   const [executionLog, setExecutionLog] = useState<ExecutionLog | null>(null);
@@ -349,52 +348,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         >
           Review
         </button>
-      )}
-      {task.status === 'InProgress' && executionLog && (
-        <>
-          {executionLog.status === 'running' && (
-            <button
-              onClick={handlePause}
-              disabled={isPauseLoading}
-              style={{
-                padding: '6px 12px',
-                marginTop: '8px',
-                backgroundColor: isPauseLoading ? '#ccc' : '#f59e0b',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
-                width: '100%',
-                fontSize: '12px',
-                fontWeight: 'bold',
-              }}
-              title="Pause execution"
-            >
-              {isPauseLoading ? 'Pausing...' : '⏸ Pause'}
-            </button>
-          )}
-          {executionLog.status === 'paused' && (
-            <button
-              onClick={handleResume}
-              disabled={isPauseLoading}
-              style={{
-                padding: '6px 12px',
-                marginTop: '8px',
-                backgroundColor: isPauseLoading ? '#ccc' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
-                width: '100%',
-                fontSize: '12px',
-                fontWeight: 'bold',
-              }}
-              title="Resume execution"
-            >
-              {isPauseLoading ? 'Resuming...' : '▶ Resume'}
-            </button>
-          )}
-        </>
       )}
       {task.status === 'Failed' && (
         <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
