@@ -6,8 +6,10 @@ pub mod settings;
 pub mod sync;
 pub mod review;
 pub mod merge_outcome;
+pub mod connection;
 
 pub use project::{Project, ProjectStatus, SshConfig, SshAuthMethod};
+pub use connection::GitConnection;
 pub use task::{Task, TaskStatus, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
 pub use worktree::{Worktree, WorktreeStatus, PoolStatus};
 pub use execution_log::{ExecutionLog, ExecutionStatus, ErrorEvent};

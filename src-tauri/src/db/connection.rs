@@ -7,6 +7,7 @@ use crate::db::schema::initialize_schema;
 use crate::error::AppError;
 use crate::process::PtySession;
 use crate::ssh::RemoteSshSession;
+use crate::models::{Project, GitConnection};
 
 /// Initialize the SQLite database
 ///
@@ -72,6 +73,32 @@ impl AppState {
     /// Remove an SSH session for a project
     pub async fn remove_ssh_session(&self, project_id: i64) {
         self.ssh_sessions.lock().await.remove(&project_id);
+    }
+}
+
+/// Get a GitConnection for a project (local or remote via SSH)
+///
+/// For local projects: returns GitConnection::Local with the project path
+/// For remote projects: returns GitConnection::Remote with SSH session and remote path
+pub async fn get_git_connection(
+    project: &Project,
+    app_state: &AppState,
+) -> Result<GitConnection, String> {
+    if project.is_remote {
+        let ssh_config = project.ssh_config.as_ref()
+            .ok_or("Remote project missing SSH config")?;
+
+        let ssh_session = app_state.get_ssh_session(project.id as i64).await
+            .ok_or("SSH session not initialized for remote project")?;
+
+        Ok(GitConnection::Remote {
+            ssh: Arc::new(ssh_session),
+            remote_path: ssh_config.remote_path.clone(),
+        })
+    } else {
+        Ok(GitConnection::Local {
+            path: project.path.clone(),
+        })
     }
 }
 
