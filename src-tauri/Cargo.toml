@@ -27,6 +27,7 @@ reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 base64 = "0.22"
 portable-pty = "0.8"
+ssh2 = "0.9"
 
 [package.metadata.ts-rs]
 export_dir = "../src/types"

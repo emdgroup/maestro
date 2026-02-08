@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -171,6 +171,39 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             // Stores ErrorEvent struct as JSON for error detection and suggestions
             conn.execute(
                 "ALTER TABLE execution_logs ADD COLUMN error_event TEXT;",
+                [],
+            )?;
+        }
+
+        if current_version < 6 {
+            // Migration from v5 to v6: add remote project support
+            // Add is_remote and ssh_config columns to projects table
+            conn.execute(
+                "ALTER TABLE projects ADD COLUMN is_remote BOOLEAN NOT NULL DEFAULT 0;",
+                [],
+            )?;
+
+            conn.execute(
+                "ALTER TABLE projects ADD COLUMN ssh_config TEXT;",
+                [],
+            )?;
+
+            // Create known_hosts table for storing accepted SSH host keys
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS known_hosts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL,
+                    host_fingerprint TEXT NOT NULL,
+                    fingerprint_type TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                );",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);",
                 [],
             )?;
         }

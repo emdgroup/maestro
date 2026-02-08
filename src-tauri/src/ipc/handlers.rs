@@ -15,16 +15,22 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC")
+        .prepare("SELECT id, name, path, created_at, is_remote, ssh_config FROM projects ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
         .query_map([], |row| {
+            let ssh_config_json: Option<String> = row.get(5)?;
+            let ssh_config = ssh_config_json
+                .and_then(|json| serde_json::from_str(&json).ok());
+
             Ok(Project {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 path: row.get(2)?,
                 created_at: row.get(3)?,
+                is_remote: row.get(4)?,
+                ssh_config,
             })
         })
         .map_err(|e| e.to_string())?
@@ -45,14 +51,20 @@ pub fn get_or_create_project(
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at FROM projects WHERE path = ?",
+        "SELECT id, name, path, created_at, is_remote, ssh_config FROM projects WHERE path = ?",
         [&path],
         |row| {
+            let ssh_config_json: Option<String> = row.get(5)?;
+            let ssh_config = ssh_config_json
+                .and_then(|json| serde_json::from_str(&json).ok());
+
             Ok(Project {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 path: row.get(2)?,
                 created_at: row.get(3)?,
+                is_remote: row.get(4)?,
+                ssh_config,
             })
         },
     );
@@ -70,8 +82,8 @@ pub fn get_or_create_project(
         .to_string();
 
     conn.execute(
-        "INSERT INTO projects (name, path, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        rusqlite::params![&name, &path, &now, &now],
+        "INSERT INTO projects (name, path, created_at, updated_at, is_remote, ssh_config) VALUES (?, ?, ?, ?, ?, ?)",
+        rusqlite::params![&name, &path, &now, &now, false, None::<String>],
     )
     .map_err(|e| e.to_string())?;
 
@@ -82,6 +94,8 @@ pub fn get_or_create_project(
         name,
         path,
         created_at: now,
+        is_remote: false,
+        ssh_config: None,
     })
 }
 
