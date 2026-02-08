@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "./lib/tauri-mock";
 import { ProjectPicker } from "./components/ProjectPicker";
+import { ProjectCard } from "./components/ProjectCard";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskModal } from "./components/TaskModal";
 import { TaskDetail } from "./components/TaskDetail";
@@ -136,7 +137,7 @@ function App() {
       <header className="app-header">
         <div className="header-left">
           <h1>GSD Agent Orchestrator</h1>
-          <p>Project: {settings?.project_path}</p>
+          {currentProject && <ProjectCard project={currentProject} compact={true} />}
         </div>
         <div className="header-right">
           {projectSelected && currentProject && (

@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import { RemoteConnectionForm } from "./RemoteConnectionForm";
+import { SshConfig } from "../types/bindings";
 import "../styles/ProjectPicker.css";
 
 interface ProjectPickerProps {
@@ -7,13 +11,26 @@ interface ProjectPickerProps {
   recentProjects?: string[];
 }
 
+type Stage = "select" | "local" | "remote";
+
 export function ProjectPicker({
   onProjectSelected,
   recentProjects = [],
 }: ProjectPickerProps) {
+  const [stage, setStage] = useState<Stage>("select");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualPath, setManualPath] = useState("");
+
+  async function handleSelectLocal() {
+    setStage("local");
+    setError(null);
+  }
+
+  async function handleSelectRemote() {
+    setStage("remote");
+    setError(null);
+  }
 
   async function handleFolderPicker() {
     setLoading(true);
@@ -66,62 +83,144 @@ export function ProjectPicker({
     }
   }
 
-  return (
-    <div className="project-picker">
-      <div className="project-picker-container">
-        <h1>Welcome to GSD Agent Orchestrator</h1>
-        <p>Select a project directory to get started</p>
+  async function handleCreateRemote(config: SshConfig) {
+    setLoading(true);
+    setError(null);
+    try {
+      // Verify connection again before creating project
+      await invoke<boolean>("test_remote_connection", { config });
 
-        <button
-          className="project-picker-button primary"
-          onClick={handleFolderPicker}
-          disabled={loading}
-        >
-          {loading ? "Loading..." : "Select Project Folder"}
-        </button>
+      // Create project with remote config
+      const project = await invoke<{ path: string }>("get_or_create_project", {
+        path: config.remote_path,
+      });
 
-        <div className="manual-path-section">
-          <p className="manual-path-label">Or enter path manually:</p>
-          <form onSubmit={handleManualPath} className="manual-path-form">
-            <input
-              type="text"
-              value={manualPath}
-              onChange={(e) => setManualPath(e.target.value)}
-              placeholder="/home/user/project-path"
-              className="manual-path-input"
-              disabled={loading}
-            />
+      onProjectSelected(project.path);
+    } catch (err) {
+      const errorMsg = String(err);
+      setError(errorMsg);
+      toast.error(`Failed to create remote project: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Stage: Select local or remote
+  if (stage === "select") {
+    return (
+      <div className="project-picker">
+        <div className="project-picker-container">
+          <h1>Welcome to GSD Agent Orchestrator</h1>
+          <p>Select a project directory to get started</p>
+
+          <div className="project-type-selection">
             <button
-              type="submit"
               className="project-picker-button primary"
-              disabled={loading || !manualPath.trim()}
+              onClick={handleSelectLocal}
+              disabled={loading}
             >
-              Open
+              📁 Local Project
             </button>
-          </form>
-        </div>
 
-        {recentProjects.length > 0 && (
-          <div className="recent-projects">
-            <h2>Recent Projects</h2>
-            <ul>
-              {recentProjects.map((project) => (
-                <li key={project}>
-                  <button
-                    onClick={() => handleRecentProject(project)}
-                    disabled={loading}
-                    className="project-picker-button secondary"
-                  >
-                    {project}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <button
+              className="project-picker-button primary"
+              onClick={handleSelectRemote}
+              disabled={loading}
+            >
+              🌐 Remote Project (SSH)
+            </button>
           </div>
-        )}
 
-        {error && <div className="error-message">{error}</div>}
+          {recentProjects.length > 0 && (
+            <div className="recent-projects">
+              <h2>Recent Projects</h2>
+              <ul>
+                {recentProjects.map((project) => (
+                  <li key={project}>
+                    <button
+                      onClick={() => handleRecentProject(project)}
+                      disabled={loading}
+                      className="project-picker-button secondary"
+                    >
+                      {project}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {error && <div className="error-message">{error}</div>}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // Stage: Local project
+  if (stage === "local") {
+    return (
+      <div className="project-picker">
+        <div className="project-picker-container">
+          <h1>Select Local Project</h1>
+
+          <button
+            className="project-picker-button primary"
+            onClick={handleFolderPicker}
+            disabled={loading}
+          >
+            {loading ? "Loading..." : "Select Project Folder"}
+          </button>
+
+          <div className="manual-path-section">
+            <p className="manual-path-label">Or enter path manually:</p>
+            <form onSubmit={handleManualPath} className="manual-path-form">
+              <input
+                type="text"
+                value={manualPath}
+                onChange={(e) => setManualPath(e.target.value)}
+                placeholder="/home/user/project-path"
+                className="manual-path-input"
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                className="project-picker-button primary"
+                disabled={loading || !manualPath.trim()}
+              >
+                Open
+              </button>
+            </form>
+          </div>
+
+          <button
+            className="project-picker-button secondary"
+            onClick={() => setStage("select")}
+            disabled={loading}
+          >
+            Back
+          </button>
+
+          {error && <div className="error-message">{error}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // Stage: Remote project
+  if (stage === "remote") {
+    return (
+      <div className="project-picker">
+        <div className="project-picker-container">
+          <RemoteConnectionForm
+            onSubmit={handleCreateRemote}
+            onBack={() => setStage("select")}
+            loading={loading}
+          />
+          {error && <div className="error-message">{error}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
