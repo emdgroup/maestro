@@ -2236,6 +2236,7 @@ pub async fn approve_task_and_merge(
                                     worktree_id,
                                     &full_worktree_path,
                                     &repo_path,
+                                    &branch_name,
                                 ).await {
                                     eprintln!("[merge] Merge finalization error: {}", e);
                                 } else {
@@ -2281,13 +2282,14 @@ pub async fn approve_task_and_merge(
     Ok(serde_json::json!({ "merging": true, "message": "Merge started" }))
 }
 
-/// Finalize successful merge: update task to Done, cleanup worktree, return to pool
+/// Finalize successful merge: update task to Done, cleanup worktree from disk, return to pool
 async fn finalize_successful_merge(
     app_state: &Arc<AppState>,
     task_id: i32,
     worktree_id: i32,
     worktree_path: &str,
     repo_path: &str,
+    branch_name: &str,
 ) -> Result<(), String> {
     println!(
         "[finalize] Finalizing merge for task {}: updating task to Done",
@@ -2308,23 +2310,58 @@ async fn finalize_successful_merge(
         println!("[finalize] ✓ Task {} moved to Done", task_id);
     }
 
-    // 2. Return worktree to pool (mark as Available, clear task_id)
+    // 2. Mark worktree as Dirty before cleanup (crash-safe state marking)
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = chrono::Utc::now().to_rfc3339();
-
         conn.execute(
-            "UPDATE worktrees SET task_id = NULL, status = 'Available', returned_at = ?, updated_at = ?
-             WHERE id = ?",
-            rusqlite::params![&now, &now, worktree_id],
+            "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+            rusqlite::params![worktree_id],
         )
-        .map_err(|e| format!("Return worktree to pool failed: {}", e))?;
+        .map_err(|e| format!("Failed to mark worktree Dirty: {}", e))?;
 
-        println!("[finalize] ✓ Worktree {} returned to pool", worktree_id);
+        println!("[finalize] Marked worktree {} as Dirty before cleanup", worktree_id);
     }
 
-    // 3. Clean up worktree directory (optional, can skip if sidecar doesn't remove it)
-    // For now, we'll rely on cleanup_worktree to be called separately if needed
+    // 3. Delete worktree from disk via sidecar
+    let sidecar_result = tokio::process::Command::new("node")
+        .args(&[
+            "sidecar/dist/index.js",
+            "--delete-worktree",
+            repo_path,
+            worktree_path,
+            branch_name,
+        ])
+        .output()
+        .await;
+
+    match sidecar_result {
+        Ok(output) => {
+            if output.status.success() {
+                // Delete from database on successful cleanup
+                {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    conn.execute(
+                        "DELETE FROM worktrees WHERE id = ?",
+                        rusqlite::params![worktree_id],
+                    )
+                    .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
+                }
+                println!("[finalize] ✓ Worktree {} deleted from disk and DB", worktree_id);
+            } else {
+                // Cleanup failed - log error but don't fail the entire merge
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("[finalize] ⚠ Cleanup failed (will retry): {}", stderr);
+                // Worktree stays in Dirty state for recovery via recover_dirty_worktrees on app restart
+            }
+        }
+        Err(e) => {
+            // Sidecar spawn error - log but don't fail
+            eprintln!("[finalize] ⚠ Failed to invoke sidecar: {} (will retry)", e);
+            // Worktree stays in Dirty state for recovery
+        }
+    }
+
+    // 4. Final status log
     println!("[finalize] ✓ Merge finalization complete for task {}", task_id);
 
     Ok(())
