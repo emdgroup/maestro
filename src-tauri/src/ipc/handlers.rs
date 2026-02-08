@@ -4,9 +4,10 @@ use base64::Engine;
 use tokio::io::AsyncReadExt;
 use chrono::Utc;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome, ErrorEvent, GitConnection};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection};
 use crate::db::{AppState, get_git_connection};
-use crate::process::spawn_agent_cli_pty;
+use crate::process::{spawn_agent_cli_pty, ExecutionConfig};
+use crate::websocket::attach_remote_stream_listener;
 use crate::git;
 
 /// Get list of all projects
@@ -1139,6 +1140,20 @@ pub async fn spawn_agent_execution(
 ) -> Result<i32, String> {
     println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
 
+    // 0. Get project and determine if remote
+    let is_remote = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let is_remote: bool = conn.query_row(
+            "SELECT is_remote FROM projects WHERE id = ?",
+            [project_id],
+            |row| row.get(0),
+        ).map_err(|e| format!("Failed to load project: {}", e))?;
+        drop(conn);
+        is_remote
+    };
+
+    println!("✓ Determined execution type (is_remote: {})", is_remote);
+
     // 1. Create execution log record
     let exec_log_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -1152,82 +1167,161 @@ pub async fn spawn_agent_execution(
     let worktree_path = format!("{}/{}", repo_path, worktree.path);
     println!("✓ Leased worktree {} at path {}", worktree_id, worktree.path);
 
-    // 3. Extract Arc<AppState> from State for background task
-    // This allows the Arc to be moved into the tokio::spawn closure
-    // State<'_, Arc<AppState>> dereferences to &Arc<AppState>, so we clone to own it
+    // 3. Get task for execution
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let result = conn.query_row(
+            "SELECT id, project_id, name, description, acceptance_criteria, status, external_id, is_imported, import_source, skills, model_override, mcp_allowlist, skills_override, created_at, updated_at
+             FROM tasks WHERE id = ?",
+            [task_id],
+            |row| {
+                let status_str: String = row.get(5)?;
+                let status = match status_str.as_str() {
+                    "Backlog" => TaskStatus::Backlog,
+                    "Ready" => TaskStatus::Ready,
+                    "InProgress" => TaskStatus::InProgress,
+                    "Review" => TaskStatus::Review,
+                    "Merging" => TaskStatus::Merging,
+                    "Failed" => TaskStatus::Failed,
+                    _ => TaskStatus::Done,
+                };
+
+                let skills_json: String = row.get(9)?;
+                let skills: Vec<String> = serde_json::from_str(&skills_json).unwrap_or_default();
+                let mcp_json: Option<String> = row.get(11)?;
+                let mcp_allowlist = mcp_json.and_then(|j| serde_json::from_str(&j).ok());
+                let skills_json: Option<String> = row.get(12)?;
+                let skills_override = skills_json.and_then(|j| serde_json::from_str(&j).ok());
+
+                Ok(Task {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    acceptance_criteria: row.get(4)?,
+                    status,
+                    external_id: row.get(6)?,
+                    is_imported: row.get(7)?,
+                    import_source: row.get(8)?,
+                    skills,
+                    model_override: row.get(10)?,
+                    mcp_allowlist,
+                    skills_override,
+                    created_at: row.get(13)?,
+                    updated_at: row.get(14)?,
+                })
+            },
+        );
+        drop(conn);
+        result.map_err(|e| format!("Failed to load task: {}", e))?
+    };
+
+    // 4. Build execution config from task and project settings
+    let config = ExecutionConfig {
+        model_override: task.model_override.clone(),
+        mcp_allowlist: task.mcp_allowlist.clone(),
+        skills_override: task.skills_override.clone(),
+    };
+
+    // 5. Extract Arc<AppState> from State for background task
     let app_state_arc = (*app_state).clone();
 
-    // 4. Spawn background task (returns immediately to caller)
+    // 6. Spawn background task (returns immediately to caller)
     tokio::spawn(async move {
         println!("[background] Starting agent execution for task {} in worktree {}", task_id, worktree_id);
 
-        // Run agent process via PTY spawner
-        match spawn_agent_cli_pty(
-            task_id,
-            "node".to_string(),
-            vec!["sidecar/dist/index.js".to_string(), "--task-id".to_string(), task_id.to_string()],
-            std::path::PathBuf::from(&worktree_path),
-        )
-        .await
-        {
-            Ok(pty_session) => {
-                println!("[background] PTY session spawned for task {}", task_id);
+        // For local execution: continue using existing PTY spawner
+        if !is_remote {
+            match spawn_agent_cli_pty(
+                task_id,
+                "node".to_string(),
+                vec!["sidecar/dist/index.js".to_string(), "--task-id".to_string(), task_id.to_string()],
+                std::path::PathBuf::from(&worktree_path),
+            )
+            .await
+            {
+                Ok(pty_session) => {
+                    println!("[background] PTY session spawned for task {}", task_id);
 
-                // Store PtySession in AppState for frontend attachment
-                {
-                    let mut sessions = app_state_arc.pty_sessions.lock().await;
-                    sessions.insert(task_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
-                    println!("[background] ✓ Stored PTY session for task {} in AppState", task_id);
-                }
-
-                // Initialize execution log status (PTY output will be streamed to frontend)
-                match app_state_arc.db.lock() {
-                    Ok(conn) => {
-                        // Update execution log to running status
-                        if let Err(e) = crate::db::execution_logs::mark_complete(&conn, exec_log_id, 0) {
-                            eprintln!("[background] Failed to initialize execution log: {}", e);
-                        }
-
-                        // Worktree remains in InUse status during execution
-                        // Will be returned to pool or marked dirty when frontend detaches or process completes
+                    // Store PtySession in AppState for frontend attachment
+                    {
+                        let mut sessions = app_state_arc.pty_sessions.lock().await;
+                        sessions.insert(task_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+                        println!("[background] ✓ Stored PTY session for task {} in AppState", task_id);
                     }
-                    Err(e) => {
-                        eprintln!("[background] Failed to lock database: {}", e);
+
+                    // Initialize execution log status
+                    match app_state_arc.db.lock() {
+                        Ok(conn) => {
+                            if let Err(e) = crate::db::execution_logs::mark_complete(&conn, exec_log_id, 0) {
+                                eprintln!("[background] Failed to initialize execution log: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[background] Failed to lock database: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[background] PTY spawning failed: {}", e);
+
+                    match app_state_arc.db.lock() {
+                        Ok(conn) => {
+                            let error_msg = format!("\n[ERROR] Failed to spawn PTY: {}", e);
+                            let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+
+                            let (error_type, suggestions) = detect_error_type_and_suggestions(&e, -1);
+                            let now = Utc::now().to_rfc3339();
+                            let error_event = ErrorEvent {
+                                error_type: error_type.clone(),
+                                message: e.clone(),
+                                suggestions,
+                                detected_at: now,
+                            };
+
+                            let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+
+                            let _ = conn.execute(
+                                "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                                rusqlite::params![worktree_id],
+                            );
+                            println!("✗ Marked worktree {} as dirty due to spawn error. Error type: {}", worktree_id, error_type);
+                        }
+                        Err(lock_err) => {
+                            eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
+                        }
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("[background] PTY spawning failed: {}", e);
+        } else {
+            // For remote execution: Remote execution placeholder
+            // Note: Full remote execution requires getting SSH session from AppState
+            // which is complex to implement inside async task without Send issues
+            eprintln!("[background] Remote execution is not yet fully implemented");
 
-                // Log error to execution log and mark as failed with error details
-                match app_state_arc.db.lock() {
-                    Ok(conn) => {
-                        let error_msg = format!("\n[ERROR] Failed to spawn PTY: {}", e);
-                        let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
+            match app_state_arc.db.lock() {
+                Ok(conn) => {
+                    let error_msg = "[ERROR] Remote execution not yet implemented in this phase".to_string();
+                    let _ = crate::db::execution_logs::append_output(&conn, exec_log_id, &error_msg);
 
-                        // Detect error type and generate suggestions
-                        let (error_type, suggestions) = detect_error_type_and_suggestions(&e, -1);
-                        let now = Utc::now().to_rfc3339();
-                        let error_event = ErrorEvent {
-                            error_type: error_type.clone(),
-                            message: e.clone(),
-                            suggestions,
-                            detected_at: now,
-                        };
+                    let (error_type, suggestions) = detect_error_type_and_suggestions(&error_msg, -1);
+                    let now = Utc::now().to_rfc3339();
+                    let error_event = ErrorEvent {
+                        error_type: error_type.clone(),
+                        message: error_msg.clone(),
+                        suggestions,
+                        detected_at: now,
+                    };
 
-                        // Mark as failed with error event
-                        let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
+                    let _ = crate::db::execution_logs::mark_failed(&conn, exec_log_id, &error_event);
 
-                        // Mark worktree as dirty on spawn error
-                        let _ = conn.execute(
-                            "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
-                            rusqlite::params![worktree_id],
-                        );
-                        println!("✗ Marked worktree {} as dirty due to spawn error. Error type: {}", worktree_id, error_type);
-                    }
-                    Err(lock_err) => {
-                        eprintln!("[background] Failed to lock database for error logging: {}", lock_err);
-                    }
+                    let _ = conn.execute(
+                        "UPDATE worktrees SET status = 'Dirty' WHERE id = ?",
+                        rusqlite::params![worktree_id],
+                    );
+                }
+                Err(lock_err) => {
+                    eprintln!("[background] Failed to lock database: {}", lock_err);
                 }
             }
         }
@@ -1235,7 +1329,7 @@ pub async fn spawn_agent_execution(
         println!("[background] Agent execution complete for task {}", task_id);
     });
 
-    // 5. Return execution_log id immediately (process runs in background)
+    // 7. Return execution_log id immediately (process runs in background)
     println!("✓ Spawned background agent task, execution log id: {}", exec_log_id);
     Ok(exec_log_id)
 }
