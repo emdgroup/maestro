@@ -9,12 +9,14 @@ export interface BoardState {
   isTerminalOpen: boolean;
   retryingTaskIds: Set<number>;
   abortingTaskIds: Set<number>;
+  pausingTaskIds: Set<number>;
   loadTasks: (tasks: Task[]) => void;
   updateTaskStatus: (taskId: number, newStatus: TaskStatus) => void;
   addTask: (task: Task) => void;
   getTasks: () => Task[];
   getTasksByStatus: (status: TaskStatus) => Task[];
   executeTask: (projectId: number, taskId: number, repoPath: string) => Promise<number>;
+  pauseExecution: (taskId: number) => Promise<void>;
   resumeExecution: (projectId: number, taskId: number, repoPath: string) => Promise<number>;
   abortExecution: (projectId: number, taskId: number) => Promise<void>;
   openTerminal: (taskId: number) => void;
@@ -28,6 +30,7 @@ export const useBoardStore = create<BoardState>()(
     isTerminalOpen: false,
     retryingTaskIds: new Set<number>(),
     abortingTaskIds: new Set<number>(),
+    pausingTaskIds: new Set<number>(),
 
     loadTasks: (tasks: Task[]) =>
       set((state) => {
@@ -79,6 +82,25 @@ export const useBoardStore = create<BoardState>()(
       }
     },
 
+    pauseExecution: async (taskId: number) => {
+      try {
+        set((state) => {
+          state.pausingTaskIds.add(taskId);
+        });
+
+        await invoke<void>("pause_agent_execution", { task_id: taskId });
+
+        // Backend updates database directly. TaskCard will reload execution log.
+      } catch (error) {
+        console.error("Pause execution failed:", error);
+        throw error;
+      } finally {
+        set((state) => {
+          state.pausingTaskIds.delete(taskId);
+        });
+      }
+    },
+
     resumeExecution: async (projectId: number, taskId: number, repoPath: string) => {
       try {
         // Track retrying state
@@ -86,10 +108,10 @@ export const useBoardStore = create<BoardState>()(
           state.retryingTaskIds.add(taskId);
         });
 
-        // Invoke spawn_agent_execution to retry
-        const executionLogId = await invoke<number>("spawn_agent_execution", {
-          project_id: projectId,
+        // Invoke resume_agent_execution handler (reuses same config, creates new execution log)
+        const executionLogId = await invoke<number>("resume_agent_execution", {
           task_id: taskId,
+          project_id: projectId,
           repo_path: repoPath,
         });
 
