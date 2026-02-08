@@ -132,3 +132,210 @@
 .manual-path-form .project-picker-button {
   min-width: 100px;
 }
+
+/* Project type selection (Local vs Remote) */
+.project-type-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin: 30px 0;
+}
+
+.project-type-selection .project-picker-button {
+  width: 100%;
+  padding: 16px;
+  font-size: 16px;
+}
+
+/* Remote Connection Form */
+.remote-connection-form {
+  width: 100%;
+}
+
+.remote-connection-form h2 {
+  font-size: 24px;
+  margin-bottom: 25px;
+  font-weight: 600;
+}
+
+.remote-connection-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-group .required {
+  color: #e74c3c;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="password"] {
+  padding: 12px;
+  font-size: 14px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-color, #0066cc);
+  background: var(--bg-primary);
+}
+
+.form-group input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Auth method fieldset */
+.auth-method-group {
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  padding: 15px;
+  margin: 0;
+}
+
+.auth-method-group legend {
+  padding: 0 10px;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.radio-label input[type="radio"] {
+  cursor: pointer;
+  margin: 0;
+}
+
+.radio-label input[type="radio"]:disabled {
+  cursor: not-allowed;
+}
+
+/* Key file path input */
+.key-file-path {
+  margin-left: 24px;
+  margin-top: 8px;
+}
+
+/* Test button */
+.test-button {
+  padding: 12px 16px;
+  font-size: 14px;
+  background: var(--accent-color, #27ae60);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.test-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.test-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Test result feedback */
+.test-result {
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  border: 1px solid;
+}
+
+.test-result.success {
+  background: rgba(39, 174, 96, 0.1);
+  color: #27ae60;
+  border-color: rgba(39, 174, 96, 0.3);
+}
+
+.test-result.error {
+  background: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+  border-color: rgba(231, 76, 60, 0.3);
+}
+
+/* Button group for submit/back */
+.button-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.submit-button,
+.back-button {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.submit-button {
+  background: var(--primary-color, #0066cc);
+  color: white;
+}
+
+.submit-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.submit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.back-button {
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.back-button:hover:not(:disabled) {
+  background: var(--hover-color, #eeeeee);
+}
+
+.back-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

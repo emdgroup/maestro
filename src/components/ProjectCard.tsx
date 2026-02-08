@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Project, ConnectionStatus } from "../types/bindings";
+import "../styles/ProjectCard.css";
 
 interface ProjectCardProps {
   project: Project;

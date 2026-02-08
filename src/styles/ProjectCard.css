@@ -1,0 +1,108 @@
+/* Project card container */
+.project-card {
+  padding: 16px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.project-card h3 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.project-card .path {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* Compact project card view */
+.project-card.compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  font-size: 14px;
+}
+
+/* Remote indicator section */
+.remote-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 8px;
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 0.375rem;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+/* Remote badge */
+.remote-badge,
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: rgba(102, 126, 234, 0.15);
+  color: var(--primary-color, #0066cc);
+  border-radius: 0.25rem;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Connection status indicator */
+.connection-status,
+.status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 0.25rem;
+}
+
+.connection-status.connected,
+.status.connected {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.connection-status.disconnected,
+.status.disconnected {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+/* Retry button */
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: var(--primary-color, #0066cc);
+  border-color: var(--primary-color, #0066cc);
+  color: white;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
