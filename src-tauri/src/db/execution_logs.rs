@@ -160,3 +160,71 @@ pub fn get_error_event(
 
     Ok(error_event)
 }
+
+/// Pause an execution log (set status to 'paused')
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `exec_log_id` - ID of the execution log to pause
+///
+/// # Returns
+/// Ok(()) on success, Err(String) on database error
+pub fn pause_execution_log(
+    conn: &Connection,
+    exec_log_id: i32,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE execution_logs SET status = 'paused' WHERE id = ?",
+        [exec_log_id],
+    )
+    .map_err(|e| format!("Failed to pause execution: {}", e))?;
+
+    Ok(())
+}
+
+/// Get the most recent execution log for a task
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `task_id` - ID of the task
+///
+/// # Returns
+/// Ok(ExecutionLog) - the most recent execution log
+/// Err(String) - if no execution log found or database error
+pub fn get_current_execution_log(
+    conn: &Connection,
+    task_id: i32,
+) -> Result<crate::models::ExecutionLog, String> {
+    use crate::models::ExecutionLog;
+
+    let result = conn.query_row(
+        "SELECT id, task_id, output, terminal_output, status, started_at, completed_at, error_event
+         FROM execution_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+        [task_id],
+        |row| {
+            let status_str: String = row.get(4)?;
+            Ok(ExecutionLog {
+                id: row.get(0)?,
+                task_id: row.get(1)?,
+                output: row.get(2)?,
+                terminal_output: row.get(3)?,
+                status: match status_str.as_str() {
+                    "running" => crate::models::ExecutionStatus::Running,
+                    "complete" => crate::models::ExecutionStatus::Complete,
+                    "failed" => crate::models::ExecutionStatus::Failed,
+                    "paused" => crate::models::ExecutionStatus::Paused,
+                    "cancelled" => crate::models::ExecutionStatus::Cancelled,
+                    _ => crate::models::ExecutionStatus::Running,
+                },
+                started_at: row.get(5)?,
+                completed_at: row.get(6)?,
+                error_event: {
+                    let error_json: Option<String> = row.get(7)?;
+                    error_json.and_then(|s| serde_json::from_str(&s).ok())
+                },
+            })
+        },
+    );
+
+    result.map_err(|e| format!("Failed to get execution log: {}", e))
+}

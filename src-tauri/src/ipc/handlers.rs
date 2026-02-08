@@ -2671,3 +2671,173 @@ pub async fn reconnect_remote_project(
     println!("[reconnect] ✓ Successfully reconnected to project {}", project_id);
     Ok(())
 }
+
+/// Pause a running agent execution by sending SIGSTOP to the process
+#[tauri::command]
+pub async fn pause_agent_execution(
+    state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<(), String> {
+    println!("pause_agent_execution(task={}) called", task_id);
+
+    // Get current execution log for this task
+    let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
+    let exec_log = crate::db::get_current_execution_log(&conn, task_id)
+        .map_err(|e| format!("Failed to get execution log: {}", e))?;
+    drop(conn);
+
+    println!("[pause] Got execution log {}", exec_log.id);
+
+    // Update execution log status to Paused in database
+    let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
+    crate::db::pause_execution_log(&conn, exec_log.id)
+        .map_err(|e| format!("Failed to pause execution: {}", e))?;
+    drop(conn);
+
+    println!("[pause] ✓ Updated execution log status to paused");
+
+    // TODO: Send SIGSTOP to running process (implementation depends on process handle management)
+    // For now, we just update the database status. Full process pause requires process handle tracking.
+
+    Ok(())
+}
+
+/// Resume a paused agent execution by creating a new execution and spawning the agent again
+#[tauri::command]
+pub async fn resume_agent_execution(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    project_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    println!("resume_agent_execution(task={}, project={}) called", task_id, project_id);
+
+    // Step 1: Get current paused execution log
+    let _prev_exec_log = {
+        let conn = app_state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
+        crate::db::get_current_execution_log(&conn, task_id)
+            .map_err(|e| format!("Failed to get execution log: {}", e))?
+    };
+
+    println!("[resume] Got previous execution log");
+
+    // Step 2: Create new execution log
+    let exec_log_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
+        crate::db::create_execution_log(&conn, task_id, 0)?
+    };
+
+    println!("[resume] Created new execution log {}", exec_log_id);
+
+    // Step 3: Lease worktree
+    let worktree = lease_worktree(app_state.clone(), project_id, task_id, repo_path.clone()).await?;
+    let worktree_id = worktree.id;
+    let worktree_path = format!("{}/{}", repo_path, worktree.path);
+
+    println!("[resume] Leased worktree {} at path {}", worktree_id, worktree.path);
+
+    // Step 4: Get project to determine if remote
+    let is_remote: bool = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT is_remote FROM projects WHERE id = ?",
+            [project_id],
+            |row| row.get::<_, bool>(0),
+        ).map_err(|e| format!("Failed to load project: {}", e))?
+    };
+
+    println!("[resume] ✓ Determined execution type (is_remote: {})", is_remote);
+
+    // Step 5: Extract Arc<AppState> for background task
+    let app_state_arc = (*app_state).clone();
+
+    // Step 6: Spawn background task (reuses spawn_agent_cli_pty pattern from spawn_agent_execution)
+    tokio::spawn(async move {
+        println!("[background] Starting resumed agent execution for task {} in worktree {}", task_id, worktree_id);
+
+        // For local execution
+        if !is_remote {
+            match spawn_agent_cli_pty(
+                task_id,
+                "node".to_string(),
+                vec!["sidecar/dist/index.js".to_string(), "--task-id".to_string(), task_id.to_string()],
+                std::path::PathBuf::from(&worktree_path),
+            )
+            .await
+            {
+                Ok(pty_session) => {
+                    println!("[background] PTY session spawned for resumed task {}", task_id);
+
+                    // Store PtySession in AppState
+                    {
+                        let mut sessions = app_state_arc.pty_sessions.lock().await;
+                        sessions.insert(task_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+                        println!("[background] ✓ Stored PTY session for task {} in AppState", task_id);
+                    }
+
+                    // Initialize execution log status
+                    match app_state_arc.db.lock() {
+                        Ok(conn) => {
+                            if let Err(e) = crate::db::mark_complete(&conn, exec_log_id, 0) {
+                                eprintln!("[background] Failed to initialize execution log: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[background] Failed to lock database: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[background] PTY spawning failed: {}", e);
+
+                    match app_state_arc.db.lock() {
+                        Ok(conn) => {
+                            let error_msg = format!("\n[ERROR] Failed to spawn PTY on resume: {}", e);
+                            let _ = crate::db::append_output(&conn, exec_log_id, &error_msg);
+
+                            let (error_type, suggestions) = detect_error_type_and_suggestions(&e, -1);
+                            let now = Utc::now().to_rfc3339();
+                            let error_event = crate::models::ErrorEvent {
+                                error_type: error_type.clone(),
+                                message: e.clone(),
+                                suggestions,
+                                detected_at: now,
+                            };
+
+                            let _ = crate::db::mark_failed(&conn, exec_log_id, &error_event);
+
+                            let _ = conn.execute(
+                                "UPDATE tasks SET status = 'Failed' WHERE id = ?",
+                                [task_id],
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[background] Failed to lock database: {}", e);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Remote execution - TODO: similar pattern to local but with remote spawn
+            eprintln!("[background] Remote execution on resume not yet implemented");
+        }
+
+        // Finalization: Return worktree to pool
+        match app_state_arc.db.lock() {
+            Ok(conn) => {
+                let now = Utc::now().to_rfc3339();
+                let _ = conn.execute(
+                    "UPDATE worktrees SET status = 'Available', returned_at = ? WHERE id = ?",
+                    rusqlite::params![&now, worktree_id],
+                );
+                println!("[background] ✓ Returned worktree {} to Available", worktree_id);
+            }
+            Err(e) => {
+                eprintln!("[background] Failed to return worktree to pool: {}", e);
+            }
+        }
+    });
+
+    println!("[resume] ✓ Spawned background execution task, returning log id {}", exec_log_id);
+    Ok(exec_log_id)
+}

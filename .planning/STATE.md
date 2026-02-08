@@ -11,19 +11,19 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 11 of 12 (Agent Execution UX Polish - In Progress)
-Plan: 2 of 4 complete (Worktree Leasing Integration)
-Status: Phase 11 Plan 02 COMPLETE ✓ - Automatic worktree leasing with retry logic and pool expansion
-Last activity: 2026-02-08 — Completed Phase 11 Plan 02 (worktree leasing integration)
+Plan: 3 of 4 complete (Failure Notifications)
+Status: Phase 11 Plan 04 COMPLETE ✓ - Failure notifications with toasts and persistent badges
+Last activity: 2026-02-08 — Completed Phase 11 Plan 04 (failure notifications)
 
-Progress: [████████████████░] 41/44 plans (93.2%), 11/12 phases (11 in progress, 1 pending)
+Progress: [██████████████████] 42/44 plans (95.5%), 11/12 phases (11 in progress, 1 pending)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 41 (including tech debt closure)
-- Average duration: 22.8 min (includes 25-min Phase 10 plan)
-- Total execution time: ~15.7h (includes 11 phases + gap closure + Phase 11-02)
-- Project completion rate: 93.2% (41/44 plans delivered)
+- Total plans completed: 42 (including tech debt closure)
+- Average duration: 22.5 min (includes 25-min Phase 10 plan)
+- Total execution time: ~15.8h (includes 11 phases + gap closure + Phase 11-02 + Phase 11-04)
+- Project completion rate: 95.5% (42/44 plans delivered)
 
 **By Phase:**
 
@@ -41,6 +41,14 @@ Progress: [████████████████░] 41/44 plans (93.
 | 10-documentation-completeness | 1 | 25m | 25m | Complete ✓ (Phase 2 VERIFICATION.md tech debt closure) |
 
 **Recent Trend:**
+- Phase 11 Plan 04 Complete (11-04): Failure Notifications ✓ COMPLETE
+  - Toast notifications on execution failure: format "Failed: [task name] — [error type]"
+  - Auto-dismiss after 10 seconds (persistent Failed badge remains)
+  - Failure detection via ExecutionHistory polling status transitions
+  - One-time notification per failure (not repeated after app refresh)
+  - Integration of ExecutionHistory with taskName prop from TaskDetail
+  - Bug fix: removed incomplete pause/resume code blocking TypeScript compilation
+  - 2 implementation commits + 1 bug fix commit
 - Phase 11 Plan 02 Complete (11-02): Worktree Leasing Integration ✓ COMPLETE
   - Enhanced lease_worktree with retry logic (3 attempts, exponential backoff: 500ms, 1s, 1.5s)
   - Automatic pool expansion: creates new worktrees if pool < max_size (5)

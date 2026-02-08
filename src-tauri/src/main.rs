@@ -238,6 +238,24 @@ async fn detach_terminal(
 }
 
 #[tauri::command]
+async fn pause_agent_execution(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::pause_agent_execution(app_state, task_id).await
+}
+
+#[tauri::command]
+async fn resume_agent_execution(
+    state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    project_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    gsd_demo::ipc::handlers::resume_agent_execution(state, task_id, project_id, repo_path).await
+}
+
+#[tauri::command]
 async fn append_terminal_output(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -430,7 +448,9 @@ fn main() {
             test_remote_connection,
             get_remote_connection_status,
             reconnect_remote_project,
-            detach_terminal
+            detach_terminal,
+            pause_agent_execution,
+            resume_agent_execution
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
