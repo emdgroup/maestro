@@ -24,6 +24,13 @@ export type Project = {
   ssh_config: SshConfig | null;
 };
 
+export type ConnectionStatus = {
+  project_id: number;
+  is_remote: boolean;
+  connected: boolean;
+  disconnected_reason: string | null;
+};
+
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Merging" | "Failed" | "Done";
 
 export type Task = {

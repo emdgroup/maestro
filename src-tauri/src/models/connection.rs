@@ -1,5 +1,7 @@
 use crate::ssh::RemoteSshSession;
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Represents the connection context for git operations
 /// Routes operations to either local or remote (SSH) execution
@@ -35,4 +37,14 @@ impl GitConnection {
             _ => None,
         }
     }
+}
+
+/// Represents the status of a remote SSH connection for a project
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ConnectionStatus {
+    pub project_id: i32,
+    pub is_remote: bool,
+    pub connected: bool,
+    pub disconnected_reason: Option<String>,
 }

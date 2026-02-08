@@ -4,7 +4,7 @@ use base64::Engine;
 use tokio::io::AsyncReadExt;
 use chrono::Utc;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection, ConnectionStatus, SshConfig};
 use crate::db::{AppState, get_git_connection};
 use crate::process::{spawn_agent_cli_pty, ExecutionConfig};
 use crate::websocket::attach_remote_stream_listener;
@@ -2315,5 +2315,134 @@ pub async fn detach_terminal(
     // Note: The actual cleanup happens when the channel is dropped on the frontend.
     // The streaming tasks in attach_terminal will exit when they detect the channel is closed.
     // We don't need to explicitly stop anything here - just log and return.
+    Ok(())
+}
+
+/// Test an SSH connection with the given configuration
+/// Tests authentication and connectivity without storing the session
+#[tauri::command]
+pub async fn test_remote_connection(
+    config: SshConfig,
+    _state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    println!("test_remote_connection() called for {}:{}", config.host, config.port);
+
+    // Create a temporary RemoteSshSession for testing
+    use crate::ssh::RemoteSshSession;
+    let session = RemoteSshSession::new(config.clone());
+
+    // Attempt to connect with timeout
+    match session.connect().await {
+        Ok(_) => {
+            // Connection successful, spawn disconnect in background
+            let session_clone = session.clone();
+            let _ = tokio::spawn(async move {
+                session_clone.disconnect().await;
+            });
+            println!("[test_connection] ✓ Connection successful for {}:{}", config.host, config.port);
+            Ok(true)
+        }
+        Err(e) => {
+            let error_msg = format!("Connection test failed: {}", e);
+            println!("[test_connection] ✗ {}", error_msg);
+            Err(error_msg)
+        }
+    }
+}
+
+/// Get the current connection status for a remote project
+#[tauri::command]
+pub async fn get_remote_connection_status(
+    project_id: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ConnectionStatus, String> {
+    println!("get_remote_connection_status({}) called", project_id);
+
+    // Check if project exists and is remote
+    let is_remote: bool = {
+        let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT is_remote FROM projects WHERE id = ?",
+            [project_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| format!("Project not found: {}", project_id))?
+    };
+
+    if !is_remote {
+        return Ok(ConnectionStatus {
+            project_id,
+            is_remote: false,
+            connected: false,
+            disconnected_reason: Some("Project is not remote".into()),
+        });
+    }
+
+    // Get the SSH session for this project (lazy - may not be connected yet)
+    let session = state.get_ssh_session(project_id as i64).await;
+
+    let connected = if let Some(s) = session {
+        s.is_connected().await
+    } else {
+        false
+    };
+
+    Ok(ConnectionStatus {
+        project_id,
+        is_remote: true,
+        connected,
+        disconnected_reason: if !connected {
+            Some("Not connected".into())
+        } else {
+            None
+        },
+    })
+}
+
+/// Reconnect a remote project by establishing a new SSH session
+#[tauri::command]
+pub async fn reconnect_remote_project(
+    project_id: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    println!("reconnect_remote_project({}) called", project_id);
+
+    // Get the project and SSH config (scoped to release lock before async)
+    let (is_remote, config): (bool, SshConfig) = {
+        let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        let (is_remote, ssh_config_json): (bool, Option<String>) = conn
+            .query_row(
+                "SELECT is_remote, ssh_config FROM projects WHERE id = ?",
+                [project_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|_| format!("Project not found: {}", project_id))?;
+
+        if !is_remote {
+            return Err("Project is not remote".into());
+        }
+
+        let ssh_config_str = ssh_config_json.ok_or("No SSH config found")?;
+        let config: SshConfig = serde_json::from_str(&ssh_config_str)
+            .map_err(|e| format!("Failed to parse SSH config: {}", e))?;
+
+        (is_remote, config)
+    };
+
+    // Create and connect a new SSH session
+    use crate::ssh::RemoteSshSession;
+    let session = RemoteSshSession::new(config);
+
+    session.connect().await.map_err(|e| {
+        format!("Reconnection failed: {}", e)
+    })?;
+
+    // Store the connected session in AppState
+    state
+        .set_ssh_session(project_id as i64, session)
+        .await;
+
+    println!("[reconnect] ✓ Successfully reconnected to project {}", project_id);
     Ok(())
 }

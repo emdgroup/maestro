@@ -298,6 +298,30 @@ fn update_task_settings(
     gsd_demo::ipc::handlers::update_task_settings(app_state, task_id, settings)
 }
 
+#[tauri::command]
+async fn test_remote_connection(
+    config: gsd_demo::models::SshConfig,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    gsd_demo::ipc::handlers::test_remote_connection(config, app_state).await
+}
+
+#[tauri::command]
+async fn get_remote_connection_status(
+    project_id: i32,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<gsd_demo::models::ConnectionStatus, String> {
+    gsd_demo::ipc::handlers::get_remote_connection_status(project_id, app_state).await
+}
+
+#[tauri::command]
+async fn reconnect_remote_project(
+    project_id: i32,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::reconnect_remote_project(project_id, app_state).await
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -390,7 +414,11 @@ fn main() {
             approve_task_and_merge,
             get_project_settings,
             update_project_settings,
-            update_task_settings
+            update_task_settings,
+            test_remote_connection,
+            get_remote_connection_status,
+            reconnect_remote_project,
+            detach_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
