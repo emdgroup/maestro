@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::db::schema::initialize_schema;
 use crate::error::AppError;
 use crate::process::PtySession;
+use crate::ssh::RemoteSshSession;
 
 /// Initialize the SQLite database
 ///
@@ -41,10 +42,11 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
     Ok(conn)
 }
 
-/// Application state containing the database connection and PTY sessions
+/// Application state containing the database connection, PTY sessions, and SSH sessions
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i64, RemoteSshSession>>>,
 }
 
 impl AppState {
@@ -53,7 +55,57 @@ impl AppState {
         AppState {
             db: Mutex::new(db),
             pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
+            ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Get an SSH session for a project if it exists
+    pub async fn get_ssh_session(&self, project_id: i64) -> Option<RemoteSshSession> {
+        self.ssh_sessions.lock().await.get(&project_id).cloned()
+    }
+
+    /// Store an SSH session for a project
+    pub async fn set_ssh_session(&self, project_id: i64, session: RemoteSshSession) {
+        self.ssh_sessions.lock().await.insert(project_id, session);
+    }
+
+    /// Remove an SSH session for a project
+    pub async fn remove_ssh_session(&self, project_id: i64) {
+        self.ssh_sessions.lock().await.remove(&project_id);
+    }
+}
+
+/// Check if a host key is known for a project, store if new
+pub fn check_and_store_host_key(
+    conn: &Connection,
+    project_id: i64,
+    host_fingerprint: &str,
+    fingerprint_type: &str,
+) -> Result<bool, String> {
+    // Query known_hosts for this project and fingerprint
+    let existing: Result<String, _> = conn.query_row(
+        "SELECT host_fingerprint FROM known_hosts WHERE project_id = ? AND host_fingerprint = ?",
+        params![project_id, host_fingerprint],
+        |row| row.get(0),
+    );
+
+    match existing {
+        Ok(_) => {
+            // Fingerprint is known, return true
+            Ok(true)
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // New fingerprint, store it
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO known_hosts (project_id, host_fingerprint, fingerprint_type, first_seen_at, created_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                params![project_id, host_fingerprint, fingerprint_type, now, now],
+            )
+            .map_err(|e| format!("Failed to store host key: {}", e))?;
+            Ok(true)
+        }
+        Err(e) => Err(format!("Database error checking host key: {}", e)),
     }
 }
 

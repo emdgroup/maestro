@@ -2,11 +2,13 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 use gsd_demo::db::{init_db, AppState};
-use gsd_demo::models::{Task, AppSettings};
+use gsd_demo::models::{Task, AppSettings, SshConfig};
+use gsd_demo::ssh::RemoteSshSession;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Manager, State};
 use serde_json;
+use rusqlite::params;
 
 /// Get the app data directory path for the current platform
 fn get_app_data_dir() -> PathBuf {
@@ -306,6 +308,47 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
     let app_state = Arc::new(AppState::new(conn));
+
+    // Load remote projects and initialize SSH sessions (lazy connection - do NOT connect)
+    {
+        let db_lock = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let mut stmt = db_lock
+            .prepare("SELECT id, ssh_config FROM projects WHERE is_remote = 1")
+            .map_err(|e| format!("Failed to query projects: {}", e))?;
+
+        let ssh_sessions: Result<Vec<(i64, RemoteSshSession)>, _> = stmt
+            .query_map([], |row| {
+                let project_id: i64 = row.get(0)?;
+                let ssh_config_json: String = row.get(1)?;
+                let ssh_config: SshConfig = serde_json::from_str(&ssh_config_json)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let session = RemoteSshSession::new(ssh_config);
+                Ok((project_id, session))
+            })
+            .and_then(|rows| rows.collect())
+            .map_err(|e| format!("Failed to initialize SSH sessions: {}", e));
+
+        match ssh_sessions {
+            Ok(sessions) => {
+                // Store SSH sessions in AppState (no connections yet - lazy connection)
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+
+                runtime.block_on(async {
+                    for (project_id, session) in sessions {
+                        app_state.set_ssh_session(project_id, session).await;
+                    }
+                });
+
+                println!("Loaded SSH sessions from database for remote projects");
+            }
+            Err(e) => {
+                println!("Warning: Failed to load SSH sessions: {}", e);
+                // Continue without SSH sessions - they can be created when needed
+            }
+        }
+    }
+
     app.manage(app_state);
 
     println!("Tauri app initialized successfully");

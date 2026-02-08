@@ -10,6 +10,13 @@ use tokio::sync::Mutex;
 use crate::models::SshConfig;
 use crate::ssh::error::SshError;
 
+/// Calculate fingerprint of host key (base64-encoded)
+fn calculate_key_fingerprint(key_bytes: &[u8]) -> String {
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::STANDARD;
+    format!("SHA256:{}", engine.encode(key_bytes))
+}
+
 /// SSH connection state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SshConnectionState {
