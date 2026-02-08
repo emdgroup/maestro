@@ -6,24 +6,24 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control—eliminating blocking waits while maintaining safety through worktree isolation and human-in-the-loop review.
 
-**Current focus:** Phase 11 - Agent Execution UX Polish (In Progress)
+**Current focus:** Phase 12 - Worktree Disk Cleanup (Next)
 
 ## Current Position
 
-Phase: 11 of 12 (Agent Execution UX Polish - In Progress)
-Plan: 4 of 4 complete (Pause/Resume UI Buttons - Gap Closure)
-Status: Phase 11 Plan 05 COMPLETE ✓ - Pause/Resume button UI for InProgress tasks, closes verification gap
-Last activity: 2026-02-08 — Completed Phase 11 Plan 05 (pause/resume button UI gap closure)
+Phase: 12 of 12 (Worktree Disk Cleanup - Complete)
+Plan: 1 of 1 complete
+Status: Phase 12 COMPLETE ✓ - Worktree disk cleanup fully integrated into merge finalization
+Last activity: 2026-02-08 — Completed Phase 12 Plan 01 with integration verification
 
-Progress: [████████████████░] 43/44 plans (97.7%), 11/12 phases (11 in progress, 1 pending)
+Progress: [██████████████████] 45/45 plans (100%), 12/12 phases (ALL COMPLETE)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 42 (including tech debt closure)
-- Average duration: 22.5 min (includes 25-min Phase 10 plan)
-- Total execution time: ~15.8h (includes 11 phases + gap closure + Phase 11-02 + Phase 11-04)
-- Project completion rate: 95.5% (42/44 plans delivered)
+- Total plans completed: 45 (including tech debt closure and gap closures)
+- Average duration: 21.9 min
+- Total execution time: ~16.4h (includes all 12 phases + gap closures)
+- Project completion rate: 100% (45/45 plans delivered)
 
 **By Phase:**
 
@@ -39,8 +39,25 @@ Progress: [████████████████░] 43/44 plans (97.
 | 08-error-handling-polish | 3 | 135m | 45m | Complete ✓✓✓ (full pipeline: detection + terminal + recovery UI) |
 | 09-remote-project-support | 5 | ~200m | 40m | Complete ✓✓✓✓✓ (SSH infrastructure + git ops + process execution + UI + streaming) |
 | 10-documentation-completeness | 1 | 25m | 25m | Complete ✓ (Phase 2 VERIFICATION.md tech debt closure) |
+| 11-agent-execution-ux-polish | 5 | ~25m | 5m | Complete ✓✓✓✓✓ (status badge + worktree leasing + pause/resume + notifications + UI gap closure) |
+| 12-worktree-disk-cleanup | 1 | 18m | 18m | Complete ✓ (Phase 6 tech debt closure - sidecar --delete-worktree integration) |
 
 **Recent Trend:**
+- Phase 12 Complete (1/1 plans): Worktree Disk Cleanup ✓ COMPLETE
+  - Plan 12-01: Sidecar --delete-worktree CLI handler + finalize_successful_merge integration
+  - Disk cleanup invoked after merge success, before task marked Done
+  - Dirty-state marking ensures crash-safety and recovery on app restart
+  - Phase 6 tech debt closed: worktrees no longer orphaned after merge
+  - Verification: cargo build 0 errors, cargo test 27/27 passing
+  - 2 commits: sidecar handler + handler wiring
+- Phase 11 Complete (all 5 plans): Agent Execution UX Polish ✓ COMPLETE
+  - Plan 11-01: Status badge with elapsed time in TaskCard top-right (blue pulsing, live updates)
+  - Plan 11-02: Worktree leasing integration with retry logic and pool expansion
+  - Plan 11-03: Backend pause/resume handlers (pause_agent_execution, resume_agent_execution)
+  - Plan 11-04: Failure notifications via toast (10s auto-dismiss, error type extraction)
+  - Plan 11-05 (gap closure): Pause/Resume UI buttons added to TaskCard for InProgress tasks
+  - Verification: PASSED (4/4 success criteria met)
+  - All Phase 4 tech debt now closed
 - Phase 11 Plan 04 Complete (11-04): Failure Notifications ✓ COMPLETE
   - Toast notifications on execution failure: format "Failed: [task name] — [error type]"
   - Auto-dismiss after 10 seconds (persistent Failed badge remains)
@@ -418,6 +435,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08 (current)
-Stopped at: Plan 11-02 complete (Worktree Leasing Integration)
+Stopped at: Phase 12 Plan 01 complete (Worktree Disk Cleanup)
 Resume file: None
-Next: Phase 11 Plan 03 (Pause/Resume Controls - TBD)
+Next: PROJECT COMPLETE (All 12 phases and 45 plans delivered)
