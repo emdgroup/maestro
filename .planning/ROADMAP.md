@@ -207,10 +207,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 09-01: SSH tunneling setup and connection management (libssh2, connection pooling)
-- [ ] 09-02: Remote git operations (dispatch git commands over SSH)
-- [ ] 09-03: Remote process execution (spawn Claude Code CLI on remote via SSH)
-- [ ] 09-04: Remote terminal streaming (forward WebSocket output from remote sidecar)
+- [ ] 09-01-PLAN.md — SSH connection infrastructure + RemoteSshSession + host key verification
+- [ ] 09-02-PLAN.md — Remote git operations dispatcher (routes git commands to local or remote)
+- [ ] 09-03-PLAN.md — Remote process execution (spawn Claude Code CLI on remote via SSH PTY)
+- [ ] 09-04-PLAN.md — Remote terminal streaming + UI integration (project creation flow, status indicators)
 
 ## Progress
 
@@ -226,18 +226,18 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Real-time Monitoring | 3 | ✓ Complete | 2026-02-06 |
 | 6. Review & Merge Workflow | 5 (3 main + 2 gap closure) | ✓ Complete | 2026-02-07 |
 | 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
-| 8. Error Handling & Polish | 3 | Planned | — |
-| 9. Remote Project Support | 4 | Not started | — |
+| 8. Error Handling & Polish | 3 | ✓ Complete | 2026-02-07 |
+| 9. Remote Project Support | 4 | Planned | — |
 
-**Total Plans:** 36 (33 main + 2 gap closure plans for Phase 6)
-**Completed Plans:** 28/36 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3)
-**Planned Plans:** 3/36 (Phase 8: 3/3)
+**Total Plans:** 36 (33 main + 3 gap closure plans)
+**Completed Plans:** 31/36 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3)
+**Planned Plans:** 4/36 (Phase 9: 4/4)
 **Total Requirements Mapped:** 28/28 ✓
 
 ---
 
 *Roadmap created: 2026-02-04*
-*Phase 7 completed: 2026-02-07*
-*Phase 8 planned: 2026-02-07*
+*Phase 8 completed: 2026-02-07*
+*Phase 9 planned: 2026-02-08*
 *Depth: comprehensive (9 phases)*
 *Coverage: 100% — All 28 v1.0 requirements mapped*
