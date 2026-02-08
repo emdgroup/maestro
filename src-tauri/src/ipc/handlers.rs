@@ -4,9 +4,10 @@ use base64::Engine;
 use tokio::io::AsyncReadExt;
 use chrono::Utc;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome, ErrorEvent};
-use crate::db::AppState;
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, ReviewDecision, MergeOutcome, ErrorEvent, GitConnection};
+use crate::db::{AppState, get_git_connection};
 use crate::process::spawn_agent_cli_pty;
+use crate::git;
 
 /// Get list of all projects
 #[tauri::command]
@@ -1605,72 +1606,100 @@ pub async fn get_diff_for_review(
     println!("get_diff_for_review({}) called", task_id);
 
     // 1. Query task to get project_id and task details
-    let (project_id, repo_path) = {
+    let (project_id, project, worktree_path, branch_name) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-        let (proj_id, _name): (i32, String) = conn
+        let proj_id: i32 = conn
             .query_row(
-                "SELECT project_id, name FROM tasks WHERE id = ?",
+                "SELECT project_id FROM tasks WHERE id = ?",
                 rusqlite::params![task_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .map_err(|e| format!("Task not found: {}", e))?;
 
-        // Get project path
-        let path: String = conn
+        // Get project details (local path, is_remote, ssh_config)
+        let (path, is_remote, ssh_config_json): (String, bool, Option<String>) = conn
             .query_row(
-                "SELECT path FROM projects WHERE id = ?",
+                "SELECT path, is_remote, ssh_config FROM projects WHERE id = ?",
                 rusqlite::params![proj_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|e| format!("Project not found: {}", e))?;
 
-        (proj_id, path)
-    };
+        let ssh_config = ssh_config_json
+            .and_then(|json| serde_json::from_str(&json).ok());
 
-    // 2. Find worktree for this task
-    let (worktree_path, branch_name) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let project = Project {
+            id: proj_id,
+            name: String::new(), // Not needed for this operation
+            path,
+            created_at: String::new(), // Not needed
+            is_remote,
+            ssh_config,
+        };
 
-        let (path, branch): (String, String) = conn
+        // Find worktree for this task
+        let (wt_path, branch): (String, String) = conn
             .query_row(
                 "SELECT path, branch_name FROM worktrees WHERE project_id = ? AND (status = 'InUse' OR status = 'Leased')",
-                rusqlite::params![project_id],
+                rusqlite::params![proj_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| format!("Worktree not found for task: {}", e))?;
 
-        (path, branch)
+        (proj_id, project, wt_path, branch)
     };
 
-    let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
+    // 2. Handle diff generation based on project type
+    if project.is_remote {
+        // Remote project: use git dispatcher which executes over SSH
+        println!("  Generating diff for remote project via SSH");
 
-    println!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+        let git_conn = get_git_connection(&project, &app_state)
+            .await
+            .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-    // 3. Call Node.js sidecar to generate diff
-    let output = tokio::process::Command::new("node")
-        .args(&[
-            "sidecar/dist/index.js",
-            "--get-diff",
-            &full_worktree_path,
-            &branch_name,
-            "main", // Compare against main branch
-            "6",    // 6 context lines
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+        // For remote, we execute git diff on the remote machine
+        // The worktree_path is relative to the remote project root
+        let diff = git::git_diff(&git_conn, &branch_name, "main")
+            .await
+            .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Sidecar failed: {}", stderr));
+        println!("✓ Generated diff for task {} from remote: {} bytes", task_id, diff.len());
+        Ok(diff)
+    } else {
+        // Local project: use Node.js sidecar (Phase 3-01 integration)
+        println!("  Generating diff for local project via sidecar");
+
+        let full_worktree_path = format!("{}/{}", project.path, worktree_path);
+
+        println!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+
+        // Call Node.js sidecar to generate diff
+        let output = tokio::process::Command::new("node")
+            .args(&[
+                "sidecar/dist/index.js",
+                "--get-diff",
+                &full_worktree_path,
+                &branch_name,
+                "main", // Compare against main branch
+                "6",    // 6 context lines
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Sidecar failed: {}", stderr));
+        }
+
+        let diff = String::from_utf8(output.stdout)
+            .map_err(|e| format!("Failed to decode sidecar output: {}", e))?;
+
+        println!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
+        Ok(diff)
     }
-
-    let diff = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Failed to decode sidecar output: {}", e))?;
-
-    println!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
-    Ok(diff)
 }
 
 /// Save task review with feedback and per-file comments
