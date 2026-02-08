@@ -107,11 +107,9 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
         // Apply migrations based on current version
         if current_version < 2 {
-            // Migration from v1 to v2: add terminal_output column to execution_logs
-            conn.execute(
-                "ALTER TABLE execution_logs ADD COLUMN terminal_output TEXT;",
-                [],
-            )?;
+            // Migration from v1 to v2: terminal_output is now in base schema, so skip
+            // Previous code attempted: ALTER TABLE execution_logs ADD COLUMN terminal_output TEXT;
+            // But terminal_output is already in SCHEMA_V1, so this would fail
         }
 
         if current_version < 3 {
