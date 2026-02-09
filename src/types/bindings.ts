@@ -107,6 +107,7 @@ export type AppSettings = {
   model_default: string;
   mcp_allowlist: Array<string>;
   skills_default: Array<string>;
+  theme_preference: string | null;
   updated_at: string;
 };
 

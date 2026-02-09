@@ -50,6 +50,7 @@ function App() {
           model_default: "claude-opus-4-5",
           mcp_allowlist: [],
           skills_default: [],
+          theme_preference: "system",
           updated_at: new Date().toISOString(),
         });
       } finally {
@@ -74,6 +75,7 @@ function App() {
         model_default: settings?.model_default || "claude-opus-4-5",
         mcp_allowlist: settings?.mcp_allowlist || [],
         skills_default: settings?.skills_default || [],
+        theme_preference: settings?.theme_preference || "system",
         updated_at: new Date().toISOString(),
       };
 
