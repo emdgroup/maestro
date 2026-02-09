@@ -1,143 +1,184 @@
-# Requirements: AI Agent Orchestrator
+# Requirements: v1.1 UI/UX Polish
 
-**Defined:** 2026-02-04
-**Core Value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
+**Milestone:** v1.1 UI/UX Polish
+**Goal:** Fix critical bugs and dramatically improve visual design with modern, clean aesthetic
+**Status:** In progress (roadmap created)
 
-## v1.0 Requirements
+---
 
-Requirements for initial MVP release. Each maps to roadmap phases.
+## v1.1 Requirements (This Milestone)
 
-### Orchestration
+### Bug Fixes
 
-- [ ] **ORCH-01**: User can create tasks manually with description, context, and acceptance criteria
-- [ ] **ORCH-02**: User can configure project to sync with either GitHub project issues OR Jira project issues (mutually exclusive, auto-sync on project open)
-- [ ] **ORCH-03**: User can view Kanban board with 5 columns (Backlog → Ready → In Progress → Review → Done)
-- [ ] **ORCH-04**: User can drag-drop tasks between Kanban columns
-- [ ] **ORCH-05**: User can configure task with model selection (Claude model version)
-- [ ] **ORCH-06**: User can configure task with MCP server allowlist
-- [ ] **ORCH-07**: User can configure task with Skills selection
-- [x] **ORCH-08**: User can close and reopen app without losing task queue state (SQLite persistence)
+**Category:** Critical bug fixes from v1.0
 
-### Agent Execution
+- [x] **BUG-01**: User should not see mock IPC handlers in release builds
+  - ✓ Implemented build-time conditional imports using import.meta.env.DEV
+  - ✓ Vite tree-shaking eliminates mock code from production bundle
+  - ✓ Verified: 0 mock markers in 298 JS files (Phase 13-01)
 
-- [ ] **EXEC-01**: User can execute agent on task in isolated git worktree
-- [ ] **EXEC-02**: User can view real-time terminal output while agent executes
-- [ ] **EXEC-03**: User can see agent status indicators (running/paused/failed/complete)
-- [x] **EXEC-04**: User can attach to embedded terminal to send input (Ctrl+C, manual commands)
-- [x] **EXEC-05**: User can detach from terminal while agent continues execution
-- [x] **EXEC-06**: System pauses agent execution on failure and notifies user
-- [ ] **EXEC-07**: User can view agent output history (terminal logs, git diffs, errors) for completed tasks
-- [x] **EXEC-08**: System automatically cleans up worktree and branch after successful merge
-- [x] **EXEC-09**: User can run multiple agents in parallel on different tasks (hybrid worktree pool)
-- [x] **EXEC-10**: System pre-creates 3-5 worktrees for instant allocation and expands dynamically if exhausted
+- [x] **BUG-02**: Developer should see zero Rust build warnings
+  - ✓ Removed unused import from src-tauri/src/main.rs
+  - ✓ cargo build --lib produces zero warnings
+  - ✓ Verified: cargo build completes with "Finished" message (Phase 13-01)
 
-### Review & Merge
+### UI Foundation
 
-- [ ] **REV-01**: User can view file diffs for task in Review column
-- [ ] **REV-02**: User can approve task in Review column to trigger merge
-- [ ] **REV-03**: User can reject task in Review column with feedback
-- [ ] **REV-04**: System automatically merges approved task branch to main
-- [x] **REV-05**: System automatically deletes worktree and branch after merge completes
+**Category:** Core UI framework and theming infrastructure
 
-### Configuration
+- [ ] **UI-01**: User can use Tailwind CSS utilities throughout the app
+  - Install Tailwind CSS 4.1+ and @tailwindcss/vite
+  - Configure tailwind.config.ts with content paths
+  - Add Tailwind directives to main CSS file
+  - Verify utilities work in components
 
-- [x] **CFG-01**: User can configure project settings (default Claude model, git repo path)
-- [ ] **CFG-02**: User can set project-level defaults for MCP servers
-- [ ] **CFG-03**: User can set project-level defaults for Skills
-- [ ] **CFG-04**: User can override project defaults at task level (restrict MCP/Skills per task)
+- [ ] **UI-02**: User can use shadcn/ui components
+  - Initialize shadcn/ui with `pnpm dlx shadcn@latest init`
+  - Configure path aliases in tsconfig.json and vite.config.ts
+  - Install core components (Button, Card, Input, Dialog, Badge, Select)
+  - Verify components render correctly
 
-### Remote Projects
+- [ ] **UI-03**: User can switch between light, dark, and system theme
+  - Install and configure next-themes
+  - Implement theme provider wrapping app
+  - Persist theme preference to storage
+  - Support system theme detection
 
-- [ ] **REM-01**: User can configure remote SSH connection for entire project (host, port, credentials, remote project path)
-- [ ] **REM-02**: User can work with remote project where git repository, worktrees, and all operations exist on remote machine
-- [ ] **REM-03**: User can execute agent sessions on remote machine via SSH tunnel (desktop app is UI only)
-- [ ] **REM-04**: User can view real-time terminal output from remote agent execution streamed over SSH
-- [ ] **REM-05**: User can view file diffs from remote worktrees during review workflow
+- [ ] **UI-04**: User can toggle theme from settings
+  - Add theme toggle control in settings panel
+  - Show current theme selection (light/dark/system)
+  - Update immediately on change
 
-## v2 Requirements
+- [ ] **UI-05**: User should not see theme flash on app startup
+  - Inject theme detection script in index.html `<head>`
+  - Load theme from storage before React renders
+  - Prevent FOUC (Flash of Unstyled Content)
 
-Deferred to future release. Tracked but not in current roadmap.
+### Component Redesign
 
-### Advanced Workflows
+**Category:** Migrate existing components to Tailwind + shadcn
 
-- **FLOW-01**: User can open task worktree in VS Code for review (IDE integration)
-- **FLOW-02**: Agent automatically picks next Ready task after merge approval (autonomous loop)
-- **FLOW-03**: User can abort running task and automatically rollback uncommitted changes
-- **FLOW-04**: User can reorder tasks in Backlog and mark priority
+- [ ] **UI-06**: User sees consistent styled components throughout app
+  - Migrate Button, Card, Input, Dialog, Badge, Select to shadcn versions
+  - Replace old component implementations
+  - Verify all instances updated
 
-### Advanced Monitoring
+- [ ] **UI-07**: Developer maintains styles using Tailwind and CSS modules
+  - Replace global CSS files with Tailwind utilities
+  - Use CSS modules only for terminal/special cases
+  - Delete old CSS files after migration
+  - Verify no CSS conflicts
 
-- **MON-01**: User can view real-time file diffs while agent executes (live diff viewer)
-- **MON-02**: User can view file change timeline during execution
+### Page Redesign
 
-### Advanced Configuration
+**Category:** Redesign main application views matching mockup aesthetic
 
-- **ADV-CFG-01**: User can add/remove/enable MCP servers via UI (MCP management)
-- **ADV-CFG-02**: User can add/remove Skills via UI (Skills management)
-- **ADV-CFG-03**: User can define task dependencies (Task A blocks Task B)
-- **ADV-CFG-04**: User can configure pre-execution and post-execution hooks
+- [ ] **UI-08**: User sees modern Kanban board matching mockup design
+  - Card-based layout with subtle borders
+  - Status indicators with colored dots (animated pulse for in-progress)
+  - Tight spacing (text-xs, h-7 buttons, p-3 cards)
+  - Hover effects revealing actions (opacity transitions)
+  - Drag-drop visual feedback (border highlights, background tints)
+
+- [ ] **UI-09**: User sees modern Agent monitor interface
+  - Terminal-style output with monospace font
+  - Agent sidebar showing status and metrics
+  - Live log streaming display
+  - Status indicators (running/idle/error)
+  - Agent selection interface
+
+- [ ] **UI-10**: User sees modern Worktree manager interface
+  - Worktree cards with git status
+  - Branch names and commit info
+  - Clean/dirty/conflict status indicators
+  - Hover actions for management
+
+- [ ] **UI-11**: User sees modern Settings panel
+  - Sectioned layout with icons
+  - Form controls using shadcn components
+  - Clear visual hierarchy
+  - Save/reset actions
+
+- [ ] **UI-12**: User sees modern App header and navigation
+  - Project selector dropdown
+  - Navigation tabs (Tasks, Agents, Worktrees, Settings)
+  - Status display (agents running indicator)
+  - Action buttons (New Agent, etc.)
+
+### Typography & Visual
+
+**Category:** Design system implementation
+
+- [ ] **UI-13**: User sees consistent colors using system accent color
+  - Implement design system using system accent color (dynamic)
+  - Dark theme as default
+  - CSS variables for theming
+  - Consistent color usage across components
+
+- [ ] **UI-14**: User sees appropriate fonts for different content types
+  - FiraCode font for terminal/code output
+  - Inter font for UI text
+  - Proper font loading and fallbacks
+
+- [ ] **UI-15**: User sees consistent spacing throughout app
+  - Tight, compact layout matching mockup
+  - Consistent padding (p-3 for cards, py-0.5 for text)
+  - Proper visual hierarchy
+
+---
+
+## Future Requirements
+
+**Deferred to v1.2 or later:**
+
+- Light mode implementation (dark mode only in v1.1)
+- Mobile/responsive design (desktop-first in v1.1)
+- Advanced animations and transitions
+- Full accessibility audit (WCAG 2.1 AA compliance)
+- Custom theme color picker
+- Font size customization
+
+---
 
 ## Out of Scope
 
-Explicitly excluded. Documented to prevent scope creep.
+**Explicitly excluded from v1.1:**
 
-| Feature | Reason |
-|---------|--------|
-| Multi-project switching | MVP focuses on single project workflow. Users open multiple app instances if needed. Defer to v2. |
-| OpenCode and other CLI tools | Claude Code CLI only in v1. Architecture supports future tools. Defer to v2. |
-| Plugin marketplace | Leverage existing Claude Code plugin architecture. Build after core features solid. Defer to v2. |
-| Multi-user collaboration | Single user focus for v1. Multi-user collaboration deferred to v2+. |
-| Cloud relay for remote sessions | SSH tunneling sufficient for v1. Defer to v3+. |
-| Custom worktree retention policies | Clean up immediately after merge. Defer to v2. |
-| Webhook integration for issue sync | Auto-sync on open sufficient. Defer to v2. |
-| Automatic agent retries | Fail fast, notify immediately. User decides retry strategy. |
-| Real-time everything (100ms updates) | Stream only significant events to prevent noise. |
-| Fully autonomous (no human gates) | Human review gates mandatory for safety. Will not implement. |
+- Multi-project UI (defer to v2.0)
+- Plugin marketplace UI (defer to v2.0)
+- Custom theme builder (defer to v2.0)
+- Mobile app support (desktop only)
+- Web deployment (Tauri desktop only)
+- i18n/localization (English only)
+
+---
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+Mapping requirements to v1.1 roadmap phases:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ORCH-01 | Phase 2 | Pending |
-| ORCH-02 | Phase 2 | Pending |
-| ORCH-03 | Phase 2 | Pending |
-| ORCH-04 | Phase 2 | Pending |
-| ORCH-05 | Phase 7 | Pending |
-| ORCH-06 | Phase 7 | Pending |
-| ORCH-07 | Phase 2 | Pending |
-| ORCH-08 | Phase 1 | Complete |
-| EXEC-01 | Phase 4 | Pending |
-| EXEC-02 | Phase 5 | Pending |
-| EXEC-03 | Phase 4 | Pending |
-| EXEC-04 | Phase 8 | Complete |
-| EXEC-05 | Phase 8 | Complete |
-| EXEC-06 | Phase 8 | Complete |
-| EXEC-07 | Phase 4 | Pending |
-| EXEC-08 | Phase 3 | Complete |
-| EXEC-09 | Phase 3 | Complete |
-| EXEC-10 | Phase 3 | Complete |
-| REV-01 | Phase 6 | Pending |
-| REV-02 | Phase 6 | Pending |
-| REV-03 | Phase 6 | Pending |
-| REV-04 | Phase 6 | Pending |
-| REV-05 | Phase 3 | Complete |
-| CFG-01 | Phase 1 | Complete |
-| CFG-02 | Phase 7 | Pending |
-| CFG-03 | Phase 7 | Pending |
-| CFG-04 | Phase 7 | Pending |
-| REM-01 | Phase 9 | Complete |
-| REM-02 | Phase 9 | Complete |
-| REM-03 | Phase 9 | Complete |
-| REM-04 | Phase 9 | Complete |
-| REM-05 | Phase 9 | Complete |
+| BUG-01 | 13 | Not started |
+| BUG-02 | 13 | Not started |
+| UI-01 | 14 | Not started |
+| UI-02 | 14 | Not started |
+| UI-03 | 14 | Not started |
+| UI-04 | 14 | Not started |
+| UI-05 | 14 | Not started |
+| UI-06 | 15 | Not started |
+| UI-07 | 15 | Not started |
+| UI-13 | 15 | Not started |
+| UI-14 | 15 | Not started |
+| UI-15 | 15 | Not started |
+| UI-08 | 16 | Not started |
+| UI-09 | 16 | Not started |
+| UI-10 | 16 | Not started |
+| UI-11 | 16 | Not started |
+| UI-12 | 16 | Not started |
 
-**Coverage:**
-- v1 requirements: 28 total
-- Mapped to phases: 28
-- Unmapped: 0 ✓
+**Coverage:** 17/17 requirements mapped ✓
 
 ---
-*Requirements defined: 2026-02-04*
-*Last updated: 2026-02-08 after Phase 9 completion (including gap closure)*
+
+*Roadmap traceability updated: 2026-02-09*
