@@ -1,3 +1,10 @@
+//! Error handling module for the GSD orchestrator application.
+//!
+//! SSH helper functions (calculate_key_fingerprint, is_retriable_error) were removed in Phase 13 Bug Fixes (v1.1).
+//! These functions were not used in v1.0 codebase. When SSH authentication is enhanced in future phases,
+//! they can be re-implemented from VCS history if needed. See Phase 13 Bug Fixes research documentation for context:
+//! .planning/phases/13-bug-fixes/13-RESEARCH.md
+
 use std::fmt;
 use std::io;
 use rusqlite;

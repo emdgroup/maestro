@@ -8,7 +8,10 @@ import type { Task } from '../types/bindings';
 // Check if we're running in a real Tauri environment
 const isTauri = typeof (window as any).__TAURI__ !== 'undefined';
 
-// Development-only mock code (tree-shaken in production)
+// Build-time mock exclusion: This entire block is removed from production via Vite tree-shaking.
+// Vite replaces import.meta.env.DEV with 'false' during production build, and tree-shaking
+// removes the unreachable if (false) branch. This prevents mock code bloat in release builds.
+// See CLAUDE.md "Build-Time Mock Exclusion" section for details.
 if ((import.meta as any).env.DEV) {
   // In-memory mock database for browser-only development
   var mockDB = {
@@ -18,7 +21,9 @@ if ((import.meta as any).env.DEV) {
   };
 }
 
-// Production-safe invoke function (always exported)
+// Production fallback: Always available for production use when Tauri is not available.
+// In production builds (import.meta.env.DEV = false), mock handlers are tree-shaken away
+// and only the Tauri real invoke or error path is included in the bundle.
 export async function invoke<T>(cmd: string, args?: Record<string, any>): Promise<T> {
   if (isTauri) {
     // Use real Tauri API
