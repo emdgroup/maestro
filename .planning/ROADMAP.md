@@ -1,308 +1,155 @@
-# Roadmap: AI Agent Orchestrator
+# Roadmap: v1.1 UI/UX Polish
 
 ## Overview
 
-Build a complete AI agent orchestration platform that enables users to queue tasks on a Kanban board, execute autonomous agents in isolated git worktrees with real-time monitoring, and approve merges through a human-in-the-loop review gate. Start with a strong foundation of database and UI infrastructure, layer in worktree isolation and agent execution, add real-time monitoring and review workflows, then enable full configuration control and remote project support.
+This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then transforms the UI from functional to beautiful. We establish a modern CSS framework (Tailwind CSS 4.1 + shadcn/ui), implement a complete theming system with no flash-on-startup, migrate all components to a design system, and redesign all five major pages (Kanban, Agent Monitor, Worktree Manager, Settings, Header) matching the clean, modern mockup aesthetic with dark-first theme and system accent colors.
 
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1-9): Planned milestone work
-- Decimal phases (X.1, X.2): Urgent insertions (marked with INSERTED)
+- Integer phases (13-17): Planned milestone work for v1.1
+- Continues from v1.0 which ended at Phase 12
 
-- [x] **Phase 1: Foundation** - Project setup, database schema, app shell, type definitions
-- [x] **Phase 2: Core Orchestration** - Task management, Kanban board, column workflows
-- [x] **Phase 3: Git Worktree Infrastructure** - Worktree creation, pooling, cleanup
-- [~] **Phase 4: Agent Execution** - Process management, Claude Code CLI integration (gaps found)
-- [x] **Phase 5: Real-time Monitoring** - Terminal streaming, status indicators, output history
-- [x] **Phase 6: Review & Merge Workflow** - File diffs, approval gate, automatic merge and cleanup
-- [x] **Phase 7: Configuration Management** - Task/project-level model, MCP, Skills config
-- [x] **Phase 8: Error Handling & Polish** - Failure detection, pause, recovery, attach/detach terminal
-- [x] **Phase 9: Remote Project Support** - SSH tunneling, remote git operations, remote execution
-- [x] **Phase 10: Documentation Completeness** - Tech debt closure with verification documentation
-- [x] **Phase 11: Agent Execution UX Polish** - Status badges, worktree integration, pause/resume, notifications
-- [x] **Phase 12: Worktree Disk Cleanup** - Ensure worktrees are fully cleaned from disk after merge
+- [x] **Phase 13: Bug Fixes** - Fix mock IPC leak and Rust build warnings
+- [ ] **Phase 14: UI Foundation** - Tailwind CSS, shadcn/ui, theme system with no flash
+- [ ] **Phase 15: Component & Design System** - Migrate components, establish design tokens
+- [ ] **Phase 16: Page Redesigns** - Modernize all major application pages
+- [ ] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
 
 ## Phase Details
 
-### Phase 1: Foundation
-**Goal**: Establish database persistence, app shell, and type definitions so all subsequent phases have a solid foundation.
+### Phase 13: Bug Fixes
 
-**Depends on**: Nothing (first phase)
+**Goal**: Eliminate mock IPC leak into production and resolve all Rust build warnings to achieve clean build
 
-**Requirements**: ORCH-08 (SQLite persistence), CFG-01 (project settings)
+**Depends on**: v1.0 complete (Phase 12)
+
+**Requirements**: BUG-01, BUG-02
 
 **Success Criteria** (what must be TRUE):
-  1. User can open app and it persists project path and settings across restarts
-  2. Database schema exists with tables for projects, tasks, worktrees, execution logs
-  3. Type definitions exist for Task, Workflow, Agent, ProcessHandle across all layers
-  4. React app renders with Tauri IPC connection established and working
+  1. Release build does not include tauri-mock.ts or mock handlers
+  2. `cargo build` produces zero warnings
+  3. Mock handlers used only in dev mode with build-time exclusion verified
 
-**Plans**: 4 plans
+**Plans**: 2 plans
 
 Plans:
-- [x] 01-01-PLAN.md — Create SQLite database schema with PRAGMA versioning and connection pooling
-- [x] 01-02-PLAN.md — Set up Tauri 2 + React 18 + Vite frontend shell with IPC connection
-- [x] 01-03-PLAN.md — Define Rust types with ts-rs code generation for auto-generated TypeScript bindings
-- [x] 01-04-PLAN.md — Implement project picker UI and settings persistence
+- [x] 13-01-PLAN.md — Fix Rust warnings (cargo fix + manual dead code removal); implement build-time mock exclusion via import.meta.env.DEV gates; add automated bundle verification script to prevent regression
+- [x] 13-02-PLAN.md — Document mock exclusion pattern in CLAUDE.md; add code comments explaining removed SSH functions and conditional imports; provide future developer reference
 
-### Phase 2: Core Orchestration
-**Goal**: Enable users to manage tasks via Kanban board with full column workflow support.
+---
 
-**Depends on**: Phase 1
+### Phase 14: UI Foundation
 
-**Requirements**: ORCH-01 (manual task creation), ORCH-02 (GitHub/Jira import), ORCH-03 (Kanban board), ORCH-04 (drag-drop), ORCH-07 (Skills selection)
+**Goal**: Establish CSS framework and complete theming system preventing flash-of-unstyled-content on startup
 
-**Success Criteria** (what must be TRUE):
-  1. User can manually create task with description, context, acceptance criteria, and skills assignment
-  2. User can import issues from GitHub or Jira project (mutually exclusive, syncs on button click)
-  3. User can view Kanban board with 5 columns (Backlog → Ready → In Progress → Review → Done)
-  4. User can drag-drop tasks between columns and see changes persist
+**Depends on**: Phase 13
 
-**Plans**: 5 plans
-
-Plans:
-- [x] 02-01-PLAN.md — Kanban board UI with 5 columns, Zustand state management, React Beautiful DnD drag-drop integration
-- [x] 02-02-PLAN.md — Backend task creation: create_task IPC handler and TypeScript bindings with skills field
-- [x] 02-03-PLAN.md — Frontend task creation modal with React Hook Form, Radix Dialog, skills multi-select field
-- [x] 02-04-PLAN.md — Backend GitHub/Jira sync: sync_github_issues, sync_jira_issues handlers with conflict detection
-- [x] 02-05-PLAN.md — Frontend import settings: ImportSettings UI, SyncButton component, ErrorToast notifications, read-only protection
-
-### Phase 3: Git Worktree Infrastructure
-**Goal**: Establish isolated git worktrees for parallel agent execution with automatic cleanup.
-
-**Depends on**: Phase 1
-
-**Requirements**: EXEC-09 (parallel agents), EXEC-10 (hybrid worktree pool with pre-create and dynamic expand), REV-05 (cleanup after merge)
+**Requirements**: UI-01, UI-02, UI-03, UI-04, UI-05
 
 **Success Criteria** (what must be TRUE):
-  1. System pre-creates 3-5 worktrees for instant allocation to tasks
-  2. System automatically creates additional worktrees if pool is exhausted
-  3. User can run multiple agents in parallel on different tasks without conflicts
-  4. System automatically deletes worktree and branch after task merge to main
+  1. Tailwind CSS 4.1 utilities work throughout app with @tailwindcss/vite plugin configured
+  2. User can toggle between light, dark, and system theme with instant visual update
+  3. Theme preference persists across app restarts
+  4. No visible flash or flicker on app startup regardless of theme selection
+  5. shadcn/ui components render correctly with theme-aware styling
 
 **Plans**: 3 plans
 
 Plans:
-- [x] 03-01-PLAN.md — Node.js sidecar git manager (create, delete, reset worktrees via simple-git)
-- [x] 03-02-PLAN.md — Worktree pooling logic (lease, return, dynamic expansion with state machine)
-- [x] 03-03-PLAN.md — Automatic cleanup workflow (safe deletion, dirty-state recovery, prune stale metadata)
-- [x] 03-04-PLAN.md — Pool pre-creation on project open (instant allocation, lazy git creation)
+- [ ] 14-01-PLAN.md — Install Tailwind CSS 4.1, @tailwindcss/vite, configure tailwind.config.ts
+- [ ] 14-02-PLAN.md — Integrate next-themes, implement theme provider in App.tsx, add theme toggle to settings
+- [ ] 14-03-PLAN.md — Inject theme detection script in index.html, validate no flash on startup
 
-### Phase 4: Agent Execution
-**Goal**: Enable executing agents on tasks in isolated worktrees and capturing execution lifecycle.
+---
 
-**Depends on**: Phase 2, Phase 3
+### Phase 15: Component & Design System
 
-**Requirements**: EXEC-01 (execute agent in worktree), EXEC-03 (status indicators), EXEC-06 (pause on failure), EXEC-07 (output history), EXEC-08 (cleanup after merge)
+**Goal**: Migrate all reusable components to shadcn/ui, establish consistent design tokens for colors/fonts/spacing across the app
 
-**Success Criteria** (what must be TRUE):
-  1. User can click "Execute" on a task and agent runs in its leased worktree
-  2. User can see agent status indicator (running/paused/failed/complete) on task
-  3. System automatically pauses on agent failure and notifies user
-  4. User can view output history (terminal logs, git diffs, errors) for completed tasks
+**Depends on**: Phase 14
 
-**Plans**: 4 plans
-
-Plans:
-- [x] 04-01-PLAN.md — Create async process spawner module with tokio (non-blocking CLI execution)
-- [x] 04-02-PLAN.md — Implement execution log persistence and spawn_agent_execution handler (background tasks)
-- [x] 04-03-PLAN.md — Integrate agent execution into task UI with Execute button (status tracking)
-- [x] 04-04-PLAN.md — Create execution history and task detail UI (output viewer, timestamps)
-
-**Verification**: 2/4 criteria met - Critical gaps: pause mechanism, notifications (see 04-VERIFICATION.md)
-
-### Phase 5: Real-time Monitoring
-**Goal**: Stream real-time terminal output and enable interactive terminal access during execution.
-
-**Depends on**: Phase 4
-
-**Requirements**: EXEC-02 (real-time terminal output), EXEC-04 (attach to terminal), EXEC-05 (detach while agent continues)
+**Requirements**: UI-06, UI-07, UI-13, UI-14, UI-15
 
 **Success Criteria** (what must be TRUE):
-  1. User can see live terminal output while agent executes (streamed via Tauri channels)
-  2. User can attach to embedded terminal and send input (Ctrl+C, manual commands)
-  3. User can detach from terminal while agent continues running in background
-  4. Terminal output is captured and searchable in execution history
+  1. Button, Card, Input, Dialog, Badge, Select components use shadcn/ui throughout app
+  2. All old hand-written CSS for core components deleted, single source of truth achieved
+  3. Colors use system accent color dynamically (CSS variables) with dark theme as default
+  4. Typography consistent: FiraCode for terminal/code, Inter for UI text with proper fallbacks
+  5. Spacing follows compact, power-user-friendly pattern (text-xs, h-7 buttons, p-3 cards)
 
 **Plans**: 3 plans
 
 Plans:
-- [x] 05-01-PLAN.md — PTY spawning and backend streaming infrastructure (portable-pty + Tauri channels)
-- [x] 05-02-PLAN.md — xterm.js terminal UI component with attach/detach (React integration)
-- [x] 05-03-PLAN.md — Terminal output persistence, resizing, and memory management (CircularBuffer)
+- [ ] 15-01-PLAN.md — Migrate Button, Card, Input, Dialog components to shadcn/ui
+- [ ] 15-02-PLAN.md — Delete old CSS files for migrated components, implement CSS modules for edge cases
+- [ ] 15-03-PLAN.md — Establish design system (colors via CSS variables, fonts via @font-face, spacing scale)
 
-### Phase 6: Review & Merge Workflow
-**Goal**: Implement human-in-the-loop approval gate with file diffs and automatic merge.
+---
 
-**Depends on**: Phase 4, Phase 5
+### Phase 16: Page Redesigns
 
-**Requirements**: REV-01 (file diffs), REV-02 (approve to trigger merge), REV-03 (reject with feedback), REV-04 (automatic merge), REV-05 (automatic cleanup)
+**Goal**: Redesign all major application pages with modern aesthetic matching mockup: Kanban board, Agent monitor, Worktree manager, Settings panel, App header
 
-**Success Criteria** (what must be TRUE):
-  1. User can view file diffs for task in Review column showing exactly what agent changed
-  2. User can approve task to trigger merge to main or reject with feedback
-  3. System automatically merges approved branch to main
-  4. System automatically cleans up worktree and branch after successful merge
+**Depends on**: Phase 15
 
-**Plans**: 5 plans (3 main + 2 gap closure)
-
-Plans:
-- [x] 06-01-PLAN.md — Diff viewer infrastructure with @git-diff-view/react and file tree navigation
-- [x] 06-02-PLAN.md — Approval workflow with feedback capture and request-changes state transition
-- [x] 06-03-PLAN.md — Automatic squash merge, conflict detection, and worktree cleanup
-- [x] 06-04-PLAN.md (gap closure) — Integrate ReviewModal into UI (Review button on TaskCard)
-- [x] 06-05-PLAN.md (gap closure) — Implement sidecar --merge CLI handler and merge outcome parsing
-
-### Phase 7: Configuration Management
-**Goal**: Enable users to control agent capabilities through task and project-level configuration.
-
-**Depends on**: Phase 2, Phase 6
-
-**Requirements**: ORCH-05 (model selection per task), ORCH-06 (MCP allowlist per task), ORCH-07 (Skills per task), CFG-01 (project settings), CFG-02 (project MCP defaults), CFG-03 (project Skills defaults), CFG-04 (task-level override)
+**Requirements**: UI-08, UI-09, UI-10, UI-11, UI-12
 
 **Success Criteria** (what must be TRUE):
-  1. User can select Claude model version per task (and see project default)
-  2. User can configure MCP server allowlist at project level and override per task
-  3. User can configure Skills at project level and override per task
-  4. User can view and edit project settings (Claude model default, git repo path)
+  1. Kanban board displays with card-based layout, colored status dots (animated pulse for in-progress), drag-drop visual feedback
+  2. Agent monitor shows split-pane interface with agent list sidebar and live terminal output with semantic prefix coloring
+  3. Worktree manager displays cards with git status, branch names, clean/dirty indicators
+  4. Settings panel uses sectioned layout with icons and shadcn form controls, clear visual hierarchy
+  5. App header includes project selector, navigation tabs, agent status indicator, action buttons
 
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [x] 07-01-PLAN.md — Data model + database schema + IPC handlers for project and task configuration
-- [x] 07-02-PLAN.md — Project settings UI (model dropdown, MCP checkboxes, Skills checkboxes via gear icon)
-- [x] 07-03-PLAN.md — Task settings UI (model/MCP/Skills overrides via context menu, separate modal)
+- [ ] 16-01-PLAN.md — Redesign Kanban board, Agent monitor, Worktree manager with compact layout and visual indicators
+- [ ] 16-02-PLAN.md — Redesign Settings panel and App header, implement navigation structure
 
-### Phase 8: Error Handling & Polish
-**Goal**: Detect failures, pause execution, and enable user recovery actions and interactive debugging.
+---
 
-**Depends on**: Phase 5, Phase 6
+### Phase 17: Polish & Testing
 
-**Requirements**: EXEC-06 (pause on failure), EXEC-04 (embed terminal for interactive control), EXEC-05 (detach while continuing)
+**Goal**: Final QA pass validating responsive design, dark mode edge cases, color contrast, and production build correctness
+
+**Depends on**: Phase 16
+
+**Requirements**: None (closure phase)
 
 **Success Criteria** (what must be TRUE):
-  1. When agent fails, system immediately pauses and notifies user with error details
-  2. User can open embedded terminal to send input interactively (Ctrl+C, manual fixes)
-  3. User can detach terminal and resume execution or abort task
-  4. Execution history shows error events, terminal output, and recovery attempts
+  1. Production build (`pnpm tauri build`) succeeds with no CSS purging issues or missing classes
+  2. Dark mode toggle persists correctly across app restarts with no flicker
+  3. All text meets WCAG AA color contrast requirements (4.5:1 minimum)
+  4. Hover states, focus rings, disabled states render correctly on all components
+  5. No visual regressions from v1.0 Kanban workflow functionality
 
-**Plans**: 3 plans
-
-Plans:
-- [x] 08-01-PLAN.md — Error detection and pause logic (process exit code, stderr parsing, categorization, auto-retry)
-- [x] 08-02-PLAN.md — Terminal attach/detach functionality (PTY management, signal handling, interactive input)
-- [x] 08-03-PLAN.md — Recovery UI (resume, abort actions, error notifications, execution history display)
-
-### Phase 9: Remote Project Support
-**Goal**: Enable users to work with remote projects via SSH where all operations execute on remote machine.
-
-**Depends on**: Phase 3, Phase 4, Phase 8
-
-**Requirements**: REM-01 (SSH connection config), REM-02 (remote git repo and worktrees), REM-03 (remote agent execution), REM-04 (remote terminal streaming), REM-05 (remote file diffs)
-
-**Success Criteria** (what must be TRUE):
-  1. User can configure remote SSH connection (host, port, credentials, remote path)
-  2. User can view remote project with git repository and worktrees on remote machine
-  3. Agent execution, terminal streaming, and file diffs all work over SSH tunnel
-  4. User is unaware of local vs remote — UI experience is identical
-
-**Plans**: 5 plans (4 main + 1 gap closure)
+**Plans**: 2 plans
 
 Plans:
-- [x] 09-01-PLAN.md — SSH connection infrastructure + RemoteSshSession + host key verification
-- [x] 09-02-PLAN.md — Remote git operations dispatcher (routes git commands to local or remote)
-- [x] 09-03-PLAN.md — Remote process execution (spawn Claude Code CLI on remote via SSH PTY)
-- [x] 09-04-PLAN.md — Remote terminal streaming + UI integration (project creation flow, status indicators)
-- [x] 09-05-PLAN.md (gap closure) — Complete terminal streaming integration (SSH PTY polling, WebSocket bridge, handler wiring)
+- [ ] 17-01-PLAN.md — Production build validation, CSS coverage verification, edge case fixes
+- [ ] 17-02-PLAN.md — Accessibility audit (contrast, focus, semantic HTML), final QA sign-off
 
-### Phase 10: Documentation Completeness
-**Goal**: Complete administrative documentation for all phases.
-
-**Depends on**: Phase 2
-
-**Tech Debt Closure**: Phase 2 - Core Orchestration
-
-**Success Criteria** (what must be TRUE):
-  1. Phase 2 has a VERIFICATION.md file documenting all implemented features
-  2. All phase verification files are present and complete
-  3. Audit can verify Phase 2 from documentation rather than code inspection
-
-**Plans**: 1 plan
-
-Plans:
-- [x] 10-01-PLAN.md — Generate Phase 2 VERIFICATION.md file documenting Kanban board, task creation, GitHub/Jira import, drag-drop persistence with full evidence chain
-
-### Phase 11: Agent Execution UX Polish
-**Goal**: Complete all UX features for agent execution workflow.
-
-**Depends on**: Phase 4
-
-**Tech Debt Closure**: Phase 4 - Agent Execution
-
-**Success Criteria** (what must be TRUE):
-  1. TaskCard displays visual status badge showing agent execution state
-  2. Agent execution uses actual worktree leasing instead of placeholder path
-  3. Users can pause and resume agent execution with proper state management
-  4. Users receive notifications when agents fail with actionable information
-
-**Plans**: 4 plans
-
-Plans:
-- [x] 11-01-PLAN.md — Status badge with elapsed time in top-right corner of TaskCard (running/failed/success states with animations)
-- [x] 11-02-PLAN.md — Worktree leasing integration in spawn_agent_execution handler (automatic retry with pool expansion)
-- [x] 11-03-PLAN.md — Pause/resume mechanism with state management (soft pause via SIGSTOP, resume creates new execution)
-- [x] 11-04-PLAN.md — Failure notifications (toast alerts + persistent badges, error type extraction from database)
-- [x] 11-05-PLAN.md (gap closure) — Pause/Resume UI buttons in TaskCard (exposes backend functionality to users)
-
-### Phase 12: Worktree Disk Cleanup
-**Goal**: Ensure worktrees are fully cleaned from disk after merge.
-
-**Depends on**: Phase 6
-
-**Tech Debt Closure**: Phase 6 - Review & Merge Workflow
-
-**Success Criteria** (what must be TRUE):
-  1. After successful merge, worktree is deleted from disk (not just returned to pool)
-  2. Disk space is reclaimed after worktree cleanup
-  3. No stale worktree directories accumulate over time
-
-**Plans**: 1 plan
-
-Plans:
-- [x] 12-01-PLAN.md — Add disk cleanup to finalize_successful_merge handler
+---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
-| 1. Foundation | 4 | ✓ Complete | 2026-02-04 |
-| 2. Core Orchestration | 5 | ✓ Complete | 2026-02-05 |
-| 3. Git Worktree Infrastructure | 4 | ✓ Complete | 2026-02-05 |
-| 4. Agent Execution | 4 | ✓ Complete | 2026-02-06 |
-| 5. Real-time Monitoring | 3 | ✓ Complete | 2026-02-06 |
-| 6. Review & Merge Workflow | 5 (3 main + 2 gap closure) | ✓ Complete | 2026-02-07 |
-| 7. Configuration Management | 3 | ✓ Complete | 2026-02-07 |
-| 8. Error Handling & Polish | 3 | ✓ Complete | 2026-02-07 |
-| 9. Remote Project Support | 5 (4 main + 1 gap closure) | ✓ Complete | 2026-02-08 |
-| 10. Documentation Completeness | 1 | ✓ Complete | 2026-02-08 |
-| 11. Agent Execution UX Polish | 5 (4 main + 1 gap closure) | ✓ Complete | 2026-02-08 |
-| 12. Worktree Disk Cleanup | 1 | ✓ Plan Complete | 2026-02-08 |
+| 13 - Bug Fixes | 2 | Planned | - |
+| 14 - UI Foundation | 3 | Not started | - |
+| 15 - Component & Design System | 3 | Not started | - |
+| 16 - Page Redesigns | 2 | Not started | - |
+| 17 - Polish & Testing | 2 | Not started | - |
 
-**Total Plans:** 45 (37 main + 2 gap closure + 6 tech debt)
-**Planned Plans:** 45/45 (Phase 1: 4/4, Phase 2: 5/5, Phase 3: 4/4, Phase 4: 4/4, Phase 5: 3/3, Phase 6: 5/5, Phase 7: 3/3, Phase 8: 3/3, Phase 9: 5/5, Phase 10: 1/1, Phase 11: 5/5, Phase 12: 1/1)
-**Total Requirements Mapped:** 28/28 ✓
+**Total v1.1 work:** 12 plans across 5 phases
 
 ---
 
-*Roadmap created: 2026-02-04*
-*Phase 8 completed: 2026-02-07*
-*Phase 9 completed: 2026-02-08*
-*Phase 10 completed: 2026-02-08*
-*Phase 11 completed: 2026-02-08*
-*Phase 12 planning complete: 2026-02-08*
-*Depth: comprehensive (12 phases including tech debt closure)*
-*Coverage: 100% — All 28 v1.0 requirements mapped + tech debt closure*
+*Roadmap created: 2026-02-09*
+*Phase 13 planning completed: 2026-02-09*
+*Continues from v1.0 phases 1-12 (shipped 2026-02-09)*
