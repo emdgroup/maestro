@@ -9,7 +9,7 @@ import type { Task } from '../types/bindings';
 const isTauri = typeof (window as any).__TAURI__ !== 'undefined';
 
 // Development-only mock code (tree-shaken in production)
-if (import.meta.env.DEV) {
+if ((import.meta as any).env.DEV) {
   // In-memory mock database for browser-only development
   var mockDB = {
     tasks: [] as Task[],
@@ -27,7 +27,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
   }
 
   // Dev-only mock responses (tree-shaken in production)
-  if (import.meta.env.DEV) {
+  if ((import.meta as any).env.DEV) {
     // Mock responses for browser-only development
     console.log(`[MOCK] invoke('${cmd}', ${JSON.stringify(args)})`);
 
