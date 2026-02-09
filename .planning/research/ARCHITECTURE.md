@@ -1,667 +1,641 @@
-# Architecture Research: AI Agent Orchestration Desktop Tool
+# Architecture: Tailwind 4 + shadcn/ui + Theming in Tauri 2 React
 
-**Domain:** AI agent orchestration and autonomous code generation
-**Researched:** 2026-02-04
-**Confidence:** HIGH
+**Domain:** UI framework migration in Tauri desktop apps
+**Researched:** 2026-02-09
+**Confidence:** HIGH (Tailwind 4 + Vite well-documented, shadcn patterns established, Tauri integration straightforward)
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            TAURI 2 APPLICATION SHELL                          │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                                │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                     REACT FRONTEND (Web Layer)                         │  │
-│  │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐                  │  │
-│  │  │ Kanban View  │  │ Agent Panel  │  │ Terminal View│                  │  │
-│  │  │ (Workflows)  │  │ (Controls)   │  │ (Streaming)  │                  │  │
-│  │  └──────┬───────┘  └──────┬──────┘  └──────┬───────┘                  │  │
-│  │         │                 │                │                           │  │
-│  │         └─────────────────┴────────────────┘                           │  │
-│  │         │ WebSocket (real-time streams) & IPC (commands)              │  │
-│  │         ↓                                                               │  │
-│  └─────────┼───────────────────────────────────────────────────────────────┘  │
-│            │                                                                    │
-├────────────┼───────────────────────────────────────────────────────────────────┤
-│ TAURI IPC  │                                                                    │
-│ LAYER      │ Commands (JSON serialized) & Events (WebSocket bridge)            │
-│            │                                                                    │
-├────────────┼───────────────────────────────────────────────────────────────────┤
-│            ↓                                                                    │
-│  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │              RUST BACKEND (Tauri Command Handler Layer)                 │  │
-│  │  ┌──────────────────┐  ┌─────────────────┐  ┌──────────────────┐      │  │
-│  │  │ Command Router   │  │ State Manager   │  │ Event Dispatcher │      │  │
-│  │  │ (invoke parsing) │  │ (app state)     │  │ (send to UI)     │      │  │
-│  │  └────────┬─────────┘  └────────┬────────┘  └────────┬─────────┘      │  │
-│  │           │                     │                    │                 │  │
-│  │  ┌────────▼─────────────────────▼────────────────────▼─────────────┐  │  │
-│  │  │                  Core Services Layer                            │  │  │
-│  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │  │  │
-│  │  │  │ Process Mgr  │  │ Git Manager  │  │ DB Manager   │          │  │  │
-│  │  │  │ (spawn CLI)  │  │ (worktrees)  │  │ (SQLite)     │          │  │  │
-│  │  │  └──────────────┘  └──────────────┘  └──────────────┘          │  │  │
-│  │  └────────┬─────────────────┬──────────────────────────┬──────────┘  │  │
-│  │           │                 │                          │             │  │
-│  └───────────┼─────────────────┼──────────────────────────┼─────────────┘  │
-│              │                 │                          │                 │
-└──────────────┼─────────────────┼──────────────────────────┼─────────────────┘
-               │                 │                          │
-┌──────────────▼─────────────────▼──────────────────────────▼─────────────────┐
-│                    EXTERNAL SYSTEM LAYER                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                       │
-│  │ Node.js      │  │ Git CLI      │  │ SQLite       │                       │
-│  │ Sidecar      │  │ (system)     │  │ Database     │                       │
-│  │ (Claude Code)│  │ (worktree)   │  │ (state)      │                       │
-│  └──────────────┘  └──────────────┘  └──────────────┘                       │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      React Components Layer                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
+│  │  shadcn/   │  │  Custom    │  │   Radix    │  │   Sonner   │ │
+│  │    Button  │  │ Components │  │   Dialog   │  │   Toasts   │ │
+│  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘ │
+│        │                │               │               │        │
+├────────┴────────────────┴───────────────┴───────────────┴────────┤
+│              Tailwind + CSS Modules Layer                         │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────┐  ┌──────────────────┐  ┌────────────┐    │
+│  │  Tailwind Utilities│  │  Component.module.css  │ Theme  │    │
+│  │  (generated at    │  │  (Kanban, Terminal,  │  CSS    │    │
+│  │   build time)     │  │   etc.)            │ Vars    │    │
+│  └───────────────────┘  └──────────────────┘  └────────────┘    │
+├─────────────────────────────────────────────────────────────────┤
+│                    Theme Provider Layer                          │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │     ThemeProvider (next-themes)                           │   │
+│  │  - Manages light/dark/system modes                        │   │
+│  │  - Persists preference to localStorage                    │   │
+│  │  - Applies data-theme attribute to <html>                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────┤
+│                   Build & Configuration Layer                    │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌────────────────────┐  ┌─────────────────┐  ┌──────────────┐  │
+│  │  Vite + @tailwindcss  │  │  PostCSS        │  │  tailwind.   │  │
+│  │     /vite plugin       │  │  (optional)     │  │  config.ts   │  │
+│  └────────────────────┘  └─────────────────┘  └──────────────┘  │
+│                                                                   │
+│  ┌────────────────────┐  ┌─────────────────┐  ┌──────────────┐  │
+│  │  components.json   │  │  index.css      │  │  App.css     │  │
+│  │  (shadcn config)   │  │  (@import       │  │  (theme      │  │
+│  │                    │  │   tailwindcss)  │  │   overrides) │  │
+│  └────────────────────┘  └─────────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| **React Frontend** | UI rendering, user interactions, real-time display updates | React with hooks (useState, useEffect, useContext), WebSocket for streaming |
-| **Tauri IPC Layer** | Command routing from frontend to backend, event delivery to frontend | Tauri's `invoke()` API and event system |
-| **Rust Command Handler** | Parse commands, dispatch to services, aggregate responses | Tauri `#[tauri::command]` macros, JSON-RPC pattern |
-| **Process Manager** | Spawn CLI processes, capture output, manage lifecycle, error handling | `std::process::Command`, Tokio async spawning |
-| **Git Manager** | Create/destroy worktrees, manage branches, handle conflicts | `git` CLI invocations or `gitoxide` library |
-| **State Manager** | Coordinate app state, orchestrate workflows, manage agent tasks | In-memory app state + SQLite persistence |
-| **Database Manager** | Persist workflows, agent state, execution logs, git metadata | SQLite with connection pooling |
-| **Node.js Sidecar** | Run Claude Code CLI, isolated from main process, controlled lifetime | Node.js child process via `tauri::process::Command` |
-| **WebSocket Bridge** | Stream terminal output, real-time logs, agent progress | ws or tokio-tungstenite over localhost |
+| Component | Responsibility | Implementation |
+|-----------|----------------|-----------------|
+| React Components | UI rendering, event handling, state binding | Traditional TSX components |
+| shadcn/ui | Pre-built, accessible, headless components | Copy-to-project components with Tailwind |
+| Tailwind Utilities | Layout, spacing, typography, colors | CSS class names on elements |
+| CSS Modules | Component-specific one-off styles | `.css` files alongside components |
+| ThemeProvider | Theme state management, persistence, OS detection | next-themes library wrapper |
+| Vite + @tailwindcss/vite | CSS generation, hot module reload, build output | Compile Tailwind to CSS at dev/build time |
+| PostCSS (optional) | Plugin pipeline for CSS transformations | Only needed for advanced features beyond Tailwind |
 
 ## Recommended Project Structure
 
 ```
 src/
-├── commands/              # Tauri command handlers
-│   ├── mod.rs             # Command registry
-│   ├── agent.rs           # Agent lifecycle commands
-│   ├── workflow.rs        # Workflow commands
-│   ├── process.rs         # Process spawning commands
-│   ├── git.rs             # Git operations
-│   └── state.rs           # State queries
-│
-├── services/              # Business logic and external integration
-│   ├── mod.rs
-│   ├── process_manager.rs # Spawn and manage child processes
-│   ├── git_manager.rs     # Git worktree operations
-│   ├── agent_orchestrator.rs # Coordinate agents and workflows
-│   ├── state_coordinator.rs # App state management
-│   ├── db_manager.rs      # SQLite operations
-│   └── sidecar_launcher.rs # Node.js sidecar lifecycle
-│
-├── models/                # Data structures
-│   ├── mod.rs
-│   ├── agent.rs           # Agent state, task definitions
-│   ├── workflow.rs        # Workflow, task, step definitions
-│   ├── process.rs         # Process handle, execution state
-│   └── event.rs           # Event types sent to frontend
-│
-├── db/                    # Database layer
-│   ├── mod.rs
-│   ├── schema.rs          # Table definitions
-│   ├── migrations.rs      # Initial schema setup
-│   └── queries.rs         # Prepared statements
-│
-├── ipc/                   # IPC communication helpers
-│   ├── mod.rs
-│   ├── protocol.rs        # Command/response structures
-│   └── error_handling.rs  # IPC error formats
-│
-├── utils/                 # Helper utilities
-│   ├── mod.rs
-│   ├── paths.rs           # Project and worktree paths
-│   ├── environment.rs     # Environment setup
-│   └── logging.rs         # Structured logging
-│
-└── main.rs                # App initialization, setup
-
-frontend/src/
 ├── components/
-│   ├── KanbanBoard.tsx     # Workflow visualization
-│   ├── AgentControl.tsx    # Agent lifecycle UI
-│   ├── TerminalView.tsx    # Real-time output streaming
-│   ├── TaskPanel.tsx       # Task details and controls
-│   └── StateMonitor.tsx    # System state display
-│
-├── hooks/
-│   ├── useProcessOutput.ts # WebSocket subscription hook
-│   ├── useAgentState.ts    # Agent state management
-│   ├── useWorkflow.ts      # Workflow management
-│   └── useIPC.ts           # Tauri IPC abstraction
-│
-├── services/
-│   ├── ipcClient.ts        # Tauri invoke wrapper
-│   ├── websocketClient.ts  # Terminal streaming
-│   └── stateService.ts     # Frontend state sync
-│
+│   ├── ui/                         # shadcn components (copy from CLI)
+│   │   ├── button.tsx
+│   │   ├── dialog.tsx
+│   │   ├── select.tsx
+│   │   └── [...]
+│   ├── KanbanBoard.tsx             # App-specific components
+│   ├── KanbanBoard.module.css      # Component-scoped styles (if needed)
+│   ├── TaskCard.tsx
+│   ├── TaskCard.module.css
+│   ├── ProjectPicker.tsx
+│   ├── ProjectSettingsModal.tsx
+│   └── [...]
 ├── store/
-│   ├── workflowStore.ts    # Workflow state (React Context)
-│   ├── agentStore.ts       # Agent state (React Context)
-│   └── uiStore.ts          # UI state (React Context)
-│
-└── App.tsx
+│   └── boardStore.ts              # Zustand state management
+├── styles/
+│   ├── index.css                  # Root: @import "tailwindcss"
+│   ├── App.css                    # App-level CSS variables, theme overrides
+│   └── globals.css                # (Optional) shared utility classes
+├── types/
+│   └── bindings.ts                # Auto-generated from Rust
+├── lib/
+│   └── [utilities]
+├── App.tsx                        # Root wrapped with ThemeProvider
+└── main.tsx                       # App mount point
 ```
 
 ### Structure Rationale
 
-- **commands/:** Separates Tauri command handlers from business logic for clean API surface definition
-- **services/:** Isolates business logic (git, process, orchestration) for testability and reuse
-- **models/:** Centralized data structure definitions ensures consistency across layers
-- **db/:** Dedicated database layer allows easy migration or replacement later
-- **ipc/:** Isolates protocol definitions and marshaling for maintainability
-- **frontend/components/:** React components organized by feature domain
-- **frontend/hooks/:** Custom hooks encapsulate IPC and WebSocket logic for reusability
-- **frontend/store/:** React Context-based state management avoids prop drilling across deep UI trees
+- **`components/ui/`:** Separate shadcn components to clarify they're third-party. Enables bulk updates or replacement.
+- **`components/`:** App-specific components stay at this level, not nested deeper (flatter structure for easier imports).
+- **`.module.css` files:** Colocated with components. CSS Modules prevent naming conflicts, improve maintainability for one-off styles.
+- **`styles/index.css`:** Single entry point for Tailwind. All theme configuration and global utilities here.
+- **`App.tsx` root level:** ThemeProvider wraps entire app, enabling theme context everywhere.
 
 ## Architectural Patterns
 
-### Pattern 1: Command-Response IPC with Error Propagation
+### Pattern 1: Tailwind + CSS Modules (Hybrid)
 
-**What:** Frontend invokes Tauri commands (async) with JSON payloads. Backend executes command, returns JSON result or error.
+**What:** Use Tailwind utilities for layout/spacing, CSS Modules for component-specific styles that need scoping or complexity.
 
-**When to use:** All frontend-to-backend operations (state queries, mutations, long-running operations)
-
-**Trade-offs:**
-- Pro: Type-safe with TypeScript interfaces mirroring Rust structs
-- Pro: Automatic JSON serialization/deserialization
-- Con: Request-response is synchronous at the frontend (use async/await), not ideal for streaming responses
-- Con: Large responses need pagination or streaming fallback
-
-**Example:**
-
-```rust
-// Backend (Rust)
-#[tauri::command]
-async fn spawn_agent(
-    state: tauri::State<'_, AppState>,
-    config: AgentConfig,
-) -> Result<AgentHandle, String> {
-    state.orchestrator.spawn_agent(config)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-// Frontend (TypeScript)
-const { invoke } = await import("@tauri-apps/api/core");
-
-const handle = await invoke<AgentHandle>("spawn_agent", {
-    config: { name: "agent-1", model: "claude-opus" }
-}).catch(err => console.error("Failed to spawn:", err));
-```
-
-### Pattern 2: WebSocket Streaming for Terminal Output
-
-**What:** Real-time output (logs, agent activity) streamed via WebSocket instead of polling or bulk IPC.
-
-**When to use:** Terminal output, progress updates, streaming data that shouldn't block the main IPC channel
+**When to use:**
+- Most of the time — Tailwind for 90% of styling
+- CSS Modules only when: component has complex state-based styles, needs animation definitions, or has BEM-like naming
 
 **Trade-offs:**
-- Pro: Low-latency, high-frequency updates
-- Pro: Frontend can buffer and render efficiently
-- Con: Requires separate WebSocket connection management
-- Con: Error recovery (reconnection) needed for robustness
+- Pro: Best of both worlds — utility speed with scoped safety
+- Pro: Easy to refactor — delete `.module.css` when component simplifies
+- Con: Two parallel style systems to maintain
+- Con: Slight build complexity for dual pipelines
 
 **Example:**
+```typescript
+// KanbanBoard.tsx
+import styles from "./KanbanBoard.module.css";
 
-```rust
-// Backend: WebSocket broadcaster
-pub struct TerminalStream {
-    tx: tokio::sync::broadcast::Sender<String>,
-}
-
-impl TerminalStream {
-    fn emit_line(&self, line: String) {
-        let _ = self.tx.send(line);
-    }
-}
-
-// Frontend: Hook for WebSocket subscription
-function useTerminalOutput(processId: string) {
-    const [output, setOutput] = useState<string[]>([]);
-
-    useEffect(() => {
-        const ws = new WebSocket(`ws://localhost:7777/terminal/${processId}`);
-        ws.onmessage = (event) => {
-            setOutput(prev => [...prev, event.data]);
-        };
-        return () => ws.close();
-    }, [processId]);
-
-    return output;
+export function KanbanBoard() {
+  return (
+    <div className="flex h-screen gap-4 bg-background p-4">
+      {/* Tailwind for layout */}
+      <div className={styles.column}>
+        {/* CSS Modules for component-specific animation */}
+        Backlog
+      </div>
+    </div>
+  );
 }
 ```
 
-### Pattern 3: Git Worktree Pooling with Lifecycle Management
-
-**What:** Pre-allocate N git worktrees, lease them to agents, recycle on task completion.
-
-**When to use:** Avoid `git worktree create` overhead on every task; enable agent isolation and parallel execution
-
-**Trade-offs:**
-- Pro: Fast agent startup (existing worktree)
-- Pro: Easy cleanup (reset to base state)
-- Con: Requires disk space for N copies of repo
-- Con: Must handle worktree state conflicts if recycling is too aggressive
-
-**Example:**
-
-```rust
-pub struct WorktreePool {
-    available: Vec<PathBuf>,      // Unoccupied worktrees
-    leased: HashMap<AgentId, PathBuf>, // Occupied worktrees
-    capacity: usize,
+```css
+/* KanbanBoard.module.css */
+.column {
+  animation: slideIn 0.3s ease-out;
 }
 
-impl WorktreePool {
-    async fn lease(&mut self) -> Result<PathBuf> {
-        // If pool depleted, create new or wait
-        if self.available.is_empty() && self.leased.len() < self.capacity {
-            self.create_worktree().await?;
-        }
-        Ok(self.available.pop()?)
-    }
-
-    async fn return_to_pool(&mut self, agent_id: AgentId) -> Result<()> {
-        // Reset worktree state, return to available pool
-        let path = self.leased.remove(&agent_id)?;
-        self.reset_worktree(&path).await?;
-        self.available.push(path);
-        Ok(())
-    }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 ```
 
-### Pattern 4: App State as Single Source of Truth with Event Sourcing
+### Pattern 2: Theme Provider at Root
 
-**What:** Centralized app state (in-memory + SQLite) with all mutations logged as events. UI subscribes to state changes via events.
+**What:** Wrap entire app with `<ThemeProvider>` at the topmost level to enable `useTheme` hook throughout component tree.
 
-**When to use:** Complex workflows with multiple agents; need to replay/audit execution; recover from crashes
+**When to use:** Always — this is the foundation for theme switching.
 
 **Trade-offs:**
-- Pro: Complete audit trail of all mutations
-- Pro: Crash recovery by replaying events
-- Con: Added complexity (event store, event handlers)
-- Con: Storage overhead (every mutation is persisted)
+- Pro: Single source of truth for theme state
+- Pro: Avoids prop drilling for theme
+- Con: Adds one wrapper component to React tree
+- Con: SSR complications (mitigated in Tauri — no SSR)
 
 **Example:**
+```typescript
+// App.tsx
+import { ThemeProvider } from "next-themes";
 
-```rust
-pub enum WorkflowEvent {
-    TaskCreated { workflow_id: u64, task: Task },
-    TaskStarted { task_id: u64 },
-    TaskCompleted { task_id: u64, result: String },
-    TaskFailed { task_id: u64, error: String },
+export function App() {
+  return (
+    <ThemeProvider
+      attribute="data-theme"
+      defaultTheme="system"
+      enableSystem
+      storageKey="app-theme"
+    >
+      {/* All components here have access to useTheme() */}
+      <KanbanBoard />
+    </ThemeProvider>
+  );
 }
 
-pub struct EventLog {
-    db: rusqlite::Connection,
-}
+// Inside any nested component
+import { useTheme } from "next-themes";
 
-impl EventLog {
-    async fn append(&self, event: WorkflowEvent) -> Result<u64> {
-        // Serialize, store in DB with timestamp
-        let json = serde_json::to_string(&event)?;
-        self.db.execute(
-            "INSERT INTO events (type, payload, created_at) VALUES (?, ?, ?)",
-            [&event_type, &json, &now],
-        )?;
-        Ok(last_insert_rowid)
-    }
-
-    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<WorkflowEvent> {
-        // UI subscribes to event stream
-        self.tx.subscribe()
-    }
+function Settings() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+      Toggle theme
+    </button>
+  );
 }
 ```
 
-### Pattern 5: Sidecar Process Lifecycle with Health Monitoring
+### Pattern 3: CSS Variables for Colors (Tailwind 4 Native)
 
-**What:** Launch Node.js sidecar once at app startup. Monitor health, restart if crashed. Graceful shutdown on app exit.
+**What:** Define theme colors as CSS variables using `@theme` directive. Tailwind 4 automatically exposes all theme tokens as CSS variables.
 
-**When to use:** Integration with external CLI tools (Claude Code CLI); need isolated environment
+**When to use:** Always in Tailwind 4. Replaces separate theme config files.
 
 **Trade-offs:**
-- Pro: Isolates Node.js from Rust runtime
-- Pro: Can restart Node.js without restarting Tauri app
-- Con: Adds IPC overhead (Tauri ↔ Node.js)
-- Con: Requires health monitoring and reconnection logic
+- Pro: Colors update dynamically without rebuilding
+- Pro: Simpler to override specific tokens
+- Pro: CSS-in-CSS (no JavaScript theme config needed)
+- Con: Requires Tailwind 4+ (breaking change from v3)
 
 **Example:**
+```css
+/* src/styles/index.css */
+@import "tailwindcss";
 
-```rust
-pub struct SidecarManager {
-    process: Option<std::process::Child>,
-    health_check_tx: tokio::sync::mpsc::Sender<()>,
+@theme {
+  --color-primary-500: oklch(0.62 0.22 257.65);
+  --color-success-500: oklch(0.71 0.13 142.48);
+  --color-destructive-500: oklch(0.63 0.26 29.23);
 }
+```
 
-impl SidecarManager {
-    async fn start(&mut self) -> Result<()> {
-        let child = tauri::process::Command::new("node")
-            .args(&["sidecar/index.js"])
-            .spawn()?;
-        self.process = Some(child);
-        self.spawn_health_check();
-        Ok(())
-    }
+### Pattern 4: Data-Attribute Dark Mode (Tauri-Friendly)
 
-    fn spawn_health_check(&self) {
-        // Periodically check if process is alive
-        // Restart if dead
-    }
-}
+**What:** Use `data-theme` attribute (instead of class) on `<html>` for theme switching. Works better in Tauri without SSR complexity.
 
-impl Drop for SidecarManager {
-    fn drop(&mut self) {
-        // Graceful shutdown: send signal to Node.js process
-        if let Some(mut proc) = self.process.take() {
-            let _ = proc.kill();
-        }
-    }
-}
+**When to use:** In Tauri (and any non-SSR context). Simpler than class strategy.
+
+**Trade-offs:**
+- Pro: Avoids SSR hydration mismatches (none in Tauri anyway)
+- Pro: Cleaner CSS selectors with data attributes
+- Con: Class strategy is more common in web
+- Con: Requires custom CSS variant in Tailwind
+
+**Example:**
+```css
+/* src/styles/App.css */
+/* Override Tailwind's dark variant to use data attribute */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+```
+
+```typescript
+// ThemeProvider configuration in App.tsx
+<ThemeProvider
+  attribute="data-theme"
+  values={{
+    light: "light",
+    dark: "dark",
+    system: "system"
+  }}
+>
+```
+
+### Pattern 5: Incremental Component Migration
+
+**What:** Convert existing components to shadcn one-by-one, keeping old CSS files until replacement is complete.
+
+**When to use:** During migration phase (Phase 1 of roadmap).
+
+**Trade-offs:**
+- Pro: Reduces risk — test each component change independently
+- Pro: Keeps app working throughout migration
+- Con: Temporary code duplication
+- Con: Two component libraries in use simultaneously
+
+**Example Migration Path:**
+```
+Week 1: TaskCard → shadcn Button + Card
+  - Old: TaskCard.tsx uses .css file
+  - New: KanbanBoard now imports shadcn Button
+  - Delete: TaskCard.css after full migration
+
+Week 2: KanbanBoard columns → shadcn Card
+  - Old: Custom column divs
+  - New: shadcn Card wrapper
+  - CSS Modules for drag-drop animations stay
+
+Week 3: Modals → shadcn Dialog
+  - Old: Custom modal divs with Radix
+  - New: shadcn Dialog (built on Radix already)
+  - Seamless switch — same underlying library
 ```
 
 ## Data Flow
 
-### Request Flow: User Action → Backend Command → Service Layer
+### Theme State Flow
 
 ```
-User clicks "Start Agent"
+User clicks "Dark mode" toggle
     ↓
-React onClick handler
+useTheme().setTheme("dark") called
     ↓
-invoke<AgentHandle>("spawn_agent", config)
-    ↓ (IPC serialization: config → JSON)
-Tauri command router
+ThemeProvider updates state + localStorage
     ↓
-Rust command handler: spawn_agent()
+data-theme="dark" applied to <html>
     ↓
-Process Manager: spawn_child_process()
+CSS dark: variants activate globally
     ↓
-Git Manager: lease_worktree()
+Component re-renders with dark colors
     ↓
-State Coordinator: record agent state
-    ↓ (JSON serialization: AgentHandle → JSON)
-Frontend receives response
-    ↓
-React state update (setAgents)
-    ↓
-UI re-renders with new agent
+CSS variables reflect dark theme
 ```
 
-### Streaming Flow: Terminal Output → WebSocket → Frontend Render
+### Style Resolution Order (Highest to Lowest Priority)
 
 ```
-Child process writes to stdout
-    ↓
-Process Manager captures line
-    ↓
-TerminalStream broadcasts: tx.send(line)
-    ↓
-WebSocket clients receive message
-    ↓ (streaming, not buffering)
-Frontend useTerminalOutput hook updates state
-    ↓
-Virtual terminal component renders new line
-    ↓
-User sees live output
+1. Inline styles (avoid)
+   ↓
+2. CSS Modules (.module.css)
+   ↓
+3. Component-scoped CSS (imported .css files)
+   ↓
+4. Tailwind utilities (class names)
+   ↓
+5. Global CSS (App.css, index.css)
+   ↓
+6. Browser defaults
 ```
 
-### State Persistence Flow: Mutation → Event Log → SQLite → Broadcast
+### Build-Time CSS Generation
 
 ```
-Command completes successfully
+.tsx files written by developer
     ↓
-Rust service appends event to EventLog
+Vite scans for class names (e.g., "p-4 bg-background")
     ↓
-EventLog.append() serializes and inserts into DB
+@tailwindcss/vite plugin intercepts
     ↓
-EventLog broadcasts event on tokio::sync::broadcast channel
+Generates matching CSS rules (p-4 → padding: 1rem, etc.)
     ↓
-Tauri event system (tauri::emit()) sends to frontend
+CSS written to bundle
     ↓
-React hook (useWorkflowState) receives event, updates Context
-    ↓
-Components re-render with new state
-    ↓
-Next app restart: replay EventLog to recover state
+Browser receives optimized stylesheet (only used classes)
 ```
 
-### Key Data Flows
+### Component Import Flow (shadcn)
 
-1. **User-initiated agent spawning:** Frontend invokes command → Rust spawns process + leases worktree + creates DB record → WebSocket stream established for output
-2. **Real-time terminal output:** Process stdout captured → WebSocket broadcast → Frontend receives and renders → User sees live terminal
-3. **Workflow state changes:** Event created → Logged to DB → Broadcast to all listeners → Frontend updates UI and local state
-4. **Error handling:** Process fails → Service logs error event → Frontend receives event → UI displays error and optionally retries
+```
+Developer runs: pnpm dlx shadcn@latest add button
+    ↓
+CLI reads components.json config
+    ↓
+Downloads button.tsx from registry
+    ↓
+Copies to src/components/ui/button.tsx
+    ↓
+Developer imports: import { Button } from "@/components/ui/button"
+    ↓
+Button renders with project's Tailwind tokens
+    ↓
+(No npm dependency — code is yours to modify)
+```
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 0-1 agent | Single process, in-memory state fine, SQLite sufficient. Pattern: monolithic. |
-| 1-5 agents | Add worktree pooling to avoid repeated `git worktree create`. Event log helpful for debugging. Add WebSocket for streaming to prevent IPC saturation. |
-| 5-50 agents | Implement event sourcing for crash recovery. Consider moving state to separate service (not just in-memory). Add connection pooling to SQLite. Monitor process memory (Tokio tasks). |
-| 50+ agents | Sidecar bottleneck likely. Consider process spawning strategy (queue, rate limiting). Worktree pooling becomes critical (allocate N worktrees up front). Event log archival (old events to separate cold storage). |
+| Single user (MVP) | Tailwind + shadcn + next-themes handles everything. No database needed for theme (localStorage sufficient). |
+| 100s of users | Theme data moves to database (if app stores user preferences server-side for future cloud features). CSS bundle stable — Tailwind outputs same file regardless of user count. |
+| 1000s of users | Consider lazy-loading shadcn components if using 50+ components. Tree-shake unused Tailwind utilities (already automatic with Vite). |
+| 10k+ users | CSS-in-JS optional if dynamic theming needed beyond light/dark. Current approach scales fine. |
 
 ### Scaling Priorities
 
-1. **First bottleneck:** Process spawning (Tauri can spawn but OS has process limit). Solution: queue agents, batch spawning, worktree pooling prevents redundant operations.
-2. **Second bottleneck:** IPC throughput for terminal output. Solution: WebSocket streaming instead of bulk IPC, compress if needed.
-3. **Third bottleneck:** SQLite with many concurrent writes. Solution: connection pooling (rusqlite with tokio), write batching, consider PostgreSQL for multi-instance setups.
+1. **First optimization:** Lazy-load shadcn components (use dynamic imports for modals, settings) — biggest impact on initial load.
+2. **Second optimization:** CSS critical path inlining (Vite does this automatically) — ensures no flash of unstyled content.
+3. **Third optimization:** Theme persistence via Tauri store (instead of localStorage) — survives app updates.
+
+## Tauri-Specific Considerations
+
+### Challenge 1: No SSR (Actually an Advantage)
+
+**Problem in web apps:** Flash of wrong theme on initial page load because theme CSS loads after JavaScript hydrates.
+
+**Solution in Tauri:** No server-side rendering exists. App always renders client-side. `next-themes` script runs before React renders. **No flash possible.**
+
+**Implementation:** Use `disableTransitionOnChange={false}` safely in Tauri (transitions won't appear jarring since no hydration mismatch).
+
+```typescript
+<ThemeProvider
+  attribute="data-theme"
+  defaultTheme="system"
+  enableSystem
+  disableTransitionOnChange={false}  // Safe in Tauri
+>
+```
+
+### Challenge 2: Vite HMR in Dev Mode
+
+**Problem:** Vite dev server needs to hot-reload CSS when theme changes.
+
+**Solution:** Already configured in vite.config.ts. Tauri plugin handles this.
+
+**Verification:** In `vite.config.ts`, HMR port is 5174 (different from 5173):
+```typescript
+hmr: host
+  ? { protocol: "ws", host, port: 5174 }
+  : undefined,
+```
+
+### Challenge 3: Theme Persistence Beyond localStorage
+
+**Problem:** localStorage is not ideal for desktop apps (could be lost on app update, not Tauri-aware).
+
+**Solution Option 1 (recommended):** Use Tauri's `@tauri-apps/plugin-store` for persistent theme.
+
+```typescript
+import { Store } from "@tauri-apps/plugin-store";
+
+const store = new Store(".preferences.dat");
+
+// On app init
+const savedTheme = await store.get("theme") || "system";
+setTheme(savedTheme);
+
+// On theme change
+await store.set("theme", newTheme);
+await store.save();
+```
+
+**Solution Option 2:** Keep localStorage (simpler, sufficient for MVP).
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Synchronous Blocking in Tauri Command Handlers
+### Anti-Pattern 1: Tailwind config bloat (v3 mistake, avoid in v4)
 
-**What people do:** Write blocking operations directly in `#[tauri::command]` without `async`.
+**What people do:** Define every custom color in `tailwind.config.js` (v3 approach).
 
-**Why it's wrong:** Blocks the Tauri event loop, freezing UI. Other commands queue up.
+**Why it's wrong:** Tailwind 4 uses CSS-first `@theme` directives. Old approach defeats simplicity advantage of v4.
 
-**Do this instead:** Always use `async fn` for I/O-bound operations. Use `tokio::spawn_blocking()` for CPU-heavy work.
+**Do this instead:**
+```css
+/* src/styles/App.css - NOT tailwind.config.js */
+@import "tailwindcss";
 
-```rust
-// WRONG
-#[tauri::command]
-fn spawn_agent(config: AgentConfig) -> Result<AgentHandle> {
-    std::thread::sleep(std::time::Duration::from_secs(5)); // Freezes UI!
-    // ...
-}
-
-// RIGHT
-#[tauri::command]
-async fn spawn_agent(
-    state: tauri::State<'_, AppState>,
-    config: AgentConfig,
-) -> Result<AgentHandle> {
-    state.orchestrator.spawn_agent(config).await
+@theme {
+  --color-brand-500: oklch(0.55 0.20 257);
 }
 ```
 
-### Anti-Pattern 2: Polling for Process Status Instead of Events
+### Anti-Pattern 2: CSS Modules for everything
 
-**What people do:** Frontend repeatedly calls `get_process_status()` every 100ms to check if agent is done.
+**What people do:** Create `.module.css` files for every component, even simple layout ones.
 
-**Why it's wrong:** Wastes IPC bandwidth, adds latency, poor UX (not real-time).
+**Why it's wrong:** Tailwind utilities are simpler and faster. Scoping not needed for layout classes.
 
-**Do this instead:** Have backend emit events when status changes. Frontend listens to events.
-
+**Do this instead:**
 ```typescript
-// WRONG
-useEffect(() => {
-    const timer = setInterval(() => {
-        invoke("get_process_status", { id }).then(setStatus);
-    }, 100);
-    return () => clearInterval(timer);
-}, []);
-
-// RIGHT
-useEffect(() => {
-    const unlisten = listen(`process:${id}:status`, (event) => {
-        setStatus(event.payload);
-    });
-    return unlisten;
-}, []);
-```
-
-### Anti-Pattern 3: Storing Agent State Only in Memory
-
-**What people do:** Keep all agent/workflow state in a Rust `Arc<Mutex<AppState>>`, no SQLite.
-
-**Why it's wrong:** Crash = lost state. Can't replay execution or debug.
-
-**Do this instead:** Dual-write to in-memory state AND SQLite. Treat SQLite as source of truth for recovery.
-
-```rust
-// WRONG
-let mut state = app_state.lock().unwrap();
-state.agents.insert(agent_id, agent_info); // Only in memory!
-
-// RIGHT
-state.db.insert_agent(&agent_info).await?; // Persist first
-state.cache.insert(agent_id, agent_info); // Cache for performance
-```
-
-### Anti-Pattern 4: Unmanaged Git Worktree Accumulation
-
-**What people do:** Create worktree per task without cleanup. After 100 tasks, 100 worktrees on disk.
-
-**Why it's wrong:** Disk space bloat, slow filesystem ops.
-
-**Do this instead:** Implement worktree pooling and cleanup. Limit pool size, reset worktrees between uses.
-
-```rust
-// WRONG
-async fn execute_task(task: Task) {
-    let worktree = create_new_worktree().await?; // New worktree every time
-    // ... run agent ...
-    // Never cleaned up!
+// Good: Use Tailwind for layout
+export function Card() {
+  return <div className="rounded-lg border p-4 shadow-sm">...</div>;
 }
 
-// RIGHT
-let mut pool = WorktreePool::new(max_size: 5);
-let worktree = pool.lease().await?;
-// ... run agent ...
-pool.return_to_pool(worktree).await?; // Recycle
+// Bad: Unnecessary scoping
+// Card.module.css with .card { border-radius: 0.5rem; ... }
 ```
 
-### Anti-Pattern 5: WebSocket Without Reconnection or Backpressure
+### Anti-Pattern 3: Global CSS with theme colors
 
-**What people do:** Open WebSocket for output stream. If it drops, no recovery. Or send unlimited messages, crash client.
+**What people do:** Hard-code colors in global CSS (e.g., `body { background: #ffffff; }`).
 
-**Why it's wrong:** Network flakiness will crash the app. User loses output visibility.
+**Why it's wrong:** Doesn't update when theme changes. Defeats dark mode.
 
-**Do this instead:** Implement reconnection logic, message queueing, and backpressure handling.
-
-```rust
-// WRONG
-tx.send(output_line)?; // Fails if receiver disconnected
-
-// RIGHT
-match tx.send(output_line) {
-    Ok(_) => {},
-    Err(e) => {
-        // Log and recover: might want to queue message
-        // or signal to frontend that stream is broken
-        eprintln!("WebSocket send failed: {}", e);
-    }
+**Do this instead:**
+```css
+/* App.css */
+body {
+  background-color: hsl(var(--background) / <alpha-value>);
+  color: hsl(var(--foreground) / <alpha-value>);
 }
+```
+
+### Anti-Pattern 4: Class-based dark mode in Tauri
+
+**What people do:** Use `className="dark"` toggle on `<html>` (web convention).
+
+**Why it's wrong:** Works, but Tauri renders consistently. Data attributes are cleaner and prevent naming conflicts.
+
+**Do this instead:**
+```typescript
+// Use data-theme attribute (cleaner for desktop apps)
+<html data-theme="dark">
+
+// Not this:
+<html className="dark">
+```
+
+### Anti-Pattern 5: Not migrating radix-ui components to shadcn
+
+**What people do:** Keep Radix Dialog, Select, etc. and mix in shadcn.
+
+**Why it's wrong:** Duplicate dependency, inconsistent styling, larger bundle.
+
+**Do this instead:**
+```typescript
+// Existing code already uses Radix:
+import { Dialog } from "@radix-ui/react-dialog";
+
+// Replace with shadcn (which wraps Radix, same API):
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 ```
 
 ## Integration Points
 
-### External Services
+### External Libraries
 
-| Service | Integration Pattern | Notes |
+| Library | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| **Node.js Sidecar** | `tauri::process::Command::new("node")`. IPC via stdin/stdout or HTTP. | Health monitoring required; graceful shutdown on app exit. |
-| **Git CLI** | Shell commands via `std::process::Command`. Capture stdout/stderr. | Already installed on dev machines; simpler than gitoxide library. |
-| **SQLite** | `rusqlite` crate with connection pooling for Tokio. | File-based, no network overhead. Local transactions sufficient for single-app writes. |
-| **Claude Code CLI** | Executed within Node.js sidecar. Invoked by agent orchestrator with project state as args. | Orchestrator polls sidecar for completion or listens to events from Node.js. |
+| shadcn/ui | Copy components to project, customize with Tailwind | No npm dependency — CLI-based setup |
+| Tailwind CSS 4 | `@import "tailwindcss"` in CSS file | No config needed with @tailwindcss/vite |
+| next-themes | Wrap app root with ThemeProvider | Works in non-Next.js React apps |
+| PostCSS | Only if using advanced features (rarely needed) | Vite handles CSS bundling automatically |
+| Radix UI | Already in project (shadcn built on it) | Keep for Dialog, Select. No conflicts. |
+| Sonner | Toast library (compatible with all above) | Works with Tailwind styling |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| **Frontend ↔ Rust Backend** | Tauri IPC (JSON serialized commands/responses) + Tauri events for state broadcasts | Type-safe with TypeScript interfaces. Commands are fire-and-forget or await-response; events are one-way broadcasts. |
-| **Rust Backend ↔ Terminal Streaming** | WebSocket over localhost (tokio-tungstenite or async-tungstenite). Broadcast pattern: one sender, many subscribers. | Decouples terminal output from IPC channel. Allows independent reconnection. |
-| **Rust Backend ↔ Git Manager** | Direct function calls (same Rust binary). Git commands are blocking, wrapped in `tokio::task::block_in_place()`. | Simpler than subprocess calls; synchronous git operations are acceptable (usually <1s per call). |
-| **Rust Backend ↔ Process Manager** | Direct function calls. Spawning is async (returns JoinHandle). Output captured to a channel and broadcast to WebSocket. | Process lifecycle tracked in app state; cleanup on agent completion or app exit. |
-| **Rust Backend ↔ Node.js Sidecar** | stdin/stdout piping or HTTP over localhost. Likely: invoke sidecar via command line arguments, wait for process exit, parse stdout as JSON result. | Sidecar lifetime tied to Tauri app lifetime (spawn at startup, kill on shutdown). |
+| Components ↔ Tailwind | CSS classes on JSX elements | One-way: component reads, Tailwind writes CSS |
+| Components ↔ Theme Provider | useTheme hook | Two-way: read theme state, dispatch setTheme |
+| Theme Provider ↔ localStorage | Automatic via next-themes | Transparent — no code needed |
+| Vite ↔ @tailwindcss/vite | Plugin architecture | Automatic — plugin intercepts CSS imports |
+| Dev server ↔ Browser | WebSocket (HMR port 5174) | Tauri + Vite handles automatically |
 
-## Implementation Approach for Build Order
+## Build Process
 
-### Phase 1: Foundation (Must build first)
-- SQLite schema and DB manager
-- Tauri IPC command registry (empty stubs)
-- React app shell with Context-based state management
-- Type definitions for all major models (Agent, Workflow, Task, etc.)
+### Development (`pnpm tauri:dev`)
 
-**Rationale:** Everything depends on these; build them solid.
+```
+1. Vite starts on port 5173
+2. @tailwindcss/vite plugin initializes
+3. src/styles/index.css parsed (@import "tailwindcss")
+4. Tailwind scans .tsx files for class names
+5. CSS generated in-memory (not written to disk)
+6. React components load with Tailwind utilities
+7. Browser watches for changes (HMR port 5174)
+8. Edit .tsx → Vite detects → CSS rescanned → Instant reload
+9. Edit .css → Vite detects → CSS refreshed → Instant reload
+```
 
-### Phase 2: Core Orchestration (Depends on Phase 1)
-- Rust app state and event log
-- Process manager (spawn and track processes)
-- Basic command handlers (spawn_agent, get_agents, etc.)
-- React UI components for agent list and controls
+### Production (`pnpm tauri build`)
 
-**Rationale:** Now you can spawn processes and track them.
+```
+1. TypeScript compiled to JavaScript
+2. @tailwindcss/vite plugin runs full scan
+3. Only used Tailwind utilities included in bundle
+4. CSS minified and deduplicated
+5. Output written to dist/assets/
+6. Tauri bundles dist/ into .dmg/.exe/.AppImage
+```
 
-### Phase 3: Git Integration (Depends on Phase 1)
-- Git manager (create/destroy/reset worktrees)
-- Worktree pooling logic
-- Git command handlers (create_worktree, delete_worktree, etc.)
-- DB schema updates for git metadata
+## Common Integration Issues
 
-**Rationale:** Agents need isolated worktrees to operate safely.
+### Issue 1: Tailwind utilities not applying
 
-### Phase 4: Real-time Output Streaming (Depends on Phase 2)
-- WebSocket server (localhost, ephemeral port)
-- Terminal output buffering and broadcast
-- Frontend WebSocket client and terminal view component
-- Backpressure and reconnection logic
+**Symptom:** Class names in JSX but no styles appear.
 
-**Rationale:** Terminal streaming is critical for UX; must be after process management.
+**Cause:** CSS file not imported properly or Tailwind directive missing.
 
-### Phase 5: Advanced Orchestration (Depends on Phase 2 + 3)
-- Workflow engine (sequence tasks, branching, error recovery)
-- Agent state transitions and state machine
-- Event sourcing and audit logging
-- Kanban board UI reflecting workflow state
+**Fix:**
+```typescript
+// App.tsx or entry point MUST import CSS
+import "./styles/index.css";  // ← Include this
 
-**Rationale:** Complex orchestration logic builds on stable process and git managers.
+// src/styles/index.css MUST have:
+@import "tailwindcss";  // ← Include this
+```
 
-### Phase 6: Sidecar Integration (Depends on Phase 2)
-- Node.js sidecar launcher and health monitoring
-- Claude Code CLI invocation via sidecar
-- Sidecar → Tauri backend communication protocol
-- Graceful sidecar shutdown on app exit
+### Issue 2: Dark mode not persisting across app restarts
 
-**Rationale:** Can be parallel with other phases; orthogonal to core orchestration.
+**Symptom:** Theme reverts to light after closing/opening app.
 
-### Phase 7: Production Hardening (Depends on Phases 1-6)
-- Error recovery and restart logic
-- Monitoring and diagnostics (logs, telemetry)
-- Crash recovery (replay event log on startup)
-- Performance tuning (connection pooling, caching)
+**Cause:** Using localStorage alone (sufficient for web, not ideal for desktop).
 
-**Rationale:** Late stage; integrates all components.
+**Fix:** Migrate to Tauri store:
+```typescript
+const store = new Store(".preferences.dat");
+const savedTheme = await store.get("theme") || "system";
+```
+
+### Issue 3: CSS Modules conflict with Tailwind
+
+**Symptom:** Module CSS works but Tailwind classes stop working in same component.
+
+**Cause:** CSS Modules disabled in Vite by default for Tailwind apps.
+
+**Fix:** Ensure vite.config.ts doesn't disable modules:
+```typescript
+export default defineConfig({
+  css: {
+    modules: { auto: /\.module\.css$/ }  // ← Enable for .module.css only
+  },
+  plugins: [
+    tailwindcss(),
+    react()
+  ]
+});
+```
+
+### Issue 4: shadcn components not styled
+
+**Symptom:** shadcn components render but look unstyled (no colors, borders, etc.).
+
+**Cause:** components.json not created or Tailwind not configured before running CLI.
+
+**Fix:**
+```bash
+# 1. Set up Tailwind first:
+npm install tailwindcss @tailwindcss/vite
+# Update src/styles/index.css with @import "tailwindcss"
+
+# 2. THEN set up shadcn:
+pnpm dlx shadcn@latest init
+pnpm dlx shadcn@latest add button
+```
+
+## Migration Checklist
+
+- [ ] Install Tailwind 4 + @tailwindcss/vite + next-themes
+- [ ] Update src/styles/index.css with `@import "tailwindcss"`
+- [ ] Update vite.config.ts with `tailwindcss()` plugin
+- [ ] Update App.tsx to wrap with `<ThemeProvider>`
+- [ ] Run `pnpm dlx shadcn@latest init` to create components.json
+- [ ] Add first shadcn component: `pnpm dlx shadcn@latest add button`
+- [ ] Verify Tailwind utilities work: add `className="p-4 bg-background"` to test
+- [ ] Replace first component (suggest: Button) with shadcn equivalent
+- [ ] Set up theme toggle UI using `useTheme()` hook
+- [ ] Test dark mode toggle in dev mode
+- [ ] Update CSS Modules for components that need scoped styles
+- [ ] Delete old CSS files as components migrate
+- [ ] Test final build: `pnpm tauri build`
 
 ## Sources
 
-- **Tauri 2 Documentation:** https://docs.rs/tauri/2.9.5/ (IPC, commands, async runtime)
-- **React Hooks:** https://react.dev/learn/lifecycle-of-reactive-effects (useEffect, state management)
-- **Node.js Child Processes:** https://nodejs.org/api/child_process (fork, IPC, process management)
-- **GitHub Topics:** Agent orchestration systems employ event-driven architectures, persistent state, task-based workflows (HIGH confidence from cross-project analysis)
-- **AI Agent Orchestration Patterns:** Synapse, Routilux, JAT examples demonstrate event buses, persistent workflows, distributed execution (MEDIUM confidence; WebSearch verified)
+- **Tailwind CSS 4 Documentation:** https://tailwindcss.com/docs (CSS-first configuration, @theme directive, @tailwindcss/vite plugin)
+- **Tailwind CSS v4.0 Release Blog:** https://tailwindcss.com/blog/tailwindcss-v4 (major changes, 3.78x build speed improvement)
+- **shadcn/ui Setup for Vite:** https://ui.shadcn.com/docs/installation/vite (components.json, manual component copying)
+- **next-themes GitHub:** https://github.com/pacocoursey/next-themes (client-side theming, localStorage persistence, system preference detection)
+- **Tailwind Dark Mode Docs:** https://tailwindcss.com/docs/dark-mode (class vs media strategy, @custom-variant)
+- **Vite Config Documentation:** https://vite.dev/config/ (HMR, plugin architecture, CSS module configuration)
 
 ---
-
-*Architecture research for: Desktop orchestration tool for autonomous AI coding agents*
-*Researched: 2026-02-04*
+*Architecture research for: Tailwind 4 + shadcn/ui + theming integration in Tauri 2 React app*
+*Researched: 2026-02-09*
+*Confidence: HIGH — All major integration patterns validated against official documentation*
