@@ -54,12 +54,13 @@ Plans:
   4. No visible flash or flicker on app startup regardless of theme selection
   5. shadcn/ui components render correctly with theme-aware styling
 
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — Install Tailwind CSS 4.1, @tailwindcss/vite, configure tailwind.config.ts
-- [ ] 14-02-PLAN.md — Integrate next-themes, implement theme provider in App.tsx, add theme toggle to settings
-- [ ] 14-03-PLAN.md — Inject theme detection script in index.html, validate no flash on startup
+- [ ] 14-01-PLAN.md — Install Tailwind CSS 4.1 + @tailwindcss/vite, configure tailwind.config.ts with CSS variable colors and container queries, update src/index.css with theme variables
+- [ ] 14-02-PLAN.md — Extend AppSettings Rust model with theme_preference field, update database load/save functions, regenerate TypeScript bindings
+- [ ] 14-03-PLAN.md — Create ThemeProvider React component, integrate in App.tsx, add Tauri window preload for flash-free startup
+- [ ] 14-04-PLAN.md — Add theme selector to ProjectSettingsModal, implement theme persistence and instant visual updates
 
 ---
 
@@ -141,12 +142,12 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
 | 13 - Bug Fixes | 2 | Complete | 2026-02-09 |
-| 14 - UI Foundation | 3 | Not started | - |
+| 14 - UI Foundation | 4 | Planned | - |
 | 15 - Component & Design System | 3 | Not started | - |
 | 16 - Page Redesigns | 2 | Not started | - |
 | 17 - Polish & Testing | 2 | Not started | - |
 
-**Total v1.1 work:** 12 plans across 5 phases
+**Total v1.1 work:** 13 plans across 5 phases
 
 ---
 
