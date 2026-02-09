@@ -9,6 +9,7 @@ import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
 import { SyncButton } from "./components/SyncButton";
 import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
+import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
@@ -116,98 +117,96 @@ function App() {
     setShowImportSettings(false);
   }
 
-  if (loading) {
-    return (
-      <div className="app">
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  if (!projectSelected) {
-    return (
-      <ProjectPicker
-        onProjectSelected={handleProjectSelected}
-        recentProjects={settings?.recent_projects}
-      />
-    );
-  }
-
-  return (
-    <div className="app">
-      <ToasterRoot />
-      <header className="app-header">
-        <div className="header-left">
-          <h1>GSD Agent Orchestrator</h1>
-          {currentProject && <ProjectCard project={currentProject} compact={true} />}
+  const appContent = (
+    <>
+      {loading ? (
+        <div className="app">
+          <p>Loading...</p>
         </div>
-        <div className="header-right">
-          {projectSelected && currentProject && (
-            <>
-              <button
-                onClick={() => setShowProjectSettings(true)}
-                className="btn-gear"
-                title="Project Settings"
-              >
-                ⚙️
-              </button>
-              <button
-                onClick={() => setShowImportSettings(true)}
-                className="btn-settings"
-                title="Import Settings"
-              >
-                ⚙️ Import Settings
-              </button>
-              {currentProject && (
-                <SyncButton
-                  projectId={currentProject.id}
-                  onSyncComplete={handleSyncComplete}
-                />
+      ) : !projectSelected ? (
+        <ProjectPicker
+          onProjectSelected={handleProjectSelected}
+          recentProjects={settings?.recent_projects}
+        />
+      ) : (
+        <div className="app">
+          <ToasterRoot />
+          <header className="app-header">
+            <div className="header-left">
+              <h1>GSD Agent Orchestrator</h1>
+              {currentProject && <ProjectCard project={currentProject} compact={true} />}
+            </div>
+            <div className="header-right">
+              {projectSelected && currentProject && (
+                <>
+                  <button
+                    onClick={() => setShowProjectSettings(true)}
+                    className="btn-gear"
+                    title="Project Settings"
+                  >
+                    ⚙️
+                  </button>
+                  <button
+                    onClick={() => setShowImportSettings(true)}
+                    className="btn-settings"
+                    title="Import Settings"
+                  >
+                    ⚙️ Import Settings
+                  </button>
+                  {currentProject && (
+                    <SyncButton
+                      projectId={currentProject.id}
+                      onSyncComplete={handleSyncComplete}
+                    />
+                  )}
+                  <button
+                    onClick={() => setShowNewTaskModal(true)}
+                    className="btn-new-task"
+                  >
+                    + New Task
+                  </button>
+                </>
               )}
-              <button
-                onClick={() => setShowNewTaskModal(true)}
-                className="btn-new-task"
-              >
-                + New Task
-              </button>
-            </>
-          )}
+            </div>
+          </header>
+          <main className="app-main">
+            {currentProject && (
+              <>
+                <KanbanBoard
+                  projectId={currentProject.id}
+                  projectPath={currentProject.path}
+                  onTaskClick={setSelectedTask}
+                />
+                <TaskModal
+                  isOpen={showNewTaskModal}
+                  onClose={() => setShowNewTaskModal(false)}
+                  projectId={currentProject.id}
+                  onTaskCreated={handleTaskCreated}
+                />
+                <ProjectSettingsModal
+                  isOpen={showProjectSettings}
+                  onClose={() => setShowProjectSettings(false)}
+                  projectId={currentProject.id}
+                />
+                <TaskDetail
+                  task={selectedTask}
+                  projectPath={currentProject.path}
+                  onClose={() => setSelectedTask(null)}
+                />
+                <ImportSettings
+                  isOpen={showImportSettings}
+                  onClose={() => setShowImportSettings(false)}
+                  onConfigSaved={handleImportConfigSaved}
+                />
+              </>
+            )}
+          </main>
         </div>
-      </header>
-      <main className="app-main">
-        {currentProject && (
-          <>
-            <KanbanBoard
-              projectId={currentProject.id}
-              projectPath={currentProject.path}
-              onTaskClick={setSelectedTask}
-            />
-            <TaskModal
-              isOpen={showNewTaskModal}
-              onClose={() => setShowNewTaskModal(false)}
-              projectId={currentProject.id}
-              onTaskCreated={handleTaskCreated}
-            />
-            <ProjectSettingsModal
-              isOpen={showProjectSettings}
-              onClose={() => setShowProjectSettings(false)}
-              projectId={currentProject.id}
-            />
-            <TaskDetail
-              task={selectedTask}
-              projectPath={currentProject.path}
-              onClose={() => setSelectedTask(null)}
-            />
-            <ImportSettings
-              isOpen={showImportSettings}
-              onClose={() => setShowImportSettings(false)}
-              onConfigSaved={handleImportConfigSaved}
-            />
-          </>
-        )}
-      </main>
-    </div>
+      )}
+    </>
   );
+
+  return <ThemeProvider>{appContent}</ThemeProvider>;
 }
 
 export default App;
