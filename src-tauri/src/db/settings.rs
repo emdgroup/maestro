@@ -69,12 +69,15 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
         .cloned()
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
 
+    let theme_preference = settings_map.get("theme_preference").cloned();
+
     Ok(AppSettings {
         project_path,
         recent_projects,
         model_default,
         mcp_allowlist,
         skills_default,
+        theme_preference,
         updated_at,
     })
 }
@@ -101,6 +104,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("model_default", &settings.model_default),
         ("mcp_allowlist", mcp_allowlist_json.as_str()),
         ("skills_default", skills_default_json.as_str()),
+        ("theme_preference", settings.theme_preference.as_ref().map(|s| s.as_str()).unwrap_or("system")),
         ("updated_at", &settings.updated_at),
     ];
 
@@ -149,6 +153,7 @@ mod tests {
             model_default: "claude-opus-4-5".to_string(),
             mcp_allowlist: vec!["filesystem".to_string(), "web".to_string()],
             skills_default: vec!["javascript".to_string()],
+            theme_preference: Some("dark".to_string()),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -160,5 +165,6 @@ mod tests {
         assert_eq!(loaded.model_default, settings.model_default);
         assert_eq!(loaded.mcp_allowlist, settings.mcp_allowlist);
         assert_eq!(loaded.skills_default, settings.skills_default);
+        assert_eq!(loaded.theme_preference, settings.theme_preference);
     }
 }

@@ -9,6 +9,7 @@ pub struct AppSettings {
     pub model_default: String,              // Default AI model (for Phase 7)
     pub mcp_allowlist: Vec<String>,         // MCP allowlist (default empty vec [])
     pub skills_default: Vec<String>,        // Skills default (default empty vec [])
+    pub theme_preference: Option<String>,   // Theme preference: 'light', 'dark', or 'system'
     pub updated_at: String,                 // ISO 8601 timestamp
 }
 
@@ -20,6 +21,7 @@ impl Default for AppSettings {
             model_default: "claude-opus-4-5".to_string(),
             mcp_allowlist: Vec::new(),
             skills_default: Vec::new(),
+            theme_preference: Some("system".to_string()),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
     }
