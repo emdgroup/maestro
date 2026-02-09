@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Manager, State};
 use serde_json;
-use rusqlite::params;
 
 /// Get the app data directory path for the current platform
 fn get_app_data_dir() -> PathBuf {
