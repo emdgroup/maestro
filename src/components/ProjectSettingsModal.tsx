@@ -8,7 +8,7 @@ import {
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
 } from "../store/configStore";
-import type { ProjectConfigResponse, ProjectConfigRequest } from "../types/bindings";
+import type { ProjectConfigResponse, ProjectConfigRequest, AppSettings } from "../types/bindings";
 import "../styles/ProjectSettingsModal.css";
 
 interface ProjectSettingsModalProps {
@@ -21,6 +21,7 @@ interface ProjectSettingsFormData {
   model_default: string;
   mcp_servers: Record<string, boolean>;
   skills: Record<string, boolean>;
+  theme_preference: string;
 }
 
 export function ProjectSettingsModal({
@@ -65,6 +66,7 @@ export function ProjectSettingsModal({
         },
         {} as Record<string, boolean>
       ),
+      theme_preference: "system",
     },
   });
 
@@ -81,6 +83,9 @@ export function ProjectSettingsModal({
           "get_project_settings",
           { project_id: projectId }
         );
+
+        // Also fetch global theme preference
+        const appSettings = await invoke<AppSettings>("get_settings", {});
 
         // Convert arrays to checkbox records
         const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
@@ -109,6 +114,7 @@ export function ProjectSettingsModal({
           model_default: response.model_default,
           mcp_servers: mcp_servers_record,
           skills: skills_record,
+          theme_preference: (appSettings?.theme_preference || "system") as string,
         });
 
         setLoading(false);
@@ -244,6 +250,21 @@ export function ProjectSettingsModal({
                     </label>
                   ))}
                 </div>
+              </fieldset>
+
+              {/* Appearance - Theme */}
+              <fieldset className="form-fieldset">
+                <legend>Appearance</legend>
+                <label htmlFor="theme_preference">Theme</label>
+                <select
+                  id="theme_preference"
+                  {...register("theme_preference")}
+                  className="form-select"
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                  <option value="system">System</option>
+                </select>
               </fieldset>
 
               {/* Buttons */}
