@@ -403,6 +403,19 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     app.manage(app_state);
 
+    // Inject theme class on window initialization to prevent flash of unstyled content
+    let main_window = app.get_webview_window("main")
+        .ok_or("Failed to get main window")?;
+
+    main_window.eval(
+        "(function() {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (prefersDark) {
+                document.documentElement.classList.add('dark');
+            }
+        })();"
+    ).map_err(|e| format!("Failed to inject theme class: {}", e))?;
+
     println!("Tauri app initialized successfully");
     Ok(())
 }
