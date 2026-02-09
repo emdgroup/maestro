@@ -9,6 +9,7 @@ import {
   AVAILABLE_MODELS,
 } from "../store/configStore";
 import type { ProjectConfigResponse, ProjectConfigRequest, AppSettings } from "../types/bindings";
+import { useTheme } from "../providers/ThemeProvider";
 import "../styles/ProjectSettingsModal.css";
 
 interface ProjectSettingsModalProps {
@@ -43,6 +44,7 @@ export function ProjectSettingsModal({
   } = useConfigStore();
 
   const [isSaving, setIsSaving] = useState(false);
+  const { setTheme } = useTheme();
   const {
     register,
     handleSubmit,
@@ -182,6 +184,16 @@ export function ProjectSettingsModal({
     onClose();
   };
 
+  const handleThemeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newTheme = e.target.value as 'light' | 'dark' | 'system';
+    try {
+      await setTheme(newTheme);
+    } catch (err) {
+      console.error('Failed to change theme:', err);
+      // Don't show toast, silently log error per phase decision
+    }
+  };
+
   const selectedModelDefault = watch("model_default");
 
   return (
@@ -259,6 +271,7 @@ export function ProjectSettingsModal({
                 <select
                   id="theme_preference"
                   {...register("theme_preference")}
+                  onChange={handleThemeChange}
                   className="form-select"
                 >
                   <option value="light">Light</option>
