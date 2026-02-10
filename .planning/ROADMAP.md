@@ -13,7 +13,7 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 13: Bug Fixes** - Fix mock IPC leak and Rust build warnings
 - [ ] **Phase 14: UI Foundation** - Tailwind CSS, shadcn/ui, theme system with no flash
 - [x] **Phase 15: Component & Design System** - Migrate components, establish design tokens
-- [ ] **Phase 16: Page Redesigns** - Modernize all major application pages
+- [x] **Phase 16: Page Redesigns** - Modernize all major application pages
 - [ ] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
 
 ## Phase Details
@@ -129,8 +129,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 17-01-PLAN.md — Production build validation, CSS coverage verification, edge case fixes
-- [ ] 17-02-PLAN.md — Accessibility audit (contrast, focus, semantic HTML), final QA sign-off
+- [ ] 17-01-PLAN.md — Production build validation (pnpm tauri build succeeds, CSS coverage verified, dark mode persists, responsive layout tested, Kanban regression checked)
+- [ ] 17-02-PLAN.md — Accessibility audit (WCAG AA contrast ≥4.5:1, focus rings visible, keyboard navigation, semantic HTML, motion accessibility), final QA sign-off
 
 ---
 
@@ -144,7 +144,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17
 | 13 - Bug Fixes | 2 | Complete | 2026-02-09 |
 | 14 - UI Foundation | 4 | Planned | - |
 | 15 - Component & Design System | 3 | Complete | 2026-02-10 |
-| 16 - Page Redesigns | 2 | Not started | - |
+| 16 - Page Redesigns | 2 | Complete | 2026-02-10 |
 | 17 - Polish & Testing | 2 | Not started | - |
 
 **Total v1.1 work:** 13 plans across 5 phases
