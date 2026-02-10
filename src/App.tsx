@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "./lib/tauri-mock";
 import { ProjectPicker } from "./components/ProjectPicker";
-import { ProjectCard } from "./components/ProjectCard";
 import { KanbanBoard } from "./components/KanbanBoard";
+import { AppHeader } from "./components/AppHeader";
+import { AgentMonitor } from "./components/AgentMonitor";
+import { WorktreeManager } from "./components/WorktreeManager";
 import { TaskModal } from "./components/TaskModal";
 import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
-import { SyncButton } from "./components/SyncButton";
 import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
@@ -21,9 +22,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
-  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const { addTask, loadTasks } = useBoardStore();
+  const [activePage, setActivePage] = useState("kanban");
+  const { addTask } = useBoardStore();
 
   // Load settings on mount
   useEffect(() => {
@@ -98,20 +99,6 @@ function App() {
     addTask(newTask);
   }
 
-  async function handleSyncComplete() {
-    // Reload tasks from the database after sync
-    if (currentProject) {
-      try {
-        const tasks = await invoke<Task[]>('get_tasks', {
-          project_id: currentProject.id,
-        });
-        loadTasks(tasks);
-      } catch (error) {
-        console.error('Failed to reload tasks after sync:', error);
-      }
-    }
-  }
-
   function handleImportConfigSaved() {
     // Settings saved, can now enable sync button
     setShowImportSettings(false);
@@ -129,64 +116,61 @@ function App() {
           recentProjects={settings?.recent_projects}
         />
       ) : (
-        <div className="app">
+        <div className="app flex flex-col h-screen bg-background">
           <ToasterRoot />
-          <header className="app-header">
-            <div className="header-left">
-              <h1>GSD Agent Orchestrator</h1>
-              {currentProject && <ProjectCard project={currentProject} compact={true} />}
-            </div>
-            <div className="header-right">
-              {projectSelected && currentProject && (
-                <>
-                  <button
-                    onClick={() => setShowProjectSettings(true)}
-                    className="btn-gear"
-                    title="Project Settings"
-                  >
-                    ⚙️
-                  </button>
-                  <button
-                    onClick={() => setShowImportSettings(true)}
-                    className="btn-settings"
-                    title="Import Settings"
-                  >
-                    ⚙️ Import Settings
-                  </button>
-                  {currentProject && (
-                    <SyncButton
-                      projectId={currentProject.id}
-                      onSyncComplete={handleSyncComplete}
-                    />
-                  )}
-                  <button
-                    onClick={() => setShowNewTaskModal(true)}
-                    className="btn-new-task"
-                  >
-                    + New Task
-                  </button>
-                </>
-              )}
-            </div>
-          </header>
-          <main className="app-main">
+          <AppHeader
+            currentProject={currentProject}
+            activePage={activePage}
+            onPageChange={setActivePage}
+            agentsRunning={0}
+            worktreesCount={0}
+          />
+          <main className="flex-1 overflow-auto">
             {currentProject && (
               <>
-                <KanbanBoard
-                  projectId={currentProject.id}
-                  projectPath={currentProject.path}
-                  onTaskClick={setSelectedTask}
-                />
+                {/* Kanban Board Page */}
+                {activePage === "kanban" && (
+                  <KanbanBoard
+                    projectId={currentProject.id}
+                    projectPath={currentProject.path}
+                    onTaskClick={setSelectedTask}
+                  />
+                )}
+
+                {/* Agent Monitor Page */}
+                {activePage === "agents" && (
+                  <AgentMonitor
+                    projectId={currentProject.id}
+                    agents={[]}
+                    activeAgentId={null}
+                  />
+                )}
+
+                {/* Worktree Manager Page */}
+                {activePage === "worktrees" && (
+                  <WorktreeManager
+                    projectId={currentProject.id}
+                    worktrees={[]}
+                  />
+                )}
+
+                {/* Settings Page */}
+                {activePage === "settings" && (
+                  <div className="h-full p-4">
+                    <ProjectSettingsModal
+                      isOpen={true}
+                      onClose={() => setActivePage("kanban")}
+                      projectId={currentProject.id}
+                    />
+                  </div>
+                )}
+
+                {/* Modals and Overlays */}
                 <TaskModal
                   isOpen={showNewTaskModal}
                   onClose={() => setShowNewTaskModal(false)}
                   projectId={currentProject.id}
                   onTaskCreated={handleTaskCreated}
-                />
-                <ProjectSettingsModal
-                  isOpen={showProjectSettings}
-                  onClose={() => setShowProjectSettings(false)}
-                  projectId={currentProject.id}
                 />
                 <TaskDetail
                   task={selectedTask}
