@@ -267,4 +267,13 @@ button:disabled {
   code, pre, .terminal-output {
     font-family: 'Fira Code', Menlo, Monaco, Consolas, monospace;
   }
+
+  /* Respect user's motion preference for accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
