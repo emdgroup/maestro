@@ -6,7 +6,25 @@ import { Task, ExecutionLog } from "../types/bindings";
 import { useBoardStore } from "../store/boardStore";
 import { showErrorToast, showSuccessToast } from "./ErrorToast";
 import { TaskContextMenu } from "./TaskContextMenu";
-import "../styles/TaskCard.css";
+
+/// Get status dot color based on task status
+function getStatusDotColor(status: string): string {
+  switch (status) {
+    case 'Done':
+      return 'bg-success';
+    case 'InProgress':
+      return 'bg-warning';
+    case 'Review':
+    case 'Merging':
+      return 'bg-secondary';
+    case 'Ready':
+      return 'bg-accent';
+    case 'Backlog':
+    case 'Failed':
+    default:
+      return 'bg-muted';
+  }
+}
 
 /// Format elapsed time from a start timestamp to human-readable string
 /// Returns format: "Xm Ys", "Xs", or "Xh Ym"
@@ -119,24 +137,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
     }
   };
 
-  // Status badge colors
-  const getStatusBadgeStyle = (status: string) => {
-    switch (status) {
-      case 'InProgress':
-        return { backgroundColor: '#fef3c7', color: '#92400e' }; // Yellow
-      case 'Review':
-        return { backgroundColor: '#dbeafe', color: '#0369a1' }; // Blue
-      case 'Merging':
-        return { backgroundColor: '#e9d5ff', color: '#7e22ce' }; // Purple
-      case 'Done':
-        return { backgroundColor: '#dcfce7', color: '#166534' }; // Green
-      case 'Failed':
-        return { backgroundColor: '#fee2e2', color: '#991b1b' }; // Red
-      default:
-        return { backgroundColor: '#f3f4f6', color: '#374151' }; // Gray
-    }
-  };
-
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'InProgress':
@@ -209,16 +209,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
   return (
     <div
       ref={!isDragging ? setNodeRef : undefined}
-      style={{
-        ...style,
-        ...(task.status === 'Failed' && {
-          backgroundColor: '#fef2f2',
-          border: '1px solid #fecaca',
-        }),
-      }}
-      {...(!isDragging && !task.is_imported && task.status !== 'Failed' ? listeners : {})}
-      {...(!isDragging && !task.is_imported && task.status !== 'Failed' ? attributes : {})}
-      className={`task-card ${task.is_imported ? 'task-card-imported' : ''} ${task.status === 'Failed' ? 'task-card-failed' : ''}`}
+      style={style}
+      {...(!isDragging && !task.is_imported ? listeners : {})}
+      {...(!isDragging && !task.is_imported ? attributes : {})}
+      className={`rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 ${
+        !task.is_imported ? 'cursor-grab hover:shadow-md hover:border-ring' : 'cursor-default'
+      } ${
+        task.status === 'Failed' ? 'bg-error/10 border-error/30' : ''
+      }`}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenuOpen(true);
@@ -227,15 +225,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
     >
       {/* Status badge with elapsed time */}
       {task.status === 'InProgress' && executionLog && (
-        <div className={`badge-container ${
-          executionLog.status === 'running' ? 'badge-running' :
-          executionLog.status === 'failed' ? 'badge-failed' :
-          executionLog.status === 'complete' ? 'badge-success' :
-          ''
+        <div className={`mt-2 inline-block px-2 py-1 text-xs font-medium rounded ${
+          executionLog.status === 'running' ? 'bg-warning/20 text-warning animate-pulse' :
+          executionLog.status === 'failed' ? 'bg-error/20 text-error' :
+          executionLog.status === 'complete' ? 'bg-success/20 text-success' :
+          'bg-muted text-muted-foreground'
         }`}>
           {executionLog.status === 'running' && (
             <>
-              <span className="spinner-icon"></span>
+              <span>⟳ </span>
               <span>{elapsedTime}</span>
             </>
           )}
@@ -243,40 +241,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
             <span>Failed</span>
           )}
           {executionLog.status === 'complete' && (
-            <>
-              <span>✓</span>
-              <span>Done</span>
-            </>
+            <span>✓ Done</span>
           )}
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px' }}>
+      <div className="flex justify-between items-start gap-2">
         <div
-          className="task-card-title"
+          className="flex items-center gap-2 flex-1 cursor-pointer"
           onClick={() => onTaskClick?.(task)}
-          style={{ cursor: 'pointer', flex: 1 }}
         >
-          {task.name}
+          <div className={`h-2 w-2 rounded-full flex-shrink-0 ${getStatusDotColor(task.status)} ${task.status === 'InProgress' ? 'animate-pulse' : ''}`} />
+          <div className="font-base text-foreground truncate">{task.name}</div>
         </div>
-        <div style={{ position: 'relative' }}>
+        <div className="relative flex-shrink-0">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              fontSize: '18px',
-              color: 'var(--text-secondary, #6b7280)',
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              (e.target as HTMLButtonElement).style.color = 'var(--text-primary, #1f2937)';
-            }}
-            onMouseLeave={(e) => {
-              (e.target as HTMLButtonElement).style.color = 'var(--text-secondary, #6b7280)';
-            }}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1"
             title="Task menu"
           >
             ⋮
@@ -289,47 +270,28 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           />
         </div>
       </div>
-      <div className="task-card-badges">
+      <div className="mt-2 flex flex-wrap gap-2">
         {task.status !== 'Backlog' && task.status !== 'Ready' && (
-          <span
-            className="task-card-badge"
-            style={getStatusBadgeStyle(task.status)}
-          >
+          <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-muted text-muted-foreground">
             {getStatusLabel(task.status)}
           </span>
         )}
         {task.status === 'Merging' && (
-          <div style={{
-            marginTop: '8px',
-            fontSize: '12px',
-            fontStyle: 'italic',
-            color: '#666',
-            animation: 'pulse 1.5s infinite'
-          }}>
+          <div className="mt-1 text-xs italic text-muted-foreground animate-pulse">
             Merge in progress...
           </div>
         )}
         {task.is_imported && (
-          <span className="badge-readonly">🔒 Read-only (imported)</span>
+          <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-success/10 text-success">
+            🔒 Read-only
+          </span>
         )}
       </div>
 
       {task.status === 'Failed' && (
-        <div style={{
-          marginTop: '8px',
-          padding: '6px 8px',
-          backgroundColor: '#fff5f5',
-          border: '1px solid #feb2b2',
-          borderRadius: '4px',
-          fontSize: '11px',
-          color: '#742a2a',
-          maxHeight: '60px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'normal',
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>Error Details:</div>
-          <div style={{ fontSize: '10px', opacity: 0.8 }}>
+        <div className="mt-2 p-2 bg-error/10 border border-error/30 rounded text-xs text-error max-h-16 overflow-hidden">
+          <div className="font-semibold mb-1">Error Details:</div>
+          <div className="text-error/80">
             Click task to view full error details and suggestions
           </div>
         </div>
@@ -338,18 +300,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         <button
           onClick={handleExecute}
           disabled={isExecuting}
-          style={{
-            padding: '6px 12px',
-            marginTop: '8px',
-            backgroundColor: isExecuting ? '#ccc' : '#0066cc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isExecuting ? 'not-allowed' : 'pointer',
-            width: '100%',
-            fontSize: '12px',
-            fontWeight: 'bold',
-          }}
+          className={`mt-2 w-full px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
+            isExecuting
+              ? 'bg-muted text-muted-foreground cursor-not-allowed'
+              : 'bg-accent text-accent-foreground hover:shadow-md'
+          }`}
         >
           {isExecuting ? 'Executing...' : 'Execute'}
         </button>
@@ -357,40 +312,22 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
       {task.status === 'Review' && (
         <button
           onClick={() => onReviewClick?.(task.id, task.name)}
-          style={{
-            padding: '6px 12px',
-            marginTop: '8px',
-            backgroundColor: '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            width: '100%',
-            fontSize: '12px',
-            fontWeight: 'bold',
-          }}
+          className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded bg-secondary text-secondary-foreground hover:shadow-md transition-all duration-200"
           title="View diff and approve/reject changes"
         >
           Review
         </button>
       )}
       {task.status === 'Failed' && (
-        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+        <div className="mt-2 flex gap-2 flex-wrap">
           <button
             onClick={handleRetry}
             disabled={isRetrying || isAborting}
-            style={{
-              flex: 1,
-              minWidth: '60px',
-              padding: '6px 8px',
-              backgroundColor: isRetrying ? '#ccc' : '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: isRetrying ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              fontWeight: 'bold',
-            }}
+            className={`flex-1 min-w-14 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
+              isRetrying || isAborting
+                ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                : 'bg-success text-success-foreground hover:shadow-md'
+            }`}
             title="Retry execution with same command"
           >
             {isRetrying ? '⏳' : '🔄 Resume'}
@@ -398,18 +335,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           <button
             onClick={handleAbort}
             disabled={isAborting || isRetrying}
-            style={{
-              flex: 1,
-              minWidth: '60px',
-              padding: '6px 8px',
-              backgroundColor: isAborting ? '#ccc' : '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: isAborting ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              fontWeight: 'bold',
-            }}
+            className={`flex-1 min-w-14 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
+              isAborting || isRetrying
+                ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                : 'bg-error text-error-foreground hover:shadow-md'
+            }`}
             title="Mark task as failed and stop recovery"
           >
             {isAborting ? '⏳' : '⏹️ Abort'}
@@ -417,18 +347,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
           <button
             onClick={() => onTaskClick?.(task)}
             disabled={isRetrying || isAborting}
-            style={{
-              flex: 1,
-              minWidth: '80px',
-              padding: '6px 8px',
-              backgroundColor: (isRetrying || isAborting) ? '#ccc' : '#8b5cf6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: (isRetrying || isAborting) ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              fontWeight: 'bold',
-            }}
+            className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
+              isRetrying || isAborting
+                ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                : 'bg-accent text-accent-foreground hover:shadow-md'
+            }`}
             title="Attach terminal to debug"
           >
             🔌 Terminal
@@ -436,23 +359,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
         </div>
       )}
       {task.status === 'InProgress' && executionLog && (
-        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+        <div className="mt-2 flex gap-2 flex-wrap">
           {executionLog.status === 'running' && (
             <button
               onClick={handlePause}
               disabled={isPauseLoading}
-              style={{
-                flex: 1,
-                minWidth: '80px',
-                padding: '6px 8px',
-                backgroundColor: isPauseLoading ? '#ccc' : '#f59e0b',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
-                fontSize: '11px',
-                fontWeight: 'bold',
-              }}
+              className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
+                isPauseLoading
+                  ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                  : 'bg-warning text-warning-foreground hover:shadow-md'
+              }`}
               title="Pause execution without terminating process"
             >
               {isPauseLoading ? '⏳' : '⏸️ Pause'}
@@ -462,18 +378,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
             <button
               onClick={handleResume}
               disabled={isPauseLoading}
-              style={{
-                flex: 1,
-                minWidth: '80px',
-                padding: '6px 8px',
-                backgroundColor: isPauseLoading ? '#ccc' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isPauseLoading ? 'not-allowed' : 'pointer',
-                fontSize: '11px',
-                fontWeight: 'bold',
-              }}
+              className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
+                isPauseLoading
+                  ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                  : 'bg-success text-success-foreground hover:shadow-md'
+              }`}
               title="Resume paused execution"
             >
               {isPauseLoading ? '⏳' : '▶️ Resume'}
