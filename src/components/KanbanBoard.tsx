@@ -17,7 +17,6 @@ import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "./ReviewModal";
 import { TaskSettingsModal } from "./TaskSettingsModal";
 import { ExecutionTerminal } from "./ExecutionTerminal";
-import "../styles/KanbanBoard.css";
 
 interface KanbanBoardProps {
   projectId: number;
@@ -194,13 +193,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   return (
     <div>
       {errorMessage && (
-        <div style={{
-          padding: "1rem",
-          marginBottom: "1rem",
-          backgroundColor: "#fee2e2",
-          color: "#991b1b",
-          borderRadius: "0.375rem",
-        }}>
+        <div className="p-4 mb-4 bg-error text-error-foreground rounded-lg">
           {errorMessage}
         </div>
       )}
@@ -210,7 +203,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="kanban-board">
+        <div className="grid grid-cols-5 gap-4 p-4 bg-background h-[calc(100vh-120px)]">
           {COLUMN_STATUSES.map((status) => (
             <KanbanColumn
               key={status}
@@ -230,7 +223,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
         </div>
         <DragOverlay>
           {activeTask ? (
-            <div style={{ opacity: 0.8 }}>
+            <div className="opacity-50">
               <TaskCard task={activeTask} isDragging />
             </div>
           ) : null}

@@ -27,13 +27,15 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   });
 
   return (
-    <div className="kanban-column">
-      <div className="kanban-column-header">
-        {columnTitle} <span className="kanban-column-count">({tasks.length})</span>
+    <div className="flex flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+      <div className="px-4 py-3 font-semibold text-base text-foreground border-b border-border bg-muted/30">
+        {columnTitle} <span className="text-sm text-muted-foreground">({tasks.length})</span>
       </div>
       <div
         ref={setNodeRef}
-        className={`kanban-drop-zone ${isOver ? "drag-over-valid" : ""}`}
+        className={`flex-1 overflow-y-auto p-3 transition-all duration-150 ${
+          isOver ? "border-2 border-success bg-success/5" : "border-2 border-transparent"
+        }`}
       >
         {tasks.map((task) => (
           <TaskCard key={task.id} task={task} projectPath={projectPath} onTaskClick={onTaskClick} onReviewClick={onReviewClick} onSettingsClick={onSettingsClick} />
