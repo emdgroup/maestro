@@ -8,7 +8,6 @@
  * Prevents regression of the mock code tree-shaking optimization and CSS coverage
  */
 
-import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
