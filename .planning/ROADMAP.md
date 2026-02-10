@@ -57,10 +57,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — Install Tailwind CSS 4.1 + @tailwindcss/vite, configure tailwind.config.ts with CSS variable colors and container queries, update src/index.css with theme variables
-- [ ] 14-02-PLAN.md — Extend AppSettings Rust model with theme_preference field, update database load/save functions, regenerate TypeScript bindings
-- [ ] 14-03-PLAN.md — Create ThemeProvider React component, integrate in App.tsx, add Tauri window preload for flash-free startup
-- [ ] 14-04-PLAN.md — Add theme selector to ProjectSettingsModal, implement theme persistence and instant visual updates
+- [x] 14-01-PLAN.md — Install Tailwind CSS 4.1 + @tailwindcss/vite, configure tailwind.config.ts with CSS variable colors and container queries, update src/index.css with theme variables
+- [x] 14-02-PLAN.md — Extend AppSettings Rust model with theme_preference field, update database load/save functions, regenerate TypeScript bindings
+- [x] 14-03-PLAN.md — Create ThemeProvider React component, integrate in App.tsx, add Tauri window preload for flash-free startup
+- [x] 14-04-PLAN.md — Add theme selector to ProjectSettingsModal, implement theme persistence and instant visual updates
 
 ---
 
@@ -82,9 +82,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 15-01-PLAN.md — Migrate Button, Card, Input, Dialog components to shadcn/ui
-- [ ] 15-02-PLAN.md — Delete old CSS files for migrated components, implement CSS modules for edge cases
-- [ ] 15-03-PLAN.md — Establish design system (colors via CSS variables, fonts via @font-face, spacing scale)
+- [ ] 15-01-PLAN.md — Initialize shadcn/ui, install core components (Button, Card, Input, Dialog, Badge, Select, Checkbox, Label, Textarea, Tabs, Popover)
+- [ ] 15-02-PLAN.md — Migrate all components to shadcn/ui imports, delete old custom component implementations
+- [ ] 15-03-PLAN.md — Establish design system (CSS variables, semantic colors, typography hierarchy, spacing scale)
 
 ---
 
