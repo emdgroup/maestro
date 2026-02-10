@@ -1,0 +1,20 @@
+/* Inter - UI text, regular weight */
+@font-face {
+  font-family: 'Inter';
+  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* Using Google Fonts CDN import for now */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap');
+
+/* Font family declarations for direct reference */
+body {
+  font-family: Inter, system-ui, sans-serif;
+}
+
+code, pre, .terminal-output {
+  font-family: 'Fira Code', Menlo, Monaco, Consolas, monospace;
+}

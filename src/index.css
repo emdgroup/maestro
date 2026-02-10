@@ -1,3 +1,4 @@
+@import './styles/fonts.css';
 @import "tailwindcss";
 
 @plugin "tailwindcss-animate";
@@ -5,57 +6,75 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: #ffffff;
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Light theme - neutral grays with accent override */
+  --primary: 0 0% 0%;           /* Black text */
+  --primary-foreground: 0 0% 100%; /* White background */
+
+  --secondary: 217 89% 61%;     /* Blue */
+  --secondary-foreground: 0 0% 100%;
+
+  --accent: 217 91% 60%;        /* Blue - system accent placeholder */
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;     /* Red */
+  --destructive-foreground: 0 0% 100%;
+
+  --muted: 210 40% 96%;         /* Very light gray */
+  --muted-foreground: 215 13% 34%; /* Dark gray text */
+
+  --success: 142 72% 29%;       /* Green */
+  --warning: 38 92% 50%;        /* Amber/Yellow */
+  --error: 0 84% 60%;           /* Red (same as destructive) */
+
+  --background: 0 0% 100%;      /* White */
+  --foreground: 215 13% 34%;    /* Dark gray text */
+
+  --card: 0 0% 100%;            /* White */
+  --card-foreground: 215 13% 34%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 13% 34%;
+
+  --border: 210 40% 90%;        /* Light gray */
+  --input: 0 0% 100%;           /* White input background */
+  --ring: 217 91% 60%;          /* Blue focus ring */
+
+  /* System accent color will be injected here via Tauri window preload */
+  --system-accent: 217 91% 60%; /* Fallback - will be overridden */
 }
 
 html.dark {
-  --background: #1a1a1a;
-  --foreground: #ffffff;
-  --primary: #3b82f6;
-  --primary-foreground: #000000;
-  --secondary: #333333;
-  --secondary-foreground: #ffffff;
-  --muted: #404040;
-  --muted-foreground: #999999;
-  --accent: #3b82f6;
-  --accent-foreground: #000000;
-  --destructive: #ef4444;
-  --destructive-foreground: #000000;
-  --border: #444444;
-  --input: #2a2a2a;
-  --ring: #3b82f6;
+  --primary: 0 0% 100%;          /* White text */
+  --primary-foreground: 215 13% 20%; /* Dark background */
+
+  --secondary: 217 91% 60%;      /* Light blue */
+  --secondary-foreground: 215 13% 20%;
+
+  --accent: 217 91% 60%;         /* Blue - system override */
+  --accent-foreground: 215 13% 20%;
+
+  --destructive: 0 84% 60%;      /* Red (matches light) */
+  --destructive-foreground: 0 0% 100%;
+
+  --muted: 215 13% 34%;          /* Dark gray */
+  --muted-foreground: 210 40% 96%; /* Light gray text */
+
+  --success: 142 72% 54%;        /* Lighter green */
+  --warning: 38 92% 60%;         /* Lighter amber */
+  --error: 0 84% 60%;            /* Red */
+
+  --background: 215 13% 20%;     /* Very dark gray */
+  --foreground: 210 40% 96%;     /* Light gray text */
+
+  --card: 215 13% 30%;           /* Dark gray cards */
+  --card-foreground: 210 40% 96%;
+
+  --popover: 215 13% 30%;
+  --popover-foreground: 210 40% 96%;
+
+  --border: 215 13% 40%;         /* Medium dark gray */
+  --input: 215 13% 30%;          /* Dark input background */
+  --ring: 217 91% 60%;           /* Blue focus ring */
 }
 
 * {
@@ -217,37 +236,24 @@ button:disabled {
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: 215 13% 20%;
+  --foreground: 210 40% 96%;
+  --card: 215 13% 30%;
+  --card-foreground: 210 40% 96%;
+  --popover: 215 13% 30%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 0 0% 100%;
+  --primary-foreground: 215 13% 20%;
+  --secondary: 217 91% 60%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 215 13% 34%;
+  --muted-foreground: 210 40% 96%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 215 13% 20%;
+  --destructive: 0 84% 60%;
+  --border: 215 13% 40%;
+  --input: 215 13% 30%;
+  --ring: 217 91% 60%;
 }
 
 @layer base {
@@ -256,5 +262,9 @@ button:disabled {
   }
   body {
     @apply bg-background text-foreground;
+    font-family: Inter, system-ui, sans-serif;
+  }
+  code, pre, .terminal-output {
+    font-family: 'Fira Code', Menlo, Monaco, Consolas, monospace;
   }
 }
