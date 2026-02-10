@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { invoke } from "../lib/tauri-mock";
-import * as Dialog from "@radix-ui/react-dialog";
+import {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   useConfigStore,
   AVAILABLE_MCP_SERVERS,
@@ -197,17 +208,17 @@ export function ProjectSettingsModal({
   const selectedModelDefault = watch("model_default");
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content project-settings-modal">
-          <Dialog.Title className="dialog-title">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogContent className="project-settings-modal">
+          <DialogTitle>
             Project Configuration
-          </Dialog.Title>
-          <Dialog.Description className="dialog-description">
+          </DialogTitle>
+          <DialogDescription>
             Configure project-level defaults for Claude model, MCP servers, and
             skills that apply to all tasks unless overridden.
-          </Dialog.Description>
+          </DialogDescription>
 
           {error && <div className="error-banner">{error}</div>}
 
@@ -216,11 +227,12 @@ export function ProjectSettingsModal({
           ) : (
             <form onSubmit={handleSubmit(onSubmit)} className="settings-form">
               {/* Model Selection */}
-              <fieldset className="form-fieldset">
-                <legend>Claude Model</legend>
+              <div className="form-fieldset">
+                <Label htmlFor="model_default">Claude Model</Label>
                 <select
+                  id="model_default"
                   {...register("model_default", { required: true })}
-                  className="form-select"
+                  className="w-full px-3 py-2 border rounded-md bg-background text-foreground"
                 >
                   {AVAILABLE_MODELS.map((model) => (
                     <option key={model} value={model}>
@@ -228,86 +240,82 @@ export function ProjectSettingsModal({
                     </option>
                   ))}
                 </select>
-              </fieldset>
+              </div>
 
               {/* MCP Servers */}
-              <fieldset className="form-fieldset">
-                <legend>MCP Servers</legend>
-                <div className="checkbox-group">
+              <div className="form-fieldset">
+                <Label>MCP Servers</Label>
+                <div className="checkbox-group space-y-2">
                   {AVAILABLE_MCP_SERVERS.map((server) => (
-                    <label key={server} className="checkbox-label">
-                      <input
-                        type="checkbox"
+                    <div key={server} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`mcp-${server}`}
                         {...register(`mcp_servers.${server}`)}
-                        className="form-checkbox"
                       />
-                      <span>{server}</span>
-                    </label>
+                      <Label htmlFor={`mcp-${server}`} className="cursor-pointer">{server}</Label>
+                    </div>
                   ))}
                 </div>
-              </fieldset>
+              </div>
 
               {/* Skills */}
-              <fieldset className="form-fieldset">
-                <legend>Skills</legend>
-                <div className="checkbox-group">
+              <div className="form-fieldset">
+                <Label>Skills</Label>
+                <div className="checkbox-group space-y-2">
                   {AVAILABLE_SKILLS.map((skill) => (
-                    <label key={skill} className="checkbox-label">
-                      <input
-                        type="checkbox"
+                    <div key={skill} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`skill-${skill}`}
                         {...register(`skills.${skill}`)}
-                        className="form-checkbox"
                       />
-                      <span>{skill}</span>
-                    </label>
+                      <Label htmlFor={`skill-${skill}`} className="cursor-pointer">{skill}</Label>
+                    </div>
                   ))}
                 </div>
-              </fieldset>
+              </div>
 
               {/* Appearance - Theme */}
-              <fieldset className="form-fieldset">
-                <legend>Appearance</legend>
-                <label htmlFor="theme_preference">Theme</label>
+              <div className="form-fieldset">
+                <Label htmlFor="theme_preference">Appearance - Theme</Label>
                 <select
                   id="theme_preference"
-                  {...register("theme_preference")}
+                  defaultValue="system"
                   onChange={handleThemeChange}
-                  className="form-select"
+                  className="w-full px-3 py-2 border rounded-md bg-background text-foreground"
                 >
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
                   <option value="system">System</option>
                 </select>
-              </fieldset>
+              </div>
 
               {/* Buttons */}
               <div className="form-buttons">
-                <button
+                <Button
                   type="submit"
                   disabled={isSaving || !selectedModelDefault}
-                  className="btn-primary"
                 >
                   {isSaving ? "Saving..." : "Save Configuration"}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={handleClose}
                   disabled={isSaving}
-                  className="btn-secondary"
+                  variant="outline"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           )}
 
-          <Dialog.Close asChild>
-            <button className="dialog-close" aria-label="Close">
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm" aria-label="Close">
               ✕
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </Button>
+          </DialogClose>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }
