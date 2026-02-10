@@ -6,25 +6,25 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Light theme - neutral grays with accent override */
+  /* Light theme - neutral grays with WCAG AA compliant accent colors */
   --primary: 0 0% 0%;           /* Black text */
   --primary-foreground: 0 0% 100%; /* White background */
 
-  --secondary: 217 89% 61%;     /* Blue */
+  --secondary: 217 91% 35%;     /* Dark blue - WCAG AA compliant (8.51:1) */
   --secondary-foreground: 0 0% 100%;
 
-  --accent: 217 91% 60%;        /* Blue - system accent placeholder */
+  --accent: 217 91% 35%;        /* Dark blue - WCAG AA compliant (8.51:1) */
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 60%;     /* Red */
+  --destructive: 0 84% 35%;     /* Dark red - WCAG AA compliant (7.93:1) */
   --destructive-foreground: 0 0% 100%;
 
   --muted: 210 40% 96%;         /* Very light gray */
   --muted-foreground: 215 13% 34%; /* Dark gray text */
 
   --success: 142 72% 29%;       /* Green */
-  --warning: 38 92% 50%;        /* Amber/Yellow */
-  --error: 0 84% 60%;           /* Red (same as destructive) */
+  --warning: 38 92% 33%;        /* Amber - WCAG AA compliant (4.56:1) */
+  --error: 0 84% 35%;           /* Red - WCAG AA compliant */
 
   --background: 0 0% 100%;      /* White */
   --foreground: 215 13% 34%;    /* Dark gray text */
@@ -37,31 +37,31 @@
 
   --border: 210 40% 90%;        /* Light gray */
   --input: 0 0% 100%;           /* White input background */
-  --ring: 217 91% 60%;          /* Blue focus ring */
+  --ring: 217 91% 35%;          /* Dark blue focus ring */
 
   /* System accent color will be injected here via Tauri window preload */
-  --system-accent: 217 91% 60%; /* Fallback - will be overridden */
+  --system-accent: 217 91% 35%; /* Fallback - darker blue for WCAG AA */
 }
 
 html.dark {
   --primary: 0 0% 100%;          /* White text */
   --primary-foreground: 215 13% 20%; /* Dark background */
 
-  --secondary: 217 91% 60%;      /* Light blue */
+  --secondary: 217 91% 71%;      /* Lighter blue - WCAG AA (5.20:1) */
   --secondary-foreground: 215 13% 20%;
 
-  --accent: 217 91% 60%;         /* Blue - system override */
+  --accent: 217 91% 71%;         /* Lighter blue - WCAG AA (5.20:1) */
   --accent-foreground: 215 13% 20%;
 
-  --destructive: 0 84% 60%;      /* Red (matches light) */
+  --destructive: 0 84% 70%;      /* Lighter red - WCAG AA (4.59:1) */
   --destructive-foreground: 0 0% 100%;
 
   --muted: 215 13% 34%;          /* Dark gray */
   --muted-foreground: 210 40% 96%; /* Light gray text */
 
   --success: 142 72% 54%;        /* Lighter green */
-  --warning: 38 92% 60%;         /* Lighter amber */
-  --error: 0 84% 60%;            /* Red */
+  --warning: 38 92% 75%;         /* Lighter amber - WCAG AA (8.82:1) */
+  --error: 0 84% 70%;            /* Lighter red */
 
   --background: 215 13% 20%;     /* Very dark gray */
   --foreground: 210 40% 96%;     /* Light gray text */
@@ -74,7 +74,7 @@ html.dark {
 
   --border: 215 13% 40%;         /* Medium dark gray */
   --input: 215 13% 30%;          /* Dark input background */
-  --ring: 217 91% 60%;           /* Blue focus ring */
+  --ring: 217 91% 71%;           /* Lighter blue focus ring */
 }
 
 * {
@@ -244,16 +244,16 @@ button:disabled {
   --popover-foreground: 210 40% 96%;
   --primary: 0 0% 100%;
   --primary-foreground: 215 13% 20%;
-  --secondary: 217 91% 60%;
+  --secondary: 217 91% 71%;
   --secondary-foreground: 210 40% 96%;
   --muted: 215 13% 34%;
   --muted-foreground: 210 40% 96%;
-  --accent: 217 91% 60%;
+  --accent: 217 91% 71%;
   --accent-foreground: 215 13% 20%;
-  --destructive: 0 84% 60%;
+  --destructive: 0 84% 70%;
   --border: 215 13% 40%;
   --input: 215 13% 30%;
-  --ring: 217 91% 60%;
+  --ring: 217 91% 71%;
 }
 
 @layer base {
