@@ -12,7 +12,7 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 
 - [x] **Phase 13: Bug Fixes** - Fix mock IPC leak and Rust build warnings
 - [ ] **Phase 14: UI Foundation** - Tailwind CSS, shadcn/ui, theme system with no flash
-- [ ] **Phase 15: Component & Design System** - Migrate components, establish design tokens
+- [x] **Phase 15: Component & Design System** - Migrate components, establish design tokens
 - [ ] **Phase 16: Page Redesigns** - Modernize all major application pages
 - [ ] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
 
@@ -106,8 +106,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — Redesign Kanban board, Agent monitor, Worktree manager with compact layout and visual indicators
-- [ ] 16-02-PLAN.md — Redesign Settings panel and App header, implement navigation structure
+- [ ] 16-01-PLAN.md — Modernize Kanban board layout with grid structure, semantic status dots with pulse animation, hover effects, and drag feedback styling
+- [ ] 16-02-PLAN.md — Create AppHeader component with navigation tabs, implement Agent Monitor and Worktree Manager pages, update Settings panel to modern sectioned layout
 
 ---
 
@@ -143,7 +143,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17
 |-------|-------|--------|-----------|
 | 13 - Bug Fixes | 2 | Complete | 2026-02-09 |
 | 14 - UI Foundation | 4 | Planned | - |
-| 15 - Component & Design System | 3 | Not started | - |
+| 15 - Component & Design System | 3 | Complete | 2026-02-10 |
 | 16 - Page Redesigns | 2 | Not started | - |
 | 17 - Polish & Testing | 2 | Not started | - |
 
