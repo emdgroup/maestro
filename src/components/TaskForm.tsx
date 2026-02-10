@@ -1,5 +1,15 @@
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
-import * as Select from "@radix-ui/react-select";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CreateTaskRequest } from "../types/bindings";
 import "../styles/TaskForm.css";
 
@@ -61,8 +71,8 @@ export function TaskForm({
   return (
     <form onSubmit={handleSubmit(submitHandler)} className="task-form">
       <div className="form-group">
-        <label htmlFor="title">Title *</label>
-        <input
+        <Label htmlFor="title">Title *</Label>
+        <Input
           id="title"
           type="text"
           placeholder="Task title"
@@ -84,8 +94,8 @@ export function TaskForm({
       </div>
 
       <div className="form-group">
-        <label htmlFor="description">Description *</label>
-        <textarea
+        <Label htmlFor="description">Description *</Label>
+        <Textarea
           id="description"
           placeholder="Task description (min 10 characters)"
           rows={4}
@@ -103,8 +113,8 @@ export function TaskForm({
       </div>
 
       <div className="form-group">
-        <label htmlFor="acceptanceCriteria">Acceptance Criteria *</label>
-        <textarea
+        <Label htmlFor="acceptanceCriteria">Acceptance Criteria *</Label>
+        <Textarea
           id="acceptanceCriteria"
           placeholder="Acceptance criteria (min 10 characters)"
           rows={4}
@@ -124,32 +134,30 @@ export function TaskForm({
       </div>
 
       <div className="form-group">
-        <label htmlFor="skills">Skills (Optional)</label>
+        <Label htmlFor="skills">Skills (Optional)</Label>
         <Controller
           name="skills"
           control={control}
           render={({ field: { value, onChange } }) => (
             <div>
-              <Select.Root value={value.length > 0 ? value[0] : ""} onValueChange={(newVal) => {
+              <Select value={value.length > 0 ? value[0] : ""} onValueChange={(newVal) => {
                 if (value.includes(newVal)) {
                   onChange(value.filter(s => s !== newVal));
                 } else {
                   onChange([...value, newVal]);
                 }
               }}>
-                <Select.Trigger className="select-trigger">
-                  <Select.Value placeholder="Select skills..." />
-                </Select.Trigger>
-                <Select.Content className="select-content">
-                  <Select.Viewport>
-                    {AVAILABLE_SKILLS.map((skill) => (
-                      <Select.Item key={skill} value={skill} className="select-item">
-                        <Select.ItemText>{skill}</Select.ItemText>
-                      </Select.Item>
-                    ))}
-                  </Select.Viewport>
-                </Select.Content>
-              </Select.Root>
+                <SelectTrigger id="skills" className="select-trigger w-full">
+                  <SelectValue placeholder="Select skills..." />
+                </SelectTrigger>
+                <SelectContent className="select-content">
+                  {AVAILABLE_SKILLS.map((skill) => (
+                    <SelectItem key={skill} value={skill} className="select-item">
+                      {skill}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {value.length > 0 && (
                 <div className="skills-selected">
                   {value.map((skill) => (
@@ -174,21 +182,22 @@ export function TaskForm({
       </div>
 
       <div className="form-actions">
-        <button
+        <Button
           type="submit"
           disabled={isLoading}
           className="btn-submit"
         >
           {isLoading ? "Creating..." : "Create Task"}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={onCancel}
           disabled={isLoading}
+          variant="outline"
           className="btn-cancel"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

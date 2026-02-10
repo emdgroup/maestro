@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DiffFileWithName } from "../types/review";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import "./ApprovalForm.css";
 
@@ -125,42 +128,47 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
       <div className="approval-form-section">
         <h3 className="approval-form-heading">Decision Required</h3>
         <div className="approval-form-radio-group">
-          <label className="approval-form-radio-label">
+          <div className="flex items-center space-x-2">
             <input
+              id="decision-approve"
               type="radio"
               name="decision"
               value="Approve"
               checked={decision === "Approve"}
               onChange={() => setDecision("Approve")}
               disabled={loading}
+              className="h-4 w-4"
             />
-            <span>Approve</span>
-          </label>
-          <label className="approval-form-radio-label">
+            <Label htmlFor="decision-approve" className="cursor-pointer">Approve</Label>
+          </div>
+          <div className="flex items-center space-x-2">
             <input
+              id="decision-request"
               type="radio"
               name="decision"
               value="RequestChanges"
               checked={decision === "RequestChanges"}
               onChange={() => setDecision("RequestChanges")}
               disabled={loading}
+              className="h-4 w-4"
             />
-            <span>Request Changes</span>
-          </label>
+            <Label htmlFor="decision-request" className="cursor-pointer">Request Changes</Label>
+          </div>
         </div>
       </div>
 
       <div className="approval-form-section">
-        <label className="approval-form-label">
+        <Label htmlFor="general-feedback">
           General Feedback (Optional)
-        </label>
-        <textarea
-          className="approval-form-textarea"
+        </Label>
+        <Textarea
+          id="general-feedback"
           placeholder="Enter feedback for the developer..."
           value={generalFeedback}
           onChange={(e) => setGeneralFeedback(e.target.value)}
           disabled={loading}
           rows={4}
+          className="approval-form-textarea"
         />
       </div>
 
@@ -189,8 +197,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
                   )}
                 </button>
                 {expandedFiles.has(file.fileName) && (
-                  <textarea
-                    className="approval-form-file-textarea"
+                  <Textarea
                     placeholder={`Comment on ${file.fileName}...`}
                     value={perFileComments.get(file.fileName) || ""}
                     onChange={(e) =>
@@ -198,6 +205,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
                     }
                     disabled={loading}
                     rows={3}
+                    className="approval-form-file-textarea"
                   />
                 )}
               </div>
@@ -209,20 +217,19 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
       {error && <div className="approval-form-error">{error}</div>}
 
       <div className="approval-form-actions">
-        <button
-          className="approval-form-button approval-form-button-secondary"
+        <Button
           onClick={onClose}
           disabled={loading}
+          variant="outline"
         >
           Cancel
-        </button>
-        <button
-          className="approval-form-button approval-form-button-primary"
+        </Button>
+        <Button
           onClick={handleSubmit}
           disabled={loading || !decision}
         >
           {loading ? "Saving..." : "Submit"}
-        </button>
+        </Button>
       </div>
     </div>
   );

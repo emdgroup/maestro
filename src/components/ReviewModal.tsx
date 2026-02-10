@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "../store/reviewStore";
 import { parseDiffString } from "../utils/diffParser";
@@ -95,27 +103,31 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="review-modal-overlay" />
-        <Dialog.Content className="review-modal-content">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogPortal>
+        <DialogOverlay className="review-modal-overlay" />
+        <DialogContent className="review-modal-content">
           <div className="review-modal-header">
             <div>
-              <Dialog.Title className="review-modal-title">
+              <DialogTitle className="review-modal-title">
                 Review Changes
-              </Dialog.Title>
+              </DialogTitle>
               <p className="review-modal-subtitle">{taskName}</p>
             </div>
-            <Dialog.Close className="review-modal-close">✕</Dialog.Close>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm" aria-label="Close">
+                ✕
+              </Button>
+            </DialogClose>
           </div>
 
           <div className="review-modal-body">
             {store.error && (
               <div className="review-modal-error">
                 <p className="review-modal-error-text">{store.error}</p>
-                <button className="review-modal-retry-button" onClick={handleRetry}>
+                <Button onClick={handleRetry} className="review-modal-retry-button">
                   Retry
-                </button>
+                </Button>
               </div>
             )}
 
@@ -138,18 +150,17 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
           {!showApprovalForm && (
             <div className="review-modal-footer">
-              <button
-                className="review-modal-button review-modal-button-secondary"
+              <Button
                 onClick={handleClose}
+                variant="outline"
               >
                 Close
-              </button>
-              <button
-                className="review-modal-button review-modal-button-primary"
+              </Button>
+              <Button
                 onClick={() => setShowApprovalForm(true)}
               >
                 Proceed to Approval
-              </button>
+              </Button>
             </div>
           )}
 
@@ -164,8 +175,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
               onClose={() => setShowApprovalForm(false)}
             />
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 };

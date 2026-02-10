@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { invoke } from "../lib/tauri-mock";
-import * as Dialog from "@radix-ui/react-dialog";
+import {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { TaskForm } from "./TaskForm";
 import { Task, CreateTaskRequest } from "../types/bindings";
 import "../styles/TaskModal.css";
@@ -47,14 +56,14 @@ export function TaskModal({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content">
-          <Dialog.Title className="dialog-title">Create New Task</Dialog.Title>
-          <Dialog.Description className="dialog-description">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogContent>
+          <DialogTitle>Create New Task</DialogTitle>
+          <DialogDescription>
             Enter task details (title, description, acceptance criteria required)
-          </Dialog.Description>
+          </DialogDescription>
 
           {error && <div className="error-banner">{error}</div>}
 
@@ -65,13 +74,13 @@ export function TaskModal({
             projectId={projectId}
           />
 
-          <Dialog.Close asChild>
-            <button className="dialog-close" aria-label="Close">
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm" aria-label="Close">
               ✕
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </Button>
+          </DialogClose>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }

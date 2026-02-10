@@ -1,7 +1,25 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { invoke } from "../lib/tauri-mock";
-import * as Dialog from "@radix-ui/react-dialog";
+import {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AVAILABLE_MCP_SERVERS,
   AVAILABLE_SKILLS,
@@ -53,6 +71,7 @@ export function TaskSettingsModal({
     register,
     handleSubmit,
     reset,
+    watch,
   } = useForm<TaskSettingsFormData>({
     mode: "onChange",
     defaultValues: {
@@ -133,21 +152,21 @@ export function TaskSettingsModal({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content task-settings-modal">
-          <Dialog.Title className="dialog-title">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogContent className="task-settings-modal">
+          <DialogTitle>
             Task Configuration Overrides
-          </Dialog.Title>
-          <Dialog.Description className="dialog-description">
+          </DialogTitle>
+          <DialogDescription>
             <p>
               Configure task-specific overrides for Claude model, MCP servers, and skills.
             </p>
             <p className="override-note">
               Leave unchecked to use project defaults. Any settings you enable here will completely replace the project defaults for this task only.
             </p>
-          </Dialog.Description>
+          </DialogDescription>
 
           {error && <div className="error-banner">{error}</div>}
 
@@ -158,17 +177,23 @@ export function TaskSettingsModal({
               <div className="fieldset-description">
                 Leave empty to use project default
               </div>
-              <select
-                {...register("model_override")}
-                className="form-select"
-              >
-                <option value="">Use Project Default</option>
-                {AVAILABLE_MODELS.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+              <Select value={watch("model_override")} onValueChange={(value) => {
+                // Register field and set value
+                const event = { target: { value, name: "model_override" } };
+                register("model_override").onChange?.(event);
+              }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Use Project Default" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Use Project Default</SelectItem>
+                  {AVAILABLE_MODELS.map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </fieldset>
 
             {/* MCP Servers Override */}
@@ -177,16 +202,15 @@ export function TaskSettingsModal({
               <div className="fieldset-description">
                 Leave unchecked to use project defaults
               </div>
-              <div className="checkbox-group">
+              <div className="checkbox-group space-y-2">
                 {AVAILABLE_MCP_SERVERS.map((server) => (
-                  <label key={server} className="checkbox-label">
-                    <input
-                      type="checkbox"
+                  <div key={server} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`mcp-override-${server}`}
                       {...register(`mcp_allowlist.${server}`)}
-                      className="form-checkbox"
                     />
-                    <span>{server}</span>
-                  </label>
+                    <Label htmlFor={`mcp-override-${server}`} className="cursor-pointer">{server}</Label>
+                  </div>
                 ))}
               </div>
             </fieldset>
@@ -197,47 +221,45 @@ export function TaskSettingsModal({
               <div className="fieldset-description">
                 Leave unchecked to use project defaults
               </div>
-              <div className="checkbox-group">
+              <div className="checkbox-group space-y-2">
                 {AVAILABLE_SKILLS.map((skill) => (
-                  <label key={skill} className="checkbox-label">
-                    <input
-                      type="checkbox"
+                  <div key={skill} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`skill-override-${skill}`}
                       {...register(`skills_override.${skill}`)}
-                      className="form-checkbox"
                     />
-                    <span>{skill}</span>
-                  </label>
+                    <Label htmlFor={`skill-override-${skill}`} className="cursor-pointer">{skill}</Label>
+                  </div>
                 ))}
               </div>
             </fieldset>
 
             {/* Buttons */}
             <div className="form-buttons">
-              <button
+              <Button
                 type="submit"
                 disabled={isSaving}
-                className="btn-primary"
               >
                 {isSaving ? "Saving..." : "Save Overrides"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={handleClose}
                 disabled={isSaving}
-                className="btn-secondary"
+                variant="outline"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
 
-          <Dialog.Close asChild>
-            <button className="dialog-close" aria-label="Close">
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm" aria-label="Close">
               ✕
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </Button>
+          </DialogClose>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }
