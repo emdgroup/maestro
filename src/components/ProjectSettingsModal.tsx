@@ -168,7 +168,7 @@ export function ProjectSettingsModal({
       };
 
       await invoke("update_project_settings", {
-        project_id: projectId,
+        projectId: projectId,
         settings: request,
       });
 
