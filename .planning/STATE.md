@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 17.1 of 17+ (Critical UI Fixes - Inserted)
-Plan: 3 of 4 in current phase - IN PROGRESS
-Status: Phase 17.1 in progress
-Last activity: 2026-02-11 — Phase 17.1-03 (System accent color integration) complete
+Plan: 4 of 4 in current phase - COMPLETE
+Status: Phase 17.1 COMPLETE
+Last activity: 2026-02-11 — Phase 17.1-04 (Playwright visual regression testing) complete
 
-Progress: [████████████████████] 100% (13/13 original plans + 3/4 phase 17.1 plans complete)
+Progress: [████████████████████] 100% (13/13 original plans + 4/4 phase 17.1 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed this milestone: 13
-- Average duration: 0.13 hours
-- Total execution time: 1.66 hours
+- Total plans completed this milestone: 17
+- Average duration: 0.128 hours
+- Total execution time: 2.18 hours
 
 **By Phase:**
 
@@ -32,6 +32,7 @@ Progress: [████████████████████] 100% (1
 | 15 | 3 | 0.43h | 0.143h |
 | 16 | 2 | 0.23h | 0.115h |
 | 17 | 2 | 0.33h | 0.165h |
+| 17.1 | 4 | 0.52h | 0.130h |
 
 **Recent Trend:**
 - Phase 13-01: 0.1h (Bug fixes - clean build, mock code exclusion)
@@ -50,6 +51,7 @@ Progress: [████████████████████] 100% (1
 - Phase 17.1-01: 0.13h (Production-safe IPC logging - safeInvoke wrapper, ProjectPicker instrumentation, App.tsx logging)
 - Phase 17.1-02: 0.12h (Modern header with project dropdown and tab navigation - AppHeader redesign, App.tsx integration, tab routing)
 - Phase 17.1-03: 0.06h (System accent color integration - accent color loading in ThemeProvider, CSS variable injection, theme change handling)
+- Phase 17.1-04: 0.13h (Playwright visual regression testing - E2E framework, 10 test cases, baseline screenshots, responsive verification)
 
 *Updated after each plan completion*
 
@@ -87,7 +89,7 @@ None yet.
 
 ### Blockers/Concerns
 
-**CRITICAL - Phase 17.1 COMPLETE (2026-02-11):**
+**COMPLETE - Phase 17.1 FULLY COMPLETE (2026-02-11):**
 - ✓ Phase 17.1-01 COMPLETE: Production IPC logging infrastructure
   - safeInvoke wrapper created with [Tauri] console logging
   - ProjectPicker instrumented with [DEBUG] statements
@@ -98,13 +100,24 @@ None yet.
   - Tab-based page routing in App.tsx (activePage state)
   - All icons from lucide-react, modern flex layout (h-12)
   - Inline project switching without full-screen modal
+- ✓ Phase 17.1-03 COMPLETE: System accent color integration
+  - Accent color loaded from system theme in ThemeProvider
+  - CSS variables injected dynamically on mount
+  - Theme changes update accent color in real-time
+- ✓ Phase 17.1-04 COMPLETE: Playwright visual regression testing
+  - E2E framework configured with dev server integration
+  - 10 visual regression tests covering major UI elements
+  - Baseline screenshots established for ProjectPicker, layouts, viewports
+  - Automated CLS and DOM stability verification
+  - Test infrastructure ready for regression detection (pnpm test:e2e)
 
-**Phase 17.1 Impact:**
+**Phase 17.1 Impact Summary:**
 - ✓ UI now has modern aesthetic matching exemple/ design patterns
 - ✓ UX improved: Project switching from header dropdown instead of full-screen modal
 - ✓ Navigation: Compact tab bar with icons and active state styling
 - ✓ System accent color integration complete: Dynamic theme-aware accent color injection
-- Future work: Playwright visual testing, agent count functionality, remaining UI polish (plan 17.1-04)
+- ✓ Visual regression testing infrastructure: Automated baseline capture and regression detection
+- Phase 17.1 milestone complete; all 4 plans executed successfully
 
 ### Roadmap Evolution
 
@@ -112,10 +125,10 @@ None yet.
 
 ## Session Continuity
 
-Current session: 2026-02-11 (Phase 17.1 execution - IN PROGRESS)
-Completed: Phase 17.1-01 (Production-safe IPC logging) + Phase 17.1-02 (Modern header redesign) + Phase 17.1-03 (System accent color integration)
-Next: Phase 17.1-04 (final UI polish)
-Session timestamp: 2026-02-11T07:40:37Z
+Current session: 2026-02-11 (Phase 17.1 execution - COMPLETE)
+Completed: Phase 17.1-01 (Production-safe IPC logging) + Phase 17.1-02 (Modern header redesign) + Phase 17.1-03 (System accent color integration) + Phase 17.1-04 (Playwright visual regression testing)
+Status: All Phase 17.1 plans complete; v1.1 milestone fully complete (17 plans, 2.18 hours total)
+Session timestamp: 2026-02-11T07:58:40Z
 
 ---
 
