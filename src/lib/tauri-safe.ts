@@ -4,6 +4,9 @@
  * This wrapper ensures all IPC calls are visible in browser console for production debugging.
  * All invocations, successes, and errors are logged with [Tauri] prefix for easy filtering.
  *
+ * In dev mode, automatically uses mock responses when Tauri is not available (browser-only dev).
+ * In production, always uses real Tauri API.
+ *
  * Usage:
  *   import { safeInvoke } from './tauri-safe';
  *
@@ -18,7 +21,7 @@
  *   }
  */
 
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invoke } from './tauri-mock';
 
 /**
  * Safe wrapper around Tauri's invoke command with full logging.
@@ -44,8 +47,8 @@ export async function safeInvoke<T>(
   );
 
   try {
-    // Call the real Tauri invoke
-    const result = await tauriInvoke<T>(command, args);
+    // Call invoke (which handles both real Tauri and dev mock automatically)
+    const result = await invoke<T>(command, args);
 
     // Log success with result
     console.log(`[Tauri] Success ${command}:`, result);
