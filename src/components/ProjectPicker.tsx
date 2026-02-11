@@ -127,7 +127,7 @@ export function ProjectPicker({
   // Stage: Select local or remote
   if (stage === "select") {
     return (
-      <div className="project-picker">
+      <div className="project-picker" data-testid="project-picker">
         <div className="project-picker-container">
           <h1>Welcome to GSD Agent Orchestrator</h1>
           <p>Select a project directory to get started</p>
@@ -178,7 +178,7 @@ export function ProjectPicker({
   // Stage: Local project
   if (stage === "local") {
     return (
-      <div className="project-picker">
+      <div className="project-picker" data-testid="project-picker-local">
         <div className="project-picker-container">
           <h1>Select Local Project</h1>
 
@@ -228,7 +228,7 @@ export function ProjectPicker({
   // Stage: Remote project
   if (stage === "remote") {
     return (
-      <div className="project-picker">
+      <div className="project-picker" data-testid="project-picker-remote">
         <div className="project-picker-container">
           <RemoteConnectionForm
             onSubmit={handleCreateRemote}
