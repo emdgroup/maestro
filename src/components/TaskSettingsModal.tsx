@@ -26,7 +26,6 @@ import {
   AVAILABLE_MODELS,
 } from "../store/configStore";
 import type { Task, TaskConfigRequest } from "../types/bindings";
-import "../styles/TaskSettingsModal.css";
 
 interface TaskSettingsModalProps {
   isOpen: boolean;
@@ -155,7 +154,7 @@ export function TaskSettingsModal({
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogPortal>
         <DialogOverlay />
-        <DialogContent className="task-settings-modal">
+        <DialogContent className="max-w-2xl">
           <DialogTitle>
             Task Configuration Overrides
           </DialogTitle>
@@ -163,18 +162,18 @@ export function TaskSettingsModal({
             <p>
               Configure task-specific overrides for Claude model, MCP servers, and skills.
             </p>
-            <p className="override-note">
+            <p className="text-xs text-muted-foreground mb-4">
               Leave unchecked to use project defaults. Any settings you enable here will completely replace the project defaults for this task only.
             </p>
           </DialogDescription>
 
-          {error && <div className="error-banner">{error}</div>}
+          {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">{error}</div>}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="settings-form">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Model Override */}
-            <fieldset className="form-fieldset">
+            <fieldset className="border border-border rounded-md p-4 space-y-3">
               <legend>Claude Model Override</legend>
-              <div className="fieldset-description">
+              <div className="text-sm text-muted-foreground mb-3">
                 Leave empty to use project default
               </div>
               <Select value={watch("model_override")} onValueChange={(value) => {
@@ -197,12 +196,12 @@ export function TaskSettingsModal({
             </fieldset>
 
             {/* MCP Servers Override */}
-            <fieldset className="form-fieldset">
+            <fieldset className="border border-border rounded-md p-4 space-y-3">
               <legend>MCP Servers Override</legend>
-              <div className="fieldset-description">
+              <div className="text-sm text-muted-foreground mb-3">
                 Leave unchecked to use project defaults
               </div>
-              <div className="checkbox-group space-y-2">
+              <div className="space-y-2">
                 {AVAILABLE_MCP_SERVERS.map((server) => (
                   <div key={server} className="flex items-center space-x-2">
                     <Checkbox
@@ -216,12 +215,12 @@ export function TaskSettingsModal({
             </fieldset>
 
             {/* Skills Override */}
-            <fieldset className="form-fieldset">
+            <fieldset className="border border-border rounded-md p-4 space-y-3">
               <legend>Skills Override</legend>
-              <div className="fieldset-description">
+              <div className="text-sm text-muted-foreground mb-3">
                 Leave unchecked to use project defaults
               </div>
-              <div className="checkbox-group space-y-2">
+              <div className="space-y-2">
                 {AVAILABLE_SKILLS.map((skill) => (
                   <div key={skill} className="flex items-center space-x-2">
                     <Checkbox
@@ -235,7 +234,7 @@ export function TaskSettingsModal({
             </fieldset>
 
             {/* Buttons */}
-            <div className="form-buttons">
+            <div className="flex justify-end gap-3 pt-4">
               <Button
                 type="submit"
                 disabled={isSaving}

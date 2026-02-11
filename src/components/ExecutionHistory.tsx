@@ -4,7 +4,6 @@ import { ExecutionLog } from '../types/bindings';
 import { showErrorToast, showSuccessToast } from './ErrorToast';
 import { useBoardStore } from '../store/boardStore';
 import { toast } from 'sonner';
-import '../styles/ExecutionHistory.css';
 
 interface ExecutionHistoryProps {
   taskId: number;
@@ -388,7 +387,7 @@ export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: E
             {/* Display terminal output with search filtering */}
             <div className="terminal-output-container">
               {selectedLog.terminal_output ? (
-                <pre className="terminal-output">
+                <pre className="flex-1 overflow-auto p-4 font-mono text-xs bg-background text-foreground">
                   {searchTerm
                     ? selectedLog.terminal_output
                         .split('\n')
@@ -399,7 +398,7 @@ export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: E
                     : selectedLog.terminal_output}
                 </pre>
               ) : (
-                <pre className="terminal-output">(no terminal output captured)</pre>
+                <pre className="flex-1 overflow-auto p-4 font-mono text-xs bg-background text-foreground">(no terminal output captured)</pre>
               )}
             </div>
 

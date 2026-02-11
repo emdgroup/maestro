@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { invoke } from '../lib/tauri-mock';
 import { showErrorToast, showSuccessToast } from './ErrorToast';
-import '../styles/ImportSettings.css';
 
 interface ImportSettingsProps {
   isOpen: boolean;

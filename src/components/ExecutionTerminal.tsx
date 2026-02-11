@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
-import '../styles/ExecutionTerminal.css';
 
 interface ExecutionTerminalProps {
   taskId: number;
@@ -182,7 +181,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     return (
       <div className="execution-terminal modal-backdrop">
         <div className="execution-terminal-container">
-          <div className="terminal-header">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
             <h2>{taskName}</h2>
             <button onClick={onClose} className="terminal-close-button" title="Close terminal">
               ✕
@@ -200,7 +199,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     return (
       <div className="execution-terminal modal-backdrop">
         <div className="execution-terminal-container">
-          <div className="terminal-header">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
             <h2>{taskName}</h2>
             <button onClick={onClose} className="terminal-close-button" title="Close terminal">
               ✕
@@ -208,7 +207,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
           </div>
           <div className="terminal-content">
             <div className="error-state">
-              <div className="error-message">{error}</div>
+              <div className="text-destructive text-xs mt-1">{error}</div>
               <button
                 onClick={() => {
                   setError(null);
@@ -228,7 +227,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
   return (
     <div className="execution-terminal modal-backdrop">
       <div className="execution-terminal-container">
-        <div className="terminal-header">
+        <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
           <div>
             <h2>{taskName}</h2>
             {error && <div className="terminal-error-banner">{error}</div>}
@@ -252,7 +251,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type command and press Enter to send (Ctrl+C for SIGINT)..."
-              className="terminal-input"
+              className="border-t border-border p-2 flex gap-2"
               disabled={sending}
               autoFocus
             />
