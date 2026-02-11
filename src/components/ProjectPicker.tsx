@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { RemoteConnectionForm } from "./RemoteConnectionForm";
 import { SshConfig } from "../types/bindings";
@@ -33,6 +33,7 @@ export function ProjectPicker({
   }
 
   async function handleFolderPicker() {
+    console.log("[DEBUG] Opening folder dialog");
     setLoading(true);
     setError(null);
     try {
@@ -43,24 +44,33 @@ export function ProjectPicker({
       });
 
       if (selectedPath) {
+        console.log(`[DEBUG] Dialog returned path: ${selectedPath}`);
         // Validate it's a directory (Tauri handles this)
         onProjectSelected(selectedPath as string);
+        console.log("[DEBUG] onProjectSelected callback invoked successfully");
+      } else {
+        console.log("[DEBUG] Dialog returned no path (user cancelled)");
       }
     } catch (err) {
-      setError(`Failed to select folder: ${err}`);
-      console.error(err);
+      const errorMsg = `Failed to select folder: ${err}`;
+      console.error(`[DEBUG] ${errorMsg}`, err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleRecentProject(path: string) {
+    console.log(`[DEBUG] Opening recent project: ${path}`);
     setLoading(true);
     setError(null);
     try {
       onProjectSelected(path);
+      console.log("[DEBUG] Recent project callback invoked successfully");
     } catch (err) {
-      setError(`Failed to open project: ${err}`);
+      const errorMsg = `Failed to open project: ${err}`;
+      console.error(`[DEBUG] ${errorMsg}`, err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -69,35 +79,44 @@ export function ProjectPicker({
   async function handleManualPath(e: React.FormEvent) {
     e.preventDefault();
     if (!manualPath.trim()) {
+      console.log("[DEBUG] Manual path is empty");
       setError("Please enter a project path");
       return;
     }
+    console.log(`[DEBUG] Opening manual path: ${manualPath.trim()}`);
     setLoading(true);
     setError(null);
     try {
       onProjectSelected(manualPath.trim());
+      console.log("[DEBUG] Manual path callback invoked successfully");
     } catch (err) {
-      setError(`Failed to open project: ${err}`);
+      const errorMsg = `Failed to open project: ${err}`;
+      console.error(`[DEBUG] ${errorMsg}`, err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleCreateRemote(config: SshConfig) {
+    console.log(`[DEBUG] Creating remote project for host: ${config.host}`);
     setLoading(true);
     setError(null);
     try {
-      // Create project with remote config
-      const project = await invoke<{ path: string }>("create_project", {
+      // Create project with remote config (safeInvoke logs all details)
+      const project = await safeInvoke<{ path: string }>("create_project", {
         name: config.host,
         path: config.remote_path,
         is_remote: true,
         ssh_config: config,
       });
 
+      console.log(`[DEBUG] Remote project created at: ${project.path}`);
       onProjectSelected(project.path);
+      console.log("[DEBUG] Remote project callback invoked successfully");
     } catch (err) {
       const errorMsg = String(err);
+      console.error(`[DEBUG] Failed to create remote project: ${errorMsg}`, err);
       setError(errorMsg);
       toast.error(`Failed to create remote project: ${errorMsg}`);
     } finally {
