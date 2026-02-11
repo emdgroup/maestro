@@ -38,11 +38,17 @@ function applyTheme(theme: ThemeValue, systemTheme: 'light' | 'dark'): void {
 function loadSystemAccentColor(): void {
   try {
     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    // Light mode: darker blue for WCAG AA compliance (8.51:1)
-    // Dark mode: lighter blue for dark mode readability (5.20:1)
-    const accentColor = isDark ? '217 91% 71%' : '217 91% 35%';
-    document.documentElement.style.setProperty('--accent', accentColor);
-    console.log('[Theme] Accent color set to:', accentColor);
+
+    // Use OKLCH format to match theme system in index.css
+    // Light mode: darker accent for contrast on white (50% lightness)
+    // Dark mode: lighter accent for contrast on dark (75% lightness)
+    const accentColor = isDark ? 'oklch(75% 0.15 250)' : 'oklch(50% 0.15 250)';
+    const accentForeground = isDark ? 'oklch(25% 0.01 250)' : 'oklch(100% 0 0)';
+
+    document.documentElement.style.setProperty('--color-accent', accentColor);
+    document.documentElement.style.setProperty('--color-accent-foreground', accentForeground);
+
+    console.log('[Theme] Accent color set to:', accentColor, '| foreground:', accentForeground);
   } catch (err) {
     console.error('[Theme] Failed to set accent color:', err);
   }
