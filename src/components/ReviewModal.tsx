@@ -14,7 +14,6 @@ import { parseDiffString } from "../utils/diffParser";
 import { FileTree } from "./FileTree";
 import { DiffViewer } from "./DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";
-import "./ReviewModal.css";
 
 interface ReviewModalProps {
   taskId: number;

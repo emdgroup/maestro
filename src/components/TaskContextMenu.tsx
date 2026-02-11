@@ -1,6 +1,5 @@
 import React from "react";
 import { Task } from "../types/bindings";
-import "./TaskContextMenu.css";
 
 interface TaskContextMenuProps {
   task: Task;
