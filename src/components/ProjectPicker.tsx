@@ -4,7 +4,8 @@ import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { RemoteConnectionForm } from "./RemoteConnectionForm";
 import { SshConfig } from "../types/bindings";
-import "../styles/ProjectPicker.css";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
@@ -127,49 +128,54 @@ export function ProjectPicker({
   // Stage: Select local or remote
   if (stage === "select") {
     return (
-      <div className="project-picker" data-testid="project-picker">
-        <div className="project-picker-container">
-          <h1>Welcome to GSD Agent Orchestrator</h1>
-          <p>Select a project directory to get started</p>
+      <div className="flex items-center justify-center h-screen bg-background text-foreground" data-testid="project-picker">
+        <div className="max-w-lg text-center px-5 py-10">
+          <h1 className="text-3xl font-semibold mb-3">Welcome to GSD Agent Orchestrator</h1>
+          <p className="text-base text-muted-foreground mb-8">Select a project directory to get started</p>
 
-          <div className="project-type-selection">
-            <button
-              className="project-picker-button primary"
+          <div className="flex flex-col gap-4 my-8">
+            <Button
+              variant="default"
+              size="lg"
               onClick={handleSelectLocal}
               disabled={loading}
+              className="w-full text-base"
             >
               📁 Local Project
-            </button>
+            </Button>
 
-            <button
-              className="project-picker-button primary"
+            <Button
+              variant="default"
+              size="lg"
               onClick={handleSelectRemote}
               disabled={loading}
+              className="w-full text-base"
             >
               🌐 Remote Project (SSH)
-            </button>
+            </Button>
           </div>
 
           {recentProjects.length > 0 && (
-            <div className="recent-projects">
-              <h2>Recent Projects</h2>
-              <ul>
+            <div className="mt-10 text-left">
+              <h2 className="text-xs uppercase text-muted-foreground mb-4 tracking-wide">Recent Projects</h2>
+              <ul className="list-none p-0">
                 {recentProjects.map((project) => (
-                  <li key={project}>
-                    <button
+                  <li key={project} className="mb-2">
+                    <Button
                       onClick={() => handleRecentProject(project)}
                       disabled={loading}
-                      className="project-picker-button secondary"
+                      variant="outline"
+                      className="w-full text-left justify-start font-mono text-sm"
                     >
                       {project}
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="mt-5 p-3 bg-destructive/10 text-destructive rounded border border-destructive/30 text-sm">{error}</div>}
         </div>
       </div>
     );
@@ -178,48 +184,52 @@ export function ProjectPicker({
   // Stage: Local project
   if (stage === "local") {
     return (
-      <div className="project-picker" data-testid="project-picker-local">
-        <div className="project-picker-container">
-          <h1>Select Local Project</h1>
+      <div className="flex items-center justify-center h-screen bg-background text-foreground" data-testid="project-picker-local">
+        <div className="max-w-lg text-center px-5 py-10">
+          <h1 className="text-3xl font-semibold mb-8">Select Local Project</h1>
 
-          <button
-            className="project-picker-button primary"
+          <Button
+            variant="default"
+            size="lg"
             onClick={handleFolderPicker}
             disabled={loading}
+            className="w-full min-w-[200px] text-base mb-8"
           >
             {loading ? "Loading..." : "Select Project Folder"}
-          </button>
+          </Button>
 
-          <div className="manual-path-section">
-            <p className="manual-path-label">Or enter path manually:</p>
-            <form onSubmit={handleManualPath} className="manual-path-form">
-              <input
+          <div className="mt-8 pt-8 border-t border-border">
+            <p className="mb-4 text-muted-foreground text-sm">Or enter path manually:</p>
+            <form onSubmit={handleManualPath} className="flex gap-3 items-center">
+              <Input
                 type="text"
                 value={manualPath}
                 onChange={(e) => setManualPath(e.target.value)}
                 placeholder="/home/user/project-path"
-                className="manual-path-input"
+                className="flex-1 font-mono text-sm"
                 disabled={loading}
               />
-              <button
+              <Button
                 type="submit"
-                className="project-picker-button primary"
+                variant="default"
                 disabled={loading || !manualPath.trim()}
+                className="min-w-[100px]"
               >
                 Open
-              </button>
+              </Button>
             </form>
           </div>
 
-          <button
-            className="project-picker-button secondary"
+          <Button
+            variant="outline"
             onClick={() => setStage("select")}
             disabled={loading}
+            className="w-full mt-8"
           >
             Back
-          </button>
+          </Button>
 
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="mt-5 p-3 bg-destructive/10 text-destructive rounded border border-destructive/30 text-sm">{error}</div>}
         </div>
       </div>
     );
@@ -228,14 +238,14 @@ export function ProjectPicker({
   // Stage: Remote project
   if (stage === "remote") {
     return (
-      <div className="project-picker" data-testid="project-picker-remote">
-        <div className="project-picker-container">
+      <div className="flex items-center justify-center h-screen bg-background text-foreground" data-testid="project-picker-remote">
+        <div className="max-w-lg px-5 py-10">
           <RemoteConnectionForm
             onSubmit={handleCreateRemote}
             onBack={() => setStage("select")}
             loading={loading}
           />
-          {error && <div className="error-message">{error}</div>}
+          {error && <div className="mt-5 p-3 bg-destructive/10 text-destructive rounded border border-destructive/30 text-sm">{error}</div>}
         </div>
       </div>
     );

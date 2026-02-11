@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { TaskForm } from "./TaskForm";
 import { Task, CreateTaskRequest } from "../types/bindings";
-import "../styles/TaskModal.css";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -65,7 +64,7 @@ export function TaskModal({
             Enter task details (title, description, acceptance criteria required)
           </DialogDescription>
 
-          {error && <div className="error-banner">{error}</div>}
+          {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">{error}</div>}
 
           <TaskForm
             onSubmit={handleSubmit}

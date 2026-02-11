@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -11,7 +12,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CreateTaskRequest } from "../types/bindings";
-import "../styles/TaskForm.css";
 
 export interface TaskFormData {
   title: string;
@@ -69,8 +69,8 @@ export function TaskForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(submitHandler)} className="task-form">
-      <div className="form-group">
+    <form onSubmit={handleSubmit(submitHandler)} className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="title">Title *</Label>
         <Input
           id="title"
@@ -89,11 +89,11 @@ export function TaskForm({
           })}
         />
         {errors.title && (
-          <span className="error-message">{errors.title.message}</span>
+          <span className="text-destructive text-xs mt-1">{errors.title.message}</span>
         )}
       </div>
 
-      <div className="form-group">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="description">Description *</Label>
         <Textarea
           id="description"
@@ -108,11 +108,11 @@ export function TaskForm({
           })}
         />
         {errors.description && (
-          <span className="error-message">{errors.description.message}</span>
+          <span className="text-destructive text-xs mt-1">{errors.description.message}</span>
         )}
       </div>
 
-      <div className="form-group">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="acceptanceCriteria">Acceptance Criteria *</Label>
         <Textarea
           id="acceptanceCriteria"
@@ -127,13 +127,13 @@ export function TaskForm({
           })}
         />
         {errors.acceptanceCriteria && (
-          <span className="error-message">
+          <span className="text-destructive text-xs mt-1">
             {errors.acceptanceCriteria.message}
           </span>
         )}
       </div>
 
-      <div className="form-group">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="skills">Skills (Optional)</Label>
         <Controller
           name="skills"
@@ -147,32 +147,32 @@ export function TaskForm({
                   onChange([...value, newVal]);
                 }
               }}>
-                <SelectTrigger id="skills" className="select-trigger w-full">
+                <SelectTrigger id="skills" className="w-full">
                   <SelectValue placeholder="Select skills..." />
                 </SelectTrigger>
-                <SelectContent className="select-content">
+                <SelectContent>
                   {AVAILABLE_SKILLS.map((skill) => (
-                    <SelectItem key={skill} value={skill} className="select-item">
+                    <SelectItem key={skill} value={skill}>
                       {skill}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {value.length > 0 && (
-                <div className="skills-selected">
+                <div className="flex flex-wrap gap-2 mt-3">
                   {value.map((skill) => (
-                    <span key={skill} className="skill-badge">
+                    <Badge key={skill} variant="default" className="gap-2 py-1.5 px-3">
                       {skill}
                       <button
                         type="button"
                         onClick={() =>
                           onChange(value.filter(s => s !== skill))
                         }
-                        className="skill-remove"
+                        className="text-lg opacity-80 hover:opacity-100 transition-opacity"
                       >
                         ×
                       </button>
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               )}
@@ -181,11 +181,10 @@ export function TaskForm({
         />
       </div>
 
-      <div className="form-actions">
+      <div className="flex gap-4 mt-4 justify-end">
         <Button
           type="submit"
           disabled={isLoading}
-          className="btn-submit"
         >
           {isLoading ? "Creating..." : "Create Task"}
         </Button>
@@ -194,7 +193,6 @@ export function TaskForm({
           onClick={onCancel}
           disabled={isLoading}
           variant="outline"
-          className="btn-cancel"
         >
           Cancel
         </Button>
