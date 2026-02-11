@@ -19,7 +19,6 @@ function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [projectSelected, setProjectSelected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
@@ -52,7 +51,6 @@ function App() {
         setSettings(loaded);
         if (loaded.project_path) {
           console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
-          setProjectSelected(true);
           // Load the current project from database
           try {
             console.log("[DEBUG] App.tsx: Loading project from database");
@@ -121,12 +119,11 @@ function App() {
       console.log("[DEBUG] App.tsx: Settings saved successfully");
 
       setSettings(newSettings);
-      setProjectSelected(true);
 
       // Reload all projects to include the newly selected one
       await loadAllProjects();
 
-      console.log("[DEBUG] App.tsx: Project selected state updated, main UI should now be visible");
+      console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
     } catch (err) {
       console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
     }
@@ -147,7 +144,7 @@ function App() {
         <div className="app">
           <p>Loading...</p>
         </div>
-      ) : !projectSelected ? (
+      ) : !currentProject ? (
         <ProjectPicker
           onProjectSelected={handleProjectSelected}
           recentProjects={settings?.recent_projects}
@@ -164,64 +161,60 @@ function App() {
             agentCount={0}
           />
           <main className="flex-1 overflow-auto">
-            {currentProject && (
-              <>
-                {/* Kanban Board Page */}
-                {activePage === "kanban" && (
-                  <KanbanBoard
-                    projectId={currentProject.id}
-                    projectPath={currentProject.path}
-                    onTaskClick={setSelectedTask}
-                  />
-                )}
-
-                {/* Agent Monitor Page */}
-                {activePage === "agents" && (
-                  <AgentMonitor
-                    projectId={currentProject.id}
-                    agents={[]}
-                    activeAgentId={null}
-                  />
-                )}
-
-                {/* Worktree Manager Page */}
-                {activePage === "worktrees" && (
-                  <WorktreeManager
-                    projectId={currentProject.id}
-                    worktrees={[]}
-                  />
-                )}
-
-                {/* Settings Page */}
-                {activePage === "settings" && (
-                  <div className="h-full p-4">
-                    <ProjectSettingsModal
-                      isOpen={true}
-                      onClose={() => setActivePage("kanban")}
-                      projectId={currentProject.id}
-                    />
-                  </div>
-                )}
-
-                {/* Modals and Overlays */}
-                <TaskModal
-                  isOpen={showNewTaskModal}
-                  onClose={() => setShowNewTaskModal(false)}
-                  projectId={currentProject.id}
-                  onTaskCreated={handleTaskCreated}
-                />
-                <TaskDetail
-                  task={selectedTask}
-                  projectPath={currentProject.path}
-                  onClose={() => setSelectedTask(null)}
-                />
-                <ImportSettings
-                  isOpen={showImportSettings}
-                  onClose={() => setShowImportSettings(false)}
-                  onConfigSaved={handleImportConfigSaved}
-                />
-              </>
+            {/* Kanban Board Page */}
+            {activePage === "kanban" && (
+              <KanbanBoard
+                projectId={currentProject.id}
+                projectPath={currentProject.path}
+                onTaskClick={setSelectedTask}
+              />
             )}
+
+            {/* Agent Monitor Page */}
+            {activePage === "agents" && (
+              <AgentMonitor
+                projectId={currentProject.id}
+                agents={[]}
+                activeAgentId={null}
+              />
+            )}
+
+            {/* Worktree Manager Page */}
+            {activePage === "worktrees" && (
+              <WorktreeManager
+                projectId={currentProject.id}
+                worktrees={[]}
+              />
+            )}
+
+            {/* Settings Page */}
+            {activePage === "settings" && (
+              <div className="h-full p-4">
+                <ProjectSettingsModal
+                  isOpen={true}
+                  onClose={() => setActivePage("kanban")}
+                  projectId={currentProject.id}
+                />
+              </div>
+            )}
+
+            {/* Modals and Overlays */}
+            <TaskModal
+              isOpen={showNewTaskModal}
+              onClose={() => setShowNewTaskModal(false)}
+              projectId={currentProject.id}
+              onTaskCreated={handleTaskCreated}
+            />
+            <TaskDetail
+              task={selectedTask}
+              projectPath={currentProject.path}
+              onClose={() => setSelectedTask(null)}
+            />
+            <ImportSettings
+              isOpen={showImportSettings}
+              onClose={() => setShowImportSettings(false)}
+              onConfigSaved={handleImportConfigSaved}
+            />
           </main>
         </div>
       )}
