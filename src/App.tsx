@@ -21,8 +21,8 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Check if Tauri is available on mount
-  console.log("[DEBUG] App.tsx: Tauri available?", typeof (window as any).__TAURI__ !== 'undefined');
+  // Check if Tauri is available on mount (Tauri 2 uses __TAURI_INTERNALS__)
+  console.log("[DEBUG] App.tsx: Tauri available?", typeof (window as any).__TAURI_INTERNALS__ !== 'undefined');
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -96,7 +96,7 @@ function App() {
       // Get or create project in database (safeInvoke logs all details)
       console.log("[DEBUG] App.tsx: Calling get_or_create_project");
       const project = await safeInvoke<Project>("get_or_create_project", {
-        path: projectPath,
+        projectPath: projectPath,
       });
       console.log("[DEBUG] App.tsx: Project created/loaded successfully", project);
       setCurrentProject(project);
