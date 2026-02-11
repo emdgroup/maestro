@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "./lib/tauri-mock";
+import { safeInvoke } from "./lib/tauri-safe";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { AppHeader } from "./components/AppHeader";
@@ -30,22 +30,29 @@ function App() {
   useEffect(() => {
     async function loadSettings() {
       try {
-        const loaded = await invoke<AppSettings>("get_settings");
+        console.log("[DEBUG] App.tsx: Loading initial settings");
+        const loaded = await safeInvoke<AppSettings>("get_settings");
+        console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
         setSettings(loaded);
         if (loaded.project_path) {
+          console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
           setProjectSelected(true);
           // Load the current project from database
           try {
-            const project = await invoke<Project>("get_or_create_project", {
+            console.log("[DEBUG] App.tsx: Loading project from database");
+            const project = await safeInvoke<Project>("get_or_create_project", {
               path: loaded.project_path,
             });
+            console.log("[DEBUG] App.tsx: Project loaded successfully", project);
             setCurrentProject(project);
           } catch (projectErr) {
-            console.error("Failed to load current project:", projectErr);
+            console.error("[DEBUG] App.tsx: Failed to load current project:", projectErr);
           }
+        } else {
+          console.log("[DEBUG] App.tsx: No project path in settings, showing ProjectPicker");
         }
       } catch (err) {
-        console.error("Failed to load settings:", err);
+        console.error("[DEBUG] App.tsx: Failed to load settings:", err);
         setSettings({
           project_path: null,
           recent_projects: [],
@@ -65,10 +72,14 @@ function App() {
 
   async function handleProjectSelected(projectPath: string) {
     try {
-      // Get or create project in database
-      const project = await invoke<Project>("get_or_create_project", {
+      console.log(`[DEBUG] App.tsx: handleProjectSelected starting with path: ${projectPath}`);
+
+      // Get or create project in database (safeInvoke logs all details)
+      console.log("[DEBUG] App.tsx: Calling get_or_create_project");
+      const project = await safeInvoke<Project>("get_or_create_project", {
         path: projectPath,
       });
+      console.log("[DEBUG] App.tsx: Project created/loaded successfully", project);
       setCurrentProject(project);
 
       const newSettings: AppSettings = {
@@ -87,11 +98,15 @@ function App() {
         newSettings.recent_projects = newSettings.recent_projects.slice(0, 5); // Keep last 5
       }
 
-      await invoke("save_settings", { settings: newSettings });
+      console.log("[DEBUG] App.tsx: Saving settings with new project path");
+      await safeInvoke("save_settings", { settings: newSettings });
+      console.log("[DEBUG] App.tsx: Settings saved successfully");
+
       setSettings(newSettings);
       setProjectSelected(true);
+      console.log("[DEBUG] App.tsx: Project selected state updated, main UI should now be visible");
     } catch (err) {
-      console.error("Failed to save settings:", err);
+      console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
     }
   }
 
