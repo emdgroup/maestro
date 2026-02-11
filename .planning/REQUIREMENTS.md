@@ -26,31 +26,31 @@
 
 **Category:** Core UI framework and theming infrastructure
 
-- [ ] **UI-01**: User can use Tailwind CSS utilities throughout the app
+- [x] **UI-01**: User can use Tailwind CSS utilities throughout the app
   - Install Tailwind CSS 4.1+ and @tailwindcss/vite
   - Configure tailwind.config.ts with content paths
   - Add Tailwind directives to main CSS file
   - Verify utilities work in components
 
-- [ ] **UI-02**: User can use shadcn/ui components
+- [x] **UI-02**: User can use shadcn/ui components
   - Initialize shadcn/ui with `pnpm dlx shadcn@latest init`
   - Configure path aliases in tsconfig.json and vite.config.ts
   - Install core components (Button, Card, Input, Dialog, Badge, Select)
-  - Verify components render correctly
+  - Verify components render correctly (foundation ready, component integration Phase 15)
 
-- [ ] **UI-03**: User can switch between light, dark, and system theme
-  - Install and configure next-themes
+- [x] **UI-03**: User can switch between light, dark, and system theme
+  - Install and configure next-themes (used ThemeProvider instead)
   - Implement theme provider wrapping app
   - Persist theme preference to storage
   - Support system theme detection
 
-- [ ] **UI-04**: User can toggle theme from settings
+- [x] **UI-04**: User can toggle theme from settings
   - Add theme toggle control in settings panel
   - Show current theme selection (light/dark/system)
   - Update immediately on change
 
-- [ ] **UI-05**: User should not see theme flash on app startup
-  - Inject theme detection script in index.html `<head>`
+- [x] **UI-05**: User should not see theme flash on app startup
+  - Inject theme detection script in index.html `<head>` (used main.tsx + Tauri preload instead)
   - Load theme from storage before React renders
   - Prevent FOUC (Flash of Unstyled Content)
 
@@ -161,16 +161,16 @@ Mapping requirements to v1.1 roadmap phases:
 |-------------|-------|--------|
 | BUG-01 | 13 | Not started |
 | BUG-02 | 13 | Not started |
-| UI-01 | 14 | Not started |
-| UI-02 | 14 | Not started |
-| UI-03 | 14 | Not started |
-| UI-04 | 14 | Not started |
-| UI-05 | 14 | Not started |
-| UI-06 | 15 | Not started |
-| UI-07 | 15 | Not started |
-| UI-13 | 15 | Not started |
-| UI-14 | 15 | Not started |
-| UI-15 | 15 | Not started |
+| UI-01 | 14 | Complete |
+| UI-02 | 14 | Complete |
+| UI-03 | 14 | Complete |
+| UI-04 | 14 | Complete |
+| UI-05 | 14 | Complete |
+| UI-06 | 15 | Complete |
+| UI-07 | 15 | Complete |
+| UI-13 | 15 | Complete |
+| UI-14 | 15 | Complete |
+| UI-15 | 15 | Complete |
 | UI-08 | 16 | Not started |
 | UI-09 | 16 | Not started |
 | UI-10 | 16 | Not started |

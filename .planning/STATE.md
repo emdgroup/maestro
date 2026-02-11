@@ -85,7 +85,45 @@ Phase 17 Status:
 
 ### Pending Todos
 
-None yet.
+1. **Refactor launch screen with local and remote sections** (ui)
+   - File: `.planning/todos/pending/2026-02-11-refactor-launch-screen-local-and-remote-sections.md`
+   - Created: 2026-02-11
+   - Feature: Add SSH remote project support, recent projects list, password management
+
+2. **Fix system accent color usage** (ui)
+   - File: `.planning/todos/pending/2026-02-11-fix-system-accent-color-usage.md`
+   - Created: 2026-02-11
+   - Issue: System accent color integration from Phase 17.1-03 may not be working correctly
+
+3. **Convert project settings from modal to page** (ui)
+   - File: `.planning/todos/pending/2026-02-11-convert-project-settings-from-modal-to-page.md`
+   - Created: 2026-02-11
+   - Refactor: Convert ProjectSettingsModal to full settings page with tab navigation
+
+4. **Center page tabs in header** (ui)
+   - File: `.planning/todos/pending/2026-02-11-center-page-tabs-in-header.md`
+   - Created: 2026-02-11
+   - Layout: Center navigation tabs in AppHeader for better visual balance
+
+5. **Add lucide-react icons to settings sections** (ui)
+   - File: `.planning/todos/pending/2026-02-11-add-lucide-icons-to-settings-sections.md`
+   - Created: 2026-02-11
+   - Enhancement: Add visual icons to Settings page sections for better hierarchy
+
+6. **Add page-specific action bar under header** (ui)
+   - File: `.planning/todos/pending/2026-02-11-add-page-specific-action-bar.md`
+   - Created: 2026-02-11
+   - Feature: Create contextual action bar below header with page-specific actions (Add Task, Save, Sync, etc.)
+
+7. **Improve kanban column design with pills and semantic colors** (ui)
+   - File: `.planning/todos/pending/2026-02-11-improve-kanban-column-design.md`
+   - Created: 2026-02-11
+   - Enhancement: Replace parenthetical counts with badges, add semantic color indicators to columns (research required)
+
+8. **Adjust light theme to warm gray with orange/yellow hue** (ui)
+   - File: `.planning/todos/pending/2026-02-11-adjust-light-theme-to-warm-gray.md`
+   - Created: 2026-02-11
+   - Enhancement: Change light theme from pure white to warm gray background for reduced eye strain
 
 ### Blockers/Concerns
 
@@ -134,7 +172,7 @@ Session timestamp: 2026-02-11T07:58:40Z
 
 **v1.1 MILESTONE STATUS: ALL PHASES COMPLETE ✓**
 
-All 5 phases of v1.1 UI/UX Polish milestone are complete (13 plans total). Production build validated, WCAG AA accessibility compliance achieved. Ready for milestone audit.
+All 6 phases of v1.1 UI/UX Polish milestone are complete (17 plans total: 13 original + 4 from urgent Phase 17.1 insertion). Production build validated, WCAG AA accessibility compliance achieved, Playwright visual testing established. Ready for milestone audit.
 
 *State initialized: 2026-02-09*
-*Updated: 2026-02-10 — Phase 17 complete (Polish & Testing complete, v1.1 milestone ready for audit)*
+*Updated: 2026-02-11 — Phase 17.1 complete (Critical UI Fixes complete, v1.1 milestone ready for audit)*

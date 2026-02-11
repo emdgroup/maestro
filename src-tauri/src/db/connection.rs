@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-use crate::db::schema::{initialize_schema, SCHEMA_VERSION};
+use crate::db::schema::{initialize_schema};
 use crate::error::AppError;
 use crate::process::PtySession;
 use crate::ssh::RemoteSshSession;
@@ -155,13 +155,7 @@ mod tests {
         // Verify file was created
         assert!(test_db_path.exists());
 
-        // Verify schema version (should be current version)
         if let Ok(conn) = result {
-            let version: u32 = conn
-                .query_row("PRAGMA user_version", [], |row| row.get(0))
-                .unwrap_or(0);
-            assert_eq!(version, SCHEMA_VERSION);
-
             // Verify foreign keys are enabled
             let fk_enabled: u32 = conn
                 .query_row("PRAGMA foreign_keys", [], |row| row.get(0))

@@ -132,7 +132,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
     }
   }
 
-  throw new Error('Tauri environment not available');
+  throw new Error(`Tauri environment not available. Command: ${cmd}. This likely means the app is running in a browser without the Tauri runtime.`);
 }
 
 export const tauriMock = {

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tauri::State;
 use base64::Engine;
-use tokio::io::AsyncReadExt;
 use chrono::Utc;
 
 use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection, ConnectionStatus, SshConfig};
@@ -687,7 +686,7 @@ pub async fn lease_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     task_id: i32,
-    repo_path: String,
+    _repo_path: String,
 ) -> Result<Worktree, String> {
     println!("lease_worktree(project={}, task={}) called", project_id, task_id);
 
@@ -1212,14 +1211,6 @@ fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (String, V
     ])
 }
 
-/// Determine if an error is retry-able (transient) or fatal (permanent)
-fn is_retriable_error(error_type: &str) -> bool {
-    match error_type {
-        "Timeout" | "ProcessCrash" => true,
-        _ => false,
-    }
-}
-
 /// This handler creates an execution log record, spawns the agent CLI process
 /// in a background tokio task, and returns immediately with the execution log ID.
 /// The process continues running after the IPC returns.
@@ -1415,7 +1406,7 @@ pub async fn spawn_agent_execution(
 
                     // 3. Call dispatcher which handles remote execution
                     match spawn_agent_execution_dispatcher(&git_conn, &worktree, &task, &config).await {
-                        Ok((output, Some(handle))) => {
+                        Ok((_output, Some(handle))) => {
                             // 4. Attach streaming to the remote handle
                             // Create broadcast_sender callback that forwards to execution log
                             let exec_log_id_for_streaming = exec_log_id;
@@ -1445,7 +1436,7 @@ pub async fn spawn_agent_execution(
                                 }
                             }
                         }
-                        Ok((output, None)) => {
+                        Ok((_output, None)) => {
                             eprintln!("[background] Remote execution returned no handle");
 
                             match app_state_arc.db.lock() {
@@ -1715,7 +1706,7 @@ pub async fn attach_terminal(
         let reader_task = tokio::spawn(async move {
             loop {
                 // Try to get a reader from the PTY master
-                let mut session_lock = session_reader.lock().await;
+                let session_lock = session_reader.lock().await;
                 let mut reader = match session_lock.master.lock().await.try_clone_reader() {
                     Ok(r) => r,
                     Err(_) => {
@@ -1925,7 +1916,7 @@ pub async fn get_diff_for_review(
     println!("get_diff_for_review({}) called", task_id);
 
     // 1. Query task to get project_id and task details
-    let (project_id, project, worktree_path, branch_name) = {
+    let (_project_id, project, worktree_path, branch_name) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
         let proj_id: i32 = conn
@@ -2150,7 +2141,7 @@ pub async fn approve_task_and_merge(
     println!("approve_task_and_merge({}) called", task_id);
 
     // 1. Query task details and worktree info
-    let (task_name, branch_name, worktree_path, worktree_id, project_id, repo_path) = {
+    let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
         let (t_name, w_branch, w_path, w_id, p_id): (String, String, String, i32, i32) = conn
@@ -2670,7 +2661,7 @@ pub async fn reconnect_remote_project(
     println!("reconnect_remote_project({}) called", project_id);
 
     // Get the project and SSH config (scoped to release lock before async)
-    let (is_remote, config): (bool, SshConfig) = {
+    let (_is_remote, config): (bool, SshConfig) = {
         let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
         let (is_remote, ssh_config_json): (bool, Option<String>) = conn

@@ -30,7 +30,7 @@ pub async fn spawn_agent_execution(
     config: &ExecutionConfig,
 ) -> Result<(ProcessOutput, Option<RemoteProcessHandle>), String> {
     match git_conn {
-        GitConnection::Local { path } => {
+        GitConnection::Local { path: _ } => {
             // Local execution: use existing PTY spawner
             // Note: spawn_agent_cli_pty is async, so we need to adapt it
             // For now, return a placeholder ProcessOutput

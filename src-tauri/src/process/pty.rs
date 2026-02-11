@@ -120,7 +120,7 @@ impl PtySession {
     ///
     /// Sends data to the PTY master, which is delivered to the child process stdin.
     pub async fn write_input(&self, data: &[u8]) -> Result<(), String> {
-        let mut master = self.master.lock().await;
+        let master = self.master.lock().await;
 
         // Get the writer from the master
         let mut writer = master
@@ -137,7 +137,7 @@ impl PtySession {
     ///
     /// Propagates the new terminal size to the child process via SIGWINCH.
     pub async fn resize_pty(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let mut master = self.master.lock().await;
+        let master = self.master.lock().await;
 
         master
             .resize(PtySize {

@@ -20,6 +20,9 @@ function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Check if Tauri is available on mount
+  console.log("[DEBUG] App.tsx: Tauri available?", typeof (window as any).__TAURI__ !== 'undefined');
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -126,6 +129,8 @@ function App() {
       console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
     } catch (err) {
       console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
+      // Show error to user
+      alert(`Failed to load project: ${err}\n\nCheck browser console for details.`);
     }
   }
 
@@ -137,6 +142,9 @@ function App() {
     // Settings saved, can now enable sync button
     setShowImportSettings(false);
   }
+
+  // Log current state before render
+  console.log("[DEBUG] App.tsx render: loading=", loading, "currentProject=", currentProject?.path || "null");
 
   const appContent = (
     <>

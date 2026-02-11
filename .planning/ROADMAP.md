@@ -2,7 +2,7 @@
 
 ## Overview
 
-This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then transforms the UI from functional to beautiful. We establish a modern CSS framework (Tailwind CSS 4.1 + shadcn/ui), implement a complete theming system with no flash-on-startup, migrate all components to a design system, and redesign all five major pages (Kanban, Agent Monitor, Worktree Manager, Settings, Header) matching the clean, modern mockup aesthetic with dark-first theme and system accent colors.
+This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then transforms the UI from functional to beautiful. We establish a modern CSS framework (Tailwind CSS 4.1 + shadcn/ui), implement a complete theming system with no flash-on-startup, migrate all components to a design system, and redesign all five major pages (Kanban, Agent Monitor, Worktree Manager, Settings, Header) matching the clean, modern mockup aesthetic with system-first theme and OS accent colors.
 
 ## Phases
 
@@ -11,10 +11,11 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - Continues from v1.0 which ended at Phase 12
 
 - [x] **Phase 13: Bug Fixes** - Fix mock IPC leak and Rust build warnings
-- [ ] **Phase 14: UI Foundation** - Tailwind CSS, shadcn/ui, theme system with no flash
+- [x] **Phase 14: UI Foundation** - Tailwind CSS, shadcn/ui, theme system with no flash
 - [x] **Phase 15: Component & Design System** - Migrate components, establish design tokens
 - [x] **Phase 16: Page Redesigns** - Modernize all major application pages
-- [ ] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
+- [x] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
+- [ ] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
 
 ## Phase Details
 
@@ -129,25 +130,56 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 17-01-PLAN.md — Production build validation (pnpm tauri build succeeds, CSS coverage verified, dark mode persists, responsive layout tested, Kanban regression checked)
-- [ ] 17-02-PLAN.md — Accessibility audit (WCAG AA contrast ≥4.5:1, focus rings visible, keyboard navigation, semantic HTML, motion accessibility), final QA sign-off
+- [x] 17-01-PLAN.md — Production build validation (pnpm tauri build succeeds, CSS coverage verified, dark mode persists, responsive layout tested, Kanban regression checked)
+- [x] 17-02-PLAN.md — Accessibility audit (WCAG AA contrast ≥4.5:1, focus rings visible, keyboard navigation, semantic HTML, motion accessibility), final QA sign-off
+
+---
+
+### Phase 17.1: Critical UI Fixes (INSERTED)
+
+**Goal**: Fix production mode project selection, implement slick modern UX patterns inspired by exemple/ (not pixel-perfect copy), and verify with actual screenshots using Playwright
+
+**Depends on**: Phase 17
+
+**Requirements**: None (urgent bug fixes)
+
+**Success Criteria** (what must be TRUE):
+  1. Production mode folder selection proceeds to main app (not stuck at picker)
+  2. UI has slick modern aesthetic quality (not unstyled/unpolished appearance)
+  3. UX patterns from exemple/ implemented:
+     - Project dropdown in header (not separate ProjectPicker screen)
+     - Tab navigation for "Tasks", "Agents", "Worktrees", "Settings" visible
+     - Kanban columns have clear, intuitive names
+     - Overall layout feels polished and intentional
+  4. System accent color properly integrated (not hardcoded colors)
+  5. Playwright screenshots taken showing before/after visual improvements
+  6. All issues from user screenshots fixed and visually verified
+
+**Plans**: 4 plans
+
+Plans:
+- [x] 17.1-01-PLAN.md — Production-safe IPC logging wrapper with comprehensive console debugging for folder selection flow
+- [x] 17.1-02-PLAN.md — Modern AppHeader with inline project dropdown and tab navigation (Tasks/Agents/Worktrees/Settings)
+- [x] 17.1-03-PLAN.md — System accent color integration with dynamic theme-aware injection
+- [x] 17.1-04-PLAN.md — Playwright visual regression testing with 10 test cases and 13 baseline screenshots
 
 ---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 → 14 → 15 → 16 → 17
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
 | 13 - Bug Fixes | 2 | Complete | 2026-02-09 |
-| 14 - UI Foundation | 4 | Planned | - |
+| 14 - UI Foundation | 4 | Complete | 2026-02-10 |
 | 15 - Component & Design System | 3 | Complete | 2026-02-10 |
 | 16 - Page Redesigns | 2 | Complete | 2026-02-10 |
-| 17 - Polish & Testing | 2 | Not started | - |
+| 17 - Polish & Testing | 2 | Complete | 2026-02-10 |
+| 17.1 - Critical UI Fixes (INSERTED) | 4 | Complete | 2026-02-11 |
 
-**Total v1.1 work:** 13 plans across 5 phases
+**Total v1.1 work:** 17 plans across 6 phases (13 original + 4 from urgent insertion Phase 17.1)
 
 ---
 
