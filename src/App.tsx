@@ -18,13 +18,29 @@ import "./App.css";
 function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectSelected, setProjectSelected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [activePage, setActivePage] = useState("kanban");
+  const [activePage, setActivePage] = useState<
+    "kanban" | "agents" | "worktrees" | "settings"
+  >("kanban");
   const { addTask } = useBoardStore();
+
+  // Load all projects
+  async function loadAllProjects() {
+    try {
+      console.log("[DEBUG] App.tsx: Loading all projects");
+      const allProjects = await safeInvoke<Project[]>("get_projects");
+      console.log("[DEBUG] App.tsx: Projects loaded successfully", allProjects);
+      setProjects(allProjects);
+    } catch (err) {
+      console.error("[DEBUG] App.tsx: Failed to load projects:", err);
+      setProjects([]);
+    }
+  }
 
   // Load settings on mount
   useEffect(() => {
@@ -68,6 +84,8 @@ function App() {
     }
 
     loadSettings();
+    // Load all projects for dropdown
+    loadAllProjects();
   }, []);
 
   async function handleProjectSelected(projectPath: string) {
@@ -104,6 +122,10 @@ function App() {
 
       setSettings(newSettings);
       setProjectSelected(true);
+
+      // Reload all projects to include the newly selected one
+      await loadAllProjects();
+
       console.log("[DEBUG] App.tsx: Project selected state updated, main UI should now be visible");
     } catch (err) {
       console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
@@ -135,10 +157,11 @@ function App() {
           <ToasterRoot />
           <AppHeader
             currentProject={currentProject}
-            activePage={activePage}
-            onPageChange={setActivePage}
-            agentsRunning={0}
-            worktreesCount={0}
+            activeView={activePage}
+            onViewChange={setActivePage}
+            projects={projects}
+            onProjectChange={handleProjectSelected}
+            agentCount={0}
           />
           <main className="flex-1 overflow-auto">
             {currentProject && (
