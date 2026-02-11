@@ -34,6 +34,20 @@ function applyTheme(theme: ThemeValue, systemTheme: 'light' | 'dark'): void {
   }
 }
 
+// Helper function to load and inject system accent color
+function loadSystemAccentColor(): void {
+  try {
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Light mode: darker blue for WCAG AA compliance (8.51:1)
+    // Dark mode: lighter blue for dark mode readability (5.20:1)
+    const accentColor = isDark ? '217 91% 71%' : '217 91% 35%';
+    document.documentElement.style.setProperty('--accent', accentColor);
+    console.log('[Theme] Accent color set to:', accentColor);
+  } catch (err) {
+    console.error('[Theme] Failed to set accent color:', err);
+  }
+}
+
 // ThemeProvider component
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemeValue>('system');
@@ -55,6 +69,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
         // Apply theme to DOM
         applyTheme(savedTheme, system);
+
+        // Load and inject system accent color
+        loadSystemAccentColor();
       } catch (err) {
         console.error('Failed to load theme settings, using system theme:', err);
         // Fallback to system theme
@@ -62,6 +79,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setSystemTheme(system);
         setThemeState('system');
         applyTheme('system', system);
+        // Still try to load accent color even on error
+        loadSystemAccentColor();
       } finally {
         setIsReady(true);
       }
@@ -107,6 +126,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       if (theme === 'system') {
         applyTheme('system', newSystemTheme);
       }
+
+      // Reload accent color when system theme changes
+      loadSystemAccentColor();
     };
 
     // Use addEventListener for better compatibility
