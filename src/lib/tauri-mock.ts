@@ -5,8 +5,27 @@
 
 import type { Task } from '../types/bindings';
 
-// Check if we're running in a real Tauri environment
-const isTauri = typeof (window as any).__TAURI__ !== 'undefined';
+// Helper to check if Tauri is available (checked at call time, not module load time)
+function checkTauriAvailable(): boolean {
+  return typeof (window as any).__TAURI__ !== 'undefined';
+}
+
+// Wait for Tauri to be available (gives it time to initialize)
+async function waitForTauri(timeoutMs: number = 5000): Promise<boolean> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (checkTauriAvailable()) {
+      console.log('[Tauri] Runtime detected and ready');
+      return true;
+    }
+    // Wait 50ms before checking again
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  console.error('[Tauri] Runtime not available after', timeoutMs, 'ms');
+  return false;
+}
 
 // Build-time mock exclusion: This entire block is removed from production via Vite tree-shaking.
 // Vite replaces import.meta.env.DEV with 'false' during production build, and tree-shaking
@@ -25,8 +44,19 @@ if ((import.meta as any).env.DEV) {
 // In production builds (import.meta.env.DEV = false), mock handlers are tree-shaken away
 // and only the Tauri real invoke or error path is included in the bundle.
 export async function invoke<T>(cmd: string, args?: Record<string, any>): Promise<T> {
-  if (isTauri) {
+  // Check if Tauri is available right now
+  if (checkTauriAvailable()) {
     // Use real Tauri API
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    return tauriInvoke(cmd, args);
+  }
+
+  // If not available immediately, wait for it (might still be initializing)
+  console.log('[Tauri] Runtime not immediately available, waiting...');
+  const available = await waitForTauri();
+
+  if (available) {
+    // Tauri initialized after waiting
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
     return tauriInvoke(cmd, args);
   }
@@ -137,5 +167,5 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
 
 export const tauriMock = {
   invoke,
-  isTauri,
+  checkTauriAvailable,
 };
