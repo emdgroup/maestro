@@ -68,10 +68,10 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
         const reviewResponse = await invoke<{ success: boolean; review_id: number }>(
           "save_task_review",
           {
-            task_id: taskId,
+            taskId: taskId,
             decision: "Approve",
-            general_feedback: generalFeedback || null,
-            per_file_comments:
+            generalFeedback: generalFeedback || null,
+            perFileComments:
               perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
           }
         );

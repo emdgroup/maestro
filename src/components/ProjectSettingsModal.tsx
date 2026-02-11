@@ -93,7 +93,7 @@ export function ProjectSettingsModal({
       try {
         const response = await invoke<ProjectConfigResponse>(
           "get_project_settings",
-          { project_id: projectId }
+          { projectId: projectId }
         );
 
         // Also fetch global theme preference

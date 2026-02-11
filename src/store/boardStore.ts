@@ -88,7 +88,7 @@ export const useBoardStore = create<BoardState>()(
           state.pausingTaskIds.add(taskId);
         });
 
-        await invoke<void>("pause_agent_execution", { task_id: taskId });
+        await invoke<void>("pause_agent_execution", { taskId: taskId });
 
         // Backend updates database directly. TaskCard will reload execution log.
       } catch (error) {
@@ -110,9 +110,9 @@ export const useBoardStore = create<BoardState>()(
 
         // Invoke resume_agent_execution handler (reuses same config, creates new execution log)
         const executionLogId = await invoke<number>("resume_agent_execution", {
-          task_id: taskId,
-          project_id: projectId,
-          repo_path: repoPath,
+          taskId: taskId,
+          projectId: projectId,
+          repoPath: repoPath,
         });
 
         // Update task status to InProgress
@@ -141,8 +141,9 @@ export const useBoardStore = create<BoardState>()(
         });
 
         // Call cancel_execution handler if available, otherwise just mark as Done
+        // TODO: cancel_execution expects logId, not taskId - this needs to fetch the log first
         try {
-          await invoke("cancel_execution", { task_id: taskId });
+          await invoke("cancel_execution", { logId: taskId });
         } catch (err) {
           console.warn("cancel_execution handler not available, marking task manually");
         }
@@ -176,7 +177,7 @@ export const useBoardStore = create<BoardState>()(
       const state = get();
       if (state.activeTerminalTaskId !== null) {
         try {
-          await invoke("detach_terminal", { task_id: state.activeTerminalTaskId });
+          await invoke("detach_terminal", { taskId: state.activeTerminalTaskId });
         } catch (err) {
           console.error("Error detaching terminal:", err);
         }

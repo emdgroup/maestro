@@ -80,7 +80,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isDragging = false, pr
 
     const loadExecutionLog = async () => {
       try {
-        const logs = await invoke<ExecutionLog[]>("get_execution_logs", { task_id: task.id });
+        const logs = await invoke<ExecutionLog[]>("get_execution_logs", { taskId: task.id });
         if (logs.length > 0) {
           setExecutionLog(logs[0]); // Get most recent log
         }

@@ -72,7 +72,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const detachTerminal = async () => {
     try {
-      await invoke('detach_terminal', { task_id: taskId });
+      await invoke('detach_terminal', { taskId: taskId });
       console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
     } catch (err) {
       console.error('Detach terminal error:', err);

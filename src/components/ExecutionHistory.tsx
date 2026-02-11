@@ -59,7 +59,7 @@ export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: E
         setLoading(true);
       }
       setError(null);
-      const logs = await invoke<ExecutionLog[]>('get_execution_logs', { task_id: taskId });
+      const logs = await invoke<ExecutionLog[]>('get_execution_logs', { taskId: taskId });
 
       // Check for new paused executions and show notification
       const previousLogs = previousLogsRef.current;
@@ -110,9 +110,9 @@ export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: E
     try {
       setRetrying(true);
       await invoke('retry_execution', {
-        project_id: projectId,
-        task_id: taskId,
-        repo_path: projectPath,
+        projectId: projectId,
+        taskId: taskId,
+        repoPath: projectPath,
       });
       // Reload logs to show the new execution
       await loadExecutionLogs();
@@ -125,7 +125,7 @@ export function ExecutionHistory({ taskId, projectId, projectPath, taskName }: E
 
   const handleCancel = async (logId: number) => {
     try {
-      await invoke('cancel_execution', { log_id: logId });
+      await invoke('cancel_execution', { logId: logId });
       // Reload logs to show updated status
       await loadExecutionLogs();
     } catch (err) {

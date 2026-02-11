@@ -67,7 +67,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
     const fetchTasks = async () => {
       try {
         setIsLoading(true);
-        const tasks = await invoke<Task[]>("get_tasks", { project_id: projectId });
+        const tasks = await invoke<Task[]>("get_tasks", { projectId: projectId });
         loadTasks(tasks);
         setErrorMessage(null);
 
@@ -87,7 +87,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
     // Set up periodic refresh to detect merge completion
     const interval = setInterval(async () => {
       try {
-        const tasks = await invoke<Task[]>("get_tasks", { project_id: projectId });
+        const tasks = await invoke<Task[]>("get_tasks", { projectId: projectId });
         loadTasks(tasks);
 
         // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
