@@ -85,35 +85,21 @@ Phase 17 Status:
 
 ### Pending Todos
 
-1. **Convert project settings from modal to page** (ui)
-   - File: `.planning/todos/pending/2026-02-11-convert-project-settings-from-modal-to-page.md`
-   - Created: 2026-02-11
-   - Refactor: Convert ProjectSettingsModal to full settings page with tab navigation
-
-2. **Center page tabs in header** (ui)
-   - File: `.planning/todos/pending/2026-02-11-center-page-tabs-in-header.md`
-   - Created: 2026-02-11
-   - Layout: Center navigation tabs in AppHeader for better visual balance
-
-3. **Add lucide-react icons to settings sections** (ui)
-   - File: `.planning/todos/pending/2026-02-11-add-lucide-icons-to-settings-sections.md`
-   - Created: 2026-02-11
-   - Enhancement: Add visual icons to Settings page sections for better hierarchy
-
-4. **Add page-specific action bar under header** (ui)
+1. **Add page-specific action bar under header** (ui)
    - File: `.planning/todos/pending/2026-02-11-add-page-specific-action-bar.md`
    - Created: 2026-02-11
    - Feature: Create contextual action bar below header with page-specific actions (Add Task, Save, Sync, etc.)
 
-5. **Improve kanban column design with pills and semantic colors** (ui)
+2. **Improve kanban column design with pills and semantic colors** (ui)
    - File: `.planning/todos/pending/2026-02-11-improve-kanban-column-design.md`
    - Created: 2026-02-11
    - Enhancement: Replace parenthetical counts with badges, add semantic color indicators to columns (research required)
 
-6. **Adjust light theme to warm gray with orange/yellow hue** (ui)
+3. **Adjust light theme to warm gray with orange/yellow hue** (ui)
    - File: `.planning/todos/pending/2026-02-11-adjust-light-theme-to-warm-gray.md`
    - Created: 2026-02-11
    - Enhancement: Change light theme from pure white to warm gray background for reduced eye strain
+
 
 ### Blockers/Concerns
 

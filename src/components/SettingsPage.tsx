@@ -12,6 +12,7 @@ import {
 } from "../store/configStore";
 import type { ProjectConfigResponse, ProjectConfigRequest, AppSettings } from "../types/bindings";
 import { useTheme } from "../providers/ThemeProvider";
+import { Bot, Server, Sparkles, Palette } from "lucide-react";
 
 interface SettingsPageProps {
   projectId: number;
@@ -209,7 +210,8 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
             {/* Model Defaults Section */}
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span>🤖</span> Model Defaults
+                <Bot className="w-5 h-5 text-muted-foreground" />
+                Model Defaults
               </h3>
               <div className="space-y-3">
                 <div>
@@ -238,7 +240,8 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
             {/* MCP Servers Section */}
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span>⚙️</span> MCP Servers
+                <Server className="w-5 h-5 text-muted-foreground" />
+                MCP Servers
               </h3>
               <div className="space-y-3 bg-muted/20 p-3 rounded-lg">
                 {AVAILABLE_MCP_SERVERS.map((server) => (
@@ -261,7 +264,8 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
             {/* Skills Section */}
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span>✨</span> Skills
+                <Sparkles className="w-5 h-5 text-muted-foreground" />
+                Skills
               </h3>
               <div className="space-y-3 bg-muted/20 p-3 rounded-lg">
                 {AVAILABLE_SKILLS.map((skill) => (
@@ -284,7 +288,8 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
             {/* Appearance Section */}
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span>🎨</span> Appearance
+                <Palette className="w-5 h-5 text-muted-foreground" />
+                Appearance
               </h3>
               <div className="space-y-3">
                 <div>

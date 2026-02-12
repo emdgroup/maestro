@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { SshConnection } from "../types/bindings";
-import { Folder, Server, ChevronRight, Zap } from "lucide-react";
+import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
 
 export type ConnectionType = "local" | "ssh";
 
@@ -46,7 +46,7 @@ export function ConnectionList({
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border">
-        <Server className="w-5 h-5 text-muted-foreground" />
+        <Globe className="w-5 h-5 text-muted-foreground" />
         <h2 className="text-lg font-semibold">Connections</h2>
       </div>
 
@@ -114,7 +114,7 @@ export function ConnectionList({
             className="shrink-0"
           >
             <Zap className="w-4 h-4" />
-            {loading ? "Adding..." : "Add Remote"}
+            {loading ? "Connecting..." : "Add Connection"}
           </Button>
         </div>
       </div>

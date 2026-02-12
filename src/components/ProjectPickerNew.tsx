@@ -301,7 +301,7 @@ export function ProjectPickerNew({
         <div className="max-w-3xl w-full">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-semibold mb-3">
-              Welcome to GSD Agent Orchestrator
+              Agent Orchestrator
             </h1>
             <p className="text-base text-muted-foreground">
               Select a connection to get started
