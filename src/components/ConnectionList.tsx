@@ -95,26 +95,28 @@ export function ConnectionList({
         )}
       </div>
 
-      <div className="pt-4 border-t border-border space-y-3">
-        <Input
-          type="text"
-          value={connectionString}
-          onChange={(e) => setConnectionString(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="user@host:22 or user@host"
-          className="font-mono text-sm"
-          disabled={loading}
-        />
-        <Button
-          onClick={handleConnect}
-          disabled={loading || !connectionString.trim()}
-          variant="default"
-          size="lg"
-          className="w-full"
-        >
-          <Zap className="w-4 h-4" />
-          {loading ? "Connecting..." : "Add SSH Connection"}
-        </Button>
+      <div className="pt-4 border-t border-border">
+        <div className="flex items-center gap-2">
+          <Input
+            type="text"
+            value={connectionString}
+            onChange={(e) => setConnectionString(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="user@host:22 or user@host"
+            className="font-mono text-sm h-auto"
+            disabled={loading}
+          />
+          <Button
+            onClick={handleConnect}
+            disabled={loading || !connectionString.trim()}
+            variant="default"
+            size="default"
+            className="shrink-0"
+          >
+            <Zap className="w-4 h-4" />
+            {loading ? "Adding..." : "Add Remote"}
+          </Button>
+        </div>
       </div>
     </div>
   );

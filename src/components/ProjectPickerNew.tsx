@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { SshConnection } from "../types/bindings";
 import { ConnectionList, Connection } from "./ConnectionList";
+import { LocalProjectsList } from "./LocalProjectsList";
 import { RemoteProjectsList } from "./RemoteProjectsList";
 import { PasswordModal } from "./PasswordModal";
-import { RemoteFilePicker } from "./RemoteFilePicker";
+import { FilePicker } from "./FilePicker";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useRecentProjects } from "../hooks/useRecentProjects";
 
@@ -69,8 +69,8 @@ export function ProjectPickerNew({
     }
   }
 
-  async function handleLocalProjectClick(path: string) {
-    console.log(`Opening local project: ${path}`);
+  async function handleProjectClick(path: string) {
+    console.log(`Opening project: ${path}`);
     setLoading(true);
     try {
       onProjectSelected(path);
@@ -82,31 +82,17 @@ export function ProjectPickerNew({
   }
 
   async function handleSelectNewLocal() {
-    console.log("Opening folder dialog");
-    setLoading(true);
-    try {
-      const selectedPath = await openDialog({
-        directory: true,
-        multiple: false,
-        title: "Select Project Directory",
-      });
-
-      if (selectedPath) {
-        console.log(`Dialog returned path: ${selectedPath}`);
-        onProjectSelected(selectedPath as string);
-      }
-    } catch (error) {
-      toast.error(`Failed to select folder: ${error}`);
-    } finally {
-      setLoading(false);
-    }
+    console.log("Opening local file picker");
+    // Show file picker modal for local (connection = null)
+    setShowFilePickerModal(true);
   }
 
   async function handleConnectionClick(connection: Connection) {
     if (connection.type === "local") {
-      // For local connection, show file picker directly
-      console.log("Local connection selected - opening file picker");
-      handleSelectNewLocal();
+      // For local connection, navigate to projects view
+      console.log("Local connection selected");
+      setActiveConnection(connection);
+      setCurrentView("projects");
     } else {
       // For SSH connection, navigate to projects view
       console.log(`Selected SSH connection: ${connection.displayName}`);
@@ -124,7 +110,7 @@ export function ProjectPickerNew({
     if (!activeConnection || !activeConnection.sshConnection) return;
 
     const sshConn = activeConnection.sshConnection;
-    console.log(`Opening file picker for: ${sshConn.connection_string}`);
+    console.log(`Opening remote file picker for: ${sshConn.connection_string}`);
     setLoading(true);
 
     try {
@@ -241,44 +227,57 @@ export function ProjectPickerNew({
     setActiveConnection(null);
   }
 
-  async function handleRemoteProjectSelect(remotePath: string) {
-    if (!activeConnection || !activeConnection.sshConnection) {
-      toast.error("No active SSH connection");
+  async function handleProjectSelect(selectedPath: string) {
+    if (!activeConnection) {
+      toast.error("No active connection");
       return;
     }
 
-    const sshConn = activeConnection.sshConnection;
-    console.log(`Creating remote project at: ${remotePath}`);
     setLoading(true);
 
     try {
-      // Parse auth method from string
-      const authMethod = JSON.parse(sshConn.auth_method);
+      if (activeConnection.type === "local") {
+        // For local, just open the path directly
+        console.log(`Opening local project at: ${selectedPath}`);
+        onProjectSelected(selectedPath);
+      } else {
+        // For remote, create remote project
+        if (!activeConnection.sshConnection) {
+          toast.error("No active SSH connection");
+          return;
+        }
 
-      // Create SSH config (use snake_case for Rust struct compatibility)
-      const sshConfig = {
-        host: sshConn.host,
-        port: sshConn.port,
-        username: sshConn.username,
-        auth_method: authMethod,
-        remote_path: remotePath,
-      };
+        const sshConn = activeConnection.sshConnection;
+        console.log(`Creating remote project at: ${selectedPath}`);
 
-      // Create remote project
-      const project = await safeInvoke<{ path: string }>("create_project", {
-        name: `${sshConn.host}:${remotePath}`,
-        path: remotePath,
-        isRemote: true,
-        sshConfig: sshConfig,
-      });
+        // Parse auth method from string
+        const authMethod = JSON.parse(sshConn.auth_method);
 
-      console.log(`Remote project created: ${project.path}`);
-      toast.success(`Remote project created at ${remotePath}`);
+        // Create SSH config (use snake_case for Rust struct compatibility)
+        const sshConfig = {
+          host: sshConn.host,
+          port: sshConn.port,
+          username: sshConn.username,
+          auth_method: authMethod,
+          remote_path: selectedPath,
+        };
 
-      // Open the project
-      onProjectSelected(project.path);
+        // Create remote project
+        const project = await safeInvoke<{ path: string }>("create_project", {
+          name: `${sshConn.host}:${selectedPath}`,
+          path: selectedPath,
+          isRemote: true,
+          sshConfig: sshConfig,
+        });
+
+        console.log(`Remote project created: ${project.path}`);
+        toast.success(`Remote project created at ${selectedPath}`);
+
+        // Open the project
+        onProjectSelected(project.path);
+      }
     } catch (error) {
-      toast.error(`Failed to create remote project: ${error}`);
+      toast.error(`Failed to open project: ${error}`);
       setLoading(false);
     }
   }
@@ -331,11 +330,21 @@ export function ProjectPickerNew({
                 currentView === "projects" ? "translate-x-0" : "translate-x-full"
               }`}
             >
-              {activeConnection && activeConnection.sshConnection && (
+              {activeConnection && activeConnection.type === "local" && (
+                <LocalProjectsList
+                  recentProjects={recentProjects}
+                  onProjectClick={handleProjectClick}
+                  onSelectNewClick={handleSelectNewLocal}
+                  onBack={handleBackToConnections}
+                  onRemoveProject={handleRemoveRecentProject}
+                  loading={loading}
+                />
+              )}
+              {activeConnection && activeConnection.type === "ssh" && activeConnection.sshConnection && (
                 <RemoteProjectsList
                   connection={activeConnection.sshConnection}
                   recentProjects={recentProjects}
-                  onProjectClick={handleLocalProjectClick}
+                  onProjectClick={handleProjectClick}
                   onSelectNewClick={handleRemoteSelectProject}
                   onBack={handleBackToConnections}
                   onRemoveProject={handleRemoveRecentProject}
@@ -357,16 +366,14 @@ export function ProjectPickerNew({
         loading={loading}
       />
 
-      {/* Remote File Picker Modal */}
+      {/* File Picker Modal (Local or Remote) */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
         <DialogContent className="max-w-4xl h-150 p-0 flex flex-col">
-          {activeConnection && activeConnection.sshConnection && (
-            <RemoteFilePicker
-              connection={activeConnection.sshConnection}
-              onProjectSelect={handleRemoteProjectSelect}
-              loading={loading}
-            />
-          )}
+          <FilePicker
+            connection={activeConnection?.sshConnection || null}
+            onProjectSelect={handleProjectSelect}
+            loading={loading}
+          />
         </DialogContent>
       </Dialog>
     </>

@@ -1,83 +1,31 @@
-import { useState } from "react";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { EnhancedRecentProject, SshConnection } from "../types/bindings";
-import { Folder, Server, X, Pencil, ChevronLeft} from "lucide-react";
-import { safeInvoke } from "../lib/tauri-safe";
-import { toast } from "sonner";
+import { EnhancedRecentProject } from "../types/bindings";
+import { Folder, X, ChevronLeft } from "lucide-react";
 
-interface RemoteProjectsListProps {
-  connection: SshConnection;
+interface LocalProjectsListProps {
   recentProjects: EnhancedRecentProject[];
   onProjectClick: (path: string) => void;
   onSelectNewClick: () => void;
   onBack: () => void;
   onRemoveProject?: (path: string) => void;
-  onConnectionRenamed?: () => void;
   loading?: boolean;
 }
 
-export function RemoteProjectsList({
-  connection,
+export function LocalProjectsList({
   recentProjects,
   onProjectClick,
   onSelectNewClick,
   onBack,
   onRemoveProject,
-  onConnectionRenamed,
   loading = false,
-}: RemoteProjectsListProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-
-  // Filter to only show projects for this connection
-  const connectionProjects = recentProjects.filter(
-    (p) => p.is_remote && p.host === connection.host && p.username === connection.username
-  );
+}: LocalProjectsListProps) {
+  // Filter to only show local projects
+  const localProjects = recentProjects.filter((p) => !p.is_remote);
 
   // Extract folder name from path for display
   const getFolderName = (path: string) => {
     const parts = path.split('/').filter(Boolean);
     return parts[parts.length - 1] || path;
-  };
-
-  const handleStartEdit = () => {
-    setIsEditing(true);
-    setEditName(connection.display_name || connection.connection_string);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editName.trim()) {
-      toast.error("Name cannot be empty");
-      return;
-    }
-
-    try {
-      await safeInvoke("rename_ssh_connection", {
-        connectionId: connection.id,
-        displayName: editName.trim(),
-      });
-      setIsEditing(false);
-      if (onConnectionRenamed) {
-        onConnectionRenamed();
-      }
-      toast.success("Connection renamed");
-    } catch (error) {
-      toast.error(`Failed to rename: ${error}`);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditName("");
-  };
-
-  const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSaveEdit();
-    } else if (e.key === "Escape") {
-      handleCancelEdit();
-    }
   };
 
   return (
@@ -91,42 +39,18 @@ export function RemoteProjectsList({
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        <Server className="w-5 h-5 text-muted-foreground" />
-        {isEditing ? (
-          <div className="flex-1 flex items-center gap-2">
-            <Input
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={handleEditKeyDown}
-              onBlur={handleSaveEdit}
-              className="flex-1 font-mono text-sm h-8"
-              autoFocus
-            />
-          </div>
-        ) : (
-          <>
-            <h2 className="text-lg font-semibold truncate flex-1">
-              {connection.display_name || connection.connection_string}
-            </h2>
-            <button
-              onClick={handleStartEdit}
-              className="p-1.5 rounded-md hover:bg-accent transition-colors"
-              title="Edit connection name"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
+        <Folder className="w-5 h-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Local</h2>
       </div>
 
       <div className="flex-1 overflow-auto mb-4">
-        {connectionProjects.length === 0 ? (
+        {localProjects.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            No recent projects for this connection
+            No recent local projects
           </p>
         ) : (
           <ul className="space-y-2">
-            {connectionProjects.map((project) => (
+            {localProjects.map((project) => (
               <li key={project.path} className="relative group">
                 <Button
                   onClick={() => onProjectClick(project.path)}

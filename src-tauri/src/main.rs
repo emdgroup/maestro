@@ -414,6 +414,13 @@ async fn list_remote_directories(
 }
 
 #[tauri::command]
+fn list_local_directories(
+    path: String,
+) -> Result<Vec<String>, String> {
+    gsd_demo::ipc::handlers::list_local_directories(path)
+}
+
+#[tauri::command]
 fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i64,
@@ -572,6 +579,7 @@ fn main() {
             connect_ssh_without_credentials,
             connect_ssh_with_password,
             list_remote_directories,
+            list_local_directories,
             delete_ssh_connection,
             rename_ssh_connection,
             detach_terminal,

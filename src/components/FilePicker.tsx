@@ -7,18 +7,21 @@ import { ChevronRight, Folder, Home, FolderUp } from "lucide-react";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 
-interface RemoteFilePickerProps {
-  connection: SshConnection;
+interface FilePickerProps {
+  connection?: SshConnection | null;
   onProjectSelect: (path: string) => void;
   loading?: boolean;
 }
 
-export function RemoteFilePicker({
+export function FilePicker({
   connection,
   onProjectSelect,
   loading: externalLoading = false,
-}: RemoteFilePickerProps) {
-  const [currentPath, setCurrentPath] = useState(`/home/${connection.username}`);
+}: FilePickerProps) {
+  const isLocal = !connection;
+  const defaultPath = connection ? `/home/${connection.username}` : "/home";
+
+  const [currentPath, setCurrentPath] = useState(defaultPath);
   const [directories, setDirectories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
@@ -30,11 +33,18 @@ export function RemoteFilePicker({
   async function loadDirectories(path: string) {
     setLoading(true);
     try {
-      const dirs = await safeInvoke<string[]>("list_remote_directories", {
-        connectionId: connection.id,
-        path,
-      });
-      setDirectories(dirs);
+      if (isLocal) {
+        const dirs = await safeInvoke<string[]>("list_local_directories", {
+          path,
+        });
+        setDirectories(dirs);
+      } else {
+        const dirs = await safeInvoke<string[]>("list_remote_directories", {
+          connectionId: connection!.id,
+          path,
+        });
+        setDirectories(dirs);
+      }
     } catch (error) {
       toast.error(`Failed to list directories: ${error}`);
       setDirectories([]);
@@ -88,11 +98,13 @@ export function RemoteFilePicker({
     <div className="flex flex-col h-full max-h-full overflow-hidden">
       <div className="text-center p-6 pb-4 shrink-0">
         <h2 className="text-2xl font-semibold mb-2">
-          Select Remote Project Directory
+          Select Project Directory
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Connected to {connection.connection_string}
-        </p>
+        {connection && (
+          <p className="text-sm text-muted-foreground">
+            Connected to {connection.connection_string}
+          </p>
+        )}
       </div>
 
       <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden gap-4">
@@ -105,7 +117,7 @@ export function RemoteFilePicker({
               <Home className="w-4 h-4" />
               <span>Root</span>
             </button>
-            {pathParts.map((part, index) => (
+            {pathParts.map((part: string, index: number) => (
               <div key={index} className="flex items-center gap-2">
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 <button

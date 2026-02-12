@@ -3018,3 +3018,50 @@ pub async fn resume_agent_execution(
     println!("[resume] ✓ Spawned background execution task, returning log id {}", exec_log_id);
     Ok(exec_log_id)
 }
+
+/// List subdirectories in a local filesystem path
+#[tauri::command]
+pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
+    println!("list_local_directories(path={}) called via IPC", path);
+
+    use std::fs;
+    use std::path::Path;
+
+    let dir_path = Path::new(&path);
+    
+    // Check if path exists and is a directory
+    if !dir_path.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    
+    if !dir_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path));
+    }
+
+    // Read directory entries
+    let entries = fs::read_dir(dir_path)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    // Filter for directories only
+    let mut directories: Vec<String> = Vec::new();
+    for entry in entries {
+        if let Ok(entry) = entry {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        // Skip . and .. (though these shouldn't appear from read_dir)
+                        if name != "." && name != ".." {
+                            directories.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort alphabetically
+    directories.sort();
+
+    println!("Found {} subdirectories in {}", directories.len(), path);
+    Ok(directories)
+}
