@@ -3165,9 +3165,60 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        // TODO: Implement Windows accent color detection via Windows.UI.ViewManagement
-        println!("[Accent] Windows accent color not yet implemented, using fallback");
-        Ok(vec![0, 120, 212]) // Windows default blue
+        use windows::Win32::System::Registry::{RegOpenKeyExA, RegQueryValueExA, RegCloseKey, HKEY_CURRENT_USER, KEY_READ, REG_DWORD};
+        use windows::Win32::Foundation::ERROR_SUCCESS;
+        use windows::core::PCSTR;
+        use std::ptr;
+
+        unsafe {
+            let subkey = b"Software\\Microsoft\\Windows\\DWM\0";
+            let value_name = b"AccentColor\0";
+
+            // Open registry key
+            let mut key_handle = std::mem::zeroed();
+            let result = RegOpenKeyExA(
+                HKEY_CURRENT_USER,
+                PCSTR(subkey.as_ptr()),
+                0,
+                KEY_READ,
+                &mut key_handle
+            );
+
+            if result.0 != ERROR_SUCCESS.0 {
+                println!("[Accent] Failed to open Windows registry key (error code: {}), using fallback", result.0);
+                return Ok(vec![0, 120, 212]);
+            }
+
+            // Query the accent color value
+            let mut data: u32 = 0;
+            let mut data_size: u32 = std::mem::size_of::<u32>() as u32;
+            let mut reg_type: u32 = 0;
+
+            let result = RegQueryValueExA(
+                key_handle,
+                PCSTR(value_name.as_ptr()),
+                Some(ptr::null_mut()),
+                Some(&mut reg_type),
+                Some(&mut data as *mut u32 as *mut u8),
+                Some(&mut data_size)
+            );
+
+            // Close the key
+            let _ = RegCloseKey(key_handle);
+
+            if result.0 != ERROR_SUCCESS.0 || reg_type != REG_DWORD.0 {
+                println!("[Accent] Failed to read AccentColor value (error code: {}), using fallback", result.0);
+                return Ok(vec![0, 120, 212]);
+            }
+
+            // Windows stores color as 0xAABBGGRR (ABGR format)
+            let r = (data & 0xFF) as u8;
+            let g = ((data >> 8) & 0xFF) as u8;
+            let b = ((data >> 16) & 0xFF) as u8;
+
+            println!("[Accent] Windows accent color detected: RGB({}, {}, {})", r, g, b);
+            Ok(vec![r, g, b])
+        }
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
