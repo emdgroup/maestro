@@ -280,26 +280,37 @@ export function ProjectPickerNew({
             </div>
 
             {/* Remote Section */}
-            <div className="bg-card border border-border rounded-lg p-6 min-h-[500px]">
-              {remoteView === "connections" ? (
+            <div className="bg-card border border-border rounded-lg p-6 min-h-[500px] overflow-hidden relative">
+              <div
+                className={`transition-transform duration-300 ease-in-out ${
+                  remoteView === "projects" ? "-translate-x-full" : "translate-x-0"
+                }`}
+              >
                 <RemoteSection
                   sshConnections={sshConnections}
                   onConnectionClick={handleConnectionClick}
                   onNewConnection={handleNewConnection}
                   loading={remoteLoading}
                 />
-              ) : activeConnection ? (
-                <RemoteProjectsList
-                  connection={activeConnection}
-                  recentProjects={recentProjects}
-                  onProjectClick={handleLocalProjectClick}
-                  onSelectNewClick={handleRemoteSelectProject}
-                  onBack={handleBackToConnections}
-                  onRemoveProject={handleRemoveRecentProject}
-                  onConnectionRenamed={loadSshConnections}
-                  loading={remoteLoading}
-                />
-              ) : null}
+              </div>
+              <div
+                className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out ${
+                  remoteView === "projects" ? "translate-x-0" : "translate-x-full"
+                }`}
+              >
+                {activeConnection && (
+                  <RemoteProjectsList
+                    connection={activeConnection}
+                    recentProjects={recentProjects}
+                    onProjectClick={handleLocalProjectClick}
+                    onSelectNewClick={handleRemoteSelectProject}
+                    onBack={handleBackToConnections}
+                    onRemoveProject={handleRemoveRecentProject}
+                    onConnectionRenamed={loadSshConnections}
+                    loading={remoteLoading}
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>

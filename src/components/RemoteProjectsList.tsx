@@ -35,6 +35,12 @@ export function RemoteProjectsList({
     (p) => p.is_remote && p.host === connection.host && p.username === connection.username
   );
 
+  // Extract folder name from path for display
+  const getFolderName = (path: string) => {
+    const parts = path.split('/').filter(Boolean);
+    return parts[parts.length - 1] || path;
+  };
+
   const handleStartEdit = () => {
     setIsEditing(true);
     setEditName(connection.display_name || connection.connection_string);
@@ -129,7 +135,7 @@ export function RemoteProjectsList({
                   className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12"
                 >
                   <div className="flex flex-col items-start gap-1 w-full">
-                    <span className="font-semibold">{project.name}</span>
+                    <span className="font-semibold">{getFolderName(project.path)}</span>
                     <span className="text-xs text-muted-foreground truncate w-full">
                       {project.path}
                     </span>

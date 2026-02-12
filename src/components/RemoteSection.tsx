@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { SshConnection } from "../types/bindings";
-import { Globe } from "lucide-react";
+import { Globe, Zap, Server, ChevronRight } from "lucide-react";
 
 interface RemoteSectionProps {
   sshConnections: SshConnection[];
@@ -47,28 +47,31 @@ export function RemoteSection({
         ) : (
           <ul className="space-y-2">
             {sshConnections.map((connection) => (
-              <li key={connection.id}>
+              <li key={connection.id} className="relative">
                 <Button
                   onClick={() => onConnectionClick(connection)}
                   disabled={loading}
                   variant="outline"
-                  className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
+                  className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10"
                 >
-                  <div className="flex flex-col items-start gap-1 w-full">
-                    <span className="font-semibold flex items-center gap-2">
-                      <Globe className="w-3 h-3" />
-                      {connection.display_name || connection.connection_string}
-                    </span>
-                    {connection.display_name && (
-                      <span className="text-xs text-muted-foreground">
-                        {connection.connection_string}
+                  <div className="flex items-start gap-2 w-full">
+                    <Server className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
+                      <span className="font-semibold">
+                        {connection.display_name || connection.connection_string}
                       </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      Last used: {new Date(connection.last_used_at).toLocaleDateString()}
-                    </span>
+                      {connection.display_name && (
+                        <span className="text-xs text-muted-foreground truncate w-full">
+                          {connection.connection_string}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        Last used: {new Date(connection.last_used_at).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
                 </Button>
+                <ChevronRight className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </li>
             ))}
           </ul>
@@ -92,7 +95,7 @@ export function RemoteSection({
           size="lg"
           className="w-full"
         >
-          <Globe className="w-4 h-4 mr-2" />
+          <Zap className="w-4 h-4 mr-2" />
           {loading ? "Connecting..." : "Connect"}
         </Button>
       </div>
