@@ -83,8 +83,8 @@ export function RemoteFilePicker({
     : directories.filter((dir) => !dir.startsWith("."));
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="text-center p-6 pb-4 flex-shrink-0">
+    <div className="flex flex-col h-full max-h-full overflow-hidden">
+      <div className="text-center p-6 pb-4 shrink-0">
         <h2 className="text-2xl font-semibold mb-2">
           Select Remote Project Directory
         </h2>
@@ -93,9 +93,9 @@ export function RemoteFilePicker({
         </p>
       </div>
 
-      <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden gap-4">
           {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border flex-wrap flex-shrink-0">
+          <div className="flex items-center gap-2 pb-4 border-b border-border flex-wrap shrink-0">
             <button
               onClick={() => handleBreadcrumbClick(-1)}
               className="flex items-center gap-1 text-sm hover:text-primary transition-colors"
@@ -118,7 +118,7 @@ export function RemoteFilePicker({
 
 
           {/* Directory List */}
-          <div className="flex-1 min-h-0 overflow-y-auto mb-4">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {loading ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Loading directories...
@@ -165,7 +165,7 @@ export function RemoteFilePicker({
           </div>
 
           {/* Action Bar */}
-          <div className="pt-4 border-t border-border flex items-center gap-4 shrink-0">
+          <div className="border-t border-border flex items-center gap-4 shrink-0 pt-4">
             <div className="flex items-center gap-2 shrink-0">
               <Switch
                 id="show-hidden"
@@ -180,8 +180,8 @@ export function RemoteFilePicker({
               </Label>
             </div>
 
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground font-mono truncate ml-auto">
+            <div className="ml-auto">
+              <p className="text-xs text-muted-foreground font-mono truncate">
                 {currentPath}
               </p>
             </div>

@@ -302,7 +302,7 @@ export function ProjectPickerNew({
 
       {/* Remote File Picker Modal */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
-        <DialogContent className="max-w-4xl h-[600px] p-0">
+        <DialogContent className="max-w-4xl h-[600px] p-0 flex flex-col">
           {activeConnection && (
             <RemoteFilePicker
               connection={activeConnection}
