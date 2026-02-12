@@ -227,8 +227,9 @@ pub async fn list_remote_directories(
         .await
         .ok_or("No active SSH session found. Please connect first.")?;
 
-    // Execute ls command to list directories
-    let cmd = format!("find '{}' -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort", path);
+    // Execute ls command to list only subdirectories
+    // Use ls -1F to append / to directories, then filter for those and remove the /
+    let cmd = format!("cd '{}' && ls -1F 2>/dev/null | grep '/$' | sed 's/\\/$//g' | sort", path);
     let output = session.execute_command(&cmd)
         .await
         .map_err(|e| format!("Failed to list directories: {}", e))?;
@@ -236,11 +237,11 @@ pub async fn list_remote_directories(
     // Parse output into vector of directory names
     let directories: Vec<String> = output
         .lines()
-        .filter(|line| !line.is_empty() && line != &".")
+        .filter(|line| !line.is_empty() && line != &"." && line != &"..")
         .map(|line| line.to_string())
         .collect();
 
-    println!("Found {} directories in {}", directories.len(), path);
+    println!("Found {} subdirectories in {}", directories.len(), path);
     Ok(directories)
 }
 

@@ -5,24 +5,27 @@ import { toast } from "sonner";
 import { SshConnection } from "../types/bindings";
 import { LocalSection } from "./LocalSection";
 import { RemoteSection } from "./RemoteSection";
+import { RemoteProjectsList } from "./RemoteProjectsList";
 import { PasswordModal } from "./PasswordModal";
 import { RemoteFilePicker } from "./RemoteFilePicker";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { useRecentProjects } from "../hooks/useRecentProjects";
 
 interface ProjectPickerNewProps {
   onProjectSelected: (path: string) => void;
 }
 
-type Stage = "main" | "remote-project-picker";
+type RemoteView = "connections" | "projects";
 
 export function ProjectPickerNew({
   onProjectSelected,
 }: ProjectPickerNewProps) {
-  const [stage, setStage] = useState<Stage>("main");
   const [loading, setLoading] = useState(false);
   const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [activeConnection, setActiveConnection] = useState<SshConnection | null>(null);
+  const [remoteView, setRemoteView] = useState<RemoteView>("connections");
 
   // Load enhanced recent projects with metadata
   const { recentProjects, loading: recentLoading } = useRecentProjects();
@@ -75,20 +78,32 @@ export function ProjectPickerNew({
   }
 
   async function handleConnectionClick(connection: SshConnection) {
-    console.log(`Connecting to: ${connection.connection_string}`);
-    setLoading(true);
+    console.log(`Selected connection: ${connection.connection_string}`);
     setActiveConnection(connection);
+    setRemoteView("projects");
+  }
+
+  function handleBackToConnections() {
+    setRemoteView("connections");
+    setActiveConnection(null);
+  }
+
+  async function handleRemoteSelectProject() {
+    if (!activeConnection) return;
+
+    console.log(`Opening file picker for: ${activeConnection.connection_string}`);
+    setLoading(true);
 
     try {
       // Try connecting without credentials first
       await safeInvoke("connect_ssh_without_credentials", {
-        connectionId: connection.id,
+        connectionId: activeConnection.id,
       });
 
-      toast.success(`Connected to ${connection.connection_string}`);
+      toast.success(`Connected to ${activeConnection.connection_string}`);
 
-      // Navigate to remote project picker
-      setStage("remote-project-picker");
+      // Show file picker modal
+      setShowFilePickerModal(true);
     } catch (error) {
       console.log("Credential-less connection failed, showing password modal");
       // Show password modal on auth failure
@@ -169,8 +184,8 @@ export function ProjectPickerNew({
       toast.success(`Connected to ${activeConnection.connection_string}`);
       setShowPasswordModal(false);
 
-      // Navigate to remote project picker
-      setStage("remote-project-picker");
+      // Show file picker modal
+      setShowFilePickerModal(true);
     } catch (error) {
       toast.error(`Authentication failed: ${error}`);
     } finally {
@@ -224,20 +239,8 @@ export function ProjectPickerNew({
     }
   }
 
-  function handleBackToMain() {
-    setStage("main");
-    setActiveConnection(null);
-  }
-
-  // Show remote project picker if SSH connection is established
-  if (stage === "remote-project-picker" && activeConnection) {
-    return (
-      <RemoteFilePicker
-        connection={activeConnection}
-        onProjectSelect={handleRemoteProjectSelect}
-        onBack={handleBackToMain}
-      />
-    );
+  function handleCloseFilePicker() {
+    setShowFilePickerModal(false);
   }
 
   // Main screen with local and remote sections
@@ -267,12 +270,23 @@ export function ProjectPickerNew({
 
             {/* Remote Section */}
             <div className="bg-card border border-border rounded-lg p-6 min-h-[500px]">
-              <RemoteSection
-                sshConnections={sshConnections}
-                onConnectionClick={handleConnectionClick}
-                onNewConnection={handleNewConnection}
-                loading={loading}
-              />
+              {remoteView === "connections" ? (
+                <RemoteSection
+                  sshConnections={sshConnections}
+                  onConnectionClick={handleConnectionClick}
+                  onNewConnection={handleNewConnection}
+                  loading={loading}
+                />
+              ) : activeConnection ? (
+                <RemoteProjectsList
+                  connection={activeConnection}
+                  recentProjects={recentProjects}
+                  onProjectClick={handleLocalProjectClick}
+                  onSelectNewClick={handleRemoteSelectProject}
+                  onBack={handleBackToConnections}
+                  loading={loading}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -286,6 +300,19 @@ export function ProjectPickerNew({
         onCancel={handlePasswordCancel}
         loading={loading}
       />
+
+      {/* Remote File Picker Modal */}
+      <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          {activeConnection && (
+            <RemoteFilePicker
+              connection={activeConnection}
+              onProjectSelect={handleRemoteProjectSelect}
+              onBack={handleCloseFilePicker}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
