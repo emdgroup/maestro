@@ -84,7 +84,7 @@ export function RemoteFilePicker({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="text-center p-6 pb-4">
+      <div className="text-center p-6 pb-4 flex-shrink-0">
         <h2 className="text-2xl font-semibold mb-2">
           Select Remote Project Directory
         </h2>
@@ -93,9 +93,9 @@ export function RemoteFilePicker({
         </p>
       </div>
 
-      <div className="flex-1 flex flex-col p-6 pt-0 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden">
           {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border flex-wrap">
+          <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border flex-wrap flex-shrink-0">
             <button
               onClick={() => handleBreadcrumbClick(-1)}
               className="flex items-center gap-1 text-sm hover:text-primary transition-colors"
@@ -118,7 +118,7 @@ export function RemoteFilePicker({
 
 
           {/* Directory List */}
-          <div className="flex-1 overflow-y-auto mb-4 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto mb-4">
             {loading ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Loading directories...
@@ -134,7 +134,7 @@ export function RemoteFilePicker({
                       variant="outline"
                       className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
                     >
-                      <FolderUp className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <FolderUp className="w-4 h-4 mr-2 shrink-0" />
                       <span className="truncate">..</span>
                     </Button>
                   </li>
@@ -154,7 +154,7 @@ export function RemoteFilePicker({
                         variant="outline"
                         className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
                       >
-                        <Folder className="w-4 h-4 mr-2 flex-shrink-0" />
+                        <Folder className="w-4 h-4 mr-2 shrink-0" />
                         <span className="truncate">{dir}</span>
                       </Button>
                     </li>
@@ -165,8 +165,8 @@ export function RemoteFilePicker({
           </div>
 
           {/* Action Bar */}
-          <div className="pt-4 border-t border-border flex items-center gap-4 flex-shrink-0">
-            <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="pt-4 border-t border-border flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <Switch
                 id="show-hidden"
                 checked={showHidden}
@@ -181,7 +181,7 @@ export function RemoteFilePicker({
             </div>
 
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground font-mono truncate">
+              <p className="text-xs text-muted-foreground font-mono truncate ml-auto">
                 {currentPath}
               </p>
             </div>
@@ -191,10 +191,10 @@ export function RemoteFilePicker({
               disabled={loading}
               variant="default"
               size="default"
-              className="flex-shrink-0"
+              className="shrink-0"
             >
               <Folder className="w-4 h-4 mr-2" />
-              Open project
+              Open Project
             </Button>
           </div>
         </div>
