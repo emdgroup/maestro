@@ -6,6 +6,7 @@ import { RemoteConnectionForm } from "./RemoteConnectionForm";
 import { SshConfig } from "../types/bindings";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { useRecentProjects } from "../hooks/useRecentProjects";
 
 interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
@@ -16,12 +17,14 @@ type Stage = "select" | "local" | "remote";
 
 export function ProjectPicker({
   onProjectSelected,
-  recentProjects = [],
 }: ProjectPickerProps) {
   const [stage, setStage] = useState<Stage>("select");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualPath, setManualPath] = useState("");
+
+  // Load enhanced recent projects with metadata
+  const { recentProjects: enhancedRecentProjects, loading: recentLoading } = useRecentProjects();
 
   async function handleSelectLocal() {
     setStage("local");
@@ -155,19 +158,29 @@ export function ProjectPicker({
             </Button>
           </div>
 
-          {recentProjects.length > 0 && (
+          {!recentLoading && enhancedRecentProjects.length > 0 && (
             <div className="mt-10 text-left">
               <h2 className="text-xs uppercase text-muted-foreground mb-4 tracking-wide">Recent Projects</h2>
               <ul className="list-none p-0">
-                {recentProjects.map((project) => (
-                  <li key={project} className="mb-2">
+                {enhancedRecentProjects.map((project) => (
+                  <li key={project.path} className="mb-2">
                     <Button
-                      onClick={() => handleRecentProject(project)}
+                      onClick={() => handleRecentProject(project.path)}
                       disabled={loading}
                       variant="outline"
                       className="w-full text-left justify-start font-mono text-sm"
                     >
-                      {project}
+                      <span className="mr-2">
+                        {project.is_remote ? '🌐' : '📁'}
+                      </span>
+                      <div className="flex flex-col items-start">
+                        <span className="font-semibold">{project.name}</span>
+                        {project.is_remote && project.host && (
+                          <span className="text-xs text-muted-foreground">
+                            {project.username}@{project.host}
+                          </span>
+                        )}
+                      </div>
                     </Button>
                   </li>
                 ))}

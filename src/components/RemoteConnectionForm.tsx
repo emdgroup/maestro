@@ -28,6 +28,10 @@ export function RemoteConnectionForm({
     msg: string;
   } | null>(null);
 
+  // Password auth state
+  const [password, setPassword] = useState("");
+  const [savePassword, setSavePassword] = useState(false);
+
   const handleTestConnection = async () => {
     setTesting(true);
     try {
@@ -56,16 +60,41 @@ export function RemoteConnectionForm({
       return;
     }
 
+    // Save password if password auth is used and savePassword is checked
+    const isPasswordMethod =
+      typeof config.auth_method === "object" &&
+      config.auth_method !== null &&
+      "Password" in config.auth_method;
+
+    if (isPasswordMethod && savePassword && password) {
+      try {
+        await invoke("save_ssh_password", {
+          host: config.host,
+          username: config.username,
+          password: password,
+        });
+        toast.success("Password saved securely");
+      } catch (error) {
+        console.error("Failed to save password:", error);
+        toast.error("Failed to save password");
+      }
+    }
+
     await onSubmit(config);
   };
 
-  const updateAuthMethod = (method: "Agent" | "KeyFile") => {
+  const updateAuthMethod = (method: "Agent" | "KeyFile" | "Password") => {
     if (method === "Agent") {
       setConfig({ ...config, auth_method: "Agent" });
-    } else {
+    } else if (method === "KeyFile") {
       setConfig({
         ...config,
         auth_method: { KeyFile: { path: "$HOME/.ssh/id_rsa" } },
+      });
+    } else {
+      setConfig({
+        ...config,
+        auth_method: { Password: { save_password: false } },
       });
     }
   };
@@ -81,6 +110,8 @@ export function RemoteConnectionForm({
 
   const isKeyFileMethod =
     typeof config.auth_method === "object" && config.auth_method !== null && "KeyFile" in config.auth_method;
+  const isPasswordMethod =
+    typeof config.auth_method === "object" && config.auth_method !== null && "Password" in config.auth_method;
   const keyFilePath = isKeyFileMethod
     ? (config.auth_method as { KeyFile: { path: string } }).KeyFile.path
     : "";
@@ -164,6 +195,17 @@ export function RemoteConnectionForm({
               />
               Private Key File
             </label>
+            <label className="radio-label">
+              <input
+                type="radio"
+                name="auth_method"
+                value="Password"
+                checked={isPasswordMethod}
+                onChange={() => updateAuthMethod("Password")}
+                disabled={loading || testing}
+              />
+              Password
+            </label>
           </div>
 
           {isKeyFileMethod && (
@@ -177,6 +219,29 @@ export function RemoteConnectionForm({
                 onChange={(e) => updateKeyFilePath(e.target.value)}
                 disabled={loading || testing}
               />
+            </div>
+          )}
+
+          {isPasswordMethod && (
+            <div className="form-group password-auth">
+              <label htmlFor="password">Password:</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading || testing}
+                placeholder="SSH password"
+              />
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={savePassword}
+                  onChange={(e) => setSavePassword(e.target.checked)}
+                  disabled={loading || testing}
+                />
+                Save password securely (OS keyring)
+              </label>
             </div>
           )}
         </fieldset>

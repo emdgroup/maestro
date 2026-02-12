@@ -6,9 +6,8 @@
 import type { Task } from '../types/bindings';
 
 // Helper to check if Tauri is available (checked at call time, not module load time)
-// Tauri 2 uses __TAURI_INTERNALS__ instead of __TAURI__
 function checkTauriAvailable(): boolean {
-  return typeof (window as any).__TAURI_INTERNALS__ !== 'undefined';
+  return typeof (window as any).__TAURI__ !== 'undefined';
 }
 
 // Wait for Tauri to be available (gives it time to initialize)

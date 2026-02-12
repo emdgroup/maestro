@@ -5,6 +5,7 @@ export type ProjectStatus = "Active" | "Archived";
 
 export type SshAuthMethod =
   | { KeyFile: { path: string } }
+  | { Password: { save_password: boolean } }
   | "Agent";
 
 export type SshConfig = {
@@ -133,4 +134,24 @@ export type SyncResult = {
   imported_count: number;
   updated_count: number;
   error_message?: string;
+};
+
+export type EnhancedRecentProject = {
+  path: string;
+  name: string;
+  is_remote: boolean;
+  host: string | null;
+  username: string | null;
+  last_opened: string;
+};
+
+export type SshConnection = {
+  id: number;
+  connection_string: string;
+  username: string;
+  host: string;
+  port: number;
+  auth_method: string;
+  last_used_at: string;
+  created_at: string;
 };

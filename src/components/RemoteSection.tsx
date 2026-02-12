@@ -1,0 +1,96 @@
+import { useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { SshConnection } from "../types/bindings";
+import { Globe } from "lucide-react";
+
+interface RemoteSectionProps {
+  sshConnections: SshConnection[];
+  onConnectionClick: (connection: SshConnection) => void;
+  onNewConnection: (connectionString: string) => void;
+  loading?: boolean;
+}
+
+export function RemoteSection({
+  sshConnections,
+  onConnectionClick,
+  onNewConnection,
+  loading = false,
+}: RemoteSectionProps) {
+  const [connectionString, setConnectionString] = useState("");
+
+  const handleConnect = () => {
+    if (connectionString.trim()) {
+      onNewConnection(connectionString.trim());
+      setConnectionString("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && connectionString.trim()) {
+      handleConnect();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border">
+        <Globe className="w-5 h-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Remote Projects</h2>
+      </div>
+
+      <div className="flex-1 overflow-auto mb-4">
+        {sshConnections.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No saved SSH connections
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {sshConnections.map((connection) => (
+              <li key={connection.id}>
+                <Button
+                  onClick={() => onConnectionClick(connection)}
+                  disabled={loading}
+                  variant="outline"
+                  className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
+                >
+                  <div className="flex flex-col items-start gap-1 w-full">
+                    <span className="font-semibold flex items-center gap-2">
+                      <Globe className="w-3 h-3" />
+                      {connection.connection_string}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Last used: {new Date(connection.last_used_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="pt-4 border-t border-border space-y-3">
+        <Input
+          type="text"
+          value={connectionString}
+          onChange={(e) => setConnectionString(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="user@host:22 or user@host"
+          className="font-mono text-sm"
+          disabled={loading}
+        />
+        <Button
+          onClick={handleConnect}
+          disabled={loading || !connectionString.trim()}
+          variant="default"
+          size="lg"
+          className="w-full"
+        >
+          <Globe className="w-4 h-4 mr-2" />
+          {loading ? "Connecting..." : "Connect"}
+        </Button>
+      </div>
+    </div>
+  );
+}

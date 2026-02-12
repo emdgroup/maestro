@@ -12,6 +12,9 @@ pub enum SshAuthMethod {
     /// Authenticate using SSH agent
     #[serde(rename = "Agent")]
     Agent,
+    /// Authenticate using password
+    #[serde(rename = "Password")]
+    Password { save_password: bool },
 }
 
 /// SSH configuration for remote projects
@@ -60,4 +63,30 @@ impl Project {
 pub enum ProjectStatus {
     Active,
     Archived,
+}
+
+/// Recent project with display metadata
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EnhancedRecentProject {
+    pub path: String,
+    pub name: String,
+    pub is_remote: bool,
+    pub host: Option<String>,
+    pub username: Option<String>,
+    pub last_opened: String,  // ISO 8601
+}
+
+/// Saved SSH connection for quick reconnection
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SshConnection {
+    pub id: i32,
+    pub connection_string: String,  // e.g., "user@host:22"
+    pub username: String,
+    pub host: String,
+    pub port: u16,
+    pub auth_method: String,  // Serialized SshAuthMethod
+    pub last_used_at: String,  // ISO 8601
+    pub created_at: String,    // ISO 8601
 }

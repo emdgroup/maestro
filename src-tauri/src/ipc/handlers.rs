@@ -2700,6 +2700,155 @@ pub async fn reconnect_remote_project(
     Ok(())
 }
 
+/// Save SSH password to OS keyring
+#[tauri::command]
+pub fn save_ssh_password(
+    host: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    println!("save_ssh_password({}, {}) called via IPC", host, username);
+
+    // Validate inputs
+    if host.is_empty() || username.is_empty() || password.is_empty() {
+        return Err("Invalid credentials".to_string());
+    }
+
+    // Store in OS keyring
+    use crate::ssh::PasswordManager;
+    PasswordManager::store_password(&host, &username, password)?;
+
+    println!("✓ Password saved securely for {}@{}", username, host);
+    Ok(())
+}
+
+/// Delete SSH password from OS keyring
+#[tauri::command]
+pub fn delete_ssh_password(
+    host: String,
+    username: String,
+) -> Result<(), String> {
+    println!("delete_ssh_password({}, {}) called via IPC", host, username);
+
+    use crate::ssh::PasswordManager;
+    PasswordManager::delete_password(&host, &username)?;
+
+    println!("✓ Password deleted for {}@{}", username, host);
+    Ok(())
+}
+
+/// Get recent projects with metadata for rich display
+#[tauri::command]
+pub fn get_recent_projects_enhanced(
+    app_state: State<Arc<AppState>>
+) -> Result<Vec<crate::models::EnhancedRecentProject>, String> {
+    println!("get_recent_projects_enhanced() called via IPC");
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Get recent_projects from settings
+    let settings = crate::db::settings::load_settings(&conn)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    let mut enhanced = Vec::new();
+
+    for path in settings.recent_projects {
+        // Query projects table for full info
+        let project: Result<Project, _> = conn.query_row(
+            "SELECT id, name, path, created_at, is_remote, ssh_config FROM projects WHERE path = ?",
+            [&path],
+            |row| {
+                let ssh_config_json: Option<String> = row.get(5)?;
+                let ssh_config = ssh_config_json
+                    .and_then(|json| serde_json::from_str(&json).ok());
+
+                Ok(Project {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    path: row.get(2)?,
+                    created_at: row.get(3)?,
+                    is_remote: row.get(4)?,
+                    ssh_config,
+                })
+            },
+        );
+
+        if let Ok(project) = project {
+            let (host, username) = if let Some(config) = &project.ssh_config {
+                (Some(config.host.clone()), Some(config.username.clone()))
+            } else {
+                (None, None)
+            };
+
+            enhanced.push(crate::models::EnhancedRecentProject {
+                path: project.path,
+                name: project.name,
+                is_remote: project.is_remote,
+                host,
+                username,
+                last_opened: project.created_at,  // Use created_at as proxy
+            });
+        }
+    }
+
+    Ok(enhanced)
+}
+
+/// Validate and clean up recent projects list
+#[tauri::command]
+pub fn validate_recent_projects(
+    app_state: State<Arc<AppState>>
+) -> Result<Vec<String>, String> {
+    println!("validate_recent_projects() called via IPC");
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Get current recent_projects
+    let settings = crate::db::settings::load_settings(&conn)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    // Filter to only projects that exist in database
+    let mut valid_projects = Vec::new();
+    for path in settings.recent_projects {
+        let exists: bool = conn.query_row(
+            "SELECT 1 FROM projects WHERE path = ?",
+            [&path],
+            |_| Ok(true),
+        ).unwrap_or(false);
+
+        if exists {
+            valid_projects.push(path);
+        }
+    }
+
+    Ok(valid_projects)
+}
+
+/// Remove project from recent list
+#[tauri::command]
+pub fn remove_recent_project(
+    app_state: State<Arc<AppState>>,
+    path: String,
+) -> Result<(), String> {
+    println!("remove_recent_project({}) called via IPC", path);
+
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Get current settings
+    let mut settings = crate::db::settings::load_settings(&conn)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    // Remove path from recent_projects
+    settings.recent_projects.retain(|p| p != &path);
+
+    // Save updated settings
+    crate::db::settings::save_settings(&mut conn, &settings)
+        .map_err(|e| format!("Failed to save settings: {}", e))?;
+
+    println!("✓ Removed {} from recent projects", path);
+    Ok(())
+}
+
 /// Pause a running agent execution by sending SIGSTOP to the process
 #[tauri::command]
 pub async fn pause_agent_execution(

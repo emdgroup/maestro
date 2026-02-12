@@ -28,6 +28,8 @@ tokio = { version = "1", features = ["full"] }
 base64 = "0.22"
 portable-pty = "0.8"
 ssh2 = "0.9"
+keyring = "2.0"
+zeroize = "1.6"
 
 [package.metadata.ts-rs]
 export_dir = "../src/types"

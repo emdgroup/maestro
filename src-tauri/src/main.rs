@@ -350,6 +350,99 @@ async fn reconnect_remote_project(
     gsd_demo::ipc::handlers::reconnect_remote_project(project_id, app_state).await
 }
 
+#[tauri::command]
+fn save_ssh_password(
+    host: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::save_ssh_password(host, username, password)
+}
+
+#[tauri::command]
+fn delete_ssh_password(
+    host: String,
+    username: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::delete_ssh_password(host, username)
+}
+
+#[tauri::command]
+fn get_ssh_connections(
+    app_state: State<Arc<AppState>>,
+) -> Result<Vec<gsd_demo::models::SshConnection>, String> {
+    gsd_demo::ipc::ssh_handlers::get_ssh_connections(app_state)
+}
+
+#[tauri::command]
+fn save_ssh_connection(
+    app_state: State<Arc<AppState>>,
+    connection_string: String,
+    username: String,
+    host: String,
+    port: u16,
+    auth_method: String,
+) -> Result<i64, String> {
+    gsd_demo::ipc::ssh_handlers::save_ssh_connection(app_state, connection_string, username, host, port, auth_method)
+}
+
+#[tauri::command]
+async fn connect_ssh_without_credentials(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i64,
+) -> Result<i64, String> {
+    gsd_demo::ipc::ssh_handlers::connect_ssh_without_credentials(app_state, connection_id).await
+}
+
+#[tauri::command]
+async fn connect_ssh_with_password(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i64,
+    password: String,
+    save_password: bool,
+) -> Result<i64, String> {
+    gsd_demo::ipc::ssh_handlers::connect_ssh_with_password(app_state, connection_id, password, save_password).await
+}
+
+#[tauri::command]
+async fn list_remote_directories(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i64,
+    path: String,
+) -> Result<Vec<String>, String> {
+    gsd_demo::ipc::ssh_handlers::list_remote_directories(app_state, connection_id, path).await
+}
+
+#[tauri::command]
+fn delete_ssh_connection(
+    app_state: State<Arc<AppState>>,
+    connection_id: i64,
+) -> Result<(), String> {
+    gsd_demo::ipc::ssh_handlers::delete_ssh_connection(app_state, connection_id)
+}
+
+#[tauri::command]
+fn get_recent_projects_enhanced(
+    app_state: State<Arc<AppState>>
+) -> Result<Vec<gsd_demo::models::EnhancedRecentProject>, String> {
+    gsd_demo::ipc::handlers::get_recent_projects_enhanced(app_state)
+}
+
+#[tauri::command]
+fn validate_recent_projects(
+    app_state: State<Arc<AppState>>
+) -> Result<Vec<String>, String> {
+    gsd_demo::ipc::handlers::validate_recent_projects(app_state)
+}
+
+#[tauri::command]
+fn remove_recent_project(
+    app_state: State<Arc<AppState>>,
+    path: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::handlers::remove_recent_project(app_state, path)
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
@@ -460,6 +553,17 @@ fn main() {
             test_remote_connection,
             get_remote_connection_status,
             reconnect_remote_project,
+            save_ssh_password,
+            delete_ssh_password,
+            get_recent_projects_enhanced,
+            validate_recent_projects,
+            remove_recent_project,
+            get_ssh_connections,
+            save_ssh_connection,
+            connect_ssh_without_credentials,
+            connect_ssh_with_password,
+            list_remote_directories,
+            delete_ssh_connection,
             detach_terminal,
             pause_agent_execution,
             resume_agent_execution

@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::models::SshConfig;
 use crate::ssh::error::SshError;
+use crate::ssh::PasswordManager;
 
 /// SSH connection state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +108,21 @@ impl RemoteSshSession {
                 session.userauth_agent(username).map_err(|e| {
                     SshError::AuthenticationError(format!("SSH agent authentication failed: {}", e))
                 })?;
+            }
+            crate::models::SshAuthMethod::Password { save_password: _ } => {
+                // Retrieve password from OS keyring
+                let password = PasswordManager::get_password(host, username).map_err(|e| {
+                    SshError::AuthenticationError(format!("Failed to retrieve password: {}", e))
+                })?;
+
+                session
+                    .userauth_password(username, &password)
+                    .map_err(|e| {
+                        SshError::AuthenticationError(format!(
+                            "Password authentication failed: {}",
+                            e
+                        ))
+                    })?;
             }
         }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { safeInvoke } from "./lib/tauri-safe";
-import { ProjectPicker } from "./components/ProjectPicker";
+import { ProjectPickerNew } from "./components/ProjectPickerNew";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { AppHeader } from "./components/AppHeader";
 import { AgentMonitor } from "./components/AgentMonitor";
@@ -21,8 +21,8 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Check if Tauri is available on mount (Tauri 2 uses __TAURI_INTERNALS__)
-  console.log("[DEBUG] App.tsx: Tauri available?", typeof (window as any).__TAURI_INTERNALS__ !== 'undefined');
+  // Check if Tauri is available on mount (Tauri 2 uses __TAURI__)
+  console.log("[DEBUG] App.tsx: Tauri available?", typeof (window as any).__TAURI__ !== 'undefined');
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -51,6 +51,18 @@ function App() {
         console.log("[DEBUG] App.tsx: Loading initial settings");
         const loaded = await safeInvoke<AppSettings>("get_settings");
         console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
+
+        // Validate and clean up recent projects
+        console.log("[DEBUG] App.tsx: Validating recent projects");
+        const validPaths = await safeInvoke<string[]>("validate_recent_projects");
+
+        // Update settings with cleaned list if different
+        if (JSON.stringify(validPaths) !== JSON.stringify(loaded.recent_projects)) {
+          console.log("[DEBUG] App.tsx: Updating recent projects with validated list");
+          loaded.recent_projects = validPaths;
+          await safeInvoke("save_settings", { settings: loaded });
+        }
+
         setSettings(loaded);
         if (loaded.project_path) {
           console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
@@ -153,9 +165,8 @@ function App() {
           <p>Loading...</p>
         </div>
       ) : !currentProject ? (
-        <ProjectPicker
+        <ProjectPickerNew
           onProjectSelected={handleProjectSelected}
-          recentProjects={settings?.recent_projects}
         />
       ) : (
         <div className="app flex flex-col h-screen bg-background">
