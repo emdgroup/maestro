@@ -1,11 +1,12 @@
 import { Button } from "./ui/button";
 import { EnhancedRecentProject } from "../types/bindings";
-import { Folder } from "lucide-react";
+import { Folder, X } from "lucide-react";
 
 interface LocalSectionProps {
   recentProjects: EnhancedRecentProject[];
   onProjectClick: (path: string) => void;
   onSelectNewClick: () => void;
+  onRemoveProject?: (path: string) => void;
   loading?: boolean;
 }
 
@@ -13,6 +14,7 @@ export function LocalSection({
   recentProjects,
   onProjectClick,
   onSelectNewClick,
+  onRemoveProject,
   loading = false,
 }: LocalSectionProps) {
   // Filter to only show local projects
@@ -33,12 +35,12 @@ export function LocalSection({
         ) : (
           <ul className="space-y-2">
             {localProjects.map((project) => (
-              <li key={project.path}>
+              <li key={project.path} className="relative group">
                 <Button
                   onClick={() => onProjectClick(project.path)}
                   disabled={loading}
                   variant="outline"
-                  className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
+                  className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12"
                 >
                   <div className="flex flex-col items-start gap-1 w-full">
                     <span className="font-semibold">{project.name}</span>
@@ -47,6 +49,18 @@ export function LocalSection({
                     </span>
                   </div>
                 </Button>
+                {onRemoveProject && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveProject(project.path);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove from recent projects"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

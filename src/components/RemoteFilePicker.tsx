@@ -10,11 +10,13 @@ import { Label } from "./ui/label";
 interface RemoteFilePickerProps {
   connection: SshConnection;
   onProjectSelect: (path: string) => void;
+  loading?: boolean;
 }
 
 export function RemoteFilePicker({
   connection,
   onProjectSelect,
+  loading: externalLoading = false,
 }: RemoteFilePickerProps) {
   const [currentPath, setCurrentPath] = useState(`/home/${connection.username}`);
   const [directories, setDirectories] = useState<string[]>([]);
@@ -183,13 +185,13 @@ export function RemoteFilePicker({
 
             <Button
               onClick={handleSelectCurrentDirectory}
-              disabled={loading}
+              disabled={loading || externalLoading}
               variant="default"
               size="default"
               className="shrink-0"
             >
               <Folder className="w-4 h-4" />
-              Open Project
+              {externalLoading ? "Opening..." : "Open Project"}
             </Button>
           </div>
         </div>

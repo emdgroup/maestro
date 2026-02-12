@@ -20,7 +20,8 @@ type RemoteView = "connections" | "projects";
 export function ProjectPickerNew({
   onProjectSelected,
 }: ProjectPickerNewProps) {
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
@@ -46,19 +47,19 @@ export function ProjectPickerNew({
 
   async function handleLocalProjectClick(path: string) {
     console.log(`Opening local project: ${path}`);
-    setLoading(true);
+    setLocalLoading(true);
     try {
       onProjectSelected(path);
     } catch (error) {
       toast.error(`Failed to open project: ${error}`);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   }
 
   async function handleSelectNewLocal() {
     console.log("Opening folder dialog");
-    setLoading(true);
+    setLocalLoading(true);
     try {
       const selectedPath = await openDialog({
         directory: true,
@@ -73,7 +74,7 @@ export function ProjectPickerNew({
     } catch (error) {
       toast.error(`Failed to select folder: ${error}`);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   }
 
@@ -92,7 +93,7 @@ export function ProjectPickerNew({
     if (!activeConnection) return;
 
     console.log(`Opening file picker for: ${activeConnection.connection_string}`);
-    setLoading(true);
+    setRemoteLoading(true);
 
     try {
       // Try connecting without credentials first
@@ -109,7 +110,7 @@ export function ProjectPickerNew({
       // Show password modal on auth failure
       setShowPasswordModal(true);
     } finally {
-      setLoading(false);
+      setRemoteLoading(false);
     }
   }
 
@@ -135,7 +136,7 @@ export function ProjectPickerNew({
       return;
     }
 
-    setLoading(true);
+    setRemoteLoading(true);
 
     try {
       // Save connection to database
@@ -167,14 +168,14 @@ export function ProjectPickerNew({
       await handleConnectionClick(newConnection);
     } catch (error) {
       toast.error(`Failed to save connection: ${error}`);
-      setLoading(false);
+      setRemoteLoading(false);
     }
   }
 
   async function handlePasswordSubmit(password: string, savePassword: boolean) {
     if (!activeConnection) return;
 
-    setLoading(true);
+    setRemoteLoading(true);
     try {
       await safeInvoke("connect_ssh_with_password", {
         connectionId: activeConnection.id,
@@ -190,7 +191,7 @@ export function ProjectPickerNew({
     } catch (error) {
       toast.error(`Authentication failed: ${error}`);
     } finally {
-      setLoading(false);
+      setRemoteLoading(false);
     }
   }
 
@@ -206,7 +207,7 @@ export function ProjectPickerNew({
     }
 
     console.log(`Creating remote project at: ${remotePath}`);
-    setLoading(true);
+    setRemoteLoading(true);
 
     try {
       // Parse auth method from string
@@ -236,7 +237,18 @@ export function ProjectPickerNew({
       onProjectSelected(project.path);
     } catch (error) {
       toast.error(`Failed to create remote project: ${error}`);
-      setLoading(false);
+      setRemoteLoading(false);
+    }
+  }
+
+  async function handleRemoveRecentProject(path: string) {
+    try {
+      await safeInvoke("remove_recent_project", { path });
+      toast.success("Project removed from recent list");
+      // Trigger a refresh by updating the key or reloading
+      window.location.reload();
+    } catch (error) {
+      toast.error(`Failed to remove project: ${error}`);
     }
   }
 
@@ -262,7 +274,8 @@ export function ProjectPickerNew({
                 recentProjects={recentProjects}
                 onProjectClick={handleLocalProjectClick}
                 onSelectNewClick={handleSelectNewLocal}
-                loading={loading || recentLoading}
+                onRemoveProject={handleRemoveRecentProject}
+                loading={localLoading || recentLoading}
               />
             </div>
 
@@ -273,8 +286,7 @@ export function ProjectPickerNew({
                   sshConnections={sshConnections}
                   onConnectionClick={handleConnectionClick}
                   onNewConnection={handleNewConnection}
-                  onConnectionRenamed={loadSshConnections}
-                  loading={loading}
+                  loading={remoteLoading}
                 />
               ) : activeConnection ? (
                 <RemoteProjectsList
@@ -283,7 +295,9 @@ export function ProjectPickerNew({
                   onProjectClick={handleLocalProjectClick}
                   onSelectNewClick={handleRemoteSelectProject}
                   onBack={handleBackToConnections}
-                  loading={loading}
+                  onRemoveProject={handleRemoveRecentProject}
+                  onConnectionRenamed={loadSshConnections}
+                  loading={remoteLoading}
                 />
               ) : null}
             </div>
@@ -297,7 +311,7 @@ export function ProjectPickerNew({
         connection={activeConnection}
         onSubmit={handlePasswordSubmit}
         onCancel={handlePasswordCancel}
-        loading={loading}
+        loading={remoteLoading}
       />
 
       {/* Remote File Picker Modal */}
@@ -307,6 +321,7 @@ export function ProjectPickerNew({
             <RemoteFilePicker
               connection={activeConnection}
               onProjectSelect={handleRemoteProjectSelect}
+              loading={remoteLoading}
             />
           )}
         </DialogContent>
