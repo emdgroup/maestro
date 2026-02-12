@@ -148,8 +148,13 @@ export function FilePicker({
       // Check if after popping, we have a drive letter (e.g., ["C:"])
       if (parts.length === 1 && /^[A-Z]:$/i.test(parts[0])) {
         setCurrentPath(`${parts[0]}/`);
+      } else if (parts.length === 0) {
+        // No parts left, go to root
+        setCurrentPath("/");
       } else {
-        const newPath = parts.length === 0 ? "/" : "/" + parts.join("/");
+        // Check if first part is a Windows drive letter
+        const isWindowsPath = /^[A-Z]:$/i.test(parts[0]);
+        const newPath = isWindowsPath ? parts.join("/") : "/" + parts.join("/");
         setCurrentPath(newPath);
       }
     }
@@ -173,7 +178,9 @@ export function FilePicker({
     if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
       setCurrentPath(`${selectedPart[0]}/`);
     } else {
-      const newPath = "/" + selectedPart.join("/");
+      // Check if first part is a Windows drive letter
+      const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
+      const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
       setCurrentPath(newPath);
     }
   }
