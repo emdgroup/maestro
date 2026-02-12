@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { EnhancedRecentProject, SshConnection } from "../types/bindings";
-import { ArrowLeft, Folder, Globe, X, Pencil } from "lucide-react";
+import { Folder, Server, X, Pencil, ChevronLeft} from "lucide-react";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 
@@ -89,9 +89,9 @@ export function RemoteProjectsList({
           onClick={onBack}
           className="p-1 h-auto -ml-1"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ChevronLeft className="w-4 h-4" />
         </Button>
-        <Globe className="w-5 h-5 text-muted-foreground" />
+        <Server className="w-5 h-5 text-muted-foreground" />
         {isEditing ? (
           <div className="flex-1 flex items-center gap-2">
             <Input
@@ -167,7 +167,7 @@ export function RemoteProjectsList({
           size="lg"
           className="w-full"
         >
-          <Folder className="w-4 h-4 mr-2" />
+          <Folder className="w-4 h-4" />
           {loading ? "Loading..." : "Select Project"}
         </Button>
       </div>

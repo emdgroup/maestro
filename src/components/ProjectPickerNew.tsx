@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { SshConnection } from "../types/bindings";
-import { LocalSection } from "./LocalSection";
-import { RemoteSection } from "./RemoteSection";
+import { ConnectionList, Connection } from "./ConnectionList";
 import { RemoteProjectsList } from "./RemoteProjectsList";
 import { PasswordModal } from "./PasswordModal";
 import { RemoteFilePicker } from "./RemoteFilePicker";
@@ -15,21 +14,46 @@ interface ProjectPickerNewProps {
   onProjectSelected: (path: string) => void;
 }
 
-type RemoteView = "connections" | "projects";
+type View = "connections" | "projects";
 
 export function ProjectPickerNew({
   onProjectSelected,
 }: ProjectPickerNewProps) {
-  const [localLoading, setLocalLoading] = useState(false);
-  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
-  const [activeConnection, setActiveConnection] = useState<SshConnection | null>(null);
-  const [remoteView, setRemoteView] = useState<RemoteView>("connections");
+  const [activeConnection, setActiveConnection] = useState<Connection | null>(null);
+  const [currentView, setCurrentView] = useState<View>("connections");
 
   // Load enhanced recent projects with metadata
   const { recentProjects, loading: recentLoading } = useRecentProjects();
+
+  // Build unified connections list: Local first, then SSH connections
+  const connections = useMemo<Connection[]>(() => {
+    const list: Connection[] = [
+      {
+        type: "local" as const,
+        id: "local",
+        displayName: "Local",
+        subtitle: "Browse local filesystem",
+      },
+    ];
+
+    // Add SSH connections
+    sshConnections.forEach((conn) => {
+      list.push({
+        type: "ssh" as const,
+        id: conn.id,
+        displayName: conn.display_name || conn.connection_string,
+        subtitle: conn.display_name ? conn.connection_string : undefined,
+        metadata: `Last used: ${new Date(conn.last_used_at).toLocaleDateString()}`,
+        sshConnection: conn,
+      });
+    });
+
+    return list;
+  }, [sshConnections]);
 
   // Load SSH connections on mount
   useEffect(() => {
@@ -47,19 +71,19 @@ export function ProjectPickerNew({
 
   async function handleLocalProjectClick(path: string) {
     console.log(`Opening local project: ${path}`);
-    setLocalLoading(true);
+    setLoading(true);
     try {
       onProjectSelected(path);
     } catch (error) {
       toast.error(`Failed to open project: ${error}`);
     } finally {
-      setLocalLoading(false);
+      setLoading(false);
     }
   }
 
   async function handleSelectNewLocal() {
     console.log("Opening folder dialog");
-    setLocalLoading(true);
+    setLoading(true);
     try {
       const selectedPath = await openDialog({
         directory: true,
@@ -74,34 +98,42 @@ export function ProjectPickerNew({
     } catch (error) {
       toast.error(`Failed to select folder: ${error}`);
     } finally {
-      setLocalLoading(false);
+      setLoading(false);
     }
   }
 
-  async function handleConnectionClick(connection: SshConnection) {
-    console.log(`Selected connection: ${connection.connection_string}`);
-    setActiveConnection(connection);
-    setRemoteView("projects");
+  async function handleConnectionClick(connection: Connection) {
+    if (connection.type === "local") {
+      // For local connection, show file picker directly
+      console.log("Local connection selected - opening file picker");
+      handleSelectNewLocal();
+    } else {
+      // For SSH connection, navigate to projects view
+      console.log(`Selected SSH connection: ${connection.displayName}`);
+      setActiveConnection(connection);
+      setCurrentView("projects");
+    }
   }
 
   function handleBackToConnections() {
-    setRemoteView("connections");
+    setCurrentView("connections");
     setActiveConnection(null);
   }
 
   async function handleRemoteSelectProject() {
-    if (!activeConnection) return;
+    if (!activeConnection || !activeConnection.sshConnection) return;
 
-    console.log(`Opening file picker for: ${activeConnection.connection_string}`);
-    setRemoteLoading(true);
+    const sshConn = activeConnection.sshConnection;
+    console.log(`Opening file picker for: ${sshConn.connection_string}`);
+    setLoading(true);
 
     try {
       // Try connecting without credentials first
       await safeInvoke("connect_ssh_without_credentials", {
-        connectionId: activeConnection.id,
+        connectionId: sshConn.id,
       });
 
-      toast.success(`Connected to ${activeConnection.connection_string}`);
+      toast.success(`Connected to ${sshConn.connection_string}`);
 
       // Show file picker modal
       setShowFilePickerModal(true);
@@ -110,7 +142,7 @@ export function ProjectPickerNew({
       // Show password modal on auth failure
       setShowPasswordModal(true);
     } finally {
-      setRemoteLoading(false);
+      setLoading(false);
     }
   }
 
@@ -136,7 +168,7 @@ export function ProjectPickerNew({
       return;
     }
 
-    setRemoteLoading(true);
+    setLoading(true);
 
     try {
       // Save connection to database
@@ -152,7 +184,7 @@ export function ProjectPickerNew({
       await loadSshConnections();
 
       // Find the newly created connection
-      const newConnection: SshConnection = {
+      const newSshConnection: SshConnection = {
         id: connectionId,
         connection_string: connectionString,
         username,
@@ -164,26 +196,35 @@ export function ProjectPickerNew({
         created_at: new Date().toISOString(),
       };
 
+      // Create Connection wrapper
+      const newConnection: Connection = {
+        type: "ssh",
+        id: connectionId,
+        displayName: connectionString,
+        sshConnection: newSshConnection,
+      };
+
       // Try connecting
       await handleConnectionClick(newConnection);
     } catch (error) {
       toast.error(`Failed to save connection: ${error}`);
-      setRemoteLoading(false);
+      setLoading(false);
     }
   }
 
   async function handlePasswordSubmit(password: string, savePassword: boolean) {
-    if (!activeConnection) return;
+    if (!activeConnection || !activeConnection.sshConnection) return;
 
-    setRemoteLoading(true);
+    const sshConn = activeConnection.sshConnection;
+    setLoading(true);
     try {
       await safeInvoke("connect_ssh_with_password", {
-        connectionId: activeConnection.id,
+        connectionId: sshConn.id,
         password,
         savePassword,
       });
 
-      toast.success(`Connected to ${activeConnection.connection_string}`);
+      toast.success(`Connected to ${sshConn.connection_string}`);
       setShowPasswordModal(false);
 
       // Show file picker modal
@@ -191,7 +232,7 @@ export function ProjectPickerNew({
     } catch (error) {
       toast.error(`Authentication failed: ${error}`);
     } finally {
-      setRemoteLoading(false);
+      setLoading(false);
     }
   }
 
@@ -201,30 +242,31 @@ export function ProjectPickerNew({
   }
 
   async function handleRemoteProjectSelect(remotePath: string) {
-    if (!activeConnection) {
+    if (!activeConnection || !activeConnection.sshConnection) {
       toast.error("No active SSH connection");
       return;
     }
 
+    const sshConn = activeConnection.sshConnection;
     console.log(`Creating remote project at: ${remotePath}`);
-    setRemoteLoading(true);
+    setLoading(true);
 
     try {
       // Parse auth method from string
-      const authMethod = JSON.parse(activeConnection.auth_method);
+      const authMethod = JSON.parse(sshConn.auth_method);
 
       // Create SSH config (use snake_case for Rust struct compatibility)
       const sshConfig = {
-        host: activeConnection.host,
-        port: activeConnection.port,
-        username: activeConnection.username,
+        host: sshConn.host,
+        port: sshConn.port,
+        username: sshConn.username,
         auth_method: authMethod,
         remote_path: remotePath,
       };
 
       // Create remote project
       const project = await safeInvoke<{ path: string }>("create_project", {
-        name: `${activeConnection.host}:${remotePath}`,
+        name: `${sshConn.host}:${remotePath}`,
         path: remotePath,
         isRemote: true,
         sshConfig: sshConfig,
@@ -237,7 +279,7 @@ export function ProjectPickerNew({
       onProjectSelected(project.path);
     } catch (error) {
       toast.error(`Failed to create remote project: ${error}`);
-      setRemoteLoading(false);
+      setLoading(false);
     }
   }
 
@@ -253,64 +295,54 @@ export function ProjectPickerNew({
   }
 
 
-  // Main screen with local and remote sections
+  // Main screen with unified connection list
   return (
     <>
       <div className="flex items-center justify-center min-h-screen bg-background text-foreground p-8">
-        <div className="max-w-5xl w-full">
+        <div className="max-w-3xl w-full">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-semibold mb-3">
               Welcome to GSD Agent Orchestrator
             </h1>
             <p className="text-base text-muted-foreground">
-              Select a project directory to get started
+              Select a connection to get started
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Local Section */}
-            <div className="bg-card border border-border rounded-lg p-6 min-h-[500px]">
-              <LocalSection
-                recentProjects={recentProjects}
-                onProjectClick={handleLocalProjectClick}
-                onSelectNewClick={handleSelectNewLocal}
-                onRemoveProject={handleRemoveRecentProject}
-                loading={localLoading || recentLoading}
+          {/* Single Panel with Slide Transition */}
+          <div className="bg-card border border-border rounded-lg p-6 min-h-125 overflow-hidden relative">
+            {/* Connections View */}
+            <div
+              className={`transition-transform duration-300 ease-in-out flex-col h-full ${
+                currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
+              }`}
+            >
+              <ConnectionList
+                connections={connections}
+                onConnectionClick={handleConnectionClick}
+                onNewConnection={handleNewConnection}
+                loading={loading || recentLoading}
               />
             </div>
 
-            {/* Remote Section */}
-            <div className="bg-card border border-border rounded-lg p-6 min-h-[500px] overflow-hidden relative">
-              <div
-                className={`transition-transform duration-300 ease-in-out ${
-                  remoteView === "projects" ? "-translate-x-full" : "translate-x-0"
-                }`}
-              >
-                <RemoteSection
-                  sshConnections={sshConnections}
-                  onConnectionClick={handleConnectionClick}
-                  onNewConnection={handleNewConnection}
-                  loading={remoteLoading}
+            {/* Projects View */}
+            <div
+              className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out ${
+                currentView === "projects" ? "translate-x-0" : "translate-x-full"
+              }`}
+            >
+              {activeConnection && activeConnection.sshConnection && (
+                <RemoteProjectsList
+                  connection={activeConnection.sshConnection}
+                  recentProjects={recentProjects}
+                  onProjectClick={handleLocalProjectClick}
+                  onSelectNewClick={handleRemoteSelectProject}
+                  onBack={handleBackToConnections}
+                  onRemoveProject={handleRemoveRecentProject}
+                  onConnectionRenamed={loadSshConnections}
+                  loading={loading}
                 />
-              </div>
-              <div
-                className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out ${
-                  remoteView === "projects" ? "translate-x-0" : "translate-x-full"
-                }`}
-              >
-                {activeConnection && (
-                  <RemoteProjectsList
-                    connection={activeConnection}
-                    recentProjects={recentProjects}
-                    onProjectClick={handleLocalProjectClick}
-                    onSelectNewClick={handleRemoteSelectProject}
-                    onBack={handleBackToConnections}
-                    onRemoveProject={handleRemoveRecentProject}
-                    onConnectionRenamed={loadSshConnections}
-                    loading={remoteLoading}
-                  />
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -319,20 +351,20 @@ export function ProjectPickerNew({
       {/* Password Modal */}
       <PasswordModal
         open={showPasswordModal}
-        connection={activeConnection}
+        connection={activeConnection?.sshConnection || null}
         onSubmit={handlePasswordSubmit}
         onCancel={handlePasswordCancel}
-        loading={remoteLoading}
+        loading={loading}
       />
 
       {/* Remote File Picker Modal */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
-        <DialogContent className="max-w-4xl h-[600px] p-0 flex flex-col">
-          {activeConnection && (
+        <DialogContent className="max-w-4xl h-150 p-0 flex flex-col">
+          {activeConnection && activeConnection.sshConnection && (
             <RemoteFilePicker
-              connection={activeConnection}
+              connection={activeConnection.sshConnection}
               onProjectSelect={handleRemoteProjectSelect}
-              loading={remoteLoading}
+              loading={loading}
             />
           )}
         </DialogContent>
