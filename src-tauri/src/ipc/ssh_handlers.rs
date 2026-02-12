@@ -228,9 +228,10 @@ pub async fn list_remote_directories(
         .await
         .ok_or("No active SSH session found. Please connect first.")?;
 
-    // Execute ls command to list only subdirectories
-    // Use ls -1F to append / to directories, then filter for those and remove the /
-    let cmd = format!("cd '{}' && ls -1F 2>/dev/null | grep '/$' | sed 's/\\/$//g' | sort", path);
+    // Execute ls command to list only subdirectories (including hidden ones)
+    // Use ls -1aF to append / to directories and show hidden files, then filter for directories and remove the /
+    // Exclude . and .. as they're handled specially in the UI
+    let cmd = format!("cd '{}' && ls -1aF 2>/dev/null | grep '/$' | sed 's/\\/$//g' | grep -v '^\\.$' | grep -v '^\\.\\.$' | sort", path);
     let output = session.execute_command(&cmd)
         .await
         .map_err(|e| format!("Failed to list directories: {}", e))?;

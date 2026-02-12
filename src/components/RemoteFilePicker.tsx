@@ -4,7 +4,7 @@ import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { ChevronRight, Folder, Home, FolderUp } from "lucide-react";
-import { Checkbox } from "./ui/checkbox";
+import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 
 interface RemoteFilePickerProps {
@@ -116,28 +116,9 @@ export function RemoteFilePicker({
             ))}
           </div>
 
-          {/* Current Path Display and Hidden Files Toggle */}
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground font-mono">
-              Current: {currentPath}
-            </p>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="show-hidden"
-                checked={showHidden}
-                onCheckedChange={(checked) => setShowHidden(checked === true)}
-              />
-              <Label
-                htmlFor="show-hidden"
-                className="text-xs font-normal cursor-pointer"
-              >
-                Show hidden files
-              </Label>
-            </div>
-          </div>
 
           {/* Directory List */}
-          <div className="flex-1 overflow-auto mb-4">
+          <div className="flex-1 overflow-y-auto mb-4 min-h-0">
             {loading ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Loading directories...
@@ -183,18 +164,38 @@ export function RemoteFilePicker({
             )}
           </div>
 
-          {/* Action Button */}
-          <div className="pt-4 border-t border-border">
+          {/* Action Bar */}
+          <div className="pt-4 border-t border-border flex items-center gap-4">
             <Button
               onClick={handleSelectCurrentDirectory}
               disabled={loading}
               variant="default"
-              size="lg"
-              className="w-full"
+              size="default"
+              className="flex-shrink-0"
             >
               <Folder className="w-4 h-4 mr-2" />
               Open project
             </Button>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground font-mono truncate">
+                {currentPath}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Switch
+                id="show-hidden"
+                checked={showHidden}
+                onCheckedChange={(checked) => setShowHidden(checked)}
+              />
+              <Label
+                htmlFor="show-hidden"
+                className="text-xs font-normal cursor-pointer whitespace-nowrap"
+              >
+                Show hidden
+              </Label>
+            </div>
           </div>
         </div>
       </div>
