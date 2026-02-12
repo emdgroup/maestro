@@ -422,6 +422,15 @@ fn delete_ssh_connection(
 }
 
 #[tauri::command]
+fn rename_ssh_connection(
+    app_state: State<Arc<AppState>>,
+    connection_id: i64,
+    display_name: String,
+) -> Result<(), String> {
+    gsd_demo::ipc::ssh_handlers::rename_ssh_connection(app_state, connection_id, display_name)
+}
+
+#[tauri::command]
 fn get_recent_projects_enhanced(
     app_state: State<Arc<AppState>>
 ) -> Result<Vec<gsd_demo::models::EnhancedRecentProject>, String> {
@@ -564,6 +573,7 @@ fn main() {
             connect_ssh_with_password,
             list_remote_directories,
             delete_ssh_connection,
+            rename_ssh_connection,
             detach_terminal,
             pause_agent_execution,
             resume_agent_execution

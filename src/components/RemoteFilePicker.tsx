@@ -3,25 +3,23 @@ import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
-import { ChevronRight, Folder, Home, ArrowLeft, FolderUp } from "lucide-react";
+import { ChevronRight, Folder, Home, FolderUp } from "lucide-react";
+import { Checkbox } from "./ui/checkbox";
+import { Label } from "./ui/label";
 
 interface RemoteFilePickerProps {
   connection: SshConnection;
   onProjectSelect: (path: string) => void;
-  onBack: () => void;
 }
 
 export function RemoteFilePicker({
   connection,
   onProjectSelect,
-  onBack,
 }: RemoteFilePickerProps) {
   const [currentPath, setCurrentPath] = useState(`/home/${connection.username}`);
-  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null);
   const [directories, setDirectories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [lastClickTime, setLastClickTime] = useState<number>(0);
-  const [lastClickedDir, setLastClickedDir] = useState<string>("");
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     loadDirectories(currentPath);
@@ -44,23 +42,11 @@ export function RemoteFilePicker({
   }
 
   function handleDirectoryClick(dirName: string) {
-    const now = Date.now();
-    const isDoubleClick = (now - lastClickTime < 300) && (lastClickedDir === dirName);
-
-    setLastClickTime(now);
-    setLastClickedDir(dirName);
-
-    if (isDoubleClick) {
-      // Double click: navigate into directory
-      const newPath = currentPath === "/"
-        ? `/${dirName}`
-        : `${currentPath}/${dirName}`;
-      setCurrentPath(newPath);
-      setSelectedDirectory(null);
-    } else {
-      // Single click: select directory
-      setSelectedDirectory(dirName);
-    }
+    // Single click: navigate into directory
+    const newPath = currentPath === "/"
+      ? `/${dirName}`
+      : `${currentPath}/${dirName}`;
+    setCurrentPath(newPath);
   }
 
   function handleParentDirectory() {
@@ -69,7 +55,6 @@ export function RemoteFilePicker({
       parts.pop();
       const newPath = parts.length === 0 ? "/" : "/" + parts.join("/");
       setCurrentPath(newPath);
-      setSelectedDirectory(null);
     }
   }
 
@@ -85,20 +70,17 @@ export function RemoteFilePicker({
   }
 
   function handleSelectCurrentDirectory() {
-    if (selectedDirectory) {
-      // If a subdirectory is selected, use that path
-      const selectedPath = currentPath === "/"
-        ? `/${selectedDirectory}`
-        : `${currentPath}/${selectedDirectory}`;
-      onProjectSelect(selectedPath);
-    } else {
-      // Otherwise use current directory
-      onProjectSelect(currentPath);
-    }
+    // Always use current directory
+    onProjectSelect(currentPath);
   }
 
   // Parse path into breadcrumb parts
   const pathParts = currentPath.split("/").filter(Boolean);
+
+  // Filter directories based on showHidden toggle
+  const visibleDirectories = showHidden
+    ? directories
+    : directories.filter((dir) => !dir.startsWith("."));
 
   return (
     <div className="flex flex-col h-full">
@@ -134,11 +116,24 @@ export function RemoteFilePicker({
             ))}
           </div>
 
-          {/* Current Path Display */}
-          <div className="mb-4">
+          {/* Current Path Display and Hidden Files Toggle */}
+          <div className="mb-4 flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-mono">
               Current: {currentPath}
             </p>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="show-hidden"
+                checked={showHidden}
+                onCheckedChange={(checked) => setShowHidden(checked === true)}
+              />
+              <Label
+                htmlFor="show-hidden"
+                className="text-xs font-normal cursor-pointer"
+              >
+                Show hidden files
+              </Label>
+            </div>
           </div>
 
           {/* Directory List */}
@@ -165,17 +160,17 @@ export function RemoteFilePicker({
                 )}
 
                 {/* Subdirectories */}
-                {directories.length === 0 && currentPath === "/" ? (
+                {visibleDirectories.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     No subdirectories found
                   </p>
                 ) : (
-                  directories.map((dir) => (
+                  visibleDirectories.map((dir) => (
                     <li key={dir}>
                       <Button
                         onClick={() => handleDirectoryClick(dir)}
                         disabled={loading}
-                        variant={selectedDirectory === dir ? "secondary" : "outline"}
+                        variant="outline"
                         className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
                       >
                         <Folder className="w-4 h-4 mr-2 flex-shrink-0" />
@@ -188,22 +183,14 @@ export function RemoteFilePicker({
             )}
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-4 border-t border-border flex gap-3">
-            <Button
-              onClick={onBack}
-              disabled={loading}
-              variant="outline"
-              className="flex-1"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
+          {/* Action Button */}
+          <div className="pt-4 border-t border-border">
             <Button
               onClick={handleSelectCurrentDirectory}
               disabled={loading}
               variant="default"
-              className="flex-1"
+              size="lg"
+              className="w-full"
             >
               <Folder className="w-4 h-4 mr-2" />
               Open project

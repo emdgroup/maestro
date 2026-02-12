@@ -15,7 +15,7 @@ pub fn get_ssh_connections(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, connection_string, username, host, port, auth_method, last_used_at, created_at FROM ssh_connections ORDER BY last_used_at DESC")
+        .prepare("SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections ORDER BY last_used_at DESC")
         .map_err(|e| e.to_string())?;
 
     let connections = stmt
@@ -27,8 +27,9 @@ pub fn get_ssh_connections(
                 host: row.get(3)?,
                 port: row.get(4)?,
                 auth_method: row.get(5)?,
-                last_used_at: row.get(6)?,
-                created_at: row.get(7)?,
+                display_name: row.get(6)?,
+                last_used_at: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -274,5 +275,27 @@ pub fn delete_ssh_connection(
     let _ = PasswordManager::delete_password(&host, &username);
 
     println!("Deleted SSH connection: {}", connection_id);
+    Ok(())
+}
+
+/// Rename an SSH connection (set display name)
+#[tauri::command]
+pub fn rename_ssh_connection(
+    app_state: State<Arc<AppState>>,
+    connection_id: i64,
+    display_name: String,
+) -> Result<(), String> {
+    println!("rename_ssh_connection(connection_id={}, display_name={}) called via IPC", connection_id, display_name);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE ssh_connections SET display_name = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&display_name, &now, connection_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    println!("Renamed SSH connection {} to '{}'", connection_id, display_name);
     Ok(())
 }

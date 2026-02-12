@@ -152,6 +152,7 @@ export type SshConnection = {
   host: string;
   port: number;
   auth_method: string;
+  display_name: string | null;
   last_used_at: string;
   created_at: string;
 };

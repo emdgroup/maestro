@@ -158,6 +158,7 @@ export function ProjectPickerNew({
         host,
         port,
         auth_method: JSON.stringify("Agent"),
+        display_name: null,
         last_used_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
       };
@@ -239,9 +240,6 @@ export function ProjectPickerNew({
     }
   }
 
-  function handleCloseFilePicker() {
-    setShowFilePickerModal(false);
-  }
 
   // Main screen with local and remote sections
   return (
@@ -275,6 +273,7 @@ export function ProjectPickerNew({
                   sshConnections={sshConnections}
                   onConnectionClick={handleConnectionClick}
                   onNewConnection={handleNewConnection}
+                  onConnectionRenamed={loadSshConnections}
                   loading={loading}
                 />
               ) : activeConnection ? (
@@ -303,12 +302,11 @@ export function ProjectPickerNew({
 
       {/* Remote File Picker Modal */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+        <DialogContent className="max-w-4xl h-[600px] p-0">
           {activeConnection && (
             <RemoteFilePicker
               connection={activeConnection}
               onProjectSelect={handleRemoteProjectSelect}
-              onBack={handleCloseFilePicker}
             />
           )}
         </DialogContent>

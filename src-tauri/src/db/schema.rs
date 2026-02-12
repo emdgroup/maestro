@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -226,6 +226,15 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);",
+                [],
+            )?;
+        }
+
+        if current_version < 8 {
+            // Migration from v7 to v8: add display_name to ssh_connections
+            // Allows users to give friendly names to connections
+            conn.execute(
+                "ALTER TABLE ssh_connections ADD COLUMN display_name TEXT;",
                 [],
             )?;
         }

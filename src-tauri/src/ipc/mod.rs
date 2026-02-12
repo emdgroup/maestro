@@ -10,4 +10,5 @@ pub use handlers::{
 pub use ssh_handlers::{
     get_ssh_connections, save_ssh_connection, connect_ssh_without_credentials,
     connect_ssh_with_password, list_remote_directories, delete_ssh_connection,
+    rename_ssh_connection,
 };

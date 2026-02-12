@@ -87,6 +87,7 @@ pub struct SshConnection {
     pub host: String,
     pub port: u16,
     pub auth_method: String,  // Serialized SshAuthMethod
+    pub display_name: Option<String>,  // User-friendly name
     pub last_used_at: String,  // ISO 8601
     pub created_at: String,    // ISO 8601
 }
