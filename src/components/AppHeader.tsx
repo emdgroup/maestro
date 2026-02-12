@@ -80,7 +80,7 @@ export function AppHeader({
       </div>
 
       {/* Center section: Tab Navigation */}
-      <nav className="flex items-center gap-1 flex-1">
+      <nav className="flex items-center gap-1 flex-1 justify-center">
         {VIEWS.map((view) => {
           const Icon = view.icon;
           const isActive = activeView === view.id;
