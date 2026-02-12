@@ -93,7 +93,7 @@ export function RemoteFilePicker({
         </p>
       </div>
 
-      <div className="flex-1 flex flex-col p-6 pt-0 min-h-[400px]">
+      <div className="flex-1 flex flex-col p-6 pt-0 min-h-0 overflow-hidden">
           {/* Breadcrumb Navigation */}
           <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border flex-wrap">
             <button
@@ -165,24 +165,7 @@ export function RemoteFilePicker({
           </div>
 
           {/* Action Bar */}
-          <div className="pt-4 border-t border-border flex items-center gap-4">
-            <Button
-              onClick={handleSelectCurrentDirectory}
-              disabled={loading}
-              variant="default"
-              size="default"
-              className="flex-shrink-0"
-            >
-              <Folder className="w-4 h-4 mr-2" />
-              Open project
-            </Button>
-
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground font-mono truncate">
-                {currentPath}
-              </p>
-            </div>
-
+          <div className="pt-4 border-t border-border flex items-center gap-4 flex-shrink-0">
             <div className="flex items-center gap-2 flex-shrink-0">
               <Switch
                 id="show-hidden"
@@ -196,6 +179,23 @@ export function RemoteFilePicker({
                 Show hidden
               </Label>
             </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground font-mono truncate">
+                {currentPath}
+              </p>
+            </div>
+
+            <Button
+              onClick={handleSelectCurrentDirectory}
+              disabled={loading}
+              variant="default"
+              size="default"
+              className="flex-shrink-0"
+            >
+              <Folder className="w-4 h-4 mr-2" />
+              Open project
+            </Button>
           </div>
         </div>
       </div>
