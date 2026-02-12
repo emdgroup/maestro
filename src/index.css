@@ -104,4 +104,28 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+  /* Custom scrollbar styling */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: oklch(from var(--color-muted-foreground) l c h / 0.3);
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(from var(--color-muted-foreground) l c h / 0.5);
+  }
+
+  /* Firefox scrollbar styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(from var(--color-muted-foreground) l c h / 0.3) transparent;
+  }
 }

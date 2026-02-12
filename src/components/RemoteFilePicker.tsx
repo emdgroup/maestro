@@ -118,7 +118,7 @@ export function RemoteFilePicker({
 
 
           {/* Directory List */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             {loading ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Loading directories...

@@ -217,16 +217,16 @@ export function ProjectPickerNew({
         host: activeConnection.host,
         port: activeConnection.port,
         username: activeConnection.username,
-        auth_method: authMethod,
-        remote_path: remotePath,
+        authMethod: authMethod,
+        remotePath: remotePath,
       };
 
       // Create remote project
       const project = await safeInvoke<{ path: string }>("create_project", {
         name: `${activeConnection.host}:${remotePath}`,
         path: remotePath,
-        is_remote: true,
-        ssh_config: sshConfig,
+        isRemote: true,
+        sshConfig: sshConfig,
       });
 
       console.log(`Remote project created: ${project.path}`);
