@@ -124,20 +124,17 @@ export function RemoteFilePicker({
                 Loading directories...
               </p>
             ) : (
-              <ul className="space-y-2">
+              <div className="divide-y divide-border">
                 {/* Parent directory ".." button - only show if not at root */}
                 {currentPath !== "/" && (
-                  <li>
-                    <Button
-                      onClick={handleParentDirectory}
-                      disabled={loading}
-                      variant="outline"
-                      className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
-                    >
-                      <FolderUp className="w-4 h-4 mr-2 shrink-0" />
-                      <span className="truncate">..</span>
-                    </Button>
-                  </li>
+                  <button
+                    onClick={handleParentDirectory}
+                    disabled={loading}
+                    className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FolderUp className="w-4 h-4 shrink-0" />
+                    <span className="truncate">..</span>
+                  </button>
                 )}
 
                 {/* Subdirectories */}
@@ -147,20 +144,18 @@ export function RemoteFilePicker({
                   </p>
                 ) : (
                   visibleDirectories.map((dir) => (
-                    <li key={dir}>
-                      <Button
-                        onClick={() => handleDirectoryClick(dir)}
-                        disabled={loading}
-                        variant="outline"
-                        className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4"
-                      >
-                        <Folder className="w-4 h-4 mr-2 shrink-0" />
-                        <span className="truncate">{dir}</span>
-                      </Button>
-                    </li>
+                    <button
+                      key={dir}
+                      onClick={() => handleDirectoryClick(dir)}
+                      disabled={loading}
+                      className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Folder className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{dir}</span>
+                    </button>
                   ))
                 )}
-              </ul>
+              </div>
             )}
           </div>
 
@@ -193,7 +188,7 @@ export function RemoteFilePicker({
               size="default"
               className="shrink-0"
             >
-              <Folder className="w-4 h-4 mr-2" />
+              <Folder className="w-4 h-4" />
               Open Project
             </Button>
           </div>

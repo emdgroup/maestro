@@ -212,13 +212,13 @@ export function ProjectPickerNew({
       // Parse auth method from string
       const authMethod = JSON.parse(activeConnection.auth_method);
 
-      // Create SSH config
+      // Create SSH config (use snake_case for Rust struct compatibility)
       const sshConfig = {
         host: activeConnection.host,
         port: activeConnection.port,
         username: activeConnection.username,
-        authMethod: authMethod,
-        remotePath: remotePath,
+        auth_method: authMethod,
+        remote_path: remotePath,
       };
 
       // Create remote project
