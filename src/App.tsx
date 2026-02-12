@@ -9,7 +9,7 @@ import { TaskModal } from "./components/TaskModal";
 import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
-import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
+import { SettingsPage } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
 import type { AppSettings, Project, Task } from "./types/bindings";
@@ -208,13 +208,7 @@ function App() {
 
             {/* Settings Page */}
             {activePage === "settings" && (
-              <div className="h-full p-4">
-                <ProjectSettingsModal
-                  isOpen={true}
-                  onClose={() => setActivePage("kanban")}
-                  projectId={currentProject.id}
-                />
-              </div>
+              <SettingsPage projectId={currentProject.id} />
             )}
 
             {/* Modals and Overlays */}
