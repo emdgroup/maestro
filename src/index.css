@@ -5,7 +5,7 @@
 
 /* Tailwind v4 theme configuration */
 @theme {
-  /* Light theme colors */
+  /* Light theme colors - warm gray background for reduced eye strain */
   --color-primary: oklch(0% 0 0);
   --color-primary-foreground: oklch(100% 0 0);
 
@@ -18,23 +18,23 @@
   --color-destructive: oklch(50% 0.2 25);
   --color-destructive-foreground: oklch(100% 0 0);
 
-  --color-muted: oklch(96% 0.01 250);
+  --color-muted: oklch(94% 0.015 70);
   --color-muted-foreground: oklch(45% 0.01 250);
 
   --color-success: oklch(55% 0.15 145);
   --color-warning: oklch(60% 0.15 70);
 
-  --color-background: oklch(100% 0 0);
+  --color-background: oklch(98% 0.015 70);
   --color-foreground: oklch(45% 0.01 250);
 
-  --color-card: oklch(100% 0 0);
+  --color-card: oklch(99.5% 0.01 70);
   --color-card-foreground: oklch(45% 0.01 250);
 
-  --color-popover: oklch(100% 0 0);
+  --color-popover: oklch(98% 0.015 70);
   --color-popover-foreground: oklch(45% 0.01 250);
 
-  --color-border: oklch(88% 0.01 250);
-  --color-input: oklch(100% 0 0);
+  --color-border: oklch(86% 0.01 70);
+  --color-input: oklch(99% 0.018 70);
   --color-ring: oklch(50% 0.15 250);
 
   --radius: 0.5rem;
