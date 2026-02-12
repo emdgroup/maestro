@@ -3192,13 +3192,13 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
             // Query the accent color value
             let mut data: u32 = 0;
             let mut data_size: u32 = std::mem::size_of::<u32>() as u32;
-            let mut reg_type: u32 = 0;
+            let mut reg_type = REG_DWORD;
 
             let result = RegQueryValueExA(
                 key_handle,
                 PCSTR(value_name.as_ptr()),
                 Some(ptr::null_mut()),
-                Some(&mut reg_type),
+                Some(&mut reg_type as *mut _),
                 Some(&mut data as *mut u32 as *mut u8),
                 Some(&mut data_size)
             );
@@ -3206,7 +3206,7 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
             // Close the key
             let _ = RegCloseKey(key_handle);
 
-            if result.0 != ERROR_SUCCESS.0 || reg_type != REG_DWORD.0 {
+            if result.0 != ERROR_SUCCESS.0 || reg_type != REG_DWORD {
                 println!("[Accent] Failed to read AccentColor value (error code: {}), using fallback", result.0);
                 return Ok(vec![0, 120, 212]);
             }
