@@ -3065,3 +3065,53 @@ pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
     println!("Found {} subdirectories in {}", directories.len(), path);
     Ok(directories)
 }
+
+/// Get the default file picker path based on the current platform
+#[tauri::command]
+pub fn get_default_file_picker_path() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, default to C:/Users
+        Ok("C:/Users".to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, default to /Users
+        Ok("/Users".to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, default to /home
+        Ok("/home".to_string())
+    }
+}
+
+/// List available drives (Windows only)
+#[tauri::command]
+pub fn list_drives() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::fs;
+        let mut drives = Vec::new();
+
+        // Check common drive letters A-Z
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:/", letter as char);
+            // Try to read the drive root to see if it exists
+            if fs::metadata(&drive).is_ok() {
+                drives.push(drive);
+            }
+        }
+
+        println!("Found {} drives: {:?}", drives.len(), drives);
+        Ok(drives)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On non-Windows systems, return empty list
+        Ok(Vec::new())
+    }
+}

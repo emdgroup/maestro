@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
-import { ChevronRight, Folder, Home, FolderUp } from "lucide-react";
+import { ChevronRight, Folder, Home, FolderUp, HardDrive } from "lucide-react";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 
@@ -13,24 +13,76 @@ interface FilePickerProps {
   loading?: boolean;
 }
 
+const DRIVES_ROOT = "<<DRIVES>>";
+
 export function FilePicker({
   connection,
   onProjectSelect,
   loading: externalLoading = false,
 }: FilePickerProps) {
   const isLocal = !connection;
-  const defaultPath = connection ? `/home/${connection.username}` : "/home";
 
-  const [currentPath, setCurrentPath] = useState(defaultPath);
+  const [currentPath, setCurrentPath] = useState<string>("");
   const [directories, setDirectories] = useState<string[]>([]);
+  const [drives, setDrives] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize default path on mount
+  useEffect(() => {
+    async function initializePath() {
+      if (isLocal && !isInitialized) {
+        try {
+          const defaultPath = await safeInvoke<string>("get_default_file_picker_path", {});
+          setCurrentPath(defaultPath);
+          setIsInitialized(true);
+        } catch (error) {
+          console.error("Failed to get default path:", error);
+          setCurrentPath("/");
+          setIsInitialized(true);
+        }
+      } else if (!isLocal && !isInitialized) {
+        // For remote connections, use /home/username
+        const remotePath = `/home/${connection!.username}`;
+        setCurrentPath(remotePath);
+        setIsInitialized(true);
+      }
+    }
+
+    initializePath();
+  }, [isLocal, isInitialized, connection]);
+
+  // Load drives on Windows (local only)
+  useEffect(() => {
+    async function loadDrives() {
+      if (isLocal && isInitialized) {
+        try {
+          const driveList = await safeInvoke<string[]>("list_drives", {});
+          setDrives(driveList);
+        } catch (error) {
+          console.error("Failed to load drives:", error);
+          setDrives([]);
+        }
+      }
+    }
+
+    loadDrives();
+  }, [isLocal, isInitialized]);
 
   useEffect(() => {
-    loadDirectories(currentPath);
-  }, [currentPath]);
+    if (isInitialized && currentPath) {
+      loadDirectories(currentPath);
+    }
+  }, [currentPath, isInitialized]);
 
   async function loadDirectories(path: string) {
+    // Special case: show drives on Windows when at drives root
+    if (path === DRIVES_ROOT) {
+      setDirectories([]);
+      return;
+    }
+
     setLoading(true);
     try {
       if (isLocal) {
@@ -54,29 +106,74 @@ export function FilePicker({
   }
 
   function handleDirectoryClick(dirName: string) {
-    // Single click: navigate into directory
-    const newPath = currentPath === "/"
-      ? `/${dirName}`
-      : `${currentPath}/${dirName}`;
+    // Handle drive selection on Windows
+    if (currentPath === DRIVES_ROOT) {
+      setCurrentPath(dirName);
+      return;
+    }
+
+    // Handle normal directory navigation
+    let newPath: string;
+
+    // Check if current path is a drive root (e.g., "C:/")
+    if (/^[A-Z]:\/$/i.test(currentPath)) {
+      newPath = `${currentPath}${dirName}`;
+    } else if (currentPath === "/") {
+      newPath = `/${dirName}`;
+    } else {
+      newPath = `${currentPath}/${dirName}`;
+    }
+
     setCurrentPath(newPath);
   }
 
   function handleParentDirectory() {
+    // Special case: at drives root, can't go up
+    if (currentPath === DRIVES_ROOT) {
+      return;
+    }
+
+    // Check if we're at a drive root on Windows (e.g., "C:/")
+    if (isLocal && drives.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
+      // Go back to drives list
+      setCurrentPath(DRIVES_ROOT);
+      return;
+    }
+
+    // Unix-style or nested Windows path
     const parts = currentPath.split("/").filter(Boolean);
     if (parts.length > 0) {
       parts.pop();
-      const newPath = parts.length === 0 ? "/" : "/" + parts.join("/");
-      setCurrentPath(newPath);
+
+      // Check if after popping, we have a drive letter (e.g., ["C:"])
+      if (parts.length === 1 && /^[A-Z]:$/i.test(parts[0])) {
+        setCurrentPath(`${parts[0]}/`);
+      } else {
+        const newPath = parts.length === 0 ? "/" : "/" + parts.join("/");
+        setCurrentPath(newPath);
+      }
     }
   }
 
   function handleBreadcrumbClick(index: number) {
-    const parts = currentPath.split("/").filter(Boolean);
     if (index === -1) {
-      // Root
-      setCurrentPath("/");
+      // Root click - on Windows with drives, go to drives root
+      if (isLocal && drives.length > 0) {
+        setCurrentPath(DRIVES_ROOT);
+      } else {
+        setCurrentPath("/");
+      }
+      return;
+    }
+
+    const parts = currentPath.split("/").filter(Boolean);
+    const selectedPart = parts.slice(0, index + 1);
+
+    // Check if we're clicking on a drive letter
+    if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
+      setCurrentPath(`${selectedPart[0]}/`);
     } else {
-      const newPath = "/" + parts.slice(0, index + 1).join("/");
+      const newPath = "/" + selectedPart.join("/");
       setCurrentPath(newPath);
     }
   }
@@ -87,7 +184,10 @@ export function FilePicker({
   }
 
   // Parse path into breadcrumb parts
-  const pathParts = currentPath.split("/").filter(Boolean);
+  const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);
+
+  // Check if we're showing drives
+  const showingDrives = isLocal && currentPath === DRIVES_ROOT;
 
   // Filter directories based on showHidden toggle
   const visibleDirectories = showHidden
@@ -115,7 +215,7 @@ export function FilePicker({
               className="flex items-center gap-1 text-sm hover:text-primary transition-colors"
             >
               <Home className="w-4 h-4" />
-              <span>Root</span>
+              <span>{showingDrives ? "Drives" : "Root"}</span>
             </button>
             {pathParts.map((part: string, index: number) => (
               <div key={index} className="flex items-center gap-2">
@@ -139,35 +239,58 @@ export function FilePicker({
               </p>
             ) : (
               <div className="divide-y divide-border">
-                {/* Parent directory ".." button - only show if not at root */}
-                {currentPath !== "/" && (
-                  <button
-                    onClick={handleParentDirectory}
-                    disabled={loading}
-                    className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <FolderUp className="w-4 h-4 shrink-0" />
-                    <span className="truncate">..</span>
-                  </button>
-                )}
-
-                {/* Subdirectories */}
-                {visibleDirectories.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No subdirectories found
-                  </p>
+                {/* Show drives on Windows when at drives root */}
+                {showingDrives ? (
+                  drives.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No drives found
+                    </p>
+                  ) : (
+                    drives.map((drive) => (
+                      <button
+                        key={drive}
+                        onClick={() => handleDirectoryClick(drive)}
+                        disabled={loading}
+                        className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <HardDrive className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{drive}</span>
+                      </button>
+                    ))
+                  )
                 ) : (
-                  visibleDirectories.map((dir) => (
-                    <button
-                      key={dir}
-                      onClick={() => handleDirectoryClick(dir)}
-                      disabled={loading}
-                      className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Folder className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{dir}</span>
-                    </button>
-                  ))
+                  <>
+                    {/* Parent directory ".." button - show unless at root or drives root */}
+                    {currentPath !== "/" && currentPath !== DRIVES_ROOT && (
+                      <button
+                        onClick={handleParentDirectory}
+                        disabled={loading}
+                        className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FolderUp className="w-4 h-4 shrink-0" />
+                        <span className="truncate">..</span>
+                      </button>
+                    )}
+
+                    {/* Subdirectories */}
+                    {visibleDirectories.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        No subdirectories found
+                      </p>
+                    ) : (
+                      visibleDirectories.map((dir) => (
+                        <button
+                          key={dir}
+                          onClick={() => handleDirectoryClick(dir)}
+                          disabled={loading}
+                          className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Folder className="w-4 h-4 shrink-0" />
+                          <span className="truncate">{dir}</span>
+                        </button>
+                      ))
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -191,13 +314,13 @@ export function FilePicker({
 
             <div className="ml-auto">
               <p className="text-xs text-muted-foreground font-mono truncate">
-                {currentPath}
+                {showingDrives ? "Select a drive" : currentPath}
               </p>
             </div>
 
             <Button
               onClick={handleSelectCurrentDirectory}
-              disabled={loading || externalLoading}
+              disabled={loading || externalLoading || showingDrives}
               variant="default"
               size="default"
               className="shrink-0"

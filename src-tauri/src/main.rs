@@ -421,6 +421,16 @@ fn list_local_directories(
 }
 
 #[tauri::command]
+fn get_default_file_picker_path() -> Result<String, String> {
+    gsd_demo::ipc::handlers::get_default_file_picker_path()
+}
+
+#[tauri::command]
+fn list_drives() -> Result<Vec<String>, String> {
+    gsd_demo::ipc::handlers::list_drives()
+}
+
+#[tauri::command]
 fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i64,
@@ -580,6 +590,8 @@ fn main() {
             connect_ssh_with_password,
             list_remote_directories,
             list_local_directories,
+            get_default_file_picker_path,
+            list_drives,
             delete_ssh_connection,
             rename_ssh_connection,
             detach_terminal,
