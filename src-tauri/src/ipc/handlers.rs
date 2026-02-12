@@ -3115,3 +3115,64 @@ pub fn list_drives() -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }
 }
+
+/// Get system accent color as RGB values
+/// Returns [r, g, b] where each value is 0-255
+#[tauri::command]
+pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        // Try GNOME/GTK accent color via gsettings
+        if let Ok(output) = Command::new("gsettings")
+            .args(&["get", "org.gnome.desktop.interface", "accent-color"])
+            .output()
+        {
+            if output.status.success() {
+                let color_name = String::from_utf8_lossy(&output.stdout).trim().trim_matches('\'').to_string();
+                println!("[Accent] GNOME accent-color: {}", color_name);
+
+                // GNOME accent colors mapping (GNOME 42+)
+                let rgb = match color_name.as_str() {
+                    "blue" => vec![53, 132, 228],
+                    "teal" => vec![0, 163, 164],
+                    "green" => vec![51, 209, 122],
+                    "yellow" => vec![229, 165, 10],
+                    "orange" => vec![255, 120, 0],
+                    "red" => vec![230, 97, 0],
+                    "pink" => vec![213, 16, 180],
+                    "purple" => vec![145, 65, 172],
+                    "slate" => vec![112, 128, 144],
+                    _ => vec![53, 132, 228], // Default to blue
+                };
+
+                return Ok(rgb);
+            }
+        }
+
+        // Fallback: Return a neutral blue
+        println!("[Accent] Using fallback blue accent color");
+        Ok(vec![53, 132, 228]) // GNOME blue
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // TODO: Implement macOS accent color detection via NSColor
+        println!("[Accent] macOS accent color not yet implemented, using fallback");
+        Ok(vec![0, 122, 255]) // macOS default blue
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // TODO: Implement Windows accent color detection via Windows.UI.ViewManagement
+        println!("[Accent] Windows accent color not yet implemented, using fallback");
+        Ok(vec![0, 120, 212]) // Windows default blue
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        // Unknown platform
+        Ok(vec![53, 132, 228])
+    }
+}

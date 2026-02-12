@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { invoke } from '../lib/tauri-mock';
 import type { AppSettings } from '../types/bindings';
+import { oklch } from 'culori';
 
 // Theme type definition
 export type ThemeValue = 'light' | 'dark' | 'system';
@@ -35,22 +36,48 @@ function applyTheme(theme: ThemeValue, systemTheme: 'light' | 'dark'): void {
 }
 
 // Helper function to load and inject system accent color
-function loadSystemAccentColor(): void {
+async function loadSystemAccentColor(): Promise<void> {
   try {
     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-    // Use OKLCH format to match theme system in index.css
-    // Light mode: darker accent for contrast on white (50% lightness)
-    // Dark mode: lighter accent for contrast on dark (75% lightness)
-    const accentColor = isDark ? 'oklch(75% 0.15 250)' : 'oklch(50% 0.15 250)';
+    // Get system accent color from Tauri backend
+    const rgb = await invoke<number[]>('get_system_accent_color');
+    console.log('[Theme] System accent color (RGB):', rgb);
+
+    // Convert RGB to oklch to extract hue
+    const rgbColor = { mode: 'rgb' as const, r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255 };
+    const oklchColor = oklch(rgbColor);
+
+    if (!oklchColor) {
+      throw new Error('Failed to convert RGB to oklch');
+    }
+
+    // Extract hue from system color (0-360)
+    const hue = oklchColor.h || 250; // Fallback to blue if hue is undefined
+
+    // Adjust lightness and chroma based on light/dark mode for proper contrast
+    // Light mode: darker accent (50% lightness)
+    // Dark mode: lighter accent (75% lightness)
+    const lightness = isDark ? 0.75 : 0.50;
+    const chroma = 0.15; // Keep saturation consistent
+
+    const accentColor = `oklch(${lightness * 100}% ${chroma} ${hue})`;
     const accentForeground = isDark ? 'oklch(25% 0.01 250)' : 'oklch(100% 0 0)';
 
     document.documentElement.style.setProperty('--color-accent', accentColor);
     document.documentElement.style.setProperty('--color-accent-foreground', accentForeground);
 
-    console.log('[Theme] Accent color set to:', accentColor, '| foreground:', accentForeground);
+    console.log('[Theme] Accent color set to:', accentColor, '| hue:', hue, '| foreground:', accentForeground);
   } catch (err) {
-    console.error('[Theme] Failed to set accent color:', err);
+    console.error('[Theme] Failed to load system accent color, using fallback:', err);
+
+    // Fallback to hardcoded blue if system color fetch fails
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const accentColor = isDark ? 'oklch(75% 0.15 250)' : 'oklch(50% 0.15 250)';
+    const accentForeground = isDark ? 'oklch(25% 0.01 250)' : 'oklch(100% 0 0)';
+
+    document.documentElement.style.setProperty('--color-accent', accentColor);
+    document.documentElement.style.setProperty('--color-accent-foreground', accentForeground);
   }
 }
 
@@ -77,7 +104,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyTheme(savedTheme, system);
 
         // Load and inject system accent color
-        loadSystemAccentColor();
+        await loadSystemAccentColor();
       } catch (err) {
         console.error('Failed to load theme settings, using system theme:', err);
         // Fallback to system theme
@@ -86,7 +113,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setThemeState('system');
         applyTheme('system', system);
         // Still try to load accent color even on error
-        loadSystemAccentColor();
+        await loadSystemAccentColor();
       } finally {
         setIsReady(true);
       }
@@ -124,7 +151,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-    const handleChange = (e: MediaQueryListEvent) => {
+    const handleChange = async (e: MediaQueryListEvent) => {
       const newSystemTheme = e.matches ? 'dark' : 'light';
       setSystemTheme(newSystemTheme);
 
@@ -134,7 +161,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Reload accent color when system theme changes
-      loadSystemAccentColor();
+      await loadSystemAccentColor();
     };
 
     // Use addEventListener for better compatibility

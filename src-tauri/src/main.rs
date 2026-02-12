@@ -431,6 +431,11 @@ fn list_drives() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+fn get_system_accent_color() -> Result<Vec<u8>, String> {
+    gsd_demo::ipc::handlers::get_system_accent_color()
+}
+
+#[tauri::command]
 fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i64,
@@ -592,6 +597,7 @@ fn main() {
             list_local_directories,
             get_default_file_picker_path,
             list_drives,
+            get_system_accent_color,
             delete_ssh_connection,
             rename_ssh_connection,
             detach_terminal,
