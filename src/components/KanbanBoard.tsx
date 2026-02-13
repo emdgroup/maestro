@@ -210,6 +210,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
               columnId={status}
               columnTitle={COLUMN_TITLES[status]}
               tasks={getTasksForColumn(status)}
+              status={status}
               projectPath={projectPath}
               onTaskClick={onTaskClick}
               onReviewClick={(taskId, taskName) => {
