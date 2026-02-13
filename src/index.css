@@ -3,75 +3,110 @@
 
 @plugin "tailwindcss-animate";
 
-/* Tailwind v4 theme configuration */
-@theme {
-  /* Light theme colors - warm gray background for reduced eye strain */
-  --color-primary: oklch(0% 0 0);
-  --color-primary-foreground: oklch(100% 0 0);
-
-  --color-secondary: oklch(50% 0.15 250);
-  --color-secondary-foreground: oklch(100% 0 0);
-
-  --color-accent: oklch(50% 0.15 250);
-  --color-accent-foreground: oklch(100% 0 0);
-
-  --color-destructive: oklch(50% 0.2 25);
-  --color-destructive-foreground: oklch(100% 0 0);
-
-  --color-muted: oklch(94% 0.015 70);
-  --color-muted-foreground: oklch(45% 0.01 250);
-
-  --color-success: oklch(55% 0.15 145);
-  --color-warning: oklch(60% 0.15 70);
-
-  --color-background: oklch(98% 0.015 70);
-  --color-foreground: oklch(45% 0.01 250);
-
-  --color-card: oklch(99.5% 0.01 70);
-  --color-card-foreground: oklch(45% 0.01 250);
-
-  --color-popover: oklch(98% 0.015 70);
-  --color-popover-foreground: oklch(45% 0.01 250);
-
-  --color-border: oklch(86% 0.01 70);
-  --color-input: oklch(99% 0.018 70);
-  --color-ring: oklch(50% 0.15 250);
-
+/* shadcn/ui CSS Variables (light mode) - warm gray theme for reduced eye strain */
+:root {
   --radius: 0.5rem;
+
+  /* Base colors */
+  --background: oklch(98% 0.015 70);
+  --foreground: oklch(45% 0.01 250);
+
+  /* Card colors */
+  --card: oklch(99.5% 0.01 70);
+  --card-foreground: oklch(45% 0.01 250);
+
+  /* Popover colors */
+  --popover: oklch(98% 0.015 70);
+  --popover-foreground: oklch(45% 0.01 250);
+
+  /* Primary colors */
+  --primary: oklch(0% 0 0);
+  --primary-foreground: oklch(100% 0 0);
+
+  /* Secondary colors */
+  --secondary: oklch(50% 0.15 250);
+  --secondary-foreground: oklch(100% 0 0);
+
+  /* Muted colors */
+  --muted: oklch(94% 0.015 70);
+  --muted-foreground: oklch(45% 0.01 250);
+
+  /* Accent colors (dynamically overridden by ThemeProvider for system accent) */
+  --accent: oklch(50% 0.15 250);
+  --accent-foreground: oklch(100% 0 0);
+
+  /* Destructive colors */
+  --destructive: oklch(50% 0.2 25);
+  --destructive-foreground: oklch(100% 0 0);
+
+  /* Custom colors */
+  --success: oklch(55% 0.15 145);
+  --warning: oklch(60% 0.15 70);
+
+  /* Border and input colors */
+  --border: oklch(86% 0.01 70);
+  --input: oklch(99% 0.018 70);
+  --ring: oklch(50% 0.15 250);
 }
 
-/* Dark mode via class selector */
+/* Dark mode CSS variables */
 .dark {
-  --color-primary: oklch(100% 0 0);
-  --color-primary-foreground: oklch(25% 0.01 250);
+  --background: oklch(25% 0.01 250);
+  --foreground: oklch(90% 0.01 250);
 
-  --color-secondary: oklch(75% 0.15 250);
-  --color-secondary-foreground: oklch(25% 0.01 250);
+  --card: oklch(32% 0.01 250);
+  --card-foreground: oklch(90% 0.01 250);
 
-  --color-accent: oklch(75% 0.15 250);
-  --color-accent-foreground: oklch(25% 0.01 250);
+  --popover: oklch(32% 0.01 250);
+  --popover-foreground: oklch(90% 0.01 250);
 
-  --color-destructive: oklch(70% 0.2 25);
-  --color-destructive-foreground: oklch(100% 0 0);
+  --primary: oklch(100% 0 0);
+  --primary-foreground: oklch(25% 0.01 250);
 
-  --color-muted: oklch(40% 0.01 250);
-  --color-muted-foreground: oklch(90% 0.01 250);
+  --secondary: oklch(75% 0.15 250);
+  --secondary-foreground: oklch(25% 0.01 250);
 
-  --color-success: oklch(65% 0.15 145);
-  --color-warning: oklch(75% 0.15 70);
+  --muted: oklch(40% 0.01 250);
+  --muted-foreground: oklch(90% 0.01 250);
 
-  --color-background: oklch(25% 0.01 250);
-  --color-foreground: oklch(90% 0.01 250);
+  /* Accent colors (dynamically overridden by ThemeProvider for system accent) */
+  --accent: oklch(75% 0.15 250);
+  --accent-foreground: oklch(25% 0.01 250);
 
-  --color-card: oklch(32% 0.01 250);
-  --color-card-foreground: oklch(90% 0.01 250);
+  --destructive: oklch(70% 0.2 25);
+  --destructive-foreground: oklch(100% 0 0);
 
-  --color-popover: oklch(32% 0.01 250);
-  --color-popover-foreground: oklch(90% 0.01 250);
+  --success: oklch(65% 0.15 145);
+  --warning: oklch(75% 0.15 70);
 
-  --color-border: oklch(45% 0.01 250);
-  --color-input: oklch(32% 0.01 250);
-  --color-ring: oklch(75% 0.15 250);
+  --border: oklch(45% 0.01 250);
+  --input: oklch(32% 0.01 250);
+  --ring: oklch(75% 0.15 250);
+}
+
+/* Map shadcn variables to Tailwind 4 color utilities */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 @layer base {
@@ -115,17 +150,17 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: oklch(from var(--color-muted-foreground) l c h / 0.3);
+    background-color: oklch(from var(--muted-foreground) l c h / 0.3);
     border-radius: 4px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(from var(--color-muted-foreground) l c h / 0.5);
+    background-color: oklch(from var(--muted-foreground) l c h / 0.5);
   }
 
   /* Firefox scrollbar styling */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: oklch(from var(--color-muted-foreground) l c h / 0.3) transparent;
+    scrollbar-color: oklch(from var(--muted-foreground) l c h / 0.3) transparent;
   }
 }

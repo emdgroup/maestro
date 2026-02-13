@@ -64,8 +64,8 @@ async function loadSystemAccentColor(): Promise<void> {
     const accentColor = `oklch(${lightness * 100}% ${chroma} ${hue})`;
     const accentForeground = isDark ? 'oklch(25% 0.01 250)' : 'oklch(100% 0 0)';
 
-    document.documentElement.style.setProperty('--color-accent', accentColor);
-    document.documentElement.style.setProperty('--color-accent-foreground', accentForeground);
+    document.documentElement.style.setProperty('--accent', accentColor);
+    document.documentElement.style.setProperty('--accent-foreground', accentForeground);
 
     console.log('[Theme] Accent color set to:', accentColor, '| hue:', hue, '| foreground:', accentForeground);
   } catch (err) {
@@ -76,8 +76,8 @@ async function loadSystemAccentColor(): Promise<void> {
     const accentColor = isDark ? 'oklch(75% 0.15 250)' : 'oklch(50% 0.15 250)';
     const accentForeground = isDark ? 'oklch(25% 0.01 250)' : 'oklch(100% 0 0)';
 
-    document.documentElement.style.setProperty('--color-accent', accentColor);
-    document.documentElement.style.setProperty('--color-accent-foreground', accentForeground);
+    document.documentElement.style.setProperty('--accent', accentColor);
+    document.documentElement.style.setProperty('--accent-foreground', accentForeground);
   }
 }
 
