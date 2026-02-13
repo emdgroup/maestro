@@ -138,7 +138,7 @@ export function ProjectPicker({
 
           <div className="flex flex-col gap-4 my-8">
             <Button
-              variant="default"
+              variant="accent"
               size="lg"
               onClick={handleSelectLocal}
               disabled={loading}
@@ -148,7 +148,7 @@ export function ProjectPicker({
             </Button>
 
             <Button
-              variant="default"
+              variant="accent"
               size="lg"
               onClick={handleSelectRemote}
               disabled={loading}
@@ -202,7 +202,7 @@ export function ProjectPicker({
           <h1 className="text-3xl font-semibold mb-8">Select Local Project</h1>
 
           <Button
-            variant="default"
+            variant="accent"
             size="lg"
             onClick={handleFolderPicker}
             disabled={loading}
@@ -224,7 +224,7 @@ export function ProjectPicker({
               />
               <Button
                 type="submit"
-                variant="default"
+                variant="accent"
                 disabled={loading || !manualPath.trim()}
                 className="min-w-[100px]"
               >
