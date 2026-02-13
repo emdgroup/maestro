@@ -12,6 +12,8 @@ import { ImportSettings } from "./components/ImportSettings";
 import { SettingsPage } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
+import { ActionBar, ActionBarAction } from "./components/ActionBar";
+import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
 
@@ -155,6 +157,52 @@ function App() {
     setShowImportSettings(false);
   }
 
+  // Define page-specific actions
+  function getPageActions(): ActionBarAction[] {
+    switch (activePage) {
+      case "kanban":
+        return [
+          {
+            id: "add-task",
+            label: "Add Task",
+            icon: Plus,
+            variant: "default",
+            onClick: () => setShowNewTaskModal(true),
+          },
+        ];
+      case "agents":
+        return [];
+      case "worktrees":
+        return [];
+      case "settings":
+        return [
+          {
+            id: "reset",
+            label: "Reset to Defaults",
+            icon: RotateCcw,
+            variant: "ghost",
+            onClick: () => {
+              // TODO: Implement reset to defaults
+              console.log("Reset to defaults clicked");
+            },
+          },
+          {
+            id: "save",
+            label: "Save",
+            icon: Save,
+            variant: "default",
+            onClick: () => {
+              // TODO: Implement save settings
+              console.log("Save settings clicked");
+            },
+            align: "right",
+          },
+        ];
+      default:
+        return [];
+    }
+  }
+
   // Log current state before render
   console.log("[DEBUG] App.tsx render: loading=", loading, "currentProject=", currentProject?.path || "null");
 
@@ -179,6 +227,7 @@ function App() {
             onProjectChange={handleProjectSelected}
             agentCount={0}
           />
+          <ActionBar actions={getPageActions()} />
           <main className="flex-1 overflow-auto">
             {/* Kanban Board Page */}
             {activePage === "kanban" && (
