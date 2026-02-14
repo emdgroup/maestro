@@ -85,7 +85,9 @@ Phase 17 Status:
 
 ### Pending Todos
 
-None - all todos completed!
+1. **Fix recent projects refresh after removal in ProjectPickerNew** (ui)
+   - `.planning/todos/pending/2026-02-14-fix-recent-projects-refresh-on-remove.md`
+   - handleRemoveRecentProject should refresh list without window reload
 
 
 ### Blockers/Concerns

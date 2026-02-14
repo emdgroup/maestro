@@ -286,8 +286,6 @@ export function ProjectPickerNew({
     try {
       await safeInvoke("remove_recent_project", { path });
       toast.success("Project removed from recent list");
-      // Trigger a refresh by updating the key or reloading
-      window.location.reload();
     } catch (error) {
       toast.error(`Failed to remove project: ${error}`);
     }
@@ -312,7 +310,7 @@ export function ProjectPickerNew({
           <div className="bg-card border border-border rounded-lg p-6 min-h-125 overflow-hidden relative">
             {/* Connections View */}
             <div
-              className={`transition-transform duration-300 ease-in-out flex-col h-full ${
+              className={`transition-transform duration-300 ease-in-out flex flex-col h-full ${
                 currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
               }`}
             >
