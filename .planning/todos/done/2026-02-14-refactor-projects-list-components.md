@@ -1,12 +1,13 @@
 ---
 created: 2026-02-14T03:28
-completed: 2026-02-14T03:35
+completed: 2026-02-14T03:45
 title: Refactor LocalProjectsList and RemoteProjectsList components
 area: ui
 files:
   - src/components/LocalProjectsList.tsx
   - src/components/RemoteProjectsList.tsx
   - src/components/ProjectListItem.tsx
+  - src/components/ProjectsListLayout.tsx
   - src/lib/path-utils.ts
 ---
 
@@ -59,3 +60,44 @@ This duplication increases maintenance burden and makes it harder to ensure cons
 - Extraction preserves type safety while eliminating duplication
 - Composition over merging keeps components focused and understandable
 - Future changes to list item styling/behavior only need one edit
+
+---
+
+## Phase 2: Extract Layout Wrapper (2026-02-14)
+
+User feedback indicated that composition could be taken further to eliminate additional presentation duplication.
+
+### Additional Changes:
+
+5. **Created `src/components/ProjectsListLayout.tsx`**
+   - Extracted common layout structure (header with back button, scrollable content, footer with action button)
+   - Uses composition pattern with `headerContent` slot and `children` for list items
+   - Handles empty state rendering
+   - ~40 additional lines of structure duplication eliminated
+
+6. **Further refactored `LocalProjectsList.tsx`**
+   - Now uses `<ProjectsListLayout>` wrapper component
+   - Only contains local-specific logic: filtering, header content (Folder icon + "Local" title)
+   - Reduced from 76 to 52 lines (total reduction: 100 → 52 = **-48%, 48 lines saved**)
+
+7. **Further refactored `RemoteProjectsList.tsx`**
+   - Now uses `<ProjectsListLayout>` wrapper component
+   - Only contains remote-specific logic: filtering by connection, inline editing functionality
+   - Reduced from 152 to 128 lines (total reduction: 176 → 128 = **-27%, 48 lines saved**)
+
+### Total Impact:
+
+✅ **~96 lines of duplicate code eliminated** (across both components)
+✅ **Single source of truth for entire layout structure**
+✅ **Highly composable** - header content can be customized while layout stays consistent
+✅ **Maximum maintainability** - layout changes propagate to both components automatically
+✅ **Components now focus on their unique logic** - filtering and header customization only
+✅ **Build verified** - TypeScript compilation and bundle verification passed
+
+### Final Component Sizes:
+
+- `LocalProjectsList.tsx`: 100 → 52 lines (**-48%**)
+- `RemoteProjectsList.tsx`: 176 → 128 lines (**-27%**)
+- New shared code: 3 small, focused, reusable components
+
+This demonstrates effective composition: extract common patterns into small building blocks, let consumers compose them with unique behavior.
