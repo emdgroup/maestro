@@ -218,7 +218,6 @@ function App() {
         />
       ) : (
         <div className="app flex flex-col h-screen bg-background">
-          <ToasterRoot />
           <AppHeader
             currentProject={currentProject}
             activeView={activePage}
@@ -283,7 +282,12 @@ function App() {
     </>
   );
 
-  return <ThemeProvider>{appContent}</ThemeProvider>;
+  return (
+    <ThemeProvider>
+      <ToasterRoot />
+      {appContent}
+    </ThemeProvider>
+  );
 }
 
 export default App;
