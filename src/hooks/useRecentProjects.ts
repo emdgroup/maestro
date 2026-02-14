@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface EnhancedRecentProject {
@@ -14,19 +14,21 @@ export function useRecentProjects() {
   const [recentProjects, setRecentProjects] = useState<EnhancedRecentProject[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadRecent() {
-      try {
-        const enhanced = await invoke<EnhancedRecentProject[]>('get_recent_projects_enhanced');
-        setRecentProjects(enhanced);
-      } catch (err) {
-        console.error('Failed to load recent projects:', err);
-      } finally {
-        setLoading(false);
-      }
+  const loadRecent = useCallback(async () => {
+    try {
+      setLoading(true);
+      const enhanced = await invoke<EnhancedRecentProject[]>('get_recent_projects_enhanced');
+      setRecentProjects(enhanced);
+    } catch (err) {
+      console.error('Failed to load recent projects:', err);
+    } finally {
+      setLoading(false);
     }
-    loadRecent();
   }, []);
 
-  return { recentProjects, loading };
+  useEffect(() => {
+    loadRecent();
+  }, [loadRecent]);
+
+  return { recentProjects, loading, refetch: loadRecent };
 }

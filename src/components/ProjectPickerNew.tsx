@@ -27,7 +27,7 @@ export function ProjectPickerNew({
   const [currentView, setCurrentView] = useState<View>("connections");
 
   // Load enhanced recent projects with metadata
-  const { recentProjects, loading: recentLoading } = useRecentProjects();
+  const { recentProjects, loading: recentLoading, refetch: refetchRecentProjects } = useRecentProjects();
 
   // Build unified connections list: Local first, then SSH connections
   const connections = useMemo<Connection[]>(() => {
@@ -286,6 +286,8 @@ export function ProjectPickerNew({
     try {
       await safeInvoke("remove_recent_project", { path });
       toast.success("Project removed from recent list");
+      // Refresh the recent projects list
+      await refetchRecentProjects();
     } catch (error) {
       toast.error(`Failed to remove project: ${error}`);
     }
