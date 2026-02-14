@@ -85,20 +85,7 @@ Phase 17 Status:
 
 ### Pending Todos
 
-1. **Add page-specific action bar under header** (ui)
-   - File: `.planning/todos/pending/2026-02-11-add-page-specific-action-bar.md`
-   - Created: 2026-02-11
-   - Feature: Create contextual action bar below header with page-specific actions (Add Task, Save, Sync, etc.)
-
-2. **Improve kanban column design with pills and semantic colors** (ui)
-   - File: `.planning/todos/pending/2026-02-11-improve-kanban-column-design.md`
-   - Created: 2026-02-11
-   - Enhancement: Replace parenthetical counts with badges, add semantic color indicators to columns (research required)
-
-3. **Adjust light theme to warm gray with orange/yellow hue** (ui)
-   - File: `.planning/todos/pending/2026-02-11-adjust-light-theme-to-warm-gray.md`
-   - Created: 2026-02-11
-   - Enhancement: Change light theme from pure white to warm gray background for reduced eye strain
+None - all todos completed!
 
 
 ### Blockers/Concerns
