@@ -275,7 +275,7 @@ function App() {
           />
           <ActionBar actions={getPageActions()} />
           <main className="flex-1 overflow-hidden relative">
-            <AnimatePresence mode="wait" initial={false} custom={slideDirection}>
+            <AnimatePresence initial={false} custom={slideDirection}>
               {activePage === "kanban" && (
                 <motion.div
                   key="kanban"
