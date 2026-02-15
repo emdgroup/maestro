@@ -6,6 +6,7 @@ import {
   GitBranch,
   Settings,
   FolderOpen,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -91,20 +92,30 @@ export function AppHeader({
             </SelectValue>
           </SelectTrigger>
           <SelectContent className="min-w-[16rem] max-w-[24rem]">
-            {filteredProjects.map((project) => (
-              <SelectItem
-                key={project.path}
-                value={project.path}
-                className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground"
-              >
-                <div className="flex flex-col gap-0.5 py-1">
-                  <div className="font-medium text-foreground">{project.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {project.path}
+            {filteredProjects.map((project) => {
+              const isSelected = project.path === currentProjectPath;
+              return (
+                <SelectItem
+                  key={project.path}
+                  value={project.path}
+                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent"
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
+                      <div className="font-medium text-foreground">
+                        {project.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {project.path}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <Check className="h-4 w-4 text-accent shrink-0" />
+                    )}
                   </div>
-                </div>
-              </SelectItem>
-            ))}
+                </SelectItem>
+              );
+            })}
             {onBackToPicker && (
               <>
                 <SelectSeparator />
