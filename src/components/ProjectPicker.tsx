@@ -12,12 +12,14 @@ import { useRecentProjects } from "../hooks/useRecentProjects";
 
 interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
+  onRecentProjectsChanged?: () => void;
 }
 
 type View = "connections" | "projects";
 
 export function ProjectPicker({
   onProjectSelected,
+  onRecentProjectsChanged,
 }: ProjectPickerProps) {
   const [loading, setLoading] = useState(false);
   const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
@@ -287,6 +289,8 @@ export function ProjectPicker({
       await safeInvoke("remove_recent_project", { path });
       // Refresh the recent projects list
       await refetchRecentProjects();
+      // Notify parent to refetch its recent projects list
+      onRecentProjectsChanged?.();
       toast.success("Project removed from recent list");
     } catch (error) {
       toast.error(`Failed to remove project: ${error}`);

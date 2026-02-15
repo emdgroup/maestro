@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { safeInvoke } from "./lib/tauri-safe";
 import { ProjectPicker } from "./components/ProjectPicker.tsx";
@@ -13,6 +13,7 @@ import { ImportSettings } from "./components/ImportSettings";
 import { SettingsPage, SettingsPageHandle } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
+import { useRecentProjects } from "./hooks/useRecentProjects";
 import { ActionBar, ActionBarAction } from "./components/ActionBar";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "./types/bindings";
@@ -37,6 +38,16 @@ function App() {
   >("kanban");
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
+
+  // Load recent projects for filtering dropdown
+  const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects();
+
+  // Filter projects to only show recent ones in the header dropdown
+  const recentProjectsOnly = useMemo(() => {
+    if (recentProjects.length === 0) return projects;
+    const recentPaths = new Set(recentProjects.map(rp => rp.path));
+    return projects.filter(p => recentPaths.has(p.path));
+  }, [projects, recentProjects]);
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
@@ -235,6 +246,7 @@ function App() {
       ) : !currentProject ? (
         <ProjectPicker
           onProjectSelected={handleProjectSelected}
+          onRecentProjectsChanged={refetchRecentProjects}
         />
       ) : (
         <div className="app flex flex-col h-screen bg-background">
@@ -242,7 +254,7 @@ function App() {
             currentProject={currentProject}
             activeView={activePage}
             onViewChange={handlePageChange}
-            projects={projects}
+            projects={recentProjectsOnly}
             onProjectChange={handleProjectSelected}
             onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
