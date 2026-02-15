@@ -83,7 +83,7 @@ export function AppHeader({
       {/* Left section: Logo + divider + Project Dropdown */}
       <div className="flex items-center gap-3 shrink-0">
         <Select value={currentProjectPath} onValueChange={handleValueChange}>
-          <SelectTrigger className="h-7 min-w-[10rem] max-w-[20rem] border-none bg-muted text-xs">
+          <SelectTrigger className="h-7 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
             <FolderOpen className="mr-1.5 h-3 w-3 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Select project">
               {currentProjectName}
@@ -94,7 +94,7 @@ export function AppHeader({
               <SelectItem
                 key={project.path}
                 value={project.path}
-                className="cursor-pointer hover:outline hover:outline-2 hover:outline-accent focus:outline focus:outline-2 focus:outline-accent"
+                className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline focus:outline-2 focus:outline-accent focus:text-foreground"
               >
                 <div className="flex flex-col gap-0.5 py-1">
                   <div className="font-medium text-foreground">{project.name}</div>
@@ -109,7 +109,7 @@ export function AppHeader({
                 <SelectSeparator />
                 <SelectItem
                   value={BACK_TO_PICKER_VALUE}
-                  className="cursor-pointer hover:outline hover:outline-2 hover:outline-accent focus:outline focus:outline-2 focus:outline-accent"
+                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline focus:outline-2 focus:outline-accent focus:text-foreground"
                 >
                   <div className="flex items-center gap-2 py-1">
                     <FolderOpen className="h-3.5 w-3.5" />
