@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
@@ -28,6 +28,9 @@ export function FilePicker({
   const [loading, setLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+
+  const directoryButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
   // Initialize default path on mount
   useEffect(() => {
@@ -73,8 +76,62 @@ export function FilePicker({
   useEffect(() => {
     if (isInitialized && currentPath) {
       loadDirectories(currentPath);
+      setSelectedIndex(-1); // Reset selection when path changes
     }
   }, [currentPath, isInitialized]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const showingDrives = isLocal && currentPath === DRIVES_ROOT;
+      const itemList = showingDrives ? drives : visibleDirectories;
+      const hasParent = !showingDrives && currentPath !== "/" && currentPath !== DRIVES_ROOT;
+      const totalItems = hasParent ? itemList.length + 1 : itemList.length;
+
+      // Arrow key navigation
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev + 1;
+          return next >= totalItems ? 0 : next;
+        });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev - 1;
+          return next < 0 ? totalItems - 1 : next;
+        });
+      } else if (e.key === "Enter" && selectedIndex >= 0) {
+        e.preventDefault();
+        // Execute the selected item
+        if (hasParent && selectedIndex === 0) {
+          handleParentDirectory();
+        } else {
+          const itemIndex = hasParent ? selectedIndex - 1 : selectedIndex;
+          const item = itemList[itemIndex];
+          if (item) {
+            handleDirectoryClick(item);
+          }
+        }
+      } else if (e.key === "Backspace" && !showingDrives) {
+        e.preventDefault();
+        handleParentDirectory();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIndex, currentPath, drives, directories, showHidden, isLocal]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (selectedIndex >= 0) {
+      const button = directoryButtonRefs.current.get(selectedIndex);
+      if (button) {
+        button.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [selectedIndex]);
 
   async function loadDirectories(path: string) {
     // Special case: show drives on Windows when at drives root
@@ -190,16 +247,16 @@ export function FilePicker({
     onProjectSelect(currentPath);
   }
 
+  // Filter directories based on showHidden toggle
+  const visibleDirectories = showHidden
+    ? directories
+    : directories.filter((dir) => !dir.startsWith("."));
+
   // Parse path into breadcrumb parts
   const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);
 
   // Check if we're showing drives
   const showingDrives = isLocal && currentPath === DRIVES_ROOT;
-
-  // Filter directories based on showHidden toggle
-  const visibleDirectories = showHidden
-    ? directories
-    : directories.filter((dir) => !dir.startsWith("."));
 
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden">
@@ -219,7 +276,7 @@ export function FilePicker({
           <div className="flex items-center gap-2 pb-4 border-b border-border flex-wrap shrink-0">
             <button
               onClick={() => handleBreadcrumbClick(-1)}
-              className="flex items-center gap-1 text-sm hover:text-primary transition-colors"
+              className="flex items-center gap-1 text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
             >
               <Home className="w-4 h-4" />
               <span>{showingDrives ? "Drives" : "Root"}</span>
@@ -229,7 +286,7 @@ export function FilePicker({
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 <button
                   onClick={() => handleBreadcrumbClick(index)}
-                  className="text-sm hover:text-primary transition-colors"
+                  className="text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
                 >
                   {part}
                 </button>
@@ -253,12 +310,18 @@ export function FilePicker({
                       No drives found
                     </p>
                   ) : (
-                    drives.map((drive) => (
+                    drives.map((drive, index) => (
                       <button
                         key={drive}
+                        ref={(el) => {
+                          if (el) directoryButtonRefs.current.set(index, el);
+                          else directoryButtonRefs.current.delete(index);
+                        }}
                         onClick={() => handleDirectoryClick(drive)}
                         disabled={loading}
-                        className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                          selectedIndex === index ? "bg-accent" : ""
+                        }`}
                       >
                         <HardDrive className="w-4 h-4 shrink-0" />
                         <span className="truncate">{drive}</span>
@@ -270,9 +333,15 @@ export function FilePicker({
                     {/* Parent directory ".." button - show unless at root or drives root */}
                     {currentPath !== "/" && currentPath !== DRIVES_ROOT && (
                       <button
+                        ref={(el) => {
+                          if (el) directoryButtonRefs.current.set(0, el);
+                          else directoryButtonRefs.current.delete(0);
+                        }}
                         onClick={handleParentDirectory}
                         disabled={loading}
-                        className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                          selectedIndex === 0 ? "bg-accent" : ""
+                        }`}
                       >
                         <FolderUp className="w-4 h-4 shrink-0" />
                         <span className="truncate">..</span>
@@ -285,17 +354,27 @@ export function FilePicker({
                         No subdirectories found
                       </p>
                     ) : (
-                      visibleDirectories.map((dir) => (
-                        <button
-                          key={dir}
-                          onClick={() => handleDirectoryClick(dir)}
-                          disabled={loading}
-                          className="w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Folder className="w-4 h-4 shrink-0" />
-                          <span className="truncate">{dir}</span>
-                        </button>
-                      ))
+                      visibleDirectories.map((dir, index) => {
+                        const hasParent = currentPath !== "/" && currentPath !== DRIVES_ROOT;
+                        const itemIndex = hasParent ? index + 1 : index;
+                        return (
+                          <button
+                            key={dir}
+                            ref={(el) => {
+                              if (el) directoryButtonRefs.current.set(itemIndex, el);
+                              else directoryButtonRefs.current.delete(itemIndex);
+                            }}
+                            onClick={() => handleDirectoryClick(dir)}
+                            disabled={loading}
+                            className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                              selectedIndex === itemIndex ? "bg-accent" : ""
+                            }`}
+                          >
+                            <Folder className="w-4 h-4 shrink-0" />
+                            <span className="truncate">{dir}</span>
+                          </button>
+                        );
+                      })
                     )}
                   </>
                 )}
@@ -310,6 +389,7 @@ export function FilePicker({
                 id="show-hidden"
                 checked={showHidden}
                 onCheckedChange={(checked) => setShowHidden(checked)}
+                className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               />
               <Label
                 htmlFor="show-hidden"
@@ -328,9 +408,9 @@ export function FilePicker({
             <Button
               onClick={handleSelectCurrentDirectory}
               disabled={loading || externalLoading || showingDrives}
-              variant="default"
+              variant="accent"
               size="default"
-              className="shrink-0"
+              className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
             >
               <Folder className="w-4 h-4" />
               {externalLoading ? "Opening..." : "Open Project"}

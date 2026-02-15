@@ -1,6 +1,6 @@
 import { Button } from "./ui/button";
 import { Folder, ChevronLeft } from "lucide-react";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 
 interface ProjectsListLayoutProps {
   /** Content for the header (icon, title, and optional actions) */
@@ -22,6 +22,7 @@ interface ProjectsListLayoutProps {
 /**
  * Shared layout wrapper for project list components.
  * Provides consistent structure: header with back button, scrollable content area, and footer with action button.
+ * Keyboard navigation: Esc goes back, Tab navigates between projects and action button.
  */
 export function ProjectsListLayout({
   headerContent,
@@ -32,6 +33,19 @@ export function ProjectsListLayout({
   onSelectNewClick,
   loading = false,
 }: ProjectsListLayoutProps) {
+  // Handle Esc key to go back
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onBack();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onBack]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border">
@@ -39,7 +53,9 @@ export function ProjectsListLayout({
           variant="ghost"
           size="sm"
           onClick={onBack}
+          tabIndex={-1}
           className="p-1 h-auto -ml-1"
+          aria-label="Back to connections (Esc)"
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
@@ -62,7 +78,7 @@ export function ProjectsListLayout({
           disabled={loading}
           variant="default"
           size="lg"
-          className="w-full"
+          className="w-full focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
         >
           <Folder className="w-4 h-4" />
           {loading ? "Loading..." : "Select New Project"}
