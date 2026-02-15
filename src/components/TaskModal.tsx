@@ -35,10 +35,10 @@ export function TaskModal({
 
     try {
       const newTask = await invoke<Task>("create_task", {
+        projectId: projectId,
         name: data.name,
         description: data.description,
-        acceptance_criteria: data.acceptance_criteria,
-        project_id: data.project_id,
+        acceptanceCriteria: data.acceptance_criteria,
         skills: data.skills,
       });
 
