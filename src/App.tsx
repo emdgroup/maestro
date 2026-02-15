@@ -258,7 +258,7 @@ function App() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto"
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <KanbanBoard
                     projectId={currentProject.id}
@@ -276,7 +276,7 @@ function App() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto"
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <AgentMonitor
                     projectId={currentProject.id}
@@ -294,7 +294,7 @@ function App() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto"
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <WorktreeManager
                     projectId={currentProject.id}
@@ -311,7 +311,7 @@ function App() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto"
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <SettingsPage ref={settingsPageRef} projectId={currentProject.id} />
                 </motion.div>

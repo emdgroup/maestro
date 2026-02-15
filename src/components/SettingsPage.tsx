@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, forwardRef, useImperativeHandle } from "react";
+import { useForm, Controller } from "react-hook-form";
 import { invoke } from "../lib/tauri-mock";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useConfigStore,
   AVAILABLE_MCP_SERVERS,
@@ -25,7 +31,12 @@ interface ProjectSettingsFormData {
   theme_preference: string;
 }
 
-export function SettingsPage({ projectId }: SettingsPageProps) {
+export interface SettingsPageHandle {
+  save: () => Promise<void>;
+  resetToDefaults: () => void;
+}
+
+export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({ projectId }, ref) => {
   const {
     model_default,
     mcp_allowlist,
@@ -38,13 +49,12 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
     clearError,
   } = useConfigStore();
 
-  const [isSaving, setIsSaving] = useState(false);
   const { setTheme } = useTheme();
   const {
     register,
     handleSubmit,
-    watch,
     reset,
+    control,
   } = useForm<ProjectSettingsFormData>({
     mode: "onChange",
     defaultValues: {
@@ -131,7 +141,6 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
       return;
     }
 
-    setIsSaving(true);
     setError(null);
 
     try {
@@ -168,24 +177,39 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
         err instanceof Error ? err.message : "Failed to save settings";
       setError(errorMessage);
       console.error("Failed to save project settings:", err);
-    } finally {
-      setIsSaving(false);
     }
   };
 
-  const handleThemeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newTheme = e.target.value as 'light' | 'dark' | 'system';
-    try {
-      await setTheme(newTheme);
-    } catch (err) {
-      console.error('Failed to change theme:', err);
-    }
-  };
-
-  const selectedModelDefault = watch("model_default");
+  // Expose save and reset methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    save: async () => {
+      await handleSubmit(onSubmit)();
+    },
+    resetToDefaults: () => {
+      // Reset form to defaults
+      reset({
+        model_default: AVAILABLE_MODELS[0],
+        mcp_servers: AVAILABLE_MCP_SERVERS.reduce(
+          (acc, server) => {
+            acc[server] = false;
+            return acc;
+          },
+          {} as Record<string, boolean>
+        ),
+        skills: AVAILABLE_SKILLS.reduce(
+          (acc, skill) => {
+            acc[skill] = false;
+            return acc;
+          },
+          {} as Record<string, boolean>
+        ),
+        theme_preference: "system",
+      });
+    },
+  }));
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full">
       <div className="max-w-3xl mx-auto p-6">
         {/* Page Header */}
         <div className="mb-6">
@@ -218,18 +242,25 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
                   <Label htmlFor="model_default" className="text-sm font-medium mb-2 block">
                     Claude Model
                   </Label>
-                  <select
-                    id="model_default"
-                    {...register("model_default", { required: true })}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground
-                               focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {AVAILABLE_MODELS.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
+                  <Controller
+                    name="model_default"
+                    control={control}
+                    rules={{ required: true }}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AVAILABLE_MODELS.map((model) => (
+                            <SelectItem key={model} value={model}>
+                              {model}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     Default Claude model for new tasks in this project
                   </p>
@@ -296,20 +327,33 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
                   <Label htmlFor="theme_preference" className="text-sm font-medium mb-2 block">
                     Theme
                   </Label>
-                  <select
-                    id="theme_preference"
-                    {...register("theme_preference")}
-                    onChange={(e) => {
-                      register("theme_preference").onChange(e);
-                      handleThemeChange(e);
-                    }}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground
-                               focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                    <option value="system">System</option>
-                  </select>
+                  <Controller
+                    name="theme_preference"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={async (value) => {
+                          field.onChange(value);
+                          const theme = value as 'light' | 'dark' | 'system';
+                          try {
+                            await setTheme(theme);
+                          } catch (err) {
+                            console.error('Failed to change theme:', err);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select theme" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="light">Light</SelectItem>
+                          <SelectItem value="dark">Dark</SelectItem>
+                          <SelectItem value="system">System</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     Choose how the interface appears
                   </p>
@@ -317,19 +361,9 @@ export function SettingsPage({ projectId }: SettingsPageProps) {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-4">
-              <Button
-                type="submit"
-                disabled={isSaving || !selectedModelDefault}
-                className="bg-accent hover:bg-accent/90"
-              >
-                {isSaving ? "Saving..." : "Save Settings"}
-              </Button>
-            </div>
           </form>
         )}
       </div>
     </div>
   );
-}
+});

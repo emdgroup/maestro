@@ -191,7 +191,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   };
 
   return (
-    <div>
+    <div className="h-full flex flex-col">
       {errorMessage && (
         <div className="p-4 mb-4 bg-error text-error-foreground rounded-lg">
           {errorMessage}
@@ -203,7 +203,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-5 gap-4 p-4 bg-background h-[calc(100vh-120px)]">
+        <div className="grid grid-cols-5 gap-4 p-4 bg-background flex-1">
           {COLUMN_STATUSES.map((status) => (
             <KanbanColumn
               key={status}
