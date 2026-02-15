@@ -19,6 +19,7 @@ import {
 import type { ProjectConfigResponse, ProjectConfigRequest, AppSettings } from "../types/bindings";
 import { useTheme } from "../providers/ThemeProvider";
 import { Bot, Server, Sparkles, Palette } from "lucide-react";
+import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
   projectId: number;
@@ -172,6 +173,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
 
       // Show success message
       setError(null);
+      showSuccessToast("Settings saved successfully");
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to save settings";

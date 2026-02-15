@@ -16,6 +16,11 @@ export function ToasterRoot() {
       position="bottom-right"
       visibleToasts={3}
       duration={4000}
+      toastOptions={{
+        classNames: {
+          success: '[&_svg]:text-green-500',
+        },
+      }}
     />
   );
 }
