@@ -50,7 +50,7 @@ export function ConnectionList({
         <h2 className="text-lg font-semibold">Connections</h2>
       </div>
 
-      <div className="flex-1 overflow-auto mb-4">
+      <div className="flex-1 overflow-auto mb-4 px-1 py-1">
         {connections.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No connections available
@@ -86,8 +86,8 @@ export function ConnectionList({
                         )}
                       </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </Button>
-                  <ChevronRight className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </li>
               );
             })}
@@ -102,8 +102,8 @@ export function ConnectionList({
             value={connectionString}
             onChange={(e) => setConnectionString(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="user@host:22 or user@host"
-            className="font-mono text-sm h-auto"
+            placeholder="Enter user@host"
+            className="font-mono text-sm h-auto bg-background border-5 border-solid border-transparent"
             disabled={loading}
           />
           <Button

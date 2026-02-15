@@ -10,7 +10,7 @@ import { FilePicker } from "./FilePicker";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useRecentProjects } from "../hooks/useRecentProjects";
 
-interface ProjectPickerNewProps {
+interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
 }
 
@@ -18,7 +18,7 @@ type View = "connections" | "projects";
 
 export function ProjectPicker({
   onProjectSelected,
-}: ProjectPickerNewProps) {
+}: ProjectPickerProps) {
   const [loading, setLoading] = useState(false);
   const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -309,10 +309,10 @@ export function ProjectPicker({
           </div>
 
           {/* Single Panel with Slide Transition */}
-          <div className="bg-card border border-border rounded-lg p-6 min-h-125 overflow-hidden relative">
+          <div className="bg-card border border-border rounded-lg p-6 overflow-clip relative flex flex-col">
             {/* Connections View */}
             <div
-              className={`transition-transform duration-300 ease-in-out flex flex-col h-full ${
+              className={`transition-transform duration-300 ease-in-out flex flex-col flex-1 ${
                 currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
               }`}
             >
@@ -326,7 +326,7 @@ export function ProjectPicker({
 
             {/* Projects View */}
             <div
-              className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out ${
+              className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
                 currentView === "projects" ? "translate-x-0" : "translate-x-full"
               }`}
             >
