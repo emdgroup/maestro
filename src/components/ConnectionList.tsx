@@ -50,7 +50,7 @@ export function ConnectionList({
         <h2 className="text-lg font-semibold">Connections</h2>
       </div>
 
-      <div className="flex-1 overflow-auto mb-4 px-1 py-1">
+      <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">
         {connections.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No connections available

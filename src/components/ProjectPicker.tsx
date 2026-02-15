@@ -309,10 +309,10 @@ export function ProjectPicker({
           </div>
 
           {/* Single Panel with Slide Transition */}
-          <div className="bg-card border border-border rounded-lg p-6 overflow-clip relative flex flex-col">
+          <div className="bg-card border border-border rounded-lg overflow-clip relative min-h-[500px] max-h-[700px]">
             {/* Connections View */}
             <div
-              className={`transition-transform duration-300 ease-in-out flex flex-col flex-1 ${
+              className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
                 currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
               }`}
             >
