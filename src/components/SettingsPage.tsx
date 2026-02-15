@@ -248,7 +248,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
                     rules={{ required: true }}
                     render={({ field }) => (
                       <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full bg-muted">
                           <SelectValue placeholder="Select a model" />
                         </SelectTrigger>
                         <SelectContent>
@@ -343,7 +343,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
                           }
                         }}
                       >
-                        <SelectTrigger className="w-full">
+                        <SelectTrigger className="w-full bg-muted">
                           <SelectValue placeholder="Select theme" />
                         </SelectTrigger>
                         <SelectContent>
