@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   Bot,
@@ -83,8 +84,8 @@ export function AppHeader({
       {/* Left section: Logo + divider + Project Dropdown */}
       <div className="flex items-center gap-3 shrink-0">
         <Select value={currentProjectPath} onValueChange={handleValueChange}>
-          <SelectTrigger className="h-7 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
-            <FolderOpen className="mr-1.5 h-3 w-3 text-muted-foreground shrink-0" />
+          <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
+            <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Select project">
               {currentProjectName}
             </SelectValue>
@@ -94,7 +95,7 @@ export function AppHeader({
               <SelectItem
                 key={project.path}
                 value={project.path}
-                className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline focus:outline-2 focus:outline-accent focus:text-foreground"
+                className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground"
               >
                 <div className="flex flex-col gap-0.5 py-1">
                   <div className="font-medium text-foreground">{project.name}</div>
@@ -107,10 +108,7 @@ export function AppHeader({
             {onBackToPicker && (
               <>
                 <SelectSeparator />
-                <SelectItem
-                  value={BACK_TO_PICKER_VALUE}
-                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline focus:outline-2 focus:outline-accent focus:text-foreground"
-                >
+                <SelectItem value={BACK_TO_PICKER_VALUE} className="cursor-pointer">
                   <div className="flex items-center gap-2 py-1">
                     <FolderOpen className="h-3.5 w-3.5" />
                     <span>Project Picker</span>
@@ -132,14 +130,21 @@ export function AppHeader({
               key={view.id}
               onClick={() => onViewChange(view.id)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus:border focus:border-solid focus:border-accent",
                 isActive
-                  ? "bg-muted text-foreground"
+                  ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
             >
               <Icon className="h-3.5 w-3.5" />
               <span>{view.label}</span>
+              {isActive && (
+                <motion.div
+                  layoutId="activeTabIndicator"
+                  className="absolute inset-0 bg-muted rounded-md -z-10"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
             </button>
           );
         })}

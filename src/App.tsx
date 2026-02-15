@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { safeInvoke } from "./lib/tauri-safe";
 import { ProjectPicker } from "./components/ProjectPicker.tsx";
 import { KanbanBoard } from "./components/KanbanBoard";
@@ -9,7 +10,7 @@ import { TaskModal } from "./components/TaskModal";
 import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
-import { SettingsPage } from "./components/SettingsPage";
+import { SettingsPage, SettingsPageHandle } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { useBoardStore } from "./store/boardStore";
 import { ActionBar, ActionBarAction } from "./components/ActionBar";
@@ -31,7 +32,27 @@ function App() {
   const [activePage, setActivePage] = useState<
     "kanban" | "agents" | "worktrees" | "settings"
   >("kanban");
+  const [prevPage, setPrevPage] = useState<
+    "kanban" | "agents" | "worktrees" | "settings"
+  >("kanban");
   const { addTask } = useBoardStore();
+  const settingsPageRef = useRef<SettingsPageHandle>(null);
+
+  // Page order for determining slide direction
+  const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
+
+  // Calculate slide direction based on page order
+  const getSlideDirection = () => {
+    const current = pageOrder[activePage];
+    const previous = pageOrder[prevPage];
+    return current > previous ? 1 : -1; // 1 = slide left (next), -1 = slide right (prev)
+  };
+
+  // Update previous page when active page changes
+  const handlePageChange = (page: typeof activePage) => {
+    setPrevPage(activePage);
+    setActivePage(page);
+  };
 
   // Load all projects
   async function loadAllProjects() {
@@ -183,8 +204,7 @@ function App() {
             icon: RotateCcw,
             variant: "ghost",
             onClick: () => {
-              // TODO: Implement reset to defaults
-              console.log("Reset to defaults clicked");
+              settingsPageRef.current?.resetToDefaults();
             },
           },
           {
@@ -192,9 +212,8 @@ function App() {
             label: "Save",
             icon: Save,
             variant: "accent",
-            onClick: () => {
-              // TODO: Implement save settings
-              console.log("Save settings clicked");
+            onClick: async () => {
+              await settingsPageRef.current?.save();
             },
             align: "right",
           },
@@ -222,44 +241,82 @@ function App() {
           <AppHeader
             currentProject={currentProject}
             activeView={activePage}
-            onViewChange={setActivePage}
+            onViewChange={handlePageChange}
             projects={projects}
             onProjectChange={handleProjectSelected}
             onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
           />
           <ActionBar actions={getPageActions()} />
-          <main className="flex-1 overflow-auto">
-            {/* Kanban Board Page */}
-            {activePage === "kanban" && (
-              <KanbanBoard
-                projectId={currentProject.id}
-                projectPath={currentProject.path}
-                onTaskClick={setSelectedTask}
-              />
-            )}
+          <main className="flex-1 overflow-hidden relative">
+            <AnimatePresence mode="wait" custom={getSlideDirection()}>
+              {activePage === "kanban" && (
+                <motion.div
+                  key="kanban"
+                  custom={getSlideDirection()}
+                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="absolute inset-0 overflow-auto"
+                >
+                  <KanbanBoard
+                    projectId={currentProject.id}
+                    projectPath={currentProject.path}
+                    onTaskClick={setSelectedTask}
+                  />
+                </motion.div>
+              )}
 
-            {/* Agent Monitor Page */}
-            {activePage === "agents" && (
-              <AgentMonitor
-                projectId={currentProject.id}
-                agents={[]}
-                activeAgentId={null}
-              />
-            )}
+              {activePage === "agents" && (
+                <motion.div
+                  key="agents"
+                  custom={getSlideDirection()}
+                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="absolute inset-0 overflow-auto"
+                >
+                  <AgentMonitor
+                    projectId={currentProject.id}
+                    agents={[]}
+                    activeAgentId={null}
+                  />
+                </motion.div>
+              )}
 
-            {/* Worktree Manager Page */}
-            {activePage === "worktrees" && (
-              <WorktreeManager
-                projectId={currentProject.id}
-                worktrees={[]}
-              />
-            )}
+              {activePage === "worktrees" && (
+                <motion.div
+                  key="worktrees"
+                  custom={getSlideDirection()}
+                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="absolute inset-0 overflow-auto"
+                >
+                  <WorktreeManager
+                    projectId={currentProject.id}
+                    worktrees={[]}
+                  />
+                </motion.div>
+              )}
 
-            {/* Settings Page */}
-            {activePage === "settings" && (
-              <SettingsPage projectId={currentProject.id} />
-            )}
+              {activePage === "settings" && (
+                <motion.div
+                  key="settings"
+                  custom={getSlideDirection()}
+                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="absolute inset-0 overflow-auto"
+                >
+                  <SettingsPage ref={settingsPageRef} projectId={currentProject.id} />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Modals and Overlays */}
             <TaskModal
