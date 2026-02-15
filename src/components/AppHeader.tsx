@@ -5,7 +5,6 @@ import {
   GitBranch,
   Settings,
   FolderOpen,
-  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -66,6 +65,7 @@ export function AppHeader({
   }, [projects, currentProject]);
 
   const currentProjectPath = currentProject?.path || "";
+  const currentProjectName = currentProject?.name || "";
 
   // Special value for "back to picker" option
   const BACK_TO_PICKER_VALUE = "__back_to_picker__";
@@ -85,11 +85,17 @@ export function AppHeader({
         <Select value={currentProjectPath} onValueChange={handleValueChange}>
           <SelectTrigger className="h-7 min-w-[10rem] max-w-[20rem] border-none bg-muted text-xs">
             <FolderOpen className="mr-1.5 h-3 w-3 text-muted-foreground shrink-0" />
-            <SelectValue placeholder="Select project" />
+            <SelectValue placeholder="Select project">
+              {currentProjectName}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent className="min-w-[16rem] max-w-[24rem]">
             {filteredProjects.map((project) => (
-              <SelectItem key={project.path} value={project.path} className="cursor-pointer">
+              <SelectItem
+                key={project.path}
+                value={project.path}
+                className="cursor-pointer hover:outline hover:outline-2 hover:outline-accent focus:outline focus:outline-2 focus:outline-accent"
+              >
                 <div className="flex flex-col gap-0.5 py-1">
                   <div className="font-medium text-foreground">{project.name}</div>
                   <div className="text-xs text-muted-foreground truncate">
@@ -101,10 +107,13 @@ export function AppHeader({
             {onBackToPicker && (
               <>
                 <SelectSeparator />
-                <SelectItem value={BACK_TO_PICKER_VALUE} className="cursor-pointer">
+                <SelectItem
+                  value={BACK_TO_PICKER_VALUE}
+                  className="cursor-pointer hover:outline hover:outline-2 hover:outline-accent focus:outline focus:outline-2 focus:outline-accent"
+                >
                   <div className="flex items-center gap-2 py-1">
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>Back to Project Picker</span>
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    <span>Project Picker</span>
                   </div>
                 </SelectItem>
               </>
