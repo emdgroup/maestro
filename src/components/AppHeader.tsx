@@ -5,14 +5,14 @@ import {
   GitBranch,
   Settings,
   FolderOpen,
-  Plus,
+  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -26,6 +26,7 @@ interface AppHeaderProps {
   onViewChange: (view: ViewType) => void;
   projects?: Project[];
   onProjectChange?: (path: string) => void;
+  onBackToPicker?: () => void;
   agentCount?: number;
 }
 
@@ -46,35 +47,68 @@ export function AppHeader({
   onViewChange,
   projects = [],
   onProjectChange,
+  onBackToPicker,
   agentCount = 0,
 }: AppHeaderProps) {
-  // Format project list for display
-  const projectOptions = useMemo(
-    () => projects.map((p) => ({ value: p.path, label: p.name })),
-    [projects]
-  );
+  // Get connection identifier for filtering
+  const getConnectionId = (project: Project): string => {
+    if (!project.is_remote || !project.ssh_config) {
+      return "local";
+    }
+    return `${project.ssh_config.username}@${project.ssh_config.host}`;
+  };
+
+  // Filter projects to show only those from the same connection
+  const filteredProjects = useMemo(() => {
+    if (!currentProject) return projects;
+    const currentConnection = getConnectionId(currentProject);
+    return projects.filter((p) => getConnectionId(p) === currentConnection);
+  }, [projects, currentProject]);
 
   const currentProjectPath = currentProject?.path || "";
+
+  // Special value for "back to picker" option
+  const BACK_TO_PICKER_VALUE = "__back_to_picker__";
+
+  const handleValueChange = (value: string) => {
+    if (value === BACK_TO_PICKER_VALUE && onBackToPicker) {
+      onBackToPicker();
+    } else if (onProjectChange) {
+      onProjectChange(value);
+    }
+  };
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b px-4 gap-4">
       {/* Left section: Logo + divider + Project Dropdown */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <span className="text-sm font-semibold tracking-tight text-foreground">
-          GSD Agent Orchestrator
-        </span>
-        <div className="h-4 w-px bg-border" />
-        <Select value={currentProjectPath} onValueChange={onProjectChange}>
-          <SelectTrigger className="h-7 w-[160px] border-none bg-muted text-xs">
-            <FolderOpen className="mr-1.5 h-3 w-3 text-muted-foreground" />
+      <div className="flex items-center gap-3 shrink-0">
+        <Select value={currentProjectPath} onValueChange={handleValueChange}>
+          <SelectTrigger className="h-7 min-w-[10rem] max-w-[20rem] border-none bg-muted text-xs">
+            <FolderOpen className="mr-1.5 h-3 w-3 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Select project" />
           </SelectTrigger>
-          <SelectContent>
-            {projectOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+          <SelectContent className="min-w-[16rem] max-w-[24rem]">
+            {filteredProjects.map((project) => (
+              <SelectItem key={project.path} value={project.path} className="cursor-pointer">
+                <div className="flex flex-col gap-0.5 py-1">
+                  <div className="font-medium text-foreground">{project.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {project.path}
+                  </div>
+                </div>
               </SelectItem>
             ))}
+            {onBackToPicker && (
+              <>
+                <SelectSeparator />
+                <SelectItem value={BACK_TO_PICKER_VALUE} className="cursor-pointer">
+                  <div className="flex items-center gap-2 py-1">
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Back to Project Picker</span>
+                  </div>
+                </SelectItem>
+              </>
+            )}
           </SelectContent>
         </Select>
       </div>
@@ -103,20 +137,13 @@ export function AppHeader({
       </nav>
 
       {/* Right section: Status indicator + New Agent button */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
           <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
           <span className="text-xs text-muted-foreground">
             {agentCount} running
           </span>
         </div>
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 text-xs bg-accent hover:bg-accent/90 text-accent-foreground"
-        >
-          <Plus className="h-3 w-3" />
-          New Agent
-        </Button>
       </div>
     </header>
   );

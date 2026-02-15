@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { safeInvoke } from "./lib/tauri-safe";
-import { ProjectPickerNew } from "./components/ProjectPickerNew";
+import { ProjectPicker } from "./components/ProjectPicker.tsx";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { AppHeader } from "./components/AppHeader";
 import { AgentMonitor } from "./components/AgentMonitor";
@@ -213,7 +213,7 @@ function App() {
           <p>Loading...</p>
         </div>
       ) : !currentProject ? (
-        <ProjectPickerNew
+        <ProjectPicker
           onProjectSelected={handleProjectSelected}
         />
       ) : (
@@ -224,6 +224,7 @@ function App() {
             onViewChange={setActivePage}
             projects={projects}
             onProjectChange={handleProjectSelected}
+            onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
           />
           <ActionBar actions={getPageActions()} />
