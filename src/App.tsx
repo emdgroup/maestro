@@ -166,8 +166,9 @@ function App() {
             id: "add-task",
             label: "Add Task",
             icon: Plus,
-            variant: "default",
+            variant: "accent",
             onClick: () => setShowNewTaskModal(true),
+            align: "right",
           },
         ];
       case "agents":
@@ -190,7 +191,7 @@ function App() {
             id: "save",
             label: "Save",
             icon: Save,
-            variant: "default",
+            variant: "accent",
             onClick: () => {
               // TODO: Implement save settings
               console.log("Save settings clicked");

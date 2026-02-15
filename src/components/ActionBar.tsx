@@ -6,7 +6,7 @@ export interface ActionBarAction {
   id: string;
   label: string;
   icon?: LucideIcon;
-  variant?: "default" | "outline" | "ghost" | "destructive";
+  variant?: "default" | "outline" | "ghost" | "destructive" | "accent";
   onClick: () => void;
   visible?: boolean;
   disabled?: boolean;
