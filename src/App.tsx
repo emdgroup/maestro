@@ -92,59 +92,75 @@ function App() {
     }
   }
 
+  // Load settings from database
+  async function loadSettings() {
+    try {
+      console.log("[DEBUG] App.tsx: Loading settings");
+      const loaded = await safeInvoke<AppSettings>("get_settings");
+      console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
+
+      // Validate and clean up recent projects
+      console.log("[DEBUG] App.tsx: Validating recent projects");
+      const validPaths = await safeInvoke<string[]>("validate_recent_projects");
+
+      // Update settings with cleaned list if different
+      if (JSON.stringify(validPaths) !== JSON.stringify(loaded.recent_projects)) {
+        console.log("[DEBUG] App.tsx: Updating recent projects with validated list");
+        loaded.recent_projects = validPaths;
+        await safeInvoke("save_settings", { settings: loaded });
+      }
+
+      setSettings(loaded);
+      return loaded;
+    } catch (err) {
+      console.error("[DEBUG] App.tsx: Failed to load settings:", err);
+      const defaultSettings = {
+        project_path: null,
+        recent_projects: [],
+        model_default: "claude-opus-4-5",
+        mcp_allowlist: [],
+        skills_default: [],
+        theme_preference: "system",
+        updated_at: new Date().toISOString(),
+      };
+      setSettings(defaultSettings);
+      return defaultSettings;
+    }
+  }
+
+  // Handle recent projects change (called when user removes a project)
+  async function handleRecentProjectsChanged() {
+    console.log("[DEBUG] App.tsx: Recent projects changed, reloading settings");
+    await refetchRecentProjects();
+    await loadSettings(); // Reload settings to keep React state in sync with database
+  }
+
   // Load settings on mount
   useEffect(() => {
-    async function loadSettings() {
-      try {
-        console.log("[DEBUG] App.tsx: Loading initial settings");
-        const loaded = await safeInvoke<AppSettings>("get_settings");
-        console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
+    async function initialize() {
+      const loaded = await loadSettings();
 
-        // Validate and clean up recent projects
-        console.log("[DEBUG] App.tsx: Validating recent projects");
-        const validPaths = await safeInvoke<string[]>("validate_recent_projects");
-
-        // Update settings with cleaned list if different
-        if (JSON.stringify(validPaths) !== JSON.stringify(loaded.recent_projects)) {
-          console.log("[DEBUG] App.tsx: Updating recent projects with validated list");
-          loaded.recent_projects = validPaths;
-          await safeInvoke("save_settings", { settings: loaded });
+      if (loaded.project_path) {
+        console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
+        // Load the current project from database
+        try {
+          console.log("[DEBUG] App.tsx: Loading project from database");
+          const project = await safeInvoke<Project>("get_or_create_project", {
+            path: loaded.project_path,
+          });
+          console.log("[DEBUG] App.tsx: Project loaded successfully", project);
+          setCurrentProject(project);
+        } catch (projectErr) {
+          console.error("[DEBUG] App.tsx: Failed to load current project:", projectErr);
         }
-
-        setSettings(loaded);
-        if (loaded.project_path) {
-          console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
-          // Load the current project from database
-          try {
-            console.log("[DEBUG] App.tsx: Loading project from database");
-            const project = await safeInvoke<Project>("get_or_create_project", {
-              path: loaded.project_path,
-            });
-            console.log("[DEBUG] App.tsx: Project loaded successfully", project);
-            setCurrentProject(project);
-          } catch (projectErr) {
-            console.error("[DEBUG] App.tsx: Failed to load current project:", projectErr);
-          }
-        } else {
-          console.log("[DEBUG] App.tsx: No project path in settings, showing ProjectPicker");
-        }
-      } catch (err) {
-        console.error("[DEBUG] App.tsx: Failed to load settings:", err);
-        setSettings({
-          project_path: null,
-          recent_projects: [],
-          model_default: "claude-opus-4-5",
-          mcp_allowlist: [],
-          skills_default: [],
-          theme_preference: "system",
-          updated_at: new Date().toISOString(),
-        });
-      } finally {
-        setLoading(false);
+      } else {
+        console.log("[DEBUG] App.tsx: No project path in settings, showing ProjectPicker");
       }
+
+      setLoading(false);
     }
 
-    loadSettings();
+    initialize();
     // Load all projects for dropdown
     loadAllProjects();
   }, []);
@@ -260,7 +276,7 @@ function App() {
       ) : !currentProject ? (
         <ProjectPicker
           onProjectSelected={handleProjectSelected}
-          onRecentProjectsChanged={refetchRecentProjects}
+          onRecentProjectsChanged={handleRecentProjectsChanged}
         />
       ) : (
         <div className="app flex flex-col h-screen bg-background">
