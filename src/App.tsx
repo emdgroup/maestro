@@ -33,9 +33,7 @@ function App() {
   const [activePage, setActivePage] = useState<
     "kanban" | "agents" | "worktrees" | "settings"
   >("kanban");
-  const [prevPage, setPrevPage] = useState<
-    "kanban" | "agents" | "worktrees" | "settings"
-  >("kanban");
+  const [slideDirection, setSlideDirection] = useState(1);
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
@@ -52,16 +50,13 @@ function App() {
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
 
-  // Calculate slide direction based on page order
-  const getSlideDirection = () => {
-    const current = pageOrder[activePage];
-    const previous = pageOrder[prevPage];
-    return current > previous ? 1 : -1; // 1 = slide left (next), -1 = slide right (prev)
-  };
-
-  // Update previous page when active page changes
+  // Update active page and calculate slide direction
   const handlePageChange = (page: typeof activePage) => {
-    setPrevPage(activePage);
+    const currentIndex = pageOrder[activePage];
+    const newIndex = pageOrder[page];
+    // 1 = moving right (new page > current), -1 = moving left (new page < current)
+    const direction = newIndex > currentIndex ? 1 : -1;
+    setSlideDirection(direction);
     setActivePage(page);
   };
 
@@ -261,14 +256,14 @@ function App() {
           />
           <ActionBar actions={getPageActions()} />
           <main className="flex-1 overflow-hidden relative">
-            <AnimatePresence mode="wait" custom={getSlideDirection()}>
+            <AnimatePresence mode="wait" custom={slideDirection}>
               {activePage === "kanban" && (
                 <motion.div
                   key="kanban"
-                  custom={getSlideDirection()}
-                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  custom={slideDirection}
+                  initial={{ x: `${100 * slideDirection}%`, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  exit={{ x: `${-100 * slideDirection}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
@@ -283,10 +278,10 @@ function App() {
               {activePage === "agents" && (
                 <motion.div
                   key="agents"
-                  custom={getSlideDirection()}
-                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  custom={slideDirection}
+                  initial={{ x: `${100 * slideDirection}%`, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  exit={{ x: `${-100 * slideDirection}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
@@ -301,10 +296,10 @@ function App() {
               {activePage === "worktrees" && (
                 <motion.div
                   key="worktrees"
-                  custom={getSlideDirection()}
-                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  custom={slideDirection}
+                  initial={{ x: `${100 * slideDirection}%`, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  exit={{ x: `${-100 * slideDirection}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
@@ -318,10 +313,10 @@ function App() {
               {activePage === "settings" && (
                 <motion.div
                   key="settings"
-                  custom={getSlideDirection()}
-                  initial={{ x: `${100 * getSlideDirection()}%`, opacity: 0 }}
+                  custom={slideDirection}
+                  initial={{ x: `${100 * slideDirection}%`, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: `${-100 * getSlideDirection()}%`, opacity: 0 }}
+                  exit={{ x: `${-100 * slideDirection}%`, opacity: 0 }}
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
