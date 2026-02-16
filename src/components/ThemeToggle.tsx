@@ -1,26 +1,34 @@
 import { Sun, Moon, SunMoon } from "lucide-react";
-import { useTheme } from "@/providers/ThemeProvider";
+import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
+import type { ReactElement } from "react";
+
+type ThemeConfig = {
+  title: string;
+  icon: ReactElement;
+  nextTheme: ThemeValue;
+};
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
 
+  const themeMap: Record<ThemeValue, ThemeConfig> = {
+    light: { title: "Light mode", icon: <Sun />, nextTheme: "dark" },
+    dark: { title: "Dark mode", icon: <Moon />, nextTheme: "system" },
+    system: { title: "System sync", icon: <SunMoon />, nextTheme: "light" },
+  };
+
+  const { title, icon, nextTheme } = themeMap[theme];
+
   return (
     <button
       onClick={() => {
-        const nextTheme = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
         setTheme(nextTheme);
       }}
-      className="flex items-center justify-center h-8 w-8 rounded-full bg-muted hover:bg-muted/80 transition-colors"
-      title={theme === "light" ? "Light mode" : theme === "dark" ? "Dark mode" : "System mode"}
+      className="flex items-center justify-center h-7 w-7 rounded-full bg-muted hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground"
+      title={title}
       aria-label={`Current theme: ${theme}. Click to cycle`}
     >
-      {theme === "light" ? (
-        <Sun className="h-4 w-4 text-foreground" />
-      ) : theme === "dark" ? (
-        <Moon className="h-4 w-4 text-foreground" />
-      ) : (
-        <SunMoon className="h-4 w-4 text-foreground" />
-      )}
+      {icon}
     </button>
   );
 }
