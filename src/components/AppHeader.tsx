@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   Bot,
@@ -53,6 +53,15 @@ export function AppHeader({
   agentCount = 0,
 }: AppHeaderProps) {
   const { theme, setTheme } = useTheme();
+  const [showThemeLabel, setShowThemeLabel] = useState(false);
+
+  // Show label briefly when theme changes
+  useEffect(() => {
+    if (showThemeLabel) {
+      const timer = setTimeout(() => setShowThemeLabel(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showThemeLabel]);
 
   // Get connection identifier for filtering
   const getConnectionId = (project: Project): string => {
@@ -160,19 +169,32 @@ export function AppHeader({
 
       {/* Right section: Theme switcher + Status indicator */}
       <div className="flex items-center gap-2 shrink-0">
-        <Select value={theme} onValueChange={setTheme}>
-          <SelectTrigger className="h-7 gap-1.5 border-none bg-muted text-xs w-auto">
-            <SunMoon className="h-3 w-3 text-muted-foreground shrink-0" />
-            <SelectValue>
-              {theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent align="end">
-            <SelectItem value="light">Light</SelectItem>
-            <SelectItem value="dark">Dark</SelectItem>
-            <SelectItem value="system">System</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="relative flex items-center">
+          <button
+            onClick={() => {
+              const nextTheme = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+              setTheme(nextTheme);
+              setShowThemeLabel(true);
+            }}
+            className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+            aria-label={`Current theme: ${theme}. Click to cycle`}
+          >
+            <SunMoon className="h-3.5 w-3.5" />
+          </button>
+          <AnimatePresence>
+            {showThemeLabel && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+                className="absolute left-9 whitespace-nowrap rounded-md bg-popover border border-border px-2 py-1 text-xs text-popover-foreground shadow-md z-50"
+              >
+                {theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System"}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
           <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
           <span className="text-xs text-muted-foreground">
