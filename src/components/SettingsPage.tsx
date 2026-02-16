@@ -16,9 +16,8 @@ import {
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
 } from "../store/configStore";
-import type { ProjectConfigResponse, ProjectConfigRequest, AppSettings } from "../types/bindings";
-import { useTheme } from "../providers/ThemeProvider";
-import { Bot, Server, Sparkles, Palette } from "lucide-react";
+import type { ProjectConfigResponse, ProjectConfigRequest } from "../types/bindings";
+import { Bot, Server, Sparkles } from "lucide-react";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
@@ -29,7 +28,6 @@ interface ProjectSettingsFormData {
   model_default: string;
   mcp_servers: Record<string, boolean>;
   skills: Record<string, boolean>;
-  theme_preference: string;
 }
 
 export interface SettingsPageHandle {
@@ -50,7 +48,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
     clearError,
   } = useConfigStore();
 
-  const { setTheme } = useTheme();
   const {
     register,
     handleSubmit,
@@ -74,7 +71,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
         },
         {} as Record<string, boolean>
       ),
-      theme_preference: "system",
     },
   });
 
@@ -89,9 +85,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
           "get_project_settings",
           { projectId: projectId }
         );
-
-        // Also fetch global theme preference
-        const appSettings = await invoke<AppSettings>("get_settings", {});
 
         // Convert arrays to checkbox records
         const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
@@ -120,7 +113,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
           model_default: response.model_default,
           mcp_servers: mcp_servers_record,
           skills: skills_record,
-          theme_preference: (appSettings?.theme_preference || "system") as string,
         });
 
         setLoading(false);
@@ -205,7 +197,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
           },
           {} as Record<string, boolean>
         ),
-        theme_preference: "system",
       });
     },
   }));
@@ -217,7 +208,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Configure model defaults, MCP servers, skills, and appearance for this project
+            Configure model defaults, MCP servers, and skills for this project
           </p>
         </div>
 
@@ -315,51 +306,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(({
                     </Label>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Appearance Section */}
-            <div className="bg-card border border-border rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <Palette className="w-5 h-5 text-muted-foreground" />
-                Appearance
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="theme_preference" className="text-sm font-medium mb-2 block">
-                    Theme
-                  </Label>
-                  <Controller
-                    name="theme_preference"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={async (value) => {
-                          field.onChange(value);
-                          const theme = value as 'light' | 'dark' | 'system';
-                          try {
-                            await setTheme(theme);
-                          } catch (err) {
-                            console.error('Failed to change theme:', err);
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="w-full bg-muted">
-                          <SelectValue placeholder="Select theme" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="light">Light</SelectItem>
-                          <SelectItem value="dark">Dark</SelectItem>
-                          <SelectItem value="system">System</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Choose how the interface appears
-                  </p>
-                </div>
               </div>
             </div>
 
