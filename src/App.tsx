@@ -42,9 +42,16 @@ function App() {
 
   // Filter projects to only show recent ones in the header dropdown
   const recentProjectsOnly = useMemo(() => {
-    if (recentProjects.length === 0) return projects;
+    console.log('[DEBUG] App.tsx: Filtering projects. Total projects:', projects.length, 'Recent projects:', recentProjects.length);
+    if (recentProjects.length === 0) {
+      console.log('[DEBUG] App.tsx: No recent projects, showing all', projects.length, 'projects');
+      return projects;
+    }
     const recentPaths = new Set(recentProjects.map(rp => rp.path));
-    return projects.filter(p => recentPaths.has(p.path));
+    console.log('[DEBUG] App.tsx: Recent paths set:', Array.from(recentPaths));
+    const filtered = projects.filter(p => recentPaths.has(p.path));
+    console.log('[DEBUG] App.tsx: After filtering to recent, showing', filtered.length, 'projects:', filtered.map(p => ({name: p.name, path: p.path})));
+    return filtered;
   }, [projects, recentProjects]);
 
   // Page order for determining slide direction
@@ -190,7 +197,7 @@ function App() {
       // Add to recent if not already there
       if (!newSettings.recent_projects.includes(projectPath)) {
         newSettings.recent_projects.unshift(projectPath);
-        newSettings.recent_projects = newSettings.recent_projects.slice(0, 5); // Keep last 5
+        newSettings.recent_projects = newSettings.recent_projects.slice(0, 20); // Keep last 20 to support multiple connections
       }
 
       console.log("[DEBUG] App.tsx: Saving settings with new project path");

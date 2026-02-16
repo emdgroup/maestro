@@ -61,9 +61,16 @@ export function AppHeader({
 
   // Filter projects to show only those from the same connection
   const filteredProjects = useMemo(() => {
-    if (!currentProject) return projects;
+    if (!currentProject) {
+      console.log('[DEBUG] AppHeader: No current project, showing all', projects.length, 'projects');
+      return projects;
+    }
     const currentConnection = getConnectionId(currentProject);
-    return projects.filter((p) => getConnectionId(p) === currentConnection);
+    console.log('[DEBUG] AppHeader: Current project:', currentProject.name, 'Connection:', currentConnection);
+    console.log('[DEBUG] AppHeader: Incoming projects:', projects.length, projects.map(p => ({name: p.name, conn: getConnectionId(p)})));
+    const filtered = projects.filter((p) => getConnectionId(p) === currentConnection);
+    console.log('[DEBUG] AppHeader: After filtering by connection, showing', filtered.length, 'projects:', filtered.map(p => p.name));
+    return filtered;
   }, [projects, currentProject]);
 
   const currentProjectPath = currentProject?.path || "";
