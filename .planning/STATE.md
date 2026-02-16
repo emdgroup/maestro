@@ -85,17 +85,13 @@ Phase 17 Status:
 
 ### Pending Todos
 
-1. **Fix recent projects refresh after removal in ProjectPickerNew** (ui)
-   - `.planning/todos/pending/2026-02-14-fix-recent-projects-refresh-on-remove.md`
-   - handleRemoveRecentProject should refresh list without window reload
-
-2. **Remove Appearance card and add theme switch to app header** (ui)
-   - `.planning/todos/pending/2026-02-16-remove-appearance-card-add-theme-switch-to-header.md`
-   - Move theme switcher from Settings page to AppHeader as icon button
-
-3. **Fix recent projects dropdown not showing all projects for connection** (ui)
+1. **Fix recent projects dropdown not showing all projects for connection** (ui)
    - `.planning/todos/pending/2026-02-16-fix-recent-projects-dropdown-not-showing-all-projects.md`
    - AppHeader dropdown doesn't display all recent projects for current connection
+
+2. **Fix SSH password authentication and session persistence** (ssh)
+   - `.planning/todos/pending/2026-02-16-fix-ssh-password-auth-and-session-persistence.md`
+   - SSH password authentication and session persistence issues
 
 
 ### Blockers/Concerns

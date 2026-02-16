@@ -9,6 +9,7 @@ import { PasswordModal } from "./PasswordModal";
 import { FilePicker } from "./FilePicker";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useRecentProjects } from "../hooks/useRecentProjects";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
@@ -301,7 +302,12 @@ export function ProjectPicker({
   // Main screen with unified connection list
   return (
     <>
-      <div className="flex items-center justify-center min-h-screen bg-background text-foreground p-8">
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground p-8 relative">
+        {/* Theme Toggle - Top Right */}
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+
         <div className="max-w-3xl w-full">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-semibold mb-3">
