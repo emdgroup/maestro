@@ -5,8 +5,7 @@ import {
   Bot,
   GitBranch,
   Settings,
-  FolderOpen,
-  Check,
+  FolderOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -92,13 +91,11 @@ export function AppHeader({
             </SelectValue>
           </SelectTrigger>
           <SelectContent className="min-w-[16rem] max-w-[24rem]">
-            {filteredProjects.map((project) => {
-              const isSelected = project.path === currentProjectPath;
-              return (
+            {filteredProjects.map((project) => (
                 <SelectItem
                   key={project.path}
                   value={project.path}
-                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent"
+                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent [&>span]:text-accent"
                 >
                   <div className="flex items-center gap-2 w-full">
                     <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
@@ -109,13 +106,9 @@ export function AppHeader({
                         {project.path}
                       </div>
                     </div>
-                    {isSelected && (
-                      <Check className="h-4 w-4 text-accent shrink-0" />
-                    )}
                   </div>
                 </SelectItem>
-              );
-            })}
+              ))}
             {onBackToPicker && (
               <>
                 <SelectSeparator />

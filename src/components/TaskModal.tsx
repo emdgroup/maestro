@@ -6,10 +6,8 @@ import {
   DialogOverlay,
   DialogContent,
   DialogTitle,
-  DialogDescription,
-  DialogClose,
+  DialogDescription
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { TaskForm } from "./TaskForm";
 import { Task, CreateTaskRequest } from "../types/bindings";
 
@@ -72,12 +70,6 @@ export function TaskModal({
             onCancel={onClose}
             projectId={projectId}
           />
-
-          <DialogClose asChild>
-            <Button variant="ghost" size="sm" aria-label="Close">
-              ✕
-            </Button>
-          </DialogClose>
         </DialogContent>
       </DialogPortal>
     </Dialog>

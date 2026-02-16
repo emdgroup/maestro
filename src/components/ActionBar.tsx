@@ -38,7 +38,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({ actions }) => {
             disabled={action.disabled}
             className="h-8"
           >
-            {action.icon && <action.icon className="w-4 h-4 mr-2" />}
+            {action.icon && <action.icon className="w-4 h-4" />}
             {action.label}
           </Button>
         ))}
@@ -54,7 +54,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({ actions }) => {
               disabled={action.disabled}
               className="h-8"
             >
-              {action.icon && <action.icon className="w-4 h-4 mr-2" />}
+              {action.icon && <action.icon className="w-4 h-4" />}
               {action.label}
             </Button>
           ))}
