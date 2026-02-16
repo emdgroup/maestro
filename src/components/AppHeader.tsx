@@ -7,7 +7,8 @@ import {
   Settings,
   FolderOpen,
   Sun,
-  Moon
+  Moon,
+  Monitor
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -163,16 +164,19 @@ export function AppHeader({
       <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={() => {
-            const newTheme = theme === "dark" ? "light" : "dark";
-            setTheme(newTheme);
+            const nextTheme = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+            setTheme(nextTheme);
           }}
           className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-          aria-label="Toggle theme"
+          aria-label={`Current theme: ${theme}. Click to cycle`}
+          title={`Theme: ${theme}`}
         >
-          {theme === "dark" ? (
+          {theme === "light" ? (
             <Sun className="h-3.5 w-3.5" />
-          ) : (
+          ) : theme === "dark" ? (
             <Moon className="h-3.5 w-3.5" />
+          ) : (
+            <Monitor className="h-3.5 w-3.5" />
           )}
         </button>
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
