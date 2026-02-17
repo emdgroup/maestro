@@ -3,7 +3,7 @@ use tauri::State;
 use base64::Engine;
 use chrono::Utc;
 
-use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection, ConnectionStatus, SshConfig};
+use crate::models::{Project, Task, AppSettings, TaskStatus, SyncResult, GitHubIssue, JiraSearchResponse, Worktree, WorktreeStatus, PoolStatus, MergeOutcome, ErrorEvent, GitConnection, ConnectionStatus, SshConfig, SshAuthMethod};
 use crate::db::{AppState, get_git_connection};
 use crate::process::{spawn_agent_cli_pty, ExecutionConfig};
 use crate::process::spawn_agent_execution as spawn_agent_execution_dispatcher;
@@ -161,7 +161,22 @@ pub async fn create_project(
 
             // NOW acquire lock and store in database
             let now = chrono::Utc::now().to_rfc3339();
-            let ssh_config_json = serde_json::to_string(config)
+
+            // Sanitize ssh_config before persisting to database
+            // Replace PasswordInMemory with Agent to avoid storing password in database
+            let config_for_db = if matches!(config.auth_method, SshAuthMethod::PasswordInMemory { .. }) {
+                SshConfig {
+                    host: config.host.clone(),
+                    port: config.port,
+                    username: config.username.clone(),
+                    auth_method: SshAuthMethod::Agent,  // Don't persist in-memory password
+                    remote_path: config.remote_path.clone(),
+                }
+            } else {
+                config.clone()
+            };
+
+            let ssh_config_json = serde_json::to_string(&config_for_db)
                 .map_err(|e| format!("Failed to serialize SSH config: {}", e))?;
 
             let project_id: i32 = {
