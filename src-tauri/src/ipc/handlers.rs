@@ -72,6 +72,13 @@ pub fn get_or_create_project(
     );
 
     if let Ok(project) = existing {
+        // Update last_opened timestamp when project is selected
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE projects SET last_opened = ? WHERE id = ?",
+            rusqlite::params![&now, project.id],
+        )
+        .map_err(|e| e.to_string())?;
         return Ok(project);
     }
 
@@ -84,8 +91,8 @@ pub fn get_or_create_project(
         .to_string();
 
     conn.execute(
-        "INSERT INTO projects (name, path, created_at, updated_at, is_remote, ssh_config) VALUES (?, ?, ?, ?, ?, ?)",
-        rusqlite::params![&name, &path, &now, &now, false, None::<String>],
+        "INSERT INTO projects (name, path, created_at, updated_at, is_remote, ssh_config, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![&name, &path, &now, &now, false, None::<String>, &now],
     )
     .map_err(|e| e.to_string())?;
 
@@ -2753,27 +2760,31 @@ pub fn get_recent_projects_enhanced(
     let mut enhanced = Vec::new();
 
     for path in settings.recent_projects {
-        // Query projects table for full info
-        let project: Result<Project, _> = conn.query_row(
-            "SELECT id, name, path, created_at, is_remote, ssh_config FROM projects WHERE path = ?",
+        // Query projects table for full info including last_opened
+        let project_info: Result<(Project, Option<String>), _> = conn.query_row(
+            "SELECT id, name, path, created_at, is_remote, ssh_config, last_opened FROM projects WHERE path = ?",
             [&path],
             |row| {
                 let ssh_config_json: Option<String> = row.get(5)?;
                 let ssh_config = ssh_config_json
                     .and_then(|json| serde_json::from_str(&json).ok());
 
-                Ok(Project {
+                let project = Project {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     path: row.get(2)?,
                     created_at: row.get(3)?,
                     is_remote: row.get(4)?,
                     ssh_config,
-                })
+                };
+
+                let last_opened: Option<String> = row.get(6)?;
+
+                Ok((project, last_opened))
             },
         );
 
-        if let Ok(project) = project {
+        if let Ok((project, last_opened)) = project_info {
             let (host, username) = if let Some(config) = &project.ssh_config {
                 (Some(config.host.clone()), Some(config.username.clone()))
             } else {
@@ -2786,7 +2797,7 @@ pub fn get_recent_projects_enhanced(
                 is_remote: project.is_remote,
                 host,
                 username,
-                last_opened: project.created_at,  // Use created_at as proxy
+                last_opened: last_opened.unwrap_or_else(|| project.created_at.clone()),
             });
         }
     }

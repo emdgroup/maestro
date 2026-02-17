@@ -85,11 +85,7 @@ Phase 17 Status:
 
 ### Pending Todos
 
-1. **Fix recent projects dropdown not showing all projects for connection** (ui)
-   - `.planning/todos/pending/2026-02-16-fix-recent-projects-dropdown-not-showing-all-projects.md`
-   - AppHeader dropdown doesn't display all recent projects for current connection
-
-2. **Fix SSH password authentication and session persistence** (ssh)
+1. **Fix SSH password authentication and session persistence** (ssh)
    - `.planning/todos/pending/2026-02-16-fix-ssh-password-auth-and-session-persistence.md`
    - SSH password authentication and session persistence issues
 

@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 pub const SCHEMA_V1: &str = r#"
 -- Projects table: stores project metadata
@@ -235,6 +235,21 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             // Allows users to give friendly names to connections
             conn.execute(
                 "ALTER TABLE ssh_connections ADD COLUMN display_name TEXT;",
+                [],
+            )?;
+        }
+
+        if current_version < 9 {
+            // Migration from v8 to v9: add last_opened to projects
+            // Track when each project was last opened for proper recent sorting
+            conn.execute(
+                "ALTER TABLE projects ADD COLUMN last_opened TEXT;",
+                [],
+            )?;
+
+            // Initialize last_opened with created_at for existing projects
+            conn.execute(
+                "UPDATE projects SET last_opened = created_at WHERE last_opened IS NULL;",
                 [],
             )?;
         }

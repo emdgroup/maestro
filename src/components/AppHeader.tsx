@@ -91,16 +91,17 @@ export function AppHeader({
     const recentAndSameConnection = sameConnection.filter(p => recentPaths.has(p.path));
     console.log('[DEBUG] AppHeader: After recent filter:', recentAndSameConnection.length, recentAndSameConnection.map(p => p.name));
 
-    // Step 3: Sort by recency (order in recentProjects list)
-    const pathToIndex = new Map(recentProjects.map((rp, idx) => [rp.path, idx]));
-    console.log('[DEBUG] AppHeader: pathToIndex map:', Array.from(pathToIndex.entries()));
+    // Step 3: Sort by last_opened timestamp (most recent first)
+    const pathToLastOpened = new Map(recentProjects.map((rp) => [rp.path, rp.last_opened]));
+    console.log('[DEBUG] AppHeader: pathToLastOpened map:', Array.from(pathToLastOpened.entries()));
     console.log('[DEBUG] AppHeader: Projects to sort:', recentAndSameConnection.map(p => ({name: p.name, path: p.path})));
 
     recentAndSameConnection.sort((a, b) => {
-      const aIdx = pathToIndex.get(a.path) ?? Infinity;
-      const bIdx = pathToIndex.get(b.path) ?? Infinity;
-      console.log(`[DEBUG] AppHeader: Sorting ${a.name} (idx=${aIdx}) vs ${b.name} (idx=${bIdx})`);
-      return aIdx - bIdx;
+      const aTime = pathToLastOpened.get(a.path) || '';
+      const bTime = pathToLastOpened.get(b.path) || '';
+      console.log(`[DEBUG] AppHeader: Sorting ${a.name} (time=${aTime}) vs ${b.name} (time=${bTime})`);
+      // Sort descending (most recent first)
+      return bTime.localeCompare(aTime);
     });
 
     // Step 4: Take top 5 most recent

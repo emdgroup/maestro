@@ -195,6 +195,9 @@ function App() {
       // Reload all projects to include the newly selected one
       await loadAllProjects();
 
+      // Reload recent projects to get updated last_opened timestamp
+      await refetchRecentProjects();
+
       console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
     } catch (err) {
       console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
