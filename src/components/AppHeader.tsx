@@ -93,15 +93,19 @@ export function AppHeader({
 
     // Step 3: Sort by recency (order in recentProjects list)
     const pathToIndex = new Map(recentProjects.map((rp, idx) => [rp.path, idx]));
+    console.log('[DEBUG] AppHeader: pathToIndex map:', Array.from(pathToIndex.entries()));
+    console.log('[DEBUG] AppHeader: Projects to sort:', recentAndSameConnection.map(p => ({name: p.name, path: p.path})));
+
     recentAndSameConnection.sort((a, b) => {
       const aIdx = pathToIndex.get(a.path) ?? Infinity;
       const bIdx = pathToIndex.get(b.path) ?? Infinity;
+      console.log(`[DEBUG] AppHeader: Sorting ${a.name} (idx=${aIdx}) vs ${b.name} (idx=${bIdx})`);
       return aIdx - bIdx;
     });
 
     // Step 4: Take top 5 most recent
     const top5 = recentAndSameConnection.slice(0, 5);
-    console.log('[DEBUG] AppHeader: Final top 5:', top5.map(p => p.name));
+    console.log('[DEBUG] AppHeader: Final top 5 (sorted):', top5.map(p => ({name: p.name, path: p.path})));
 
     return top5;
   }, [projects, recentProjects, currentProject]);
