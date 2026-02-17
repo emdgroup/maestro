@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { safeInvoke } from "./lib/tauri-safe";
 import { ProjectPicker } from "./components/ProjectPicker.tsx";
@@ -37,22 +37,8 @@ function App() {
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
-  // Load recent projects for filtering dropdown
+  // Load recent projects for filtering dropdown (AppHeader will do the filtering)
   const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects();
-
-  // Filter projects to only show recent ones in the header dropdown
-  const recentProjectsOnly = useMemo(() => {
-    console.log('[DEBUG] App.tsx: Filtering projects. Total projects:', projects.length, 'Recent projects:', recentProjects.length);
-    if (recentProjects.length === 0) {
-      console.log('[DEBUG] App.tsx: No recent projects, showing all', projects.length, 'projects');
-      return projects;
-    }
-    const recentPaths = new Set(recentProjects.map(rp => rp.path));
-    console.log('[DEBUG] App.tsx: Recent paths set:', Array.from(recentPaths));
-    const filtered = projects.filter(p => recentPaths.has(p.path));
-    console.log('[DEBUG] App.tsx: After filtering to recent, showing', filtered.length, 'projects:', filtered.map(p => ({name: p.name, path: p.path})));
-    return filtered;
-  }, [projects, recentProjects]);
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
@@ -194,10 +180,10 @@ function App() {
         updated_at: new Date().toISOString(),
       };
 
-      // Add to recent if not already there
+      // Add to recent if not already there (no limit - store all recent projects)
       if (!newSettings.recent_projects.includes(projectPath)) {
         newSettings.recent_projects.unshift(projectPath);
-        newSettings.recent_projects = newSettings.recent_projects.slice(0, 20); // Keep last 20 to support multiple connections
+        // No slice - keep all recent projects for per-connection filtering
       }
 
       console.log("[DEBUG] App.tsx: Saving settings with new project path");
@@ -291,7 +277,8 @@ function App() {
             currentProject={currentProject}
             activeView={activePage}
             onViewChange={handlePageChange}
-            projects={recentProjectsOnly}
+            projects={projects}
+            recentProjects={recentProjects}
             onProjectChange={handleProjectSelected}
             onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
