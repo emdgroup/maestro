@@ -196,7 +196,7 @@ pub async fn connect_ssh_with_password(
     // Store session in AppState
     app_state.set_ssh_session(connection_id, session).await;
 
-    // Update database: only persist auth_method if password was saved
+    // Update database based on password persistence
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let now = Utc::now().to_rfc3339();
@@ -214,14 +214,18 @@ pub async fn connect_ssh_with_password(
 
             println!("Updated database auth_method to Password (saved to keyring)");
         } else {
-            // Password NOT saved - only update timestamps, keep existing auth_method
+            // Password NOT saved - reset auth_method to Agent for next restart
+            // This ensures password prompt will appear after restart
+            let auth_method_json = serde_json::to_string(&SshAuthMethod::Agent)
+                .map_err(|e| format!("Failed to serialize auth method: {}", e))?;
+
             conn.execute(
-                "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
-                rusqlite::params![&now, &now, connection_id],
+                "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&auth_method_json, &now, &now, connection_id],
             )
             .map_err(|e| e.to_string())?;
 
-            println!("Session established but NOT persisted (password not saved)");
+            println!("Session established for this session only (auth_method reset to Agent)");
         }
     }
 

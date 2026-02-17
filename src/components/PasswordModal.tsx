@@ -61,6 +61,7 @@ export function PasswordModal({
                   placeholder="Enter SSH password"
                   disabled={loading}
                   autoFocus
+                  autoComplete="new-password"
                   className="pr-10"
                 />
                 <button
