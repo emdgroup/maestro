@@ -196,18 +196,33 @@ pub async fn connect_ssh_with_password(
     // Store session in AppState
     app_state.set_ssh_session(connection_id, session).await;
 
-    // Update last_used_at and auth_method
+    // Update database: only persist auth_method if password was saved
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let now = Utc::now().to_rfc3339();
-        let auth_method_json = serde_json::to_string(&SshAuthMethod::Password { save_password })
-            .map_err(|e| format!("Failed to serialize auth method: {}", e))?;
 
-        conn.execute(
-            "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&auth_method_json, &now, &now, connection_id],
-        )
-        .map_err(|e| e.to_string())?;
+        if save_password {
+            // Password saved to keyring - update auth_method to Password in database
+            let auth_method_json = serde_json::to_string(&SshAuthMethod::Password { save_password: true })
+                .map_err(|e| format!("Failed to serialize auth method: {}", e))?;
+
+            conn.execute(
+                "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&auth_method_json, &now, &now, connection_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+            println!("Updated database auth_method to Password (saved to keyring)");
+        } else {
+            // Password NOT saved - only update timestamps, keep existing auth_method
+            conn.execute(
+                "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, &now, connection_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+            println!("Session established but NOT persisted (password not saved)");
+        }
     }
 
     println!("SSH connection established with password for connection_id: {}", connection_id);
