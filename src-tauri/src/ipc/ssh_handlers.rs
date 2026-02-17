@@ -93,6 +93,27 @@ pub async fn connect_ssh_without_credentials(
 ) -> Result<i64, String> {
     println!("connect_ssh_without_credentials(connection_id={}) called via IPC", connection_id);
 
+    // Check if session already exists (e.g., from previous password authentication in same session)
+    if let Some(_existing_session) = app_state.get_ssh_session(connection_id).await {
+        println!("Reusing existing session for connection_id={} (already authenticated)", connection_id);
+
+        // Update last_used_at since we're reusing the connection
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, &now, connection_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        return Ok(connection_id);
+    }
+
+    // No existing session, proceed with fresh authentication
+    println!("No existing session found, attempting fresh authentication");
+
     // Get connection details from database
     let (username, host, port, auth_method_str) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
