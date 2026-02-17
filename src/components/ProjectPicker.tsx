@@ -168,7 +168,7 @@ export function ProjectPicker({
     setLoading(true);
 
     try {
-      // Save connection to database
+      // Save connection to database (get ID for authentication)
       const connectionId = await safeInvoke<number>("save_ssh_connection", {
         connectionString,
         username,
@@ -177,10 +177,7 @@ export function ProjectPicker({
         authMethod: JSON.stringify("Agent"), // Default to Agent auth
       });
 
-      // Reload connections list
-      await loadSshConnections();
-
-      // Find the newly created connection
+      // Create connection object for authentication
       const newSshConnection: SshConnection = {
         id: connectionId,
         connection_string: connectionString,
@@ -193,7 +190,6 @@ export function ProjectPicker({
         created_at: new Date().toISOString(),
       };
 
-      // Create Connection wrapper
       const newConnection: Connection = {
         type: "ssh",
         id: connectionId,
@@ -201,10 +197,27 @@ export function ProjectPicker({
         sshConnection: newSshConnection,
       };
 
-      // Try connecting
-      await handleConnectionClick(newConnection);
+      // Set as active connection but don't switch views yet
+      setActiveConnection(newConnection);
+
+      // Try to authenticate
+      try {
+        await safeInvoke("connect_ssh_without_credentials", {
+          connectionId: connectionId,
+        });
+
+        // Success! Now reload connections list and switch to projects view
+        await loadSshConnections();
+        toast.success(`Connected to ${connectionString}`);
+        setCurrentView("projects");
+      } catch (authError) {
+        console.log("Authentication failed, prompting for password");
+        // Show password modal (connection not added to list yet)
+        setShowPasswordModal(true);
+      }
     } catch (error) {
       toast.error(`Failed to save connection: ${error}`);
+    } finally {
       setLoading(false);
     }
   }
@@ -223,6 +236,12 @@ export function ProjectPicker({
 
       toast.success(`Connected to ${sshConn.connection_string}`);
       setShowPasswordModal(false);
+
+      // Reload connections list (connection now appears after successful auth)
+      await loadSshConnections();
+
+      // Switch to projects view
+      setCurrentView("projects");
 
       // Show file picker modal
       setShowFilePickerModal(true);
@@ -273,12 +292,13 @@ export function ProjectPicker({
           remote_path: selectedPath,
         };
 
-        // Create remote project
+        // Create remote project (pass connectionId to reuse existing session)
         const project = await safeInvoke<{ path: string }>("create_project", {
           name: `${sshConn.host}:${selectedPath}`,
           path: selectedPath,
           isRemote: true,
           sshConfig: sshConfig,
+          connectionId: sshConn.id,
         });
 
         console.log(`Remote project created: ${project.path}`);

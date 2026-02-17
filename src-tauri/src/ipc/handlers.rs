@@ -116,9 +116,10 @@ pub async fn create_project(
     path: String,
     is_remote: bool,
     ssh_config: Option<SshConfig>,
+    connection_id: Option<i64>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Project, String> {
-    println!("create_project({}, is_remote={}) called via IPC", name, is_remote);
+    println!("create_project({}, is_remote={}, connection_id={:?}) called via IPC", name, is_remote, connection_id);
 
     // Validate name
     let trimmed_name = name.trim();
@@ -135,12 +136,28 @@ pub async fn create_project(
     if is_remote {
         if let Some(config) = &ssh_config {
             use crate::ssh::RemoteSshSession;
-            let session = RemoteSshSession::new(config.clone());
 
-            // Test connection before creating project
-            session.connect().await.map_err(|e| {
-                format!("Failed to connect to remote project: {}", e)
-            })?;
+            // Try to reuse existing session from connection flow
+            let session = if let Some(conn_id) = connection_id {
+                if let Some(existing_session) = state.get_ssh_session(conn_id).await {
+                    println!("Reusing existing SSH session from connection_id={}", conn_id);
+                    existing_session
+                } else {
+                    println!("No existing session found for connection_id={}, creating new one", conn_id);
+                    let new_session = RemoteSshSession::new(config.clone());
+                    new_session.connect().await.map_err(|e| {
+                        format!("Failed to connect to remote project: {}", e)
+                    })?;
+                    new_session
+                }
+            } else {
+                println!("No connection_id provided, creating new session");
+                let new_session = RemoteSshSession::new(config.clone());
+                new_session.connect().await.map_err(|e| {
+                    format!("Failed to connect to remote project: {}", e)
+                })?;
+                new_session
+            };
 
             // NOW acquire lock and store in database
             let now = chrono::Utc::now().to_rfc3339();

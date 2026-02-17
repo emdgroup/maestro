@@ -45,9 +45,10 @@ async fn create_project(
     path: String,
     is_remote: bool,
     ssh_config: Option<gsd_demo::models::SshConfig>,
+    connection_id: Option<i64>,
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<gsd_demo::models::Project, String> {
-    gsd_demo::ipc::handlers::create_project(app_state.clone(), name, path, is_remote, ssh_config, app_state).await
+    gsd_demo::ipc::handlers::create_project(app_state.clone(), name, path, is_remote, ssh_config, connection_id, app_state).await
 }
 
 #[tauri::command]

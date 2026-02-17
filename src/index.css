@@ -166,4 +166,24 @@
     scrollbar-width: thin;
     scrollbar-color: oklch(from var(--muted-foreground) l c h / 0.3) transparent;
   }
+
+  /* Native password reveal button styling (Chrome/Edge) */
+  input[type="password"]::-ms-reveal {
+    color: var(--accent);
+    filter: brightness(1.2);
+  }
+
+  input[type="password"]::-ms-reveal:hover {
+    filter: brightness(1.4);
+  }
+
+  /* WebKit browsers password reveal button */
+  input[type="password"]::-webkit-credentials-auto-fill-button {
+    color: var(--accent);
+    filter: brightness(1.2);
+  }
+
+  input[type="password"]::-webkit-credentials-auto-fill-button:hover {
+    filter: brightness(1.4);
+  }
 }
