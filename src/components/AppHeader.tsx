@@ -73,40 +73,30 @@ export function AppHeader({
   // Filter projects to show only recent ones from the same connection (max 5)
   const filteredProjects = useMemo(() => {
     if (!currentProject) {
-      console.log('[DEBUG] AppHeader: No current project, showing all', projects.length, 'projects');
       return projects;
     }
 
     const currentConnection = getConnectionId(currentProject);
-    console.log('[DEBUG] AppHeader: Current project:', currentProject.name, 'Connection:', currentConnection);
-    console.log('[DEBUG] AppHeader: All projects:', projects.length, projects.map(p => ({name: p.name, path: p.path, conn: getConnectionId(p)})));
-    console.log('[DEBUG] AppHeader: Recent projects list:', recentProjects.length, recentProjects.map(rp => rp.path));
 
     // Step 1: Filter by connection
     const sameConnection = projects.filter((p) => getConnectionId(p) === currentConnection);
-    console.log('[DEBUG] AppHeader: After connection filter:', sameConnection.length, sameConnection.map(p => p.name));
 
     // Step 2: Filter to only recent projects
     const recentPaths = new Set(recentProjects.map(rp => rp.path));
     const recentAndSameConnection = sameConnection.filter(p => recentPaths.has(p.path));
-    console.log('[DEBUG] AppHeader: After recent filter:', recentAndSameConnection.length, recentAndSameConnection.map(p => p.name));
 
     // Step 3: Sort by last_opened timestamp (most recent first)
     const pathToLastOpened = new Map(recentProjects.map((rp) => [rp.path, rp.last_opened]));
-    console.log('[DEBUG] AppHeader: pathToLastOpened map:', Array.from(pathToLastOpened.entries()));
-    console.log('[DEBUG] AppHeader: Projects to sort:', recentAndSameConnection.map(p => ({name: p.name, path: p.path})));
 
     recentAndSameConnection.sort((a, b) => {
       const aTime = pathToLastOpened.get(a.path) || '';
       const bTime = pathToLastOpened.get(b.path) || '';
-      console.log(`[DEBUG] AppHeader: Sorting ${a.name} (time=${aTime}) vs ${b.name} (time=${bTime})`);
       // Sort descending (most recent first)
       return bTime.localeCompare(aTime);
     });
 
     // Step 4: Take top 5 most recent
     const top5 = recentAndSameConnection.slice(0, 5);
-    console.log('[DEBUG] AppHeader: Final top 5 (sorted):', top5.map(p => ({name: p.name, path: p.path})));
 
     return top5;
   }, [projects, recentProjects, currentProject]);

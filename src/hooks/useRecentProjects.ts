@@ -18,7 +18,6 @@ export function useRecentProjects() {
     try {
       setLoading(true);
       const enhanced = await invoke<EnhancedRecentProject[]>('get_recent_projects_enhanced');
-      console.log('[DEBUG] useRecentProjects: Backend returned', enhanced.length, 'recent projects:', enhanced);
       setRecentProjects(enhanced);
     } catch (err) {
       console.error('Failed to load recent projects:', err);

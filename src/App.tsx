@@ -262,8 +262,6 @@ function App() {
 
   // Log current state before render
   console.log("[DEBUG] App.tsx render: loading=", loading, "currentProject=", currentProject?.path || "null");
-  console.log("[DEBUG] App.tsx render: recentProjects=", recentProjects.length, recentProjects.map(rp => ({path: rp.path, name: rp.name, is_remote: rp.is_remote})));
-  console.log("[DEBUG] App.tsx render: projects=", projects.length, projects.map(p => ({path: p.path, name: p.name, is_remote: p.is_remote})));
 
   const appContent = (
     <>
