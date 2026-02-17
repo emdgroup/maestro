@@ -32,6 +32,14 @@ export function ProjectPicker({
   // Load enhanced recent projects with metadata
   const { recentProjects, loading: recentLoading, refetch: refetchRecentProjects } = useRecentProjects();
 
+  // Sort recent projects by last_opened (most recent first)
+  const sortedRecentProjects = useMemo(() => {
+    return [...recentProjects].sort((a, b) => {
+      // Sort descending (most recent first)
+      return b.last_opened.localeCompare(a.last_opened);
+    });
+  }, [recentProjects]);
+
   // Build unified connections list: Local first, then SSH connections
   const connections = useMemo<Connection[]>(() => {
     const list: Connection[] = [
@@ -342,7 +350,7 @@ export function ProjectPicker({
             >
               {activeConnection && activeConnection.type === "local" && (
                 <LocalProjectsList
-                  recentProjects={recentProjects}
+                  recentProjects={sortedRecentProjects}
                   onProjectClick={handleProjectClick}
                   onSelectNewClick={handleSelectNewLocal}
                   onBack={handleBackToConnections}
@@ -353,7 +361,7 @@ export function ProjectPicker({
               {activeConnection && activeConnection.type === "ssh" && activeConnection.sshConnection && (
                 <RemoteProjectsList
                   connection={activeConnection.sshConnection}
-                  recentProjects={recentProjects}
+                  recentProjects={sortedRecentProjects}
                   onProjectClick={handleProjectClick}
                   onSelectNewClick={handleRemoteSelectProject}
                   onBack={handleBackToConnections}
