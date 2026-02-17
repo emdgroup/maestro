@@ -173,19 +173,26 @@ pub async fn connect_ssh_with_password(
         .map_err(|e| format!("Connection not found: {}", e))?
     };
 
-    // Save password to keyring if requested
-    if save_password {
+    // Create SSH config based on password persistence preference
+    let auth_method = if save_password {
+        // Save password to keyring
         PasswordManager::store_password(&host, &username, password.clone())
             .map_err(|e| format!("Failed to save password: {}", e))?;
         println!("Password saved to OS keyring for {}@{}", username, host);
-    }
 
-    // Create SSH config with password auth
+        // Use Password auth method (retrieves from keyring on connect)
+        SshAuthMethod::Password { save_password: true }
+    } else {
+        // Don't save to keyring, use in-memory password for this session only
+        println!("Using in-memory password (not saved to keyring)");
+        SshAuthMethod::PasswordInMemory { password: password.clone() }
+    };
+
     let config = SshConfig {
         host: host.clone(),
         port,
         username: username.clone(),
-        auth_method: SshAuthMethod::Password { save_password },
+        auth_method,
         remote_path: String::new(), // Not used for connection test
     };
 

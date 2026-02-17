@@ -12,9 +12,12 @@ pub enum SshAuthMethod {
     /// Authenticate using SSH agent
     #[serde(rename = "Agent")]
     Agent,
-    /// Authenticate using password
+    /// Authenticate using password (stored in OS keyring)
     #[serde(rename = "Password")]
     Password { save_password: bool },
+    /// Authenticate using password (in-memory only, not persisted)
+    #[serde(rename = "PasswordInMemory")]
+    PasswordInMemory { password: String },
 }
 
 /// SSH configuration for remote projects

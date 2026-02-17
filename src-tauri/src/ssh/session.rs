@@ -124,6 +124,17 @@ impl RemoteSshSession {
                         ))
                     })?;
             }
+            crate::models::SshAuthMethod::PasswordInMemory { password } => {
+                // Use password provided in-memory (not persisted to keyring)
+                session
+                    .userauth_password(username, password)
+                    .map_err(|e| {
+                        SshError::AuthenticationError(format!(
+                            "Password authentication failed: {}",
+                            e
+                        ))
+                    })?;
+            }
         }
 
         // Verify authentication succeeded

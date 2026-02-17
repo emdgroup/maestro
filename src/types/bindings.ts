@@ -6,6 +6,7 @@ export type ProjectStatus = "Active" | "Archived";
 export type SshAuthMethod =
   | { KeyFile: { path: string } }
   | { Password: { save_password: boolean } }
+  | { PasswordInMemory: { password: string } }
   | "Agent";
 
 export type SshConfig = {
