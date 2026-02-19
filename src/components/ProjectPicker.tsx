@@ -1,14 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
-import { safeInvoke } from "../lib/tauri-safe";
-import { toast } from "sonner";
-import { SshConnection } from "../types/bindings";
-import { ConnectionList, Connection } from "./ConnectionList";
+import { useMemo } from "react";
+import { ConnectionList } from "./ConnectionList";
 import { LocalProjectsList } from "./LocalProjectsList";
 import { RemoteProjectsList } from "./RemoteProjectsList";
 import { PasswordModal } from "./PasswordModal";
 import { FilePicker } from "./FilePicker";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useRecentProjects } from "../hooks/useRecentProjects";
+import { useSshConnectionManager } from "../hooks/useSshConnectionManager";
+import { useProjectSelection } from "../hooks/useProjectSelection";
+import { useViewNavigation } from "../hooks/useViewNavigation";
 import { ThemeToggle } from "./ThemeToggle";
 
 interface ProjectPickerProps {
@@ -16,21 +16,32 @@ interface ProjectPickerProps {
   onRecentProjectsChanged?: () => void;
 }
 
-type View = "connections" | "projects";
-
 export function ProjectPicker({
   onProjectSelected,
   onRecentProjectsChanged,
 }: ProjectPickerProps) {
-  const [loading, setLoading] = useState(false);
-  const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showFilePickerModal, setShowFilePickerModal] = useState(false);
-  const [activeConnection, setActiveConnection] = useState<Connection | null>(null);
-  const [currentView, setCurrentView] = useState<View>("connections");
-
   // Load enhanced recent projects with metadata
   const { recentProjects, loading: recentLoading, refetch: refetchRecentProjects } = useRecentProjects();
+
+  // Initialize custom hooks
+  const sshManager = useSshConnectionManager();
+
+  const viewNav = useViewNavigation({
+    activeConnection: sshManager.activeConnection,
+    setActiveConnection: sshManager.setActiveConnection,
+    setShowPasswordModal: sshManager.setShowPasswordModal,
+    setLoading: () => {
+      // Loading state is managed by individual hooks (sshManager, projectSelection)
+      // No need for additional state management here
+    },
+  });
+
+  const projectSelection = useProjectSelection({
+    activeConnection: sshManager.activeConnection,
+    onProjectSelected,
+    onRecentProjectsChanged,
+    refetchRecentProjects,
+  });
 
   // Sort recent projects by last_opened (most recent first)
   const sortedRecentProjects = useMemo(() => {
@@ -40,292 +51,26 @@ export function ProjectPicker({
     });
   }, [recentProjects]);
 
-  // Build unified connections list: Local first, then SSH connections
-  const connections = useMemo<Connection[]>(() => {
-    const list: Connection[] = [
-      {
-        type: "local" as const,
-        id: "local",
-        displayName: "Local",
-        subtitle: "Browse local filesystem",
-      },
-    ];
-
-    // Add SSH connections
-    sshConnections.forEach((conn) => {
-      list.push({
-        type: "ssh" as const,
-        id: conn.id,
-        displayName: conn.display_name || conn.connection_string,
-        subtitle: conn.display_name ? conn.connection_string : undefined,
-        metadata: `Last used: ${new Date(conn.last_used_at).toLocaleDateString()}`,
-        sshConnection: conn,
-      });
-    });
-
-    return list;
-  }, [sshConnections]);
-
-  // Load SSH connections on mount
-  useEffect(() => {
-    loadSshConnections();
-  }, []);
-
-  async function loadSshConnections() {
-    try {
-      const connections = await safeInvoke<SshConnection[]>("get_ssh_connections", {});
-      setSshConnections(connections);
-    } catch (error) {
-      console.error("Failed to load SSH connections:", error);
+  // Handle new connection with view navigation coordination
+  const handleNewConnection = async (connectionString: string) => {
+    const result = await sshManager.handleNewConnection(connectionString);
+    if (result?.success) {
+      viewNav.setCurrentView("projects");
     }
-  }
+  };
 
-  async function handleProjectClick(path: string) {
-    console.log(`Opening project: ${path}`);
-    setLoading(true);
-    try {
-      onProjectSelected(path);
-    } catch (error) {
-      toast.error(`Failed to open project: ${error}`);
-    } finally {
-      setLoading(false);
+  // Handle password submit with view navigation coordination
+  const handlePasswordSubmit = async (password: string, savePassword: boolean) => {
+    const result = await sshManager.handlePasswordSubmit(password, savePassword);
+    if (result?.success) {
+      viewNav.setCurrentView("projects");
+      viewNav.setShowFilePickerModal(true);
     }
-  }
+  };
 
-  async function handleSelectNewLocal() {
-    console.log("Opening local file picker");
-    // Show file picker modal for local (connection = null)
-    setShowFilePickerModal(true);
-  }
 
-  async function handleConnectionClick(connection: Connection) {
-    if (connection.type === "local") {
-      // For local connection, navigate to projects view
-      console.log("Local connection selected");
-      setActiveConnection(connection);
-      setCurrentView("projects");
-    } else {
-      // For SSH connection, navigate to projects view
-      console.log(`Selected SSH connection: ${connection.displayName}`);
-      setActiveConnection(connection);
-      setCurrentView("projects");
-    }
-  }
-
-  function handleBackToConnections() {
-    setCurrentView("connections");
-    setActiveConnection(null);
-  }
-
-  async function handleRemoteSelectProject() {
-    if (!activeConnection || !activeConnection.sshConnection) return;
-
-    const sshConn = activeConnection.sshConnection;
-    console.log(`Opening remote file picker for: ${sshConn.connection_string}`);
-    setLoading(true);
-
-    try {
-      // Try connecting without credentials first
-      await safeInvoke("connect_ssh_without_credentials", {
-        connectionId: sshConn.id,
-      });
-
-      toast.success(`Connected to ${sshConn.connection_string}`);
-
-      // Show file picker modal
-      setShowFilePickerModal(true);
-    } catch (error) {
-      console.log("Credential-less connection failed, showing password modal");
-      // Show password modal on auth failure
-      setShowPasswordModal(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleNewConnection(connectionString: string) {
-    console.log(`New connection: ${connectionString}`);
-
-    // Parse connection string: user@host:port or user@host
-    const parts = connectionString.split("@");
-    if (parts.length !== 2) {
-      toast.error("Invalid format. Use: user@host:port or user@host");
-      return;
-    }
-
-    const username = parts[0];
-    const hostPart = parts[1];
-    const [host, portStr] = hostPart.includes(":")
-      ? hostPart.split(":")
-      : [hostPart, "22"];
-    const port = parseInt(portStr, 10);
-
-    if (!host || isNaN(port)) {
-      toast.error("Invalid host or port");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Save connection to database (get ID for authentication)
-      const connectionId = await safeInvoke<number>("save_ssh_connection", {
-        connectionString,
-        username,
-        host,
-        port,
-        authMethod: JSON.stringify("Agent"), // Default to Agent auth
-      });
-
-      // Create connection object for authentication
-      const newSshConnection: SshConnection = {
-        id: connectionId,
-        connection_string: connectionString,
-        username,
-        host,
-        port,
-        auth_method: JSON.stringify("Agent"),
-        display_name: null,
-        last_used_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
-
-      const newConnection: Connection = {
-        type: "ssh",
-        id: connectionId,
-        displayName: connectionString,
-        sshConnection: newSshConnection,
-      };
-
-      // Set as active connection but don't switch views yet
-      setActiveConnection(newConnection);
-
-      // Try to authenticate
-      try {
-        await safeInvoke("connect_ssh_without_credentials", {
-          connectionId: connectionId,
-        });
-
-        // Success! Now reload connections list and switch to projects view
-        await loadSshConnections();
-        toast.success(`Connected to ${connectionString}`);
-        setCurrentView("projects");
-      } catch (authError) {
-        console.log("Authentication failed, prompting for password");
-        // Show password modal (connection not added to list yet)
-        setShowPasswordModal(true);
-      }
-    } catch (error) {
-      toast.error(`Failed to save connection: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handlePasswordSubmit(password: string, savePassword: boolean) {
-    if (!activeConnection || !activeConnection.sshConnection) return;
-
-    const sshConn = activeConnection.sshConnection;
-    setLoading(true);
-    try {
-      await safeInvoke("connect_ssh_with_password", {
-        connectionId: sshConn.id,
-        password,
-        savePassword,
-      });
-
-      toast.success(`Connected to ${sshConn.connection_string}`);
-      setShowPasswordModal(false);
-
-      // Reload connections list (connection now appears after successful auth)
-      await loadSshConnections();
-
-      // Switch to projects view
-      setCurrentView("projects");
-
-      // Show file picker modal
-      setShowFilePickerModal(true);
-    } catch (error) {
-      toast.error(`Authentication failed: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handlePasswordCancel() {
-    setShowPasswordModal(false);
-    setActiveConnection(null);
-  }
-
-  async function handleProjectSelect(selectedPath: string) {
-    if (!activeConnection) {
-      toast.error("No active connection");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      if (activeConnection.type === "local") {
-        // For local, just open the path directly
-        console.log(`Opening local project at: ${selectedPath}`);
-        onProjectSelected(selectedPath);
-      } else {
-        // For remote, create remote project
-        if (!activeConnection.sshConnection) {
-          toast.error("No active SSH connection");
-          return;
-        }
-
-        const sshConn = activeConnection.sshConnection;
-        console.log(`Creating remote project at: ${selectedPath}`);
-
-        // Parse auth method from string
-        const authMethod = JSON.parse(sshConn.auth_method);
-
-        // Create SSH config (use snake_case for Rust struct compatibility)
-        const sshConfig = {
-          host: sshConn.host,
-          port: sshConn.port,
-          username: sshConn.username,
-          auth_method: authMethod,
-          remote_path: selectedPath,
-        };
-
-        // Create remote project (pass connectionId to reuse existing session)
-        const project = await safeInvoke<{ path: string }>("create_project", {
-          name: `${sshConn.host}:${selectedPath}`,
-          path: selectedPath,
-          isRemote: true,
-          sshConfig: sshConfig,
-          connectionId: sshConn.id,
-        });
-
-        console.log(`Remote project created: ${project.path}`);
-        toast.success(`Remote project created at ${selectedPath}`);
-
-        // Open the project
-        onProjectSelected(project.path);
-      }
-    } catch (error) {
-      toast.error(`Failed to open project: ${error}`);
-      setLoading(false);
-    }
-  }
-
-  async function handleRemoveRecentProject(path: string) {
-    try {
-      await safeInvoke("remove_recent_project", { path });
-      // Refresh the recent projects list
-      await refetchRecentProjects();
-      // Notify parent to refetch its recent projects list
-      onRecentProjectsChanged?.();
-      toast.success("Project removed from recent list");
-    } catch (error) {
-      toast.error(`Failed to remove project: ${error}`);
-    }
-  }
-
+  // Combined loading state for UI
+  const isLoading = sshManager.loading || projectSelection.loading || recentLoading;
 
   // Main screen with unified connection list
   return (
@@ -351,43 +96,43 @@ export function ProjectPicker({
             {/* Connections View */}
             <div
               className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
-                currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
+                viewNav.currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
               }`}
             >
               <ConnectionList
-                connections={connections}
-                onConnectionClick={handleConnectionClick}
+                connections={sshManager.connections}
+                onConnectionClick={viewNav.handleConnectionClick}
                 onNewConnection={handleNewConnection}
-                loading={loading || recentLoading}
+                loading={isLoading}
               />
             </div>
 
             {/* Projects View */}
             <div
               className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
-                currentView === "projects" ? "translate-x-0" : "translate-x-full"
+                viewNav.currentView === "projects" ? "translate-x-0" : "translate-x-full"
               }`}
             >
-              {activeConnection && activeConnection.type === "local" && (
+              {sshManager.activeConnection && sshManager.activeConnection.type === "local" && (
                 <LocalProjectsList
                   recentProjects={sortedRecentProjects}
-                  onProjectClick={handleProjectClick}
-                  onSelectNewClick={handleSelectNewLocal}
-                  onBack={handleBackToConnections}
-                  onRemoveProject={handleRemoveRecentProject}
-                  loading={loading}
+                  onProjectClick={projectSelection.handleProjectClick}
+                  onSelectNewClick={viewNav.handleSelectNewLocal}
+                  onBack={viewNav.handleBackToConnections}
+                  onRemoveProject={projectSelection.handleRemoveRecentProject}
+                  loading={isLoading}
                 />
               )}
-              {activeConnection && activeConnection.type === "ssh" && activeConnection.sshConnection && (
+              {sshManager.activeConnection && sshManager.activeConnection.type === "ssh" && sshManager.activeConnection.sshConnection && (
                 <RemoteProjectsList
-                  connection={activeConnection.sshConnection}
+                  connection={sshManager.activeConnection.sshConnection}
                   recentProjects={sortedRecentProjects}
-                  onProjectClick={handleProjectClick}
-                  onSelectNewClick={handleRemoteSelectProject}
-                  onBack={handleBackToConnections}
-                  onRemoveProject={handleRemoveRecentProject}
-                  onConnectionRenamed={loadSshConnections}
-                  loading={loading}
+                  onProjectClick={projectSelection.handleProjectClick}
+                  onSelectNewClick={viewNav.handleRemoteSelectProject}
+                  onBack={viewNav.handleBackToConnections}
+                  onRemoveProject={projectSelection.handleRemoveRecentProject}
+                  onConnectionRenamed={sshManager.loadSshConnections}
+                  loading={isLoading}
                 />
               )}
             </div>
@@ -397,20 +142,20 @@ export function ProjectPicker({
 
       {/* Password Modal */}
       <PasswordModal
-        open={showPasswordModal}
-        connection={activeConnection?.sshConnection || null}
+        open={sshManager.showPasswordModal}
+        connection={sshManager.activeConnection?.sshConnection || null}
         onSubmit={handlePasswordSubmit}
-        onCancel={handlePasswordCancel}
-        loading={loading}
+        onCancel={sshManager.handlePasswordCancel}
+        loading={sshManager.loading}
       />
 
       {/* File Picker Modal (Local or Remote) */}
-      <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
+      <Dialog open={viewNav.showFilePickerModal} onOpenChange={viewNav.setShowFilePickerModal}>
         <DialogContent className="max-w-4xl h-150 p-0 flex flex-col">
           <FilePicker
-            connection={activeConnection?.sshConnection || null}
-            onProjectSelect={handleProjectSelect}
-            loading={loading}
+            connection={sshManager.activeConnection?.sshConnection || null}
+            onProjectSelect={projectSelection.handleProjectSelect}
+            loading={projectSelection.loading}
           />
         </DialogContent>
       </Dialog>
