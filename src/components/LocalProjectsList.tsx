@@ -21,7 +21,7 @@ export function LocalProjectsList({
   loading = false,
 }: LocalProjectsListProps) {
   // Filter to only show local projects
-  const localProjects = recentProjects.filter((p) => !p.is_remote);
+  const localProjects = recentProjects.filter((p) => !p.connection_id);
 
   return (
     <ProjectsListLayout

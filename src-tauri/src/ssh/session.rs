@@ -5,11 +5,46 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use rusqlite::ToSql;
+use rusqlite::Result as SqliteResult;
+use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-
-use crate::models::SshConfig;
+use ts_rs::TS;
+use zeroize::Zeroizing;
 use crate::ssh::error::SshError;
 use crate::ssh::PasswordManager;
+
+/// Saved SSH connection for quick reconnection
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SshConnection {
+    pub id: i64,
+    pub connection_string: String,  // e.g., "user@host:22"
+    pub username: String,
+    pub host: String,
+    pub port: u16,
+    pub auth_method: SshAuthMethod,  // Serialized SshAuthMethod
+    pub display_name: Option<String>,  // User-friendly name
+    pub last_used_at: String,  // ISO 8601
+    pub created_at: String,    // ISO 8601
+}
+
+/// SSH authentication method configuration
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum SshAuthMethod {
+    /// Authenticate using a private key file
+    #[serde(rename = "KeyFile")]
+    KeyFile { path: String },
+    /// Authenticate using SSH agent
+    #[serde(rename = "Agent")]
+    Agent,
+    /// Authenticate using password (stored in OS keyring)
+    #[serde(rename = "Password")]
+    Password { save_password: bool }
+}
 
 /// SSH connection state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,43 +59,91 @@ pub enum SshConnectionState {
 /// Manages a persistent SSH connection for a remote project
 pub struct RemoteSshSession {
     session: Arc<Mutex<Option<Session>>>,
-    config: SshConfig,
+    ssh_connection: SshConnection,
     state: Arc<Mutex<SshConnectionState>>,
     reconnect_attempts: Arc<AtomicUsize>,
+    session_password: Arc<Mutex<Option<String>>>,
+}
+
+impl ToSql for SshAuthMethod {
+    fn to_sql(&self) -> SqliteResult<ToSqlOutput<'_>> {
+        let json = serde_json::to_string(self)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        Ok(ToSqlOutput::from(json))
+    }
+}
+
+impl FromSql for SshAuthMethod {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let json = value.as_str()?;
+
+        // Provide better error messages when deserialization fails
+        if json.is_empty() {
+            return Err(rusqlite::types::FromSqlError::Other(
+                "SshAuthMethod cannot be deserialized from empty string".into()
+            ));
+        }
+
+        serde_json::from_str(json).map_err(|e| {
+            rusqlite::types::FromSqlError::Other(
+                format!("Failed to deserialize SshAuthMethod from JSON: '{}'. Error: {}", json, e).into()
+            )
+        })
+    }
+}
+
+impl SshConnection {
+    /// Parse an SshConnection from a rusqlite Row
+    /// Expects columns in order
+    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(SshConnection {
+            id: row.get(0)?,
+            connection_string: row.get(1)?,
+            username: row.get(2)?,
+            host: row.get(3)?,
+            port: row.get(4)?,
+            auth_method: row.get(5)?,
+            display_name: row.get(6)?,
+            last_used_at: row.get(7)?,
+            created_at: row.get(8)?,
+        })
+    }
 }
 
 impl Clone for RemoteSshSession {
     fn clone(&self) -> Self {
         Self {
             session: self.session.clone(),
-            config: self.config.clone(),
+            ssh_connection: self.ssh_connection.clone(),
             state: self.state.clone(),
             reconnect_attempts: self.reconnect_attempts.clone(),
+            session_password: self.session_password.clone(),
         }
     }
 }
 
 impl RemoteSshSession {
     /// Create a new SSH session with the given configuration
-    pub fn new(config: SshConfig) -> Self {
+    pub fn new(ssh_connection: SshConnection) -> Self {
         Self {
             session: Arc::new(Mutex::new(None)),
-            config,
+            ssh_connection,
             state: Arc::new(Mutex::new(SshConnectionState::Initial)),
             reconnect_attempts: Arc::new(AtomicUsize::new(0)),
+            session_password: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Establish SSH connection with authentication
-    pub async fn connect(&self) -> Result<(), SshError> {
+    pub async fn connect(&self, password: Option<String>) -> Result<(), SshError> {
         let mut state = self.state.lock().await;
         *state = SshConnectionState::Connecting;
         drop(state);
 
         // Parse host and port from config
-        let host = &self.config.host;
-        let port = self.config.port;
-        let username = &self.config.username;
+        let host = &self.ssh_connection.host;
+        let port = &self.ssh_connection.port;
+        let username = &self.ssh_connection.username;
 
         // Create TCP connection with timeout
         let tcp_stream = TcpStream::connect(format!("{}:{}", host, port))
@@ -92,8 +175,8 @@ impl RemoteSshSession {
         })?;
 
         // Authenticate based on configured method
-        match &self.config.auth_method {
-            crate::models::SshAuthMethod::KeyFile { path } => {
+        match &self.ssh_connection.auth_method {
+            SshAuthMethod::KeyFile { path } => {
                 let key_path = Path::new(path);
                 session
                     .userauth_pubkey_file(username, None, key_path, None)
@@ -104,36 +187,36 @@ impl RemoteSshSession {
                         ))
                     })?;
             }
-            crate::models::SshAuthMethod::Agent => {
+            SshAuthMethod::Agent => {
                 session.userauth_agent(username).map_err(|e| {
                     SshError::AuthenticationError(format!("SSH agent authentication failed: {}", e))
                 })?;
             }
-            crate::models::SshAuthMethod::Password { save_password: _ } => {
+            SshAuthMethod::Password { save_password } => {
                 // Retrieve password from OS keyring
-                let password = PasswordManager::get_password(host, username).map_err(|e| {
-                    SshError::AuthenticationError(format!("Failed to retrieve password: {}", e))
-                })?;
+                let pwd = if save_password.clone() {
+                    PasswordManager::get_password(host, username).map_err(|e| {
+                        SshError::AuthenticationError(format!("Failed to retrieve password: {}", e))
+                    })?
+                } else {
+                    let connection_string = format!("{username}@{host}");
+                    let mem_password = password.as_ref().cloned().ok_or_else(|| {
+                        SshError::AuthenticationError(format!(
+                            "No password found for {connection_string}"
+                        ))
+                    })?;
+                    *self.session_password.lock().await = Some(mem_password.clone());
+                    Zeroizing::new(mem_password)
+                };
 
                 session
-                    .userauth_password(username, &password)
-                    .map_err(|e| {
-                        SshError::AuthenticationError(format!(
-                            "Password authentication failed: {}",
-                            e
-                        ))
-                    })?;
-            }
-            crate::models::SshAuthMethod::PasswordInMemory { password } => {
-                // Use password provided in-memory (not persisted to keyring)
-                session
-                    .userauth_password(username, password)
-                    .map_err(|e| {
-                        SshError::AuthenticationError(format!(
-                            "Password authentication failed: {}",
-                            e
-                        ))
-                    })?;
+                .userauth_password(username, &pwd)
+                .map_err(|e| {
+                    SshError::AuthenticationError(format!(
+                        "Password authentication failed: {}",
+                        e
+                    ))
+                })?;
             }
         }
 
@@ -216,11 +299,12 @@ impl RemoteSshSession {
     /// Reconnect if needed with exponential backoff
     async fn reconnect_if_needed(&self) -> Result<(), SshError> {
         let state = *self.state.lock().await;
+        let password = self.session_password.lock().await.as_ref().cloned();
 
         match state {
             SshConnectionState::Connected => Ok(()),
             SshConnectionState::Initial | SshConnectionState::Disconnected => {
-                self.connect().await
+                self.connect(password).await
             }
             SshConnectionState::Connecting => {
                 // Wait for connection in progress
@@ -252,7 +336,7 @@ impl RemoteSshSession {
                 self.reconnect_attempts.fetch_add(1, Ordering::SeqCst);
                 *self.state.lock().await = SshConnectionState::Connecting;
 
-                let result = self.connect().await;
+                let result = self.connect(password).await;
                 if result.is_err() && attempt < 4 {
                     *self.state.lock().await = SshConnectionState::Reconnecting;
                 }
@@ -260,17 +344,12 @@ impl RemoteSshSession {
             }
         }
     }
-
-    /// Get the SSH config for this session
-    pub fn get_config(&self) -> &SshConfig {
-        &self.config
-    }
 }
 
 impl std::fmt::Debug for RemoteSshSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RemoteSshSession")
-            .field("config", &self.config)
+            .field("ssh_connection", &self.ssh_connection)
             .field("reconnect_attempts", &self.reconnect_attempts.load(Ordering::SeqCst))
             .finish()
     }

@@ -31,7 +31,7 @@ export function ConnectionList({
   const [connectionString, setConnectionString] = useState("");
 
   const handleConnect = () => {
-    if (connectionString.trim()) {
+    if (connectionString) {
       onNewConnection(connectionString.trim());
       setConnectionString("");
     }

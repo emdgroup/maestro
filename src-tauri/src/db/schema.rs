@@ -1,15 +1,20 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 1;
 
 pub const SCHEMA_V1: &str = r#"
+-- Enable foreign keys
+PRAGMA foreign_keys = ON;
+
 -- Projects table: stores project metadata
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    last_opened TEXT,
+    connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL
 );
 
 -- Tasks table: stores individual tasks for projects
@@ -24,6 +29,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     is_imported INTEGER DEFAULT 0,
     import_source TEXT,
     skills TEXT DEFAULT '[]',
+    model_override TEXT,
+    mcp_allowlist TEXT,
+    skills_override TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -49,12 +57,13 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     output TEXT,
     terminal_output TEXT,
     status TEXT NOT NULL DEFAULT 'running',
+    error_event TEXT,
     started_at TEXT NOT NULL,
     completed_at TEXT,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
--- Settings table: stores application settings per project
+-- Settings table: stores application settings
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -82,11 +91,35 @@ CREATE TABLE IF NOT EXISTS review_comments (
     FOREIGN KEY (review_id) REFERENCES task_reviews(id) ON DELETE CASCADE
 );
 
--- Index for fast task_reviews lookups
-CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
+-- Known hosts table: stores accepted SSH host keys
+CREATE TABLE IF NOT EXISTS known_hosts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    host_fingerprint TEXT NOT NULL,
+    fingerprint_type TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
 
--- Enable foreign keys
-PRAGMA foreign_keys = ON;
+-- SSH connections table: stores saved SSH connections
+CREATE TABLE IF NOT EXISTS ssh_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_string TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 22,
+    auth_method TEXT NOT NULL,
+    display_name TEXT,
+    last_used_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Indexes for performance
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);
 "#;
 
 pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
@@ -100,161 +133,12 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
         |row| row.get(0),
     ).unwrap_or(0);
 
-    // If schema needs initialization
+    // Initialize schema if needed
     if current_version < SCHEMA_VERSION {
-        // Execute schema DDL (v1 base schema)
+        // Execute complete schema
         conn.execute_batch(SCHEMA_V1)?;
 
-        // Apply migrations based on current version
-        if current_version < 2 {
-            // Migration from v1 to v2: terminal_output is now in base schema, so skip
-            // Previous code attempted: ALTER TABLE execution_logs ADD COLUMN terminal_output TEXT;
-            // But terminal_output is already in SCHEMA_V1, so this would fail
-        }
-
-        if current_version < 3 {
-            // Migration from v2 to v3: add task_reviews and review_comments tables
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS task_reviews (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id INTEGER NOT NULL UNIQUE,
-                    decision TEXT NOT NULL,
-                    general_feedback TEXT,
-                    reviewed_at TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-                );",
-                [],
-            )?;
-
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS review_comments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    review_id INTEGER NOT NULL,
-                    file_path TEXT NOT NULL,
-                    comment TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (review_id) REFERENCES task_reviews(id) ON DELETE CASCADE
-                );",
-                [],
-            )?;
-
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);",
-                [],
-            )?;
-        }
-
-        if current_version < 4 {
-            // Migration from v3 to v4: add configuration columns to tasks table
-            // These columns store task-level configuration overrides
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN model_override TEXT;",
-                [],
-            )?;
-
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN mcp_allowlist TEXT;",
-                [],
-            )?;
-
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN skills_override TEXT;",
-                [],
-            )?;
-        }
-
-        if current_version < 5 {
-            // Migration from v4 to v5: add error_event column to execution_logs table
-            // Stores ErrorEvent struct as JSON for error detection and suggestions
-            conn.execute(
-                "ALTER TABLE execution_logs ADD COLUMN error_event TEXT;",
-                [],
-            )?;
-        }
-
-        if current_version < 6 {
-            // Migration from v5 to v6: add remote project support
-            // Add is_remote and ssh_config columns to projects table
-            conn.execute(
-                "ALTER TABLE projects ADD COLUMN is_remote BOOLEAN NOT NULL DEFAULT 0;",
-                [],
-            )?;
-
-            conn.execute(
-                "ALTER TABLE projects ADD COLUMN ssh_config TEXT;",
-                [],
-            )?;
-
-            // Create known_hosts table for storing accepted SSH host keys
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS known_hosts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    project_id INTEGER NOT NULL,
-                    host_fingerprint TEXT NOT NULL,
-                    fingerprint_type TEXT NOT NULL,
-                    first_seen_at TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-                );",
-                [],
-            )?;
-
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);",
-                [],
-            )?;
-        }
-
-        if current_version < 7 {
-            // Migration from v6 to v7: add SSH connections table
-            // Stores saved SSH connections for quick reconnection
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS ssh_connections (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    connection_string TEXT NOT NULL UNIQUE,
-                    username TEXT NOT NULL,
-                    host TEXT NOT NULL,
-                    port INTEGER NOT NULL DEFAULT 22,
-                    auth_method TEXT NOT NULL,
-                    last_used_at TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );",
-                [],
-            )?;
-
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);",
-                [],
-            )?;
-        }
-
-        if current_version < 8 {
-            // Migration from v7 to v8: add display_name to ssh_connections
-            // Allows users to give friendly names to connections
-            conn.execute(
-                "ALTER TABLE ssh_connections ADD COLUMN display_name TEXT;",
-                [],
-            )?;
-        }
-
-        if current_version < 9 {
-            // Migration from v8 to v9: add last_opened to projects
-            // Track when each project was last opened for proper recent sorting
-            conn.execute(
-                "ALTER TABLE projects ADD COLUMN last_opened TEXT;",
-                [],
-            )?;
-
-            // Initialize last_opened with created_at for existing projects
-            conn.execute(
-                "UPDATE projects SET last_opened = created_at WHERE last_opened IS NULL;",
-                [],
-            )?;
-        }
-
-        // Update schema version
+        // Set schema version
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -291,11 +175,19 @@ mod tests {
         assert!(tables.contains(&"settings".to_string()));
         assert!(tables.contains(&"task_reviews".to_string()));
         assert!(tables.contains(&"review_comments".to_string()));
+        assert!(tables.contains(&"known_hosts".to_string()));
+        assert!(tables.contains(&"ssh_connections".to_string()));
 
         // Verify foreign keys are enabled
         let fk_enabled: u32 = conn
             .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
             .unwrap();
         assert_eq!(fk_enabled, 1);
+
+        // Verify schema version
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
     }
 }

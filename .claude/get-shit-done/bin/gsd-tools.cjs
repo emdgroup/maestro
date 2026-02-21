@@ -41,6 +41,10 @@
  *   roadmap analyze                    Full roadmap parse with disk status
  *   roadmap update-plan-progress <N>   Update progress table row from disk (PLAN vs SUMMARY counts)
  *
+ * Requirements Operations:
+ *   requirements mark-complete <ids>   Mark requirement IDs as complete in REQUIREMENTS.md
+ *                                      Accepts: REQ-01,REQ-02 or REQ-01 REQ-02 or [REQ-01, REQ-02]
+ *
  * Milestone Operations:
  *   milestone complete <version>       Archive milestone, create MILESTONES.md
  *     [--name <name>]
@@ -140,14 +144,6 @@ const MODEL_PROFILES = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function parseIncludeFlag(args) {
-  const includeIndex = args.indexOf('--include');
-  if (includeIndex === -1) return new Set();
-  const includeValue = args[includeIndex + 1];
-  if (!includeValue) return new Set();
-  return new Set(includeValue.split(',').map(s => s.trim()));
-}
 
 function safeReadFile(filePath) {
   try {
@@ -3131,6 +3127,75 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
   }, raw, `${summaryCount}/${planCount} ${status}`);
 }
 
+// ─── Requirements Mark Complete ───────────────────────────────────────────────
+
+function cmdRequirementsMarkComplete(cwd, reqIdsRaw, raw) {
+  if (!reqIdsRaw || reqIdsRaw.length === 0) {
+    error('requirement IDs required. Usage: requirements mark-complete REQ-01,REQ-02 or REQ-01 REQ-02');
+  }
+
+  // Accept comma-separated, space-separated, or bracket-wrapped: [REQ-01, REQ-02]
+  const reqIds = reqIdsRaw
+    .join(' ')
+    .replace(/[\[\]]/g, '')
+    .split(/[,\s]+/)
+    .map(r => r.trim())
+    .filter(Boolean);
+
+  if (reqIds.length === 0) {
+    error('no valid requirement IDs found');
+  }
+
+  const reqPath = path.join(cwd, '.planning', 'REQUIREMENTS.md');
+  if (!fs.existsSync(reqPath)) {
+    output({ updated: false, reason: 'REQUIREMENTS.md not found', ids: reqIds }, raw, 'no requirements file');
+    return;
+  }
+
+  let reqContent = fs.readFileSync(reqPath, 'utf-8');
+  const updated = [];
+  const notFound = [];
+
+  for (const reqId of reqIds) {
+    let found = false;
+
+    // Update checkbox: - [ ] **REQ-ID** → - [x] **REQ-ID**
+    const checkboxPattern = new RegExp(`(-\\s*\\[)[ ](\\]\\s*\\*\\*${reqId}\\*\\*)`, 'gi');
+    if (checkboxPattern.test(reqContent)) {
+      reqContent = reqContent.replace(checkboxPattern, '$1x$2');
+      found = true;
+    }
+
+    // Update traceability table: | REQ-ID | Phase N | Pending | → | REQ-ID | Phase N | Complete |
+    const tablePattern = new RegExp(`(\\|\\s*${reqId}\\s*\\|[^|]+\\|)\\s*Pending\\s*(\\|)`, 'gi');
+    if (tablePattern.test(reqContent)) {
+      // Re-read since test() advances lastIndex for global regex
+      reqContent = reqContent.replace(
+        new RegExp(`(\\|\\s*${reqId}\\s*\\|[^|]+\\|)\\s*Pending\\s*(\\|)`, 'gi'),
+        '$1 Complete $2'
+      );
+      found = true;
+    }
+
+    if (found) {
+      updated.push(reqId);
+    } else {
+      notFound.push(reqId);
+    }
+  }
+
+  if (updated.length > 0) {
+    fs.writeFileSync(reqPath, reqContent, 'utf-8');
+  }
+
+  output({
+    updated: updated.length > 0,
+    marked_complete: updated,
+    not_found: notFound,
+    total: reqIds.length,
+  }, raw, `${updated.length}/${reqIds.length} requirements marked complete`);
+}
+
 // ─── Phase Complete (Transition) ──────────────────────────────────────────────
 
 function cmdPhaseComplete(cwd, phaseNum, raw) {
@@ -3196,7 +3261,7 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
       );
 
       if (reqMatch) {
-        const reqIds = reqMatch[1].split(/[,\s]+/).map(r => r.trim()).filter(Boolean);
+        const reqIds = reqMatch[1].replace(/[\[\]]/g, '').split(/[,\s]+/).map(r => r.trim()).filter(Boolean);
         let reqContent = fs.readFileSync(reqPath, 'utf-8');
 
         for (const reqId of reqIds) {
@@ -3757,6 +3822,13 @@ function cmdValidateHealth(cwd, options, raw) {
             break;
           }
           case 'regenerateState': {
+            // Create timestamped backup before overwriting
+            if (fs.existsSync(statePath)) {
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+              const backupPath = `${statePath}.bak-${timestamp}`;
+              fs.copyFileSync(statePath, backupPath);
+              repairActions.push({ action: 'backupState', success: true, path: backupPath });
+            }
             // Generate minimal STATE.md from ROADMAP.md structure
             const milestone = getMilestoneInfo(cwd);
             let stateContent = `# Session State\n\n`;
@@ -4164,7 +4236,7 @@ function getMilestoneInfo(cwd) {
   }
 }
 
-function cmdInitExecutePhase(cwd, phase, includes, raw) {
+function cmdInitExecutePhase(cwd, phase, raw) {
   if (!phase) {
     error('phase required for init execute-phase');
   }
@@ -4220,23 +4292,16 @@ function cmdInitExecutePhase(cwd, phase, includes, raw) {
     state_exists: pathExistsInternal(cwd, '.planning/STATE.md'),
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     config_exists: pathExistsInternal(cwd, '.planning/config.json'),
+    // File paths
+    state_path: '.planning/STATE.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    config_path: '.planning/config.json',
   };
-
-  // Include file contents if requested via --include
-  if (includes.has('state')) {
-    result.state_content = safeReadFile(path.join(cwd, '.planning', 'STATE.md'));
-  }
-  if (includes.has('config')) {
-    result.config_content = safeReadFile(path.join(cwd, '.planning', 'config.json'));
-  }
-  if (includes.has('roadmap')) {
-    result.roadmap_content = safeReadFile(path.join(cwd, '.planning', 'ROADMAP.md'));
-  }
 
   output(result, raw);
 }
 
-function cmdInitPlanPhase(cwd, phase, includes, raw) {
+function cmdInitPlanPhase(cwd, phase, raw) {
   if (!phase) {
     error('phase required for init plan-phase');
   }
@@ -4272,59 +4337,33 @@ function cmdInitPlanPhase(cwd, phase, includes, raw) {
     // Environment
     planning_exists: pathExistsInternal(cwd, '.planning'),
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
+
+    // File paths
+    state_path: '.planning/STATE.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    requirements_path: '.planning/REQUIREMENTS.md',
   };
 
-  // Include file contents if requested via --include
-  if (includes.has('state')) {
-    result.state_content = safeReadFile(path.join(cwd, '.planning', 'STATE.md'));
-  }
-  if (includes.has('roadmap')) {
-    result.roadmap_content = safeReadFile(path.join(cwd, '.planning', 'ROADMAP.md'));
-  }
-  if (includes.has('requirements')) {
-    result.requirements_content = safeReadFile(path.join(cwd, '.planning', 'REQUIREMENTS.md'));
-  }
-  if (includes.has('context') && phaseInfo?.directory) {
+  if (phaseInfo?.directory) {
     // Find *-CONTEXT.md in phase directory
     const phaseDirFull = path.join(cwd, phaseInfo.directory);
     try {
       const files = fs.readdirSync(phaseDirFull);
       const contextFile = files.find(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
       if (contextFile) {
-        result.context_content = safeReadFile(path.join(phaseDirFull, contextFile));
+        result.context_path = path.join(phaseInfo.directory, contextFile);
       }
-    } catch {}
-  }
-  if (includes.has('research') && phaseInfo?.directory) {
-    // Find *-RESEARCH.md in phase directory
-    const phaseDirFull = path.join(cwd, phaseInfo.directory);
-    try {
-      const files = fs.readdirSync(phaseDirFull);
       const researchFile = files.find(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
       if (researchFile) {
-        result.research_content = safeReadFile(path.join(phaseDirFull, researchFile));
+        result.research_path = path.join(phaseInfo.directory, researchFile);
       }
-    } catch {}
-  }
-  if (includes.has('verification') && phaseInfo?.directory) {
-    // Find *-VERIFICATION.md in phase directory
-    const phaseDirFull = path.join(cwd, phaseInfo.directory);
-    try {
-      const files = fs.readdirSync(phaseDirFull);
       const verificationFile = files.find(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
       if (verificationFile) {
-        result.verification_content = safeReadFile(path.join(phaseDirFull, verificationFile));
+        result.verification_path = path.join(phaseInfo.directory, verificationFile);
       }
-    } catch {}
-  }
-  if (includes.has('uat') && phaseInfo?.directory) {
-    // Find *-UAT.md in phase directory
-    const phaseDirFull = path.join(cwd, phaseInfo.directory);
-    try {
-      const files = fs.readdirSync(phaseDirFull);
       const uatFile = files.find(f => f.endsWith('-UAT.md') || f === 'UAT.md');
       if (uatFile) {
-        result.uat_content = safeReadFile(path.join(phaseDirFull, uatFile));
+        result.uat_path = path.join(phaseInfo.directory, uatFile);
       }
     } catch {}
   }
@@ -4383,6 +4422,9 @@ function cmdInitNewProject(cwd, raw) {
 
     // Enhanced search
     brave_search_available: hasBraveSearch,
+
+    // File paths
+    project_path: '.planning/PROJECT.md',
   };
 
   output(result, raw);
@@ -4410,6 +4452,11 @@ function cmdInitNewMilestone(cwd, raw) {
     project_exists: pathExistsInternal(cwd, '.planning/PROJECT.md'),
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     state_exists: pathExistsInternal(cwd, '.planning/STATE.md'),
+
+    // File paths
+    project_path: '.planning/PROJECT.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    state_path: '.planning/STATE.md',
   };
 
   output(result, raw);
@@ -4459,6 +4506,7 @@ function cmdInitQuick(cwd, description, raw) {
     // File existence
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     planning_exists: pathExistsInternal(cwd, '.planning'),
+
   };
 
   output(result, raw);
@@ -4479,6 +4527,11 @@ function cmdInitResume(cwd, raw) {
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     project_exists: pathExistsInternal(cwd, '.planning/PROJECT.md'),
     planning_exists: pathExistsInternal(cwd, '.planning'),
+
+    // File paths
+    state_path: '.planning/STATE.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    project_path: '.planning/PROJECT.md',
 
     // Agent state
     has_interrupted_agent: !!interruptedAgentId,
@@ -4568,7 +4621,35 @@ function cmdInitPhaseOp(cwd, phase, raw) {
     // File existence
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     planning_exists: pathExistsInternal(cwd, '.planning'),
+
+    // File paths
+    state_path: '.planning/STATE.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    requirements_path: '.planning/REQUIREMENTS.md',
   };
+
+  if (phaseInfo?.directory) {
+    const phaseDirFull = path.join(cwd, phaseInfo.directory);
+    try {
+      const files = fs.readdirSync(phaseDirFull);
+      const contextFile = files.find(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
+      if (contextFile) {
+        result.context_path = path.join(phaseInfo.directory, contextFile);
+      }
+      const researchFile = files.find(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
+      if (researchFile) {
+        result.research_path = path.join(phaseInfo.directory, researchFile);
+      }
+      const verificationFile = files.find(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
+      if (verificationFile) {
+        result.verification_path = path.join(phaseInfo.directory, verificationFile);
+      }
+      const uatFile = files.find(f => f.endsWith('-UAT.md') || f === 'UAT.md');
+      if (uatFile) {
+        result.uat_path = path.join(phaseInfo.directory, uatFile);
+      }
+    } catch {}
+  }
 
   output(result, raw);
 }
@@ -4727,7 +4808,7 @@ function cmdInitMapCodebase(cwd, raw) {
   output(result, raw);
 }
 
-function cmdInitProgress(cwd, includes, raw) {
+function cmdInitProgress(cwd, raw) {
   const config = loadConfig(cwd);
   const milestone = getMilestoneInfo(cwd);
 
@@ -4815,21 +4896,12 @@ function cmdInitProgress(cwd, includes, raw) {
     project_exists: pathExistsInternal(cwd, '.planning/PROJECT.md'),
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
     state_exists: pathExistsInternal(cwd, '.planning/STATE.md'),
+    // File paths
+    state_path: '.planning/STATE.md',
+    roadmap_path: '.planning/ROADMAP.md',
+    project_path: '.planning/PROJECT.md',
+    config_path: '.planning/config.json',
   };
-
-  // Include file contents if requested via --include
-  if (includes.has('state')) {
-    result.state_content = safeReadFile(path.join(cwd, '.planning', 'STATE.md'));
-  }
-  if (includes.has('roadmap')) {
-    result.roadmap_content = safeReadFile(path.join(cwd, '.planning', 'ROADMAP.md'));
-  }
-  if (includes.has('project')) {
-    result.project_content = safeReadFile(path.join(cwd, '.planning', 'PROJECT.md'));
-  }
-  if (includes.has('config')) {
-    result.config_content = safeReadFile(path.join(cwd, '.planning', 'config.json'));
-  }
 
   output(result, raw);
 }
@@ -5078,6 +5150,16 @@ async function main() {
       break;
     }
 
+    case 'requirements': {
+      const subcommand = args[1];
+      if (subcommand === 'mark-complete') {
+        cmdRequirementsMarkComplete(cwd, args.slice(2), raw);
+      } else {
+        error('Unknown requirements subcommand. Available: mark-complete');
+      }
+      break;
+    }
+
     case 'phase': {
       const subcommand = args[1];
       if (subcommand === 'next-decimal') {
@@ -5162,13 +5244,12 @@ async function main() {
 
     case 'init': {
       const workflow = args[1];
-      const includes = parseIncludeFlag(args);
       switch (workflow) {
         case 'execute-phase':
-          cmdInitExecutePhase(cwd, args[2], includes, raw);
+          cmdInitExecutePhase(cwd, args[2], raw);
           break;
         case 'plan-phase':
-          cmdInitPlanPhase(cwd, args[2], includes, raw);
+          cmdInitPlanPhase(cwd, args[2], raw);
           break;
         case 'new-project':
           cmdInitNewProject(cwd, raw);
@@ -5198,7 +5279,7 @@ async function main() {
           cmdInitMapCodebase(cwd, raw);
           break;
         case 'progress':
-          cmdInitProgress(cwd, includes, raw);
+          cmdInitProgress(cwd, raw);
           break;
         default:
           error(`Unknown init workflow: ${workflow}\nAvailable: execute-phase, plan-phase, new-project, new-milestone, quick, resume, verify-work, phase-op, todos, milestone-op, map-codebase, progress`);

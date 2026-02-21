@@ -85,9 +85,7 @@ Phase 17 Status:
 
 ### Pending Todos
 
-1. **Fix SSH password authentication and session persistence** (ssh)
-   - `.planning/todos/pending/2026-02-16-fix-ssh-password-auth-and-session-persistence.md`
-   - SSH password authentication and session persistence issues
+None currently.
 
 
 ### Blockers/Concerns

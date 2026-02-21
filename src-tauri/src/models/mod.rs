@@ -8,7 +8,7 @@ pub mod review;
 pub mod merge_outcome;
 pub mod connection;
 
-pub use project::{Project, ProjectStatus, SshConfig, SshAuthMethod, EnhancedRecentProject, SshConnection};
+pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
 pub use task::{Task, TaskStatus, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
 pub use worktree::{Worktree, WorktreeStatus, PoolStatus};

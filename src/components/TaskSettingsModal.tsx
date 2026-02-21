@@ -26,6 +26,7 @@ import {
   AVAILABLE_MODELS,
 } from "../store/configStore";
 import type { Task, TaskConfigRequest } from "../types/bindings";
+import {X} from "lucide-react";
 
 interface TaskSettingsModalProps {
   isOpen: boolean;
@@ -252,11 +253,9 @@ export function TaskSettingsModal({
             </div>
           </form>
 
-          <DialogClose asChild>
-            <Button variant="ghost" size="sm" aria-label="Close">
-              ✕
-            </Button>
-          </DialogClose>
+          <DialogClose render={
+            <Button variant="ghost" size="sm" aria-label="Close"><X className="size-3.5"/></Button>
+          }/>
         </DialogContent>
       </DialogPortal>
     </Dialog>

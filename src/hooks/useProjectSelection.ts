@@ -60,53 +60,26 @@ export function useProjectSelection({
         toast.error("No active connection");
         return;
       }
-
+      let project;
       setLoading(true);
-
       try {
-        if (activeConnection.type === "local") {
-          // For local, just open the path directly
-          console.log(`Opening local project at: ${selectedPath}`);
-          onProjectSelected(selectedPath);
-        } else {
-          // For remote, create remote project
-          if (!activeConnection.sshConnection) {
-            toast.error("No active SSH connection");
+        if (activeConnection.type === "ssh") {
+          // Remote: require connection_id (enforces authentication)
+          if (!activeConnection.sshConnection?.id) {
+            toast.error("SSH not authenticated");
             return;
           }
-
-          const sshConn = activeConnection.sshConnection;
-          console.log(`Creating remote project at: ${selectedPath}`);
-
-          // Parse auth method from string
-          const authMethod = JSON.parse(sshConn.auth_method);
-
-          // Create SSH config (use snake_case for Rust struct compatibility)
-          const sshConfig = {
-            host: sshConn.host,
-            port: sshConn.port,
-            username: sshConn.username,
-            auth_method: authMethod,
-            remote_path: selectedPath,
-          };
-
-          // Create remote project (pass connectionId to reuse existing session)
-          const project = await safeInvoke<{ path: string }>("create_project", {
-            name: `${sshConn.host}:${selectedPath}`,
-            path: selectedPath,
-            isRemote: true,
-            sshConfig: sshConfig,
-            connectionId: sshConn.id,
-          });
-
-          console.log(`Remote project created: ${project.path}`);
-          toast.success(`Remote project created at ${selectedPath}`);
-
-          // Open the project
-          onProjectSelected(project.path);
         }
+        project = await safeInvoke<{ path: string }>(
+              "create_project",
+              {
+                  projectPath: selectedPath,
+                  connectionId: activeConnection?.sshConnection?.id
+              });
+        onProjectSelected(project.path);
       } catch (error) {
         toast.error(`Failed to open project: ${error}`);
+      } finally {
         setLoading(false);
       }
     },

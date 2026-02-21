@@ -14,26 +14,24 @@ files:
 
 SSH connection password authentication flow has multiple critical issues preventing proper usage:
 
-### Issue 1: Double Password Prompt
-- **Current behavior**: User is prompted for password TWICE:
-  1. First prompt when adding new SSH connection
-  2. Second prompt when selecting a project folder
-- **Expected behavior**: User should be prompted ONCE per app session, even if "Save password" is unchecked
-- **Root cause**: SSH session is not persisting between the initial connection test and project folder selection
+### Issue 1: Password workflow
+- **Current behavior**: User is need to restart multiple times to access remote folders after adding a new remote connection:
+  1. When adding a new connection, user is directly moved to the recent project list of the newly added connection without having been prompted to enter the password 
+  2. User cannot select a project from the project picker because connection did not go through due to password not provided.
+  3. User need to restart, access the newly added connection and click on the "select new project" button to be prompted with the password.
+  4. User can now select a project from the project picker, but it then fails with error: Failed to connect to remote project: SSH Authentication Error: SSH agent authentication failed: [Session(-42)] unable to connect to agent pipe
+- **Expected behavior**: 
+  1. If connection fails using agent method, user should be prompted immediately with the password input
+  2. If user choose to save the password, it should not be asked to re-enter password after restarting the app. 
+  3. If user do NOT choose to save the password, it should be cached for the duration of the session (until the app is closed)
 
-### Issue 2: SSH Agent Error After Password Auth
-- **Error message**: `SSH Authentication Error: SSH agent authentication failed: [Session(-42)] unable to connect to agent pipe`
-- **When it occurs**: After successfully connecting with password, when trying to open a project folder
-- **Workaround**: Restart app, then select the connection again (works on second try)
-- **Root cause**: Unknown - session state issue or auth method mismatch between frontend and backend
-
-### Issue 3: Connection Added Before Establishment
+### Issue 2: Connection Added Before Establishment
 - **Current behavior**: SSH connection appears in recent connections list immediately when user submits connection string
 - **Expected behavior**: Connection should only be added to list AFTER successful authentication
 - **Impact**: Failed connections clutter the recent list
 
-### Issue 4: Native Password Reveal Button Styling
-- **Current behavior**: Password input has no native browser reveal button visible, or it's not styled
+### Issue 3: Native Password Reveal Button Styling
+- **Current behavior**: Password input has a reveal button, but it's not styled and hard to see in dark mode
 - **Expected behavior**: Native browser password reveal button (eye icon) should be visible and styled with accent color
 - **Note**: User wants the NATIVE browser feature styled, not a custom toggle button
 - **CSS pseudo-element**: `::-ms-reveal` (Chrome/Edge) or equivalent for other browsers
@@ -100,8 +98,9 @@ SSH connection password authentication flow has multiple critical issues prevent
 7. Backend creates SSH session and stores in `AppState.ssh_sessions[connection_id]`
 8. If `save_password = true`, password saved to OS keyring
 9. Backend optionally updates database `auth_method` to `"Password"` if password saved
-10. Frontend switches to projects view
-11. **Connection should now appear in recent list (not before)**
+10. If connection fails, toast the error and remove the connection from database and backend AppState.
+11. If connection is successful, frontend switches to projects view for this new connection.
+12. **Connection should now appear in recent connections list (not before)**
 
 **Selecting Project Folder (Same Session)**:
 1. User clicks "Select New" button

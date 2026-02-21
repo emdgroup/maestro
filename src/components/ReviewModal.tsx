@@ -14,6 +14,7 @@ import { parseDiffString } from "../utils/diffParser";
 import { FileTree } from "./FileTree";
 import { DiffViewer } from "./DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";
+import {X} from "lucide-react";
 
 interface ReviewModalProps {
   taskId: number;
@@ -113,11 +114,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
               </DialogTitle>
               <p className="review-modal-subtitle">{taskName}</p>
             </div>
-            <DialogClose asChild>
-              <Button variant="ghost" size="sm" aria-label="Close">
-                ✕
-              </Button>
-            </DialogClose>
+            <DialogClose render={
+              <Button variant="ghost" size="sm" aria-label="Close"><X className="size-3.5"/></Button>
+            }/>
           </div>
 
           <div className="review-modal-body">

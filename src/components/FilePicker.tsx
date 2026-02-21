@@ -53,7 +53,7 @@ export function FilePicker({
       }
     }
 
-    initializePath();
+    void initializePath();
   }, [isLocal, isInitialized, connection]);
 
   // Load drives on Windows (local only)
@@ -70,12 +70,12 @@ export function FilePicker({
       }
     }
 
-    loadDrives();
+    void loadDrives();
   }, [isLocal, isInitialized]);
 
   useEffect(() => {
     if (isInitialized && currentPath) {
-      loadDirectories(currentPath);
+      void loadDirectories(currentPath);
       setSelectedIndex(-1); // Reset selection when path changes
     }
   }, [currentPath, isInitialized]);

@@ -4,8 +4,8 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReviewFeedback {
-    pub id: i32,
-    pub task_id: i32,
+    pub id: i64,
+    pub task_id: i64,
     pub decision: ReviewDecision,
     pub general_feedback: Option<String>,
     pub reviewed_at: Option<String>,
@@ -15,8 +15,8 @@ pub struct ReviewFeedback {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReviewComment {
-    pub id: i32,
-    pub review_id: i32,
+    pub id: i64,
+    pub review_id: i64,
     pub file_path: String,
     pub comment: String,
     pub created_at: String,
@@ -32,7 +32,7 @@ pub enum ReviewDecision {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SaveReviewRequest {
-    pub task_id: i32,
+    pub task_id: i64,
     pub decision: ReviewDecision,
     pub general_feedback: Option<String>,
     pub per_file_comments: Option<Vec<(String, String)>>, // (file_path, comment)

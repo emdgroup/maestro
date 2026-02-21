@@ -141,7 +141,7 @@ export function TaskForm({
           render={({ field: { value, onChange } }) => (
             <div>
               <Select value={value.length > 0 ? value[0] : ""} onValueChange={(newVal) => {
-                if (value.includes(newVal)) {
+                if (newVal && value.includes(newVal)) {
                   onChange(value.filter(s => s !== newVal));
                 } else {
                   onChange([...value, newVal]);

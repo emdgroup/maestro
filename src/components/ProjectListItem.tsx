@@ -55,7 +55,7 @@ export function ProjectListItem({
           title="Remove from recent projects (Del key)"
           aria-label="Remove from recent projects"
         >
-          <X className="w-3.5 h-3.5" />
+          <X className="size-3.5" />
         </button>
       )}
     </li>

@@ -1,15 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ConnectionList } from "./ConnectionList";
 import { LocalProjectsList } from "./LocalProjectsList";
 import { RemoteProjectsList } from "./RemoteProjectsList";
 import { PasswordModal } from "./PasswordModal";
 import { FilePicker } from "./FilePicker";
 import { Dialog, DialogContent } from "./ui/dialog";
-import { useRecentProjects } from "../hooks/useRecentProjects";
-import { useSshConnectionManager } from "../hooks/useSshConnectionManager";
-import { useProjectSelection } from "../hooks/useProjectSelection";
-import { useViewNavigation } from "../hooks/useViewNavigation";
 import { ThemeToggle } from "./ThemeToggle";
+import { useProjectSelection } from "@/hooks/useProjectSelection.ts";
+import { useProjectPickerManager } from "@/hooks/useProjectPickerManager.tsx";
 
 interface ProjectPickerProps {
   onProjectSelected: (path: string) => void;
@@ -20,24 +18,33 @@ export function ProjectPicker({
   onProjectSelected,
   onRecentProjectsChanged,
 }: ProjectPickerProps) {
-  // Load enhanced recent projects with metadata
-  const { recentProjects, loading: recentLoading, refetch: refetchRecentProjects } = useRecentProjects();
 
-  // Initialize custom hooks
-  const sshManager = useSshConnectionManager();
+  const [showFilePickerModal, setShowFilePickerModal] = useState(false);
+  const {
+    currentView,
+    recentProjects,
+    activeConnection,
+    connections,
+    showPasswordModal,
+    isLoading,
+    refetchRecentProjects,
+    handleConnection,
+    handleNewConnection,
+    handleBackToConnections,
+    handleRemoteSelectProject,
+    handlePasswordSubmit,
+    handleSelectNewLocal,
+    loadSshConnections,
+    handlePasswordCancel
+  } = useProjectPickerManager({setShowFilePickerModal});
 
-  const viewNav = useViewNavigation({
-    activeConnection: sshManager.activeConnection,
-    setActiveConnection: sshManager.setActiveConnection,
-    setShowPasswordModal: sshManager.setShowPasswordModal,
-    setLoading: () => {
-      // Loading state is managed by individual hooks (sshManager, projectSelection)
-      // No need for additional state management here
-    },
-  });
-
-  const projectSelection = useProjectSelection({
-    activeConnection: sshManager.activeConnection,
+  const {
+    loading: projectLoading,
+    handleProjectClick,
+    handleProjectSelect,
+    handleRemoveRecentProject
+  } = useProjectSelection({
+    activeConnection,
     onProjectSelected,
     onRecentProjectsChanged,
     refetchRecentProjects,
@@ -50,27 +57,6 @@ export function ProjectPicker({
       return b.last_opened.localeCompare(a.last_opened);
     });
   }, [recentProjects]);
-
-  // Handle new connection with view navigation coordination
-  const handleNewConnection = async (connectionString: string) => {
-    const result = await sshManager.handleNewConnection(connectionString);
-    if (result?.success) {
-      viewNav.setCurrentView("projects");
-    }
-  };
-
-  // Handle password submit with view navigation coordination
-  const handlePasswordSubmit = async (password: string, savePassword: boolean) => {
-    const result = await sshManager.handlePasswordSubmit(password, savePassword);
-    if (result?.success) {
-      viewNav.setCurrentView("projects");
-      viewNav.setShowFilePickerModal(true);
-    }
-  };
-
-
-  // Combined loading state for UI
-  const isLoading = sshManager.loading || projectSelection.loading || recentLoading;
 
   // Main screen with unified connection list
   return (
@@ -92,16 +78,16 @@ export function ProjectPicker({
           </div>
 
           {/* Single Panel with Slide Transition */}
-          <div className="bg-card border border-border rounded-lg overflow-clip relative min-h-[500px] max-h-[700px]">
+          <div className="bg-card border border-border rounded-lg overflow-clip relative min-h-125 max-h-175">
             {/* Connections View */}
             <div
               className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
-                viewNav.currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
+                currentView === "projects" ? "-translate-x-full invisible" : "translate-x-0"
               }`}
             >
               <ConnectionList
-                connections={sshManager.connections}
-                onConnectionClick={viewNav.handleConnectionClick}
+                connections={connections}
+                onConnectionClick={handleConnection}
                 onNewConnection={handleNewConnection}
                 loading={isLoading}
               />
@@ -110,28 +96,28 @@ export function ProjectPicker({
             {/* Projects View */}
             <div
               className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
-                viewNav.currentView === "projects" ? "translate-x-0" : "translate-x-full"
+                currentView === "projects" ? "translate-x-0" : "translate-x-full"
               }`}
             >
-              {sshManager.activeConnection && sshManager.activeConnection.type === "local" && (
+              {activeConnection && activeConnection.type === "local" && (
                 <LocalProjectsList
                   recentProjects={sortedRecentProjects}
-                  onProjectClick={projectSelection.handleProjectClick}
-                  onSelectNewClick={viewNav.handleSelectNewLocal}
-                  onBack={viewNav.handleBackToConnections}
-                  onRemoveProject={projectSelection.handleRemoveRecentProject}
+                  onProjectClick={handleProjectClick}
+                  onSelectNewClick={handleSelectNewLocal}
+                  onBack={handleBackToConnections}
+                  onRemoveProject={handleRemoveRecentProject}
                   loading={isLoading}
                 />
               )}
-              {sshManager.activeConnection && sshManager.activeConnection.type === "ssh" && sshManager.activeConnection.sshConnection && (
+              {activeConnection && activeConnection.type === "ssh" && activeConnection.sshConnection && (
                 <RemoteProjectsList
-                  connection={sshManager.activeConnection.sshConnection}
+                  connection={activeConnection.sshConnection}
                   recentProjects={sortedRecentProjects}
-                  onProjectClick={projectSelection.handleProjectClick}
-                  onSelectNewClick={viewNav.handleRemoteSelectProject}
-                  onBack={viewNav.handleBackToConnections}
-                  onRemoveProject={projectSelection.handleRemoveRecentProject}
-                  onConnectionRenamed={sshManager.loadSshConnections}
+                  onProjectClick={handleProjectClick}
+                  onSelectNewClick={handleRemoteSelectProject}
+                  onBack={handleBackToConnections}
+                  onRemoveProject={handleRemoveRecentProject}
+                  onConnectionRenamed={loadSshConnections}
                   loading={isLoading}
                 />
               )}
@@ -142,20 +128,20 @@ export function ProjectPicker({
 
       {/* Password Modal */}
       <PasswordModal
-        open={sshManager.showPasswordModal}
-        connection={sshManager.activeConnection?.sshConnection || null}
+        open={showPasswordModal}
+        connection={activeConnection?.sshConnection || null}
         onSubmit={handlePasswordSubmit}
-        onCancel={sshManager.handlePasswordCancel}
-        loading={sshManager.loading}
+        onCancel={handlePasswordCancel}
+        loading={isLoading}
       />
 
       {/* File Picker Modal (Local or Remote) */}
-      <Dialog open={viewNav.showFilePickerModal} onOpenChange={viewNav.setShowFilePickerModal}>
+      <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
         <DialogContent className="max-w-4xl h-150 p-0 flex flex-col">
           <FilePicker
-            connection={sshManager.activeConnection?.sshConnection || null}
-            onProjectSelect={projectSelection.handleProjectSelect}
-            loading={projectSelection.loading}
+            connection={activeConnection?.sshConnection || null}
+            onProjectSelect={handleProjectSelect}
+            loading={projectLoading}
           />
         </DialogContent>
       </Dialog>

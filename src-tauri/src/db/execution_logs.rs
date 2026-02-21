@@ -13,9 +13,9 @@ use crate::models::ErrorEvent;
 /// The ID of the newly created execution log record
 pub fn create_execution_log(
     conn: &Connection,
-    task_id: i32,
-    _worktree_id: i32,
-) -> Result<i32, String> {
+    task_id: i64,
+    _worktree_id: i64,
+) -> Result<i64, String> {
     let now = Utc::now().to_rfc3339();
 
     conn.execute(
@@ -24,7 +24,7 @@ pub fn create_execution_log(
     )
     .map_err(|e| format!("Failed to create execution log: {}", e))?;
 
-    let log_id = conn.last_insert_rowid() as i32;
+    let log_id = conn.last_insert_rowid();
     Ok(log_id)
 }
 
@@ -39,7 +39,7 @@ pub fn create_execution_log(
 /// Ok(()) on success, Err(String) on database error
 pub fn append_output(
     conn: &Connection,
-    log_id: i32,
+    log_id: i64,
     output: &str,
 ) -> Result<(), String> {
     conn.execute(
@@ -68,7 +68,7 @@ pub fn append_output(
 /// - Sets completed_at timestamp
 pub fn mark_complete(
     conn: &Connection,
-    log_id: i32,
+    log_id: i64,
     exit_code: i32,
 ) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
@@ -94,7 +94,7 @@ pub fn mark_complete(
 /// Ok(()) on success, Err(String) on database error
 pub fn append_error_event(
     conn: &Connection,
-    log_id: i32,
+    log_id: i64,
     error_event: &ErrorEvent,
 ) -> Result<(), String> {
     let error_json = serde_json::to_string(&error_event)
@@ -120,7 +120,7 @@ pub fn append_error_event(
 /// Ok(()) on success, Err(String) on database error
 pub fn mark_failed(
     conn: &Connection,
-    log_id: i32,
+    log_id: i64,
     error_event: &ErrorEvent,
 ) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
@@ -146,7 +146,7 @@ pub fn mark_failed(
 /// Ok(Option<ErrorEvent>) - the error event if present, or None
 pub fn get_error_event(
     conn: &Connection,
-    log_id: i32,
+    log_id: i64,
 ) -> Result<Option<ErrorEvent>, String> {
     let mut stmt = conn.prepare(
         "SELECT error_event FROM execution_logs WHERE id = ?"
@@ -171,7 +171,7 @@ pub fn get_error_event(
 /// Ok(()) on success, Err(String) on database error
 pub fn pause_execution_log(
     conn: &Connection,
-    exec_log_id: i32,
+    exec_log_id: i64,
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE execution_logs SET status = 'paused' WHERE id = ?",
@@ -193,7 +193,7 @@ pub fn pause_execution_log(
 /// Err(String) - if no execution log found or database error
 pub fn get_current_execution_log(
     conn: &Connection,
-    task_id: i32,
+    task_id: i64,
 ) -> Result<crate::models::ExecutionLog, String> {
     use crate::models::ExecutionLog;
 

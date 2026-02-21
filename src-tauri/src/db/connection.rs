@@ -46,8 +46,9 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
 /// Application state containing the database connection, PTY sessions, and SSH sessions
 pub struct AppState {
     pub db: Mutex<Connection>,
-    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    pub pty_sessions: tokio::sync::Mutex<HashMap<i64, Arc<tokio::sync::Mutex<PtySession>>>>,
     pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i64, RemoteSshSession>>>,
+    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i64, String>>>
 }
 
 impl AppState {
@@ -57,22 +58,33 @@ impl AppState {
             db: Mutex::new(db),
             pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
             ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
-    /// Get an SSH session for a project if it exists
-    pub async fn get_ssh_session(&self, project_id: i64) -> Option<RemoteSshSession> {
-        self.ssh_sessions.lock().await.get(&project_id).cloned()
+    /// Get an SSH session for a connection if it exists
+    pub async fn get_ssh_session(&self, connection_id: i64) -> Option<RemoteSshSession> {
+        self.ssh_sessions.lock().await.get(&connection_id).cloned()
     }
 
-    /// Store an SSH session for a project
-    pub async fn set_ssh_session(&self, project_id: i64, session: RemoteSshSession) {
-        self.ssh_sessions.lock().await.insert(project_id, session);
+    /// Store an SSH session for a connection
+    pub async fn set_ssh_session(&self, connection_id: i64, session: RemoteSshSession) {
+        self.ssh_sessions.lock().await.insert(connection_id, session);
     }
 
-    /// Remove an SSH session for a project
-    pub async fn remove_ssh_session(&self, project_id: i64) {
-        self.ssh_sessions.lock().await.remove(&project_id);
+    /// Remove an SSH session for a connection
+    pub async fn remove_ssh_session(&self, connection_id: i64) {
+        self.ssh_sessions.lock().await.remove(&connection_id);
+    }
+
+    /// Get an SSH session password for a connection if it exists
+    pub async fn get_ssh_password(&self, connection_id: i64) -> Option<String> {
+        self.ssh_passwords.lock().await.get(&connection_id).cloned()
+    }
+
+    /// Store an SSH session password for a connection
+    pub async fn set_ssh_password(&self, connection_id: i64, password: String) {
+        self.ssh_passwords.lock().await.insert(connection_id, password);
     }
 }
 
@@ -84,16 +96,13 @@ pub async fn get_git_connection(
     project: &Project,
     app_state: &AppState,
 ) -> Result<GitConnection, String> {
-    if project.is_remote {
-        let ssh_config = project.ssh_config.as_ref()
-            .ok_or("Remote project missing SSH config")?;
-
-        let ssh_session = app_state.get_ssh_session(project.id as i64).await
+    if project.is_remote() {
+        let ssh_session = app_state.get_ssh_session(project.id).await
             .ok_or("SSH session not initialized for remote project")?;
 
         Ok(GitConnection::Remote {
             ssh: Arc::new(ssh_session),
-            remote_path: ssh_config.remote_path.clone(),
+            remote_path: project.path.clone(), // For remote projects, path is the remote path
         })
     } else {
         Ok(GitConnection::Local {

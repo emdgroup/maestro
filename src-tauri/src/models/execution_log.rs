@@ -13,8 +13,8 @@ pub struct ErrorEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExecutionLog {
-    pub id: i32,
-    pub task_id: i32,
+    pub id: i64,
+    pub task_id: i64,
     pub output: String,
     pub terminal_output: Option<String>,
     pub status: ExecutionStatus,

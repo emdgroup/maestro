@@ -4,8 +4,8 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Task {
-    pub id: i32,
-    pub project_id: i32,
+    pub id: i64,
+    pub project_id: i64,
     pub name: String,
     pub description: String,
     #[ts(optional)]
@@ -31,7 +31,7 @@ pub struct Task {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CreateTaskRequest {
-    pub project_id: i32,
+    pub project_id: i64,
     pub name: String,
     pub description: String,
     pub acceptance_criteria: String,

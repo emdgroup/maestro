@@ -6,8 +6,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
-  TooltipArrow,
+  TooltipTrigger
 } from "@/components/ui/tooltip";
 
 type ThemeConfig = {
@@ -47,28 +46,24 @@ export function ThemeToggle() {
   };
 
   return (
-    <TooltipProvider delayDuration={150}>
+    <TooltipProvider delay={150}>
       <Tooltip open={open} onOpenChange={setOpen}>
-        <TooltipTrigger asChild>
+        <TooltipTrigger render={
           <button
             onClick={handleClick}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            className="flex items-center justify-center h-7 w-7 rounded-full bg-muted hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground"
+            className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground"
             aria-label={`Current theme: ${theme}. Click to cycle`}
           >
             {icon}
-          </button>
-        </TooltipTrigger>
+          </button>} />
         <TooltipContent
           side="bottom"
           sideOffset={8}
           alignOffset={0}
-          collisionPadding={8}
-          onPointerDownOutside={(e) => e.preventDefault()}
           className="bg-popover text-popover-foreground border border-border"
         >
-          <TooltipArrow className="fill-popover" />
           <p className="text-xs">{title}</p>
         </TooltipContent>
       </Tooltip>

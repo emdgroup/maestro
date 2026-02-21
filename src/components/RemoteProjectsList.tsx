@@ -33,7 +33,7 @@ export function RemoteProjectsList({
 
   // Filter to only show projects for this connection
   const connectionProjects = recentProjects.filter(
-    (p) => p.is_remote && p.host === connection.host && p.username === connection.username
+    (p) => p.connection_id === connection.id
   );
 
   const handleStartEdit = () => {
@@ -69,7 +69,7 @@ export function RemoteProjectsList({
 
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
-      handleSaveEdit();
+      void handleSaveEdit();
     } else if (e.key === "Escape") {
       handleCancelEdit();
     }
@@ -101,7 +101,7 @@ export function RemoteProjectsList({
                 className="p-1.5 rounded-md hover:bg-accent transition-colors"
                 title="Edit connection name"
               >
-                <Pencil className="w-3.5 h-3.5" />
+                <Pencil className="size-3.5" />
               </button>
             </>
           )}

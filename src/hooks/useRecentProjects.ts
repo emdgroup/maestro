@@ -1,14 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-
-interface EnhancedRecentProject {
-  path: string;
-  name: string;
-  is_remote: boolean;
-  host: string | null;
-  username: string | null;
-  last_opened: string;
-}
+import type { EnhancedRecentProject } from '../types/bindings';
 
 export function useRecentProjects() {
   const [recentProjects, setRecentProjects] = useState<EnhancedRecentProject[]>([]);

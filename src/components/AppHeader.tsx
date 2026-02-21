@@ -17,18 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Project } from "@/types/bindings";
+import type { Project, EnhancedRecentProject } from "@/types/bindings";
 
 type ViewType = "kanban" | "agents" | "worktrees" | "settings";
-
-interface EnhancedRecentProject {
-  path: string;
-  name: string;
-  is_remote: boolean;
-  host: string | null;
-  username: string | null;
-  last_opened: string;
-}
 
 interface AppHeaderProps {
   currentProject: Project | null;
@@ -64,10 +55,10 @@ export function AppHeader({
 }: AppHeaderProps) {
   // Get connection identifier for filtering
   const getConnectionId = (project: Project): string => {
-    if (!project.is_remote || !project.ssh_config) {
+    if (!project.connection_id) {
       return "local";
     }
-    return `${project.ssh_config.username}@${project.ssh_config.host}`;
+    return `connection-${project.connection_id}`;
   };
 
   // Filter projects to show only recent ones from the same connection (max 5)
@@ -96,9 +87,7 @@ export function AppHeader({
     });
 
     // Step 4: Take top 5 most recent
-    const top5 = recentAndSameConnection.slice(0, 5);
-
-    return top5;
+    return recentAndSameConnection.slice(0, 5);
   }, [projects, recentProjects, currentProject]);
 
   const currentProjectPath = currentProject?.path || "";
@@ -107,10 +96,10 @@ export function AppHeader({
   // Special value for "back to picker" option
   const BACK_TO_PICKER_VALUE = "__back_to_picker__";
 
-  const handleValueChange = (value: string) => {
+  const handleValueChange = (value: string | null) => {
     if (value === BACK_TO_PICKER_VALUE && onBackToPicker) {
       onBackToPicker();
-    } else if (onProjectChange) {
+    } else if (value && onProjectChange) {
       onProjectChange(value);
     }
   };
@@ -150,7 +139,7 @@ export function AppHeader({
                 <SelectSeparator />
                 <SelectItem value={BACK_TO_PICKER_VALUE} className="cursor-pointer">
                   <div className="flex items-center gap-2 py-1">
-                    <FolderOpen className="h-3.5 w-3.5" />
+                    <FolderOpen className="size-3.5" />
                     <span>Project Picker</span>
                   </div>
                 </SelectItem>
@@ -176,7 +165,7 @@ export function AppHeader({
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="size-3.5" />
               <span>{view.label}</span>
               {isActive && (
                 <motion.div
