@@ -35,7 +35,7 @@ pub fn get_project(
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at, connection_id FROM projects WHERE id = ?",
+        "SELECT * FROM projects WHERE id = ?",
         [&project_id],
         Project::from_row
     );
