@@ -2,4 +2,13 @@
 import type { ErrorEvent } from "./ErrorEvent";
 import type { ExecutionStatus } from "./ExecutionStatus";
 
-export interface ExecutionLog { id: number, task_id: number, output: string, terminal_output: string | null, status: ExecutionStatus, started_at: string, completed_at: string | null, error_event: ErrorEvent | null, }
+export interface ExecutionLog {
+  id: number;
+  task_id: number;
+  output: string;
+  terminal_output: string | null;
+  status: ExecutionStatus;
+  started_at: string;
+  completed_at: string | null;
+  error_event: ErrorEvent | null;
+}

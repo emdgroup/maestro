@@ -20,13 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AVAILABLE_MCP_SERVERS,
-  AVAILABLE_SKILLS,
-  AVAILABLE_MODELS,
-} from "../store/configStore";
+import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "../store/configStore";
 import type { Task, TaskConfigRequest } from "../types/bindings";
-import {X} from "lucide-react";
+import { X } from "lucide-react";
 
 interface TaskSettingsModalProps {
   isOpen: boolean;
@@ -48,42 +44,27 @@ interface TaskSettingsFormData {
  */
 function arrayToCheckboxRecord(
   items: string[] | undefined | null,
-  availableItems: string[]
+  availableItems: string[],
 ): Record<string, boolean> {
   return availableItems.reduce(
     (acc, item) => {
       acc[item] = items?.includes(item) ?? false;
       return acc;
     },
-    {} as Record<string, boolean>
+    {} as Record<string, boolean>,
   );
 }
 
-export function TaskSettingsModal({
-  isOpen,
-  onClose,
-  task,
-}: TaskSettingsModalProps) {
+export function TaskSettingsModal({ isOpen, onClose, task }: TaskSettingsModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-  } = useForm<TaskSettingsFormData>({
+  const { register, handleSubmit, reset, watch } = useForm<TaskSettingsFormData>({
     mode: "onChange",
     defaultValues: {
       model_override: task.model_override || "",
-      mcp_allowlist: arrayToCheckboxRecord(
-        task.mcp_allowlist,
-        AVAILABLE_MCP_SERVERS
-      ),
-      skills_override: arrayToCheckboxRecord(
-        task.skills_override,
-        AVAILABLE_SKILLS
-      ),
+      mcp_allowlist: arrayToCheckboxRecord(task.mcp_allowlist, AVAILABLE_MCP_SERVERS),
+      skills_override: arrayToCheckboxRecord(task.skills_override, AVAILABLE_SKILLS),
     },
   });
 
@@ -93,14 +74,8 @@ export function TaskSettingsModal({
 
     reset({
       model_override: task.model_override || "",
-      mcp_allowlist: arrayToCheckboxRecord(
-        task.mcp_allowlist,
-        AVAILABLE_MCP_SERVERS
-      ),
-      skills_override: arrayToCheckboxRecord(
-        task.skills_override,
-        AVAILABLE_SKILLS
-      ),
+      mcp_allowlist: arrayToCheckboxRecord(task.mcp_allowlist, AVAILABLE_MCP_SERVERS),
+      skills_override: arrayToCheckboxRecord(task.skills_override, AVAILABLE_SKILLS),
     });
 
     setError(null);
@@ -137,8 +112,7 @@ export function TaskSettingsModal({
 
       onClose();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to save settings";
+      const errorMessage = err instanceof Error ? err.message : "Failed to save settings";
       setError(errorMessage);
       console.error("Failed to save task settings:", err);
     } finally {
@@ -156,19 +130,20 @@ export function TaskSettingsModal({
       <DialogPortal>
         <DialogOverlay />
         <DialogContent className="max-w-2xl">
-          <DialogTitle>
-            Task Configuration Overrides
-          </DialogTitle>
+          <DialogTitle>Task Configuration Overrides</DialogTitle>
           <DialogDescription>
-            <p>
-              Configure task-specific overrides for Claude model, MCP servers, and skills.
-            </p>
+            <p>Configure task-specific overrides for Claude model, MCP servers, and skills.</p>
             <p className="text-xs text-muted-foreground mb-4">
-              Leave unchecked to use project defaults. Any settings you enable here will completely replace the project defaults for this task only.
+              Leave unchecked to use project defaults. Any settings you enable here will completely
+              replace the project defaults for this task only.
             </p>
           </DialogDescription>
 
-          {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">{error}</div>}
+          {error && (
+            <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Model Override */}
@@ -177,11 +152,14 @@ export function TaskSettingsModal({
               <div className="text-sm text-muted-foreground mb-3">
                 Leave empty to use project default
               </div>
-              <Select value={watch("model_override")} onValueChange={(value) => {
-                // Register field and set value
-                const event = { target: { value, name: "model_override" } };
-                register("model_override").onChange?.(event);
-              }}>
+              <Select
+                value={watch("model_override")}
+                onValueChange={(value) => {
+                  // Register field and set value
+                  const event = { target: { value, name: "model_override" } };
+                  register("model_override").onChange?.(event);
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Use Project Default" />
                 </SelectTrigger>
@@ -209,7 +187,9 @@ export function TaskSettingsModal({
                       id={`mcp-override-${server}`}
                       {...register(`mcp_allowlist.${server}`)}
                     />
-                    <Label htmlFor={`mcp-override-${server}`} className="cursor-pointer">{server}</Label>
+                    <Label htmlFor={`mcp-override-${server}`} className="cursor-pointer">
+                      {server}
+                    </Label>
                   </div>
                 ))}
               </div>
@@ -228,7 +208,9 @@ export function TaskSettingsModal({
                       id={`skill-override-${skill}`}
                       {...register(`skills_override.${skill}`)}
                     />
-                    <Label htmlFor={`skill-override-${skill}`} className="cursor-pointer">{skill}</Label>
+                    <Label htmlFor={`skill-override-${skill}`} className="cursor-pointer">
+                      {skill}
+                    </Label>
                   </div>
                 ))}
               </div>
@@ -236,26 +218,22 @@ export function TaskSettingsModal({
 
             {/* Buttons */}
             <div className="flex justify-end gap-3 pt-4">
-              <Button
-                type="submit"
-                disabled={isSaving}
-              >
+              <Button type="submit" disabled={isSaving}>
                 {isSaving ? "Saving..." : "Save Overrides"}
               </Button>
-              <Button
-                type="button"
-                onClick={handleClose}
-                disabled={isSaving}
-                variant="outline"
-              >
+              <Button type="button" onClick={handleClose} disabled={isSaving} variant="outline">
                 Cancel
               </Button>
             </div>
           </form>
 
-          <DialogClose render={
-            <Button variant="ghost" size="sm" aria-label="Close"><X className="size-3.5"/></Button>
-          }/>
+          <DialogClose
+            render={
+              <Button variant="ghost" size="sm" aria-label="Close">
+                <X className="size-3.5" />
+              </Button>
+            }
+          />
         </DialogContent>
       </DialogPortal>
     </Dialog>

@@ -59,12 +59,12 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   const badgeColor = getBadgeColor(status);
 
   return (
-    <div className={`flex flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden border-l-4 ${borderColor}`}>
+    <div
+      className={`flex flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden border-l-4 ${borderColor}`}
+    >
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
         <h3 className="font-semibold text-base text-foreground">{columnTitle}</h3>
-        <Badge className={`h-5 px-2 text-xs border-0 ${badgeColor}`}>
-          {tasks.length}
-        </Badge>
+        <Badge className={`h-5 px-2 text-xs border-0 ${badgeColor}`}>{tasks.length}</Badge>
       </div>
       <div
         ref={setNodeRef}
@@ -73,7 +73,14 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         }`}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} projectPath={projectPath} onTaskClick={onTaskClick} onReviewClick={onReviewClick} onSettingsClick={onSettingsClick} />
+          <TaskCard
+            key={task.id}
+            task={task}
+            projectPath={projectPath}
+            onTaskClick={onTaskClick}
+            onReviewClick={onReviewClick}
+            onSettingsClick={onSettingsClick}
+          />
         ))}
       </div>
     </div>

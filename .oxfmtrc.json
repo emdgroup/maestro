@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    ".claude/*",
+    "sidecar/*",
+    ".planning/*",
+    ".visual-tests/*",
+    "docs/*",
+    "exemple/*",
+    "github-analysis/*"
+  ]
+}

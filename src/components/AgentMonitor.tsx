@@ -19,7 +19,7 @@ export function AgentMonitor({
   onAgentSelect,
 }: AgentMonitorProps) {
   const [terminalOutput] = useState<string>(
-    "Terminal output will appear here...\n[INFO] System ready\n[INFO] Waiting for agent tasks..."
+    "Terminal output will appear here...\n[INFO] System ready\n[INFO] Waiting for agent tasks...",
   );
 
   const getStatusColor = (status: string) => {
@@ -85,12 +85,10 @@ export function AgentMonitor({
                 <div className="flex items-center gap-2 mb-1">
                   <span
                     className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(
-                      agent.status
+                      agent.status,
                     )}`}
                   ></span>
-                  <span className="font-medium text-sm text-foreground truncate">
-                    {agent.name}
-                  </span>
+                  <span className="font-medium text-sm text-foreground truncate">{agent.name}</span>
                 </div>
                 <div className={`text-xs font-medium ${getStatusTextColor(agent.status)}`}>
                   {agent.status}
@@ -107,9 +105,7 @@ export function AgentMonitor({
         <div className="px-4 py-3 border-b border-border bg-muted/30 font-semibold text-sm flex items-center justify-between">
           <span>Terminal Output</span>
           {activeAgentId && (
-            <span className="text-xs text-muted-foreground ml-2">
-              Agent #{activeAgentId}
-            </span>
+            <span className="text-xs text-muted-foreground ml-2">Agent #{activeAgentId}</span>
           )}
         </div>
 

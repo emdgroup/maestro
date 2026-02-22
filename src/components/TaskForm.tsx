@@ -36,12 +36,7 @@ const AVAILABLE_SKILLS = [
   "refactoring",
 ];
 
-export function TaskForm({
-  onSubmit,
-  isLoading,
-  onCancel,
-  projectId,
-}: TaskFormProps) {
+export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormProps) {
   const {
     register,
     handleSubmit,
@@ -127,9 +122,7 @@ export function TaskForm({
           })}
         />
         {errors.acceptanceCriteria && (
-          <span className="text-destructive text-xs mt-1">
-            {errors.acceptanceCriteria.message}
-          </span>
+          <span className="text-destructive text-xs mt-1">{errors.acceptanceCriteria.message}</span>
         )}
       </div>
 
@@ -140,13 +133,16 @@ export function TaskForm({
           control={control}
           render={({ field: { value, onChange } }) => (
             <div>
-              <Select value={value.length > 0 ? value[0] : ""} onValueChange={(newVal) => {
-                if (newVal && value.includes(newVal)) {
-                  onChange(value.filter(s => s !== newVal));
-                } else {
-                  onChange([...value, newVal]);
-                }
-              }}>
+              <Select
+                value={value.length > 0 ? value[0] : ""}
+                onValueChange={(newVal) => {
+                  if (newVal && value.includes(newVal)) {
+                    onChange(value.filter((s) => s !== newVal));
+                  } else {
+                    onChange([...value, newVal]);
+                  }
+                }}
+              >
                 <SelectTrigger id="skills" className="w-full">
                   <SelectValue placeholder="Select skills..." />
                 </SelectTrigger>
@@ -165,9 +161,7 @@ export function TaskForm({
                       {skill}
                       <button
                         type="button"
-                        onClick={() =>
-                          onChange(value.filter(s => s !== skill))
-                        }
+                        onClick={() => onChange(value.filter((s) => s !== skill))}
                         className="text-lg opacity-80 hover:opacity-100 transition-opacity"
                       >
                         ×
@@ -182,18 +176,10 @@ export function TaskForm({
       </div>
 
       <div className="flex gap-4 mt-4 justify-end">
-        <Button
-          type="submit"
-          disabled={isLoading}
-        >
+        <Button type="submit" disabled={isLoading}>
           {isLoading ? "Creating..." : "Create Task"}
         </Button>
-        <Button
-          type="button"
-          onClick={onCancel}
-          disabled={isLoading}
-          variant="outline"
-        >
+        <Button type="button" onClick={onCancel} disabled={isLoading} variant="outline">
           Cancel
         </Button>
       </div>

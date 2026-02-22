@@ -2,10 +2,11 @@ import { useState, useCallback } from "react";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
 import { Connection } from "../components/ConnectionList";
+import { Project } from "../../src-tauri/bindings/Project.ts";
 
 interface UseProjectSelectionParams {
   activeConnection: Connection | null;
-  onProjectSelected: (path: string) => void;
+  onProjectSelected: (project: Project) => void;
   onRecentProjectsChanged?: () => void;
   refetchRecentProjects: () => Promise<void>;
 }
@@ -35,18 +36,20 @@ export function useProjectSelection({
    * Opens the project directly
    */
   const handleProjectClick = useCallback(
-    async (path: string) => {
-      console.log(`Opening project: ${path}`);
+    async (projectId: number) => {
       setLoading(true);
       try {
-        onProjectSelected(path);
+        const project = await safeInvoke<Project>("get_project", {
+          projectId,
+        });
+        onProjectSelected(project);
       } catch (error) {
         toast.error(`Failed to open project: ${error}`);
       } finally {
         setLoading(false);
       }
     },
-    [onProjectSelected]
+    [onProjectSelected],
   );
 
   /**
@@ -60,7 +63,6 @@ export function useProjectSelection({
         toast.error("No active connection");
         return;
       }
-      let project;
       setLoading(true);
       try {
         if (activeConnection.type === "ssh") {
@@ -70,20 +72,18 @@ export function useProjectSelection({
             return;
           }
         }
-        project = await safeInvoke<{ path: string }>(
-              "create_project",
-              {
-                  projectPath: selectedPath,
-                  connectionId: activeConnection?.sshConnection?.id
-              });
-        onProjectSelected(project.path);
+        const project = await safeInvoke<Project>("create_project", {
+          projectPath: selectedPath,
+          connectionId: activeConnection?.sshConnection?.id,
+        });
+        onProjectSelected(project);
       } catch (error) {
         toast.error(`Failed to open project: ${error}`);
       } finally {
         setLoading(false);
       }
     },
-    [activeConnection, onProjectSelected]
+    [activeConnection, onProjectSelected],
   );
 
   /**
@@ -102,7 +102,7 @@ export function useProjectSelection({
         toast.error(`Failed to remove project: ${error}`);
       }
     },
-    [refetchRecentProjects, onRecentProjectsChanged]
+    [refetchRecentProjects, onRecentProjectsChanged],
   );
 
   return {

@@ -64,9 +64,7 @@ export function ProjectsListLayout({
 
       <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            {emptyMessage}
-          </p>
+          <p className="text-sm text-muted-foreground text-center py-8">{emptyMessage}</p>
         ) : (
           <ul className="space-y-2">{children}</ul>
         )}

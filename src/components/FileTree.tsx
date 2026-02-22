@@ -50,7 +50,7 @@ function buildFileTree(files: DiffFileWithName[]): FileTreeNode[] {
             acc[node.name] = node;
             return acc;
           },
-          {} as Record<string, FileTreeNode>
+          {} as Record<string, FileTreeNode>,
         );
       } else {
         // This is a file node, infer status from hunks
@@ -114,14 +114,8 @@ const DirectoryNode: React.FC<{
 
   return (
     <div className="file-tree-node">
-      <div
-        className="file-tree-node-content"
-        style={{ paddingLeft: `${level * 12}px` }}
-      >
-        <button
-          className="file-tree-toggle"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
+      <div className="file-tree-node-content" style={{ paddingLeft: `${level * 12}px` }}>
+        <button className="file-tree-toggle" onClick={() => setIsExpanded(!isExpanded)}>
           {isExpanded ? "▼" : "▶"}
         </button>
         <span className="file-tree-icon">📁</span>
@@ -209,11 +203,7 @@ const FileNode: React.FC<{
 /**
  * FileTree component for collapsible file navigation
  */
-export const FileTree: React.FC<FileTreeProps> = ({
-  files,
-  selectedFile,
-  onSelectFile,
-}) => {
+export const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile }) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
   if (files.length === 0) {

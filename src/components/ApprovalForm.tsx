@@ -23,9 +23,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
 }) => {
   const [decision, setDecision] = useState<Decision>(null);
   const [generalFeedback, setGeneralFeedback] = useState("");
-  const [perFileComments, setPerFileComments] = useState<Map<string, string>>(
-    new Map()
-  );
+  const [perFileComments, setPerFileComments] = useState<Map<string, string>>(new Map());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,9 +69,8 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
             taskId: taskId,
             decision: "Approve",
             generalFeedback: generalFeedback || null,
-            perFileComments:
-              perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
-          }
+            perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+          },
         );
 
         if (reviewResponse.success) {
@@ -82,7 +79,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
             "approve_task_and_merge",
             {
               task_id: taskId,
-            }
+            },
           );
 
           if (mergeResponse.merging) {
@@ -101,14 +98,11 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
         }>("request_changes", {
           task_id: taskId,
           general_feedback: generalFeedback || null,
-          per_file_comments:
-            perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+          per_file_comments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
         });
 
         if (response.success) {
-          toast.info(
-            "Changes requested. Task returned to In Progress."
-          );
+          toast.info("Changes requested. Task returned to In Progress.");
           onClose();
         }
       }
@@ -138,7 +132,9 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
               disabled={loading}
               className="h-4 w-4"
             />
-            <Label htmlFor="decision-approve" className="cursor-pointer">Approve</Label>
+            <Label htmlFor="decision-approve" className="cursor-pointer">
+              Approve
+            </Label>
           </div>
           <div className="flex items-center space-x-2">
             <input
@@ -151,15 +147,15 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
               disabled={loading}
               className="h-4 w-4"
             />
-            <Label htmlFor="decision-request" className="cursor-pointer">Request Changes</Label>
+            <Label htmlFor="decision-request" className="cursor-pointer">
+              Request Changes
+            </Label>
           </div>
         </div>
       </div>
 
       <div className="approval-form-section">
-        <Label htmlFor="general-feedback">
-          General Feedback (Optional)
-        </Label>
+        <Label htmlFor="general-feedback">General Feedback (Optional)</Label>
         <Textarea
           id="general-feedback"
           placeholder="Enter feedback for the developer..."
@@ -178,19 +174,14 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
           </summary>
           <div className="approval-form-per-file">
             {diffFiles.map((file) => (
-              <div
-                key={file.fileName}
-                className="approval-form-file-comment"
-              >
+              <div key={file.fileName} className="approval-form-file-comment">
                 <button
                   className="approval-form-file-toggle"
                   onClick={() => toggleFileExpanded(file.fileName)}
                   disabled={loading}
                 >
                   {expandedFiles.has(file.fileName) ? "▼" : "▶"}
-                  <span className="approval-form-file-name">
-                    {file.fileName}
-                  </span>
+                  <span className="approval-form-file-name">{file.fileName}</span>
                   {perFileComments.has(file.fileName) && (
                     <span className="approval-form-file-has-comment">●</span>
                   )}
@@ -199,9 +190,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
                   <Textarea
                     placeholder={`Comment on ${file.fileName}...`}
                     value={perFileComments.get(file.fileName) || ""}
-                    onChange={(e) =>
-                      updateFileComment(file.fileName, e.target.value)
-                    }
+                    onChange={(e) => updateFileComment(file.fileName, e.target.value)}
                     disabled={loading}
                     rows={3}
                     className="approval-form-file-textarea"
@@ -216,17 +205,10 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
       {error && <div className="approval-form-error">{error}</div>}
 
       <div className="approval-form-actions">
-        <Button
-          onClick={onClose}
-          disabled={loading}
-          variant="outline"
-        >
+        <Button onClick={onClose} disabled={loading} variant="outline">
           Cancel
         </Button>
-        <Button
-          onClick={handleSubmit}
-          disabled={loading || !decision}
-        >
+        <Button onClick={handleSubmit} disabled={loading || !decision}>
           {loading ? "Saving..." : "Submit"}
         </Button>
       </div>

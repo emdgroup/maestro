@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
-import { invoke, Channel } from '@tauri-apps/api/core';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import '@xterm/xterm/css/xterm.css';
+import { useEffect, useRef } from "react";
+import { invoke, Channel } from "@tauri-apps/api/core";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
   taskId: number;
@@ -42,22 +42,22 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     };
 
     // Attach to backend PTY
-    invoke('attach_terminal', { taskId, outputChannel: channel }).catch((err) => {
-      console.error('Failed to attach terminal:', err);
+    invoke("attach_terminal", { taskId, outputChannel: channel }).catch((err) => {
+      console.error("Failed to attach terminal:", err);
       terminal.write(`\r\nError: Failed to attach terminal: ${err}\r\n`);
     });
 
     // Set up terminal to send input to backend
     terminal.onData((data: string) => {
-      invoke('send_terminal_input', { taskId, input: data }).catch((err) => {
-        console.error('Failed to send terminal input:', err);
+      invoke("send_terminal_input", { taskId, input: data }).catch((err) => {
+        console.error("Failed to send terminal input:", err);
       });
     });
 
     // Set up terminal resize handler
     terminal.onResize(({ cols, rows }) => {
-      invoke('resize_terminal', { taskId, cols, rows }).catch((err) => {
-        console.error('Failed to resize terminal:', err);
+      invoke("resize_terminal", { taskId, cols, rows }).catch((err) => {
+        console.error("Failed to resize terminal:", err);
       });
     });
 
@@ -73,9 +73,9 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     <div
       ref={terminalRef}
       style={{
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
       }}
     />
   );

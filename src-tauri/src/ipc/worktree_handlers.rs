@@ -26,8 +26,8 @@ const DEFAULT_POOL_SIZE: i32 = 3;
 #[tauri::command]
 pub async fn lease_worktree(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     _repo_path: String,
 ) -> Result<Worktree, String> {
     println!("lease_worktree(project={}, task={}) called", project_id, task_id);
@@ -101,7 +101,7 @@ pub async fn lease_worktree(
                 )
                 .map_err(|e| format!("Failed to create worktree record: {}", e))?;
 
-                let worktree_id = conn.last_insert_rowid();
+                let worktree_id = conn.last_insert_rowid() as i32;
 
                 println!("✓ Created new worktree {} (pool expansion)", worktree_id);
 
@@ -165,7 +165,7 @@ pub fn return_worktree(
 #[tauri::command]
 pub fn get_pool_status(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
 ) -> Result<PoolStatus, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
@@ -268,7 +268,7 @@ pub fn get_pool_status(
 #[tauri::command]
 pub async fn cleanup_worktree(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     worktree_id: i32,
     repo_path: String,
 ) -> Result<(), String> {
@@ -339,7 +339,7 @@ pub async fn cleanup_worktree(
 #[tauri::command]
 pub async fn recover_dirty_worktrees(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     repo_path: String,
 ) -> Result<Vec<i32>, String> {
     println!("recover_dirty_worktrees({}) called", project_id);
@@ -445,7 +445,7 @@ pub async fn recover_dirty_worktrees(
 #[tauri::command]
 pub fn initialize_worktree_pool(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     _repo_path: String,
     pool_size: Option<i32>,
 ) -> Result<PoolStatus, String> {

@@ -24,13 +24,7 @@ interface KanbanBoardProps {
   onTaskClick?: (task: Task) => void;
 }
 
-const COLUMN_STATUSES: Array<TaskStatus> = [
-  "Backlog",
-  "Ready",
-  "InProgress",
-  "Review",
-  "Done",
-];
+const COLUMN_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
 
 const COLUMN_TITLES: Record<TaskStatus, string> = {
   Backlog: "Backlog",
@@ -42,8 +36,20 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   Done: "Done",
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath = "", onTaskClick }) => {
-  const { loadTasks, updateTaskStatus, getTasksByStatus, getTasks, activeTerminalTaskId, isTerminalOpen, closeTerminal } = useBoardStore();
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({
+  projectId,
+  projectPath = "",
+  onTaskClick,
+}) => {
+  const {
+    loadTasks,
+    updateTaskStatus,
+    getTasksByStatus,
+    getTasks,
+    activeTerminalTaskId,
+    isTerminalOpen,
+    closeTerminal,
+  } = useBoardStore();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -57,7 +63,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
       activationConstraint: {
         distance: 8,
       },
-    })
+    }),
   );
 
   const previousTasksRef = useRef<Map<number, TaskStatus>>(new Map());
@@ -72,7 +78,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
         setErrorMessage(null);
 
         // Update previous state for merge detection
-        const taskStatusMap = new Map(tasks.map(t => [t.id, t.status]));
+        const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
         previousTasksRef.current = taskStatusMap;
       } catch (err) {
         console.error("Failed to load tasks:", err);
@@ -100,7 +106,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
           }
         }
 
-        const taskStatusMap = new Map(tasks.map(t => [t.id, t.status]));
+        const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
         previousTasksRef.current = taskStatusMap;
       } catch (err) {
         console.error("Failed to refresh tasks:", err);
@@ -113,7 +119,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   const isValidTransition = (
     _fromStatus: TaskStatus,
     _toStatus: TaskStatus,
-    _taskId: number
+    _taskId: number,
   ): boolean => {
     // For MVP: allow free movement between Backlog and Ready
     // Other columns are managed by agents (in future phases)
@@ -122,9 +128,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   };
 
   const handleDragStart = (event: { active: { id: string | number } }) => {
-    const taskId = typeof event.active.id === 'string'
-      ? parseInt(event.active.id, 10)
-      : event.active.id;
+    const taskId =
+      typeof event.active.id === "string" ? parseInt(event.active.id, 10) : event.active.id;
     const task = getTasks().find((t) => t.id === taskId);
     setActiveTask(task || null);
   };
@@ -137,7 +142,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
       return;
     }
 
-    const taskId = typeof active.id === 'string' ? parseInt(active.id, 10) : active.id;
+    const taskId = typeof active.id === "string" ? parseInt(active.id, 10) : active.id;
     const task = getTasks().find((t) => t.id === taskId);
 
     if (!task) {
@@ -193,9 +198,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
   return (
     <div className="h-full flex flex-col">
       {errorMessage && (
-        <div className="p-4 mb-4 bg-error text-error-foreground rounded-lg">
-          {errorMessage}
-        </div>
+        <div className="p-4 mb-4 bg-error text-error-foreground rounded-lg">{errorMessage}</div>
       )}
       <DndContext
         sensors={sensors}
@@ -253,7 +256,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, projectPath
       {isTerminalOpen && activeTerminalTaskId !== null && (
         <ExecutionTerminal
           taskId={activeTerminalTaskId}
-          taskName={getTasks().find((t) => t.id === activeTerminalTaskId)?.name || `Task ${activeTerminalTaskId}`}
+          taskName={
+            getTasks().find((t) => t.id === activeTerminalTaskId)?.name ||
+            `Task ${activeTerminalTaskId}`
+          }
           isActive={true}
           onClose={closeTerminal}
         />

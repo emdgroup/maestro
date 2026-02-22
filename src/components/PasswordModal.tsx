@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -42,9 +49,7 @@ export function PasswordModal({
           <DialogTitle>SSH Authentication Required</DialogTitle>
           <DialogDescription>
             Enter password for{" "}
-            <span className="font-mono font-semibold">
-              {connection?.connection_string}
-            </span>
+            <span className="font-mono font-semibold">{connection?.connection_string}</span>
           </DialogDescription>
         </DialogHeader>
 
@@ -71,7 +76,7 @@ export function PasswordModal({
                   disabled={loading}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  {showPassword ? <EyeOff/>: <Eye/>}
+                  {showPassword ? <EyeOff /> : <Eye />}
                 </button>
               </div>
             </div>
@@ -83,22 +88,14 @@ export function PasswordModal({
                 onCheckedChange={setSavePassword}
                 disabled={loading}
               />
-              <Label
-                htmlFor="save-password"
-                className="text-sm font-normal cursor-pointer"
-              >
+              <Label htmlFor="save-password" className="text-sm font-normal cursor-pointer">
                 Save password (OS keyring)
               </Label>
             </div>
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={loading}
-            >
+            <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
               Cancel
             </Button>
             <Button type="submit" disabled={loading || !password.trim()}>

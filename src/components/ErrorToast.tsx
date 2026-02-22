@@ -1,4 +1,4 @@
-import { Toaster, toast } from 'sonner';
+import { Toaster, toast } from "sonner";
 
 export { Toaster as ErrorToaster };
 
@@ -18,7 +18,7 @@ export function ToasterRoot() {
       duration={4000}
       toastOptions={{
         classNames: {
-          success: '[&_svg]:text-green-500',
+          success: "[&_svg]:text-green-500",
         },
       }}
     />

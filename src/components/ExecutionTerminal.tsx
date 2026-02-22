@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { useState, useEffect, useRef } from "react";
+import { invoke, Channel } from "@tauri-apps/api/core";
 
 interface ExecutionTerminalProps {
   taskId: number;
@@ -9,8 +9,8 @@ interface ExecutionTerminalProps {
 }
 
 export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: ExecutionTerminalProps) {
-  const [terminalOutput, setTerminalOutput] = useState<string>('');
-  const [inputValue, setInputValue] = useState<string>('');
+  const [terminalOutput, setTerminalOutput] = useState<string>("");
+  const [inputValue, setInputValue] = useState<string>("");
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       try {
         setLoading(true);
         setError(null);
-        setTerminalOutput('');
+        setTerminalOutput("");
 
         // Create a channel for receiving terminal output
         const channel = new Channel<string>();
@@ -46,7 +46,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         };
 
         // Invoke attach_terminal with the channel and include_history flag
-        await invoke('attach_terminal', {
+        await invoke("attach_terminal", {
           task_id: taskId,
           output_channel: channel,
           include_history: true,
@@ -58,7 +58,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         const message = err instanceof Error ? err.message : String(err);
         setError(`Failed to attach terminal: ${message}`);
         setLoading(false);
-        console.error('Attach terminal error:', err);
+        console.error("Attach terminal error:", err);
       }
     };
 
@@ -72,10 +72,10 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const detachTerminal = async () => {
     try {
-      await invoke('detach_terminal', { taskId: taskId });
+      await invoke("detach_terminal", { taskId: taskId });
       console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
     } catch (err) {
-      console.error('Detach terminal error:', err);
+      console.error("Detach terminal error:", err);
     }
   };
 
@@ -92,20 +92,20 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       }
 
       // Echo input to terminal for visual feedback
-      setTerminalOutput((prev) => prev + inputValue + '\n');
+      setTerminalOutput((prev) => prev + inputValue + "\n");
 
       // Send input to PTY
-      await invoke('send_terminal_input', {
+      await invoke("send_terminal_input", {
         task_id: taskId,
-        input: inputValue + '\n',
+        input: inputValue + "\n",
       });
 
-      setInputValue('');
+      setInputValue("");
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to send input: ${message}`);
-      console.error('Send input error:', err);
+      console.error("Send input error:", err);
     } finally {
       setSending(false);
     }
@@ -114,16 +114,16 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
   const handleSendCtrlC = async () => {
     try {
       setSending(true);
-      setTerminalOutput((prev) => prev + '^C\n');
-      await invoke('send_terminal_input', {
+      setTerminalOutput((prev) => prev + "^C\n");
+      await invoke("send_terminal_input", {
         task_id: taskId,
-        input: '\x03', // Ctrl+C
+        input: "\x03", // Ctrl+C
       });
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to send Ctrl+C: ${message}`);
-      console.error('Send Ctrl+C error:', err);
+      console.error("Send Ctrl+C error:", err);
     } finally {
       setSending(false);
     }
@@ -131,14 +131,14 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // Send on Enter
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleSendInput();
       return;
     }
 
     // Navigate history with arrow keys
-    if (e.key === 'ArrowUp') {
+    if (e.key === "ArrowUp") {
       e.preventDefault();
       if (inputHistory.length === 0) return;
 
@@ -150,7 +150,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       return;
     }
 
-    if (e.key === 'ArrowDown') {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       if (historyIndex === -1) return;
 
@@ -160,13 +160,13 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         setInputValue(inputHistory[newIndex]);
       } else {
         setHistoryIndex(-1);
-        setInputValue('');
+        setInputValue("");
       }
       return;
     }
 
     // Ctrl+C in input field
-    if (e.ctrlKey && e.key === 'c') {
+    if (e.ctrlKey && e.key === "c") {
       e.preventDefault();
       handleSendCtrlC();
       return;
@@ -239,7 +239,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
         <div className="terminal-content">
           <pre className="terminal-output-area" ref={terminalRef}>
-            {terminalOutput || '(waiting for output...)'}
+            {terminalOutput || "(waiting for output...)"}
           </pre>
         </div>
 
@@ -261,7 +261,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
               className="send-button"
               title="Send command"
             >
-              {sending ? '↓' : '↓'}
+              {sending ? "↓" : "↓"}
             </button>
             <button
               onClick={handleSendCtrlC}
@@ -272,9 +272,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
               Ctrl+C
             </button>
           </div>
-          <div className="input-help">
-            Enter: send command | Ctrl+C: interrupt | ↑↓: history
-          </div>
+          <div className="input-help">Enter: send command | Ctrl+C: interrupt | ↑↓: history</div>
         </div>
       </div>
     </div>

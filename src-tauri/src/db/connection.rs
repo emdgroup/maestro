@@ -46,9 +46,9 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
 /// Application state containing the database connection, PTY sessions, and SSH sessions
 pub struct AppState {
     pub db: Mutex<Connection>,
-    pub pty_sessions: tokio::sync::Mutex<HashMap<i64, Arc<tokio::sync::Mutex<PtySession>>>>,
-    pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i64, RemoteSshSession>>>,
-    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i64, String>>>
+    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
+    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, String>>>
 }
 
 impl AppState {
@@ -63,27 +63,27 @@ impl AppState {
     }
 
     /// Get an SSH session for a connection if it exists
-    pub async fn get_ssh_session(&self, connection_id: i64) -> Option<RemoteSshSession> {
+    pub async fn get_ssh_session(&self, connection_id: i32) -> Option<RemoteSshSession> {
         self.ssh_sessions.lock().await.get(&connection_id).cloned()
     }
 
     /// Store an SSH session for a connection
-    pub async fn set_ssh_session(&self, connection_id: i64, session: RemoteSshSession) {
+    pub async fn set_ssh_session(&self, connection_id: i32, session: RemoteSshSession) {
         self.ssh_sessions.lock().await.insert(connection_id, session);
     }
 
     /// Remove an SSH session for a connection
-    pub async fn remove_ssh_session(&self, connection_id: i64) {
+    pub async fn remove_ssh_session(&self, connection_id: i32) {
         self.ssh_sessions.lock().await.remove(&connection_id);
     }
 
     /// Get an SSH session password for a connection if it exists
-    pub async fn get_ssh_password(&self, connection_id: i64) -> Option<String> {
+    pub async fn get_ssh_password(&self, connection_id: i32) -> Option<String> {
         self.ssh_passwords.lock().await.get(&connection_id).cloned()
     }
 
     /// Store an SSH session password for a connection
-    pub async fn set_ssh_password(&self, connection_id: i64, password: String) {
+    pub async fn set_ssh_password(&self, connection_id: i32, password: String) {
         self.ssh_passwords.lock().await.insert(connection_id, password);
     }
 }
@@ -114,7 +114,7 @@ pub async fn get_git_connection(
 /// Check if a host key is known for a project, store if new
 pub fn check_and_store_host_key(
     conn: &Connection,
-    project_id: i64,
+    project_id: i32,
     host_fingerprint: &str,
     fingerprint_type: &str,
 ) -> Result<bool, String> {

@@ -8,17 +8,14 @@ import { Dialog, DialogContent } from "./ui/dialog";
 import { ThemeToggle } from "./ThemeToggle";
 import { useProjectSelection } from "@/hooks/useProjectSelection.ts";
 import { useProjectPickerManager } from "@/hooks/useProjectPickerManager.tsx";
+import { Project } from "../../src-tauri/bindings/Project.ts";
 
 interface ProjectPickerProps {
-  onProjectSelected: (path: string) => void;
+  onProjectSelected: (project: Project) => void;
   onRecentProjectsChanged?: () => void;
 }
 
-export function ProjectPicker({
-  onProjectSelected,
-  onRecentProjectsChanged,
-}: ProjectPickerProps) {
-
+export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: ProjectPickerProps) {
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const {
     currentView,
@@ -35,14 +32,14 @@ export function ProjectPicker({
     handlePasswordSubmit,
     handleSelectNewLocal,
     loadSshConnections,
-    handlePasswordCancel
-  } = useProjectPickerManager({setShowFilePickerModal});
+    handlePasswordCancel,
+  } = useProjectPickerManager({ setShowFilePickerModal });
 
   const {
     loading: projectLoading,
     handleProjectClick,
     handleProjectSelect,
-    handleRemoveRecentProject
+    handleRemoveRecentProject,
   } = useProjectSelection({
     activeConnection,
     onProjectSelected,
@@ -53,6 +50,8 @@ export function ProjectPicker({
   // Sort recent projects by last_opened (most recent first)
   const sortedRecentProjects = useMemo(() => {
     return [...recentProjects].sort((a, b) => {
+      if (!b.last_opened) return 1;
+      if (!a.last_opened) return -1;
       // Sort descending (most recent first)
       return b.last_opened.localeCompare(a.last_opened);
     });
@@ -69,12 +68,8 @@ export function ProjectPicker({
 
         <div className="max-w-3xl w-full">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-semibold mb-3">
-              Agent Orchestrator
-            </h1>
-            <p className="text-base text-muted-foreground">
-              Select a connection to get started
-            </p>
+            <h1 className="text-3xl font-semibold mb-3">Agent Orchestrator</h1>
+            <p className="text-base text-muted-foreground">Select a connection to get started</p>
           </div>
 
           {/* Single Panel with Slide Transition */}
@@ -109,18 +104,20 @@ export function ProjectPicker({
                   loading={isLoading}
                 />
               )}
-              {activeConnection && activeConnection.type === "ssh" && activeConnection.sshConnection && (
-                <RemoteProjectsList
-                  connection={activeConnection.sshConnection}
-                  recentProjects={sortedRecentProjects}
-                  onProjectClick={handleProjectClick}
-                  onSelectNewClick={handleRemoteSelectProject}
-                  onBack={handleBackToConnections}
-                  onRemoveProject={handleRemoveRecentProject}
-                  onConnectionRenamed={loadSshConnections}
-                  loading={isLoading}
-                />
-              )}
+              {activeConnection &&
+                activeConnection.type === "ssh" &&
+                activeConnection.sshConnection && (
+                  <RemoteProjectsList
+                    connection={activeConnection.sshConnection}
+                    recentProjects={sortedRecentProjects}
+                    onProjectClick={handleProjectClick}
+                    onSelectNewClick={handleRemoteSelectProject}
+                    onBack={handleBackToConnections}
+                    onRemoveProject={handleRemoveRecentProject}
+                    onConnectionRenamed={loadSshConnections}
+                    loading={isLoading}
+                  />
+                )}
             </div>
           </div>
         </div>

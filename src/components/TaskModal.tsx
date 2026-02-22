@@ -6,7 +6,7 @@ import {
   DialogOverlay,
   DialogContent,
   DialogTitle,
-  DialogDescription
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { TaskForm } from "./TaskForm";
 import { Task, CreateTaskRequest } from "../types/bindings";
@@ -18,12 +18,7 @@ interface TaskModalProps {
   onTaskCreated: (task: Task) => void;
 }
 
-export function TaskModal({
-  isOpen,
-  onClose,
-  projectId,
-  onTaskCreated,
-}: TaskModalProps) {
+export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +38,7 @@ export function TaskModal({
       onTaskCreated(newTask);
       onClose();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to create task";
+      const errorMessage = err instanceof Error ? err.message : "Failed to create task";
       setError(errorMessage);
       console.error("Task creation error:", err);
     } finally {
@@ -62,7 +56,11 @@ export function TaskModal({
             Enter task details (title, description, acceptance criteria required)
           </DialogDescription>
 
-          {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">{error}</div>}
+          {error && (
+            <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded mb-4 text-sm">
+              {error}
+            </div>
+          )}
 
           <TaskForm
             onSubmit={handleSubmit}

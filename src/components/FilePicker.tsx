@@ -261,9 +261,7 @@ export function FilePicker({
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden">
       <div className="text-center p-6 pb-4 shrink-0">
-        <h2 className="text-2xl font-semibold mb-2">
-          Select Project Directory
-        </h2>
+        <h2 className="text-2xl font-semibold mb-2">Select Project Directory</h2>
         {connection && (
           <p className="text-sm text-muted-foreground">
             Connected to {connection.connection_string}
@@ -272,151 +270,146 @@ export function FilePicker({
       </div>
 
       <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden gap-4">
-          {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-2 pb-4 border-b border-border flex-wrap shrink-0">
-            <button
-              onClick={() => handleBreadcrumbClick(-1)}
-              className="flex items-center gap-1 text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
-            >
-              <Home className="w-4 h-4" />
-              <span>{showingDrives ? "Drives" : "Root"}</span>
-            </button>
-            {pathParts.map((part: string, index: number) => (
-              <div key={index} className="flex items-center gap-2">
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                <button
-                  onClick={() => handleBreadcrumbClick(index)}
-                  className="text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
-                >
-                  {part}
-                </button>
-              </div>
-            ))}
-          </div>
+        {/* Breadcrumb Navigation */}
+        <div className="flex items-center gap-2 pb-4 border-b border-border flex-wrap shrink-0">
+          <button
+            onClick={() => handleBreadcrumbClick(-1)}
+            className="flex items-center gap-1 text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+          >
+            <Home className="w-4 h-4" />
+            <span>{showingDrives ? "Drives" : "Root"}</span>
+          </button>
+          {pathParts.map((part: string, index: number) => (
+            <div key={index} className="flex items-center gap-2">
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              <button
+                onClick={() => handleBreadcrumbClick(index)}
+                className="text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+              >
+                {part}
+              </button>
+            </div>
+          ))}
+        </div>
 
+        {/* Directory List */}
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          {loading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Loading directories...</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {/* Show drives on Windows when at drives root */}
+              {showingDrives ? (
+                drives.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">No drives found</p>
+                ) : (
+                  drives.map((drive, index) => (
+                    <button
+                      key={drive}
+                      ref={(el) => {
+                        if (el) directoryButtonRefs.current.set(index, el);
+                        else directoryButtonRefs.current.delete(index);
+                      }}
+                      onClick={() => handleDirectoryClick(drive)}
+                      disabled={loading}
+                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                        selectedIndex === index ? "bg-accent" : ""
+                      }`}
+                    >
+                      <HardDrive className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{drive}</span>
+                    </button>
+                  ))
+                )
+              ) : (
+                <>
+                  {/* Parent directory ".." button - show unless at root or drives root */}
+                  {currentPath !== "/" && currentPath !== DRIVES_ROOT && (
+                    <button
+                      ref={(el) => {
+                        if (el) directoryButtonRefs.current.set(0, el);
+                        else directoryButtonRefs.current.delete(0);
+                      }}
+                      onClick={handleParentDirectory}
+                      disabled={loading}
+                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                        selectedIndex === 0 ? "bg-accent" : ""
+                      }`}
+                    >
+                      <FolderUp className="w-4 h-4 shrink-0" />
+                      <span className="truncate">..</span>
+                    </button>
+                  )}
 
-          {/* Directory List */}
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-            {loading ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Loading directories...
-              </p>
-            ) : (
-              <div className="divide-y divide-border">
-                {/* Show drives on Windows when at drives root */}
-                {showingDrives ? (
-                  drives.length === 0 ? (
+                  {/* Subdirectories */}
+                  {visibleDirectories.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      No drives found
+                      No subdirectories found
                     </p>
                   ) : (
-                    drives.map((drive, index) => (
-                      <button
-                        key={drive}
-                        ref={(el) => {
-                          if (el) directoryButtonRefs.current.set(index, el);
-                          else directoryButtonRefs.current.delete(index);
-                        }}
-                        onClick={() => handleDirectoryClick(drive)}
-                        disabled={loading}
-                        className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                          selectedIndex === index ? "bg-accent" : ""
-                        }`}
-                      >
-                        <HardDrive className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{drive}</span>
-                      </button>
-                    ))
-                  )
-                ) : (
-                  <>
-                    {/* Parent directory ".." button - show unless at root or drives root */}
-                    {currentPath !== "/" && currentPath !== DRIVES_ROOT && (
-                      <button
-                        ref={(el) => {
-                          if (el) directoryButtonRefs.current.set(0, el);
-                          else directoryButtonRefs.current.delete(0);
-                        }}
-                        onClick={handleParentDirectory}
-                        disabled={loading}
-                        className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                          selectedIndex === 0 ? "bg-accent" : ""
-                        }`}
-                      >
-                        <FolderUp className="w-4 h-4 shrink-0" />
-                        <span className="truncate">..</span>
-                      </button>
-                    )}
-
-                    {/* Subdirectories */}
-                    {visibleDirectories.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-8">
-                        No subdirectories found
-                      </p>
-                    ) : (
-                      visibleDirectories.map((dir, index) => {
-                        const hasParent = currentPath !== "/" && currentPath !== DRIVES_ROOT;
-                        const itemIndex = hasParent ? index + 1 : index;
-                        return (
-                          <button
-                            key={dir}
-                            ref={(el) => {
-                              if (el) directoryButtonRefs.current.set(itemIndex, el);
-                              else directoryButtonRefs.current.delete(itemIndex);
-                            }}
-                            onClick={() => handleDirectoryClick(dir)}
-                            disabled={loading}
-                            className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                              selectedIndex === itemIndex ? "bg-accent" : ""
-                            }`}
-                          >
-                            <Folder className="w-4 h-4 shrink-0" />
-                            <span className="truncate">{dir}</span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Action Bar */}
-          <div className="border-t border-border flex items-center gap-4 shrink-0 pt-4">
-            <div className="flex items-center gap-2 shrink-0">
-              <Switch
-                id="show-hidden"
-                checked={showHidden}
-                onCheckedChange={(checked) => setShowHidden(checked)}
-                className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-              />
-              <Label
-                htmlFor="show-hidden"
-                className="text-xs font-normal cursor-pointer whitespace-nowrap"
-              >
-                Show hidden
-              </Label>
+                    visibleDirectories.map((dir, index) => {
+                      const hasParent = currentPath !== "/" && currentPath !== DRIVES_ROOT;
+                      const itemIndex = hasParent ? index + 1 : index;
+                      return (
+                        <button
+                          key={dir}
+                          ref={(el) => {
+                            if (el) directoryButtonRefs.current.set(itemIndex, el);
+                            else directoryButtonRefs.current.delete(itemIndex);
+                          }}
+                          onClick={() => handleDirectoryClick(dir)}
+                          disabled={loading}
+                          className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                            selectedIndex === itemIndex ? "bg-accent" : ""
+                          }`}
+                        >
+                          <Folder className="w-4 h-4 shrink-0" />
+                          <span className="truncate">{dir}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </>
+              )}
             </div>
+          )}
+        </div>
 
-            <div className="ml-auto">
-              <p className="text-xs text-muted-foreground font-mono truncate">
-                {showingDrives ? "Select a drive" : currentPath}
-              </p>
-            </div>
-
-            <Button
-              onClick={handleSelectCurrentDirectory}
-              disabled={loading || externalLoading || showingDrives}
-              variant="accent"
-              size="default"
-              className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        {/* Action Bar */}
+        <div className="border-t border-border flex items-center gap-4 shrink-0 pt-4">
+          <div className="flex items-center gap-2 shrink-0">
+            <Switch
+              id="show-hidden"
+              checked={showHidden}
+              onCheckedChange={(checked) => setShowHidden(checked)}
+              className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            />
+            <Label
+              htmlFor="show-hidden"
+              className="text-xs font-normal cursor-pointer whitespace-nowrap"
             >
-              <Folder className="w-4 h-4" />
-              {externalLoading ? "Opening..." : "Open Project"}
-            </Button>
+              Show hidden
+            </Label>
           </div>
+
+          <div className="ml-auto">
+            <p className="text-xs text-muted-foreground font-mono truncate">
+              {showingDrives ? "Select a drive" : currentPath}
+            </p>
+          </div>
+
+          <Button
+            onClick={handleSelectCurrentDirectory}
+            disabled={loading || externalLoading || showingDrives}
+            variant="accent"
+            size="default"
+            className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+          >
+            <Folder className="w-4 h-4" />
+            {externalLoading ? "Opening..." : "Open Project"}
+          </Button>
         </div>
       </div>
+    </div>
   );
 }

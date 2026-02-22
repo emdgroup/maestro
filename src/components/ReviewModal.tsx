@@ -14,7 +14,7 @@ import { parseDiffString } from "../utils/diffParser";
 import { FileTree } from "./FileTree";
 import { DiffViewer } from "./DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";
-import {X} from "lucide-react";
+import { X } from "lucide-react";
 
 interface ReviewModalProps {
   taskId: number;
@@ -23,12 +23,7 @@ interface ReviewModalProps {
   onClose: () => void;
 }
 
-export const ReviewModal: React.FC<ReviewModalProps> = ({
-  taskId,
-  taskName,
-  isOpen,
-  onClose,
-}) => {
+export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOpen, onClose }) => {
   const store = useReviewStore();
   const [showApprovalForm, setShowApprovalForm] = useState(false);
 
@@ -57,8 +52,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
         store.setDiffData(diffFiles);
       } catch (error) {
-        const errorMsg =
-          error instanceof Error ? error.message : String(error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
         store.setError(`Failed to fetch diff: ${errorMsg}`);
         console.error("Fetch diff error:", error);
       }
@@ -68,9 +62,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   }, [isOpen, taskId, store]);
 
   // Find currently selected file's diff data
-  const selectedDiffFile = store.diffData.find(
-    (f) => f.fileName === store.selectedFile
-  );
+  const selectedDiffFile = store.diffData.find((f) => f.fileName === store.selectedFile);
 
   const handleRetry = async () => {
     try {
@@ -90,8 +82,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
       store.setDiffData(diffFiles);
     } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       store.setError(`Failed to fetch diff: ${errorMsg}`);
       console.error("Retry fetch diff error:", error);
     }
@@ -109,14 +100,16 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
         <DialogContent className="review-modal-content">
           <div className="review-modal-header">
             <div>
-              <DialogTitle className="review-modal-title">
-                Review Changes
-              </DialogTitle>
+              <DialogTitle className="review-modal-title">Review Changes</DialogTitle>
               <p className="review-modal-subtitle">{taskName}</p>
             </div>
-            <DialogClose render={
-              <Button variant="ghost" size="sm" aria-label="Close"><X className="size-3.5"/></Button>
-            }/>
+            <DialogClose
+              render={
+                <Button variant="ghost" size="sm" aria-label="Close">
+                  <X className="size-3.5" />
+                </Button>
+              }
+            />
           </div>
 
           <div className="review-modal-body">
@@ -148,17 +141,10 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
           {!showApprovalForm && (
             <div className="review-modal-footer">
-              <Button
-                onClick={handleClose}
-                variant="outline"
-              >
+              <Button onClick={handleClose} variant="outline">
                 Close
               </Button>
-              <Button
-                onClick={() => setShowApprovalForm(true)}
-              >
-                Proceed to Approval
-              </Button>
+              <Button onClick={() => setShowApprovalForm(true)}>Proceed to Approval</Button>
             </div>
           )}
 

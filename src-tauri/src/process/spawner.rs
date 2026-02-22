@@ -24,7 +24,7 @@ pub struct ProcessOutput {
 pub async fn spawn_agent_cli(
     working_dir: &str,
     sidecar_path: &str,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<ProcessOutput, String> {
     let mut cmd = Command::new("node");
     cmd.current_dir(working_dir)

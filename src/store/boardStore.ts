@@ -145,7 +145,7 @@ export const useBoardStore = create<BoardState>()(
         try {
           await invoke("cancel_execution", { logId: taskId });
         } catch (err) {
-          console.warn("cancel_execution handler not available, marking task manually");
+          console.warn("cancel_execution handler not available, marking task manually", err);
         }
 
         // Update task status to Done
@@ -189,5 +189,5 @@ export const useBoardStore = create<BoardState>()(
         state.activeTerminalTaskId = null;
       });
     },
-  }))
+  })),
 );

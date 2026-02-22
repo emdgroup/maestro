@@ -88,16 +88,16 @@ pub fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (Strin
 #[tauri::command]
 pub async fn spawn_agent_execution(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
 
     // 0. Get project and determine if remote
     let is_remote = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let connection_id: Option<i64> = conn.query_row(
+        let connection_id: Option<i32> = conn.query_row(
             "SELECT connection_id FROM projects WHERE id = ?",
             [project_id],
             |row| row.get(0),
@@ -409,7 +409,7 @@ pub async fn spawn_agent_execution(
 #[tauri::command]
 pub fn get_execution_logs(
     app_state: State<Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<Vec<ExecutionLog>, String> {
     println!("get_execution_logs({}) called", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -458,10 +458,10 @@ pub fn get_execution_logs(
 #[tauri::command]
 pub async fn retry_execution(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     println!("retry_execution(project={}, task={}) called", project_id, task_id);
 
     // Simply spawn a new execution for the same task
@@ -513,7 +513,7 @@ pub fn cancel_execution(
 #[tauri::command]
 pub async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     output_channel: tauri::ipc::Channel<String>,
     include_history: Option<bool>,
 ) -> Result<(), String> {
@@ -647,7 +647,7 @@ pub async fn attach_terminal(
 #[tauri::command]
 pub async fn send_terminal_input(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     input: String,
 ) -> Result<(), String> {
     // Log control sequences for debugging
@@ -687,7 +687,7 @@ pub async fn send_terminal_input(
 #[tauri::command]
 pub async fn resize_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -725,7 +725,7 @@ pub async fn resize_terminal(
 #[tauri::command]
 pub async fn append_terminal_output(
     state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     output: String,
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -769,7 +769,7 @@ pub async fn append_terminal_output(
 #[tauri::command]
 pub async fn detach_terminal(
     _app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<(), String> {
     println!("detach_terminal({}) called", task_id);
     println!("[detach] ✓ Detached from terminal for task {}", task_id);
@@ -784,7 +784,7 @@ pub async fn detach_terminal(
 #[tauri::command]
 pub async fn pause_agent_execution(
     state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<(), String> {
     println!("pause_agent_execution(task={}) called", task_id);
 
@@ -814,10 +814,10 @@ pub async fn pause_agent_execution(
 #[tauri::command]
 pub async fn resume_agent_execution(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
-    project_id: i64,
+    task_id: i32,
+    project_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     println!("resume_agent_execution(task={}, project={}) called", task_id, project_id);
 
     // Step 1: Get current paused execution log
@@ -847,7 +847,7 @@ pub async fn resume_agent_execution(
     // Step 4: Get project to determine if remote
     let is_remote: bool = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let connection_id: Option<i64> = conn.query_row(
+        let connection_id: Option<i32> = conn.query_row(
             "SELECT connection_id FROM projects WHERE id = ?",
             [project_id],
             |row| row.get(0),

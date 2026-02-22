@@ -31,7 +31,7 @@ pub fn get_ssh_connections(
 /// Get a specific SSH connection
 #[tauri::command]
 pub fn get_ssh_connection(
-    connection_id: i64,
+    connection_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<SshConnection, String> {
     println!("get_ssh_connection({}) called via IPC", connection_id);
@@ -52,7 +52,7 @@ pub fn save_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_string: String,
     auth_method: SshAuthMethod,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     println!("save_ssh_connection({}) called via IPC", connection_string);
 
     // Parse connection string: user@host:port or user@host
@@ -88,7 +88,7 @@ pub fn save_ssh_connection(
     let now = Utc::now().to_rfc3339();
 
     // Check if connection already exists
-    let existing: Option<i64> = conn
+    let existing: Option<i32> = conn
         .query_row(
             "SELECT id FROM ssh_connections WHERE connection_string = ?",
             [&connection_string],
@@ -114,7 +114,7 @@ pub fn save_ssh_connection(
     )
     .map_err(|e| e.to_string())?;
 
-    let id = conn.last_insert_rowid();
+    let id = conn.last_insert_rowid() as i32;
     println!("Saved SSH connection with id: {}", id);
     Ok(id)
 }
@@ -123,8 +123,8 @@ pub fn save_ssh_connection(
 #[tauri::command]
 pub async fn connect_ssh_without_credentials(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
-) -> Result<i64, String> {
+    connection_id: i32,
+) -> Result<i32, String> {
     println!("connect_ssh_without_credentials(connection_id={}) called via IPC", connection_id);
 
     // Check if session already exists (e.g., from previous password authentication in same session)
@@ -178,10 +178,10 @@ pub async fn connect_ssh_without_credentials(
 #[tauri::command]
 pub async fn connect_ssh_with_password(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     password: String,
     save_password: bool,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     println!("connect_ssh_with_password(connection_id={}, save={}) called via IPC", connection_id, save_password);
 
     // Get connection details from database
@@ -229,7 +229,7 @@ pub async fn connect_ssh_with_password(
 #[tauri::command]
 pub async fn list_remote_directories(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     path: String,
 ) -> Result<Vec<String>, String> {
     println!("list_remote_directories(connection_id={}, path={}) called via IPC", connection_id, path);
@@ -262,7 +262,7 @@ pub async fn list_remote_directories(
 #[tauri::command]
 pub fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
 ) -> Result<(), String> {
     println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -294,7 +294,7 @@ pub fn delete_ssh_connection(
 #[tauri::command]
 pub fn forget_saved_password(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
 ) -> Result<(), String> {
     println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -319,7 +319,7 @@ pub fn forget_saved_password(
 #[tauri::command]
 pub fn rename_ssh_connection(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     display_name: String,
 ) -> Result<(), String> {
     println!("rename_ssh_connection(connection_id={}, display_name={}) called via IPC", connection_id, display_name);
@@ -341,7 +341,7 @@ pub fn rename_ssh_connection(
 /// Get the current connection status for a connection
 #[tauri::command]
 pub async fn get_ssh_connection_status(
-    connection_id: i64,
+    connection_id: i32,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ConnectionStatus, String> {
     println!("get_ssh_connection_status({}) called", connection_id);

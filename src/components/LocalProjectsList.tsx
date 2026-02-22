@@ -1,11 +1,11 @@
-import { EnhancedRecentProject } from "../types/bindings";
 import { Folder } from "lucide-react";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
+import { Project } from "../../src-tauri/bindings/Project.ts";
 
 interface LocalProjectsListProps {
-  recentProjects: EnhancedRecentProject[];
-  onProjectClick: (path: string) => void;
+  recentProjects: Project[];
+  onProjectClick: (projectId: number) => void;
   onSelectNewClick: () => void;
   onBack: () => void;
   onRemoveProject?: (path: string) => void;
@@ -41,7 +41,7 @@ export function LocalProjectsList({
         <ProjectListItem
           key={project.path}
           path={project.path}
-          onClick={() => onProjectClick(project.path)}
+          onClick={() => onProjectClick(project.id)}
           onRemove={onRemoveProject ? () => onRemoveProject(project.path) : undefined}
           disabled={loading}
         />

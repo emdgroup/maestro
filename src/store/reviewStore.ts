@@ -65,5 +65,5 @@ export const useReviewStore = create<ReviewState>()(
       set((state) => {
         state.loading = loading;
       }),
-  }))
+  })),
 );

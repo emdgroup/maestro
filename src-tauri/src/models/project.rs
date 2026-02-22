@@ -4,12 +4,13 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Project {
-    pub id: i64,
+    pub id: i32,
     pub name: String,
     pub path: String,
     pub created_at: String,  // ISO 8601
+    pub updated_at: String,  // ISO 8601
     pub last_opened: Option<String>, // ISO 8601
-    pub connection_id: Option<i64>,  // Foreign key to ssh_connections; None = local project
+    pub connection_id: Option<i32>,  // Foreign key to ssh_connections; None = local project
 }
 
 impl Project {
@@ -35,8 +36,9 @@ impl Project {
             name: row.get(1)?,
             path: row.get(2)?,
             created_at: row.get(3)?,
-            last_opened: row.get(4)?,
-            connection_id: row.get(5)?,
+            updated_at: row.get(4)?,
+            last_opened: row.get(5)?,
+            connection_id: row.get(6)?,
         })
     }
 

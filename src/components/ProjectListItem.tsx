@@ -39,9 +39,7 @@ export function ProjectListItem({
       >
         <div className="flex flex-col items-start gap-1 w-full">
           <span className="font-semibold">{getFolderName(path)}</span>
-          <span className="text-xs text-muted-foreground truncate w-full">
-            {path}
-          </span>
+          <span className="text-xs text-muted-foreground truncate w-full">{path}</span>
         </div>
       </Button>
       {onRemove && (

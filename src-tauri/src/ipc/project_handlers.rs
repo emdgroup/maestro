@@ -27,7 +27,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 /// Get or create project by path
 #[tauri::command]
 pub fn get_project(
-    project_id: i64,
+    project_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<Project, String> {
     println!("get_project({}) called via IPC", project_id);
@@ -59,17 +59,16 @@ pub fn get_project(
 pub fn create_project(
     app_state: State<Arc<AppState>>,
     path: String,
-    connection_id: Option<i64>
+    connection_id: Option<i32>
 ) -> Result<Project, String> {
     println!("create_project() called via IPC with path {} and connection_id {:?}", path, connection_id);
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let existing: Option<i64> = conn.query_row(
+        let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id = ?",
             rusqlite::params![&path, connection_id],
             |row| row.get(0),
         ).ok();
-
         existing.unwrap_or_else(|| {
             // Create new remote project in database
             let now = Utc::now().to_rfc3339();
@@ -82,7 +81,7 @@ pub fn create_project(
                 "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
                 rusqlite::params![&name, &path, &now, &now, connection_id, &now],
             ).expect(&format!("Failed to insert project {}", name));
-            conn.last_insert_rowid()
+            conn.last_insert_rowid() as i32
         })
     };
 
@@ -94,7 +93,7 @@ pub fn create_project(
 #[tauri::command]
 pub fn get_tasks(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
 ) -> Result<Vec<Task>, String> {
     println!("get_tasks({}) called via IPC", project_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -144,7 +143,7 @@ pub fn get_tasks(
 #[tauri::command]
 pub fn create_task(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     name: String,
     description: String,
     acceptance_criteria: String,
@@ -234,7 +233,7 @@ pub fn create_task(
 #[tauri::command]
 pub fn update_task(
     app_state: State<Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     status: Option<String>,
     description: Option<String>,
 ) -> Result<Task, String> {
@@ -308,7 +307,7 @@ pub fn update_task(
 #[tauri::command]
 pub fn get_project_settings(
     app_state: State<Arc<AppState>>,
-    _project_id: i64,
+    _project_id: i32,
 ) -> Result<crate::models::ProjectConfigResponse, String> {
     println!("get_project_settings() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -360,7 +359,7 @@ pub fn get_project_settings(
 #[tauri::command]
 pub fn update_project_settings(
     app_state: State<Arc<AppState>>,
-    _project_id: i64,
+    _project_id: i32,
     settings: crate::models::ProjectConfigRequest,
 ) -> Result<(), String> {
     println!("update_project_settings() called via IPC");
@@ -410,7 +409,7 @@ pub fn update_project_settings(
 #[tauri::command]
 pub fn update_task_settings(
     app_state: State<Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     settings: crate::models::TaskConfigRequest,
 ) -> Result<(), String> {
     println!("update_task_settings({}) called via IPC", task_id);

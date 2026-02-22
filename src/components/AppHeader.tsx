@@ -1,12 +1,6 @@
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { motion } from "framer-motion";
-import {
-  LayoutDashboard,
-  Bot,
-  GitBranch,
-  Settings,
-  FolderOpen
-} from "lucide-react";
+import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import {
@@ -17,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Project, EnhancedRecentProject } from "@/types/bindings";
+import type { Project } from "@/types/bindings";
 
 type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 
@@ -26,8 +20,8 @@ interface AppHeaderProps {
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
   projects?: Project[];
-  recentProjects?: EnhancedRecentProject[];
-  onProjectChange?: (path: string) => void;
+  recentProjects?: Project[];
+  onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
   agentCount?: number;
 }
@@ -73,15 +67,15 @@ export function AppHeader({
     const sameConnection = projects.filter((p) => getConnectionId(p) === currentConnection);
 
     // Step 2: Filter to only recent projects
-    const recentPaths = new Set(recentProjects.map(rp => rp.path));
-    const recentAndSameConnection = sameConnection.filter(p => recentPaths.has(p.path));
+    const recentPaths = new Set(recentProjects.map((rp) => rp.path));
+    const recentAndSameConnection = sameConnection.filter((p) => recentPaths.has(p.path));
 
     // Step 3: Sort by last_opened timestamp (most recent first)
     const pathToLastOpened = new Map(recentProjects.map((rp) => [rp.path, rp.last_opened]));
 
     recentAndSameConnection.sort((a, b) => {
-      const aTime = pathToLastOpened.get(a.path) || '';
-      const bTime = pathToLastOpened.get(b.path) || '';
+      const aTime = pathToLastOpened.get(a.path) || "";
+      const bTime = pathToLastOpened.get(b.path) || "";
       // Sort descending (most recent first)
       return bTime.localeCompare(aTime);
     });
@@ -96,10 +90,10 @@ export function AppHeader({
   // Special value for "back to picker" option
   const BACK_TO_PICKER_VALUE = "__back_to_picker__";
 
-  const handleValueChange = (value: string | null) => {
+  const handleValueChange = (value: Project | string | null) => {
     if (value === BACK_TO_PICKER_VALUE && onBackToPicker) {
       onBackToPicker();
-    } else if (value && onProjectChange) {
+    } else if (value && typeof value !== "string" && onProjectChange) {
       onProjectChange(value);
     }
   };
@@ -111,29 +105,23 @@ export function AppHeader({
         <Select value={currentProjectPath} onValueChange={handleValueChange}>
           <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
             <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
-            <SelectValue placeholder="Select project">
-              {currentProjectName}
-            </SelectValue>
+            <SelectValue placeholder="Select project">{currentProjectName}</SelectValue>
           </SelectTrigger>
           <SelectContent className="min-w-[16rem] max-w-[24rem]">
             {filteredProjects.map((project) => (
-                <SelectItem
-                  key={project.path}
-                  value={project.path}
-                  className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent [&>span]:text-accent"
-                >
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
-                      <div className="font-medium text-foreground">
-                        {project.name}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {project.path}
-                      </div>
-                    </div>
+              <SelectItem
+                key={project.path}
+                value={project.path}
+                className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent [&>span]:text-accent"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
+                    <div className="font-medium text-foreground">{project.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{project.path}</div>
                   </div>
-                </SelectItem>
-              ))}
+                </div>
+              </SelectItem>
+            ))}
             {onBackToPicker && (
               <>
                 <SelectSeparator />
@@ -162,7 +150,7 @@ export function AppHeader({
                 "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus:border focus:border-solid focus:border-accent",
                 isActive
                   ? "text-accent bg-muted"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
               )}
             >
               <Icon className="size-3.5" />
@@ -183,9 +171,7 @@ export function AppHeader({
       <div className="flex items-center gap-2 shrink-0">
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
           <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="text-xs text-muted-foreground">
-            {agentCount} running
-          </span>
+          <span className="text-xs text-muted-foreground">{agentCount} running</span>
         </div>
         <ThemeToggle />
       </div>

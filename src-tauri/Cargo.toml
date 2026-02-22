@@ -32,11 +32,7 @@ keyring = "2.0"
 zeroize = "1.6"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
-    "UI_ViewManagement",
-    "UI",
-    "Foundation"
-] }
+windows = { version = "0.58", features = ["UI_ViewManagement", "UI", "Foundation"] }
 
 [package.metadata.ts-rs]
 export_dir = "../src/types"

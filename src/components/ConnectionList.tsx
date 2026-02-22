@@ -52,9 +52,7 @@ export function ConnectionList({
 
       <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">
         {connections.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No connections available
-          </p>
+          <p className="text-sm text-muted-foreground text-center py-8">No connections available</p>
         ) : (
           <ul className="space-y-2">
             {connections.map((connection) => {
@@ -71,9 +69,7 @@ export function ConnectionList({
                     <div className="flex items-start gap-2 w-full">
                       <Icon className="w-4 h-4 mt-0.5 shrink-0" />
                       <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
-                        <span className="font-semibold">
-                          {connection.displayName}
-                        </span>
+                        <span className="font-semibold">{connection.displayName}</span>
                         {connection.subtitle && (
                           <span className="text-xs text-muted-foreground truncate w-full">
                             {connection.subtitle}

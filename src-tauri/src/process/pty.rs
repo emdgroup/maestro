@@ -55,7 +55,7 @@ impl CircularBuffer {
 /// Stores the task ID, PTY master handle, and child process handle
 /// for lifecycle management and I/O operations.
 pub struct PtySession {
-    pub task_id: i64,
+    pub task_id: i32,
     pub master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
 }
 
@@ -73,7 +73,7 @@ pub struct PtySession {
 /// # Returns
 /// `Result<PtySession, String>` containing the PTY session or error
 pub async fn spawn_agent_cli_pty(
-    task_id: i64,
+    task_id: i32,
     command: String,
     args: Vec<String>,
     working_dir: std::path::PathBuf,

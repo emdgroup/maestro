@@ -86,7 +86,7 @@ pub fn save_settings(
 #[tauri::command]
 pub async fn sync_github_issues(
     state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     owner: String,
     repo: String,
     token: String,
@@ -131,7 +131,7 @@ pub async fn sync_github_issues(
         let description = issue.body.unwrap_or_default();
 
         // Check if task already exists
-        let existing_id: Option<i64> = tx
+        let existing_id: Option<i32> = tx
             .query_row(
                 "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
                 rusqlite::params![&external_id, project_id],
@@ -215,7 +215,7 @@ pub async fn sync_github_issues(
 #[tauri::command]
 pub async fn sync_jira_issues(
     state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     host: String,
     email: String,
     api_token: String,
@@ -271,7 +271,7 @@ pub async fn sync_jira_issues(
         let description = issue.fields.description.unwrap_or_default();
 
         // Check if task already exists
-        let existing_id: Option<i64> = tx
+        let existing_id: Option<i32> = tx
             .query_row(
                 "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
                 rusqlite::params![external_id, project_id],
@@ -350,7 +350,7 @@ pub async fn sync_jira_issues(
 #[tauri::command]
 pub fn save_import_config(
     state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     provider: String,
     config: serde_json::Value,
 ) -> Result<(), String> {

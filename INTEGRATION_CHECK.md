@@ -23,17 +23,17 @@ Cross-phase integration verification for v1.0 milestone shows:
 
 ## Phase Verification Status
 
-| Phase | Status | Score | Key Finding |
-|-------|--------|-------|-------------|
-| 01 (Foundation) | ✓ PASSED | 4/4 | Database, types, IPC, React shell all working |
-| 02 (Core Orchestration) | ✓ IMPLIED COMPLETE | N/A | Code inspection shows Kanban board, task CRUD, GitHub/Jira import all implemented; verification file missing but not required |
-| 03 (Git Worktree Infrastructure) | ✓ PASSED | 4/4 | Pool management, cleanup, recovery all functional |
-| 04 (Agent Execution) | ⚠ GAPS_FOUND | 2/4 | Execute works, but lacks: status badges, pause mechanism, notifications (known issues from planning) |
-| 05 (Real-time Monitoring) | ✓ PASSED | 4/4 | PTY streaming, terminal I/O, output persistence functional |
-| 06 (Review & Merge) | ✓ PASSED | 4/4 | Re-verified; ReviewModal, diffs, approval, merge all working |
-| 07 (Configuration Management) | ✓ PASSED | 4/4 | Project and task-level config working |
-| 08 (Error Handling & Polish) | ✓ PASSED | 21/21 | Error detection, terminal attach, recovery UI complete |
-| 09 (Remote Project Support) | ✓ PASSED | 4/4 | Re-verified; SSH connection, remote execution, streaming all wired |
+| Phase                            | Status             | Score | Key Finding                                                                                                                   |
+| -------------------------------- | ------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 01 (Foundation)                  | ✓ PASSED           | 4/4   | Database, types, IPC, React shell all working                                                                                 |
+| 02 (Core Orchestration)          | ✓ IMPLIED COMPLETE | N/A   | Code inspection shows Kanban board, task CRUD, GitHub/Jira import all implemented; verification file missing but not required |
+| 03 (Git Worktree Infrastructure) | ✓ PASSED           | 4/4   | Pool management, cleanup, recovery all functional                                                                             |
+| 04 (Agent Execution)             | ⚠ GAPS_FOUND       | 2/4   | Execute works, but lacks: status badges, pause mechanism, notifications (known issues from planning)                          |
+| 05 (Real-time Monitoring)        | ✓ PASSED           | 4/4   | PTY streaming, terminal I/O, output persistence functional                                                                    |
+| 06 (Review & Merge)              | ✓ PASSED           | 4/4   | Re-verified; ReviewModal, diffs, approval, merge all working                                                                  |
+| 07 (Configuration Management)    | ✓ PASSED           | 4/4   | Project and task-level config working                                                                                         |
+| 08 (Error Handling & Polish)     | ✓ PASSED           | 21/21 | Error detection, terminal attach, recovery UI complete                                                                        |
+| 09 (Remote Project Support)      | ✓ PASSED           | 4/4   | Re-verified; SSH connection, remote execution, streaming all wired                                                            |
 
 ---
 
@@ -43,14 +43,15 @@ Cross-phase integration verification for v1.0 milestone shows:
 
 **Connection:** Database schema → Task CRUD operations
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 1: Task schema (database) | Phase 2: get_tasks handler | handlers.rs query | ✓ WIRED |
-| Phase 1: Task schema | Phase 2: create_task handler | handlers.rs insert | ✓ WIRED |
-| Phase 1: Task schema | Phase 2: update_task handler | handlers.rs update | ✓ WIRED |
-| Phase 1: AppSettings | Phase 2: save_settings handler | handlers.rs transaction | ✓ WIRED |
+| From                            | To                             | Via                     | Status  |
+| ------------------------------- | ------------------------------ | ----------------------- | ------- |
+| Phase 1: Task schema (database) | Phase 2: get_tasks handler     | handlers.rs query       | ✓ WIRED |
+| Phase 1: Task schema            | Phase 2: create_task handler   | handlers.rs insert      | ✓ WIRED |
+| Phase 1: Task schema            | Phase 2: update_task handler   | handlers.rs update      | ✓ WIRED |
+| Phase 1: AppSettings            | Phase 2: save_settings handler | handlers.rs transaction | ✓ WIRED |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:56-62
 fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
@@ -69,13 +70,14 @@ fn create_task(app_state: State<Arc<AppState>>, project_id: i32, name: String, .
 
 **Connection:** Task execution → Worktree allocation
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 2: TaskCard Execute button | Phase 3: lease_worktree | boardStore.executeTask → spawn_agent_execution | ✓ WIRED |
-| Phase 3: Pool initialization | Phase 2: Tasks ready to execute | initialize_worktree_pool called on project open | ✓ WIRED |
-| Phase 3: Worktree status | Phase 2: Task status display | KanbanColumn shows task.status | ✓ WIRED |
+| From                             | To                              | Via                                             | Status  |
+| -------------------------------- | ------------------------------- | ----------------------------------------------- | ------- |
+| Phase 2: TaskCard Execute button | Phase 3: lease_worktree         | boardStore.executeTask → spawn_agent_execution  | ✓ WIRED |
+| Phase 3: Pool initialization     | Phase 2: Tasks ready to execute | initialize_worktree_pool called on project open | ✓ WIRED |
+| Phase 3: Worktree status         | Phase 2: Task status display    | KanbanColumn shows task.status                  | ✓ WIRED |
 
 **Code Evidence:**
+
 ```typescript
 // src/store/boardStore.ts:58-65
 executeTask: async (projectId: number, taskId: number, repoPath: string) => {
@@ -94,12 +96,13 @@ executeTask: async (projectId: number, taskId: number, repoPath: string) => {
 
 **Connection:** Worktree allocation → Process spawning
 
-| From | To | Via | Status | Details |
-|------|----|----|--------|---------|
-| Phase 3: lease_worktree handler | Phase 4: spawn_agent_execution | Direct call at line 1257 | ✓ WIRED | Handler calls `lease_worktree(app_state, project_id, task_id, repo_path)` before spawning process |
-| Phase 3: Leased worktree path | Phase 4: PTY spawn | Used as working directory | ✓ WIRED | Path passed to spawn_agent_cli_pty (line 1321) |
+| From                            | To                             | Via                       | Status  | Details                                                                                           |
+| ------------------------------- | ------------------------------ | ------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| Phase 3: lease_worktree handler | Phase 4: spawn_agent_execution | Direct call at line 1257  | ✓ WIRED | Handler calls `lease_worktree(app_state, project_id, task_id, repo_path)` before spawning process |
+| Phase 3: Leased worktree path   | Phase 4: PTY spawn             | Used as working directory | ✓ WIRED | Path passed to spawn_agent_cli_pty (line 1321)                                                    |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:1257
 let worktree = lease_worktree(app_state.clone(), project_id, task_id, repo_path.clone()).await?;
@@ -123,13 +126,14 @@ match spawn_agent_cli_pty(
 
 **Connection:** Process spawning → Terminal streaming
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 4: spawn_agent_cli_pty | Phase 5: attach_terminal | PtySession stored in AppState | ✓ WIRED |
-| Phase 4: PTY session | Phase 5: send_terminal_input | HashMap lookup by task_id | ✓ WIRED |
-| Phase 4: Execution log | Phase 5: append_terminal_output | Persisted to database | ✓ WIRED |
+| From                         | To                              | Via                           | Status  |
+| ---------------------------- | ------------------------------- | ----------------------------- | ------- |
+| Phase 4: spawn_agent_cli_pty | Phase 5: attach_terminal        | PtySession stored in AppState | ✓ WIRED |
+| Phase 4: PTY session         | Phase 5: send_terminal_input    | HashMap lookup by task_id     | ✓ WIRED |
+| Phase 4: Execution log       | Phase 5: append_terminal_output | Persisted to database         | ✓ WIRED |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:1323-1326 (Phase 4 spawning)
 let pty_session = spawn_agent_cli_pty(...).await?;
@@ -150,13 +154,14 @@ pub async fn attach_terminal(...) -> Result<(), String> {
 
 **Connection:** Execution completion → Review ready
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 5: Execution log with output | Phase 6: get_execution_logs | Query joins execution_logs | ✓ WIRED |
-| Phase 5: Task InProgress status | Phase 6: Task moved to Review | After execution completes | ✓ WIRED |
-| Phase 5: Terminal output | Phase 6: DiffViewer feedback | Persisted in database | ✓ WIRED |
+| From                               | To                            | Via                        | Status  |
+| ---------------------------------- | ----------------------------- | -------------------------- | ------- |
+| Phase 5: Execution log with output | Phase 6: get_execution_logs   | Query joins execution_logs | ✓ WIRED |
+| Phase 5: Task InProgress status    | Phase 6: Task moved to Review | After execution completes  | ✓ WIRED |
+| Phase 5: Terminal output           | Phase 6: DiffViewer feedback  | Persisted in database      | ✓ WIRED |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs (Phase 5 marks complete)
 mark_complete(&conn, exec_log_id, 0)?;
@@ -176,13 +181,14 @@ conn.execute(
 
 **Connection:** Merge approval → Worktree cleanup
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 6: approve_task_and_merge | Phase 3: cleanup_worktree (planned) | finalize_successful_merge returns worktree to pool | ⚠ PARTIAL |
-| Phase 6: Merge success | Phase 3: Worktree marked Available | UPDATE worktrees SET status='Available' (line 2293) | ✓ WIRED |
-| Phase 6: Merge complete | Phase 3: Worktree task_id cleared | UPDATE worktrees SET task_id=NULL (line 2292) | ✓ WIRED |
+| From                            | To                                  | Via                                                 | Status    |
+| ------------------------------- | ----------------------------------- | --------------------------------------------------- | --------- |
+| Phase 6: approve_task_and_merge | Phase 3: cleanup_worktree (planned) | finalize_successful_merge returns worktree to pool  | ⚠ PARTIAL |
+| Phase 6: Merge success          | Phase 3: Worktree marked Available  | UPDATE worktrees SET status='Available' (line 2293) | ✓ WIRED   |
+| Phase 6: Merge complete         | Phase 3: Worktree task_id cleared   | UPDATE worktrees SET task_id=NULL (line 2292)       | ✓ WIRED   |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:2288-2295 (finalize_successful_merge)
 conn.execute(
@@ -203,14 +209,15 @@ conn.execute(
 
 **Connection:** Task config → Execution environment
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 7: model_override | Phase 4: ExecutionConfig struct | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
-| Phase 7: mcp_allowlist | Phase 4: ExecutionConfig | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
-| Phase 7: skills_override | Phase 4: ExecutionConfig | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
-| Phase 7: Project defaults | Phase 4: Used if task overrides null | Loaded in AppSettings | ✓ WIRED |
+| From                      | To                                   | Via                                       | Status  |
+| ------------------------- | ------------------------------------ | ----------------------------------------- | ------- |
+| Phase 7: model_override   | Phase 4: ExecutionConfig struct      | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
+| Phase 7: mcp_allowlist    | Phase 4: ExecutionConfig             | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
+| Phase 7: skills_override  | Phase 4: ExecutionConfig             | Loaded in spawn_agent_execution line 1291 | ✓ WIRED |
+| Phase 7: Project defaults | Phase 4: Used if task overrides null | Loaded in AppSettings                     | ✓ WIRED |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:1289-1296
 let config = ExecutionConfig {
@@ -230,14 +237,15 @@ let config = ExecutionConfig {
 
 **Connection:** Failure detection → Recovery UI
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 8: Error categorization | Phase 4: Task status = Failed | Exit code check, mark_failed() call | ✓ WIRED |
-| Phase 8: Error details | Phase 5: ExecutionHistory display | Persisted in execution_logs | ✓ WIRED |
-| Phase 8: Terminal attach | Phase 5: Interactive debugging | TaskCard "Terminal" button opens attach | ✓ WIRED |
-| Phase 8: Resume/Abort buttons | Phase 4: resumeExecution/abortExecution | TaskCard buttons call store methods | ✓ WIRED |
+| From                          | To                                      | Via                                     | Status  |
+| ----------------------------- | --------------------------------------- | --------------------------------------- | ------- |
+| Phase 8: Error categorization | Phase 4: Task status = Failed           | Exit code check, mark_failed() call     | ✓ WIRED |
+| Phase 8: Error details        | Phase 5: ExecutionHistory display       | Persisted in execution_logs             | ✓ WIRED |
+| Phase 8: Terminal attach      | Phase 5: Interactive debugging          | TaskCard "Terminal" button opens attach | ✓ WIRED |
+| Phase 8: Resume/Abort buttons | Phase 4: resumeExecution/abortExecution | TaskCard buttons call store methods     | ✓ WIRED |
 
 **Code Evidence:**
+
 ```typescript
 // src/components/TaskCard.tsx:262-322 (Phase 8 recovery UI)
 {task.status === 'Failed' && (
@@ -261,14 +269,15 @@ resumeExecution: async (projectId, taskId, repoPath) => {
 
 **Connection:** Transparent remote/local execution via dispatcher
 
-| From | To | Via | Status |
-|------|----|----|--------|
-| Phase 9: SSH session | Phase 4: spawn_agent_execution | Dispatcher routing (is_remote check) | ✓ WIRED |
-| Phase 9: Remote execution | Phase 5: Terminal streaming | attach_remote_stream_listener (NEW in re-verification) | ✓ WIRED |
-| Phase 9: Remote git operations | Phase 6: merge | Dispatcher routes to remote git commands | ✓ WIRED |
-| Phase 9: Remote config | Phase 7: Config persists | SSH config stored in projects table | ✓ WIRED |
+| From                           | To                             | Via                                                    | Status  |
+| ------------------------------ | ------------------------------ | ------------------------------------------------------ | ------- |
+| Phase 9: SSH session           | Phase 4: spawn_agent_execution | Dispatcher routing (is_remote check)                   | ✓ WIRED |
+| Phase 9: Remote execution      | Phase 5: Terminal streaming    | attach_remote_stream_listener (NEW in re-verification) | ✓ WIRED |
+| Phase 9: Remote git operations | Phase 6: merge                 | Dispatcher routes to remote git commands               | ✓ WIRED |
+| Phase 9: Remote config         | Phase 7: Config persists       | SSH config stored in projects table                    | ✓ WIRED |
 
 **Code Evidence:**
+
 ```rust
 // src-tauri/src/ipc/handlers.rs:1236-1245 (spawn_agent_execution is_remote check)
 let is_remote = {
@@ -302,6 +311,7 @@ if is_remote {
 ### FLOW 1: Create Task → Execute → View Output → Approve → Merge (Happy Path)
 
 **User Actions:**
+
 1. Click "+ New Task" button
 2. Fill form, create task (task in Backlog)
 3. Drag task to Ready column
@@ -312,6 +322,7 @@ if is_remote {
 8. System merges and marks Done
 
 **Wiring Status:**
+
 - ✓ New Task → create_task IPC → database insert → Kanban loads → appears in Backlog
 - ✓ Drag to Ready → update_task IPC → status persisted
 - ✓ Execute button → store.executeTask → spawn_agent_execution IPC → background task spawns
@@ -320,6 +331,7 @@ if is_remote {
 - ✓ Approve → save_task_review + approve_task_and_merge IPCs → merge spawned → Task → Done
 
 **Code Path Verification:**
+
 ```
 App.tsx:166 (+ New Task button)
   → TaskModal:17 (form)
@@ -351,6 +363,7 @@ App.tsx:166 (+ New Task button)
 ### FLOW 2: Execute Task → Fails → Attach Terminal → Resume → Complete
 
 **User Actions:**
+
 1. Execute task (process fails)
 2. Task appears in Failed status (red)
 3. Click task to open detail modal
@@ -360,6 +373,7 @@ App.tsx:166 (+ New Task button)
 7. Task re-executes and completes
 
 **Wiring Status:**
+
 - ✓ Execute → failure detected (exit code != 0) → mark_failed → task.status = Failed
 - ✓ Failed task rendered with red background (TaskCard line 125-131)
 - ✓ Resume/Abort buttons appear (TaskCard line 262-322)
@@ -374,6 +388,7 @@ App.tsx:166 (+ New Task button)
 ### FLOW 3: Import from GitHub → Execute Multiple Parallel → Review All → Merge
 
 **User Actions:**
+
 1. Click "Import Settings"
 2. Configure GitHub (owner, repo, token)
 3. Click "Sync" → issues imported to Backlog
@@ -383,6 +398,7 @@ App.tsx:166 (+ New Task button)
 7. All merged
 
 **Wiring Status:**
+
 - ✓ ImportSettings modal → save_import_config IPC (line 103-110 main.rs)
 - ✓ SyncButton → sync_github_issues IPC (line 80-88 main.rs)
 - ✓ Issues load to Backlog → getTasks IPC → loadTasks (App.tsx line 102-105)
@@ -399,6 +415,7 @@ App.tsx:166 (+ New Task button)
 ### FLOW 4: Configure Remote Project → Execute on Remote → Stream Output → Review Diffs
 
 **User Actions:**
+
 1. ProjectPicker shows local/remote choice
 2. Select "Remote"
 3. Configure SSH (host, port, credentials, remote path)
@@ -410,6 +427,7 @@ App.tsx:166 (+ New Task button)
 9. Merge executes on remote
 
 **Wiring Status:**
+
 - ✓ RemoteConnectionForm (ProjectPicker.tsx line 89-155) → test_remote_connection IPC
 - ✓ create_project IPC saves is_remote=true, ssh_config (main.rs line 44-51)
 - ✓ spawn_agent_execution checks is_remote (handlers.rs line 1236-1245)
@@ -427,6 +445,7 @@ App.tsx:166 (+ New Task button)
 ### FLOW 5: Configure Task with Custom Model/MCP/Skills → Execute → Verify Used
 
 **User Actions:**
+
 1. Right-click task → "Edit Settings"
 2. Override model to "claude-3-5-sonnet"
 3. Override MCP allowlist (enable/disable specific servers)
@@ -435,6 +454,7 @@ App.tsx:166 (+ New Task button)
 6. Process should use custom config
 
 **Wiring Status:**
+
 - ✓ TaskCard onContextMenu → setMenuOpen (line 133-137)
 - ✓ TaskContextMenu "Edit Settings" → KanbanBoard onSettingsClick → setSelectedTaskForSettings (KanbanBoard line 225)
 - ✓ TaskSettingsModal fetches task → form populated with overrides (line 40-85)
@@ -481,14 +501,15 @@ App.tsx:166 (+ New Task button)
 **Location:** `/home/m306213/workspace/gsd-demo/.planning/phases/02-core-orchestration/`  
 **Issue:** No VERIFICATION.md file created for Phase 2  
 **Evidence:** Code inspection of Phase 2 artifacts shows all planned features complete:
-  - KanbanBoard with dnd-kit drag-drop ✓
-  - Zustand state management ✓
-  - Task CRUD handlers ✓
-  - GitHub/Jira import UI and handlers ✓
-  - Import configuration modal ✓
-  - Sync button with provider detection ✓
-  - Read-only protection for imported tasks ✓
-  
+
+- KanbanBoard with dnd-kit drag-drop ✓
+- Zustand state management ✓
+- Task CRUD handlers ✓
+- GitHub/Jira import UI and handlers ✓
+- Import configuration modal ✓
+- Sync button with provider detection ✓
+- Read-only protection for imported tasks ✓
+
 **Recommendation:** Generate Phase 2 VERIFICATION.md for completeness (administrative, not blocking)
 
 ---
@@ -537,6 +558,7 @@ spawn_agent_execution_dispatcher(&git_conn, ...)
 **Cross-Phase Wiring Status: COMPLETE**
 
 All 9 phases are properly integrated:
+
 - Database foundations (Phase 1) feed all CRUD operations (Phase 2+)
 - UI components (Phase 2) wire to execution handlers (Phase 4)
 - Execution spawning (Phase 4) properly allocates worktrees (Phase 3)
@@ -547,6 +569,7 @@ All 9 phases are properly integrated:
 **E2E User Flows: ALL TESTED AND WIRED**
 
 All 5 primary user flows verified end-to-end:
+
 1. Create → Execute → Approve → Merge ✓
 2. Execute → Fail → Debug → Resume ✓
 3. Import → Multi-execute → Review All → Merge ✓
@@ -554,4 +577,3 @@ All 5 primary user flows verified end-to-end:
 5. Custom config → Execute with config ✓
 
 **No critical integration gaps prevent v1.0 release.**
-

@@ -21,7 +21,7 @@
  *   }
  */
 
-import { invoke } from './tauri-mock';
+import { invoke } from "./tauri-mock";
 
 /**
  * Safe wrapper around Tauri's invoke command with full logging.
@@ -37,14 +37,9 @@ import { invoke } from './tauri-mock';
  * - [Tauri] Success {command}: {result}           (on success)
  * - [Tauri] Error {command}: {error}              (on error, before throw)
  */
-export async function safeInvoke<T>(
-  command: string,
-  args?: Record<string, unknown>
-): Promise<T> {
+export async function safeInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   // Log the invocation with command and arguments
-  console.log(
-    `[Tauri] Invoking ${command}${args ? ` with args: ${JSON.stringify(args)}` : ''}`
-  );
+  console.log(`[Tauri] Invoking ${command}${args ? ` with args: ${JSON.stringify(args)}` : ""}`);
 
   try {
     // Call invoke (which handles both real Tauri and dev mock automatically)

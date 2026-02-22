@@ -15,7 +15,7 @@ use crate::git;
 #[tauri::command]
 pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<String, String> {
     println!("get_diff_for_review({}) called", task_id);
 
@@ -23,7 +23,7 @@ pub async fn get_diff_for_review(
     let (_project_id, project, worktree_path, branch_name) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-        let proj_id: i64 = conn
+        let proj_id: i32 = conn
             .query_row(
                 "SELECT project_id FROM tasks WHERE id = ?",
                 rusqlite::params![task_id],
@@ -32,7 +32,7 @@ pub async fn get_diff_for_review(
             .map_err(|e| format!("Task not found: {}", e))?;
 
         // Get project details (local path, connection_id)
-        let (path, connection_id): (String, Option<i64>) = conn
+        let (path, connection_id): (String, Option<i32>) = conn
             .query_row(
                 "SELECT path, connection_id FROM projects WHERE id = ?",
                 rusqlite::params![proj_id],
@@ -45,6 +45,7 @@ pub async fn get_diff_for_review(
             name: String::new(), // Not needed for this operation
             path,
             created_at: String::new(), // Not needed
+            updated_at: String::new(), // Not needed
             last_opened: None,
             connection_id,
         };
@@ -123,7 +124,7 @@ pub async fn get_diff_for_review(
 #[tauri::command]
 pub async fn save_task_review(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     decision: String,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
@@ -142,7 +143,7 @@ pub async fn save_task_review(
     .map_err(|e| format!("Insert review failed: {}", e))?;
 
     // Get review_id
-    let review_id: i64 = conn
+    let review_id: i32 = conn
         .query_row(
             "SELECT id FROM task_reviews WHERE task_id = ?",
             [task_id],
@@ -175,7 +176,7 @@ pub async fn save_task_review(
 #[tauri::command]
 pub async fn request_changes(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<serde_json::Value, String> {
@@ -193,7 +194,7 @@ pub async fn request_changes(
     .map_err(|e| format!("Insert review failed: {}", e))?;
 
     // Get review_id and save per-file comments
-    let review_id: i64 = conn
+    let review_id: i32 = conn
         .query_row(
             "SELECT id FROM task_reviews WHERE task_id = ?",
             [task_id],
@@ -248,7 +249,7 @@ pub async fn request_changes(
 #[tauri::command]
 pub async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<serde_json::Value, String> {
     println!("approve_task_and_merge({}) called", task_id);
 
@@ -396,7 +397,7 @@ pub async fn approve_task_and_merge(
 /// If cleanup fails, worktree remains in Dirty state for recovery on app restart.
 pub(crate) async fn finalize_successful_merge(
     app_state: &Arc<AppState>,
-    task_id: i64,
+    task_id: i32,
     worktree_id: i32,
     worktree_path: &str,
     repo_path: &str,
@@ -487,7 +488,7 @@ pub(crate) async fn finalize_successful_merge(
 /// Provides visibility to reviewers about which files had conflicts.
 pub(crate) async fn reject_merge_on_conflict(
     app_state: &Arc<AppState>,
-    task_id: i64,
+    task_id: i32,
     conflicts: &[String],
 ) -> Result<(), String> {
     println!(

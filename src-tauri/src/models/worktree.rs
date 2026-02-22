@@ -20,8 +20,8 @@ pub enum WorktreeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Worktree {
-    pub id: i64,
-    pub project_id: i64,
+    pub id: i32,
+    pub project_id: i32,
     pub branch_name: String,
     pub path: String,
     pub status: WorktreeStatus,

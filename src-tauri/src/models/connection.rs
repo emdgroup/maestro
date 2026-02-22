@@ -43,7 +43,7 @@ impl GitConnection {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ConnectionStatus {
-    pub connection_id: i64,
+    pub connection_id: i32,
     pub connected: bool,
     pub disconnected_reason: Option<String>,
 }

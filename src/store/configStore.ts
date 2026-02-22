@@ -36,12 +36,9 @@ export const useConfigStore = create<ConfigState>()(
     // Actions
     setState: (config: Partial<ConfigState>) =>
       set((state) => {
-        if (config.model_default !== undefined)
-          state.model_default = config.model_default;
-        if (config.mcp_allowlist !== undefined)
-          state.mcp_allowlist = config.mcp_allowlist;
-        if (config.skills_default !== undefined)
-          state.skills_default = config.skills_default;
+        if (config.model_default !== undefined) state.model_default = config.model_default;
+        if (config.mcp_allowlist !== undefined) state.mcp_allowlist = config.mcp_allowlist;
+        if (config.skills_default !== undefined) state.skills_default = config.skills_default;
         if (config.isLoading !== undefined) state.isLoading = config.isLoading;
         if (config.error !== undefined) state.error = config.error;
       }),
@@ -93,5 +90,5 @@ export const useConfigStore = create<ConfigState>()(
         state.isLoading = false;
         state.error = null;
       }),
-  }))
+  })),
 );

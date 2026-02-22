@@ -37,28 +37,28 @@ fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<gsd_demo::models:
 fn create_project(
     app_state: State<Arc<AppState>>,
     project_path: String,
-    connection_id: Option<i64>,
+    connection_id: Option<i32>,
 ) -> Result<gsd_demo::models::Project, String> {
     gsd_demo::ipc::create_project(app_state, project_path, connection_id)
 }
 
 #[tauri::command]
-fn get_project(app_state: State<Arc<AppState>>, project_id: i64) -> Result<gsd_demo::models::Project, String> {
+fn get_project(app_state: State<Arc<AppState>>, project_id: i32) -> Result<gsd_demo::models::Project, String> {
     gsd_demo::ipc::get_project(project_id, app_state)
 }
 
 #[tauri::command]
-fn get_tasks(app_state: State<Arc<AppState>>, project_id: i64) -> Result<Vec<Task>, String> {
+fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
     gsd_demo::ipc::get_tasks(app_state, project_id)
 }
 
 #[tauri::command]
-fn create_task(app_state: State<Arc<AppState>>, project_id: i64, name: String, description: String, acceptance_criteria: String, skills: Vec<String>) -> Result<Task, String> {
+fn create_task(app_state: State<Arc<AppState>>, project_id: i32, name: String, description: String, acceptance_criteria: String, skills: Vec<String>) -> Result<Task, String> {
     gsd_demo::ipc::create_task(app_state, project_id, name, description, acceptance_criteria, skills)
 }
 
 #[tauri::command]
-fn update_task(app_state: State<Arc<AppState>>, task_id: i64, status: Option<String>, description: Option<String>) -> Result<Task, String> {
+fn update_task(app_state: State<Arc<AppState>>, task_id: i32, status: Option<String>, description: Option<String>) -> Result<Task, String> {
     gsd_demo::ipc::update_task(app_state, task_id, status, description)
 }
 
@@ -75,7 +75,7 @@ fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> Resu
 #[tauri::command]
 async fn sync_github_issues(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     owner: String,
     repo: String,
     token: String,
@@ -86,7 +86,7 @@ async fn sync_github_issues(
 #[tauri::command]
 async fn sync_jira_issues(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     host: String,
     email: String,
     api_token: String,
@@ -98,7 +98,7 @@ async fn sync_jira_issues(
 #[tauri::command]
 fn save_import_config(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     provider: String,
     config: serde_json::Value,
 ) -> Result<(), String> {
@@ -108,8 +108,8 @@ fn save_import_config(
 #[tauri::command]
 async fn lease_worktree(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     repo_path: String,
 ) -> Result<gsd_demo::models::Worktree, String> {
     gsd_demo::ipc::lease_worktree(app_state, project_id, task_id, repo_path).await
@@ -126,7 +126,7 @@ fn return_worktree(
 #[tauri::command]
 fn get_pool_status(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
 ) -> Result<gsd_demo::models::PoolStatus, String> {
     gsd_demo::ipc::get_pool_status(app_state, project_id)
 }
@@ -134,7 +134,7 @@ fn get_pool_status(
 #[tauri::command]
 async fn cleanup_worktree(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     worktree_id: i32,
     repo_path: String,
 ) -> Result<(), String> {
@@ -144,7 +144,7 @@ async fn cleanup_worktree(
 #[tauri::command]
 async fn recover_dirty_worktrees(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     repo_path: String,
 ) -> Result<Vec<i32>, String> {
     gsd_demo::ipc::recover_dirty_worktrees(app_state, project_id, repo_path).await
@@ -153,7 +153,7 @@ async fn recover_dirty_worktrees(
 #[tauri::command]
 fn initialize_worktree_pool(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     repo_path: String,
     pool_size: Option<i32>,
 ) -> Result<gsd_demo::models::PoolStatus, String> {
@@ -163,17 +163,17 @@ fn initialize_worktree_pool(
 #[tauri::command]
 async fn spawn_agent_execution(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     gsd_demo::ipc::spawn_agent_execution(app_state, project_id, task_id, repo_path).await
 }
 
 #[tauri::command]
 fn get_execution_logs(
     app_state: State<Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<Vec<gsd_demo::models::ExecutionLog>, String> {
     gsd_demo::ipc::get_execution_logs(app_state, task_id)
 }
@@ -181,10 +181,10 @@ fn get_execution_logs(
 #[tauri::command]
 async fn retry_execution(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i64,
-    task_id: i64,
+    project_id: i32,
+    task_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     gsd_demo::ipc::retry_execution(app_state, project_id, task_id, repo_path).await
 }
 
@@ -199,7 +199,7 @@ fn cancel_execution(
 #[tauri::command]
 async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     output_channel: tauri::ipc::Channel<String>,
     include_history: Option<bool>,
 ) -> Result<(), String> {
@@ -209,7 +209,7 @@ async fn attach_terminal(
 #[tauri::command]
 async fn send_terminal_input(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     input: String,
 ) -> Result<(), String> {
     gsd_demo::ipc::send_terminal_input(app_state, task_id, input).await
@@ -218,7 +218,7 @@ async fn send_terminal_input(
 #[tauri::command]
 async fn resize_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -228,7 +228,7 @@ async fn resize_terminal(
 #[tauri::command]
 async fn detach_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<(), String> {
     gsd_demo::ipc::detach_terminal(app_state, task_id).await
 }
@@ -236,7 +236,7 @@ async fn detach_terminal(
 #[tauri::command]
 async fn pause_agent_execution(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<(), String> {
     gsd_demo::ipc::pause_agent_execution(app_state, task_id).await
 }
@@ -244,17 +244,17 @@ async fn pause_agent_execution(
 #[tauri::command]
 async fn resume_agent_execution(
     state: State<'_, Arc<AppState>>,
-    task_id: i64,
-    project_id: i64,
+    task_id: i32,
+    project_id: i32,
     repo_path: String,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     gsd_demo::ipc::resume_agent_execution(state, task_id, project_id, repo_path).await
 }
 
 #[tauri::command]
 async fn append_terminal_output(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     output: String,
 ) -> Result<(), String> {
     gsd_demo::ipc::append_terminal_output(app_state, task_id, output).await
@@ -263,7 +263,7 @@ async fn append_terminal_output(
 #[tauri::command]
 async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<String, String> {
     gsd_demo::ipc::get_diff_for_review(app_state, task_id).await
 }
@@ -271,7 +271,7 @@ async fn get_diff_for_review(
 #[tauri::command]
 async fn save_task_review(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     decision: String,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
@@ -282,7 +282,7 @@ async fn save_task_review(
 #[tauri::command]
 async fn request_changes(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<serde_json::Value, String> {
@@ -292,7 +292,7 @@ async fn request_changes(
 #[tauri::command]
 async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
 ) -> Result<serde_json::Value, String> {
     gsd_demo::ipc::approve_task_and_merge(app_state, task_id).await
 }
@@ -300,7 +300,7 @@ async fn approve_task_and_merge(
 #[tauri::command]
 fn get_project_settings(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
 ) -> Result<gsd_demo::models::ProjectConfigResponse, String> {
     gsd_demo::ipc::get_project_settings(app_state, project_id)
 }
@@ -308,7 +308,7 @@ fn get_project_settings(
 #[tauri::command]
 fn update_project_settings(
     app_state: State<Arc<AppState>>,
-    project_id: i64,
+    project_id: i32,
     settings: gsd_demo::models::ProjectConfigRequest,
 ) -> Result<(), String> {
     gsd_demo::ipc::update_project_settings(app_state, project_id, settings)
@@ -317,7 +317,7 @@ fn update_project_settings(
 #[tauri::command]
 fn update_task_settings(
     app_state: State<Arc<AppState>>,
-    task_id: i64,
+    task_id: i32,
     settings: gsd_demo::models::TaskConfigRequest,
 ) -> Result<(), String> {
     gsd_demo::ipc::update_task_settings(app_state, task_id, settings)
@@ -333,7 +333,7 @@ fn get_ssh_connections(
 
 #[tauri::command]
 fn get_ssh_connection(
-    connection_id: i64,
+    connection_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<gsd_demo::ssh::session::SshConnection, String> {
     gsd_demo::ipc::ssh_handlers::get_ssh_connection(connection_id, app_state)
@@ -341,7 +341,7 @@ fn get_ssh_connection(
 
 #[tauri::command]
 async fn get_ssh_connection_status(
-    connection_id: i64,
+    connection_id: i32,
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<gsd_demo::models::ConnectionStatus, String> {
     gsd_demo::ipc::ssh_handlers::get_ssh_connection_status(connection_id, app_state).await
@@ -352,32 +352,32 @@ fn save_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_string: String,
     auth_method: gsd_demo::ssh::session::SshAuthMethod,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     gsd_demo::ipc::ssh_handlers::save_ssh_connection(app_state, connection_string, auth_method)
 }
 
 #[tauri::command]
 async fn connect_ssh_without_credentials(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
-) -> Result<i64, String> {
+    connection_id: i32,
+) -> Result<i32, String> {
     gsd_demo::ipc::ssh_handlers::connect_ssh_without_credentials(app_state, connection_id).await
 }
 
 #[tauri::command]
 async fn connect_ssh_with_password(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     password: String,
     save_password: bool,
-) -> Result<i64, String> {
+) -> Result<i32, String> {
     gsd_demo::ipc::ssh_handlers::connect_ssh_with_password(app_state, connection_id, password, save_password).await
 }
 
 #[tauri::command]
 async fn list_remote_directories(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     path: String,
 ) -> Result<Vec<String>, String> {
     gsd_demo::ipc::ssh_handlers::list_remote_directories(app_state, connection_id, path).await
@@ -408,7 +408,7 @@ fn get_system_accent_color() -> Result<Vec<u8>, String> {
 #[tauri::command]
 fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
 ) -> Result<(), String> {
     gsd_demo::ipc::ssh_handlers::delete_ssh_connection(app_state, connection_id)
 }
@@ -416,7 +416,7 @@ fn delete_ssh_connection(
 #[tauri::command]
 fn forget_saved_password(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
 ) -> Result<(), String> {
     gsd_demo::ipc::ssh_handlers::forget_saved_password(app_state, connection_id)
 }
@@ -424,32 +424,10 @@ fn forget_saved_password(
 #[tauri::command]
 fn rename_ssh_connection(
     app_state: State<Arc<AppState>>,
-    connection_id: i64,
+    connection_id: i32,
     display_name: String,
 ) -> Result<(), String> {
     gsd_demo::ipc::ssh_handlers::rename_ssh_connection(app_state, connection_id, display_name)
-}
-
-#[tauri::command]
-fn get_recent_projects_enhanced(
-    app_state: State<Arc<AppState>>
-) -> Result<Vec<gsd_demo::ipc::recent_projects_handlers::EnhancedRecentProject>, String> {
-    gsd_demo::ipc::get_recent_projects_enhanced(app_state)
-}
-
-#[tauri::command]
-fn validate_recent_projects(
-    app_state: State<Arc<AppState>>
-) -> Result<Vec<String>, String> {
-    gsd_demo::ipc::validate_recent_projects(app_state)
-}
-
-#[tauri::command]
-fn remove_recent_project(
-    app_state: State<Arc<AppState>>,
-    path: String,
-) -> Result<(), String> {
-    gsd_demo::ipc::remove_recent_project(app_state, path)
 }
 
 /// Setup hook for Tauri initialization
@@ -520,9 +498,6 @@ fn main() {
             update_project_settings,
             update_task_settings,
             get_ssh_connection_status,
-            get_recent_projects_enhanced,
-            validate_recent_projects,
-            remove_recent_project,
             get_ssh_connections,
             get_ssh_connection,
             save_ssh_connection,

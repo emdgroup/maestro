@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { invoke } from '../lib/tauri-mock';
-import { showErrorToast, showSuccessToast } from './ErrorToast';
+import { useState, useEffect } from "react";
+import { invoke } from "../lib/tauri-mock";
+import { showErrorToast, showSuccessToast } from "./ErrorToast";
 
 interface SyncButtonProps {
   projectId: number;
@@ -15,12 +15,12 @@ export function SyncButton({ projectId, onSyncComplete }: SyncButtonProps) {
   useEffect(() => {
     async function loadProvider() {
       try {
-        const settings = await invoke<any>('get_settings', {});
+        const settings = await invoke<any>("get_settings", {});
         if (settings?.import_provider) {
           setImportProvider(settings.import_provider);
         }
       } catch (error) {
-        console.error('Failed to load import settings:', error);
+        console.error("Failed to load import settings:", error);
       }
     }
 
@@ -29,7 +29,7 @@ export function SyncButton({ projectId, onSyncComplete }: SyncButtonProps) {
 
   async function handleSync() {
     if (!importProvider) {
-      showErrorToast('No import provider configured');
+      showErrorToast("No import provider configured");
       return;
     }
 
@@ -37,21 +37,21 @@ export function SyncButton({ projectId, onSyncComplete }: SyncButtonProps) {
     try {
       let result;
 
-      if (importProvider === 'github') {
+      if (importProvider === "github") {
         // In real app, retrieve stored GitHub config from settings
-        result = await invoke<any>('sync_github_issues', {
-          owner: 'example',
-          repo: 'example-repo',
-          token: 'token',
+        result = await invoke<any>("sync_github_issues", {
+          owner: "example",
+          repo: "example-repo",
+          token: "token",
           project_id: projectId,
         });
-      } else if (importProvider === 'jira') {
+      } else if (importProvider === "jira") {
         // In real app, retrieve stored Jira config from settings
-        result = await invoke<any>('sync_jira_issues', {
-          host: 'example.atlassian.net',
-          email: 'user@example.com',
-          token: 'token',
-          jql: 'status = Open',
+        result = await invoke<any>("sync_jira_issues", {
+          host: "example.atlassian.net",
+          email: "user@example.com",
+          token: "token",
+          jql: "status = Open",
           project_id: projectId,
         });
       }
@@ -64,7 +64,7 @@ export function SyncButton({ projectId, onSyncComplete }: SyncButtonProps) {
         onSyncComplete();
       }
     } catch (error: any) {
-      showErrorToast(error?.message || 'Sync failed');
+      showErrorToast(error?.message || "Sync failed");
     } finally {
       setIsLoading(false);
     }
@@ -73,11 +73,7 @@ export function SyncButton({ projectId, onSyncComplete }: SyncButtonProps) {
   // If no provider configured, show disabled button
   if (!importProvider) {
     return (
-      <button
-        className="btn-sync"
-        disabled
-        title="Configure import settings first"
-      >
+      <button className="btn-sync" disabled title="Configure import settings first">
         Configure Import
       </button>
     );

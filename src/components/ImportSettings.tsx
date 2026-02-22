@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { invoke } from '../lib/tauri-mock';
-import { showErrorToast, showSuccessToast } from './ErrorToast';
+import { useState } from "react";
+import { invoke } from "../lib/tauri-mock";
+import { showErrorToast, showSuccessToast } from "./ErrorToast";
 
 interface ImportSettingsProps {
   isOpen: boolean;
@@ -8,22 +8,22 @@ interface ImportSettingsProps {
   onConfigSaved: () => void;
 }
 
-type Provider = 'github' | 'jira' | null;
+type Provider = "github" | "jira" | null;
 
 export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSettingsProps) {
-  const [provider, setProvider] = useState<Provider>('github');
+  const [provider, setProvider] = useState<Provider>("github");
   const [testing, setTesting] = useState(false);
 
   // GitHub form fields
-  const [githubOwner, setGithubOwner] = useState('');
-  const [githubRepo, setGithubRepo] = useState('');
-  const [githubToken, setGithubToken] = useState('');
+  const [githubOwner, setGithubOwner] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
+  const [githubToken, setGithubToken] = useState("");
 
   // Jira form fields
-  const [jiraHost, setJiraHost] = useState('');
-  const [jiraEmail, setJiraEmail] = useState('');
-  const [jiraToken, setJiraToken] = useState('');
-  const [jiraJql, setJiraJql] = useState('');
+  const [jiraHost, setJiraHost] = useState("");
+  const [jiraEmail, setJiraEmail] = useState("");
+  const [jiraToken, setJiraToken] = useState("");
+  const [jiraJql, setJiraJql] = useState("");
 
   if (!isOpen) {
     return null;
@@ -31,20 +31,20 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
 
   async function handleTestConnection() {
     if (!provider) {
-      showErrorToast('Please select a provider');
+      showErrorToast("Please select a provider");
       return;
     }
 
     setTesting(true);
     try {
-      if (provider === 'github') {
+      if (provider === "github") {
         if (!githubOwner || !githubRepo || !githubToken) {
-          showErrorToast('Please fill in all GitHub fields');
+          showErrorToast("Please fill in all GitHub fields");
           setTesting(false);
           return;
         }
 
-        const result = await invoke<any>('sync_github_issues', {
+        const result = await invoke<any>("sync_github_issues", {
           owner: githubOwner,
           repo: githubRepo,
           token: githubToken,
@@ -54,31 +54,31 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
         if (result.error_message) {
           showErrorToast(`GitHub error: ${result.error_message}`);
         } else {
-          showSuccessToast('Successfully connected to GitHub');
+          showSuccessToast("Successfully connected to GitHub");
         }
-      } else if (provider === 'jira') {
+      } else if (provider === "jira") {
         if (!jiraHost || !jiraEmail || !jiraToken) {
-          showErrorToast('Please fill in all Jira fields');
+          showErrorToast("Please fill in all Jira fields");
           setTesting(false);
           return;
         }
 
-        const result = await invoke<any>('sync_jira_issues', {
+        const result = await invoke<any>("sync_jira_issues", {
           host: jiraHost,
           email: jiraEmail,
           token: jiraToken,
-          jql: jiraJql || 'status = Open',
+          jql: jiraJql || "status = Open",
           project_id: 1,
         });
 
         if (result.error_message) {
           showErrorToast(`Jira error: ${result.error_message}`);
         } else {
-          showSuccessToast('Successfully connected to Jira');
+          showSuccessToast("Successfully connected to Jira");
         }
       }
     } catch (error: any) {
-      showErrorToast(error?.message || 'Connection test failed');
+      showErrorToast(error?.message || "Connection test failed");
     } finally {
       setTesting(false);
     }
@@ -86,47 +86,47 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
 
   async function handleSave() {
     if (!provider) {
-      showErrorToast('Please select a provider');
+      showErrorToast("Please select a provider");
       return;
     }
 
     try {
-      if (provider === 'github') {
+      if (provider === "github") {
         if (!githubOwner || !githubRepo || !githubToken) {
-          showErrorToast('Please fill in all GitHub fields');
+          showErrorToast("Please fill in all GitHub fields");
           return;
         }
 
-        await invoke('save_import_config', {
-          provider: 'github',
+        await invoke("save_import_config", {
+          provider: "github",
           config: {
             owner: githubOwner,
             repo: githubRepo,
             token: githubToken,
           },
         });
-      } else if (provider === 'jira') {
+      } else if (provider === "jira") {
         if (!jiraHost || !jiraEmail || !jiraToken) {
-          showErrorToast('Please fill in all Jira fields');
+          showErrorToast("Please fill in all Jira fields");
           return;
         }
 
-        await invoke('save_import_config', {
-          provider: 'jira',
+        await invoke("save_import_config", {
+          provider: "jira",
           config: {
             host: jiraHost,
             email: jiraEmail,
             token: jiraToken,
-            jql: jiraJql || 'status = Open',
+            jql: jiraJql || "status = Open",
           },
         });
       }
 
-      showSuccessToast('Import configuration saved');
+      showSuccessToast("Import configuration saved");
       onConfigSaved();
       onClose();
     } catch (error: any) {
-      showErrorToast(error?.message || 'Failed to save configuration');
+      showErrorToast(error?.message || "Failed to save configuration");
     }
   }
 
@@ -135,11 +135,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
       <div className="import-settings-modal">
         <div className="modal-header">
           <h2>Import Settings</h2>
-          <button
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
@@ -152,7 +148,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                 type="radio"
                 name="provider"
                 value="github"
-                checked={provider === 'github'}
+                checked={provider === "github"}
                 onChange={(e) => setProvider(e.target.value as Provider)}
               />
               GitHub
@@ -162,7 +158,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                 type="radio"
                 name="provider"
                 value="jira"
-                checked={provider === 'jira'}
+                checked={provider === "jira"}
                 onChange={(e) => setProvider(e.target.value as Provider)}
               />
               Jira
@@ -170,7 +166,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
           </div>
 
           {/* GitHub Form */}
-          {provider === 'github' && (
+          {provider === "github" && (
             <div className="form-section">
               <div className="form-group">
                 <label htmlFor="github-owner">Repository Owner</label>
@@ -209,7 +205,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
           )}
 
           {/* Jira Form */}
-          {provider === 'jira' && (
+          {provider === "jira" && (
             <div className="form-section">
               <div className="form-group">
                 <label htmlFor="jira-host">Jira Host</label>
@@ -260,25 +256,13 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
         </div>
 
         <div className="modal-footer">
-          <button
-            className="btn-test"
-            onClick={handleTestConnection}
-            disabled={testing}
-          >
-            {testing ? 'Testing...' : 'Test Connection'}
+          <button className="btn-test" onClick={handleTestConnection} disabled={testing}>
+            {testing ? "Testing..." : "Test Connection"}
           </button>
-          <button
-            className="btn-save"
-            onClick={handleSave}
-            disabled={testing}
-          >
+          <button className="btn-save" onClick={handleSave} disabled={testing}>
             Save
           </button>
-          <button
-            className="btn-cancel"
-            onClick={onClose}
-            disabled={testing}
-          >
+          <button className="btn-cancel" onClick={onClose} disabled={testing}>
             Cancel
           </button>
         </div>

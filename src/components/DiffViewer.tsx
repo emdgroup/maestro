@@ -10,11 +10,7 @@ interface DiffViewerProps {
   error?: string;
 }
 
-export const DiffViewer: React.FC<DiffViewerProps> = ({
-  diffFile,
-  loading,
-  error,
-}) => {
+export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error }) => {
   const [highlighter, setHighlighter] = useState<any>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
 
@@ -27,7 +23,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       } catch (err) {
         console.error("Failed to load highlighter:", err);
         setHighlighterError(
-          err instanceof Error ? err.message : "Failed to load syntax highlighter"
+          err instanceof Error ? err.message : "Failed to load syntax highlighter",
         );
       }
     };

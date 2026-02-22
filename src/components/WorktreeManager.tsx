@@ -13,10 +13,7 @@ interface WorktreeManagerProps {
   onWorktreeClick?: (worktreeId: number) => void;
 }
 
-export function WorktreeManager({
-  worktrees = [],
-  onWorktreeClick,
-}: WorktreeManagerProps) {
+export function WorktreeManager({ worktrees = [], onWorktreeClick }: WorktreeManagerProps) {
   // Placeholder worktrees for demonstration
   const placeholderWorktrees: WorktreeInfo[] = [
     {

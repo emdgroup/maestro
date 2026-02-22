@@ -19,7 +19,7 @@ use crate::ssh::PasswordManager;
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SshConnection {
-    pub id: i64,
+    pub id: i32,
     pub connection_string: String,  // e.g., "user@host:22"
     pub username: String,
     pub host: String,

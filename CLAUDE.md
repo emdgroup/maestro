@@ -11,6 +11,7 @@ See `.planning/PROJECT.md` for detailed project goals, current milestone progres
 ## Development Commands
 
 ### Frontend Development
+
 ```bash
 pnpm dev              # Start Vite dev server (port 5173)
 pnpm build            # Build frontend (outputs to dist/)
@@ -18,12 +19,14 @@ pnpm preview          # Preview production build
 ```
 
 ### Tauri Development
+
 ```bash
 pnpm tauri:dev        # Run Tauri app in dev mode (starts Vite + Tauri)
 pnpm tauri build      # Build production Tauri app
 ```
 
 ### Rust Backend
+
 ```bash
 cd src-tauri
 cargo build           # Build Rust backend
@@ -34,6 +37,7 @@ cargo check           # Check compilation without building
 ## Architecture
 
 ### Tech Stack
+
 - **Frontend**: React 19 + TypeScript, Vite build
 - **Backend**: Tauri 2 (Rust), SQLite for persistence
 - **State Management**: Zustand with Immer middleware
@@ -43,12 +47,14 @@ cargo check           # Check compilation without building
 ### Code Structure
 
 **Frontend (`src/`):**
+
 - `App.tsx` - Main app component, handles project selection flow and settings
 - `components/` - React components (KanbanBoard, TaskCard, TaskModal, ProjectPicker, etc.)
 - `store/boardStore.ts` - Zustand store for task state management with Immer
 - `types/bindings.ts` - Auto-generated TypeScript types from Rust (via ts-rs)
 
 **Backend (`src-tauri/src/`):**
+
 - `lib.rs` - Library entry point, re-exports all public modules
 - `main.rs` - Tauri app entry point, registers IPC handlers
 - `db/` - Database layer (SQLite connection, schema, settings)
@@ -68,6 +74,7 @@ cargo check           # Check compilation without building
 ### Database Schema
 
 SQLite database with foreign key constraints enabled:
+
 - **projects** - Project metadata (id, name, path, timestamps)
 - **tasks** - Tasks with status, skills, acceptance criteria (references project_id)
 - **worktrees** - Git worktree instances (references project_id)
@@ -83,6 +90,7 @@ Rust structs with `#[derive(TS)]` → auto-generate TypeScript types in `src/typ
 ### IPC Communication
 
 Frontend invokes Rust commands via `@tauri-apps/api/core`:
+
 ```typescript
 import { invoke } from "@tauri-apps/api/core";
 const tasks = await invoke<Task[]>("get_tasks", { projectId: 1 });
@@ -93,22 +101,27 @@ Rust handlers in `src-tauri/src/ipc/handlers.rs` are marked with `#[tauri::comma
 ## Key Patterns
 
 ### State Management
+
 - Use Zustand with Immer middleware for state updates (see `boardStore.ts`)
 - Immer allows direct state mutations in reducers (proxied to immutable updates)
 - Store provides action methods (loadTasks, updateTaskStatus, addTask) and selector methods (getTasks, getTasksByStatus)
 
 ### Tauri State
+
 - `AppState` contains Mutex-wrapped SQLite connection
 - Injected into IPC handlers via `State<Arc<AppState>>`
 - Always lock the mutex before database operations
 
 ### Error Handling
+
 - Rust functions return `Result<T, String>` for IPC commands
 - Database errors are mapped to strings for Tauri serialization
 - Frontend displays errors in console (consider adding user-facing error UI)
 
 ### Type Generation Workflow
+
 When modifying Rust models:
+
 1. Add/update struct with `#[derive(Serialize, Deserialize, TS)]` and `#[ts(export)]`
 2. Configure export directory in `Cargo.toml`: `export_dir = "../src/types"`
 3. Build the Rust project (`cargo build`) to generate TypeScript types
@@ -116,6 +129,7 @@ When modifying Rust models:
 5. Import and use in React components
 
 ### Database Migrations
+
 - Schema version tracked via `PRAGMA user_version`
 - Current version: `SCHEMA_VERSION = 1` in `src-tauri/src/db/schema.rs`
 - Schema initialization checks version and applies migrations on first run
@@ -130,6 +144,7 @@ When modifying Rust models:
 **Why this matters:** Development uses mock IPC handlers to test without Tauri runtime. Production builds must exclude all mock code to avoid bundling unnecessary code.
 
 **Implementation:**
+
 - All mock invoke functions and mockDB are wrapped in `if (import.meta.env.DEV) { ... }`
 - Vite statically replaces `import.meta.env.DEV` with `true` during dev, `false` during production build
 - Tree-shaking removes `if (false)` branches entirely from production bundle
@@ -144,17 +159,20 @@ When modifying Rust models:
 ## Project Conventions
 
 ### File Organization
+
 - React components in `src/components/` (PascalCase filenames)
 - Rust modules use snake_case filenames
 - Store files in `src/store/` (camelCase with "Store" suffix)
 - Generated types in `src/types/`
 
 ### Naming
+
 - Rust: snake_case for functions/variables, PascalCase for types/enums
 - TypeScript/React: camelCase for functions/variables, PascalCase for components/types
 - Database: snake_case for tables and columns
 
 ### Status Enums
+
 - TaskStatus: Backlog, Ready, InProgress, Review, Done
 - Serialized as PascalCase in JSON (`#[serde(rename_all = "PascalCase")]`)
 - Used for Kanban column organization

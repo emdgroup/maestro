@@ -69,24 +69,24 @@ export function useSshConnectionManager() {
         connectionId,
       });
     } catch (error) {
-      console.log("Credential-less connection failed, showing password modal");
+      console.log("Credential-less connection failed, showing password modal", error);
       // Show password modal on auth failure
       setShowPasswordModal(true);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  const handleConnection = useCallback(async (connection?: Connection) => {
-    const conn = connection || activeConnection;
-    console.log({activeConnection: conn});
-    if (!conn) return;
-    console.log(`Selected SSH connection: ${conn.displayName}`);
-    const sshConn = conn.sshConnection;
-    if (!sshConn) return;
-    await initiateConnection(sshConn.id);
-    toast.success(`Connected to ${sshConn.connection_string}`);
-  }, [activeConnection]);
+  const handleConnection = useCallback(
+    async (connection?: Connection) => {
+      const conn = connection || activeConnection;
+      if (!conn?.sshConnection) return;
+      const { sshConnection } = conn;
+      await initiateConnection(sshConnection.id);
+      toast.success(`Connected to ${sshConnection.connection_string}`);
+    },
+    [activeConnection],
+  );
 
   /**
    * Handle new SSH connection creation
@@ -109,8 +109,8 @@ export function useSshConnectionManager() {
         type: "ssh",
         id: connectionId,
         displayName: sshConnection.display_name || sshConnection.connection_string,
-        sshConnection
-      })
+        sshConnection,
+      });
       await initiateConnection(connectionId);
     } catch (error) {
       toast.error(`Failed to save connection: ${error}`);
@@ -123,32 +123,35 @@ export function useSshConnectionManager() {
   /**
    * Handle password authentication submission
    */
-  const handlePasswordSubmit = useCallback(async (password: string, savePassword: boolean) => {
-    if (!activeConnection || !activeConnection.sshConnection) return;
+  const handlePasswordSubmit = useCallback(
+    async (password: string, savePassword: boolean) => {
+      if (!activeConnection || !activeConnection.sshConnection) return;
 
-    const sshConn = activeConnection.sshConnection;
-    setLoading(true);
-    try {
-      await safeInvoke("connect_ssh_with_password", {
-        connectionId: sshConn.id,
-        password,
-        savePassword,
-      });
+      const sshConn = activeConnection.sshConnection;
+      setLoading(true);
+      try {
+        await safeInvoke("connect_ssh_with_password", {
+          connectionId: sshConn.id,
+          password,
+          savePassword,
+        });
 
-      toast.success(`Connected to ${sshConn.connection_string}`);
-      setShowPasswordModal(false);
+        toast.success(`Connected to ${sshConn.connection_string}`);
+        setShowPasswordModal(false);
 
-      // Reload connections list (connection now appears after successful auth)
-      await loadSshConnections();
+        // Reload connections list (connection now appears after successful auth)
+        await loadSshConnections();
 
-      return { success: true };
-    } catch (error) {
-      toast.error(`Authentication failed: ${error}`);
-      return { success: false };
-    } finally {
-      setLoading(false);
-    }
-  }, [activeConnection, loadSshConnections]);
+        return { success: true };
+      } catch (error) {
+        toast.error(`Authentication failed: ${error}`);
+        return { success: false };
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeConnection, loadSshConnections],
+  );
 
   /**
    * Handle password modal cancellation
@@ -175,8 +178,8 @@ export function useSshConnectionManager() {
 
       return { success: true };
     } catch (error) {
+      console.error(error);
       toast.error(`Failed to remove ${sshConn.display_name} from connections`);
-
       return { success: false };
     } finally {
       setLoading(false);
@@ -200,6 +203,7 @@ export function useSshConnectionManager() {
 
       return { success: true };
     } catch (error) {
+      console.error(error);
       toast.error(`Failed to remove ${sshConn.display_name} password`);
       return { success: false };
     } finally {
