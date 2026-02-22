@@ -15,7 +15,8 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 15: Component & Design System** - Migrate components, establish design tokens
 - [x] **Phase 16: Page Redesigns** - Modernize all major application pages
 - [x] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
-- [ ] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
+- [x] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
+- [ ] **Phase 18: Maestro Folder Architecture & Rebranding** - Migrate to project-local .maestro folder for state/settings, rename project to Maestro
 
 ## Phase Details
 
@@ -165,10 +166,70 @@ Plans:
 
 ---
 
+### Phase 18: Maestro Folder Architecture & Rebranding
+
+**Goal**: Shift from database-centric to project-local storage model with .maestro folder containing project state and settings; rebrand application from "GSD Orchestrator" to "Maestro"
+
+**Depends on**: Phase 17.1
+
+**Requirements**: None (architectural improvement)
+
+**Success Criteria** (what must be TRUE):
+  1. When creating a project, a `.maestro/` folder is created at project root
+  2. Project-specific settings stored as JSON file in `.maestro/settings.json`
+  3. Project state (tasks, worktrees, execution logs) migrated from database to `.maestro/` folder
+  4. Global settings (appearance, theme) remain in database (not project-specific)
+  5. When opening a project with existing `.maestro/` folder, content is loaded automatically
+  6. All references to "GSD Orchestrator" renamed to "Maestro" in UI, docs, and code
+  7. Backwards compatibility: existing projects without `.maestro/` folder are migrated automatically
+
+**Plans**: 6 plans
+
+Plans:
+- [ ] 18-01-PLAN.md — Create ProjectConfig and ProjectState Rust models with JSON serialization
+- [ ] 18-02-PLAN.md — Implement file I/O layer (project_storage.rs) for .maestro folder operations
+- [ ] 18-03-PLAN.md — Update database schema to track migration status with migrated_at column
+- [ ] 18-04-PLAN.md — Implement automatic migration logic with idempotency detection
+- [ ] 18-05-PLAN.md — Rebrand application from GSD Orchestrator to Maestro (tauri.conf.json, Cargo.toml, docs)
+- [ ] 18-06-PLAN.md — Integrate .maestro initialization into project creation and migration triggering on project open
+
+**Details:**
+
+This phase represents a fundamental architectural shift:
+
+**Current Architecture:**
+- All project state stored in SQLite database in app data directory
+- Projects reference external folder paths
+- Settings stored globally in database
+
+**New Architecture:**
+- Each project folder contains `.maestro/` directory with:
+  - `settings.json` - project-specific settings
+  - `state.json` or similar - task state, worktree state
+  - `logs/` - execution logs (optional design)
+- Global database retains only:
+  - Appearance settings (theme, UI preferences)
+  - Recent projects list (paths to .maestro folders)
+- Opening a project = loading from `.maestro/` folder
+- Creating a project = initializing `.maestro/` folder structure
+
+**Rebranding:**
+- "GSD Orchestrator" → "Maestro" everywhere
+- Window titles, app name, documentation, code comments
+- Keep technical references to "gsd" in folder names (`.planning/`, command names) for consistency
+
+**Migration Strategy:**
+- Detect projects without `.maestro/` folder
+- Export current state from database
+- Initialize `.maestro/` folder with migrated data
+- Update project path references
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
@@ -178,8 +239,9 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1
 | 16 - Page Redesigns | 2 | Complete | 2026-02-10 |
 | 17 - Polish & Testing | 2 | Complete | 2026-02-10 |
 | 17.1 - Critical UI Fixes (INSERTED) | 4 | Complete | 2026-02-11 |
+| 18 - Maestro Folder Architecture & Rebranding | 6 | Planned | - |
 
-**Total v1.1 work:** 17 plans across 6 phases (13 original + 4 from urgent insertion Phase 17.1)
+**Total v1.1 work:** 23 plans across 7 phases (13 original + 4 from urgent insertion Phase 17.1 + 6 from Phase 18)
 
 ---
 
