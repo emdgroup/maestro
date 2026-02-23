@@ -1,5 +1,5 @@
 use std::path::Path;
-use crate::models::{ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot};
+use crate::models::{ProjectConfig, ProjectState};
 
 /// Initialize the .maestro directory structure for a project
 ///
