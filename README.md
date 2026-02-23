@@ -1,6 +1,6 @@
-# Tauri + React + Typescript
+# Maestro
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Maestro is a Tauri desktop application for orchestrating autonomous AI coding agents. This is the development version built with React, TypeScript, and Vite on the frontend, and Rust with Tauri on the backend.
 
 ## Recommended IDE Setup
 

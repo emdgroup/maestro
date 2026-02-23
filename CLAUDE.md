@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**GSD Agent Orchestrator** - A Tauri desktop app for orchestrating autonomous AI coding agents. Users manage tasks on a Kanban board, agents execute them in isolated git worktrees with real-time monitoring. Built with React + TypeScript (frontend) and Rust (backend).
+**Maestro** - A Tauri desktop app for orchestrating autonomous AI coding agents. Users manage tasks on a Kanban board, agents execute them in isolated git worktrees with real-time monitoring. Built with React + TypeScript (frontend) and Rust (backend).
 
 See `.planning/PROJECT.md` for detailed project goals, current milestone progress, and requirements.
 

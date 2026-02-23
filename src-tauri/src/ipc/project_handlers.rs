@@ -3,7 +3,7 @@ use tauri::State;
 use chrono::Utc;
 
 use crate::models::{Project, Task, TaskStatus};
-use crate::db::AppState;
+use crate::db::{AppState, project_storage};
 
 /// Get list of all projects
 #[tauri::command]
@@ -84,6 +84,11 @@ pub fn create_project(
             conn.last_insert_rowid() as i32
         })
     };
+
+    // Initialize .maestro folder structure for project-local storage
+    // (Phase 18 architectural change: state stored locally, not in global database)
+    project_storage::create_project_maestro_folder(&path)
+        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
 
     let project = get_project(project_id, app_state).map_err(|e| e.to_string())?;
     Ok(project)

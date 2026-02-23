@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GSD Agent Orchestrator",
+  "productName": "Maestro",
   "version": "0.1.0",
-  "identifier": "com.gsd.orchestrator",
+  "identifier": "com.maestro.app",
   "build": {
     "beforeDevCommand": "pnpm dev --host",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "GSD Agent Orchestrator",
+        "title": "Maestro",
         "width": 1200,
         "height": 800,
         "resizable": true,
