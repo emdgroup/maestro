@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExecutionLog } from "../types/bindings";
 import { showErrorToast, showSuccessToast } from "./ErrorToast";
@@ -50,14 +50,7 @@ export function ExecutionHistory({
   const previousLogsRef = useRef<ExecutionLog[]>([]);
   const store = useBoardStore();
 
-  useEffect(() => {
-    loadExecutionLogs();
-    // Poll for execution status changes every 5 seconds
-    const interval = setInterval(loadExecutionLogs, 5000);
-    return () => clearInterval(interval);
-  }, [taskId]);
-
-  const loadExecutionLogs = async () => {
+  const loadExecutionLogs = useCallback(async () => {
     try {
       if (loading) {
         // Only show loading state on initial load, not on polling
@@ -109,7 +102,14 @@ export function ExecutionHistory({
         setLoading(false);
       }
     }
-  };
+  }, [loading, taskName, selectedLogId, taskId]);
+
+  useEffect(() => {
+    void loadExecutionLogs();
+    // Poll for execution status changes every 5 seconds
+    const interval = setInterval(loadExecutionLogs, 5000);
+    return () => clearInterval(interval);
+  }, [taskId, loadExecutionLogs]);
 
   const handleRetry = async () => {
     try {

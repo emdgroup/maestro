@@ -7,6 +7,8 @@ pub mod sync;
 pub mod review;
 pub mod merge_outcome;
 pub mod connection;
+pub mod project_config;
+pub mod project_state;
 
 pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
@@ -17,3 +19,5 @@ pub use settings::AppSettings;
 pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraFields};
 pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest};
 pub use merge_outcome::MergeOutcome;
+pub use project_config::ProjectConfig;
+pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};

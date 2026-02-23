@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 
 interface ExecutionTerminalProps {
@@ -25,6 +25,15 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [terminalOutput]);
+
+  const detachTerminal = useCallback(async () => {
+    try {
+      await invoke("detach_terminal", { taskId: taskId });
+      console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
+    } catch (err) {
+      console.error("Detach terminal error:", err);
+    }
+  }, [taskId]);
 
   // Attach to terminal and set up streaming
   useEffect(() => {
@@ -62,22 +71,13 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       }
     };
 
-    attachTerminal();
+    void attachTerminal();
 
     return () => {
       // Clean up channel and detach when component unmounts
-      detachTerminal();
+      void detachTerminal();
     };
-  }, [isActive, taskId]);
-
-  const detachTerminal = async () => {
-    try {
-      await invoke("detach_terminal", { taskId: taskId });
-      console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
-    } catch (err) {
-      console.error("Detach terminal error:", err);
-    }
-  };
+  }, [isActive, taskId, detachTerminal]);
 
   const handleSendInput = async () => {
     if (!inputValue) return;

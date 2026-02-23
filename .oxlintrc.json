@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": null,
+  "plugins": ["react", "react-perf", "vitest"],
   "categories": {},
   "rules": {},
   "settings": {
@@ -39,10 +39,6 @@
   "ignorePatterns": [
     ".claude/*",
     "sidecar/*",
-    ".planning/*",
-    ".visual-tests/*",
-    "docs/*",
-    "exemple/*",
-    "github-analysis/*"
+    ".planning/*"
   ]
 }

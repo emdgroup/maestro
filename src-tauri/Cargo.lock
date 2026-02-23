@@ -1538,29 +1538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gsd-demo"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "keyring",
- "portable-pty",
- "reqwest 0.11.27",
- "rusqlite",
- "serde",
- "serde_json",
- "ssh2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tokio",
- "ts-rs",
- "windows 0.58.0",
- "zeroize",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2384,6 +2361,29 @@ name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
+
+[[package]]
+name = "maestro"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "keyring",
+ "portable-pty",
+ "reqwest 0.11.27",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "ssh2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tokio",
+ "ts-rs",
+ "windows 0.58.0",
+ "zeroize",
+]
 
 [[package]]
 name = "markup5ever"

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
@@ -31,6 +31,129 @@ export function FilePicker({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
 
   const directoryButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+
+  // Filter directories based on showHidden toggle
+  const visibleDirectories = showHidden
+    ? directories
+    : directories.filter((dir) => !dir.startsWith("."));
+
+  const handleDirectoryClick = useCallback(
+    (dirName: string) => {
+      // Handle drive selection on Windows
+      if (currentPath === DRIVES_ROOT) {
+        setCurrentPath(dirName);
+        return;
+      }
+
+      // Handle normal directory navigation
+      let newPath: string;
+
+      // Check if current path is a drive root (e.g., "C:/")
+      if (/^[A-Z]:\/$/i.test(currentPath)) {
+        newPath = `${currentPath}${dirName}`;
+      } else if (currentPath === "/") {
+        newPath = `/${dirName}`;
+      } else {
+        newPath = `${currentPath}/${dirName}`;
+      }
+
+      setCurrentPath(newPath);
+    },
+    [currentPath],
+  );
+
+  const handleParentDirectory = useCallback(() => {
+    // Special case: at drives root, can't go up
+    if (currentPath === DRIVES_ROOT) {
+      return;
+    }
+
+    // Check if we're at a drive root on Windows (e.g., "C:/")
+    if (isLocal && drives.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
+      // Go back to drives list
+      setCurrentPath(DRIVES_ROOT);
+      return;
+    }
+
+    // Unix-style or nested Windows path
+    const parts = currentPath.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      parts.pop();
+
+      // Check if after popping, we have a drive letter (e.g., ["C:"])
+      if (parts.length === 1 && /^[A-Z]:$/i.test(parts[0])) {
+        setCurrentPath(`${parts[0]}/`);
+      } else if (parts.length === 0) {
+        // No parts left, go to root
+        setCurrentPath("/");
+      } else {
+        // Check if first part is a Windows drive letter
+        const isWindowsPath = /^[A-Z]:$/i.test(parts[0]);
+        const newPath = isWindowsPath ? parts.join("/") : "/" + parts.join("/");
+        setCurrentPath(newPath);
+      }
+    }
+  }, [isLocal, currentPath, drives]);
+
+  const loadDirectories = useCallback(
+    async (path: string) => {
+      // Special case: show drives on Windows when at drives root
+      if (path === DRIVES_ROOT) {
+        setDirectories([]);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        if (isLocal) {
+          const dirs = await safeInvoke<string[]>("list_local_directories", {
+            path,
+          });
+          setDirectories(dirs);
+        } else {
+          const dirs = await safeInvoke<string[]>("list_remote_directories", {
+            connectionId: connection!.id,
+            path,
+          });
+          setDirectories(dirs);
+        }
+      } catch (error) {
+        toast.error(`Failed to list directories: ${error}`);
+        setDirectories([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isLocal, connection?.id],
+  );
+
+  const handleBreadcrumbClick = useCallback(
+    (index: number) => {
+      if (index === -1) {
+        // Root click - on Windows with drives, go to drives root
+        if (isLocal && drives.length > 0) {
+          setCurrentPath(DRIVES_ROOT);
+        } else {
+          setCurrentPath("/");
+        }
+        return;
+      }
+
+      const parts = currentPath.split("/").filter(Boolean);
+      const selectedPart = parts.slice(0, index + 1);
+
+      // Check if we're clicking on a drive letter
+      if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
+        setCurrentPath(`${selectedPart[0]}/`);
+      } else {
+        // Check if first part is a Windows drive letter
+        const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
+        const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
+        setCurrentPath(newPath);
+      }
+    },
+    [isLocal, drives, currentPath],
+  );
 
   // Initialize default path on mount
   useEffect(() => {
@@ -78,7 +201,7 @@ export function FilePicker({
       void loadDirectories(currentPath);
       setSelectedIndex(-1); // Reset selection when path changes
     }
-  }, [currentPath, isInitialized]);
+  }, [currentPath, isInitialized, loadDirectories]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -121,7 +244,17 @@ export function FilePicker({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIndex, currentPath, drives, directories, showHidden, isLocal]);
+  }, [
+    selectedIndex,
+    currentPath,
+    drives,
+    directories,
+    showHidden,
+    isLocal,
+    handleDirectoryClick,
+    handleParentDirectory,
+    visibleDirectories,
+  ]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -133,124 +266,10 @@ export function FilePicker({
     }
   }, [selectedIndex]);
 
-  async function loadDirectories(path: string) {
-    // Special case: show drives on Windows when at drives root
-    if (path === DRIVES_ROOT) {
-      setDirectories([]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      if (isLocal) {
-        const dirs = await safeInvoke<string[]>("list_local_directories", {
-          path,
-        });
-        setDirectories(dirs);
-      } else {
-        const dirs = await safeInvoke<string[]>("list_remote_directories", {
-          connectionId: connection!.id,
-          path,
-        });
-        setDirectories(dirs);
-      }
-    } catch (error) {
-      toast.error(`Failed to list directories: ${error}`);
-      setDirectories([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleDirectoryClick(dirName: string) {
-    // Handle drive selection on Windows
-    if (currentPath === DRIVES_ROOT) {
-      setCurrentPath(dirName);
-      return;
-    }
-
-    // Handle normal directory navigation
-    let newPath: string;
-
-    // Check if current path is a drive root (e.g., "C:/")
-    if (/^[A-Z]:\/$/i.test(currentPath)) {
-      newPath = `${currentPath}${dirName}`;
-    } else if (currentPath === "/") {
-      newPath = `/${dirName}`;
-    } else {
-      newPath = `${currentPath}/${dirName}`;
-    }
-
-    setCurrentPath(newPath);
-  }
-
-  function handleParentDirectory() {
-    // Special case: at drives root, can't go up
-    if (currentPath === DRIVES_ROOT) {
-      return;
-    }
-
-    // Check if we're at a drive root on Windows (e.g., "C:/")
-    if (isLocal && drives.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
-      // Go back to drives list
-      setCurrentPath(DRIVES_ROOT);
-      return;
-    }
-
-    // Unix-style or nested Windows path
-    const parts = currentPath.split("/").filter(Boolean);
-    if (parts.length > 0) {
-      parts.pop();
-
-      // Check if after popping, we have a drive letter (e.g., ["C:"])
-      if (parts.length === 1 && /^[A-Z]:$/i.test(parts[0])) {
-        setCurrentPath(`${parts[0]}/`);
-      } else if (parts.length === 0) {
-        // No parts left, go to root
-        setCurrentPath("/");
-      } else {
-        // Check if first part is a Windows drive letter
-        const isWindowsPath = /^[A-Z]:$/i.test(parts[0]);
-        const newPath = isWindowsPath ? parts.join("/") : "/" + parts.join("/");
-        setCurrentPath(newPath);
-      }
-    }
-  }
-
-  function handleBreadcrumbClick(index: number) {
-    if (index === -1) {
-      // Root click - on Windows with drives, go to drives root
-      if (isLocal && drives.length > 0) {
-        setCurrentPath(DRIVES_ROOT);
-      } else {
-        setCurrentPath("/");
-      }
-      return;
-    }
-
-    const parts = currentPath.split("/").filter(Boolean);
-    const selectedPart = parts.slice(0, index + 1);
-
-    // Check if we're clicking on a drive letter
-    if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
-      setCurrentPath(`${selectedPart[0]}/`);
-    } else {
-      // Check if first part is a Windows drive letter
-      const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
-      const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
-      setCurrentPath(newPath);
-    }
-  }
-
   function handleSelectCurrentDirectory() {
     // Always use current directory
     onProjectSelect(currentPath);
   }
-
-  // Filter directories based on showHidden toggle
-  const visibleDirectories = showHidden
-    ? directories
-    : directories.filter((dir) => !dir.startsWith("."));
 
   // Parse path into breadcrumb parts
   const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);

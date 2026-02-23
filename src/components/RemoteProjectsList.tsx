@@ -23,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./ui/alert-dialog";
+import { Button } from "@/components/ui/button.tsx";
 
 interface RemoteProjectsListProps {
   connection: SshConnection;
@@ -58,6 +59,7 @@ export function RemoteProjectsList({
   };
 
   const handleSaveEdit = async () => {
+    if (editName === connection.display_name) return;
     if (!editName.trim()) {
       toast.error("Name cannot be empty");
       return;
@@ -123,7 +125,7 @@ export function RemoteProjectsList({
   const hasSavedPassword =
     typeof connection.auth_method === "object" &&
     "Password" in connection.auth_method &&
-    connection.auth_method.Password.save_password === true;
+    connection.auth_method.Password.save_password;
 
   return (
     <>
@@ -147,16 +149,19 @@ export function RemoteProjectsList({
                 <h2 className="text-lg font-semibold truncate flex-1">
                   {connection.display_name || connection.connection_string}
                 </h2>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={handleStartEdit}
-                  className="p-1.5 rounded-md hover:bg-accent transition-colors"
-                  title="Edit connection name"
+                  tabIndex={-1}
+                  className="p-1 h-auto -ml-1 hover:text-accent"
+                  aria-label="Edit connection name"
                 >
                   <Pencil className="size-3.5" />
-                </button>
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    className="p-1.5 rounded-md hover:bg-accent transition-colors"
+                    className="p-1.5 rounded-md hover:text-accent transition-colors"
                     title="Connection actions"
                   >
                     <MoreVertical className="size-3.5" />

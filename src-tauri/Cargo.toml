@@ -1,5 +1,5 @@
 [package]
-name = "gsd-demo"
+name = "maestro"
 version = "0.1.0"
 description = "Maestro: AI Agent Orchestration for Autonomous Coding"
 authors = ["you"]
@@ -8,7 +8,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "gsd_demo"
+name = "maestro"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

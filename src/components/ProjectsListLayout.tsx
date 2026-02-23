@@ -54,7 +54,7 @@ export function ProjectsListLayout({
           size="sm"
           onClick={onBack}
           tabIndex={-1}
-          className="p-1 h-auto -ml-1"
+          className="p-1 h-auto -ml-1 hover:text-accent"
           aria-label="Back to connections (Esc)"
         >
           <ChevronLeft className="w-4 h-4" />

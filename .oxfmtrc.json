@@ -3,10 +3,6 @@
   "ignorePatterns": [
     ".claude/*",
     "sidecar/*",
-    ".planning/*",
-    ".visual-tests/*",
-    "docs/*",
-    "exemple/*",
-    "github-analysis/*"
+    ".planning/*"
   ]
 }

@@ -39,7 +39,7 @@ export function useProjectPickerManager({ setShowFilePickerModal }: Params) {
   const handleSelectNewLocal = useCallback(() => {
     console.log("Opening local file picker");
     setShowFilePickerModal(true);
-  }, []);
+  }, [setShowFilePickerModal]);
 
   /**
    * Handle back button click from projects view

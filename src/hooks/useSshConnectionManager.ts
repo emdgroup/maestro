@@ -184,7 +184,7 @@ export function useSshConnectionManager() {
     } finally {
       setLoading(false);
     }
-  }, [setActiveConnection, setLoading]);
+  }, [setActiveConnection, setLoading, activeConnection]);
 
   const handleForgetPassword = useCallback(async () => {
     if (!activeConnection) return;
@@ -209,7 +209,7 @@ export function useSshConnectionManager() {
     } finally {
       setLoading(false);
     }
-  }, [setActiveConnection, setLoading]);
+  }, [setActiveConnection, setLoading, activeConnection]);
 
   // Load SSH connections on mount
   useEffect(() => {
