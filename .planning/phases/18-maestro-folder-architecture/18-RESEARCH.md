@@ -268,9 +268,9 @@ Configuration Files:
 │   └── windows[0].title: "GSD Agent Orchestrator" → "Maestro"
 ├── src-tauri/Cargo.toml
 │   └── description: "AI Agent Orchestrator" → "Maestro: AI Agent Orchestrator"
-│   └── package name stays "gsd-demo" (internal identifier)
+│   └── package name stays "maestro" (internal identifier)
 └── package.json
-    └── name: "gsd-demo" (stays for compatibility)
+    └── name: "maestro" (stays for compatibility)
 
 Code References (Rust):
 ├── Comments and doc strings: Update "GSD" → "Maestro"
@@ -291,7 +291,7 @@ Documentation:
 
 **Keep Technical (backward compatible):**
 - Folder names: `.planning/`, `.maestro/` (already intentional)
-- Command names: `gsd-demo` (Tauri app identifier used by CLI)
+- Command names: `maestro` (Tauri app identifier used by CLI)
 - Rust crate name: `gsd_demo` (internal, not user-facing)
 - Git commands/worktrees: Existing workflows unchanged
 

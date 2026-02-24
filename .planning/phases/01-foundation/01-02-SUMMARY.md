@@ -165,7 +165,7 @@ When `npm run build` is executed:
 ## Deviations from Plan
 
 ### Environment Constraint: Rust Not Available
-During execution, the environment lacks Rust/Cargo installation required for verification step `cargo build -p gsd-demo`.
+During execution, the environment lacks Rust/Cargo installation required for verification step `cargo build -p maestro`.
 
 **Impact:** Cannot compile Rust code to verify type correctness, but this is a build-time environment issue, not a code issue.
 

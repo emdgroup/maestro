@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Input } from "./ui/input";
 import { Project, SshConnection } from "../types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
@@ -59,9 +59,11 @@ export function RemoteProjectsList({
   };
 
   const handleSaveEdit = async () => {
-    if (editName === connection.display_name) return;
-    if (!editName.trim()) {
-      toast.error("Name cannot be empty");
+    if (
+      !editName.trim() ||
+      editName.trim() === (connection.display_name ?? connection.connection_string)
+    ) {
+      setIsEditing(false);
       return;
     }
 
@@ -161,12 +163,12 @@ export function RemoteProjectsList({
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    className="p-1.5 rounded-md hover:text-accent transition-colors"
+                    className="p-1.5 rounded-md hover:text-accent transition-colors cursor-pointer"
                     title="Connection actions"
                   >
                     <MoreVertical className="size-3.5" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent className="w-auto" align="end">
                     {hasSavedPassword && (
                       <>
                         <DropdownMenuItem onClick={handleForgetPassword}>

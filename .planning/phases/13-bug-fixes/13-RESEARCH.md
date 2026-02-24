@@ -103,7 +103,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
 **Why it matters:** Dead code increases maintenance burden; fixes improve code health more than suppression
 
 **Approach for this project:**
-- **Auto-fixable (11 warnings):** Run `cargo fix --lib -p gsd-demo --allow-dirty` to automatically remove unused imports and `mut` keywords
+- **Auto-fixable (11 warnings):** Run `cargo fix --lib -p maestro --allow-dirty` to automatically remove unused imports and `mut` keywords
 - **Manual dead code (4 warnings):** Remove unused functions `is_retriable_error` and `calculate_key_fingerprint`; remove unused variables by prefixing with `_` if intentional
 
 **Source:** Rust official documentation; best practice in production codebases
@@ -175,7 +175,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
 
 ### Mock Code Structure (Current - Need to Verify Tree-Shaking)
 
-Source: `/home/m306213/workspace/gsd-demo/src/lib/tauri-mock.ts`
+Source: `/home/m306213/workspace/maestro/src/lib/tauri-mock.ts`
 
 Current file uses runtime check:
 ```typescript
@@ -213,7 +213,7 @@ if (import.meta.env.DEV) {
 
 ### Rust Warnings to Fix
 
-Source: Output from `cargo build` in `/home/m306213/workspace/gsd-demo/src-tauri`
+Source: Output from `cargo build` in `/home/m306213/workspace/maestro/src-tauri`
 
 **Auto-fixable (11 warnings):**
 ```rust
@@ -228,7 +228,7 @@ let mut session_lock = session_reader.lock().await;  // never mutated
 let session_lock = session_reader.lock().await;
 ```
 
-Fix with: `cd src-tauri && cargo fix --lib -p gsd-demo --allow-dirty`
+Fix with: `cd src-tauri && cargo fix --lib -p maestro --allow-dirty`
 
 **Manual dead code (4 warnings):**
 ```rust

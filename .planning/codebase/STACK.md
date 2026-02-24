@@ -116,9 +116,9 @@
 
 **SQLite 3:**
 - Location (per platform):
-  - Linux: `~/.local/share/gsd-demo/gsd-demo.db`
-  - macOS: `~/Library/Application Support/gsd-demo/gsd-demo.db`
-  - Windows: `%APPDATA%/gsd-demo/gsd-demo.db`
+  - Linux: `~/.local/share/maestro/maestro.db`
+  - macOS: `~/Library/Application Support/maestro/maestro.db`
+  - Windows: `%APPDATA%/maestro/maestro.db`
 - Schema version 8 (auto-migrated on first run via `src-tauri/src/db/schema.rs`)
 - Foreign key constraints enabled
 - Tables: `projects`, `tasks`, `worktrees`, `execution_logs`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`

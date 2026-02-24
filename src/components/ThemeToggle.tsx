@@ -33,7 +33,7 @@ export function ThemeToggle() {
   };
 
   const handleClick = () => {
-    setTheme(nextTheme);
+    void setTheme(nextTheme);
     // Keep tooltip open if still hovering
     if (isHovering.current) {
       setOpen(true);
@@ -49,19 +49,14 @@ export function ThemeToggle() {
               onClick={handleClick}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
-              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground"
+              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground cursor-pointer"
               aria-label={`Current theme: ${theme}. Click to cycle`}
             >
               {icon}
             </button>
           }
         />
-        <TooltipContent
-          side="bottom"
-          sideOffset={8}
-          alignOffset={0}
-          className="bg-popover text-popover-foreground border border-border"
-        >
+        <TooltipContent side="bottom" sideOffset={8} alignOffset={0}>
           <p className="text-xs">{title}</p>
         </TooltipContent>
       </Tooltip>

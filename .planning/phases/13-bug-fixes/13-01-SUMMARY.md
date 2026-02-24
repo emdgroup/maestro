@@ -56,7 +56,7 @@ metrics:
 - Verified zero warnings in lib and binary builds
 
 **Verification:**
-- `cargo build --lib -p gsd-demo 2>&1 | grep warning` returns 0 results
+- `cargo build --lib -p maestro 2>&1 | grep warning` returns 0 results
 - `cargo build` completes with "Finished dev" message
 
 ## How Verification Works
@@ -82,7 +82,7 @@ pnpm build  # Now runs: tsc && vite build && node scripts/verify-bundle.mjs
 
 Production build verification:
 ```bash
-cd src-tauri && cargo build --lib -p gsd-demo
+cd src-tauri && cargo build --lib -p maestro
 # Output: Finished dev [unoptimized + debuginfo] target(s) in X.XXs
 # No warning lines above Finished
 ```

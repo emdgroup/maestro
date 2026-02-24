@@ -3,9 +3,16 @@ import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
-import { ChevronRight, Folder, Home, FolderUp, HardDrive } from "lucide-react";
+import { Folder, Home, FolderUp, HardDrive } from "lucide-react";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+} from "./ui/breadcrumb";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
@@ -290,25 +297,43 @@ export function FilePicker({
 
       <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden gap-4">
         {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2 pb-4 border-b border-border flex-wrap shrink-0">
-          <button
-            onClick={() => handleBreadcrumbClick(-1)}
-            className="flex items-center gap-1 text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
-          >
-            <Home className="w-4 h-4" />
-            <span>{showingDrives ? "Drives" : "Root"}</span>
-          </button>
-          {pathParts.map((part: string, index: number) => (
-            <div key={index} className="flex items-center gap-2">
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-              <button
-                onClick={() => handleBreadcrumbClick(index)}
-                className="text-sm hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
-              >
-                {part}
-              </button>
-            </div>
-          ))}
+        <div className="pb-4 border-b border-border shrink-0">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink
+                  render={(props) => (
+                    <button
+                      {...props}
+                      onClick={() => handleBreadcrumbClick(-1)}
+                      className="flex items-center gap-1 text-sm hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+                    >
+                      <Home className="w-4 h-4" />
+                      <span>{showingDrives ? "Drives" : "Root"}</span>
+                    </button>
+                  )}
+                />
+              </BreadcrumbItem>
+              {pathParts.map((part: string, index: number) => (
+                <div key={index} className="contents">
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbLink
+                      render={(props) => (
+                        <button
+                          {...props}
+                          onClick={() => handleBreadcrumbClick(index)}
+                          className="text-sm hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+                        >
+                          {part}
+                        </button>
+                      )}
+                    />
+                  </BreadcrumbItem>
+                </div>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
         </div>
 
         {/* Directory List */}

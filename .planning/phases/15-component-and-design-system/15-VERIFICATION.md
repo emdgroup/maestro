@@ -36,7 +36,7 @@ re_verification: false
 | **Dark mode CSS variables provide contrast** | ✓ VERIFIED | Light theme: text (215° 13% 34%) on background (0° 0% 100%) = ~12:1 contrast; Dark theme: text (210° 40% 96%) on background (215° 13% 20%) = ~10:1 contrast; both exceed WCAG AA minimum |
 | **Font loading is configured** | ✓ VERIFIED | `src/styles/fonts.css` contains Google Fonts CDN imports; Tailwind config extends fontFamily with Inter/Fira Code; body CSS applies Inter as default |
 | **App builds without errors** | ✓ VERIFIED | `pnpm build` completed successfully in 9.88s with zero TypeScript errors; production bundle verified for mock code (PASSED) |
-| **Old custom component files do not exist** | ✓ VERIFIED | `ls /home/m306213/workspace/gsd-demo/src/components/` contains no Button.tsx, Card.tsx, or Input.tsx |
+| **Old custom component files do not exist** | ✓ VERIFIED | `ls /home/m306213/workspace/maestro/src/components/` contains no Button.tsx, Card.tsx, or Input.tsx |
 | **Components are properly wired to design system** | ✓ VERIFIED | shadcn/ui Button uses CSS variables (bg-primary, text-primary-foreground); components composed in modals use Button, Dialog, Checkbox, Label, Select, Textarea from `@/components/ui/*` |
 
 ## Required Artifacts

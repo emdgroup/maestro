@@ -134,7 +134,7 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
 
       {/* File Picker Modal (Local or Remote) */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
-        <DialogContent className="max-w-4xl h-150 p-0 flex flex-col">
+        <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col">
           <FilePicker
             connection={activeConnection?.sshConnection || null}
             onProjectSelect={handleProjectSelect}

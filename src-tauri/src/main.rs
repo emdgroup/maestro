@@ -13,17 +13,17 @@ fn get_app_data_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/.local/share/gsd-demo", home))
+        PathBuf::from(format!("{}/.local/share/maestro", home))
     }
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/Library/Application Support/gsd-demo", home))
+        PathBuf::from(format!("{}/Library/Application Support/maestro", home))
     }
     #[cfg(target_os = "windows")]
     {
         let appdata = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}\\gsd-demo", appdata))
+        PathBuf::from(format!("{}\\maestro", appdata))
     }
 }
 
@@ -433,7 +433,7 @@ fn rename_ssh_connection(
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir();
-    let db_path = app_data_dir.join("gsd-demo.db");
+    let db_path = app_data_dir.join("maestro.db");
 
     // Initialize database
     let conn = init_db(db_path)

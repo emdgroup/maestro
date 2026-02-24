@@ -212,7 +212,7 @@ The installed components are ready for:
 
 ✓ PASSED
 
-- **components.json exists:** Yes, at /home/m306213/workspace/gsd-demo/components.json
+- **components.json exists:** Yes, at /home/m306213/workspace/maestro/components.json
 - **Path aliases configured:** Yes, in tsconfig.json
 - **11 components installed:** Yes, all 11 files exist in src/components/ui/
 - **CSS variables in index.css:** Yes, 40+ theme variables defined

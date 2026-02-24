@@ -18,9 +18,9 @@ use crate::models::{Project, GitConnection};
 /// 4. Initializes the schema
 ///
 /// The database is stored at:
-/// - Linux: ~/.local/share/gsd-demo/gsd-demo.db
-/// - macOS: ~/Library/Application Support/gsd-demo/gsd-demo.db
-/// - Windows: %APPDATA%/gsd-demo/gsd-demo.db
+/// - Linux: ~/.local/share/maestro/maestro.db
+/// - macOS: ~/Library/Application Support/maestro/maestro.db
+/// - Windows: %APPDATA%/maestro/maestro.db
 pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
     // Create directory if it doesn't exist
     if let Some(parent) = db_path.parent() {
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_init_db() {
-        let test_db_path = PathBuf::from("/tmp/test-gsd-demo.db");
+        let test_db_path = PathBuf::from("/tmp/test-maestro.db");
 
         // Clean up if exists
         let _ = fs::remove_file(&test_db_path);

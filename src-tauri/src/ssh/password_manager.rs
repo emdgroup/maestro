@@ -6,7 +6,7 @@ pub struct PasswordManager;
 impl PasswordManager {
     /// Store password in OS keyring
     pub fn store_password(host: &str, username: &str, password: String) -> Result<(), String> {
-        let service_name = format!("gsd-demo.ssh.{}", host);
+        let service_name = format!("maestro.ssh.{}", host);
         let entry = Entry::new(&service_name, username)
             .map_err(|e| format!("Keyring error: {}", e))?;
 
@@ -20,7 +20,7 @@ impl PasswordManager {
 
     /// Retrieve password from OS keyring
     pub fn get_password(host: &str, username: &str) -> Result<Zeroizing<String>, String> {
-        let service_name = format!("gsd-demo.ssh.{}", host);
+        let service_name = format!("maestro.ssh.{}", host);
         let entry = Entry::new(&service_name, username)
             .map_err(|e| format!("Keyring error: {}", e))?;
 
@@ -33,7 +33,7 @@ impl PasswordManager {
 
     /// Delete password from OS keyring
     pub fn delete_password(host: &str, username: &str) -> Result<(), String> {
-        let service_name = format!("gsd-demo.ssh.{}", host);
+        let service_name = format!("maestro.ssh.{}", host);
         let entry = Entry::new(&service_name, username)
             .map_err(|e| format!("Keyring error: {}", e))?;
 

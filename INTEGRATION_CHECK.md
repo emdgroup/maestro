@@ -498,7 +498,7 @@ App.tsx:166 (+ New Task button)
 
 ### Issue 3: Phase 2 Missing VERIFICATION.md (Administrative)
 
-**Location:** `/home/m306213/workspace/gsd-demo/.planning/phases/02-core-orchestration/`  
+**Location:** `/home/m306213/workspace/maestro/.planning/phases/02-core-orchestration/`  
 **Issue:** No VERIFICATION.md file created for Phase 2  
 **Evidence:** Code inspection of Phase 2 artifacts shows all planned features complete:
 

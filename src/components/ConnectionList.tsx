@@ -99,7 +99,7 @@ export function ConnectionList({
             onChange={(e) => setConnectionString(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Enter user@host"
-            className="font-mono text-sm h-auto bg-background border-5 border-solid border-transparent"
+            className="font-mono text-sm h-auto bg-background"
             disabled={loading}
           />
           <Button

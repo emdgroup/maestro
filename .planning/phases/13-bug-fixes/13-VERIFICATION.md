@@ -27,7 +27,7 @@ All automated and manual verification checks pass. Development workflow unchange
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
 | 1 | Release build does not contain mock code references (mockDB, mock invoke handlers) | ✓ VERIFIED | `grep -i "mockDB\|Mock Tauri API\|browser-only development\|mock invoke" dist/assets/*.js` returns 0 results (298 JS files scanned) |
-| 2 | cargo build produces zero warnings | ✓ VERIFIED | `cargo build --lib -p gsd-demo 2>&1 \| grep -i warning` returns 0 results. Output: "Finished `dev` [unoptimized + debuginfo]" |
+| 2 | cargo build produces zero warnings | ✓ VERIFIED | `cargo build --lib -p maestro 2>&1 \| grep -i warning` returns 0 results. Output: "Finished `dev` [unoptimized + debuginfo]" |
 | 3 | Development workflow unchanged - tauri:dev works with mocks | ✓ VERIFIED | src/lib/tauri-mock.ts wraps mock handlers with `if ((import.meta as any).env.DEV) { ... }` enabling mock in dev |
 | 4 | Bundle analysis runs automatically during build and fails if mock code detected | ✓ VERIFIED | `node scripts/verify-bundle.mjs` executes and outputs "✓ PASSED: Production bundle verified - no mock code detected" |
 | 5 | Development patterns documented for future maintainers | ✓ VERIFIED | CLAUDE.md contains "Build-Time Mock Exclusion (Development vs Production)" section (line 124-142) with full explanation |
@@ -101,7 +101,7 @@ All automated and manual verification checks pass. Development workflow unchange
 ## Verification Method
 
 ### Automated Checks (Performed)
-1. **Cargo build clean check**: `cd src-tauri && cargo build --lib -p gsd-demo 2>&1 | grep -i warning` → 0 results ✓
+1. **Cargo build clean check**: `cd src-tauri && cargo build --lib -p maestro 2>&1 | grep -i warning` → 0 results ✓
 2. **Bundle marker scan**: `grep -i "mockDB\|..." dist/assets/*.js` → 0 results ✓
 3. **Verification script execution**: `node scripts/verify-bundle.mjs` → "✓ PASSED" ✓
 4. **File existence check**: All 5 artifacts present and readable ✓

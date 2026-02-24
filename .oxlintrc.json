@@ -36,9 +36,5 @@
     "builtin": true
   },
   "globals": {},
-  "ignorePatterns": [
-    ".claude/*",
-    "sidecar/*",
-    ".planning/*"
-  ]
+  "ignorePatterns": [".claude/*", "sidecar/*", ".planning/*"]
 }

@@ -315,7 +315,7 @@ Conclusion: Full implementation chain from UI form through IPC to database persi
 
 ### Primary (HIGH confidence)
 
-1. **Existing VERIFICATION.md files** - `/home/m306213/workspace/gsd-demo/.planning/phases/`:
+1. **Existing VERIFICATION.md files** - `/home/m306213/workspace/maestro/.planning/phases/`:
    - `01-foundation/01-VERIFICATION.md` — Template and pattern established
    - `03-git-worktree-infrastructure/03-VERIFICATION.md` — Evidence collection pattern
    - `04-agent-execution/04-VERIFICATION.md` — Observable truth decomposition

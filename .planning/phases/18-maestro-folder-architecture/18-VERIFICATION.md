@@ -36,7 +36,7 @@ gaps: []
 | `src-tauri/src/db/project_storage.rs` | File I/O utilities for .maestro folder | ✓ VERIFIED | File exists (86 lines), exports 6 public functions: `create_project_maestro_folder`, `export_config_to_settings`, `export_state_to_file`, `load_project_config`, `load_project_state`, `ensure_maestro_folder_exists`. |
 | `src/types/bindings.ts` | Auto-generated TypeScript types | ✓ VERIFIED | File exists and exports: `ProjectConfig`, `ProjectState`, `TaskSnapshot`, `WorktreeSnapshot`. All re-exported from src-tauri/bindings/ directory. |
 | `src-tauri/tauri.conf.json` | Updated productName, identifier, window title | ✓ VERIFIED | productName="Maestro", identifier="com.maestro.app", window title="Maestro" (verified in app.windows[0]). |
-| `src-tauri/Cargo.toml` | Updated package description | ✓ VERIFIED | [package] section shows: description = "Maestro: AI Agent Orchestration for Autonomous Coding". Package name remains "gsd-demo" for technical backwards compatibility. |
+| `src-tauri/Cargo.toml` | Updated package description | ✓ VERIFIED | [package] section shows: description = "Maestro: AI Agent Orchestration for Autonomous Coding". Package name remains "maestro" for technical backwards compatibility. |
 | `CLAUDE.md` | Project overview updated | ✓ VERIFIED | Project Overview section: "**Maestro** - A Tauri desktop app for orchestrating autonomous AI coding agents..." |
 | `README.md` | Title and main heading reference Maestro | ✓ VERIFIED | Title: "# Maestro", first paragraph: "Maestro is a Tauri desktop application..." |
 
@@ -124,7 +124,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
 ### Truth 1: .maestro folder created on project creation
 
 **Evidence Chain:**
-1. File I/O function created: `/home/m306213/workspace/gsd-demo/src-tauri/src/db/project_storage.rs` line 8-17
+1. File I/O function created: `/home/m306213/workspace/maestro/src-tauri/src/db/project_storage.rs` line 8-17
    ```rust
    pub fn create_project_maestro_folder(project_path: &str) -> Result<(), String> {
        let maestro_path = Path::new(project_path).join(".maestro");
@@ -134,7 +134,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
    }
    ```
 
-2. IPC handler integrates call: `/home/m306213/workspace/gsd-demo/src-tauri/src/ipc/project_handlers.rs` line 88-91
+2. IPC handler integrates call: `/home/m306213/workspace/maestro/src-tauri/src/ipc/project_handlers.rs` line 88-91
    ```rust
    // Initialize .maestro folder structure for project-local storage
    // (Phase 18 architectural change: state stored locally, not in global database)
@@ -142,7 +142,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
    ```
 
-3. Module properly exported: `/home/m306213/workspace/gsd-demo/src-tauri/src/db/mod.rs` line 5 and 12
+3. Module properly exported: `/home/m306213/workspace/maestro/src-tauri/src/db/mod.rs` line 5 and 12
    ```rust
    pub mod project_storage;
    pub use project_storage::create_project_maestro_folder;
@@ -155,7 +155,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
 ### Truth 2: Project settings stored in .maestro/settings.json
 
 **Evidence Chain:**
-1. Model created: `/home/m306213/workspace/gsd-demo/src-tauri/src/models/project_config.rs` lines 10-24
+1. Model created: `/home/m306213/workspace/maestro/src-tauri/src/models/project_config.rs` lines 10-24
    ```rust
    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
    #[ts(export)]
@@ -167,7 +167,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
    }
    ```
 
-2. Save method implemented: `/home/m306213/workspace/gsd-demo/src-tauri/src/models/project_config.rs` lines 47-61
+2. Save method implemented: `/home/m306213/workspace/maestro/src-tauri/src/models/project_config.rs` lines 47-61
    ```rust
    pub fn save_to_project(&self, project_path: &str) -> Result<(), String> {
        let maestro_dir = Path::new(project_path).join(".maestro");
@@ -184,14 +184,14 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
    }
    ```
 
-3. Wrapper function available: `/home/m306213/workspace/gsd-demo/src-tauri/src/db/project_storage.rs` lines 22-24
+3. Wrapper function available: `/home/m306213/workspace/maestro/src-tauri/src/db/project_storage.rs` lines 22-24
    ```rust
    pub fn export_config_to_settings(config: &ProjectConfig, project_path: &str) -> Result<(), String> {
        config.save_to_project(project_path)
    }
    ```
 
-4. TypeScript types available: `/home/m306213/workspace/gsd-demo/src/types/bindings.ts` line 14
+4. TypeScript types available: `/home/m306213/workspace/maestro/src/types/bindings.ts` line 14
    ```typescript
    export type { ProjectConfig } from "../../src-tauri/bindings/ProjectConfig";
    ```
@@ -203,7 +203,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
 ### Truth 3: Project state models support .maestro/state.json serialization
 
 **Evidence Chain:**
-1. State model created: `/home/m306213/workspace/gsd-demo/src-tauri/src/models/project_state.rs` lines 54-63
+1. State model created: `/home/m306213/workspace/maestro/src-tauri/src/models/project_state.rs` lines 54-63
    ```rust
    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
    #[ts(export)]
@@ -216,7 +216,7 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
    }
    ```
 
-2. Save method implemented: `/home/m306213/workspace/gsd-demo/src-tauri/src/models/project_state.rs` lines 86-100
+2. Save method implemented: `/home/m306213/workspace/maestro/src-tauri/src/models/project_state.rs` lines 86-100
    ```rust
    pub fn save_to_project(&self, project_path: &str) -> Result<(), String> {
        let maestro_dir = Path::new(project_path).join(".maestro");
@@ -233,12 +233,12 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
    }
    ```
 
-3. Snapshot structs defined: `/home/m306213/workspace/gsd-demo/src-tauri/src/models/project_state.rs` lines 9-50
+3. Snapshot structs defined: `/home/m306213/workspace/maestro/src-tauri/src/models/project_state.rs` lines 9-50
    - TaskSnapshot with 14 fields including status as String
    - WorktreeSnapshot with 6 fields including status as String
    - Both use #[serde(skip_serializing_if = "Option::is_none")] for optional fields
 
-4. TypeScript types available: `/home/m306213/workspace/gsd-demo/src/types/bindings.ts` lines 17-18, 28, 31
+4. TypeScript types available: `/home/m306213/workspace/maestro/src/types/bindings.ts` lines 17-18, 28, 31
    ```typescript
    export type { ProjectState } from "../../src-tauri/bindings/ProjectState";
    export type { TaskSnapshot } from "../../src-tauri/bindings/TaskSnapshot";
@@ -253,14 +253,14 @@ No explicit requirements mapped to Phase 18 in REQUIREMENTS.md (architectural im
 
 **Evidence Chain:**
 1. Configuration files:
-   - `/home/m306213/workspace/gsd-demo/src-tauri/tauri.conf.json` line 3: `"productName": "Maestro"`
-   - `/home/m306213/workspace/gsd-demo/src-tauri/tauri.conf.json` line 5: `"identifier": "com.maestro.app"`
-   - `/home/m306213/workspace/gsd-demo/src-tauri/tauri.conf.json` line 16: `"title": "Maestro"`
-   - `/home/m306213/workspace/gsd-demo/src-tauri/Cargo.toml` [package]: `description = "Maestro: AI Agent Orchestration for Autonomous Coding"`
+   - `/home/m306213/workspace/maestro/src-tauri/tauri.conf.json` line 3: `"productName": "Maestro"`
+   - `/home/m306213/workspace/maestro/src-tauri/tauri.conf.json` line 5: `"identifier": "com.maestro.app"`
+   - `/home/m306213/workspace/maestro/src-tauri/tauri.conf.json` line 16: `"title": "Maestro"`
+   - `/home/m306213/workspace/maestro/src-tauri/Cargo.toml` [package]: `description = "Maestro: AI Agent Orchestration for Autonomous Coding"`
 
 2. Documentation:
-   - `/home/m306213/workspace/gsd-demo/CLAUDE.md`: Project Overview starts with "**Maestro** - A Tauri desktop app..."
-   - `/home/m306213/workspace/gsd-demo/README.md`: Title is "# Maestro" and first paragraph: "Maestro is a Tauri desktop application..."
+   - `/home/m306213/workspace/maestro/CLAUDE.md`: Project Overview starts with "**Maestro** - A Tauri desktop app..."
+   - `/home/m306213/workspace/maestro/README.md`: Title is "# Maestro" and first paragraph: "Maestro is a Tauri desktop application..."
 
 3. Technical identifiers preserved (backwards compatibility):
    - Package name remains "gsd_demo" (internal, not user-facing)

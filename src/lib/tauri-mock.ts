@@ -69,8 +69,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
     switch (cmd) {
       case "get_settings":
         return {
-          project_path: "/home/m306213/workspace/gsd-demo",
-          recent_projects: ["/home/m306213/workspace/gsd-demo"],
+          project_path: "/home/m306213/workspace/maestro",
+          recent_projects: ["/home/m306213/workspace/maestro"],
           model_default: "claude-opus-4-5",
           mcp_defaults: null,
           skills_defaults: null,
@@ -80,8 +80,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, any>): Promis
       case "get_or_create_project":
         return {
           id: 1,
-          path: args?.path || "/home/m306213/workspace/gsd-demo",
-          name: "gsd-demo",
+          path: args?.path || "/home/m306213/workspace/maestro",
+          name: "maestro",
           created_at: new Date().toISOString(),
         } as T;
 

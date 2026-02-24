@@ -421,7 +421,7 @@ export type Task = {
 };
 ```
 
-Regenerate with: `cargo build -p gsd-demo` (ts-rs 7.1 auto-generates)
+Regenerate with: `cargo build -p maestro` (ts-rs 7.1 auto-generates)
 
 ---
 

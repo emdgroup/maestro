@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_init_db() {
-        let test_db_path = PathBuf::from("/tmp/test-gsd-demo.db");
+        let test_db_path = PathBuf::from("/tmp/test-maestro.db");
 
         // Clean up if exists
         let _ = fs::remove_file(&test_db_path);
@@ -217,7 +217,7 @@ test('Recent projects have subtle hover states', async ({ page }) => {
 ```rust
 #[test]
 fn test_init_db() {
-    let test_db_path = PathBuf::from("/tmp/test-gsd-demo.db");
+    let test_db_path = PathBuf::from("/tmp/test-maestro.db");
 
     let result = init_db(test_db_path.clone());
     assert!(result.is_ok());

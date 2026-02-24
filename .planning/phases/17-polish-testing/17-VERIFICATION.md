@@ -54,8 +54,8 @@ Phase 17 achieved all success criteria. The application is production-ready with
 **Status:** ✓ PASSED
 
 **Evidence Files:**
-- `/home/m306213/workspace/gsd-demo/dist/` - production build output
-- `/home/m306213/workspace/gsd-demo/scripts/verify-bundle.mjs` - verification script
+- `/home/m306213/workspace/maestro/dist/` - production build output
+- `/home/m306213/workspace/maestro/scripts/verify-bundle.mjs` - verification script
 
 ---
 
@@ -79,9 +79,9 @@ Phase 17 achieved all success criteria. The application is production-ready with
 **Status:** ✓ PASSED
 
 **Evidence Files:**
-- `/home/m306213/workspace/gsd-demo/src/providers/ThemeProvider.tsx` - persistence logic
-- `/home/m306213/workspace/gsd-demo/src/index.css` - CSS variables for both modes
-- `/home/m306213/workspace/gsd-demo/src/App.tsx` - ThemeProvider integration
+- `/home/m306213/workspace/maestro/src/providers/ThemeProvider.tsx` - persistence logic
+- `/home/m306213/workspace/maestro/src/index.css` - CSS variables for both modes
+- `/home/m306213/workspace/maestro/src/App.tsx` - ThemeProvider integration
 
 ---
 
@@ -113,7 +113,7 @@ Phase 17 achieved all success criteria. The application is production-ready with
 **Status:** ✓ PASSED
 
 **Evidence Files:**
-- `/home/m306213/workspace/gsd-demo/src/index.css` - lines 8-78 (color definitions)
+- `/home/m306213/workspace/maestro/src/index.css` - lines 8-78 (color definitions)
 - `.planning/phases/17-polish-testing/17-02-VERIFICATION.md` - detailed contrast calculations
 
 ---
@@ -152,10 +152,10 @@ Phase 17 achieved all success criteria. The application is production-ready with
 **Status:** ✓ PASSED
 
 **Evidence Files:**
-- `/home/m306213/workspace/gsd-demo/src/components/ui/button.tsx` - focus/hover/disabled
-- `/home/m306213/workspace/gsd-demo/src/components/ui/input.tsx` - focus rings
-- `/home/m306213/workspace/gsd-demo/src/components/ui/tabs.tsx` - active states
-- `/home/m306213/workspace/gsd-demo/src/components/ui/dialog.tsx` - sr-only labels
+- `/home/m306213/workspace/maestro/src/components/ui/button.tsx` - focus/hover/disabled
+- `/home/m306213/workspace/maestro/src/components/ui/input.tsx` - focus rings
+- `/home/m306213/workspace/maestro/src/components/ui/tabs.tsx` - active states
+- `/home/m306213/workspace/maestro/src/components/ui/dialog.tsx` - sr-only labels
 
 ---
 
@@ -197,10 +197,10 @@ Phase 17 achieved all success criteria. The application is production-ready with
 **Status:** ✓ PASSED
 
 **Evidence Files:**
-- `/home/m306213/workspace/gsd-demo/src/components/KanbanBoard.tsx` - grid layout
-- `/home/m306213/workspace/gsd-demo/src/components/TaskCard.tsx` - status dots, buttons
-- `/home/m306213/workspace/gsd-demo/src/components/WorktreeManager.tsx` - responsive grid
-- `/home/m306213/workspace/gsd-demo/src/components/AgentMonitor.tsx` - split pane layout
+- `/home/m306213/workspace/maestro/src/components/KanbanBoard.tsx` - grid layout
+- `/home/m306213/workspace/maestro/src/components/TaskCard.tsx` - status dots, buttons
+- `/home/m306213/workspace/maestro/src/components/WorktreeManager.tsx` - responsive grid
+- `/home/m306213/workspace/maestro/src/components/AgentMonitor.tsx` - split pane layout
 
 ---
 

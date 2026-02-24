@@ -165,11 +165,11 @@ None - plan executed exactly as written. All required files created, schema vali
 
 When integrated with Tauri, database will be stored at:
 
-- **Linux:** `~/.local/share/gsd-demo/gsd-demo.db`
-- **macOS:** `~/Library/Application Support/gsd-demo/gsd-demo.db`
-- **Windows:** `%APPDATA%/gsd-demo/gsd-demo.db`
+- **Linux:** `~/.local/share/maestro/maestro.db`
+- **macOS:** `~/Library/Application Support/maestro/maestro.db`
+- **Windows:** `%APPDATA%/maestro/maestro.db`
 
-For current testing: `/tmp/gsd-demo/gsd-demo.db`
+For current testing: `/tmp/maestro/maestro.db`
 
 ## AppState Usage Pattern
 

@@ -7,16 +7,16 @@ FILE LOCATIONS
 ==============
 
 Main Report:
-/home/m306213/workspace/gsd-demo/INTEGRATION_CHECK.md (494 lines, 17827 bytes)
+/home/m306213/workspace/maestro/INTEGRATION_CHECK.md (494 lines, 17827 bytes)
 
 Source Code Examined:
-/home/m306213/workspace/gsd-demo/src-tauri/src/main.rs
-/home/m306213/workspace/gsd-demo/src-tauri/src/ipc/handlers.rs
-/home/m306213/workspace/gsd-demo/src/store/boardStore.ts
-/home/m306213/workspace/gsd-demo/src/components/TaskCard.tsx
-/home/m306213/workspace/gsd-demo/src/components/ExecutionTerminal.tsx
-/home/m306213/workspace/gsd-demo/src/components/KanbanBoard.tsx
-/home/m306213/workspace/gsd-demo/src/types/bindings.ts
+/home/m306213/workspace/maestro/src-tauri/src/main.rs
+/home/m306213/workspace/maestro/src-tauri/src/ipc/handlers.rs
+/home/m306213/workspace/maestro/src/store/boardStore.ts
+/home/m306213/workspace/maestro/src/components/TaskCard.tsx
+/home/m306213/workspace/maestro/src/components/ExecutionTerminal.tsx
+/home/m306213/workspace/maestro/src/components/KanbanBoard.tsx
+/home/m306213/workspace/maestro/src/types/bindings.ts
 
 VERIFICATION SUMMARY
 ====================

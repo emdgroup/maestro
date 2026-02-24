@@ -5,7 +5,7 @@
 ## Directory Layout
 
 ```
-gsd-demo/
+maestro/
 ├── src/                           # Frontend React application (TypeScript)
 │   ├── components/                # React components
 │   │   ├── ui/                    # shadcn/ui primitive components

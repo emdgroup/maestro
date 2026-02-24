@@ -105,7 +105,7 @@ Phase 18 Architecture Decisions:
 
 ### Pending Todos
 
-None currently.
+No pending todos.
 
 
 ### Blockers/Concerns
@@ -173,7 +173,7 @@ Phase 18 (Maestro Folder Architecture & Rebranding) execution underway:
   - tauri.conf.json: productName, identifier, window title updated to Maestro
   - Cargo.toml description updated with Maestro branding
   - CLAUDE.md and README.md updated with new application branding
-  - Technical identifiers (gsd-demo, .planning/) maintained for backwards compatibility
+  - Technical identifiers (maestro, .planning/) maintained for backwards compatibility
 - ✓ 18-04: IPC Handler Integration (COMPLETE)
   - create_project IPC handler now calls project_storage::create_project_maestro_folder()
   - .maestro folder initialized on project creation with error handling
