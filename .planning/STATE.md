@@ -105,7 +105,7 @@ Phase 18 Architecture Decisions:
 
 ### Pending Todos
 
-No pending todos.
+None currently.
 
 
 ### Blockers/Concerns

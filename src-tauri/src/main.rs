@@ -34,6 +34,11 @@ fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<maestro::models::
 }
 
 #[tauri::command]
+fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<maestro::models::Project>, String> {
+    maestro::ipc::get_connection_projects(connection_id, app_state)
+}
+
+#[tauri::command]
 fn create_project(
     app_state: State<Arc<AppState>>,
     project_path: String,
@@ -466,6 +471,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_projects,
+            get_connection_projects,
             create_project,
             get_project,
             get_tasks,

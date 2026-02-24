@@ -25,12 +25,15 @@ export function useProjectPickerManager({ setShowFilePickerModal }: Params) {
     handlePasswordCancel,
     loadSshConnections,
   } = useSshConnectionManager();
-  // Load enhanced recent projects with metadata
+  // Load enhanced recent projects with metadata, filtered by active connection
+  const connectionId = activeConnection?.type === "ssh" && typeof activeConnection.id === "number"
+    ? activeConnection.id
+    : null;
   const {
     recentProjects,
     loading: recentLoading,
     refetch: refetchRecentProjects,
-  } = useRecentProjects();
+  } = useRecentProjects(connectionId);
 
   /**
    * Handle local "Select New Project" button click

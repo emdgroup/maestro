@@ -24,6 +24,25 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     Ok(projects)
 }
 
+/// Get list of all projects per connections
+#[tauri::command]
+pub fn get_connection_projects(connection_id: Option<i32>, app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
+    println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let mut stmt = conn
+        .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC ")
+        .map_err(|e| e.to_string())?;
+
+    let projects = stmt
+        .query_map([connection_id], Project::from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(projects)
+}
+
 /// Get or create project by path
 #[tauri::command]
 pub fn get_project(

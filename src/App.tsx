@@ -40,8 +40,10 @@ function App() {
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
-  // Load recent projects for filtering dropdown (AppHeader will do the filtering)
-  const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects();
+  // Load recent projects for filtering dropdown, filtered by current project's connection
+  const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects(
+    currentProject?.connection_id ?? null
+  );
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
