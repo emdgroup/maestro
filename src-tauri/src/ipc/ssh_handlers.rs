@@ -268,12 +268,7 @@ pub fn delete_ssh_connection(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Get connection details before deleting (for keyring cleanup)
-    let (host, username): (String, String) = conn
-        .query_row(
-            "SELECT host, username FROM ssh_connections WHERE id = ?",
-            [connection_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
+    let SshConnection {host, username, ..} = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
     // Delete from database

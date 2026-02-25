@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useRecentProjects } from "../hooks/useRecentProjects";
 import { useSshConnectionManager } from "../hooks/useSshConnectionManager";
 import { Connection } from "@/components/ConnectionList.tsx";
 
@@ -15,7 +14,7 @@ export function useProjectPickerManager({ setShowFilePickerModal }: Params) {
     activeConnection,
     connections,
     showPasswordModal,
-    loading: sshLoading,
+    loading,
     setActiveConnection,
     handleConnection: handleSshConnection,
     handleNewConnection: handleNewSshConnection,
@@ -25,15 +24,6 @@ export function useProjectPickerManager({ setShowFilePickerModal }: Params) {
     handlePasswordCancel,
     loadSshConnections,
   } = useSshConnectionManager();
-  // Load enhanced recent projects with metadata, filtered by active connection
-  const connectionId = activeConnection?.type === "ssh" && typeof activeConnection.id === "number"
-    ? activeConnection.id
-    : null;
-  const {
-    recentProjects,
-    loading: recentLoading,
-    refetch: refetchRecentProjects,
-  } = useRecentProjects(connectionId);
 
   /**
    * Handle local "Select New Project" button click
@@ -107,17 +97,12 @@ export function useProjectPickerManager({ setShowFilePickerModal }: Params) {
     }
   };
 
-  // Combined loading state for UI
-  const isLoading = sshLoading || recentLoading;
-
   return {
     currentView,
-    recentProjects,
     activeConnection,
     connections,
     showPasswordModal,
-    isLoading,
-    refetchRecentProjects,
+    loading,
     handleConnection,
     handleNewConnection,
     handleBackToConnections,

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Input } from "./ui/input";
-import { Project, SshConnection } from "../types/bindings";
+import { SshConnection } from "../types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
@@ -24,34 +24,30 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "@/components/ui/button.tsx";
+import { useRecentProjects } from "@/hooks/useRecentProjects.ts";
 
 interface RemoteProjectsListProps {
   connection: SshConnection;
-  recentProjects: Project[];
   onProjectClick: (projectId: number) => void;
+  onRemoveProject: (projectId: number) => void;
   onSelectNewClick: () => void;
   onBack: () => void;
-  onRemoveProject?: (path: string) => void;
   onConnectionRenamed?: () => void;
-  loading?: boolean;
 }
 
 export function RemoteProjectsList({
   connection,
-  recentProjects,
   onProjectClick,
   onSelectNewClick,
   onBack,
   onRemoveProject,
   onConnectionRenamed,
-  loading = false,
 }: RemoteProjectsListProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  // Filter to only show projects for this connection
-  const connectionProjects = recentProjects.filter((p) => p.connection_id === connection.id);
+  const { recentProjects, loading } = useRecentProjects(connection.id);
 
   const handleStartEdit = () => {
     setIsEditing(true);
@@ -191,18 +187,18 @@ export function RemoteProjectsList({
             )}
           </>
         }
-        isEmpty={connectionProjects.length === 0}
+        isEmpty={recentProjects.length === 0}
         emptyMessage="No recent projects for this connection"
         onBack={onBack}
         onSelectNewClick={onSelectNewClick}
         loading={loading}
       >
-        {connectionProjects.map((project) => (
+        {recentProjects.map((project) => (
           <ProjectListItem
-            key={project.path}
+            key={project.id}
             path={project.path}
             onClick={() => onProjectClick(project.id)}
-            onRemove={onRemoveProject ? () => onRemoveProject(project.path) : undefined}
+            onRemove={() => onRemoveProject(project.id)}
             disabled={loading}
           />
         ))}

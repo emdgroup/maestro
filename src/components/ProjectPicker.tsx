@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ConnectionList } from "./ConnectionList";
 import { LocalProjectsList } from "./LocalProjectsList";
 import { RemoteProjectsList } from "./RemoteProjectsList";
@@ -12,19 +12,17 @@ import { Project } from "../../src-tauri/bindings/Project.ts";
 
 interface ProjectPickerProps {
   onProjectSelected: (project: Project) => void;
-  onRecentProjectsChanged?: () => void;
+  onRecentProjectsChanged: () => void;
 }
 
 export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: ProjectPickerProps) {
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const {
     currentView,
-    recentProjects,
     activeConnection,
     connections,
     showPasswordModal,
-    isLoading,
-    refetchRecentProjects,
+    loading,
     handleConnection,
     handleNewConnection,
     handleBackToConnections,
@@ -39,23 +37,12 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
     loading: projectLoading,
     handleProjectClick,
     handleProjectSelect,
-    handleRemoveRecentProject,
+    handleRemoveProject,
   } = useProjectSelection({
     activeConnection,
     onProjectSelected,
     onRecentProjectsChanged,
-    refetchRecentProjects,
   });
-
-  // Sort recent projects by last_opened (most recent first)
-  const sortedRecentProjects = useMemo(() => {
-    return [...recentProjects].sort((a, b) => {
-      if (!b.last_opened) return 1;
-      if (!a.last_opened) return -1;
-      // Sort descending (most recent first)
-      return b.last_opened.localeCompare(a.last_opened);
-    });
-  }, [recentProjects]);
 
   // Main screen with unified connection list
   return (
@@ -84,7 +71,7 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
                 connections={connections}
                 onConnectionClick={handleConnection}
                 onNewConnection={handleNewConnection}
-                loading={isLoading}
+                loading={loading}
               />
             </div>
 
@@ -96,12 +83,10 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
             >
               {activeConnection && activeConnection.type === "local" && (
                 <LocalProjectsList
-                  recentProjects={sortedRecentProjects}
                   onProjectClick={handleProjectClick}
                   onSelectNewClick={handleSelectNewLocal}
                   onBack={handleBackToConnections}
-                  onRemoveProject={handleRemoveRecentProject}
-                  loading={isLoading}
+                  onRemoveProject={handleRemoveProject}
                 />
               )}
               {activeConnection &&
@@ -109,13 +94,11 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
                 activeConnection.sshConnection && (
                   <RemoteProjectsList
                     connection={activeConnection.sshConnection}
-                    recentProjects={sortedRecentProjects}
                     onProjectClick={handleProjectClick}
                     onSelectNewClick={handleRemoteSelectProject}
                     onBack={handleBackToConnections}
-                    onRemoveProject={handleRemoveRecentProject}
+                    onRemoveProject={handleRemoveProject}
                     onConnectionRenamed={loadSshConnections}
-                    loading={isLoading}
                   />
                 )}
             </div>
@@ -129,12 +112,12 @@ export function ProjectPicker({ onProjectSelected, onRecentProjectsChanged }: Pr
         connection={activeConnection?.sshConnection || null}
         onSubmit={handlePasswordSubmit}
         onCancel={handlePasswordCancel}
-        loading={isLoading}
+        loading={loading}
       />
 
       {/* File Picker Modal (Local or Remote) */}
       <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
-        <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col">
+        <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
           <FilePicker
             connection={activeConnection?.sshConnection || null}
             onProjectSelect={handleProjectSelect}

@@ -126,7 +126,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    initializeTheme();
+    void initializeTheme();
   }, []);
 
   // Handle theme changes and persist to database

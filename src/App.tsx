@@ -22,7 +22,6 @@ import "./App.css";
 function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Check if Tauri is available on mount (Tauri 2 uses __TAURI__)
@@ -40,9 +39,9 @@ function App() {
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
-  // Load recent projects for filtering dropdown, filtered by current project's connection
+  // Load recent projects for filtering dropdown (AppHeader will do the filtering)
   const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects(
-    currentProject?.connection_id ?? null
+    currentProject?.connection_id,
   );
 
   // Page order for determining slide direction
@@ -77,36 +76,12 @@ function App() {
     setActivePage(page);
   };
 
-  // Load all projects
-  async function loadAllProjects() {
-    try {
-      console.log("[DEBUG] App.tsx: Loading all projects");
-      const allProjects = await safeInvoke<Project[]>("get_projects");
-      console.log("[DEBUG] App.tsx: Projects loaded successfully", allProjects);
-      setProjects(allProjects);
-    } catch (err) {
-      console.error("[DEBUG] App.tsx: Failed to load projects:", err);
-      setProjects([]);
-    }
-  }
-
   // Load settings from database
   async function loadSettings() {
     try {
       console.log("[DEBUG] App.tsx: Loading settings");
       const loaded = await safeInvoke<AppSettings>("get_settings");
       console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
-
-      // Validate and clean up recent projects
-      console.log("[DEBUG] App.tsx: Validating recent projects");
-      const validPaths = await safeInvoke<string[]>("validate_recent_projects");
-
-      // Update settings with cleaned list if different
-      if (JSON.stringify(validPaths) !== JSON.stringify(loaded.recent_projects)) {
-        console.log("[DEBUG] App.tsx: Updating recent projects with validated list");
-        loaded.recent_projects = validPaths;
-        await safeInvoke("save_settings", { settings: loaded });
-      }
 
       setSettings(loaded);
       return loaded;
@@ -158,9 +133,7 @@ function App() {
       setLoading(false);
     }
 
-    initialize();
-    // Load all projects for dropdown
-    loadAllProjects();
+    void initialize();
   }, []);
 
   async function handleProjectSelected(project: Project) {
@@ -190,9 +163,6 @@ function App() {
       console.log("[DEBUG] App.tsx: Settings saved successfully");
 
       setSettings(newSettings);
-
-      // Reload all projects to include the newly selected one
-      await loadAllProjects();
 
       // Reload recent projects to get updated last_opened timestamp
       await refetchRecentProjects();
@@ -284,7 +254,6 @@ function App() {
             currentProject={currentProject}
             activeView={activePage}
             onViewChange={handlePageChange}
-            projects={projects}
             recentProjects={recentProjects}
             onProjectChange={handleProjectSelected}
             onBackToPicker={() => setCurrentProject(null)}

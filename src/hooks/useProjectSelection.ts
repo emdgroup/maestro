@@ -7,8 +7,7 @@ import { Project } from "../../src-tauri/bindings/Project.ts";
 interface UseProjectSelectionParams {
   activeConnection: Connection | null;
   onProjectSelected: (project: Project) => void;
-  onRecentProjectsChanged?: () => void;
-  refetchRecentProjects: () => Promise<void>;
+  onRecentProjectsChanged: () => void;
 }
 
 /**
@@ -27,7 +26,6 @@ export function useProjectSelection({
   activeConnection,
   onProjectSelected,
   onRecentProjectsChanged,
-  refetchRecentProjects,
 }: UseProjectSelectionParams) {
   const [loading, setLoading] = useState(false);
 
@@ -59,13 +57,9 @@ export function useProjectSelection({
    */
   const handleProjectSelect = useCallback(
     async (selectedPath: string) => {
-      if (!activeConnection) {
-        toast.error("No active connection");
-        return;
-      }
       setLoading(true);
       try {
-        if (activeConnection.type === "ssh") {
+        if (activeConnection?.type === "ssh") {
           // Remote: require connection_id (enforces authentication)
           if (!activeConnection.sshConnection?.id) {
             toast.error("SSH not authenticated");
@@ -89,26 +83,24 @@ export function useProjectSelection({
   /**
    * Handle removing a project from the recent list
    */
-  const handleRemoveRecentProject = useCallback(
-    async (path: string) => {
+  const handleRemoveProject = useCallback(
+    async (projectId: number) => {
       try {
-        await safeInvoke("remove_recent_project", { path });
-        // Refresh the recent projects list
-        await refetchRecentProjects();
+        await safeInvoke("remove_project", { projectId });
         // Notify parent to refetch its recent projects list
-        onRecentProjectsChanged?.();
+        onRecentProjectsChanged();
         toast.success("Project removed from recent list");
       } catch (error) {
         toast.error(`Failed to remove project: ${error}`);
       }
     },
-    [refetchRecentProjects, onRecentProjectsChanged],
+    [onRecentProjectsChanged],
   );
 
   return {
     loading,
     handleProjectClick,
     handleProjectSelect,
-    handleRemoveRecentProject,
+    handleRemoveProject,
   };
 }

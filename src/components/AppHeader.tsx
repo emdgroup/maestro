@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,10 +16,9 @@ import type { Project } from "@/types/bindings";
 type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 
 interface AppHeaderProps {
-  currentProject: Project | null;
+  currentProject: Project;
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
-  projects?: Project[];
   recentProjects?: Project[];
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
@@ -41,52 +40,11 @@ export function AppHeader({
   currentProject,
   activeView,
   onViewChange,
-  projects = [],
   recentProjects = [],
   onProjectChange,
   onBackToPicker,
   agentCount = 0,
 }: AppHeaderProps) {
-  // Get connection identifier for filtering
-  const getConnectionId = (project: Project): string => {
-    if (!project.connection_id) {
-      return "local";
-    }
-    return `connection-${project.connection_id}`;
-  };
-
-  // Filter projects to show only recent ones from the same connection (max 5)
-  const filteredProjects = useMemo(() => {
-    if (!currentProject) {
-      return projects;
-    }
-
-    const currentConnection = getConnectionId(currentProject);
-
-    // Step 1: Filter by connection
-    const sameConnection = projects.filter((p) => getConnectionId(p) === currentConnection);
-
-    // Step 2: Filter to only recent projects
-    const recentPaths = new Set(recentProjects.map((rp) => rp.path));
-    const recentAndSameConnection = sameConnection.filter((p) => recentPaths.has(p.path));
-
-    // Step 3: Sort by last_opened timestamp (most recent first)
-    const pathToLastOpened = new Map(recentProjects.map((rp) => [rp.path, rp.last_opened]));
-
-    recentAndSameConnection.sort((a, b) => {
-      const aTime = pathToLastOpened.get(a.path) || "";
-      const bTime = pathToLastOpened.get(b.path) || "";
-      // Sort descending (most recent first)
-      return bTime.localeCompare(aTime);
-    });
-
-    // Step 4: Take top 5 most recent
-    return recentAndSameConnection.slice(0, 5);
-  }, [projects, recentProjects, currentProject]);
-
-  const currentProjectPath = currentProject?.path || "";
-  const currentProjectName = currentProject?.name || "";
-
   // Special value for "back to picker" option
   const BACK_TO_PICKER_VALUE = "__back_to_picker__";
 
@@ -102,16 +60,16 @@ export function AppHeader({
     <header className="flex h-12 shrink-0 items-center justify-between border-b px-4 gap-4">
       {/* Left section: Logo + divider + Project Dropdown */}
       <div className="flex items-center gap-3 shrink-0">
-        <Select value={currentProjectPath} onValueChange={handleValueChange}>
+        <Select value={currentProject} onValueChange={handleValueChange}>
           <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
             <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
-            <SelectValue placeholder="Select project">{currentProjectName}</SelectValue>
+            <SelectValue placeholder="Select project">{currentProject.name}</SelectValue>
           </SelectTrigger>
           <SelectContent className="min-w-[16rem] max-w-[24rem]">
-            {filteredProjects.map((project) => (
+            {recentProjects.slice(0, 5).map((project) => (
               <SelectItem
-                key={project.path}
-                value={project.path}
+                key={project.id}
+                value={project}
                 className="cursor-pointer focus:bg-transparent hover:bg-transparent focus:outline-2 focus:outline-accent focus:text-foreground hover:ring-2 hover:ring-accent [&>span]:text-accent"
               >
                 <div className="flex items-center gap-2 w-full">

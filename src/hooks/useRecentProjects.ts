@@ -2,16 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Project } from "../types/bindings";
 
-export function useRecentProjects(connectionId?: number | null) {
+export function useRecentProjects(connectionId: number | undefined | null) {
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadRecent = useCallback(async () => {
     try {
       setLoading(true);
-      const projects = await invoke<Project[]>("get_connection_projects", {
-        connectionId: connectionId ?? null
-      });
+      const projects = await invoke<Project[]>("get_connection_projects", { connectionId });
       setRecentProjects(projects);
     } catch (err) {
       console.error("Failed to load connection projects:", err);
@@ -21,7 +19,7 @@ export function useRecentProjects(connectionId?: number | null) {
   }, [connectionId]);
 
   useEffect(() => {
-    loadRecent();
+    void loadRecent();
   }, [loadRecent]);
 
   return { recentProjects, loading, refetch: loadRecent };

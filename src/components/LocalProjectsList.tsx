@@ -1,27 +1,22 @@
 import { Folder } from "lucide-react";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
-import { Project } from "../../src-tauri/bindings/Project.ts";
+import { useRecentProjects } from "@/hooks/useRecentProjects.ts";
 
 interface LocalProjectsListProps {
-  recentProjects: Project[];
   onProjectClick: (projectId: number) => void;
+  onRemoveProject: (projectId: number) => void;
   onSelectNewClick: () => void;
   onBack: () => void;
-  onRemoveProject?: (path: string) => void;
-  loading?: boolean;
 }
 
 export function LocalProjectsList({
-  recentProjects,
   onProjectClick,
   onSelectNewClick,
   onBack,
   onRemoveProject,
-  loading = false,
 }: LocalProjectsListProps) {
-  // Filter to only show local projects
-  const localProjects = recentProjects.filter((p) => !p.connection_id);
+  const { recentProjects, loading } = useRecentProjects(null);
 
   return (
     <ProjectsListLayout
@@ -31,18 +26,18 @@ export function LocalProjectsList({
           <h2 className="text-lg font-semibold">Local</h2>
         </>
       }
-      isEmpty={localProjects.length === 0}
+      isEmpty={recentProjects.length === 0}
       emptyMessage="No recent local projects"
       onBack={onBack}
       onSelectNewClick={onSelectNewClick}
       loading={loading}
     >
-      {localProjects.map((project) => (
+      {recentProjects.map((project) => (
         <ProjectListItem
-          key={project.path}
+          key={project.id}
           path={project.path}
           onClick={() => onProjectClick(project.id)}
-          onRemove={onRemoveProject ? () => onRemoveProject(project.path) : undefined}
+          onRemove={() => onRemoveProject(project.id)}
           disabled={loading}
         />
       ))}

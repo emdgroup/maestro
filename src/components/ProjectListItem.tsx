@@ -36,7 +36,7 @@ export function ProjectListItem({
         onKeyDown={handleKeyDown}
         disabled={disabled}
         variant="outline"
-        className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background"
       >
         <div className="flex flex-col items-start gap-1 w-full">
           <span className="font-semibold">{getFolderName(path)}</span>
@@ -44,18 +44,19 @@ export function ProjectListItem({
         </div>
       </Button>
       {onRemove && (
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
           }}
+          variant={"ghost"}
           tabIndex={-1}
           className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           title="Remove from recent projects (Del key)"
           aria-label="Remove from recent projects"
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       )}
     </li>
   );

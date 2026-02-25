@@ -1,7 +1,8 @@
+use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
-
+use rusqlite::{params, ToSql};
 use crate::models::{Project, Task, TaskStatus};
 use crate::db::{AppState, project_storage};
 
@@ -12,7 +13,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT * FROM projects ORDER BY created_at DESC")
+        .prepare("SELECT * FROM projects")
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
@@ -26,16 +27,19 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 
 /// Get list of all projects per connections
 #[tauri::command]
-pub fn get_connection_projects(connection_id: Option<i32>, app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
+pub fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
     println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-    let mut stmt = conn
-        .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC ")
+    let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
+        Some(id) => ("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
+        None => ("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
+    };
+    let mut stmt = conn.prepare(query)
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
-        .query_map([connection_id], Project::from_row)
+        .query_map(params, Project::from_row)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -43,11 +47,11 @@ pub fn get_connection_projects(connection_id: Option<i32>, app_state: State<Arc<
     Ok(projects)
 }
 
-/// Get or create project by path
+/// Get project by id
 #[tauri::command]
 pub fn get_project(
-    project_id: i32,
     app_state: State<Arc<AppState>>,
+    project_id: i32,
 ) -> Result<Project, String> {
     println!("get_project({}) called via IPC", project_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -73,6 +77,23 @@ pub fn get_project(
     }
 }
 
+/// remove project by id
+#[tauri::command]
+pub fn remove_project(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+) -> Result<(), String> {
+    println!("remove_project({}) called via IPC", project_id);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Delete from database
+    conn.execute("DELETE FROM projects WHERE id = ?",[project_id])
+        .map_err(|e| e.to_string())?;
+
+    println!("Deleted project: {}", project_id);
+    Ok(())
+}
+
 /// Create a new project
 #[tauri::command]
 pub fn create_project(
@@ -85,20 +106,20 @@ pub fn create_project(
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id = ?",
-            rusqlite::params![&path, connection_id],
+            params![path, connection_id],
             |row| row.get(0),
         ).ok();
         existing.unwrap_or_else(|| {
             // Create new remote project in database
             let now = Utc::now().to_rfc3339();
-            let name = std::path::Path::new(&path)
+            let name = Path::new(&path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Untitled")
                 .to_string();
             conn.execute(
                 "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![&name, &path, &now, &now, connection_id, &now],
+                params![name, path, now, now, connection_id, now],
             ).expect(&format!("Failed to insert project {}", name));
             conn.last_insert_rowid() as i32
         })
@@ -109,7 +130,7 @@ pub fn create_project(
     project_storage::create_project_maestro_folder(&path)
         .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
 
-    let project = get_project(project_id, app_state).map_err(|e| e.to_string())?;
+    let project = get_project(app_state, project_id).map_err(|e| e.to_string())?;
     Ok(project)
 }
 

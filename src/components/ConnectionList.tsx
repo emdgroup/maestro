@@ -64,7 +64,7 @@ export function ConnectionList({
                     onClick={() => onConnectionClick(connection)}
                     disabled={loading}
                     variant="outline"
-                    className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10"
+                    className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background"
                   >
                     <div className="flex items-start gap-2 w-full">
                       <Icon className="w-4 h-4 mt-0.5 shrink-0" />
@@ -99,7 +99,7 @@ export function ConnectionList({
             onChange={(e) => setConnectionString(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Enter user@host"
-            className="font-mono text-sm h-auto bg-background"
+            className="font-mono text-sm h-auto hover:bg-background focus:bg-background"
             disabled={loading}
           />
           <Button

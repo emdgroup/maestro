@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
 import { safeInvoke } from "../lib/tauri-safe";
 import { toast } from "sonner";
-import { Folder, Home, FolderUp, HardDrive } from "lucide-react";
+import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 import {
@@ -306,7 +306,7 @@ export function FilePicker({
                     <button
                       {...props}
                       onClick={() => handleBreadcrumbClick(-1)}
-                      className="flex items-center gap-1 text-sm hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+                      className="flex items-center gap-1 text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
                     >
                       <Home className="w-4 h-4" />
                       <span>{showingDrives ? "Drives" : "Root"}</span>
@@ -323,7 +323,7 @@ export function FilePicker({
                         <button
                           {...props}
                           onClick={() => handleBreadcrumbClick(index)}
-                          className="text-sm hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5"
+                          className="text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
                         >
                           {part}
                         </button>
@@ -356,7 +356,7 @@ export function FilePicker({
                       }}
                       onClick={() => handleDirectoryClick(drive)}
                       disabled={loading}
-                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
                         selectedIndex === index ? "bg-accent" : ""
                       }`}
                     >
@@ -376,9 +376,7 @@ export function FilePicker({
                       }}
                       onClick={handleParentDirectory}
                       disabled={loading}
-                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                        selectedIndex === 0 ? "bg-accent" : ""
-                      }`}
+                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset`}
                     >
                       <FolderUp className="w-4 h-4 shrink-0" />
                       <span className="truncate">..</span>
@@ -403,11 +401,11 @@ export function FilePicker({
                           }}
                           onClick={() => handleDirectoryClick(dir)}
                           disabled={loading}
-                          className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                          className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
                             selectedIndex === itemIndex ? "bg-accent" : ""
                           }`}
                         >
-                          <Folder className="w-4 h-4 shrink-0" />
+                          <Folder className="size-4 shrink-0" />
                           <span className="truncate">{dir}</span>
                         </button>
                       );
@@ -426,7 +424,7 @@ export function FilePicker({
               id="show-hidden"
               checked={showHidden}
               onCheckedChange={(checked) => setShowHidden(checked)}
-              className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 data-checked:bg-accent data-unchecked:bg-muted-foreground/25 dark:data-unchecked:bg-muted-foreground/25"
             />
             <Label
               htmlFor="show-hidden"
@@ -449,7 +447,7 @@ export function FilePicker({
             size="default"
             className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
           >
-            <Folder className="w-4 h-4" />
+            <FolderOpen className="size-4" />
             {externalLoading ? "Opening..." : "Open Project"}
           </Button>
         </div>

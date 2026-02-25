@@ -35,7 +35,7 @@ fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<maestro::models::
 
 #[tauri::command]
 fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<maestro::models::Project>, String> {
-    maestro::ipc::get_connection_projects(connection_id, app_state)
+    maestro::ipc::get_connection_projects(app_state, connection_id)
 }
 
 #[tauri::command]
@@ -49,7 +49,12 @@ fn create_project(
 
 #[tauri::command]
 fn get_project(app_state: State<Arc<AppState>>, project_id: i32) -> Result<maestro::models::Project, String> {
-    maestro::ipc::get_project(project_id, app_state)
+    maestro::ipc::get_project(app_state, project_id)
+}
+
+#[tauri::command]
+fn remove_project(app_state: State<Arc<AppState>>, project_id: i32) -> Result<(), String> {
+    maestro::ipc::remove_project(app_state, project_id)
 }
 
 #[tauri::command]
@@ -474,6 +479,7 @@ fn main() {
             get_connection_projects,
             create_project,
             get_project,
+            remove_project,
             get_tasks,
             create_task,
             update_task,

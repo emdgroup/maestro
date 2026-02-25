@@ -49,7 +49,7 @@ pub fn save_settings(
     app_state: State<Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    println!("save_settings() called via IPC with project_path: {:?}", settings.project_path);
+    println!("save_settings() called via IPC");
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
 }

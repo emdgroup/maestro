@@ -1,5 +1,5 @@
 import { Button } from "./ui/button";
-import { Folder, ChevronLeft } from "lucide-react";
+import { ChevronLeft, FolderPlus } from "lucide-react";
 import { ReactNode, useEffect } from "react";
 
 interface ProjectsListLayoutProps {
@@ -78,7 +78,7 @@ export function ProjectsListLayout({
           size="lg"
           className="w-full focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
         >
-          <Folder className="w-4 h-4" />
+          <FolderPlus className="w-4 h-4" />
           {loading ? "Loading..." : "Select New Project"}
         </Button>
       </div>
