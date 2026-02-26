@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T21:12:00.657Z"
+last_updated: "2026-02-26T21:33:40Z"
 progress:
   total_phases: 21
   completed_phases: 19
   total_plans: 70
-  completed_plans: 68
+  completed_plans: 69
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 19 of 19 (Frontend Architecture Refactoring)
-Plan: 4 of 6 in current phase - COMPLETE
-Status: Phase 19-04 executed successfully
-Last activity: 2026-02-26 — Phase 19-04 complete (Replace Scattered invoke() Calls with Service Layer)
+Plan: 5 of 6 in current phase - COMPLETE
+Status: Phase 19-05 executed successfully
+Last activity: 2026-02-26 — Phase 19-05 complete (Organize Utils Layer - Hooks and Helpers)
 
-**Next Action:** Execute Phase 19-05 (Add Custom Hooks Layer)
+**Next Action:** Execute Phase 19-06 (Implement Feature Modules)
 
-Progress: [███████████████████░] 96% (18/19 phases complete + 4/6 phase 19 tasks)
+Progress: [███████████████████░] 97% (18/19 phases complete + 5/6 phase 19 tasks)
 
 ## Performance Metrics
 
@@ -77,9 +77,11 @@ Progress: [███████████████████░] 96% (18
 - Phase 19-02: 0.001h (Organize Domain-Grouped Services Layer - centralized IPC wrapper + 6 domain services: task, project, settings, execution, connection)
 - Phase 19-03: 0.08h (Organize Reusable Components into Domain-Specific Folders - 5 domain folders, barrel exports, 33 files with updated imports)
 - Phase 19-04: 0.16h (Replace Scattered invoke() Calls with Service Layer - 31 IPC calls migrated, 10 components/providers updated, 7 service methods added)
+- Phase 19-05: 0.09h (Organize Utils Layer - Hooks and Helpers - src/utils/{hooks,helpers} structure, 4 complex hooks in folders, 3 helpers consolidated, 63 files updated with new imports)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |
+| Phase 19-05 P05 | 0.09 | 2 tasks | 63 files |
 
 ## Accumulated Context
 
@@ -174,17 +176,17 @@ Session timestamp: 2026-02-26 21:10:53Z
 ---
 
 **v1.1 MILESTONE STATUS: IN PROGRESS**
-**Phase 19 STATUS: IN PROGRESS (4/6 plans complete)**
+**Phase 19 STATUS: IN PROGRESS (5/6 plans complete)**
 
 v1.1 UI/UX Polish milestone - 18 of 19 phases complete + Phase 19 architecture refactoring underway.
-Phase 19-04 (Replace Scattered invoke() Calls with Service Layer) COMPLETE 2026-02-26.
+Phase 19-05 (Organize Utils Layer - Hooks and Helpers) COMPLETE 2026-02-26.
 
 **Phase 19 Plan Status:**
 - 19-01: COMPLETE - Extract Page-Level Components to Views
 - 19-02: COMPLETE - Organize Domain-Grouped Services Layer
 - 19-03: COMPLETE - Organize Reusable Components into Domain-Specific Folders
 - 19-04: COMPLETE - Replace Scattered invoke() Calls with Service Layer
-- 19-05: PENDING - Add Custom Hooks Layer
+- 19-05: COMPLETE - Organize Utils Layer (Hooks and Helpers)
 - 19-06: PENDING - Implement Feature Modules
 
 Phase 18 (Maestro Folder Architecture & Rebranding) complete:
@@ -238,3 +240,24 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
 
 *State initialized: 2026-02-09*
 *Updated: 2026-02-26 — Phase 19-03 complete (Component organization refactoring); 3/6 plans complete (50%)*
+
+- Phase 19-04 COMPLETE (2026-02-26): Replace Scattered invoke() Calls with Service Layer
+  - 31 IPC calls migrated from components/providers to service layer
+  - 10 components and providers updated with service layer imports
+  - 7 service methods added/enhanced in src/services
+  - Centralized error handling and logging through services
+  - Type-safe IPC integration via service abstraction
+  - All components using consistent service-layer patterns
+
+- Phase 19-05 COMPLETE (2026-02-26): Organize Utils Layer (Hooks and Helpers)
+  - src/utils/{hooks,helpers} folder structure created
+  - 4 complex hooks organized in individual folders: useProjectPickerNavigation, useRecentProjects, useSshConnectionManager, useSshConnectionsQuery
+  - 1 simple hook kept as single file: use-mobile.ts
+  - 3 helpers consolidated: path-utils.ts, diff-utils.ts, ui-utils.ts
+  - Barrel exports created for hooks/, helpers/, and root utils/
+  - 63 files updated with new @/utils/hooks and @/utils/helpers import paths
+  - Old src/hooks/ and src/lib/ directories removed
+  - TypeScript compilation: 0 errors
+  - All imports verified: 0 old @/hooks or @/lib imports remaining
+
+*Updated: 2026-02-26 — Phase 19-05 complete (Utils layer organization); 5/6 plans complete (83%)*
