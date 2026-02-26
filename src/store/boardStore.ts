@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { executionService, taskService } from "@/services";
-import { Task, TaskStatus } from "../types/bindings";
+import { Task, TaskStatus } from "@/types/bindings";
 
 export interface BoardState {
   tasks: Task[];

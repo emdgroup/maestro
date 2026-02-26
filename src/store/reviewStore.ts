@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { DiffFileWithName } from "../types/review";
+import { DiffFileWithName } from "@/types/review";
 
 export interface ReviewState {
   currentTaskId: number | null;

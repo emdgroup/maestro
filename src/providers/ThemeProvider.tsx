@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { settingsService } from "@/services";
-import type { AppSettings } from "../types/bindings";
+import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
 
 // Theme type definition
