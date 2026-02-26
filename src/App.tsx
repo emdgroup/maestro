@@ -1,17 +1,20 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { ProjectPicker } from "./components/ProjectPicker.tsx";
 import { useSelectedProject } from "./store/projectStore";
-import { KanbanBoard } from "./components/KanbanBoard";
 import { AppHeader } from "./components/AppHeader";
-import { AgentMonitor } from "./components/AgentMonitor";
-import { WorktreeManager } from "./components/WorktreeManager";
 import { TaskModal } from "./components/TaskModal";
 import { TaskDetail } from "./components/TaskDetail";
 import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
-import { SettingsPage, SettingsPageHandle } from "./components/SettingsPage";
+import {
+  KanbanView,
+  AgentsView,
+  SettingsView,
+  ProjectPickerView,
+  WorktreesView,
+} from "./views";
+import type { SettingsPageHandle } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { QueryProvider } from "./providers/QueryProvider";
 import { useBoardStore } from "./store/boardStore";
@@ -20,7 +23,6 @@ import { ActionBar, ActionBarAction } from "./components/ActionBar";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
-import { ConnectionProvider } from "@/contexts/ConnectionContext.tsx";
 
 function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -243,9 +245,7 @@ function App() {
           <p>Loading...</p>
         </div>
       ) : !currentProject ? (
-        <ConnectionProvider>
-          <ProjectPicker />
-        </ConnectionProvider>
+        <ProjectPickerView />
       ) : (
         <div className="app flex flex-col h-screen bg-background">
           <AppHeader
@@ -271,7 +271,7 @@ function App() {
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
-                  <KanbanBoard
+                  <KanbanView
                     projectId={currentProject.id}
                     projectPath={currentProject.path}
                     onTaskClick={setSelectedTask}
@@ -290,7 +290,7 @@ function App() {
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
-                  <AgentMonitor projectId={currentProject.id} agents={[]} activeAgentId={null} />
+                  <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
                 </motion.div>
               )}
 
@@ -305,7 +305,7 @@ function App() {
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
-                  <WorktreeManager projectId={currentProject.id} worktrees={[]} />
+                  <WorktreesView projectId={currentProject.id} worktrees={[]} />
                 </motion.div>
               )}
 
@@ -320,7 +320,7 @@ function App() {
                   transition={{ duration: 0.25, ease: "easeInOut" }}
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
-                  <SettingsPage ref={settingsPageRef} projectId={currentProject.id} />
+                  <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
                 </motion.div>
               )}
             </AnimatePresence>
