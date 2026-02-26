@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { SshConnection } from "@/types/bindings";
-import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
-import { useSshConnectionsQuery } from "@/utils/hooks/useSshConnectionsQuery";
+import { SshConnection } from "@/types/bindings.ts";
+import { Connection, localConnectionId } from "@/contexts/ConnectionContext.tsx";
+import { useSshConnectionsQuery } from "@/hooks/useSshConnectionsQuery";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;

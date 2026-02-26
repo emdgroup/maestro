@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Project } from "@/types/bindings";
+import type { Project } from "@/types/bindings.ts";
 
 export function useRecentProjects(connectionId: number | undefined | null) {
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);

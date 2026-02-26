@@ -6,7 +6,7 @@ import { useRecentProjects } from "@/utils/hooks";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
-import { ConnectionHeader, FilePicker } from "@/components/project";
+import { ConnectionHeader, FilePicker } from "@/components/project-picker";
 import { Dialog, DialogContent } from "@/components/ui/dialog.tsx";
 import { useState } from "react";
 import { useProjectPickerNavigation } from "@/utils/hooks";
