@@ -6,6 +6,43 @@ import { ipc } from "./ipc";
  */
 export const executionService = {
   /**
+   * Spawn agent execution for a task
+   */
+  async spawnAgentExecution(
+    projectId: number,
+    taskId: number,
+    repoPath: string
+  ): Promise<number> {
+    return ipc.invoke<number>("spawn_agent_execution", {
+      project_id: projectId,
+      task_id: taskId,
+      repo_path: repoPath,
+    });
+  },
+
+  /**
+   * Pause agent execution for a task
+   */
+  async pauseAgentExecution(taskId: number): Promise<void> {
+    return ipc.invoke<void>("pause_agent_execution", { taskId });
+  },
+
+  /**
+   * Resume agent execution for a task
+   */
+  async resumeAgentExecution(
+    taskId: number,
+    projectId: number,
+    repoPath: string
+  ): Promise<number> {
+    return ipc.invoke<number>("resume_agent_execution", {
+      taskId,
+      projectId,
+      repoPath,
+    });
+  },
+
+  /**
    * Attach to a task's execution terminal
    */
   async attachTerminal(

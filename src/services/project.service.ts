@@ -3,6 +3,7 @@ import type {
   Project,
   ProjectConfigResponse,
   ProjectConfigRequest,
+  AppSettings,
 } from "@/types/bindings";
 
 /**
@@ -10,6 +11,13 @@ import type {
  * All project-related IPC calls are centralized here.
  */
 export const projectService = {
+  /**
+   * Get all projects
+   */
+  async getProjects(): Promise<Project[]> {
+    return ipc.invoke<Project[]>("get_projects");
+  },
+
   /**
    * Get project details by ID
    */
@@ -71,6 +79,26 @@ export const projectService = {
     return ipc.invoke<void>("save_import_config", {
       projectId,
       importConfig,
+    });
+  },
+
+  /**
+   * Get application settings (legacy name for compatibility)
+   */
+  async getSettings(): Promise<AppSettings> {
+    return ipc.invoke<AppSettings>("get_settings");
+  },
+
+  /**
+   * Get or create a project by path
+   */
+  async getOrCreateProject(
+    path: string,
+    description?: string
+  ): Promise<Project> {
+    return ipc.invoke<Project>("get_or_create_project", {
+      path,
+      description: description || "",
     });
   },
 };

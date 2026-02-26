@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { invoke } from "@tauri-apps/api/core";
+import { executionService, taskService } from "@/services";
 import { Task, TaskStatus } from "../types/bindings";
 
 export interface BoardState {
@@ -60,12 +60,12 @@ export const useBoardStore = create<BoardState>()(
 
     executeTask: async (projectId: number, taskId: number, repoPath: string) => {
       try {
-        // Invoke spawn_agent_execution handler
-        const executionLogId = await invoke<number>("spawn_agent_execution", {
-          project_id: projectId,
-          task_id: taskId,
-          repo_path: repoPath,
-        });
+        // Call executionService to spawn agent
+        const executionLogId = await executionService.spawnAgentExecution(
+          projectId,
+          taskId,
+          repoPath
+        );
 
         // Update task status to InProgress using immer middleware
         set((state) => {
@@ -88,7 +88,7 @@ export const useBoardStore = create<BoardState>()(
           state.pausingTaskIds.add(taskId);
         });
 
-        await invoke<void>("pause_agent_execution", { taskId: taskId });
+        await executionService.pauseAgentExecution(taskId);
 
         // Backend updates database directly. TaskCard will reload execution log.
       } catch (error) {
@@ -108,12 +108,12 @@ export const useBoardStore = create<BoardState>()(
           state.retryingTaskIds.add(taskId);
         });
 
-        // Invoke resume_agent_execution handler (reuses same config, creates new execution log)
-        const executionLogId = await invoke<number>("resume_agent_execution", {
-          taskId: taskId,
-          projectId: projectId,
-          repoPath: repoPath,
-        });
+        // Call executionService to resume agent (reuses same config, creates new execution log)
+        const executionLogId = await executionService.resumeAgentExecution(
+          taskId,
+          projectId,
+          repoPath
+        );
 
         // Update task status to InProgress
         set((state) => {
@@ -140,12 +140,12 @@ export const useBoardStore = create<BoardState>()(
           state.abortingTaskIds.add(taskId);
         });
 
-        // Call cancel_execution handler if available, otherwise just mark as Done
+        // Call cancelExecution handler if available, otherwise just mark as Done
         // TODO: cancel_execution expects logId, not taskId - this needs to fetch the log first
         try {
-          await invoke("cancel_execution", { logId: taskId });
+          await taskService.cancelExecution(taskId);
         } catch (err) {
-          console.warn("cancel_execution handler not available, marking task manually", err);
+          console.warn("cancelExecution handler not available, marking task manually", err);
         }
 
         // Update task status to Done
@@ -177,7 +177,7 @@ export const useBoardStore = create<BoardState>()(
       const state = get();
       if (state.activeTerminalTaskId !== null) {
         try {
-          await invoke("detach_terminal", { taskId: state.activeTerminalTaskId });
+          await executionService.detachTerminal(state.activeTerminalTaskId);
         } catch (err) {
           console.error("Error detaching terminal:", err);
         }

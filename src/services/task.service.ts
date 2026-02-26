@@ -34,6 +34,13 @@ export const taskService = {
   },
 
   /**
+   * Update task status (convenience method)
+   */
+  async updateTaskStatus(taskId: number, status: string): Promise<Task> {
+    return ipc.invoke<Task>("update_task_status", { taskId, status });
+  },
+
+  /**
    * Get execution logs for a task
    */
   async getExecutionLogs(taskId: number): Promise<ExecutionLog[]> {
