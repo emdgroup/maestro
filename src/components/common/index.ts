@@ -1,6 +1,7 @@
 export { AppHeader } from "./AppHeader";
 export { ActionBar } from "./ActionBar";
-export { ErrorToast, showErrorToast } from "./ErrorToast";
+export type { ActionBarAction } from "./ActionBar";
+export { ToasterRoot, showErrorToast, showSuccessToast } from "./ErrorToast";
 export { ThemeToggle } from "./ThemeToggle";
 export { SyncButton } from "./SyncButton";
 export { ReviewModal } from "./ReviewModal";

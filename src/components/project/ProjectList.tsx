@@ -4,12 +4,11 @@ import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { Project } from "../../src-tauri/bindings/Project";
+import type { Project } from "@/types/bindings";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
-import { ConnectionHeader } from "@/components/ConnectionHeader.tsx";
+import { ConnectionHeader, FilePicker } from "@/components/project";
 import { Dialog, DialogContent } from "@/components/ui/dialog.tsx";
-import { FilePicker } from "@/components/FilePicker.tsx";
 import { useState } from "react";
 import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation.ts";
 

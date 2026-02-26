@@ -20,8 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "../store/configStore";
-import type { Task, TaskConfigRequest } from "../types/bindings";
+import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "../../store/configStore";
+import type { Task, TaskConfigRequest } from "../../types/bindings";
 import { X } from "lucide-react";
 
 interface TaskSettingsModalProps {

@@ -2,26 +2,18 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { useSelectedProject } from "./store/projectStore";
-import { AppHeader } from "./components/AppHeader";
-import { TaskModal } from "./components/TaskModal";
-import { TaskDetail } from "./components/TaskDetail";
-import { ToasterRoot } from "./components/ErrorToast";
-import { ImportSettings } from "./components/ImportSettings";
-import {
-  KanbanView,
-  AgentsView,
-  SettingsView,
-  ProjectPickerView,
-  WorktreesView,
-} from "./views";
-import type { SettingsPageHandle } from "./components/SettingsPage";
+import { AppHeader, ActionBar, ToasterRoot } from "@/components/common";
+import { TaskModal } from "@/components/kanban";
+import { TaskDetail, ImportSettings } from "@/components/task";
+import type { SettingsPageHandle } from "@/components/common";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { QueryProvider } from "./providers/QueryProvider";
 import { useBoardStore } from "./store/boardStore";
 import { useRecentProjects } from "./hooks/useRecentProjects";
-import { ActionBar, ActionBarAction } from "./components/ActionBar";
+import type { ActionBarAction } from "@/components/common";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "./types/bindings";
+import { KanbanView, ProjectPickerView, WorktreesView, AgentsView, SettingsView } from "./views";
 import "./App.css";
 
 function App() {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExecutionLog } from "../types/bindings";
-import { showErrorToast, showSuccessToast } from "./ErrorToast";
-import { useBoardStore } from "../store/boardStore";
+import { ExecutionLog } from "../../types/bindings";
+import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
+import { useBoardStore } from "../../store/boardStore";
 import { toast } from "sonner";
 
 interface ExecutionHistoryProps {

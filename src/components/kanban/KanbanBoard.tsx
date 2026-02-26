@@ -9,16 +9,16 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { invoke } from "@tauri-apps/api/core";
-import { useBoardStore } from "../store/boardStore";
-import { Task, TaskStatus } from "../types/bindings";
+import { useBoardStore } from "../../store/boardStore";
+import { Task, TaskStatus } from "../../types/bindings";
 import { toast } from "sonner";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
-import { ReviewModal } from "./ReviewModal";
-import { TaskSettingsModal } from "./TaskSettingsModal";
-import { ExecutionTerminal } from "./ExecutionTerminal";
+import { ReviewModal } from "../common/ReviewModal";
+import { TaskSettingsModal } from "../task/TaskSettingsModal";
+import { ExecutionTerminal } from "../execution/ExecutionTerminal";
 
-interface KanbanBoardProps {
+export interface KanbanBoardProps {
   projectId: number;
   projectPath?: string;
   onTaskClick?: (task: Task) => void;

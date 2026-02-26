@@ -1,4 +1,4 @@
-import { Button } from "./ui/button";
+import { Button } from "../ui/button";
 import { ChevronLeft, FolderPlus } from "lucide-react";
 import { ReactNode, useEffect } from "react";
 

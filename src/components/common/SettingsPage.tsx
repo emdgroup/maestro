@@ -15,8 +15,8 @@ import {
   AVAILABLE_MCP_SERVERS,
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
-} from "../store/configStore";
-import type { ProjectConfigResponse, ProjectConfigRequest } from "../types/bindings";
+} from "../../store/configStore";
+import type { ProjectConfigResponse, ProjectConfigRequest } from "../../types/bindings";
 import { Bot, Server, Sparkles } from "lucide-react";
 import { showSuccessToast } from "./ErrorToast";
 

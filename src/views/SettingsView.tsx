@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { SettingsPage, SettingsPageHandle } from "@/components/SettingsPage";
+import { SettingsPage, SettingsPageHandle } from "@/components/common";
 
 interface SettingsViewProps {
   projectId: number;

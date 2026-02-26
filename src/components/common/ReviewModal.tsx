@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
-import { useReviewStore } from "../store/reviewStore";
-import { parseDiffString } from "../utils/diffParser";
-import { FileTree } from "./FileTree";
-import { DiffViewer } from "./DiffViewer";
+import { useReviewStore } from "../../store/reviewStore";
+import { parseDiffString } from "../../utils/diffParser";
+import { FileTree } from "../execution/FileTree";
+import { DiffViewer } from "../execution/DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";
 import { X } from "lucide-react";
 

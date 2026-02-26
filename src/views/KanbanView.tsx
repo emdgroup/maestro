@@ -1,4 +1,4 @@
-import { KanbanBoard } from "@/components/KanbanBoard";
+import { KanbanBoard } from "@/components/kanban";
 import type { Task } from "@/types/bindings";
 
 interface KanbanViewProps {

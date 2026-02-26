@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Task } from "../types/bindings";
-import { ExecutionHistory } from "./ExecutionHistory";
-import { TerminalComponent } from "./Terminal";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
+import { Task } from "../../types/bindings";
+import { ExecutionHistory } from "../execution/ExecutionHistory";
+import { TerminalComponent } from "../execution/Terminal";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 
 interface TaskDetailProps {
   task: Task | null;

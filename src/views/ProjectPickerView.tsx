@@ -1,4 +1,4 @@
-import { ProjectPicker } from "@/components/ProjectPicker";
+import { ProjectPicker } from "@/components/project";
 
 /**
  * ProjectPickerView - Page-level orchestrator for the project selection first-run screen

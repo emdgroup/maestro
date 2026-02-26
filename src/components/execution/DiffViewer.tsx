@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { DiffView, DiffModeEnum } from "@git-diff-view/react";
 import { getDiffViewHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
-import { DiffFile } from "../types/review";
+import { DiffFile } from "../../types/review";
 
 interface DiffViewerProps {
   diffFile: DiffFile | null;
