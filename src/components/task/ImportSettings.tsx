@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { projectService } from "@/services";
 import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
 
 interface ImportSettingsProps {
@@ -97,7 +98,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
           return;
         }
 
-        await invoke("save_import_config", {
+        await projectService.saveImportConfig(1, {
           provider: "github",
           config: {
             owner: githubOwner,
@@ -111,7 +112,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
           return;
         }
 
-        await invoke("save_import_config", {
+        await projectService.saveImportConfig(1, {
           provider: "jira",
           config: {
             host: jiraHost,

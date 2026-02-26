@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { executionService } from "@/services";
 
 interface ExecutionTerminalProps {
   taskId: number;
@@ -28,7 +29,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const detachTerminal = useCallback(async () => {
     try {
-      await invoke("detach_terminal", { taskId: taskId });
+      await executionService.detachTerminal(taskId);
       console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
     } catch (err) {
       console.error("Detach terminal error:", err);
@@ -54,12 +55,8 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
           setTerminalOutput((prev) => prev + message);
         };
 
-        // Invoke attach_terminal with the channel and include_history flag
-        await invoke("attach_terminal", {
-          task_id: taskId,
-          output_channel: channel,
-          include_history: true,
-        });
+        // Call executionService to attach terminal with the channel
+        await executionService.attachTerminal(taskId, channel.toString());
 
         console.log(`[ExecutionTerminal] Attached to task ${taskId}`);
         setLoading(false);
@@ -94,11 +91,8 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       // Echo input to terminal for visual feedback
       setTerminalOutput((prev) => prev + inputValue + "\n");
 
-      // Send input to PTY
-      await invoke("send_terminal_input", {
-        task_id: taskId,
-        input: inputValue + "\n",
-      });
+      // Send input to PTY using execution service
+      await executionService.sendTerminalInput(taskId, inputValue + "\n");
 
       setInputValue("");
       setError(null);
@@ -115,10 +109,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     try {
       setSending(true);
       setTerminalOutput((prev) => prev + "^C\n");
-      await invoke("send_terminal_input", {
-        task_id: taskId,
-        input: "\x03", // Ctrl+C
-      });
+      await executionService.sendTerminalInput(taskId, "\x03"); // Ctrl+C
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

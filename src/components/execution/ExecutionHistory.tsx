@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { taskService } from "@/services";
 import { ExecutionLog } from "../../types/bindings";
 import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
 import { useBoardStore } from "../../store/boardStore";
@@ -57,7 +57,7 @@ export function ExecutionHistory({
         setLoading(true);
       }
       setError(null);
-      const logs = await invoke<ExecutionLog[]>("get_execution_logs", { taskId: taskId });
+      const logs = await taskService.getExecutionLogs(taskId);
 
       // Check for new paused executions and show notification
       const previousLogs = previousLogsRef.current;
@@ -114,11 +114,7 @@ export function ExecutionHistory({
   const handleRetry = async () => {
     try {
       setRetrying(true);
-      await invoke("retry_execution", {
-        projectId: projectId,
-        taskId: taskId,
-        repoPath: projectPath,
-      });
+      await taskService.retryExecution(taskId);
       // Reload logs to show the new execution
       await loadExecutionLogs();
     } catch (err) {
@@ -130,7 +126,7 @@ export function ExecutionHistory({
 
   const handleCancel = async (logId: number) => {
     try {
-      await invoke("cancel_execution", { logId: logId });
+      await taskService.cancelExecution(logId);
       // Reload logs to show updated status
       await loadExecutionLogs();
     } catch (err) {

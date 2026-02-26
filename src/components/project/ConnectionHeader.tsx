@@ -3,7 +3,7 @@ import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { SshConnection } from "../../types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { connectionService } from "@/services";
 import { toast } from "sonner";
 import { useUpdateSshConnectionMutation } from "@/hooks/useSshConnectionsQuery";
 import {
@@ -83,9 +83,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
 
   const handleDeleteConnection = async () => {
     try {
-      await invoke("delete_ssh_connection", {
-        connectionId: connection.id,
-      });
+      await connectionService.deleteSshConnection(connection.id.toString());
       setShowDeleteDialog(false);
       toast.success("Connection deleted");
       // Notify parent that connection was deleted
@@ -97,9 +95,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
 
   const handleForgetPassword = async () => {
     try {
-      await invoke("forget_saved_password", {
-        connectionId: connection.id,
-      });
+      await connectionService.forgetSavedPassword(connection.id.toString());
       toast.success("Password forgotten");
     } catch (error) {
       toast.error(`Failed to forget password: ${error}`);

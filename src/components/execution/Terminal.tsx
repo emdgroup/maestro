@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { executionService } from "@/services";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -41,22 +42,22 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       terminal.write(output);
     };
 
-    // Attach to backend PTY
-    invoke("attach_terminal", { taskId, outputChannel: channel }).catch((err) => {
+    // Attach to backend PTY using execution service
+    executionService.attachTerminal(taskId, channel.toString()).catch((err) => {
       console.error("Failed to attach terminal:", err);
       terminal.write(`\r\nError: Failed to attach terminal: ${err}\r\n`);
     });
 
     // Set up terminal to send input to backend
     terminal.onData((data: string) => {
-      invoke("send_terminal_input", { taskId, input: data }).catch((err) => {
+      executionService.sendTerminalInput(taskId, data).catch((err) => {
         console.error("Failed to send terminal input:", err);
       });
     });
 
     // Set up terminal resize handler
     terminal.onResize(({ cols, rows }) => {
-      invoke("resize_terminal", { taskId, cols, rows }).catch((err) => {
+      executionService.resizeTerminal(taskId, cols, rows).catch((err) => {
         console.error("Failed to resize terminal:", err);
       });
     });

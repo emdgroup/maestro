@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { settingsService } from "@/services";
 import type { AppSettings } from "../types/bindings";
 import { oklch } from "culori";
 
@@ -40,8 +40,8 @@ async function loadSystemAccentColor(): Promise<void> {
   try {
     const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-    // Get system accent color from Tauri backend
-    const rgb = await invoke<number[]>("get_system_accent_color");
+    // Get system accent color from settings service
+    const rgb = await settingsService.getSystemAccentColor();
     console.log("[Theme] System accent color (RGB):", rgb);
 
     // Convert RGB to oklch to extract hue
@@ -102,8 +102,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const system = getSystemTheme();
         setSystemTheme(system);
 
-        // Load saved theme preference from database
-        const settings = await invoke<AppSettings>("get_settings");
+        // Load saved theme preference from database using settings service
+        const settings = await settingsService.getSettings();
         const savedTheme = (settings.theme_preference as ThemeValue) || "system";
         setThemeState(savedTheme);
 
@@ -138,14 +138,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // Apply theme to DOM immediately
       applyTheme(newTheme, systemTheme);
 
-      // Persist to database
-      const settings = await invoke<AppSettings>("get_settings");
+      // Persist to database using settings service
+      const settings = await settingsService.getSettings();
       const updatedSettings: AppSettings = {
         ...settings,
         theme_preference: newTheme,
         updated_at: new Date().toISOString(),
       };
-      await invoke("save_settings", { settings: updatedSettings });
+      await settingsService.saveSettings(updatedSettings);
     } catch (err) {
       console.error("Failed to save theme preference:", err);
       // Revert state on error

@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { projectService } from "@/services";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import type { Project } from "@/types/bindings";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
 import { ConnectionHeader, FilePicker } from "@/components/project";
@@ -35,10 +34,11 @@ export function ProjectList() {
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
-      const project = await invoke<Project>("create_project", {
-        projectPath: selectedPath,
-        connectionId,
-      });
+      const project = await projectService.createProject(
+        selectedPath,
+        selectedPath,
+        connectionId?.toString()
+      );
       setSelectedProject(project);
       setShowFilePickerModal(false);
     } catch (error) {
@@ -50,9 +50,7 @@ export function ProjectList() {
 
   const handleProjectClick = async (projectId: number) => {
     try {
-      const project = await invoke<Project>("get_project", {
-        projectId,
-      });
+      const project = await projectService.getProject(projectId);
       setSelectedProject(project);
     } catch (error) {
       toast.error(`Failed to open project: ${error}`);
@@ -61,7 +59,7 @@ export function ProjectList() {
 
   const handleRemoveProject = async (projectId: number) => {
     try {
-      await invoke("remove_project", { projectId });
+      await projectService.removeProject(projectId);
       await refetch();
       toast.success("Project removed from recent list");
     } catch (error) {

@@ -1,6 +1,6 @@
 import { useEffect, forwardRef, useImperativeHandle } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { invoke } from "@tauri-apps/api/core";
+import { projectService } from "@/services";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -16,7 +16,7 @@ import {
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
 } from "../../store/configStore";
-import type { ProjectConfigResponse, ProjectConfigRequest } from "../../types/bindings";
+import type { ProjectConfigRequest } from "../../types/bindings";
 import { Bot, Server, Sparkles } from "lucide-react";
 import { showSuccessToast } from "./ErrorToast";
 
@@ -77,9 +77,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         clearError();
 
         try {
-          const response = await invoke<ProjectConfigResponse>("get_project_settings", {
-            projectId: projectId,
-          });
+          const response = await projectService.getProjectSettings(projectId);
 
           // Convert arrays to checkbox records
           const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
@@ -146,10 +144,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           skills_default,
         };
 
-        await invoke("update_project_settings", {
-          projectId: projectId,
-          settings: request,
-        });
+        await projectService.updateProjectSettings(projectId, request);
 
         setState({
           model_default: data.model_default,

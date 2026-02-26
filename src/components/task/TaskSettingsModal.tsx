@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { invoke } from "@tauri-apps/api/core";
+import { taskService } from "@/services";
 import {
   Dialog,
   DialogPortal,
@@ -105,10 +105,11 @@ export function TaskSettingsModal({ isOpen, onClose, task }: TaskSettingsModalPr
         skills_override: skills_override_final,
       };
 
-      await invoke("update_task_settings", {
-        task_id: task.id,
-        ...request,
-      });
+      await taskService.updateTaskSettings(
+        task.project_id,
+        task.id,
+        request as any
+      );
 
       onClose();
     } catch (err) {

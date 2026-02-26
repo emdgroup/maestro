@@ -8,7 +8,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { invoke } from "@tauri-apps/api/core";
+import { taskService } from "@/services";
 import { useBoardStore } from "../../store/boardStore";
 import { Task, TaskStatus } from "../../types/bindings";
 import { toast } from "sonner";
@@ -73,7 +73,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const fetchTasks = async () => {
       try {
         setIsLoading(true);
-        const tasks = await invoke<Task[]>("get_tasks", { projectId: projectId });
+        const tasks = await taskService.getTasks(projectId);
         loadTasks(tasks);
         setErrorMessage(null);
 
@@ -93,7 +93,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     // Set up periodic refresh to detect merge completion
     const interval = setInterval(async () => {
       try {
-        const tasks = await invoke<Task[]>("get_tasks", { projectId: projectId });
+        const tasks = await taskService.getTasks(projectId);
         loadTasks(tasks);
 
         // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
@@ -163,11 +163,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
 
     try {
-      // Update task status in database
-      await invoke("update_task", {
-        task_id: taskId,
-        status: toStatus,
-      });
+      // Update task status in database using task service
+      await taskService.updateTask(taskId, { status: toStatus } as any);
 
       // Update local store
       updateTaskStatus(taskId, toStatus);
