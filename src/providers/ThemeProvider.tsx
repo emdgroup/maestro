@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { invoke } from "../lib/tauri-mock";
+import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../types/bindings";
 import { oklch } from "culori";
 

@@ -11,12 +11,12 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
-import { SshConnection } from "../types/bindings";
 import { Eye, EyeOff } from "lucide-react";
+import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 
 interface PasswordModalProps {
   open: boolean;
-  connection: SshConnection | null;
+  connectionString: string | null;
   onSubmit: (password: string, savePassword: boolean) => void;
   onCancel: () => void;
   loading?: boolean;
@@ -24,7 +24,7 @@ interface PasswordModalProps {
 
 export function PasswordModal({
   open,
-  connection,
+  connectionString,
   onSubmit,
   onCancel,
   loading = false,
@@ -32,6 +32,7 @@ export function PasswordModal({
   const [password, setPassword] = useState("");
   const [savePassword, setSavePassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const { activeConnection } = useConnectionContext();
 
   const handleSubmit = (e: React.SubmitEvent) => {
     e.preventDefault();
@@ -49,7 +50,9 @@ export function PasswordModal({
           <DialogTitle>SSH Authentication Required</DialogTitle>
           <DialogDescription>
             Enter password for{" "}
-            <span className="font-mono font-semibold">{connection?.connection_string}</span>
+            <span className="font-mono font-semibold">
+              {connectionString || activeConnection?.displayName}
+            </span>
           </DialogDescription>
         </DialogHeader>
 

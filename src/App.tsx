@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { safeInvoke } from "./lib/tauri-safe";
+import { invoke } from "@tauri-apps/api/core";
 import { ProjectPicker } from "./components/ProjectPicker.tsx";
+import { useSelectedProject } from "./store/projectStore";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { AppHeader } from "./components/AppHeader";
 import { AgentMonitor } from "./components/AgentMonitor";
@@ -12,17 +13,22 @@ import { ToasterRoot } from "./components/ErrorToast";
 import { ImportSettings } from "./components/ImportSettings";
 import { SettingsPage, SettingsPageHandle } from "./components/SettingsPage";
 import { ThemeProvider } from "./providers/ThemeProvider";
+import { QueryProvider } from "./providers/QueryProvider";
 import { useBoardStore } from "./store/boardStore";
 import { useRecentProjects } from "./hooks/useRecentProjects";
 import { ActionBar, ActionBarAction } from "./components/ActionBar";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "./types/bindings";
 import "./App.css";
+import { ConnectionProvider } from "@/contexts/ConnectionContext.tsx";
 
 function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Subscribe to project store for project selection
+  const selectedProject = useSelectedProject();
 
   // Check if Tauri is available on mount (Tauri 2 uses __TAURI__)
   console.log(
@@ -40,9 +46,7 @@ function App() {
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
   // Load recent projects for filtering dropdown (AppHeader will do the filtering)
-  const { recentProjects, refetch: refetchRecentProjects } = useRecentProjects(
-    currentProject?.connection_id,
-  );
+  const { recentProjects } = useRecentProjects(currentProject?.connection_id);
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
@@ -80,7 +84,7 @@ function App() {
   async function loadSettings() {
     try {
       console.log("[DEBUG] App.tsx: Loading settings");
-      const loaded = await safeInvoke<AppSettings>("get_settings");
+      const loaded = await invoke<AppSettings>("get_settings");
       console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
 
       setSettings(loaded);
@@ -101,13 +105,6 @@ function App() {
     }
   }
 
-  // Handle recent projects change (called when user removes a project)
-  async function handleRecentProjectsChanged() {
-    console.log("[DEBUG] App.tsx: Recent projects changed, reloading settings");
-    await refetchRecentProjects();
-    await loadSettings(); // Reload settings to keep React state in sync with database
-  }
-
   // Load settings on mount
   useEffect(() => {
     async function initialize() {
@@ -118,7 +115,7 @@ function App() {
         // Load the current project from database
         try {
           console.log("[DEBUG] App.tsx: Loading project from database");
-          const project = await safeInvoke<Project>("get_or_create_project", {
+          const project = await invoke<Project>("get_or_create_project", {
             path: loaded.project_path,
           });
           console.log("[DEBUG] App.tsx: Project loaded successfully", project);
@@ -135,6 +132,11 @@ function App() {
 
     void initialize();
   }, []);
+
+  // Handle project selection from project store
+  useEffect(() => {
+    setCurrentProject(selectedProject);
+  }, [selectedProject]);
 
   async function handleProjectSelected(project: Project) {
     try {
@@ -159,13 +161,10 @@ function App() {
       }
 
       console.log("[DEBUG] App.tsx: Saving settings with new project path");
-      await safeInvoke("save_settings", { settings: newSettings });
+      await invoke("save_settings", { settings: newSettings });
       console.log("[DEBUG] App.tsx: Settings saved successfully");
 
       setSettings(newSettings);
-
-      // Reload recent projects to get updated last_opened timestamp
-      await refetchRecentProjects();
 
       console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
     } catch (err) {
@@ -244,10 +243,9 @@ function App() {
           <p>Loading...</p>
         </div>
       ) : !currentProject ? (
-        <ProjectPicker
-          onProjectSelected={handleProjectSelected}
-          onRecentProjectsChanged={handleRecentProjectsChanged}
-        />
+        <ConnectionProvider>
+          <ProjectPicker />
+        </ConnectionProvider>
       ) : (
         <div className="app flex flex-col h-screen bg-background">
           <AppHeader
@@ -351,10 +349,12 @@ function App() {
   );
 
   return (
-    <ThemeProvider>
-      <ToasterRoot />
-      {appContent}
-    </ThemeProvider>
+    <QueryProvider>
+      <ThemeProvider>
+        <ToasterRoot />
+        {appContent}
+      </ThemeProvider>
+    </QueryProvider>
   );
 }
 

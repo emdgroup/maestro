@@ -135,27 +135,6 @@ When modifying Rust models:
 - Schema initialization checks version and applies migrations on first run
 - Foreign keys are enabled via `PRAGMA foreign_keys = ON`
 
-### Build-Time Mock Exclusion (Development vs Production)
-
-**Pattern:** Use `import.meta.env.DEV` to gate development-only code that gets tree-shaken by Vite in production builds.
-
-**Location:** `src/lib/tauri-mock.ts` and any imports in `src/main.ts`
-
-**Why this matters:** Development uses mock IPC handlers to test without Tauri runtime. Production builds must exclude all mock code to avoid bundling unnecessary code.
-
-**Implementation:**
-
-- All mock invoke functions and mockDB are wrapped in `if (import.meta.env.DEV) { ... }`
-- Vite statically replaces `import.meta.env.DEV` with `true` during dev, `false` during production build
-- Tree-shaking removes `if (false)` branches entirely from production bundle
-- Real Tauri fallback outside the DEV check always available for production
-
-**Do NOT use runtime checks** like `if (isTauri) { real } else { mock }` — this includes mock code in production bundle because both branches are reachable at runtime.
-
-**Verification:** Bundle analysis script (`scripts/verify-bundle.mjs`) runs after every production build and fails if mock markers found.
-
-**Reference:** Phase 13 Bug Fixes (v1.1) — fixed mock leak by implementing this pattern.
-
 ## Project Conventions
 
 ### File Organization

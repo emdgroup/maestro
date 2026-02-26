@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { invoke } from "../lib/tauri-mock";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
   DialogPortal,

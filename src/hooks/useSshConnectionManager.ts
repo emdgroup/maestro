@@ -1,8 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { safeInvoke } from "../lib/tauri-safe";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { SshConnection } from "../types/bindings";
-import { Connection } from "../components/ConnectionList";
+import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
+import { useSshConnectionsQuery } from "./useSshConnectionsQuery";
+
+interface sshConnectionManagerProps {
+  onConnectionSuccess: (connection: Connection) => void;
+}
 
 /**
  * Custom hook for managing SSH connections and authentication flow.
@@ -15,59 +20,78 @@ import { Connection } from "../components/ConnectionList";
  *
  * @returns SSH connection state, handlers, and unified connections list
  */
-export function useSshConnectionManager() {
-  const [sshConnections, setSshConnections] = useState<SshConnection[]>([]);
-  const [activeConnection, setActiveConnection] = useState<Connection | null>(null);
+export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionManagerProps) {
+  const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Use TanStack Query for SSH connections
+  const { data: sshConnections = [], refetch: refetchConnections } = useSshConnectionsQuery();
+
+  const local = useRef<Connection>({
+    type: "local" as const,
+    id: localConnectionId,
+    displayName: "Local",
+    subtitle: "Browse local filesystem",
+  });
+
+  const buildConnection = (sshConn: SshConnection) => ({
+      type: "ssh" as const,
+      id: sshConn.id,
+      displayName: sshConn.display_name || sshConn.connection_string,
+      subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
+      metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
+      sshConnection: sshConn,
+    });
 
   /**
    * Build unified connections list: Local first, then SSH connections
    */
   const connections = useMemo<Connection[]>(() => {
-    const list: Connection[] = [
-      {
-        type: "local" as const,
-        id: "local",
-        displayName: "Local",
-        subtitle: "Browse local filesystem",
-      },
-    ];
+    const list: Connection[] = [local.current];
 
     // Add SSH connections
-    sshConnections.forEach((conn) => {
-      list.push({
-        type: "ssh" as const,
-        id: conn.id,
-        displayName: conn.display_name || conn.connection_string,
-        subtitle: conn.display_name ? conn.connection_string : undefined,
-        metadata: `Last used: ${new Date(conn.last_used_at).toLocaleDateString()}`,
-        sshConnection: conn,
-      });
+    sshConnections.map(buildConnection).forEach((c) => {
+      list.push(c);
     });
 
     return list;
   }, [sshConnections]);
 
   /**
-   * Load SSH connections from database
+   * Helper to fetch a connection by ID and construct Connection object
+   * Refetches from server to ensure data is fresh, then returns the specific connection
    */
-  const loadSshConnections = useCallback(async () => {
+  const getConnectionById = useCallback(async (id: number): Promise<Connection | null> => {
     try {
-      const connections = await safeInvoke<SshConnection[]>("get_ssh_connections", {});
-      setSshConnections(connections);
-    } catch (error) {
-      console.error("Failed to load SSH connections:", error);
-    }
-  }, []);
+      // Refetch to ensure we have the latest data (TanStack Query will update cache)
+      const { data } = await refetchConnections();
 
-  const initiateConnection = async (connectionId: number) => {
+      const sshConn = data?.find((conn) => conn.id === id);
+      return sshConn ? buildConnection(sshConn) : null;
+    } catch (error) {
+      console.error("Failed to get connection:", error);
+      return null;
+    }
+  }, [refetchConnections]);
+
+  const initiateConnection = useCallback(async (connId: number) => {
     setLoading(true);
+    setConnectionId(connId);
     try {
       // Try connecting without credentials first
-      await safeInvoke("connect_ssh_without_credentials", {
-        connectionId,
+      await invoke("connect_ssh_without_credentials", {
+        connectionId: connId,
       });
+
+      // Fetch fresh connection data and call callback
+      // (getConnectionById also updates state, so no separate reload needed)
+      const connection = await getConnectionById(connId);
+      if (connection) {
+        onConnectionSuccess(connection);
+      } else {
+        toast.error("Failed to retrieve connection details");
+      }
     } catch (error) {
       console.log("Credential-less connection failed, showing password modal", error);
       // Show password modal on auth failure
@@ -75,82 +99,79 @@ export function useSshConnectionManager() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onConnectionSuccess, getConnectionById]);
 
   const handleConnection = useCallback(
-    async (connection?: Connection) => {
-      const conn = connection || activeConnection;
-      if (!conn?.sshConnection) return;
-      const { sshConnection } = conn;
-      await initiateConnection(sshConnection.id);
-      toast.success(`Connected to ${sshConnection.connection_string}`);
+    async (connection: Connection) => {
+      if (connection.type === "local") {
+        onConnectionSuccess(local.current);
+      } else if (connection.sshConnection) {
+        await initiateConnection(connection.sshConnection.id);
+      }
     },
-    [activeConnection],
+    [onConnectionSuccess, initiateConnection],
   );
 
   /**
    * Handle new SSH connection creation
    * Saves connection string to database and attempts authentication
    */
-  const handleNewConnection = async (connectionString: string) => {
-    console.log(`New connection: ${connectionString}`);
-    setLoading(true);
+  const handleNewConnection = useCallback(
+    async (connectionString: string) => {
+      console.log(`New connection: ${connectionString}`);
+      setLoading(true);
 
-    try {
-      // Save connection to database (parsing happens in Rust)
-      const connectionId = await safeInvoke<number>("save_ssh_connection", {
-        connectionString,
-        authMethod: "Agent", // Default to Agent auth
-      });
-      const sshConnection = await safeInvoke<SshConnection>("get_ssh_connection", {
-        connectionId,
-      });
-      setActiveConnection({
-        type: "ssh",
-        id: connectionId,
-        displayName: sshConnection.display_name || sshConnection.connection_string,
-        sshConnection,
-      });
-      await initiateConnection(connectionId);
-    } catch (error) {
-      toast.error(`Failed to save connection: ${error}`);
-      return { success: false };
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        // Save connection to database (parsing happens in Rust)
+        const newConnectionId = await invoke<number>("save_ssh_connection", {
+          connectionString,
+          authMethod: "Agent", // Default to Agent auth
+        });
+        await initiateConnection(newConnectionId);
+      } catch (error) {
+        toast.error(`Failed to save connection: ${error}`);
+        return { success: false };
+      } finally {
+        setLoading(false);
+      }
+    },
+    [initiateConnection],
+  );
 
   /**
    * Handle password authentication submission
    */
   const handlePasswordSubmit = useCallback(
     async (password: string, savePassword: boolean) => {
-      if (!activeConnection || !activeConnection.sshConnection) return;
+      if (connectionId === null) {
+        toast.error("No connection ID available");
+        return;
+      }
 
-      const sshConn = activeConnection.sshConnection;
       setLoading(true);
       try {
-        await safeInvoke("connect_ssh_with_password", {
-          connectionId: sshConn.id,
+        await invoke("connect_ssh_with_password", {
+          connectionId,
           password,
           savePassword,
         });
-
-        toast.success(`Connected to ${sshConn.connection_string}`);
         setShowPasswordModal(false);
 
-        // Reload connections list (connection now appears after successful auth)
-        await loadSshConnections();
-
-        return { success: true };
+        // Fetch fresh connection data and call callback
+        // (getConnectionById also updates state, so no separate reload needed)
+        const connection = await getConnectionById(connectionId);
+        if (connection) {
+          onConnectionSuccess(connection);
+        } else {
+          toast.error("Failed to retrieve connection details");
+        }
       } catch (error) {
         toast.error(`Authentication failed: ${error}`);
-        return { success: false };
       } finally {
         setLoading(false);
       }
     },
-    [activeConnection, loadSshConnections],
+    [connectionId, onConnectionSuccess, getConnectionById],
   );
 
   /**
@@ -158,77 +179,16 @@ export function useSshConnectionManager() {
    */
   const handlePasswordCancel = useCallback(() => {
     setShowPasswordModal(false);
-    setActiveConnection(null);
   }, []);
 
-  const handleRemoveConnection = useCallback(async () => {
-    if (!activeConnection) return;
-    const sshConn = activeConnection.sshConnection;
-    if (!sshConn) return;
-    setLoading(true);
-
-    try {
-      // Try connecting without credentials first
-      await safeInvoke("delete_ssh_connection", {
-        connectionId: sshConn.id,
-      });
-
-      toast.success(`Removed ${sshConn.display_name} from connections`);
-      setActiveConnection(null);
-
-      return { success: true };
-    } catch (error) {
-      console.error(error);
-      toast.error(`Failed to remove ${sshConn.display_name} from connections`);
-      return { success: false };
-    } finally {
-      setLoading(false);
-    }
-  }, [setActiveConnection, setLoading, activeConnection]);
-
-  const handleForgetPassword = useCallback(async () => {
-    if (!activeConnection) return;
-    const sshConn = activeConnection.sshConnection;
-    if (!sshConn) return;
-    setLoading(true);
-
-    try {
-      // Try connecting without credentials first
-      await safeInvoke("forget_saved_password", {
-        connectionId: sshConn.id,
-      });
-
-      toast.success(`Removed ${sshConn.display_name} password from OS keyring`);
-      setActiveConnection(null);
-
-      return { success: true };
-    } catch (error) {
-      console.error(error);
-      toast.error(`Failed to remove ${sshConn.display_name} password`);
-      return { success: false };
-    } finally {
-      setLoading(false);
-    }
-  }, [setActiveConnection, setLoading, activeConnection]);
-
-  // Load SSH connections on mount
-  useEffect(() => {
-    void loadSshConnections();
-  }, [loadSshConnections]);
-
   return {
-    sshConnections,
-    activeConnection,
     connections,
     showPasswordModal,
     loading,
-    loadSshConnections,
     handleConnection,
     handleNewConnection,
     handlePasswordSubmit,
     handlePasswordCancel,
-    handleRemoveConnection,
-    handleForgetPassword,
-    setActiveConnection,
+    refetchConnections, // Export for manual refetch if needed
   };
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "./ui/button";
 import { SshConnection } from "../types/bindings";
-import { safeInvoke } from "../lib/tauri-safe";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
 import { Switch } from "./ui/switch";
@@ -16,7 +16,7 @@ import {
 
 interface FilePickerProps {
   connection?: SshConnection | null;
-  onProjectSelect: (path: string) => void;
+  onProjectSelect: (path: string, connectionId?: number) => void;
   loading?: boolean;
 }
 
@@ -113,12 +113,12 @@ export function FilePicker({
       setLoading(true);
       try {
         if (isLocal) {
-          const dirs = await safeInvoke<string[]>("list_local_directories", {
+          const dirs = await invoke<string[]>("list_local_directories", {
             path,
           });
           setDirectories(dirs);
         } else {
-          const dirs = await safeInvoke<string[]>("list_remote_directories", {
+          const dirs = await invoke<string[]>("list_remote_directories", {
             connectionId: connection!.id,
             path,
           });
@@ -167,7 +167,7 @@ export function FilePicker({
     async function initializePath() {
       if (isLocal && !isInitialized) {
         try {
-          const defaultPath = await safeInvoke<string>("get_default_file_picker_path", {});
+          const defaultPath = await invoke<string>("get_default_file_picker_path", {});
           setCurrentPath(defaultPath);
           setIsInitialized(true);
         } catch (error) {
@@ -191,7 +191,7 @@ export function FilePicker({
     async function loadDrives() {
       if (isLocal && isInitialized) {
         try {
-          const driveList = await safeInvoke<string[]>("list_drives", {});
+          const driveList = await invoke<string[]>("list_drives", {});
           setDrives(driveList);
         } catch (error) {
           console.error("Failed to load drives:", error);
@@ -275,7 +275,7 @@ export function FilePicker({
 
   function handleSelectCurrentDirectory() {
     // Always use current directory
-    onProjectSelect(currentPath);
+    onProjectSelect(currentPath, connection?.id);
   }
 
   // Parse path into breadcrumb parts

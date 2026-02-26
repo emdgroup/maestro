@@ -1,6 +1,6 @@
 import { useEffect, forwardRef, useImperativeHandle } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { invoke } from "../lib/tauri-mock";
+import { invoke } from "@tauri-apps/api/core";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {

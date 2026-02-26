@@ -7,10 +7,6 @@ interface ProjectsListLayoutProps {
   headerContent: ReactNode;
   /** The list of projects or empty state */
   children: ReactNode;
-  /** Text to show when there are no projects */
-  emptyMessage: string;
-  /** Whether the list is empty */
-  isEmpty: boolean;
   /** Callback when back button is clicked */
   onBack: () => void;
   /** Callback when "Select New Project" is clicked */
@@ -27,8 +23,6 @@ interface ProjectsListLayoutProps {
 export function ProjectsListLayout({
   headerContent,
   children,
-  emptyMessage,
-  isEmpty,
   onBack,
   onSelectNewClick,
   loading = false,
@@ -57,18 +51,12 @@ export function ProjectsListLayout({
           className="p-1 h-auto -ml-1 hover:text-accent"
           aria-label="Back to connections (Esc)"
         >
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="size-4" />
         </Button>
         {headerContent}
       </div>
 
-      <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">
-        {isEmpty ? (
-          <p className="text-sm text-muted-foreground text-center py-8">{emptyMessage}</p>
-        ) : (
-          <ul className="space-y-2">{children}</ul>
-        )}
-      </div>
+      <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">{children}</div>
 
       <div className="pt-4 border-t border-border">
         <Button
@@ -78,7 +66,7 @@ export function ProjectsListLayout({
           size="lg"
           className="w-full focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
         >
-          <FolderPlus className="w-4 h-4" />
+          <FolderPlus className="size-4" />
           {loading ? "Loading..." : "Select New Project"}
         </Button>
       </div>

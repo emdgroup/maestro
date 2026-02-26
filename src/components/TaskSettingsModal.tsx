@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { invoke } from "../lib/tauri-mock";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
   DialogPortal,
