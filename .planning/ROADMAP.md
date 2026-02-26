@@ -16,7 +16,8 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 16: Page Redesigns** - Modernize all major application pages
 - [x] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
 - [x] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
-- [ ] **Phase 18: Maestro Folder Architecture & Rebranding** - Migrate to project-local .maestro folder for state/settings, rename project to Maestro
+- [x] **Phase 18: Maestro Folder Architecture & Rebranding** - Migrate to project-local .maestro folder for state/settings, rename project to Maestro
+- [ ] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
 
 ## Phase Details
 
@@ -215,10 +216,82 @@ This phase represents a fundamental architectural shift:
 
 ---
 
+### Phase 19: Frontend Architecture Refactoring
+
+**Goal**: Reorganize frontend codebase to follow standard project structure with clear separation between views (pages), reusable components, services (business logic), and utilities
+
+**Depends on**: Phase 18
+
+**Requirements**: None (architectural improvement)
+
+**Success Criteria** (what must be TRUE):
+  1. All page-level components moved to `src/views/` with route-based organization
+  2. Reusable components grouped by domain in `src/components/` with index exports
+  3. Tauri IPC calls extracted into service layer at `src/services/`
+  4. Hooks organized in `src/utils/hooks/` with folder-per-hook structure
+  5. Helpers consolidated in `src/utils/helpers/` (path, diff, ui utilities)
+  6. All imports updated to use new structure with no broken references
+
+**Plans**: 6 plans in 4 waves
+
+Plans:
+- [ ] 19-01-PLAN.md — Extract page-level components to src/views/
+- [ ] 19-02-PLAN.md — Create centralized service layer (ipc wrapper + domain services)
+- [ ] 19-03-PLAN.md — Organize reusable components into domain folders
+- [ ] 19-04-PLAN.md — Replace all invoke() calls with service layer
+- [ ] 19-05-PLAN.md — Consolidate hooks and helpers into src/utils/
+- [ ] 19-06-PLAN.md — Finalize path aliases and comprehensive verification
+
+**Details:**
+
+This phase refactors the frontend architecture to match industry-standard project structure guidelines:
+
+**Current Structure Issues:**
+- All components flat in `/components` - no separation between views and reusable UI
+- Business logic mixed with component code (Tauri IPC calls inline)
+- Hooks scattered in `/hooks` instead of `/utils/hooks`
+- `/lib` folder exists but should be consolidated into `/utils`
+- No `/services` folder for API/IPC abstraction
+- No `/views` folder for page-level components
+
+**Target Structure:**
+```
+src/
+├── views/              # Page-level components (ProjectPicker, Kanban, Agents, Worktrees, Settings)
+├── components/         # Reusable UI components grouped by domain
+│   ├── kanban/        # TaskCard, KanbanColumn
+│   ├── task/          # TaskForm, TaskModal, TaskDetail
+│   ├── project/       # ProjectList, ProjectListItem
+│   ├── connection/    # ConnectionList, ConnectionHeader
+│   ├── common/        # ThemeToggle, SyncButton, etc.
+│   └── ui/            # shadcn/ui primitives (keep as-is)
+├── services/          # Business logic and IPC abstraction
+│   ├── tauri.service.ts
+│   ├── project.service.ts
+│   ├── task.service.ts
+│   └── worktree.service.ts
+├── store/             # Global state (no changes)
+├── utils/             # Utilities organized by type
+│   ├── hooks/         # Custom hooks (folder per hook)
+│   ├── helpers/       # Helper functions (path, diff, ui)
+│   └── constants/     # Global constants
+└── types/             # TypeScript types (no changes)
+```
+
+**Migration Strategy:**
+1. Create service layer first (extract IPC calls)
+2. Move page components to views/
+3. Group reusable components by domain
+4. Reorganize utils (hooks, helpers, constants)
+5. Update all imports across codebase
+6. Test and verify no regressions
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 → 19
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
@@ -229,8 +302,9 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18
 | 17 - Polish & Testing | 2 | Complete | 2026-02-10 |
 | 17.1 - Critical UI Fixes (INSERTED) | 4 | Complete | 2026-02-11 |
 | 18 - Maestro Folder Architecture & Rebranding | 4 | Complete | 2026-02-23 |
+| 19 - Frontend Architecture Refactoring | 0 | Not Started | - |
 
-**Total v1.1 work:** 21 plans across 7 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18)
+**Total v1.1 work:** 21 plans across 8 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + Phase 19 TBD)
 
 ---
 
