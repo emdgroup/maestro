@@ -14,6 +14,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Base URL and Path aliases */
+    "baseUrl": "./",
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
@@ -23,10 +26,27 @@
     /* Path aliases */
     "paths": {
       "@/*": ["./src/*"],
+      "@/views": ["./src/views"],
+      "@/views/*": ["./src/views/*"],
       "@/components": ["./src/components"],
+      "@/components/*": ["./src/components/*"],
       "@/components/ui": ["./src/components/ui"],
-      "@/lib": ["./src/lib"],
-      "@/hooks": ["./src/hooks"]
+      "@/services": ["./src/services"],
+      "@/services/*": ["./src/services/*"],
+      "@/store": ["./src/store"],
+      "@/store/*": ["./src/store/*"],
+      "@/utils": ["./src/utils"],
+      "@/utils/*": ["./src/utils/*"],
+      "@/types": ["./src/types"],
+      "@/types/*": ["./src/types/*"],
+      "@/contexts": ["./src/contexts"],
+      "@/contexts/*": ["./src/contexts/*"],
+      "@/providers": ["./src/providers"],
+      "@/providers/*": ["./src/providers/*"],
+      "@/hooks": ["./src/utils/hooks"],
+      "@/hooks/*": ["./src/utils/hooks/*"],
+      "@/lib": ["./src/utils/helpers"],
+      "@/lib/*": ["./src/utils/helpers/*"]
     }
   },
   "include": ["src"],
