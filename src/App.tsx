@@ -9,7 +9,7 @@ import type { SettingsPageHandle } from "@/components/common";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { useBoardStore } from "@/store/boardStore";
-import { useRecentProjects } from "@/utils/hooks";
+import { useRecentProjects } from "@/hooks";
 import type { ActionBarAction } from "@/components/common";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "@/types/bindings";

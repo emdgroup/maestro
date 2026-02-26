@@ -1,18 +1,18 @@
 import React, { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/ui/input";
+import { Button } from "@/ui/button";
 import { SshConnection } from "@/types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
 import { connectionService } from "@/services";
 import { toast } from "sonner";
-import { useUpdateSshConnectionMutation } from "@/utils/hooks";
+import { useUpdateSshConnectionMutation } from "@/hooks";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/ui/alert-dialog";
 
 interface ConnectionHeaderProps {
   connection: SshConnection;

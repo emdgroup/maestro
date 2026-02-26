@@ -1,16 +1,16 @@
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/ui/button";
+import { Label } from "@/ui/label";
+import { Input } from "@/ui/input";
+import { Textarea } from "@/ui/textarea";
+import { Badge } from "@/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/ui/select";
 import { CreateTaskRequest } from "@/types/bindings";
 
 export interface TaskFormData {

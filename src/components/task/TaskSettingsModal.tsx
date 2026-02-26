@@ -9,17 +9,17 @@ import {
   DialogTitle,
   DialogDescription,
   DialogClose,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+} from "@/ui/dialog";
+import { Button } from "@/ui/button";
+import { Label } from "@/ui/label";
+import { Checkbox } from "@/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/ui/select";
 import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "@/store/configStore";
 import type { Task, TaskConfigRequest } from "@/types/bindings";
 import { X } from "lucide-react";

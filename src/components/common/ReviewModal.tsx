@@ -6,11 +6,11 @@ import {
   DialogContent,
   DialogTitle,
   DialogClose,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+} from "@/ui/dialog";
+import { Button } from "@/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "@/store/reviewStore";
-import { parseDiffString } from "@/utils/helpers";
+import { parseDiffString } from "@/lib";
 import { FileTree } from "@/components/execution/FileTree";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";

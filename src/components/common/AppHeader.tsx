@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
-import { cn } from "@/utils/helpers";
+import { cn } from "@/lib";
 import { ThemeToggle } from "./ThemeToggle";
 import {
   Select,
@@ -10,7 +10,7 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/ui/select";
 import type { Project } from "@/types/bindings";
 
 type ViewType = "kanban" | "agents" | "worktrees" | "settings";

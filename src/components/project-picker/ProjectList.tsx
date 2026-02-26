@@ -2,14 +2,14 @@ import { toast } from "sonner";
 import { projectService } from "@/services";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
-import { useRecentProjects } from "@/utils/hooks";
+import { useRecentProjects } from "@/hooks";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
 import { ConnectionHeader, FilePicker } from "@/components/project-picker";
-import { Dialog, DialogContent } from "@/components/ui/dialog.tsx";
+import { Dialog, DialogContent } from "@/ui/dialog.tsx";
 import { useState } from "react";
-import { useProjectPickerNavigation } from "@/utils/hooks";
+import { useProjectPickerNavigation } from "@/hooks";
 
 /**
  * Unified component for displaying and managing project lists.

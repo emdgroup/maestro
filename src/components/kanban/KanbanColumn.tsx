@@ -2,7 +2,7 @@ import React from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Task, TaskStatus } from "@/types/bindings";
 import { TaskCard } from "./TaskCard";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/ui/badge";
 
 interface KanbanColumnProps {
   columnId: string;

@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/ui/button";
 import { X } from "lucide-react";
-import { getFolderName } from "@/utils/helpers";
+import { getFolderName } from "@/lib";
 import React from "react";
 
 interface ProjectListItemProps {

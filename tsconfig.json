@@ -23,30 +23,15 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* Path aliases */
+    /* Path aliases - imported from shared config */
     "paths": {
       "@/*": ["./src/*"],
-      "@/views": ["./src/views"],
-      "@/views/*": ["./src/views/*"],
-      "@/components": ["./src/components"],
-      "@/components/*": ["./src/components/*"],
-      "@/components/ui": ["./src/components/ui"],
-      "@/services": ["./src/services"],
-      "@/services/*": ["./src/services/*"],
-      "@/store": ["./src/store"],
-      "@/store/*": ["./src/store/*"],
-      "@/utils": ["./src/utils"],
-      "@/utils/*": ["./src/utils/*"],
-      "@/types": ["./src/types"],
-      "@/types/*": ["./src/types/*"],
-      "@/contexts": ["./src/contexts"],
-      "@/contexts/*": ["./src/contexts/*"],
-      "@/providers": ["./src/providers"],
-      "@/providers/*": ["./src/providers/*"],
       "@/hooks": ["./src/utils/hooks"],
       "@/hooks/*": ["./src/utils/hooks/*"],
       "@/lib": ["./src/utils/helpers"],
-      "@/lib/*": ["./src/utils/helpers/*"]
+      "@/lib/*": ["./src/utils/helpers/*"],
+      "@/ui": ["./src/components/ui/*"],
+      "@/ui/*": ["./src/components/ui/*"]
     }
   },
   "include": ["src"],

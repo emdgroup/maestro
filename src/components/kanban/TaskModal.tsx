@@ -7,7 +7,7 @@ import {
   DialogContent,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
+} from "@/ui/dialog";
 import { TaskForm } from "@/components/task/TaskForm";
 import { Task, CreateTaskRequest } from "@/types/bindings";
 
