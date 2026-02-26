@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: unknown
-last_updated: "2026-02-26T21:33:40Z"
+status: in_progress
+last_updated: "2026-02-26T23:31:05Z"
 progress:
-  total_phases: 21
+  total_phases: 22
   completed_phases: 19
-  total_plans: 70
-  completed_plans: 69
+  total_plans: 77
+  completed_plans: 72
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -22,21 +22,21 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-Phase: 19 of 19 (Frontend Architecture Refactoring)
-Plan: 5 of 6 in current phase - COMPLETE
-Status: Phase 19-05 executed successfully
-Last activity: 2026-02-26 — Phase 19-05 complete (Organize Utils Layer - Hooks and Helpers)
+Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
+Plan: 1 of 7 in current phase - COMPLETE
+Status: Phase 20-01 executed successfully
+Last activity: 2026-02-26 23:31 — Phase 20-01 complete (Add TanStack Query Hooks to Task and Project Services)
 
-**Next Action:** Execute Phase 19-06 (Implement Feature Modules)
+**Next Action:** Execute Phase 20-02 (Add TanStack Query hooks to execution and settings services)
 
-Progress: [███████████████████░] 97% (18/19 phases complete + 5/6 phase 19 tasks)
+Progress: [███████████████████░] 99% (19/22 phases complete + 1/7 phase 20 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed across all phases: 20
-- Average duration: 0.119 hours
-- Total execution time: 2.45 hours
+- Total plans completed across all phases: 21
+- Average duration: 0.118 hours
+- Total execution time: 2.46 hours
 
 **By Phase:**
 
@@ -78,10 +78,13 @@ Progress: [███████████████████░] 97% (18
 - Phase 19-03: 0.08h (Organize Reusable Components into Domain-Specific Folders - 5 domain folders, barrel exports, 33 files with updated imports)
 - Phase 19-04: 0.16h (Replace Scattered invoke() Calls with Service Layer - 31 IPC calls migrated, 10 components/providers updated, 7 service methods added)
 - Phase 19-05: 0.09h (Organize Utils Layer - Hooks and Helpers - src/utils/{hooks,helpers} structure, 4 complex hooks in folders, 3 helpers consolidated, 63 files updated with new imports)
+- Phase 20-01: 0.067h (Add TanStack Query Hooks to Task and Project Services - 10 task hooks + 7 project hooks + 2 query key factories, 349 lines added, automatic caching and optimistic updates)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |
 | Phase 19-05 P05 | 0.09 | 2 tasks | 63 files |
+| Phase 20-01 P01 | 0.067 | 2 tasks | 2 files |
+| Phase 20 P01 | 0.067 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -165,6 +168,7 @@ None currently.
 - Phase 17.1 inserted after Phase 17: Critical UI Fixes (URGENT) - Fix production folder selection, implement slick UX patterns from exemple/ (not pixel-perfect copy), use system accent color, verify with Playwright screenshots
 - Phase 18 added: Maestro Folder Architecture & Rebranding - Migrate from database-centric to project-local .maestro folder storage; rebrand from "GSD Orchestrator" to "Maestro"
 - Phase 19 added: Frontend Architecture Refactoring - Reorganize src/ to follow standard project structure with views/, services/, and grouped components
+- Phase 20 added: Refactor Frontend to use TanStack Query - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 
 ## Session Continuity
 
@@ -261,3 +265,17 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - All imports verified: 0 old @/hooks or @/lib imports remaining
 
 *Updated: 2026-02-26 — Phase 19-05 complete (Utils layer organization); 5/6 plans complete (83%)*
+
+**Phase 20 Status - IN PROGRESS:**
+- Phase 20-01 COMPLETE (2026-02-26): Add TanStack Query Hooks to Task and Project Services
+  - 10 TanStack Query hooks added to task.service.ts (useTasksQuery, useExecutionLogsQuery, useTaskSettingsQuery, useDiffForReviewQuery, useCreateTaskMutation, useUpdateTaskMutation, useUpdateTaskStatusMutation, useRetryExecutionMutation, useCancelExecutionMutation, useUpdateTaskSettingsMutation)
+  - 7 TanStack Query hooks added to project.service.ts (useProjectsQuery, useProjectQuery, useProjectSettingsQuery, useCreateProjectMutation, useRemoveProjectMutation, useUpdateProjectSettingsMutation, useSaveImportConfigMutation)
+  - taskQueryKeys and projectQueryKeys factories for consistent cache invalidation
+  - All hooks with proper enabled conditions for dependent queries
+  - useUpdateTaskStatusMutation implements optimistic updates with rollback
+  - All mutations use queryClient.invalidateQueries() for cache consistency
+  - Sonner integration for error/success feedback
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 349 lines added to 2 files, 2 tasks complete
+
+*Updated: 2026-02-26 23:31 — Phase 20-01 complete (TanStack Query hooks setup); 1/7 plans complete (14%)*
