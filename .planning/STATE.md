@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 1 of 7 in current phase - COMPLETE
-Status: Phase 20-01 executed successfully
-Last activity: 2026-02-26 23:31 — Phase 20-01 complete (Add TanStack Query Hooks to Task and Project Services)
+Plan: 2 of 7 in current phase - COMPLETE
+Status: Phase 20-02 executed successfully
+Last activity: 2026-02-26 23:38 — Phase 20-02 complete (Add TanStack Query Hooks to Execution and Settings Services)
 
 **Next Action:** Execute Phase 20-02 (Add TanStack Query hooks to execution and settings services)
 
-Progress: [███████████████████░] 99% (19/22 phases complete + 1/7 phase 20 plans complete)
+Progress: [███████████████████░] 99% (19/22 phases complete + 2/7 phase 20 plans complete)
 
 ## Performance Metrics
 
@@ -79,12 +79,13 @@ Progress: [███████████████████░] 99% (19
 - Phase 19-04: 0.16h (Replace Scattered invoke() Calls with Service Layer - 31 IPC calls migrated, 10 components/providers updated, 7 service methods added)
 - Phase 19-05: 0.09h (Organize Utils Layer - Hooks and Helpers - src/utils/{hooks,helpers} structure, 4 complex hooks in folders, 3 helpers consolidated, 63 files updated with new imports)
 - Phase 20-01: 0.067h (Add TanStack Query Hooks to Task and Project Services - 10 task hooks + 7 project hooks + 2 query key factories, 349 lines added, automatic caching and optimistic updates)
+- Phase 20-02: 0.043h (Add TanStack Query Hooks to Execution and Settings Services - 7 execution mutations + 3 settings hooks + 2 query key factories, 205 lines added, Sonner error handling)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |
 | Phase 19-05 P05 | 0.09 | 2 tasks | 63 files |
 | Phase 20-01 P01 | 0.067 | 2 tasks | 2 files |
-| Phase 20 P01 | 0.067 | 2 tasks | 2 files |
+| Phase 20-02 P02 | 0.043 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -278,4 +279,15 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - Build verified: 0 TypeScript errors, production bundle passed
   - 349 lines added to 2 files, 2 tasks complete
 
-*Updated: 2026-02-26 23:31 — Phase 20-01 complete (TanStack Query hooks setup); 1/7 plans complete (14%)*
+- Phase 20-02 COMPLETE (2026-02-26): Add TanStack Query Hooks to Execution and Settings Services
+  - 7 TanStack Query mutation hooks added to execution.service.ts (useSpawnExecutionMutation, usePauseExecutionMutation, useResumeExecutionMutation, useAttachTerminalMutation, useDetachTerminalMutation, useSendTerminalInputMutation, useResizeTerminalMutation)
+  - 3 TanStack Query hooks added to settings.service.ts (useSettingsQuery with 10-min staleTime, useSystemAccentColorQuery with Infinity staleTime, useSaveSettingsMutation)
+  - executionQueryKeys and settingsQueryKeys factories for consistency
+  - All execution mutations are fire-and-forget RPC side-effects with onError toast handling
+  - Settings queries tuned for data volatility (10min for app settings, Infinity for OS accent color)
+  - useSaveSettingsMutation invalidates cache and shows success/error toast
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 205 lines added to 2 files, 2 tasks complete
+  - Wave 1 infrastructure: 21 total hooks created (task 10 + project 7 + execution 7 + settings 3)
+
+*Updated: 2026-02-26 23:38 — Phase 20-02 complete (Execution and Settings TanStack Query hooks); 2/7 plans complete (29%)*

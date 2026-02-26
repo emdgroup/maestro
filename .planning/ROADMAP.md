@@ -18,6 +18,7 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
 - [x] **Phase 18: Maestro Folder Architecture & Rebranding** - Migrate to project-local .maestro folder for state/settings, rename project to Maestro
 - [ ] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
+- [ ] **Phase 20: Refactor Frontend to use TanStack Query** - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 
 ## Phase Details
 
@@ -288,6 +289,64 @@ src/
 
 ---
 
+### Phase 20: Refactor Frontend to use TanStack Query
+
+**Goal**: Replace all direct Tauri invoke() calls with TanStack Query hooks for consistent data fetching, caching, and mutation patterns across the frontend
+
+**Depends on**: Phase 19
+
+**Requirements**: None (architectural improvement)
+
+**Success Criteria** (what must be TRUE):
+  1. All Tauri IPC data fetching operations use TanStack Query's useQuery hook
+  2. All Tauri IPC mutations use TanStack Query's useMutation hook
+  3. Query hooks defined in corresponding service files (src/services/*.ts) not in hooks folder
+  4. Automatic cache invalidation and refetching configured for all mutations
+  5. Loading and error states managed through TanStack Query state
+  6. No direct invoke() calls remaining in React components for data operations
+
+**Plans**: TBD (run /gsd:plan-phase 20 to break down)
+
+Plans:
+- [ ] TBD
+
+**Details:**
+
+This phase modernizes the frontend data layer by adopting TanStack Query as the standard pattern for all backend communication, following the pattern established in `useSshConnectionsQuery.ts`.
+
+**Current Architecture:**
+- Components make direct `invoke()` calls to Tauri backend
+- Manual loading/error state management in components
+- No automatic caching or refetching
+- Inconsistent patterns across different features
+- Example: `useSshConnectionsQuery.ts` already uses TanStack Query
+
+**Target Architecture:**
+- All data fetching through `useQuery` hooks
+- All mutations through `useMutation` hooks
+- Query hooks defined in service files (e.g., `src/services/task.service.ts`)
+- Centralized cache management via QueryClient
+- Optimistic updates for instant UI feedback
+- Automatic refetching on window focus, network reconnect, etc.
+- Consistent loading/error/success states
+
+**Migration Strategy:**
+1. Audit all invoke() calls across components
+2. Create TanStack Query hooks in service files
+3. Migrate components to use query hooks
+4. Configure cache invalidation strategies
+5. Test data flow and cache behavior
+6. Remove old direct invoke() patterns
+
+**Benefits:**
+- Automatic caching reduces redundant backend calls
+- Optimistic updates improve perceived performance
+- Standardized loading/error handling
+- Better developer experience with devtools
+- Easier testing with query mocks
+
+---
+
 ## Progress
 
 **Execution Order:**
@@ -302,9 +361,10 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 
 | 17 - Polish & Testing | 2 | Complete | 2026-02-10 |
 | 17.1 - Critical UI Fixes (INSERTED) | 4 | Complete | 2026-02-11 |
 | 18 - Maestro Folder Architecture & Rebranding | 4 | Complete | 2026-02-23 |
-| 19 - Frontend Architecture Refactoring | 0 | Not Started | - |
+| 19 - Frontend Architecture Refactoring | 6 | Complete | 2026-02-26 |
+| 20 - Refactor Frontend to use TanStack Query | 2/7 | In Progress | - |
 
-**Total v1.1 work:** 21 plans across 8 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + Phase 19 TBD)
+**Total v1.1 work:** 21 plans across 9 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + 6 from Phase 19 + 7 from Phase 20)
 
 ---
 
