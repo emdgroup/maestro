@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Button } from "../ui/button";
-import { SshConnection } from "../../types/bindings";
+import { Button } from "@/components/ui/button";
+import { SshConnection } from "@/types/bindings";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
-import { Switch } from "../ui/switch";
-import { Label } from "../ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Breadcrumb,
   BreadcrumbList,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbSeparator,
-} from "../ui/breadcrumb";
+} from "@/components/ui/breadcrumb";
 
 interface FilePickerProps {
   connection?: SshConnection | null;

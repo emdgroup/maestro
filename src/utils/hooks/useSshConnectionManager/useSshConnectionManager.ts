@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { SshConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
-import { useSshConnectionsQuery } from "../useSshConnectionsQuery";
+import { useSshConnectionsQuery } from "@/utils/hooks/useSshConnectionsQuery";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;

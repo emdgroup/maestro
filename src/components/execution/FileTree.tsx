@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { DiffFileWithName } from "../../types/review";
+import { DiffFileWithName } from "@/types/review";
 
 interface FileTreeNode {
   name: string;

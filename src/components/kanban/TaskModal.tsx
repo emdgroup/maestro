@@ -8,8 +8,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { TaskForm } from "../task/TaskForm";
-import { Task, CreateTaskRequest } from "../../types/bindings";
+import { TaskForm } from "@/components/task/TaskForm";
+import { Task, CreateTaskRequest } from "@/types/bindings";
 
 interface TaskModalProps {
   isOpen: boolean;

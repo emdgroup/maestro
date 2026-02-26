@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { taskService } from "@/services";
-import { ExecutionLog } from "../../types/bindings";
-import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
-import { useBoardStore } from "../../store/boardStore";
+import { ExecutionLog } from "@/types/bindings";
+import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
+import { useBoardStore } from "@/store/boardStore";
 import { toast } from "sonner";
 
 interface ExecutionHistoryProps {

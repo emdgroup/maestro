@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { projectService } from "@/services";
-import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
+import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
 
 interface ImportSettingsProps {
   isOpen: boolean;

@@ -9,14 +9,14 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { taskService } from "@/services";
-import { useBoardStore } from "../../store/boardStore";
-import { Task, TaskStatus } from "../../types/bindings";
+import { useBoardStore } from "@/store/boardStore";
+import { Task, TaskStatus } from "@/types/bindings";
 import { toast } from "sonner";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
-import { ReviewModal } from "../common/ReviewModal";
-import { TaskSettingsModal } from "../task/TaskSettingsModal";
-import { ExecutionTerminal } from "../execution/ExecutionTerminal";
+import { ReviewModal } from "@/components/common/ReviewModal";
+import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
+import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
 
 export interface KanbanBoardProps {
   projectId: number;

@@ -1,4 +1,4 @@
-import { Button } from "../ui/button";
+import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { getFolderName } from "@/utils/helpers";
 import React from "react";

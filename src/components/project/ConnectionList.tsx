@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
 import { PasswordModal } from "@/components/task";
 import { useSshConnectionManager } from "@/utils/hooks";

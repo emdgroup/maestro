@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreateTaskRequest } from "../../types/bindings";
+import { CreateTaskRequest } from "@/types/bindings";
 
 export interface TaskFormData {
   title: string;

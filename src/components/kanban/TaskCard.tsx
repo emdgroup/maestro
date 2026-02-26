@@ -2,10 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { invoke } from "@tauri-apps/api/core";
-import { Task, ExecutionLog } from "../../types/bindings";
-import { useBoardStore } from "../../store/boardStore";
-import { showErrorToast, showSuccessToast } from "../common/ErrorToast";
-import { TaskContextMenu } from "../task/TaskContextMenu";
+import { Task, ExecutionLog } from "@/types/bindings";
+import { useBoardStore } from "@/store/boardStore";
+import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
+import { TaskContextMenu } from "@/components/task/TaskContextMenu";
 
 /// Get status dot color based on task status
 function getStatusDotColor(status: string): string {
