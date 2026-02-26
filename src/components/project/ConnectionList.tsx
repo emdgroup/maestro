@@ -3,8 +3,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
 import { PasswordModal } from "@/components/task";
-import { useSshConnectionManager } from "@/hooks/useSshConnectionManager.ts";
-import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation.ts";
+import { useSshConnectionManager } from "@/utils/hooks";
+import { useProjectPickerNavigation } from "@/utils/hooks";
 
 export function ConnectionList() {
   const [connectionString, setConnectionString] = useState("");

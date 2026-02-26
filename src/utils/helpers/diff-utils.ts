@@ -3,7 +3,7 @@
  * Converts raw unified diff string to @git-diff-view/react DiffFile format
  */
 
-import { DiffFileWithName, DiffHighlighterLang } from "../types/review";
+import { DiffFileWithName, DiffHighlighterLang } from "@/types/review";
 
 /**
  * Detect file language based on file extension

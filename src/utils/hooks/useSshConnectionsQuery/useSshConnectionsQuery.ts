@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { SshConnection } from "../types/bindings";
+import { SshConnection } from "@/types/bindings";
 
 export const SSH_CONNECTIONS_KEY = ["ssh-connections"];
 

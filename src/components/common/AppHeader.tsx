@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils/helpers";
 import { ThemeToggle } from "./ThemeToggle";
 import {
   Select,

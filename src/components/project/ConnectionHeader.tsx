@@ -5,7 +5,7 @@ import { SshConnection } from "../../types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
 import { connectionService } from "@/services";
 import { toast } from "sonner";
-import { useUpdateSshConnectionMutation } from "@/hooks/useSshConnectionsQuery";
+import { useUpdateSshConnectionMutation } from "@/utils/hooks";
 import {
   DropdownMenu,
   DropdownMenuContent,
