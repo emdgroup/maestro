@@ -1,5 +1,4 @@
-import { ConnectionList } from "./ConnectionList";
-import { ProjectList } from "./ProjectList";
+import { ConnectionList, ProjectList } from "@/components";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 
