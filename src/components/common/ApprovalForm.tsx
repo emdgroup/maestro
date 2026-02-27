@@ -1,10 +1,9 @@
 import React, { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { DiffFileWithName } from "@/types/review";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
 import { Textarea } from "@/ui/textarea";
-import { toast } from "sonner";
+import { useSaveTaskReviewMutation, useApproveTaskAndMergeMutation, useRequestChangesMutation } from "@/services/task.service";
 
 interface ApprovalFormProps {
   taskId: number;
@@ -25,8 +24,14 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
   const [generalFeedback, setGeneralFeedback] = useState("");
   const [perFileComments, setPerFileComments] = useState<Map<string, string>>(new Map());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Mutation hooks
+  const { mutate: saveReview, isPending: isSavingReview } = useSaveTaskReviewMutation();
+  const { mutate: approveAndMerge, isPending: isApproving } = useApproveTaskAndMergeMutation();
+  const { mutate: requestChanges, isPending: isRequestingChanges } = useRequestChangesMutation();
+
+  const loading = isSavingReview || isApproving || isRequestingChanges;
 
   const toggleFileExpanded = (filePath: string) => {
     const updated = new Set(expandedFiles);
@@ -48,71 +53,52 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
     setPerFileComments(updated);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!decision) {
       setError("Please select Approve or Request Changes");
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    setError(null);
 
-      // Convert per-file comments map to array of tuples
-      const perFileCommentsArray = Array.from(perFileComments.entries());
+    // Convert per-file comments map to array of tuples
+    const perFileCommentsArray = Array.from(perFileComments.entries());
 
-      if (decision === "Approve") {
-        // 1. Save review feedback first
-        const reviewResponse = await invoke<{ success: boolean; review_id: number }>(
-          "save_task_review",
-          {
-            taskId: taskId,
-            decision: "Approve",
-            generalFeedback: generalFeedback || null,
-            perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+    if (decision === "Approve") {
+      // 1. Save review feedback first
+      saveReview(
+        {
+          taskId: taskId,
+          decision: "Approve",
+          generalFeedback: generalFeedback || null,
+          perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+        },
+        {
+          onSuccess: () => {
+            // 2. Initiate merge process
+            approveAndMerge(taskId, {
+              onSuccess: () => {
+                // Wait a moment then trigger onApprove callback to close modal
+                setTimeout(onApprove, 500);
+              },
+            });
           },
-        );
-
-        if (reviewResponse.success) {
-          // 2. Initiate merge process
-          const mergeResponse = await invoke<{ merging: boolean; message: string }>(
-            "approve_task_and_merge",
-            {
-              task_id: taskId,
-            },
-          );
-
-          if (mergeResponse.merging) {
-            toast.success("Approval submitted. Merge starting...");
-            // Wait a moment then trigger onApprove callback to close modal
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            onApprove();
-          }
         }
-      } else if (decision === "RequestChanges") {
-        // Call request_changes handler
-        const response = await invoke<{
-          success: boolean;
-          review_id: number;
-          task_status: string;
-        }>("request_changes", {
-          task_id: taskId,
-          general_feedback: generalFeedback || null,
-          per_file_comments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
-        });
-
-        if (response.success) {
-          toast.info("Changes requested. Task returned to In Progress.");
-          onClose();
+      );
+    } else if (decision === "RequestChanges") {
+      // Call request_changes handler
+      requestChanges(
+        {
+          taskId: taskId,
+          generalFeedback: generalFeedback || null,
+          perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+        },
+        {
+          onSuccess: () => {
+            onClose();
+          },
         }
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      setError(`Error saving review: ${errorMsg}`);
-      toast.error(`Error saving review: ${errorMsg}`);
-      console.error("Approval form error:", err);
-    } finally {
-      setLoading(false);
+      );
     }
   };
 

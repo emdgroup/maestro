@@ -109,6 +109,38 @@ export const taskService = {
   async getDiffForReview(taskId: number): Promise<string> {
     return ipc.invoke<string>("get_diff_for_review", { taskId });
   },
+
+  /**
+   * Save task review with decision and feedback
+   */
+  async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: Array<[string, string]> | null): Promise<{ success: boolean; review_id: number }> {
+    return ipc.invoke<{ success: boolean; review_id: number }>("save_task_review", {
+      taskId,
+      decision,
+      generalFeedback,
+      perFileComments,
+    });
+  },
+
+  /**
+   * Approve task and start merge process
+   */
+  async approveTaskAndMerge(taskId: number): Promise<{ merging: boolean; message: string }> {
+    return ipc.invoke<{ merging: boolean; message: string }>("approve_task_and_merge", {
+      task_id: taskId,
+    });
+  },
+
+  /**
+   * Request changes for a task
+   */
+  async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: Array<[string, string]> | null): Promise<{ success: boolean; review_id: number; task_status: string }> {
+    return ipc.invoke<{ success: boolean; review_id: number; task_status: string }>("request_changes", {
+      task_id: taskId,
+      general_feedback: generalFeedback,
+      per_file_comments: perFileComments,
+    });
+  },
 };
 
 /**
@@ -290,6 +322,72 @@ export function useUpdateTaskSettingsMutation() {
     },
     onError: (error) => {
       toast.error(`Failed to update task settings: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for saving task review
+ */
+export function useSaveTaskReviewMutation() {
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      decision,
+      generalFeedback,
+      perFileComments,
+    }: {
+      taskId: number;
+      decision: string;
+      generalFeedback: string | null;
+      perFileComments: Array<[string, string]> | null;
+    }) => taskService.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
+    onError: (error) => {
+      toast.error(`Failed to save review: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for approving task and starting merge
+ */
+export function useApproveTaskAndMergeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: number) => taskService.approveTaskAndMerge(taskId),
+    onSuccess: () => {
+      toast.success("Approval submitted. Merge starting...");
+      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: (error) => {
+      toast.error(`Failed to approve task: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for requesting changes
+ */
+export function useRequestChangesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      generalFeedback,
+      perFileComments,
+    }: {
+      taskId: number;
+      generalFeedback: string | null;
+      perFileComments: Array<[string, string]> | null;
+    }) => taskService.requestChanges(taskId, generalFeedback, perFileComments),
+    onSuccess: () => {
+      toast.info("Changes requested. Task returned to In Progress.");
+      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: (error) => {
+      toast.error(`Failed to request changes: ${error instanceof Error ? error.message : String(error)}`);
     },
   });
 }
