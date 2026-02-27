@@ -8,13 +8,13 @@ import {
   DialogClose,
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { invoke } from "@tauri-apps/api/core";
 import { useReviewStore } from "@/store/reviewStore";
 import { parseDiffString } from "@/lib";
 import { FileTree } from "@/components/execution/FileTree";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import { ApprovalForm } from "./ApprovalForm";
 import { X } from "lucide-react";
+import { useDiffForReviewQuery } from "@/services/task.service";
 
 interface ReviewModalProps {
   taskId: number;
@@ -27,52 +27,30 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOp
   const store = useReviewStore();
   const [showApprovalForm, setShowApprovalForm] = useState(false);
 
-  // Fetch diff when modal opens
+  // Query hook for fetching diff - only enabled when modal is open
+  const { data: diffString, isLoading: isDiffLoading, error: diffError, refetch: refetchDiff } = useDiffForReviewQuery(isOpen ? taskId : null);
+
+  // Process diff data when it arrives
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    const fetchDiff = async () => {
-      try {
-        store.openReview(taskId);
+    store.openReview(taskId);
 
-        // Call Tauri IPC command to get diff
-        const diffString = await invoke<string>("get_diff_for_review", {
-          task_id: taskId,
-        });
+    if (diffError) {
+      const errorMsg = diffError instanceof Error ? diffError.message : String(diffError);
+      store.setError(`Failed to fetch diff: ${errorMsg}`);
+      console.error("Fetch diff error:", diffError);
+      return;
+    }
 
-        // Parse diff string into DiffFile array
-        const diffFiles = parseDiffString(diffString);
+    if (isDiffLoading) {
+      return;
+    }
 
-        if (diffFiles.length === 0) {
-          store.setError("No changes found in diff");
-          return;
-        }
-
-        store.setDiffData(diffFiles);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        store.setError(`Failed to fetch diff: ${errorMsg}`);
-        console.error("Fetch diff error:", error);
-      }
-    };
-
-    fetchDiff();
-  }, [isOpen, taskId, store]);
-
-  // Find currently selected file's diff data
-  const selectedDiffFile = store.diffData.find((f) => f.fileName === store.selectedFile);
-
-  const handleRetry = async () => {
-    try {
-      store.setLoading(true);
-      store.setError(null);
-
-      const diffString = await invoke<string>("get_diff_for_review", {
-        task_id: taskId,
-      });
-
+    if (diffString) {
+      // Parse diff string into DiffFile array
       const diffFiles = parseDiffString(diffString);
 
       if (diffFiles.length === 0) {
@@ -80,12 +58,17 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOp
         return;
       }
 
+      store.setError(null);
       store.setDiffData(diffFiles);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      store.setError(`Failed to fetch diff: ${errorMsg}`);
-      console.error("Retry fetch diff error:", error);
     }
+  }, [isOpen, taskId, diffString, isDiffLoading, diffError, store]);
+
+  // Find currently selected file's diff data
+  const selectedDiffFile = store.diffData.find((f) => f.fileName === store.selectedFile);
+
+  const handleRetry = async () => {
+    store.setError(null);
+    await refetchDiff();
   };
 
   const handleClose = () => {
