@@ -9,17 +9,18 @@ import type { SettingsPageHandle } from "@/components/common";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { useBoardStore } from "@/store/boardStore";
-import { useRecentProjects } from "@/hooks";
+import { useRecentProjects } from "@/utils/hooks";
 import type { ActionBarAction } from "@/components/common";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "@/types/bindings";
 import { KanbanView, ProjectPickerView, WorktreesView, AgentsView, SettingsView } from "@/views";
+import { useSettingsQuery, useSaveSettingsMutation } from "@/services/settings.service";
+import { toast } from "sonner";
 import "./App.css";
 
 function App() {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [appLoading, setAppLoading] = useState(true);
 
   // Subscribe to project store for project selection
   const selectedProject = useSelectedProject();
@@ -38,6 +39,10 @@ function App() {
   const [slideDirection, setSlideDirection] = useState(1);
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
+
+  // Query hooks for settings and mutations
+  const { data: settings, isLoading: settingsLoading, error: settingsError } = useSettingsQuery();
+  const { mutate: saveSettings } = useSaveSettingsMutation();
 
   // Load recent projects for filtering dropdown (AppHeader will do the filtering)
   const { recentProjects } = useRecentProjects(currentProject?.connection_id);
@@ -74,58 +79,46 @@ function App() {
     setActivePage(page);
   };
 
-  // Load settings from database
-  async function loadSettings() {
-    try {
-      console.log("[DEBUG] App.tsx: Loading settings");
-      const loaded = await invoke<AppSettings>("get_settings");
-      console.log("[DEBUG] App.tsx: Settings loaded successfully", loaded);
-
-      setSettings(loaded);
-      return loaded;
-    } catch (err) {
-      console.error("[DEBUG] App.tsx: Failed to load settings:", err);
-      const defaultSettings = {
-        project_path: null,
-        recent_projects: [],
-        model_default: "claude-opus-4-5",
-        mcp_allowlist: [],
-        skills_default: [],
-        theme_preference: "system",
-        updated_at: new Date().toISOString(),
-      };
-      setSettings(defaultSettings);
-      return defaultSettings;
-    }
-  }
-
-  // Load settings on mount
+  // Initialize app when settings are loaded
   useEffect(() => {
     async function initialize() {
-      const loaded = await loadSettings();
+      if (settingsError) {
+        console.error("[DEBUG] App.tsx: Failed to load settings:", settingsError);
+        toast.error("Failed to load settings");
+        setAppLoading(false);
+        return;
+      }
 
-      if (loaded.project_path) {
-        console.log(`[DEBUG] App.tsx: Project path found in settings: ${loaded.project_path}`);
+      if (!settings) {
+        // Still loading
+        return;
+      }
+
+      console.log("[DEBUG] App.tsx: Settings loaded successfully", settings);
+
+      if (settings.project_path) {
+        console.log(`[DEBUG] App.tsx: Project path found in settings: ${settings.project_path}`);
         // Load the current project from database
         try {
           console.log("[DEBUG] App.tsx: Loading project from database");
           const project = await invoke<Project>("get_or_create_project", {
-            path: loaded.project_path,
+            path: settings.project_path,
           });
           console.log("[DEBUG] App.tsx: Project loaded successfully", project);
           setCurrentProject(project);
         } catch (projectErr) {
           console.error("[DEBUG] App.tsx: Failed to load current project:", projectErr);
+          toast.error("Failed to load project");
         }
       } else {
         console.log("[DEBUG] App.tsx: No project path in settings, showing ProjectPicker");
       }
 
-      setLoading(false);
+      setAppLoading(false);
     }
 
     void initialize();
-  }, []);
+  }, [settings, settingsError]);
 
   // Handle project selection from project store
   useEffect(() => {
@@ -155,16 +148,13 @@ function App() {
       }
 
       console.log("[DEBUG] App.tsx: Saving settings with new project path");
-      await invoke("save_settings", { settings: newSettings });
-      console.log("[DEBUG] App.tsx: Settings saved successfully");
-
-      setSettings(newSettings);
+      saveSettings(newSettings);
 
       console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
     } catch (err) {
       console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
       // Show error to user
-      alert(`Failed to load project: ${err}\n\nCheck browser console for details.`);
+      toast.error(`Failed to load project: ${err}`);
     }
   }
 
@@ -224,15 +214,17 @@ function App() {
 
   // Log current state before render
   console.log(
-    "[DEBUG] App.tsx render: loading=",
-    loading,
+    "[DEBUG] App.tsx render: appLoading=",
+    appLoading,
+    "settingsLoading=",
+    settingsLoading,
     "currentProject=",
     currentProject?.path || "null",
   );
 
   const appContent = (
     <>
-      {loading ? (
+      {appLoading || settingsLoading ? (
         <div className="app">
           <p>Loading...</p>
         </div>
