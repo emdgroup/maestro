@@ -103,6 +103,37 @@ export const projectService = {
       description: description || "",
     });
   },
+
+  /**
+   * Sync GitHub issues
+   */
+  async syncGithubIssues(
+    projectId: number,
+    owner: string,
+    repo: string,
+    token: string
+  ): Promise<{ imported_count: number; error_message?: string }> {
+    return ipc.invoke<{ imported_count: number; error_message?: string }>(
+      "sync_github_issues",
+      { projectId, owner, repo, token }
+    );
+  },
+
+  /**
+   * Sync Jira issues
+   */
+  async syncJiraIssues(
+    projectId: number,
+    host: string,
+    email: string,
+    token: string,
+    jql: string
+  ): Promise<{ imported_count: number; error_message?: string }> {
+    return ipc.invoke<{ imported_count: number; error_message?: string }>(
+      "sync_jira_issues",
+      { projectId, host, email, token, jql }
+    );
+  },
 };
 
 /**
@@ -244,6 +275,62 @@ export function useSaveImportConfigMutation() {
     },
     onError: (error) => {
       toast.error(`Failed to save import config: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for syncing GitHub issues
+ */
+export function useSyncGithubIssuesMutation() {
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      owner,
+      repo,
+      token,
+    }: {
+      projectId: number;
+      owner: string;
+      repo: string;
+      token: string;
+    }) => projectService.syncGithubIssues(projectId, owner, repo, token),
+    onSuccess: (data) => {
+      toast.success(`Synced ${data.imported_count} issues from GitHub`);
+    },
+    onError: (error) => {
+      toast.error(
+        `Failed to sync GitHub issues: ${error instanceof Error ? error.message : String(error)}`
+      );
+    },
+  });
+}
+
+/**
+ * Mutation hook for syncing Jira issues
+ */
+export function useSyncJiraIssuesMutation() {
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      host,
+      email,
+      token,
+      jql,
+    }: {
+      projectId: number;
+      host: string;
+      email: string;
+      token: string;
+      jql: string;
+    }) => projectService.syncJiraIssues(projectId, host, email, token, jql),
+    onSuccess: (data) => {
+      toast.success(`Synced ${data.imported_count} issues from Jira`);
+    },
+    onError: (error) => {
+      toast.error(
+        `Failed to sync Jira issues: ${error instanceof Error ? error.message : String(error)}`
+      );
     },
   });
 }
