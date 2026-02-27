@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 2 of 7 in current phase - COMPLETE
-Status: Phase 20-02 executed successfully
-Last activity: 2026-02-26 23:38 — Phase 20-02 complete (Add TanStack Query Hooks to Execution and Settings Services)
+Plan: 3 of 7 in current phase - COMPLETE
+Status: Phase 20-03 executed successfully
+Last activity: 2026-02-27 00:07 — Phase 20-03 complete (Audit and Extend Connection Service with TanStack Query Hooks)
 
-**Next Action:** Execute Phase 20-02 (Add TanStack Query hooks to execution and settings services)
+**Next Action:** Execute Phase 20-04+ (Component migrations to use query hooks)
 
-Progress: [███████████████████░] 99% (19/22 phases complete + 2/7 phase 20 plans complete)
+Progress: [███████████████████░] 99% (19/22 phases complete + 3/7 phase 20 plans complete)
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [███████████████████░] 99% (19
 | Phase 19-05 P05 | 0.09 | 2 tasks | 63 files |
 | Phase 20-01 P01 | 0.067 | 2 tasks | 2 files |
 | Phase 20-02 P02 | 0.043 | 2 tasks | 2 files |
+| Phase 20-03 P03 | 0.055 | 1 task | 1 file |
 
 ## Accumulated Context
 
@@ -290,4 +291,18 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - 205 lines added to 2 files, 2 tasks complete
   - Wave 1 infrastructure: 21 total hooks created (task 10 + project 7 + execution 7 + settings 3)
 
-*Updated: 2026-02-26 23:38 — Phase 20-02 complete (Execution and Settings TanStack Query hooks); 2/7 plans complete (29%)*
+- Phase 20-03 COMPLETE (2026-02-27): Audit and Extend Connection Service with TanStack Query Hooks
+  - Audited connection.service.ts and identified missing TanStack Query hooks
+  - Added connectionQueryKeys factory (nested query key structure)
+  - Added useSshConnectionsQuery() for fetching all SSH connections (30s staleTime)
+  - Added useCreateSshConnectionMutation() for creating SSH connections
+  - Added useUpdateSshConnectionMutation() with optimistic updates for renaming
+  - Added useDeleteSshConnectionMutation() for deleting connections
+  - Added useForgetSavedPasswordMutation() for forgetting saved passwords
+  - All mutations have Sonner toast error/success feedback
+  - Verified exemplar pattern (useSshConnectionsQuery.ts) as working reference
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 176 lines added to 1 file, 1 task complete
+  - Wave 1 infrastructure complete: 32 total hooks across 5 services
+
+*Updated: 2026-02-27 00:07 — Phase 20-03 complete (Connection Service TanStack Query hooks); 3/7 plans complete (43%)*
