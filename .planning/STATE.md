@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-27T00:30:00.000Z"
+last_updated: "2026-02-27T00:46:00.000Z"
 progress:
   total_phases: 22
   completed_phases: 19
   total_plans: 77
-  completed_plans: 76
+  completed_plans: 77
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 5 of 7 in current phase - COMPLETE
-Status: Phase 20-05 executed successfully
-Last activity: 2026-02-27 00:30 — Phase 20-05 complete (Migrate Kanban Workflow Components to TanStack Query Hooks)
+Plan: 6 of 7 in current phase - COMPLETE
+Status: Phase 20-06 executed successfully
+Last activity: 2026-02-27 00:46 — Phase 20-06 complete (Migrate Final Components and Hooks to TanStack Query)
 
-**Next Action:** Execute Phase 20-06 (Continue Wave 2 component migrations)
+**Next Action:** Execute Phase 20-07 (Final Wave 2 completion or Wave 3 work)
 
-Progress: [███████████████████░] 99% (19/22 phases complete + 5/7 phase 20 plans complete)
+Progress: [███████████████████░] 99% (19/22 phases complete + 6/7 phase 20 plans complete)
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [███████████████████░] 99% (19
 - Phase 20-03: 0.055h (Audit and Extend Connection Service with TanStack Query Hooks - 5 new hooks, 176 lines, connection service complete)
 - Phase 20-04: 0.048h (Migrate Core Components to TanStack Query Hooks - 3 components (App, ApprovalForm, ReviewModal), 121 new mutation hooks in task.service, Wave 2 begun)
 - Phase 20-05: 0.067h (Migrate Kanban Workflow Components to TanStack Query Hooks - 3 components (SyncButton, TaskCard, TaskModal), 2 sync mutations added, 60+ lines state mgmt removed)
+- Phase 20-06: 0.042h (Migrate Final Components and Hooks to TanStack Query - 3 components (FilePicker, ImportSettings, useRecentProjects), Wave 2 complete, 9/9 components migrated)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |
@@ -92,6 +93,7 @@ Progress: [███████████████████░] 99% (19
 | Phase 20-03 P03 | 0.055 | 1 task | 1 file |
 | Phase 20-04 P04 | 0.048 | 3 tasks | 4 files |
 | Phase 20-05 P05 | 0.067 | 3 tasks | 5 files |
+| Phase 20-06 P06 | 0.042 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -341,3 +343,15 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - Rule 1 deviation: Fixed SyncButton import_provider type mismatch by accepting provider as prop
 
 *Updated: 2026-02-27 00:30 — Phase 20-05 complete (Kanban Component migrations); 5/7 plans complete (71%)*
+
+- Phase 20-06 COMPLETE (2026-02-27): Migrate Final Components and Hooks to TanStack Query (Wave 2)
+  - Migrated FilePicker.tsx from direct invoke() to useMutation hooks (file operations)
+  - Migrated ImportSettings.tsx to project.service mutation hooks (sync and config save)
+  - Refactored useRecentProjects.ts from useState to useQuery hook pattern
+  - All 9 Wave 2 components now complete (3+3+3 migrations)
+  - Connection service, Project service, Settings service all fully integrated
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 3 commits, 5 files modified, 0.042h duration
+  - Wave 2 infrastructure complete: All component direct invoke() calls replaced with TanStack Query hooks
+
+*Updated: 2026-02-27 00:46 — Phase 20-06 complete (Final component migrations); 6/7 plans complete (86%)*
