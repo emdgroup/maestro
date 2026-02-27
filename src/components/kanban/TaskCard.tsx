@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { invoke } from "@tauri-apps/api/core";
-import { Task, ExecutionLog } from "@/types/bindings";
+import { Task } from "@/types/bindings";
 import { useBoardStore } from "@/store/boardStore";
-import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
+import { useExecutionLogsQuery } from "@/services/task.service";
+import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
 
 /// Get status dot color based on task status
@@ -75,29 +75,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("0s");
-  const [executionLog, setExecutionLog] = useState<ExecutionLog | null>(null);
   const store = useBoardStore();
 
-  // Load latest execution log for this task
-  useEffect(() => {
-    if (task.status !== "InProgress") {
-      setExecutionLog(null);
-      return;
-    }
+  // Load latest execution logs using TanStack Query
+  const { data: logs = [] } = useExecutionLogsQuery(
+    task.status === "InProgress" ? task.id : null
+  );
 
-    const loadExecutionLog = async () => {
-      try {
-        const logs = await invoke<ExecutionLog[]>("get_execution_logs", { taskId: task.id });
-        if (logs.length > 0) {
-          setExecutionLog(logs[0]); // Get most recent log
-        }
-      } catch (error) {
-        console.error("Failed to load execution log:", error);
-      }
-    };
-
-    loadExecutionLog();
-  }, [task.id, task.status]);
+  const executionLog = logs.length > 0 ? logs[0] : null;
 
   // Update elapsed time every 1 second for running tasks
   useEffect(() => {
@@ -137,10 +122,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     try {
       const executionLogId = await store.executeTask(task.project_id, task.id, projectPath);
       console.log("Execution started:", executionLogId);
-      showSuccessToast(`Execution started for "${task.name}"`);
+      toast.success(`Execution started for "${task.name}"`);
     } catch (error) {
       console.error("Execution failed:", error);
-      showErrorToast(
+      toast.error(
         `Failed to start execution: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
@@ -172,10 +157,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
-      showSuccessToast(`Retrying: ${task.name}`);
+      toast.success(`Retrying: ${task.name}`);
       await store.resumeExecution(task.project_id, task.id, projectPath);
     } catch (error) {
-      showErrorToast(`Resume failed: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Resume failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsRetrying(false);
     }
@@ -184,10 +169,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const handleAbort = async () => {
     setIsAborting(true);
     try {
-      showSuccessToast(`Task aborted: ${task.name}`);
+      toast.success(`Task aborted: ${task.name}`);
       await store.abortExecution(task.project_id, task.id);
     } catch (error) {
-      showErrorToast(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsAborting(false);
     }
@@ -197,9 +182,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     setIsPauseLoading(true);
     try {
       await store.pauseExecution(task.id);
-      showSuccessToast(`Task paused: ${task.name}`);
+      toast.success(`Task paused: ${task.name}`);
     } catch (error) {
-      showErrorToast(`Failed to pause: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Failed to pause: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsPauseLoading(false);
     }
@@ -209,9 +194,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     setIsPauseLoading(true);
     try {
       await store.resumeExecution(task.project_id, task.id, projectPath);
-      showSuccessToast(`Task resumed: ${task.name}`);
+      toast.success(`Task resumed: ${task.name}`);
     } catch (error) {
-      showErrorToast(`Failed to resume: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Failed to resume: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsPauseLoading(false);
     }
