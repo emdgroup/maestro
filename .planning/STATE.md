@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: in_progress
-last_updated: "2026-02-26T23:31:05Z"
+status: unknown
+last_updated: "2026-02-27T00:19:40.049Z"
 progress:
   total_phases: 22
   completed_phases: 19
   total_plans: 77
-  completed_plans: 72
+  completed_plans: 75
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 3 of 7 in current phase - COMPLETE
-Status: Phase 20-03 executed successfully
-Last activity: 2026-02-27 00:07 — Phase 20-03 complete (Audit and Extend Connection Service with TanStack Query Hooks)
+Plan: 4 of 7 in current phase - COMPLETE
+Status: Phase 20-04 executed successfully
+Last activity: 2026-02-27 00:11 — Phase 20-04 complete (Migrate Core Components to TanStack Query Hooks)
 
-**Next Action:** Execute Phase 20-04+ (Component migrations to use query hooks)
+**Next Action:** Execute Phase 20-05+ (Component migrations to use query hooks)
 
-Progress: [███████████████████░] 99% (19/22 phases complete + 3/7 phase 20 plans complete)
+Progress: [███████████████████░] 99% (19/22 phases complete + 4/7 phase 20 plans complete)
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [███████████████████░] 99% (19
 | Phase 20-01 P01 | 0.067 | 2 tasks | 2 files |
 | Phase 20-02 P02 | 0.043 | 2 tasks | 2 files |
 | Phase 20-03 P03 | 0.055 | 1 task | 1 file |
+| Phase 20 P04 | 0.048 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -306,3 +307,17 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - Wave 1 infrastructure complete: 32 total hooks across 5 services
 
 *Updated: 2026-02-27 00:07 — Phase 20-03 complete (Connection Service TanStack Query hooks); 3/7 plans complete (43%)*
+
+- Phase 20-04 COMPLETE (2026-02-27): Migrate Core Components to TanStack Query Hooks (Wave 2)
+  - Migrated App.tsx from direct invoke() to useSettingsQuery hook
+  - Removed manual useState for settings, loading/error states managed by TanStack Query
+  - Migrated ApprovalForm.tsx to use 3 new mutation hooks: useSaveTaskReviewMutation, useApproveTaskAndMergeMutation, useRequestChangesMutation (Rule 2 deviation)
+  - Migrated ReviewModal.tsx from direct invoke() to useDiffForReviewQuery hook
+  - All components now delegate loading/error state management to TanStack Query
+  - Sonner toast integration for all error/success feedback
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 121 lines added to task.service.ts for mutation hooks
+  - 3 core foundation components migrated, 3 new mutation hooks added
+  - Wave 2 component migrations begun: 3/7 components complete
+
+*Updated: 2026-02-27 00:11 — Phase 20-04 complete (Core Component migrations); 4/7 plans complete (57%)*
