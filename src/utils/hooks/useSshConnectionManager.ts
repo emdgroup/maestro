@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { SshConnection } from "@/types/bindings.ts";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext.tsx";
 import { useSshConnectionsQuery } from "@/hooks";
+import { ipc } from "@/services/ipc";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
@@ -80,7 +80,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     setConnectionId(connId);
     try {
       // Try connecting without credentials first
-      await invoke("connect_ssh_without_credentials", {
+      await ipc.invoke<void>("connect_ssh_without_credentials", {
         connectionId: connId,
       });
 
@@ -123,7 +123,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
       try {
         // Save connection to database (parsing happens in Rust)
-        const newConnectionId = await invoke<number>("save_ssh_connection", {
+        const newConnectionId = await ipc.invoke<number>("save_ssh_connection", {
           connectionString,
           authMethod: "Agent", // Default to Agent auth
         });
@@ -150,7 +150,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
       setLoading(true);
       try {
-        await invoke("connect_ssh_with_password", {
+        await ipc.invoke<void>("connect_ssh_with_password", {
           connectionId,
           password,
           savePassword,

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { SshConnection } from "@/types/bindings.ts";
+import { ipc } from "@/services/ipc";
 
 export const SSH_CONNECTIONS_KEY = ["ssh-connections"];
 
@@ -13,7 +13,7 @@ export function useSshConnectionsQuery() {
   return useQuery({
     queryKey: SSH_CONNECTIONS_KEY,
     queryFn: async () => {
-      return await invoke<SshConnection[]>("get_ssh_connections", {});
+      return ipc.invoke<SshConnection[]>("get_ssh_connections", {});
     },
     staleTime: 30000, // Consider data fresh for 30 seconds
     refetchOnWindowFocus: true, // Auto-refetch when user returns to tab
@@ -35,7 +35,7 @@ export function useUpdateSshConnectionMutation() {
       connectionId: number;
       displayName: string;
     }) => {
-      await invoke("rename_ssh_connection", {
+      await ipc.invoke<void>("rename_ssh_connection", {
         connectionId,
         displayName,
       });
