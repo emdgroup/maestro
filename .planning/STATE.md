@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-27T00:19:40.049Z"
+last_updated: "2026-02-27T00:30:00.000Z"
 progress:
   total_phases: 22
   completed_phases: 19
   total_plans: 77
-  completed_plans: 75
+  completed_plans: 76
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 4 of 7 in current phase - COMPLETE
-Status: Phase 20-04 executed successfully
-Last activity: 2026-02-27 00:11 — Phase 20-04 complete (Migrate Core Components to TanStack Query Hooks)
+Plan: 5 of 7 in current phase - COMPLETE
+Status: Phase 20-05 executed successfully
+Last activity: 2026-02-27 00:30 — Phase 20-05 complete (Migrate Kanban Workflow Components to TanStack Query Hooks)
 
-**Next Action:** Execute Phase 20-05+ (Component migrations to use query hooks)
+**Next Action:** Execute Phase 20-06 (Continue Wave 2 component migrations)
 
-Progress: [███████████████████░] 99% (19/22 phases complete + 4/7 phase 20 plans complete)
+Progress: [███████████████████░] 99% (19/22 phases complete + 5/7 phase 20 plans complete)
 
 ## Performance Metrics
 
@@ -80,6 +80,9 @@ Progress: [███████████████████░] 99% (19
 - Phase 19-05: 0.09h (Organize Utils Layer - Hooks and Helpers - src/utils/{hooks,helpers} structure, 4 complex hooks in folders, 3 helpers consolidated, 63 files updated with new imports)
 - Phase 20-01: 0.067h (Add TanStack Query Hooks to Task and Project Services - 10 task hooks + 7 project hooks + 2 query key factories, 349 lines added, automatic caching and optimistic updates)
 - Phase 20-02: 0.043h (Add TanStack Query Hooks to Execution and Settings Services - 7 execution mutations + 3 settings hooks + 2 query key factories, 205 lines added, Sonner error handling)
+- Phase 20-03: 0.055h (Audit and Extend Connection Service with TanStack Query Hooks - 5 new hooks, 176 lines, connection service complete)
+- Phase 20-04: 0.048h (Migrate Core Components to TanStack Query Hooks - 3 components (App, ApprovalForm, ReviewModal), 121 new mutation hooks in task.service, Wave 2 begun)
+- Phase 20-05: 0.067h (Migrate Kanban Workflow Components to TanStack Query Hooks - 3 components (SyncButton, TaskCard, TaskModal), 2 sync mutations added, 60+ lines state mgmt removed)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |
@@ -87,7 +90,8 @@ Progress: [███████████████████░] 99% (19
 | Phase 20-01 P01 | 0.067 | 2 tasks | 2 files |
 | Phase 20-02 P02 | 0.043 | 2 tasks | 2 files |
 | Phase 20-03 P03 | 0.055 | 1 task | 1 file |
-| Phase 20 P04 | 0.048 | 3 tasks | 4 files |
+| Phase 20-04 P04 | 0.048 | 3 tasks | 4 files |
+| Phase 20-05 P05 | 0.067 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -321,3 +325,19 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
   - Wave 2 component migrations begun: 3/7 components complete
 
 *Updated: 2026-02-27 00:11 — Phase 20-04 complete (Core Component migrations); 4/7 plans complete (57%)*
+
+- Phase 20-05 COMPLETE (2026-02-27): Migrate Kanban Workflow Components to TanStack Query Hooks (Wave 2)
+  - Migrated SyncButton.tsx from direct invoke() to useSyncGithubIssuesMutation and useSyncJiraIssuesMutation hooks
+  - Added 2 sync mutation hooks to project.service.ts with automatic error/success toast handling
+  - Migrated TaskCard.tsx from manual useEffect + invoke() to useExecutionLogsQuery hook
+  - Removed 15 lines of state management from TaskCard for execution logs
+  - Migrated TaskModal.tsx from direct invoke() to useCreateTaskMutation hook
+  - Replaced showErrorToast/showSuccessToast with direct sonner toast calls throughout
+  - All 3 components now use TanStack Query for state and loading management
+  - Build verified: 0 TypeScript errors, production bundle passed
+  - 78 lines added to project.service.ts for sync mutations
+  - 60+ lines of manual state management code removed
+  - Wave 2 component migrations: 6/7 components complete
+  - Rule 1 deviation: Fixed SyncButton import_provider type mismatch by accepting provider as prop
+
+*Updated: 2026-02-27 00:30 — Phase 20-05 complete (Kanban Component migrations); 5/7 plans complete (71%)*
