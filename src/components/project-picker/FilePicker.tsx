@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/ui/button";
 import { SshConnection } from "@/types/bindings";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { connectionService } from "@/services/connection.service";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
 import {
@@ -32,7 +33,6 @@ export function FilePicker({
   const [currentPath, setCurrentPath] = useState<string>("");
   const [directories, setDirectories] = useState<string[]>([]);
   const [drives, setDrives] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -102,6 +102,24 @@ export function FilePicker({
     }
   }, [isLocal, currentPath, drives]);
 
+  // Mutations for file operations
+  const listLocalDirsMutation = useMutation({
+    mutationFn: (path: string) => connectionService.listLocalDirectories(path),
+    onError: (error) => {
+      toast.error(`Failed to list directories: ${error}`);
+      setDirectories([]);
+    },
+  });
+
+  const listRemoteDirsMutation = useMutation({
+    mutationFn: ({ connectionId, path }: { connectionId: number; path: string }) =>
+      connectionService.listRemoteDirectories(connectionId, path),
+    onError: (error) => {
+      toast.error(`Failed to list directories: ${error}`);
+      setDirectories([]);
+    },
+  });
+
   const loadDirectories = useCallback(
     async (path: string) => {
       // Special case: show drives on Windows when at drives root
@@ -110,28 +128,18 @@ export function FilePicker({
         return;
       }
 
-      setLoading(true);
-      try {
-        if (isLocal) {
-          const dirs = await invoke<string[]>("list_local_directories", {
-            path,
-          });
-          setDirectories(dirs);
-        } else {
-          const dirs = await invoke<string[]>("list_remote_directories", {
-            connectionId: connection!.id,
-            path,
-          });
-          setDirectories(dirs);
-        }
-      } catch (error) {
-        toast.error(`Failed to list directories: ${error}`);
-        setDirectories([]);
-      } finally {
-        setLoading(false);
+      if (isLocal) {
+        const result = await listLocalDirsMutation.mutateAsync(path);
+        setDirectories(result);
+      } else {
+        const result = await listRemoteDirsMutation.mutateAsync({
+          connectionId: connection!.id,
+          path,
+        });
+        setDirectories(result);
       }
     },
-    [isLocal, connection?.id],
+    [isLocal, connection?.id, listLocalDirsMutation, listRemoteDirsMutation],
   );
 
   const handleBreadcrumbClick = useCallback(
@@ -162,12 +170,22 @@ export function FilePicker({
     [isLocal, drives, currentPath],
   );
 
+  // Mutation for getting default path
+  const getDefaultPathMutation = useMutation({
+    mutationFn: () => connectionService.getDefaultFilePickerPath(),
+    onError: (error) => {
+      console.error("Failed to get default path:", error);
+      setCurrentPath("/");
+      setIsInitialized(true);
+    },
+  });
+
   // Initialize default path on mount
   useEffect(() => {
     async function initializePath() {
       if (isLocal && !isInitialized) {
         try {
-          const defaultPath = await invoke<string>("get_default_file_picker_path", {});
+          const defaultPath = await getDefaultPathMutation.mutateAsync();
           setCurrentPath(defaultPath);
           setIsInitialized(true);
         } catch (error) {
@@ -184,14 +202,23 @@ export function FilePicker({
     }
 
     void initializePath();
-  }, [isLocal, isInitialized, connection]);
+  }, [isLocal, isInitialized, connection, getDefaultPathMutation]);
+
+  // Mutation for loading drives
+  const listDrivesMutation = useMutation({
+    mutationFn: () => connectionService.listDrives(),
+    onError: (error) => {
+      console.error("Failed to load drives:", error);
+      setDrives([]);
+    },
+  });
 
   // Load drives on Windows (local only)
   useEffect(() => {
     async function loadDrives() {
       if (isLocal && isInitialized) {
         try {
-          const driveList = await invoke<string[]>("list_drives", {});
+          const driveList = await listDrivesMutation.mutateAsync();
           setDrives(driveList);
         } catch (error) {
           console.error("Failed to load drives:", error);
@@ -201,7 +228,7 @@ export function FilePicker({
     }
 
     void loadDrives();
-  }, [isLocal, isInitialized]);
+  }, [isLocal, isInitialized, listDrivesMutation]);
 
   useEffect(() => {
     if (isInitialized && currentPath) {
@@ -209,6 +236,9 @@ export function FilePicker({
       setSelectedIndex(-1); // Reset selection when path changes
     }
   }, [currentPath, isInitialized, loadDirectories]);
+
+  // Compute loading state from mutations
+  const loading = listLocalDirsMutation.isPending || listRemoteDirsMutation.isPending;
 
   // Keyboard navigation
   useEffect(() => {
