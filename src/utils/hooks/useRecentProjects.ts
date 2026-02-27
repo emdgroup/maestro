@@ -1,26 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useQuery } from "@tanstack/react-query";
+import { ipc } from "@/services/ipc";
 import type { Project } from "@/types/bindings.ts";
 
+/**
+ * Query key factory for connection projects
+ */
+export const connectionProjectsQueryKeys = {
+  all: ["connectionProjects"] as const,
+  lists: () => [...connectionProjectsQueryKeys.all, "list"] as const,
+  byConnection: (connectionId: number | null | undefined) =>
+    [...connectionProjectsQueryKeys.lists(), connectionId] as const,
+};
+
+/**
+ * Hook for fetching projects for a specific SSH connection
+ * Replaces direct invoke("get_connection_projects") calls
+ */
 export function useRecentProjects(connectionId: number | undefined | null) {
-  const [recentProjects, setRecentProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadRecent = useCallback(async () => {
-    try {
-      setLoading(true);
-      const projects = await invoke<Project[]>("get_connection_projects", { connectionId });
-      setRecentProjects(projects);
-    } catch (err) {
-      console.error("Failed to load connection projects:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [connectionId]);
-
-  useEffect(() => {
-    void loadRecent();
-  }, [loadRecent]);
-
-  return { recentProjects, loading, refetch: loadRecent };
+  return useQuery({
+    queryKey: connectionProjectsQueryKeys.byConnection(connectionId),
+    queryFn: async () => {
+      return ipc.invoke<Project[]>("get_connection_projects", { connectionId });
+    },
+    enabled: connectionId !== null && connectionId !== undefined,
+    staleTime: 300000, // 5 minutes - projects don't change often
+    refetchOnWindowFocus: true,
+  });
 }

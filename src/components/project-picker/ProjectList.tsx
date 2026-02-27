@@ -2,14 +2,13 @@ import { toast } from "sonner";
 import { projectService } from "@/services";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
-import { useRecentProjects } from "@/hooks";
+import { useRecentProjects, useProjectPickerNavigation } from "@/utils/hooks";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
 import { ConnectionHeader, FilePicker } from "@/components/project-picker";
 import { Dialog, DialogContent } from "@/ui/dialog.tsx";
 import { useState } from "react";
-import { useProjectPickerNavigation } from "@/hooks";
 
 /**
  * Unified component for displaying and managing project lists.
@@ -20,7 +19,7 @@ import { useProjectPickerNavigation } from "@/hooks";
 export function ProjectList() {
   const { activeConnection, setActiveConnection } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const { recentProjects, loading, refetch } = useRecentProjects(
+  const { data: recentProjects = [], isLoading: loading, refetch } = useRecentProjects(
     activeConnection?.sshConnection?.id,
   );
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);

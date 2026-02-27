@@ -45,7 +45,7 @@ function App() {
   const { mutate: saveSettings } = useSaveSettingsMutation();
 
   // Load recent projects for filtering dropdown (AppHeader will do the filtering)
-  const { recentProjects } = useRecentProjects(currentProject?.connection_id);
+  const { data: recentProjects = [] } = useRecentProjects(currentProject?.connection_id);
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
