@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
   DialogPortal,
@@ -10,6 +9,7 @@ import {
 } from "@/ui/dialog";
 import { TaskForm } from "@/components/task/TaskForm";
 import { Task, CreateTaskRequest } from "@/types/bindings";
+import { useCreateTaskMutation } from "@/services/task.service";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -19,31 +19,28 @@ interface TaskModalProps {
 }
 
 export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { mutate: createTask, isPending: isLoading } = useCreateTaskMutation();
 
   const handleSubmit = async (data: CreateTaskRequest) => {
-    setIsLoading(true);
     setError(null);
 
-    try {
-      const newTask = await invoke<Task>("create_task", {
-        projectId: projectId,
-        name: data.name,
-        description: data.description,
-        acceptanceCriteria: data.acceptance_criteria,
-        skills: data.skills,
-      });
-
-      onTaskCreated(newTask);
-      onClose();
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to create task";
-      setError(errorMessage);
-      console.error("Task creation error:", err);
-    } finally {
-      setIsLoading(false);
-    }
+    createTask(
+      {
+        ...data,
+      },
+      {
+        onSuccess: (newTask) => {
+          onTaskCreated(newTask);
+          onClose();
+        },
+        onError: (err) => {
+          const errorMessage = err instanceof Error ? err.message : "Failed to create task";
+          setError(errorMessage);
+          console.error("Task creation error:", err);
+        },
+      }
+    );
   };
 
   return (
