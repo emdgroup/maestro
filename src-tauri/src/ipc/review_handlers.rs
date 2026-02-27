@@ -13,6 +13,7 @@ use crate::git;
 ///
 /// Returns the unified diff as a string with 6 context lines.
 #[tauri::command]
+#[specta::specta]
 pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -122,6 +123,7 @@ pub async fn get_diff_for_review(
 ///
 /// Returns JSON object with success flag and review_id.
 #[tauri::command]
+#[specta::specta]
 pub async fn save_task_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -174,6 +176,7 @@ pub async fn save_task_review(
 ///
 /// Returns JSON object with success flag, review_id, and updated task_status.
 #[tauri::command]
+#[specta::specta]
 pub async fn request_changes(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -247,6 +250,7 @@ pub async fn request_changes(
 /// Returns immediately with "merging started" confirmation.
 /// Frontend listens for merge_complete or merge_error events for final status.
 #[tauri::command]
+#[specta::specta]
 pub async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,

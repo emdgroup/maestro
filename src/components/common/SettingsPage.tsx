@@ -1,22 +1,15 @@
 import { useEffect, forwardRef, useImperativeHandle } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { projectService } from "@/services";
 import { Label } from "@/ui/label";
 import { Checkbox } from "@/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import {
   useConfigStore,
   AVAILABLE_MCP_SERVERS,
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
 } from "@/store/configStore";
-import type { ProjectConfigRequest } from "@/types/bindings";
+import { commands, ProjectConfigRequest } from "@/types/bindings";
 import { Bot, Server, Sparkles } from "lucide-react";
 import { showSuccessToast } from "./ErrorToast";
 
@@ -77,36 +70,39 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         clearError();
 
         try {
-          const response = await projectService.getProjectSettings(projectId);
+          const result = await commands.getProjectSettings(projectId);
 
-          // Convert arrays to checkbox records
-          const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
-            (acc, server) => {
-              acc[server] = response.mcp_allowlist?.includes(server) ?? false;
-              return acc;
-            },
-            {} as Record<string, boolean>,
-          );
+          if (result.status === "ok") {
+            const response = result.data;
+            // Convert arrays to checkbox records
+            const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
+              (acc, server) => {
+                acc[server] = response.mcp_allowlist?.includes(server) ?? false;
+                return acc;
+              },
+              {} as Record<string, boolean>,
+            );
 
-          const skills_record = AVAILABLE_SKILLS.reduce(
-            (acc, skill) => {
-              acc[skill] = response.skills_default?.includes(skill) ?? false;
-              return acc;
-            },
-            {} as Record<string, boolean>,
-          );
+            const skills_record = AVAILABLE_SKILLS.reduce(
+              (acc, skill) => {
+                acc[skill] = response.skills_default?.includes(skill) ?? false;
+                return acc;
+              },
+              {} as Record<string, boolean>,
+            );
 
-          setState({
-            model_default: response.model_default,
-            mcp_allowlist: response.mcp_allowlist || [],
-            skills_default: response.skills_default || [],
-          });
+            setState({
+              model_default: response.model_default,
+              mcp_allowlist: response.mcp_allowlist || [],
+              skills_default: response.skills_default || [],
+            });
 
-          reset({
-            model_default: response.model_default,
-            mcp_servers: mcp_servers_record,
-            skills: skills_record,
-          });
+            reset({
+              model_default: response.model_default,
+              mcp_servers: mcp_servers_record,
+              skills: skills_record,
+            });
+          }
 
           setLoading(false);
         } catch (err) {
@@ -144,7 +140,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           skills_default,
         };
 
-        await projectService.updateProjectSettings(projectId, request);
+        await commands.updateProjectSettings(projectId, request);
 
         setState({
           model_default: data.model_default,

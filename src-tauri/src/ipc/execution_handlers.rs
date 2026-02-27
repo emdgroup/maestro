@@ -86,6 +86,7 @@ pub fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (Strin
 /// - Background task captures output and marks completion
 /// - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
 #[tauri::command]
+#[specta::specta]
 pub async fn spawn_agent_execution(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -407,6 +408,7 @@ pub async fn spawn_agent_execution(
 
 /// Get execution logs for a task
 #[tauri::command]
+#[specta::specta]
 pub fn get_execution_logs(
     app_state: State<Arc<AppState>>,
     task_id: i32,
@@ -456,6 +458,7 @@ pub fn get_execution_logs(
 
 /// Retry a paused execution
 #[tauri::command]
+#[specta::specta]
 pub async fn retry_execution(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -470,6 +473,7 @@ pub async fn retry_execution(
 
 /// Cancel a paused execution
 #[tauri::command]
+#[specta::specta]
 pub fn cancel_execution(
     app_state: State<Arc<AppState>>,
     log_id: i32,
@@ -511,6 +515,7 @@ pub fn cancel_execution(
 /// 3. Then continues streaming live PTY output as normal
 /// This ensures the frontend sees the full terminal context when attaching.
 #[tauri::command]
+#[specta::specta]
 pub async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -645,6 +650,7 @@ pub async fn attach_terminal(
 /// - Ctrl+C: "\x03" → converted to SIGINT by PTY layer
 /// - Ctrl+Z: "\x1a" → converted to SIGTSTP by PTY layer
 #[tauri::command]
+#[specta::specta]
 pub async fn send_terminal_input(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -685,6 +691,7 @@ pub async fn send_terminal_input(
 /// # Returns
 /// `Result<(), String>` - Ok if resized, Err if session not found or resize failed
 #[tauri::command]
+#[specta::specta]
 pub async fn resize_terminal(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -723,6 +730,7 @@ pub async fn resize_terminal(
 /// - Uses COALESCE to handle NULL terminal_output gracefully
 /// - Only updates logs with status 'running', 'failed', or 'complete'
 #[tauri::command]
+#[specta::specta]
 pub async fn append_terminal_output(
     state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -767,6 +775,7 @@ pub async fn append_terminal_output(
 /// The actual cleanup happens when the channel is dropped on the frontend.
 /// The streaming tasks in attach_terminal will exit when they detect the channel is closed.
 #[tauri::command]
+#[specta::specta]
 pub async fn detach_terminal(
     _app_state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -782,6 +791,7 @@ pub async fn detach_terminal(
 
 /// Pause a running agent execution by sending SIGSTOP to the process
 #[tauri::command]
+#[specta::specta]
 pub async fn pause_agent_execution(
     state: State<'_, Arc<AppState>>,
     task_id: i32,
@@ -812,6 +822,7 @@ pub async fn pause_agent_execution(
 
 /// Resume a paused agent execution by creating a new execution and spawning the agent again
 #[tauri::command]
+#[specta::specta]
 pub async fn resume_agent_execution(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,

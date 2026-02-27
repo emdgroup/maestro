@@ -16,11 +16,5 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
   projectPath = "",
   onTaskClick,
 }) => {
-  return (
-    <KanbanBoard
-      projectId={projectId}
-      projectPath={projectPath}
-      onTaskClick={onTaskClick}
-    />
-  );
+  return <KanbanBoard projectId={projectId} projectPath={projectPath} onTaskClick={onTaskClick} />;
 };

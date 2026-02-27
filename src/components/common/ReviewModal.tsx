@@ -28,7 +28,12 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOp
   const [showApprovalForm, setShowApprovalForm] = useState(false);
 
   // Query hook for fetching diff - only enabled when modal is open
-  const { data: diffString, isLoading: isDiffLoading, error: diffError, refetch: refetchDiff } = useDiffForReviewQuery(isOpen ? taskId : null);
+  const {
+    data: diffString,
+    isLoading: isDiffLoading,
+    error: diffError,
+    refetch: refetchDiff,
+  } = useDiffForReviewQuery(isOpen ? taskId : null);
 
   // Process diff data when it arrives
   useEffect(() => {

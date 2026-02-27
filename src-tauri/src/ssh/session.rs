@@ -10,14 +10,14 @@ use rusqlite::Result as SqliteResult;
 use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use ts_rs::TS;
+use specta::Type;
 use zeroize::Zeroizing;
 use crate::ssh::error::SshError;
 use crate::ssh::PasswordManager;
 
 /// Saved SSH connection for quick reconnection
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct SshConnection {
     pub id: i32,
     pub connection_string: String,  // e.g., "user@host:22"
@@ -31,8 +31,8 @@ pub struct SshConnection {
 }
 
 /// SSH authentication method configuration
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum SshAuthMethod {
     /// Authenticate using a private key file

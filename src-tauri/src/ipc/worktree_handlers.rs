@@ -24,6 +24,7 @@ const DEFAULT_POOL_SIZE: i32 = 3;
 /// 3. After retries exhausted, attempts pool expansion (creates new worktree)
 /// 4. Returns error only if all retries and expansion fail
 #[tauri::command]
+#[specta::specta]
 pub async fn lease_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -138,6 +139,7 @@ pub async fn lease_worktree(
 
 /// Return worktree to pool after task completion
 #[tauri::command]
+#[specta::specta]
 pub fn return_worktree(
     app_state: State<Arc<AppState>>,
     worktree_id: i32,
@@ -163,6 +165,7 @@ pub fn return_worktree(
 
 /// Get current pool status for monitoring
 #[tauri::command]
+#[specta::specta]
 pub fn get_pool_status(
     app_state: State<Arc<AppState>>,
     project_id: i32,
@@ -266,6 +269,7 @@ pub fn get_pool_status(
 /// # Async Context
 /// MUST use tokio::process::Command (NOT std::process::Command) to avoid blocking.
 #[tauri::command]
+#[specta::specta]
 pub async fn cleanup_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -337,6 +341,7 @@ pub async fn cleanup_worktree(
 /// # Integration
 /// Should be invoked in App.tsx useEffect on project load (see Phase 2 integration point)
 #[tauri::command]
+#[specta::specta]
 pub async fn recover_dirty_worktrees(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -443,6 +448,7 @@ pub async fn recover_dirty_worktrees(
 /// await invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
 /// ```
 #[tauri::command]
+#[specta::specta]
 pub fn initialize_worktree_pool(
     app_state: State<Arc<AppState>>,
     project_id: i32,

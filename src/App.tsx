@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { invoke } from "@tauri-apps/api/core";
 import { useSelectedProject } from "@/store/projectStore";
 import { AppHeader, ActionBar, ToasterRoot } from "@/components/common";
 import { TaskModal } from "@/components/kanban";
@@ -94,26 +93,6 @@ function App() {
         return;
       }
 
-      console.log("[DEBUG] App.tsx: Settings loaded successfully", settings);
-
-      if (settings.project_path) {
-        console.log(`[DEBUG] App.tsx: Project path found in settings: ${settings.project_path}`);
-        // Load the current project from database
-        try {
-          console.log("[DEBUG] App.tsx: Loading project from database");
-          const project = await invoke<Project>("get_or_create_project", {
-            path: settings.project_path,
-          });
-          console.log("[DEBUG] App.tsx: Project loaded successfully", project);
-          setCurrentProject(project);
-        } catch (projectErr) {
-          console.error("[DEBUG] App.tsx: Failed to load current project:", projectErr);
-          toast.error("Failed to load project");
-        }
-      } else {
-        console.log("[DEBUG] App.tsx: No project path in settings, showing ProjectPicker");
-      }
-
       setAppLoading(false);
     }
 
@@ -132,20 +111,9 @@ function App() {
       setCurrentProject(project);
 
       const newSettings: AppSettings = {
-        project_path: project.path,
-        recent_projects: settings?.recent_projects || [],
-        model_default: settings?.model_default || "claude-opus-4-5",
-        mcp_allowlist: settings?.mcp_allowlist || [],
-        skills_default: settings?.skills_default || [],
         theme_preference: settings?.theme_preference || "system",
         updated_at: new Date().toISOString(),
       };
-
-      // Add to recent if not already there (no limit - store all recent projects)
-      if (!newSettings.recent_projects.includes(project.path)) {
-        newSettings.recent_projects.unshift(project.path);
-        // No slice - keep all recent projects for per-connection filtering
-      }
 
       console.log("[DEBUG] App.tsx: Saving settings with new project path");
       saveSettings(newSettings);

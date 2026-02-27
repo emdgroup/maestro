@@ -3,7 +3,11 @@ import { DiffFileWithName } from "@/types/review";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
 import { Textarea } from "@/ui/textarea";
-import { useSaveTaskReviewMutation, useApproveTaskAndMergeMutation, useRequestChangesMutation } from "@/services/task.service";
+import {
+  useSaveTaskReviewMutation,
+  useApproveTaskAndMergeMutation,
+  useRequestChangesMutation,
+} from "@/services/task.service";
 
 interface ApprovalFormProps {
   taskId: number;
@@ -83,7 +87,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
               },
             });
           },
-        }
+        },
       );
     } else if (decision === "RequestChanges") {
       // Call request_changes handler
@@ -97,7 +101,7 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
           onSuccess: () => {
             onClose();
           },
-        }
+        },
       );
     }
   };

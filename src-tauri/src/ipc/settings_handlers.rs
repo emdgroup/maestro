@@ -22,6 +22,7 @@ use crate::db::AppState;
 /// - The database lock cannot be acquired
 /// - The settings cannot be loaded from the database
 #[tauri::command]
+#[specta::specta]
 pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
     println!("get_settings() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -45,6 +46,7 @@ pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, Stri
 /// - The database lock cannot be acquired
 /// - The settings cannot be saved to the database
 #[tauri::command]
+#[specta::specta]
 pub fn save_settings(
     app_state: State<Arc<AppState>>,
     settings: AppSettings,
@@ -84,6 +86,7 @@ pub fn save_settings(
 /// - Uses the issue number as the external_id
 /// - Sets all imported tasks to "Backlog" status initially
 #[tauri::command]
+#[specta::specta]
 pub async fn sync_github_issues(
     state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -213,6 +216,7 @@ pub async fn sync_github_issues(
 /// - Uses the issue key (e.g., "PROJ-123") as the external_id
 /// - Sets all imported tasks to "Backlog" status initially
 #[tauri::command]
+#[specta::specta]
 pub async fn sync_jira_issues(
     state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -223,8 +227,9 @@ pub async fn sync_jira_issues(
 ) -> Result<SyncResult, String> {
     println!("sync_jira_issues() called: host={}, project_id={}", host, project_id);
 
-    // Construct Jira API URL
-    let url = format!("https://{}/rest/api/3/search", host);
+    // Construct Jira API URL with query parameters
+    let encoded_jql = urlencoding::encode(&jql);
+    let url = format!("https://{}/rest/api/3/search?jql={}", host, encoded_jql);
 
     // Create authorization header
     let credentials = format!("{}:{}", email, api_token);
@@ -235,7 +240,6 @@ pub async fn sync_jira_issues(
     let response = client
         .get(&url)
         .header("Authorization", format!("Basic {}", encoded))
-        .query(&[("jql", jql.as_str())])
         .send()
         .await
         .map_err(|e| format!("Failed to fetch from Jira: {}", e))?;
@@ -348,6 +352,7 @@ pub async fn sync_jira_issues(
 /// - Uses INSERT OR REPLACE to update existing configs
 /// - Records the timestamp of the save operation
 #[tauri::command]
+#[specta::specta]
 pub fn save_import_config(
     state: State<'_, Arc<AppState>>,
     project_id: i32,

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct Project {
     pub id: i32,
     pub name: String,
@@ -44,8 +44,8 @@ impl Project {
 
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum ProjectStatus {
     Active,

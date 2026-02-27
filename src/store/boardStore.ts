@@ -64,7 +64,7 @@ export const useBoardStore = create<BoardState>()(
         const executionLogId = await executionService.spawnAgentExecution(
           projectId,
           taskId,
-          repoPath
+          repoPath,
         );
 
         // Update task status to InProgress using immer middleware
@@ -112,7 +112,7 @@ export const useBoardStore = create<BoardState>()(
         const executionLogId = await executionService.resumeAgentExecution(
           taskId,
           projectId,
-          repoPath
+          repoPath,
         );
 
         // Update task status to InProgress

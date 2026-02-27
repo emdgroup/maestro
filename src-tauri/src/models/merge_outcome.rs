@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
 /// Outcome of a squash merge operation
 /// Matches the TypeScript interface from sidecar/src/merge-manager.ts
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct MergeOutcome {
     /// Whether merge completed successfully
     pub success: bool,

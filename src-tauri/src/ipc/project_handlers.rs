@@ -8,6 +8,7 @@ use crate::db::{AppState, project_storage};
 
 /// Get list of all projects
 #[tauri::command]
+#[specta::specta]
 pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
     println!("get_projects() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -27,6 +28,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 
 /// Get list of all projects per connections
 #[tauri::command]
+#[specta::specta]
 pub fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
     println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -49,6 +51,7 @@ pub fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: O
 
 /// Get project by id
 #[tauri::command]
+#[specta::specta]
 pub fn get_project(
     app_state: State<Arc<AppState>>,
     project_id: i32,
@@ -79,6 +82,7 @@ pub fn get_project(
 
 /// remove project by id
 #[tauri::command]
+#[specta::specta]
 pub fn remove_project(
     app_state: State<Arc<AppState>>,
     project_id: i32,
@@ -96,6 +100,7 @@ pub fn remove_project(
 
 /// Create a new project
 #[tauri::command]
+#[specta::specta]
 pub fn create_project(
     app_state: State<Arc<AppState>>,
     path: String,
@@ -136,6 +141,7 @@ pub fn create_project(
 
 /// Get list of all tasks for a project
 #[tauri::command]
+#[specta::specta]
 pub fn get_tasks(
     app_state: State<Arc<AppState>>,
     project_id: i32,
@@ -186,6 +192,7 @@ pub fn get_tasks(
 
 /// Create a new task with validation
 #[tauri::command]
+#[specta::specta]
 pub fn create_task(
     app_state: State<Arc<AppState>>,
     project_id: i32,
@@ -276,6 +283,7 @@ pub fn create_task(
 
 /// Update a task's status or other fields
 #[tauri::command]
+#[specta::specta]
 pub fn update_task(
     app_state: State<Arc<AppState>>,
     task_id: i32,
@@ -350,6 +358,7 @@ pub fn update_task(
 
 /// Get project-level configuration (model default, MCP allowlist, skills default)
 #[tauri::command]
+#[specta::specta]
 pub fn get_project_settings(
     app_state: State<Arc<AppState>>,
     _project_id: i32,
@@ -402,6 +411,7 @@ pub fn get_project_settings(
 
 /// Update project-level configuration
 #[tauri::command]
+#[specta::specta]
 pub fn update_project_settings(
     app_state: State<Arc<AppState>>,
     _project_id: i32,
@@ -452,6 +462,7 @@ pub fn update_project_settings(
 
 /// Update task-level configuration overrides
 #[tauri::command]
+#[specta::specta]
 pub fn update_task_settings(
     app_state: State<Arc<AppState>>,
     task_id: i32,

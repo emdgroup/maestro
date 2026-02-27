@@ -3,12 +3,12 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
 use std::path::Path;
-use ts_rs::TS;
+use specta::Type;
 
 /// Project-specific configuration stored in .maestro/settings.json
 /// This replaces project-level settings currently stored in the database.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ProjectConfig {
     /// Default model for this project's tasks (e.g., "claude-opus-4-5")
     pub model_default: String,

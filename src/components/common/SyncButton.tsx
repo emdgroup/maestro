@@ -1,7 +1,4 @@
-import {
-  useSyncGithubIssuesMutation,
-  useSyncJiraIssuesMutation,
-} from "@/services/project.service";
+import { useSyncGithubIssues, useSyncJiraIssues } from "@/services/project.service";
 
 interface SyncButtonProps {
   projectId: number;
@@ -10,8 +7,8 @@ interface SyncButtonProps {
 }
 
 export function SyncButton({ projectId, provider, onSyncComplete }: SyncButtonProps) {
-  const { mutate: syncGithub, isPending: isGithubSyncing } = useSyncGithubIssuesMutation();
-  const { mutate: syncJira, isPending: isJiraSyncing } = useSyncJiraIssuesMutation();
+  const { mutate: syncGithub, isPending: isGithubSyncing } = useSyncGithubIssues();
+  const { mutate: syncJira, isPending: isJiraSyncing } = useSyncJiraIssues();
 
   const isLoading = isGithubSyncing || isJiraSyncing;
 
@@ -29,7 +26,7 @@ export function SyncButton({ projectId, provider, onSyncComplete }: SyncButtonPr
           onSuccess: () => {
             onSyncComplete();
           },
-        }
+        },
       );
     } else if (provider === "jira") {
       // In real app, retrieve stored Jira config from settings
@@ -45,7 +42,7 @@ export function SyncButton({ projectId, provider, onSyncComplete }: SyncButtonPr
           onSuccess: () => {
             onSyncComplete();
           },
-        }
+        },
       );
     }
   }

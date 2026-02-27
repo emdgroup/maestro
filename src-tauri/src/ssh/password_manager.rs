@@ -38,7 +38,7 @@ impl PasswordManager {
             .map_err(|e| format!("Keyring error: {}", e))?;
 
         entry
-            .delete_password()
+            .delete_credential()
             .map_err(|e| format!("Failed to delete password: {}", e))?;
 
         Ok(())

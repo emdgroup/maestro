@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
 use std::path::Path;
-use ts_rs::TS;
+use specta::Type;
 
 /// Snapshot of a task at a specific point in time for project state storage
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct TaskSnapshot {
     pub id: i32,
     pub name: String,
@@ -34,8 +34,8 @@ pub struct TaskSnapshot {
 }
 
 /// Snapshot of a worktree at a specific point in time for project state storage
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct WorktreeSnapshot {
     pub id: i32,
     pub branch_name: String,
@@ -51,8 +51,8 @@ pub struct WorktreeSnapshot {
 
 /// Project-level state stored in .maestro/state.json
 /// Contains snapshots of all tasks and worktrees for this project
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ProjectState {
     pub tasks: Vec<TaskSnapshot>,
     pub worktrees: Vec<WorktreeSnapshot>,

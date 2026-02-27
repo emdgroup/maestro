@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ErrorEvent {
     pub error_type: String,
     pub message: String,
@@ -10,8 +10,8 @@ pub struct ErrorEvent {
     pub detected_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ExecutionLog {
     pub id: i32,
     pub task_id: i32,
@@ -23,8 +23,8 @@ pub struct ExecutionLog {
     pub error_event: Option<ErrorEvent>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionStatus {
     Running,

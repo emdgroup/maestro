@@ -78,9 +78,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const store = useBoardStore();
 
   // Load latest execution logs using TanStack Query
-  const { data: logs = [] } = useExecutionLogsQuery(
-    task.status === "InProgress" ? task.id : null
-  );
+  const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
 
   const executionLog = logs.length > 0 ? logs[0] : null;
 
@@ -106,7 +104,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     isDragging: isActivelyDragging,
   } = useDraggable({
     id: task.id,
-    disabled: task.is_imported,
+    disabled: !!task.is_imported,
   });
 
   // If this is the overlay card, don't apply transform
@@ -247,11 +245,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           onClick={() => onTaskClick?.(task)}
         >
           <div
-            className={`h-2 w-2 rounded-full flex-shrink-0 ${getStatusDotColor(task.status)} ${task.status === "InProgress" ? "animate-pulse" : ""}`}
+            className={`h-2 w-2 rounded-full shrink-0 ${getStatusDotColor(task.status)} ${task.status === "InProgress" ? "animate-pulse" : ""}`}
           />
           <div className="font-base text-foreground truncate">{task.name}</div>
         </div>
-        <div className="relative flex-shrink-0">
+        <div className="relative shrink-0">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="text-muted-foreground hover:text-foreground transition-colors p-1"

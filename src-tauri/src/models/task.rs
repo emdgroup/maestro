@@ -1,35 +1,35 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct Task {
     pub id: i32,
     pub project_id: i32,
     pub name: String,
     pub description: String,
-    #[ts(optional)]
+    #[specta(optional)]
     pub acceptance_criteria: Option<String>,
     pub status: TaskStatus,
-    #[ts(optional)]
+    #[specta(optional)]
     pub external_id: Option<String>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub is_imported: Option<bool>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub import_source: Option<String>,
     pub skills: Vec<String>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub model_override: Option<String>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub mcp_allowlist: Option<Vec<String>>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub skills_override: Option<Vec<String>>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct CreateTaskRequest {
     pub project_id: i32,
     pub name: String,
@@ -38,8 +38,8 @@ pub struct CreateTaskRequest {
     pub skills: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskStatus {
     Backlog,
@@ -51,29 +51,29 @@ pub enum TaskStatus {
     Done,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ProjectConfigResponse {
     pub model_default: String,
     pub mcp_allowlist: Vec<String>,
     pub skills_default: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct ProjectConfigRequest {
     pub model_default: String,
     pub mcp_allowlist: Vec<String>,
     pub skills_default: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct TaskConfigRequest {
-    #[ts(optional)]
+    #[specta(optional)]
     pub model_override: Option<String>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub mcp_allowlist: Option<Vec<String>>,
-    #[ts(optional)]
+    #[specta(optional)]
     pub skills_override: Option<Vec<String>>,
 }

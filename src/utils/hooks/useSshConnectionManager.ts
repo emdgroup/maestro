@@ -1,9 +1,8 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { SshConnection } from "@/types/bindings.ts";
+import { commands, SshConnection } from "@/types/bindings.ts";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext.tsx";
-import { useSshConnectionsQuery } from "@/hooks";
-import { ipc } from "@/services/ipc";
+import { useSshConnections } from "@/services/connection.service.ts";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
@@ -21,12 +20,11 @@ interface sshConnectionManagerProps {
  * @returns SSH connection state, handlers, and unified connections list
  */
 export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionManagerProps) {
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Use TanStack Query for SSH connections
-  const { data: sshConnections = [], refetch: refetchConnections } = useSshConnectionsQuery();
+  const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
 
   const local = useRef<Connection>({
     type: "local" as const,
@@ -35,71 +33,68 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     subtitle: "Browse local filesystem",
   });
 
-  const buildConnection = (sshConn: SshConnection) => ({
+  const buildConnection = useCallback(
+    (sshConn: SshConnection) => ({
       type: "ssh" as const,
       id: sshConn.id,
       displayName: sshConn.display_name || sshConn.connection_string,
       subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
       metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
       sshConnection: sshConn,
-    });
+    }),
+    [],
+  );
 
-  /**
-   * Build unified connections list: Local first, then SSH connections
-   */
-  const connections = useMemo<Connection[]>(() => {
-    const list: Connection[] = [local.current];
-
-    // Add SSH connections
-    sshConnections.map(buildConnection).forEach((c) => {
-      list.push(c);
-    });
-
-    return list;
-  }, [sshConnections]);
+  useEffect(() => {
+    setConnections([local.current, ...sshConnections.map(buildConnection)]);
+  }, [sshConnections, buildConnection]);
 
   /**
    * Helper to fetch a connection by ID and construct Connection object
    * Refetches from server to ensure data is fresh, then returns the specific connection
    */
-  const getConnectionById = useCallback(async (id: number): Promise<Connection | null> => {
-    try {
-      // Refetch to ensure we have the latest data (TanStack Query will update cache)
-      const { data } = await refetchConnections();
+  const getConnectionById = useCallback(
+    async (id: number): Promise<Connection | null> => {
+      try {
+        // Refetch to ensure we have the latest data (TanStack Query will update cache)
+        const { data } = await refetchConnections();
 
-      const sshConn = data?.find((conn) => conn.id === id);
-      return sshConn ? buildConnection(sshConn) : null;
-    } catch (error) {
-      console.error("Failed to get connection:", error);
-      return null;
-    }
-  }, [refetchConnections]);
-
-  const initiateConnection = useCallback(async (connId: number) => {
-    setLoading(true);
-    setConnectionId(connId);
-    try {
-      // Try connecting without credentials first
-      await ipc.invoke<void>("connect_ssh_without_credentials", {
-        connectionId: connId,
-      });
-
-      // Fetch fresh connection data and call callback
-      // (getConnectionById also updates state, so no separate reload needed)
-      const connection = await getConnectionById(connId);
-      if (connection) {
-        onConnectionSuccess(connection);
-      } else {
-        toast.error("Failed to retrieve connection details");
+        const sshConn = data?.find((conn) => conn.id === id);
+        return sshConn ? buildConnection(sshConn) : null;
+      } catch (error) {
+        console.error("Failed to get connection:", error);
+        return null;
       }
-    } catch (error) {
-      console.log("Credential-less connection failed, showing password modal", error);
-      // Show password modal on auth failure
-      setShowPasswordModal(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [onConnectionSuccess, getConnectionById]);
+    },
+    [refetchConnections, buildConnection],
+  );
+
+  const initiateConnection = useCallback(
+    async (connId: number) => {
+      setLoading(true);
+      setConnectionId(connId);
+      try {
+        // Try connecting without credentials first
+        await commands.connectSshWithoutCredentials(connId);
+
+        // Fetch fresh connection data and call callback
+        // (getConnectionById also updates state, so no separate reload needed)
+        const connection = await getConnectionById(connId);
+        if (connection) {
+          onConnectionSuccess(connection);
+        } else {
+          toast.error("Failed to retrieve connection details");
+        }
+      } catch (error) {
+        console.log("Credential-less connection failed, showing password modal", error);
+        // Show password modal on auth failure
+        setShowPasswordModal(true);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [onConnectionSuccess, getConnectionById],
+  );
 
   const handleConnection = useCallback(
     async (connection: Connection) => {
@@ -123,11 +118,13 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
       try {
         // Save connection to database (parsing happens in Rust)
-        const newConnectionId = await ipc.invoke<number>("save_ssh_connection", {
+        const result = await commands.saveSshConnection(
           connectionString,
-          authMethod: "Agent", // Default to Agent auth
-        });
-        await initiateConnection(newConnectionId);
+          "Agent", // Default to Agent auth
+        );
+        if (result.status === "ok") {
+          await initiateConnection(result.data);
+        }
       } catch (error) {
         toast.error(`Failed to save connection: ${error}`);
         return { success: false };
@@ -150,11 +147,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
       setLoading(true);
       try {
-        await ipc.invoke<void>("connect_ssh_with_password", {
-          connectionId,
-          password,
-          savePassword,
-        });
+        await commands.connectSshWithPassword(connectionId, password, savePassword);
         setShowPasswordModal(false);
 
         // Fetch fresh connection data and call callback

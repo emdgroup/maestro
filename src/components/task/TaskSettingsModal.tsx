@@ -13,13 +13,7 @@ import {
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
 import { Checkbox } from "@/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "@/store/configStore";
 import type { Task, TaskConfigRequest } from "@/types/bindings";
 import { X } from "lucide-react";
@@ -105,11 +99,7 @@ export function TaskSettingsModal({ isOpen, onClose, task }: TaskSettingsModalPr
         skills_override: skills_override_final,
       };
 
-      await taskService.updateTaskSettings(
-        task.project_id,
-        task.id,
-        request as any
-      );
+      await taskService.updateTaskSettings(task.project_id, task.id, request as any);
 
       onClose();
     } catch (err) {

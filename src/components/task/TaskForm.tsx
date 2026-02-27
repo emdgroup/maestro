@@ -4,14 +4,8 @@ import { Label } from "@/ui/label";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Badge } from "@/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
-import { CreateTaskRequest } from "@/types/bindings";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import type { Task } from "@/types";
 
 export interface TaskFormData {
   title: string;
@@ -21,7 +15,7 @@ export interface TaskFormData {
 }
 
 interface TaskFormProps {
-  onSubmit: (data: CreateTaskRequest) => Promise<void>;
+  onSubmit: (data: Task) => Promise<void>;
   isLoading: boolean;
   onCancel: () => void;
   projectId: number;
@@ -52,6 +46,10 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
   const submitHandler: SubmitHandler<TaskFormData> = async (data) => {
     try {
       await onSubmit({
+        created_at: "",
+        id: 0,
+        status: "Backlog",
+        updated_at: "",
         project_id: projectId,
         name: data.title,
         description: data.description,

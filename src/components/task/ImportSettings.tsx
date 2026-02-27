@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { useSaveImportConfigMutation, useSyncGithubIssuesMutation, useSyncJiraIssuesMutation } from "@/services/project.service";
+import {
+  useSaveImportConfig,
+  useSyncGithubIssues,
+  useSyncJiraIssues,
+} from "@/services/project.service";
 import { toast } from "sonner";
 
 interface ImportSettingsProps {
@@ -25,9 +29,9 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
   const [jiraJql, setJiraJql] = useState("");
 
   // TanStack Query mutations
-  const saveConfigMutation = useSaveImportConfigMutation();
-  const syncGithubMutation = useSyncGithubIssuesMutation();
-  const syncJiraMutation = useSyncJiraIssuesMutation();
+  const saveConfigMutation = useSaveImportConfig();
+  const syncGithubMutation = useSyncGithubIssues();
+  const syncJiraMutation = useSyncJiraIssues();
 
   const isTesting = syncGithubMutation.isPending || syncJiraMutation.isPending;
   const isSaving = saveConfigMutation.isPending;
@@ -264,7 +268,11 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
         </div>
 
         <div className="modal-footer">
-          <button className="btn-test" onClick={handleTestConnection} disabled={isTesting || isSaving}>
+          <button
+            className="btn-test"
+            onClick={handleTestConnection}
+            disabled={isTesting || isSaving}
+          >
             {isTesting ? "Testing..." : "Test Connection"}
           </button>
           <button className="btn-save" onClick={handleSave} disabled={isSaving || isTesting}>

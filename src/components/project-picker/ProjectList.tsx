@@ -1,7 +1,5 @@
 import { toast } from "sonner";
-import { projectService } from "@/services";
-import { ProjectListItem } from "./ProjectListItem";
-import { ProjectsListLayout } from "./ProjectsListLayout";
+import { ProjectListItem, ProjectsListLayout } from "@/components";
 import { useRecentProjects, useProjectPickerNavigation } from "@/utils/hooks";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
@@ -9,6 +7,7 @@ import { Folder } from "lucide-react";
 import { ConnectionHeader, FilePicker } from "@/components/project-picker";
 import { Dialog, DialogContent } from "@/ui/dialog.tsx";
 import { useState } from "react";
+import { commands } from "@/types";
 
 /**
  * Unified component for displaying and managing project lists.
@@ -19,9 +18,11 @@ import { useState } from "react";
 export function ProjectList() {
   const { activeConnection, setActiveConnection } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const { data: recentProjects = [], isLoading: loading, refetch } = useRecentProjects(
-    activeConnection?.sshConnection?.id,
-  );
+  const {
+    data: recentProjects = [],
+    isLoading: loading,
+    refetch,
+  } = useRecentProjects(activeConnection?.sshConnection?.id);
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();
@@ -33,13 +34,11 @@ export function ProjectList() {
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
-      const project = await projectService.createProject(
-        selectedPath,
-        selectedPath,
-        connectionId?.toString()
-      );
-      setSelectedProject(project);
-      setShowFilePickerModal(false);
+      const result = await commands.createProject(selectedPath, connectionId ?? null);
+      if (result.status === "ok") {
+        setSelectedProject(result.data);
+        setShowFilePickerModal(false);
+      }
     } catch (error) {
       toast.error(`Failed to open project: ${error}`);
     } finally {
@@ -49,8 +48,10 @@ export function ProjectList() {
 
   const handleProjectClick = async (projectId: number) => {
     try {
-      const project = await projectService.getProject(projectId);
-      setSelectedProject(project);
+      const result = await commands.getProject(projectId);
+      if (result.status === "ok") {
+        setSelectedProject(result.data);
+      }
     } catch (error) {
       toast.error(`Failed to open project: ${error}`);
     }
@@ -58,7 +59,7 @@ export function ProjectList() {
 
   const handleRemoveProject = async (projectId: number) => {
     try {
-      await projectService.removeProject(projectId);
+      await commands.removeProject(projectId);
       await refetch();
       toast.success("Project removed from recent list");
     } catch (error) {

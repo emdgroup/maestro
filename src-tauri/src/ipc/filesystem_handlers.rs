@@ -3,6 +3,7 @@ use std::path::Path;
 
 /// List subdirectories in a local filesystem path
 #[tauri::command]
+#[specta::specta]
 pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
     println!("list_local_directories(path={}) called via IPC", path);
 
@@ -47,6 +48,7 @@ pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
 
 /// Get the default file picker path based on the current platform
 #[tauri::command]
+#[specta::specta]
 pub fn get_default_file_picker_path() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
@@ -69,6 +71,7 @@ pub fn get_default_file_picker_path() -> Result<String, String> {
 
 /// List available drives (Windows only)
 #[tauri::command]
+#[specta::specta]
 pub fn list_drives() -> Result<Vec<String>, String> {
     #[cfg(target_os = "windows")]
     {
@@ -97,6 +100,7 @@ pub fn list_drives() -> Result<Vec<String>, String> {
 /// Get system accent color as RGB values
 /// Returns [r, g, b] where each value is 0-255
 #[tauri::command]
+#[specta::specta]
 pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
     #[cfg(target_os = "linux")]
     {

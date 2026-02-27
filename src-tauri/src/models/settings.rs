@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct AppSettings {
     pub theme_preference: Option<String>,   // Theme preference: 'light', 'dark', or 'system'
     pub updated_at: String,                 // ISO 8601 timestamp

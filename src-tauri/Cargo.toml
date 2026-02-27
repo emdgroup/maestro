@@ -20,20 +20,20 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
 chrono = "0.4"
-ts-rs = "7.1"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.13", default-features = true, features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 base64 = "0.22"
-portable-pty = "0.8"
+portable-pty = "0.9.0"
 ssh2 = "0.9"
-keyring = "2.0"
+keyring = "3.6.3"
 zeroize = "1.6"
+specta = { version = "2.0.0-rc.20", features = ["serde_json"] }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
+urlencoding = "2.1"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["UI_ViewManagement", "UI", "Foundation"] }
-
-[package.metadata.ts-rs]
-export_dir = "../src/types"
+windows = { version = "0.62.2", features = ["UI_ViewManagement", "UI", "Foundation"] }
 

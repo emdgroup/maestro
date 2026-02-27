@@ -12,7 +12,7 @@ import type {
  * Project service providing type-safe operations for project management.
  * All project-related IPC calls are centralized here.
  */
-export const projectService = {
+const projectService = {
   /**
    * Get all projects
    */
@@ -30,11 +30,7 @@ export const projectService = {
   /**
    * Create a new project
    */
-  async createProject(
-    name: string,
-    path: string,
-    description?: string
-  ): Promise<Project> {
+  async createProject(name: string, path: string, description?: string): Promise<Project> {
     return ipc.invoke<Project>("create_project", {
       name,
       path,
@@ -63,7 +59,7 @@ export const projectService = {
    */
   async updateProjectSettings(
     projectId: number,
-    config: ProjectConfigRequest
+    config: ProjectConfigRequest,
   ): Promise<ProjectConfigResponse> {
     return ipc.invoke<ProjectConfigResponse>("update_project_settings", {
       projectId,
@@ -74,10 +70,7 @@ export const projectService = {
   /**
    * Save import configuration for a project
    */
-  async saveImportConfig(
-    projectId: number,
-    importConfig: Record<string, unknown>
-  ): Promise<void> {
+  async saveImportConfig(projectId: number, importConfig: Record<string, unknown>): Promise<void> {
     return ipc.invoke<void>("save_import_config", {
       projectId,
       importConfig,
@@ -94,10 +87,7 @@ export const projectService = {
   /**
    * Get or create a project by path
    */
-  async getOrCreateProject(
-    path: string,
-    description?: string
-  ): Promise<Project> {
+  async getOrCreateProject(path: string, description?: string): Promise<Project> {
     return ipc.invoke<Project>("get_or_create_project", {
       path,
       description: description || "",
@@ -111,12 +101,14 @@ export const projectService = {
     projectId: number,
     owner: string,
     repo: string,
-    token: string
+    token: string,
   ): Promise<{ imported_count: number; error_message?: string }> {
-    return ipc.invoke<{ imported_count: number; error_message?: string }>(
-      "sync_github_issues",
-      { projectId, owner, repo, token }
-    );
+    return ipc.invoke<{ imported_count: number; error_message?: string }>("sync_github_issues", {
+      projectId,
+      owner,
+      repo,
+      token,
+    });
   },
 
   /**
@@ -127,12 +119,15 @@ export const projectService = {
     host: string,
     email: string,
     token: string,
-    jql: string
+    jql: string,
   ): Promise<{ imported_count: number; error_message?: string }> {
-    return ipc.invoke<{ imported_count: number; error_message?: string }>(
-      "sync_jira_issues",
-      { projectId, host, email, token, jql }
-    );
+    return ipc.invoke<{ imported_count: number; error_message?: string }>("sync_jira_issues", {
+      projectId,
+      host,
+      email,
+      token,
+      jql,
+    });
   },
 };
 
@@ -140,56 +135,53 @@ export const projectService = {
  * Query key factory for project-related queries
  * Ensures consistent cache invalidation across components
  */
-export const projectQueryKeys = {
-  all: ["projects"] as const,
-  lists: () => [...projectQueryKeys.all, "list"] as const,
+const projectQueryKeys = {
+  baseKey: ["projects"] as const,
+  lists: () => [...projectQueryKeys.baseKey, "list"] as const,
   list: () => [...projectQueryKeys.lists()] as const,
-  details: () => [...projectQueryKeys.all, "detail"] as const,
+  details: () => [...projectQueryKeys.baseKey, "details"] as const,
   detail: (id: number) => [...projectQueryKeys.details(), id] as const,
-  settings: () => [...projectQueryKeys.all, "settings"] as const,
+  settings: () => [...projectQueryKeys.baseKey, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
 };
 
 /**
  * Query hook for fetching all projects
  */
-export function useProjectsQuery() {
+export function useProjects() {
   return useQuery({
     queryKey: projectQueryKeys.list(),
     queryFn: () => projectService.getProjects(),
-    staleTime: 300000, // 5 minutes—projects rarely change
-    refetchOnWindowFocus: true,
+    staleTime: Infinity,
   });
 }
 
 /**
  * Query hook for fetching a single project by ID
  */
-export function useProjectQuery(projectId: number | null) {
+export function useProjectById(projectId: number) {
   return useQuery({
-    queryKey: projectQueryKeys.detail(projectId!),
-    queryFn: () => projectService.getProject(projectId!),
-    enabled: projectId !== null,
-    staleTime: 300000, // 5 minutes
+    queryKey: projectQueryKeys.detail(projectId),
+    queryFn: () => projectService.getProject(projectId),
+    staleTime: Infinity,
   });
 }
 
 /**
  * Query hook for fetching project settings/configuration
  */
-export function useProjectSettingsQuery(projectId: number | null) {
+export function useProjectSettings(projectId: number) {
   return useQuery({
-    queryKey: projectQueryKeys.settingsDetail(projectId!),
-    queryFn: () => projectService.getProjectSettings(projectId!),
-    enabled: projectId !== null,
-    staleTime: 300000, // 5 minutes
+    queryKey: projectQueryKeys.settingsDetail(projectId),
+    queryFn: () => projectService.getProjectSettings(projectId),
+    staleTime: Infinity,
   });
 }
 
 /**
  * Mutation hook for creating a new project
  */
-export function useCreateProjectMutation() {
+export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -203,10 +195,12 @@ export function useCreateProjectMutation() {
       description?: string;
     }) => projectService.createProject(name, path, description),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
     },
     onError: (error) => {
-      toast.error(`Failed to create project: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to create project: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -214,17 +208,19 @@ export function useCreateProjectMutation() {
 /**
  * Mutation hook for removing a project
  */
-export function useRemoveProjectMutation() {
+export function useRemoveProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (projectId: number) => projectService.removeProject(projectId),
     onSuccess: (_data, projectId) => {
-      queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: projectQueryKeys.detail(projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.detail(projectId) });
     },
     onError: (error) => {
-      toast.error(`Failed to remove project: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to remove project: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -232,24 +228,21 @@ export function useRemoveProjectMutation() {
 /**
  * Mutation hook for updating project settings
  */
-export function useUpdateProjectSettingsMutation() {
+export function useUpdateProjectSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      config,
-    }: {
-      projectId: number;
-      config: ProjectConfigRequest;
-    }) => projectService.updateProjectSettings(projectId, config),
+    mutationFn: ({ projectId, config }: { projectId: number; config: ProjectConfigRequest }) =>
+      projectService.updateProjectSettings(projectId, config),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(variables.projectId),
       });
     },
     onError: (error) => {
-      toast.error(`Failed to update project settings: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to update project settings: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -257,7 +250,7 @@ export function useUpdateProjectSettingsMutation() {
 /**
  * Mutation hook for saving import configuration
  */
-export function useSaveImportConfigMutation() {
+export function useSaveImportConfig() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -269,12 +262,14 @@ export function useSaveImportConfigMutation() {
       importConfig: Record<string, unknown>;
     }) => projectService.saveImportConfig(projectId, importConfig),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(variables.projectId),
       });
     },
     onError: (error) => {
-      toast.error(`Failed to save import config: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to save import config: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -282,7 +277,7 @@ export function useSaveImportConfigMutation() {
 /**
  * Mutation hook for syncing GitHub issues
  */
-export function useSyncGithubIssuesMutation() {
+export function useSyncGithubIssues() {
   return useMutation({
     mutationFn: ({
       projectId,
@@ -300,7 +295,7 @@ export function useSyncGithubIssuesMutation() {
     },
     onError: (error) => {
       toast.error(
-        `Failed to sync GitHub issues: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to sync GitHub issues: ${error instanceof Error ? error.message : String(error)}`,
       );
     },
   });
@@ -309,7 +304,7 @@ export function useSyncGithubIssuesMutation() {
 /**
  * Mutation hook for syncing Jira issues
  */
-export function useSyncJiraIssuesMutation() {
+export function useSyncJiraIssues() {
   return useMutation({
     mutationFn: ({
       projectId,
@@ -329,7 +324,7 @@ export function useSyncJiraIssuesMutation() {
     },
     onError: (error) => {
       toast.error(
-        `Failed to sync Jira issues: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to sync Jira issues: ${error instanceof Error ? error.message : String(error)}`,
       );
     },
   });

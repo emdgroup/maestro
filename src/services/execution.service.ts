@@ -10,11 +10,7 @@ export const executionService = {
   /**
    * Spawn agent execution for a task
    */
-  async spawnAgentExecution(
-    projectId: number,
-    taskId: number,
-    repoPath: string
-  ): Promise<number> {
+  async spawnAgentExecution(projectId: number, taskId: number, repoPath: string): Promise<number> {
     return ipc.invoke<number>("spawn_agent_execution", {
       project_id: projectId,
       task_id: taskId,
@@ -32,11 +28,7 @@ export const executionService = {
   /**
    * Resume agent execution for a task
    */
-  async resumeAgentExecution(
-    taskId: number,
-    projectId: number,
-    repoPath: string
-  ): Promise<number> {
+  async resumeAgentExecution(taskId: number, projectId: number, repoPath: string): Promise<number> {
     return ipc.invoke<number>("resume_agent_execution", {
       taskId,
       projectId,
@@ -47,10 +39,7 @@ export const executionService = {
   /**
    * Attach to a task's execution terminal
    */
-  async attachTerminal(
-    taskId: number,
-    outputChannel: string
-  ): Promise<void> {
+  async attachTerminal(taskId: number, outputChannel: string): Promise<void> {
     return ipc.invoke<void>("attach_terminal", { taskId, outputChannel });
   },
 
@@ -64,11 +53,7 @@ export const executionService = {
   /**
    * Resize execution terminal
    */
-  async resizeTerminal(
-    taskId: number,
-    cols: number,
-    rows: number
-  ): Promise<void> {
+  async resizeTerminal(taskId: number, cols: number, rows: number): Promise<void> {
     return ipc.invoke<void>("resize_terminal", { taskId, cols, rows });
   },
 
@@ -154,13 +139,7 @@ export function useResumeExecutionMutation() {
  */
 export function useAttachTerminalMutation() {
   return useMutation({
-    mutationFn: async ({
-      taskId,
-      outputChannel,
-    }: {
-      taskId: number;
-      outputChannel: string;
-    }) => {
+    mutationFn: async ({ taskId, outputChannel }: { taskId: number; outputChannel: string }) => {
       return await executionService.attachTerminal(taskId, outputChannel);
     },
     onError: (error) => {
@@ -188,13 +167,7 @@ export function useDetachTerminalMutation() {
  */
 export function useSendTerminalInputMutation() {
   return useMutation({
-    mutationFn: async ({
-      taskId,
-      input,
-    }: {
-      taskId: number;
-      input: string;
-    }) => {
+    mutationFn: async ({ taskId, input }: { taskId: number; input: string }) => {
       return await executionService.sendTerminalInput(taskId, input);
     },
     onError: (error) => {
@@ -208,15 +181,7 @@ export function useSendTerminalInputMutation() {
  */
 export function useResizeTerminalMutation() {
   return useMutation({
-    mutationFn: async ({
-      taskId,
-      cols,
-      rows,
-    }: {
-      taskId: number;
-      cols: number;
-      rows: number;
-    }) => {
+    mutationFn: async ({ taskId, cols, rows }: { taskId: number; cols: number; rows: number }) => {
       return await executionService.resizeTerminal(taskId, cols, rows);
     },
     onError: (error) => {

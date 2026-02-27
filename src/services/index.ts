@@ -5,7 +5,5 @@
 
 export { ipc } from "./ipc";
 export { taskService } from "./task.service";
-export { projectService } from "./project.service";
 export { settingsService } from "./settings.service";
 export { executionService } from "./execution.service";
-export { connectionService } from "./connection.service";

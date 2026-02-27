@@ -9,6 +9,7 @@ use crate::ssh::session::{SshAuthMethod, SshConnection};
 
 /// Get all saved SSH connections
 #[tauri::command]
+#[specta::specta]
 pub fn get_ssh_connections(
     app_state: State<Arc<AppState>>,
 ) -> Result<Vec<SshConnection>, String> {
@@ -30,6 +31,7 @@ pub fn get_ssh_connections(
 
 /// Get a specific SSH connection
 #[tauri::command]
+#[specta::specta]
 pub fn get_ssh_connection(
     connection_id: i32,
     app_state: State<Arc<AppState>>,
@@ -48,6 +50,7 @@ pub fn get_ssh_connection(
 
 /// Save a new SSH connection to the database
 #[tauri::command]
+#[specta::specta]
 pub fn save_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_string: String,
@@ -121,6 +124,7 @@ pub fn save_ssh_connection(
 
 /// Attempt to connect to SSH without requiring credentials (uses saved password, agent, or key file)
 #[tauri::command]
+#[specta::specta]
 pub async fn connect_ssh_without_credentials(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
@@ -176,6 +180,7 @@ pub async fn connect_ssh_without_credentials(
 
 /// Connect to SSH using a password (fallback when credential-less connection fails)
 #[tauri::command]
+#[specta::specta]
 pub async fn connect_ssh_with_password(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
@@ -227,6 +232,7 @@ pub async fn connect_ssh_with_password(
 
 /// List directories on remote host
 #[tauri::command]
+#[specta::specta]
 pub async fn list_remote_directories(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
@@ -260,6 +266,7 @@ pub async fn list_remote_directories(
 
 /// Delete an SSH connection from the database
 #[tauri::command]
+#[specta::specta]
 pub fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
@@ -287,6 +294,7 @@ pub fn delete_ssh_connection(
 
 /// Remove saved password from OS Keyring
 #[tauri::command]
+#[specta::specta]
 pub fn forget_saved_password(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
@@ -312,6 +320,7 @@ pub fn forget_saved_password(
 
 /// Rename an SSH connection (set display name)
 #[tauri::command]
+#[specta::specta]
 pub fn rename_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
@@ -335,6 +344,7 @@ pub fn rename_ssh_connection(
 
 /// Get the current connection status for a connection
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ssh_connection_status(
     connection_id: i32,
     state: State<'_, Arc<AppState>>,

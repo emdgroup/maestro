@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from "react";
-import { SshConnection } from "../../src-tauri/bindings/SshConnection.ts";
+import type { SshConnection } from "@/types";
 
 type View = "connections" | "projects";
 

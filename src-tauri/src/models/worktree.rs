@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
 /// Worktree status state machine
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum WorktreeStatus {
     /// Ready to lease for task execution
@@ -17,8 +17,8 @@ pub enum WorktreeStatus {
 }
 
 /// Worktree record from database
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct Worktree {
     pub id: i32,
     pub project_id: i32,
@@ -31,8 +31,8 @@ pub struct Worktree {
 }
 
 /// Pool status for monitoring
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct PoolStatus {
     pub total: i32,
     pub available: i32,

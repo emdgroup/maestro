@@ -4,11 +4,10 @@ import { ipc } from "./ipc";
 import type {
   Task,
   TaskStatus,
-  CreateTaskRequest,
   ExecutionLog,
   ProjectConfigResponse,
   ProjectConfigRequest,
-} from "@/types/bindings";
+} from "@/types";
 
 /**
  * Query key factory for task-related queries
@@ -42,7 +41,7 @@ export const taskService = {
   /**
    * Create a new task
    */
-  async createTask(request: CreateTaskRequest): Promise<Task> {
+  async createTask(request: Task): Promise<Task> {
     return ipc.invoke<Task>("create_task", { request });
   },
 
@@ -94,7 +93,7 @@ export const taskService = {
   async updateTaskSettings(
     projectId: number,
     taskId: number,
-    config: ProjectConfigRequest
+    config: ProjectConfigRequest,
   ): Promise<ProjectConfigResponse> {
     return ipc.invoke<ProjectConfigResponse>("update_task_settings", {
       projectId,
@@ -113,7 +112,12 @@ export const taskService = {
   /**
    * Save task review with decision and feedback
    */
-  async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: Array<[string, string]> | null): Promise<{ success: boolean; review_id: number }> {
+  async saveTaskReview(
+    taskId: number,
+    decision: string,
+    generalFeedback: string | null,
+    perFileComments: Array<[string, string]> | null,
+  ): Promise<{ success: boolean; review_id: number }> {
     return ipc.invoke<{ success: boolean; review_id: number }>("save_task_review", {
       taskId,
       decision,
@@ -134,12 +138,19 @@ export const taskService = {
   /**
    * Request changes for a task
    */
-  async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: Array<[string, string]> | null): Promise<{ success: boolean; review_id: number; task_status: string }> {
-    return ipc.invoke<{ success: boolean; review_id: number; task_status: string }>("request_changes", {
-      task_id: taskId,
-      general_feedback: generalFeedback,
-      per_file_comments: perFileComments,
-    });
+  async requestChanges(
+    taskId: number,
+    generalFeedback: string | null,
+    perFileComments: Array<[string, string]> | null,
+  ): Promise<{ success: boolean; review_id: number; task_status: string }> {
+    return ipc.invoke<{ success: boolean; review_id: number; task_status: string }>(
+      "request_changes",
+      {
+        task_id: taskId,
+        general_feedback: generalFeedback,
+        per_file_comments: perFileComments,
+      },
+    );
   },
 };
 
@@ -200,12 +211,14 @@ export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: CreateTaskRequest) => taskService.createTask(request),
+    mutationFn: (request: Task) => taskService.createTask(request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
-      toast.error(`Failed to create task: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -223,7 +236,9 @@ export function useUpdateTaskMutation() {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
     },
     onError: (error) => {
-      toast.error(`Failed to update task: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -257,7 +272,9 @@ export function useUpdateTaskStatusMutation() {
       if (context?.previousTask) {
         queryClient.setQueryData(taskQueryKeys.detail(context.taskId), context.previousTask);
       }
-      toast.error(`Failed to update task status: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to update task status: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
     onSettled: (_data, _error, variables) => {
       // Always refetch to ensure cache is consistent
@@ -279,7 +296,9 @@ export function useRetryExecutionMutation() {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.logsByTask(data.task_id) });
     },
     onError: (error) => {
-      toast.error(`Failed to retry execution: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to retry execution: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -294,7 +313,9 @@ export function useCancelExecutionMutation() {
       toast.success("Execution cancelled");
     },
     onError: (error) => {
-      toast.error(`Failed to cancel execution: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to cancel execution: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -321,7 +342,9 @@ export function useUpdateTaskSettingsMutation() {
       });
     },
     onError: (error) => {
-      toast.error(`Failed to update task settings: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to update task settings: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -343,7 +366,9 @@ export function useSaveTaskReviewMutation() {
       perFileComments: Array<[string, string]> | null;
     }) => taskService.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
     onError: (error) => {
-      toast.error(`Failed to save review: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to save review: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -361,7 +386,9 @@ export function useApproveTaskAndMergeMutation() {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
-      toast.error(`Failed to approve task: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to approve task: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }
@@ -387,7 +414,9 @@ export function useRequestChangesMutation() {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
-      toast.error(`Failed to request changes: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        `Failed to request changes: ${error instanceof Error ? error.message : String(error)}`,
+      );
     },
   });
 }

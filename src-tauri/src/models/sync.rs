@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
 pub struct SyncResult {
     pub imported_count: i32,
     pub updated_count: i32,
-    #[ts(optional)]
+    #[specta(optional)]
     pub error_message: Option<String>,
 }
 

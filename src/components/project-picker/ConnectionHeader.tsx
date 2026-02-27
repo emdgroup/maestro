@@ -1,11 +1,9 @@
 import React, { useState } from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
-import { SshConnection } from "@/types/bindings";
+import { commands, SshConnection } from "@/types/bindings";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
-import { connectionService } from "@/services";
 import { toast } from "sonner";
-import { useUpdateSshConnectionMutation } from "@/hooks";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
+import { useUpdateSshConnection } from "@/services/connection.service.ts";
 
 interface ConnectionHeaderProps {
   connection: SshConnection;
@@ -40,7 +39,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Use TanStack Query mutation for rename
-  const updateConnectionMutation = useUpdateSshConnectionMutation();
+  const updateConnectionMutation = useUpdateSshConnection();
 
   const handleStartEdit = () => {
     setIsEditing(true);
@@ -83,7 +82,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
 
   const handleDeleteConnection = async () => {
     try {
-      await connectionService.deleteSshConnection(connection.id.toString());
+      await commands.deleteSshConnection(connection.id);
       setShowDeleteDialog(false);
       toast.success("Connection deleted");
       // Notify parent that connection was deleted
@@ -95,7 +94,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
 
   const handleForgetPassword = async () => {
     try {
-      await connectionService.forgetSavedPassword(connection.id.toString());
+      await commands.forgetSavedPassword(connection.id);
       toast.success("Password forgotten");
     } catch (error) {
       toast.error(`Failed to forget password: ${error}`);

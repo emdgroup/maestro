@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@/ui/dialog";
 import { TaskForm } from "@/components/task/TaskForm";
-import { Task, CreateTaskRequest } from "@/types/bindings";
+import { Task } from "@/types/bindings";
 import { useCreateTaskMutation } from "@/services/task.service";
 
 interface TaskModalProps {
@@ -22,7 +22,7 @@ export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskMod
   const [error, setError] = useState<string | null>(null);
   const { mutate: createTask, isPending: isLoading } = useCreateTaskMutation();
 
-  const handleSubmit = async (data: CreateTaskRequest) => {
+  const handleSubmit = async (data: Task) => {
     setError(null);
 
     createTask(
@@ -39,7 +39,7 @@ export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskMod
           setError(errorMessage);
           console.error("Task creation error:", err);
         },
-      }
+      },
     );
   };
 

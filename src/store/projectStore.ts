@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Project } from "../../src-tauri/bindings/Project";
+import type { Project } from "@/types";
 
 interface ProjectStore {
   selectedProject: Project | null;
