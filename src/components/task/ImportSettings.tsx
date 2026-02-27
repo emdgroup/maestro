@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { projectService } from "@/services";
-import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
+import { useSaveImportConfigMutation, useSyncGithubIssuesMutation, useSyncJiraIssuesMutation } from "@/services/project.service";
+import { toast } from "sonner";
 
 interface ImportSettingsProps {
   isOpen: boolean;
@@ -13,7 +12,6 @@ type Provider = "github" | "jira" | null;
 
 export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSettingsProps) {
   const [provider, setProvider] = useState<Provider>("github");
-  const [testing, setTesting] = useState(false);
 
   // GitHub form fields
   const [githubOwner, setGithubOwner] = useState("");
@@ -26,108 +24,117 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
   const [jiraToken, setJiraToken] = useState("");
   const [jiraJql, setJiraJql] = useState("");
 
+  // TanStack Query mutations
+  const saveConfigMutation = useSaveImportConfigMutation();
+  const syncGithubMutation = useSyncGithubIssuesMutation();
+  const syncJiraMutation = useSyncJiraIssuesMutation();
+
+  const isTesting = syncGithubMutation.isPending || syncJiraMutation.isPending;
+  const isSaving = saveConfigMutation.isPending;
+
   if (!isOpen) {
     return null;
   }
 
   async function handleTestConnection() {
     if (!provider) {
-      showErrorToast("Please select a provider");
+      toast.error("Please select a provider");
       return;
     }
 
-    setTesting(true);
     try {
       if (provider === "github") {
         if (!githubOwner || !githubRepo || !githubToken) {
-          showErrorToast("Please fill in all GitHub fields");
-          setTesting(false);
+          toast.error("Please fill in all GitHub fields");
           return;
         }
 
-        const result = await invoke<any>("sync_github_issues", {
+        const result = await syncGithubMutation.mutateAsync({
+          projectId: 1,
           owner: githubOwner,
           repo: githubRepo,
           token: githubToken,
-          project_id: 1,
         });
 
         if (result.error_message) {
-          showErrorToast(`GitHub error: ${result.error_message}`);
+          toast.error(`GitHub error: ${result.error_message}`);
         } else {
-          showSuccessToast("Successfully connected to GitHub");
+          toast.success("Successfully connected to GitHub");
         }
       } else if (provider === "jira") {
         if (!jiraHost || !jiraEmail || !jiraToken) {
-          showErrorToast("Please fill in all Jira fields");
-          setTesting(false);
+          toast.error("Please fill in all Jira fields");
           return;
         }
 
-        const result = await invoke<any>("sync_jira_issues", {
+        const result = await syncJiraMutation.mutateAsync({
+          projectId: 1,
           host: jiraHost,
           email: jiraEmail,
           token: jiraToken,
           jql: jiraJql || "status = Open",
-          project_id: 1,
         });
 
         if (result.error_message) {
-          showErrorToast(`Jira error: ${result.error_message}`);
+          toast.error(`Jira error: ${result.error_message}`);
         } else {
-          showSuccessToast("Successfully connected to Jira");
+          toast.success("Successfully connected to Jira");
         }
       }
     } catch (error: any) {
-      showErrorToast(error?.message || "Connection test failed");
-    } finally {
-      setTesting(false);
+      toast.error(error?.message || "Connection test failed");
     }
   }
 
   async function handleSave() {
     if (!provider) {
-      showErrorToast("Please select a provider");
+      toast.error("Please select a provider");
       return;
     }
 
     try {
       if (provider === "github") {
         if (!githubOwner || !githubRepo || !githubToken) {
-          showErrorToast("Please fill in all GitHub fields");
+          toast.error("Please fill in all GitHub fields");
           return;
         }
 
-        await projectService.saveImportConfig(1, {
-          provider: "github",
-          config: {
-            owner: githubOwner,
-            repo: githubRepo,
-            token: githubToken,
+        await saveConfigMutation.mutateAsync({
+          projectId: 1,
+          importConfig: {
+            provider: "github",
+            config: {
+              owner: githubOwner,
+              repo: githubRepo,
+              token: githubToken,
+            },
           },
         });
       } else if (provider === "jira") {
         if (!jiraHost || !jiraEmail || !jiraToken) {
-          showErrorToast("Please fill in all Jira fields");
+          toast.error("Please fill in all Jira fields");
           return;
         }
 
-        await projectService.saveImportConfig(1, {
-          provider: "jira",
-          config: {
-            host: jiraHost,
-            email: jiraEmail,
-            token: jiraToken,
-            jql: jiraJql || "status = Open",
+        await saveConfigMutation.mutateAsync({
+          projectId: 1,
+          importConfig: {
+            provider: "jira",
+            config: {
+              host: jiraHost,
+              email: jiraEmail,
+              token: jiraToken,
+              jql: jiraJql || "status = Open",
+            },
           },
         });
       }
 
-      showSuccessToast("Import configuration saved");
+      toast.success("Import configuration saved");
       onConfigSaved();
       onClose();
     } catch (error: any) {
-      showErrorToast(error?.message || "Failed to save configuration");
+      toast.error(error?.message || "Failed to save configuration");
     }
   }
 
@@ -177,7 +184,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="e.g., octocat"
                   value={githubOwner}
                   onChange={(e) => setGithubOwner(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
               <div className="form-group">
@@ -188,7 +195,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="e.g., Hello-World"
                   value={githubRepo}
                   onChange={(e) => setGithubRepo(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
               <div className="form-group">
@@ -199,7 +206,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                   value={githubToken}
                   onChange={(e) => setGithubToken(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
             </div>
@@ -216,7 +223,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="e.g., mycompany.atlassian.net"
                   value={jiraHost}
                   onChange={(e) => setJiraHost(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
               <div className="form-group">
@@ -227,7 +234,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="user@example.com"
                   value={jiraEmail}
                   onChange={(e) => setJiraEmail(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
               <div className="form-group">
@@ -238,7 +245,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="Your API token"
                   value={jiraToken}
                   onChange={(e) => setJiraToken(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
               <div className="form-group">
@@ -249,7 +256,7 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
                   placeholder="e.g., status = Open"
                   value={jiraJql}
                   onChange={(e) => setJiraJql(e.target.value)}
-                  disabled={testing}
+                  disabled={isTesting || isSaving}
                 />
               </div>
             </div>
@@ -257,13 +264,13 @@ export function ImportSettings({ isOpen, onClose, onConfigSaved }: ImportSetting
         </div>
 
         <div className="modal-footer">
-          <button className="btn-test" onClick={handleTestConnection} disabled={testing}>
-            {testing ? "Testing..." : "Test Connection"}
+          <button className="btn-test" onClick={handleTestConnection} disabled={isTesting || isSaving}>
+            {isTesting ? "Testing..." : "Test Connection"}
           </button>
-          <button className="btn-save" onClick={handleSave} disabled={testing}>
-            Save
+          <button className="btn-save" onClick={handleSave} disabled={isSaving || isTesting}>
+            {isSaving ? "Saving..." : "Save"}
           </button>
-          <button className="btn-cancel" onClick={onClose} disabled={testing}>
+          <button className="btn-cancel" onClick={onClose} disabled={isSaving || isTesting}>
             Cancel
           </button>
         </div>
