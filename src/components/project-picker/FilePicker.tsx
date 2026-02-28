@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/ui/button";
-import { commands, SshConnection } from "@/types/bindings";
-import { toast } from "sonner";
+import type { SshConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
 import {
@@ -13,6 +11,12 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
 } from "@/ui/breadcrumb";
+import {
+  useListLocalDirectories,
+  useListRemoteDirectories,
+  useGetDefaultFilePickerPath,
+  useListDrives,
+} from "@/services/connection.service";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
@@ -101,23 +105,9 @@ export function FilePicker({
     }
   }, [isLocal, currentPath, drives]);
 
-  // Mutations for file operations
-  const listLocalDirsMutation = useMutation({
-    mutationFn: (path: string) => commands.listLocalDirectories(path),
-    onError: (error) => {
-      toast.error(`Failed to list directories: ${error}`);
-      setDirectories([]);
-    },
-  });
-
-  const listRemoteDirsMutation = useMutation({
-    mutationFn: ({ connectionId, path }: { connectionId: number; path: string }) =>
-      commands.listRemoteDirectories(connectionId, path),
-    onError: (error) => {
-      toast.error(`Failed to list directories: ${error}`);
-      setDirectories([]);
-    },
-  });
+  // Service hooks for file operations
+  const listLocalDirsMutation = useListLocalDirectories();
+  const listRemoteDirsMutation = useListRemoteDirectories();
 
   const loadDirectories = useCallback(
     async (path: string) => {
@@ -173,24 +163,20 @@ export function FilePicker({
     [isLocal, drives, currentPath],
   );
 
-  // Mutation for getting default path
-  const getDefaultPathMutation = useMutation({
-    mutationFn: () => commands.getDefaultFilePickerPath(),
-    onError: (error) => {
-      console.error("Failed to get default path:", error);
-      setCurrentPath("/");
-      setIsInitialized(true);
-    },
-  });
+  // Service hook for getting default path
+  const getDefaultPathQuery = useGetDefaultFilePickerPath();
 
   // Initialize default path on mount
   useEffect(() => {
     async function initializePath() {
       if (isLocal && !isInitialized) {
         try {
-          const result = await getDefaultPathMutation.mutateAsync();
-          if (result.status === "ok") {
-            setCurrentPath(result.data);
+          const data = getDefaultPathQuery.data;
+          if (data) {
+            setCurrentPath(data);
+            setIsInitialized(true);
+          } else {
+            setCurrentPath("/");
             setIsInitialized(true);
           }
         } catch (error) {
@@ -207,35 +193,17 @@ export function FilePicker({
     }
 
     void initializePath();
-  }, [isLocal, isInitialized, connection, getDefaultPathMutation]);
+  }, [isLocal, isInitialized, connection, getDefaultPathQuery.data]);
 
-  // Mutation for loading drives
-  const listDrivesMutation = useMutation({
-    mutationFn: () => commands.listDrives(),
-    onError: (error) => {
-      console.error("Failed to load drives:", error);
-      setDrives([]);
-    },
-  });
+  // Service hook for loading drives
+  const listDrivesQuery = useListDrives();
 
   // Load drives on Windows (local only)
   useEffect(() => {
-    async function loadDrives() {
-      if (isLocal && isInitialized) {
-        try {
-          const result = await listDrivesMutation.mutateAsync();
-          if (result.status === "ok") {
-            setDrives(result.data);
-          }
-        } catch (error) {
-          console.error("Failed to load drives:", error);
-          setDrives([]);
-        }
-      }
+    if (isLocal && isInitialized && listDrivesQuery.data) {
+      setDrives(listDrivesQuery.data);
     }
-
-    void loadDrives();
-  }, [isLocal, isInitialized, listDrivesMutation]);
+  }, [isLocal, isInitialized, listDrivesQuery.data]);
 
   useEffect(() => {
     if (isInitialized && currentPath) {
@@ -245,7 +213,7 @@ export function FilePicker({
   }, [currentPath, isInitialized, loadDirectories]);
 
   // Compute loading state from mutations
-  const loading = listLocalDirsMutation.isPending || listRemoteDirsMutation.isPending;
+  const loading = listLocalDirsMutation.isPending || listRemoteDirsMutation.isPending || getDefaultPathQuery.isLoading || listDrivesQuery.isLoading;
 
   // Keyboard navigation
   useEffect(() => {
