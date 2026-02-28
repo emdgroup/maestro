@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/ui/select";
 import type { Project } from "@/types/bindings";
+import { useRecentProjects } from "@/services";
 
 type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 
@@ -19,7 +20,6 @@ interface AppHeaderProps {
   currentProject: Project;
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
-  recentProjects?: Project[];
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
   agentCount?: number;
@@ -40,11 +40,13 @@ export function AppHeader({
   currentProject,
   activeView,
   onViewChange,
-  recentProjects = [],
   onProjectChange,
   onBackToPicker,
   agentCount = 0,
 }: AppHeaderProps) {
+  // Load recent projects on-demand (only when header is rendered)
+  const { data: recentProjects = [] } = useRecentProjects(currentProject?.connection_id);
+
   // Special value for "back to picker" option
   const BACK_TO_PICKER_VALUE = "__back_to_picker__";
 

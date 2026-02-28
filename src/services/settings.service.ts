@@ -23,7 +23,7 @@ const settingsQueryKeys = {
  * Query hook for fetching all application settings
  * Settings rarely change, so staleTime is 10 minutes
  */
-export function useSettingsQuery() {
+export function useSettings() {
   return useQuery({
     queryKey: settingsQueryKeys.lists(),
     queryFn: () => api.getSettings(),
@@ -49,7 +49,7 @@ export function useSystemAccentColorQuery() {
  * Mutation hook for saving application settings
  * Invalidates settings cache after successful save
  */
-export function useSaveSettingsMutation() {
+export function useSaveSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -57,7 +57,7 @@ export function useSaveSettingsMutation() {
     onSuccess: () => {
       toast.success("Settings saved");
       // Invalidate settings list so it refetches with updated values
-      queryClient.invalidateQueries({ queryKey: settingsQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.lists() });
     },
     onError: (error) => {
       toast.error(`Failed to save settings: ${error}`);

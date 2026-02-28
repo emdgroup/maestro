@@ -1,19 +1,27 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSelectedProject } from "@/store/projectStore";
 import { AppHeader, ActionBar } from "@/components/common";
-import { TaskModal } from "@/components/kanban";
-import { TaskDetail, ImportSettings } from "@/components/task";
 import type { SettingsPageHandle } from "@/components/common";
 import { useBoardStore } from "@/store/boardStore";
-import { useRecentProjects } from "@/utils/hooks";
 import type { ActionBarAction } from "@/components/common";
 import { Plus, Save, RotateCcw } from "lucide-react";
 import type { AppSettings, Project, Task } from "@/types/bindings";
-import { KanbanView, ProjectPickerView, WorktreesView, AgentsView, SettingsView } from "@/views";
-import { useSettingsQuery, useSaveSettingsMutation } from "@/services/settings.service";
+import { ProjectPickerView } from "@/views";
+import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { toast } from "sonner";
 import "./App.css";
+
+// Lazy load views for code splitting (performance optimization)
+const KanbanView = lazy(() => import("@/views").then(m => ({ default: m.KanbanView })));
+const AgentsView = lazy(() => import("@/views").then(m => ({ default: m.AgentsView })));
+const WorktreesView = lazy(() => import("@/views").then(m => ({ default: m.WorktreesView })));
+const SettingsView = lazy(() => import("@/views").then(m => ({ default: m.SettingsView })));
+
+// Lazy load modals for code splitting (performance optimization)
+const TaskModal = lazy(() => import("@/components/kanban").then(m => ({ default: m.TaskModal })));
+const TaskDetail = lazy(() => import("@/components/task").then(m => ({ default: m.TaskDetail })));
+const ImportSettings = lazy(() => import("@/components/task").then(m => ({ default: m.ImportSettings })));
 
 function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -38,11 +46,8 @@ function App() {
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
   // Query hooks for settings and mutations
-  const { data: settings, isLoading: settingsLoading, error: settingsError } = useSettingsQuery();
-  const { mutate: saveSettings } = useSaveSettingsMutation();
-
-  // Load recent projects for filtering dropdown (AppHeader will do the filtering)
-  const { data: recentProjects = [] } = useRecentProjects(currentProject?.connection_id);
+  const { data: settings, isLoading: settingsLoading, error: settingsError } = useSettings();
+  const { mutate: saveSettings } = useSaveSettings();
 
   // Page order for determining slide direction
   const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
@@ -178,16 +183,6 @@ function App() {
     }
   }
 
-  // Log current state before render
-  console.log(
-    "[DEBUG] App.tsx render: appLoading=",
-    appLoading,
-    "settingsLoading=",
-    settingsLoading,
-    "currentProject=",
-    currentProject?.path || "null",
-  );
-
   return (
     <>
       {appLoading || settingsLoading ? (
@@ -202,96 +197,99 @@ function App() {
             currentProject={currentProject}
             activeView={activePage}
             onViewChange={handlePageChange}
-            recentProjects={recentProjects}
             onProjectChange={handleProjectSelected}
             onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
           />
           <ActionBar actions={getPageActions()} />
           <main className="flex-1 overflow-hidden relative">
-            <AnimatePresence initial={false} custom={slideDirection}>
-              {activePage === "kanban" && (
-                <motion.div
-                  key="kanban"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <KanbanView
-                    projectId={currentProject.id}
-                    projectPath={currentProject.path}
-                    onTaskClick={setSelectedTask}
-                  />
-                </motion.div>
-              )}
+            <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-sm text-muted-foreground">Loading...</p></div>}>
+              <AnimatePresence initial={false} custom={slideDirection}>
+                {activePage === "kanban" && (
+                  <motion.div
+                    key="kanban"
+                    custom={slideDirection}
+                    variants={slideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    className="absolute inset-0 overflow-auto custom-scrollbar"
+                  >
+                    <KanbanView
+                      projectId={currentProject.id}
+                      projectPath={currentProject.path}
+                      onTaskClick={setSelectedTask}
+                    />
+                  </motion.div>
+                )}
 
-              {activePage === "agents" && (
-                <motion.div
-                  key="agents"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
-                </motion.div>
-              )}
+                {activePage === "agents" && (
+                  <motion.div
+                    key="agents"
+                    custom={slideDirection}
+                    variants={slideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    className="absolute inset-0 overflow-auto custom-scrollbar"
+                  >
+                    <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
+                  </motion.div>
+                )}
 
-              {activePage === "worktrees" && (
-                <motion.div
-                  key="worktrees"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <WorktreesView projectId={currentProject.id} worktrees={[]} />
-                </motion.div>
-              )}
+                {activePage === "worktrees" && (
+                  <motion.div
+                    key="worktrees"
+                    custom={slideDirection}
+                    variants={slideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    className="absolute inset-0 overflow-auto custom-scrollbar"
+                  >
+                    <WorktreesView projectId={currentProject.id} worktrees={[]} />
+                  </motion.div>
+                )}
 
-              {activePage === "settings" && (
-                <motion.div
-                  key="settings"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                {activePage === "settings" && (
+                  <motion.div
+                    key="settings"
+                    custom={slideDirection}
+                    variants={slideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    className="absolute inset-0 overflow-auto custom-scrollbar"
+                  >
+                    <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Suspense>
 
-            {/* Modals and Overlays */}
-            <TaskModal
-              isOpen={showNewTaskModal}
-              onClose={() => setShowNewTaskModal(false)}
-              projectId={currentProject.id}
-              onTaskCreated={handleTaskCreated}
-            />
-            <TaskDetail
-              task={selectedTask}
-              projectPath={currentProject.path}
-              onClose={() => setSelectedTask(null)}
-            />
-            <ImportSettings
-              isOpen={showImportSettings}
-              onClose={() => setShowImportSettings(false)}
-              onConfigSaved={handleImportConfigSaved}
-            />
+            {/* Modals and Overlays - lazy loaded for performance */}
+            <Suspense fallback={null}>
+              <TaskModal
+                isOpen={showNewTaskModal}
+                onClose={() => setShowNewTaskModal(false)}
+                projectId={currentProject.id}
+                onTaskCreated={handleTaskCreated}
+              />
+              <TaskDetail
+                task={selectedTask}
+                projectPath={currentProject.path}
+                onClose={() => setSelectedTask(null)}
+              />
+              <ImportSettings
+                isOpen={showImportSettings}
+                onClose={() => setShowImportSettings(false)}
+                onConfigSaved={handleImportConfigSaved}
+              />
+            </Suspense>
           </main>
         </div>
       )}
