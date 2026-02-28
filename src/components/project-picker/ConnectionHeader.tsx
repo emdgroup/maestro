@@ -1,9 +1,8 @@
 import React, { useState } from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
-import { commands, SshConnection } from "@/types";
+import type { SshConnection } from "@/types";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
-import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { useUpdateSshConnection } from "@/services/connection.service.ts";
+import { useUpdateSshConnection, useDeleteSshConnection, useForgetSavedPassword } from "@/services/connection.service.ts";
 
 interface ConnectionHeaderProps {
   connection: SshConnection;
@@ -38,8 +37,10 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
   const [editName, setEditName] = useState("");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  // Use TanStack Query mutation for rename
+  // Use TanStack Query mutations for all operations
   const updateConnectionMutation = useUpdateSshConnection();
+  const deleteConnectionMutation = useDeleteSshConnection();
+  const forgetPasswordMutation = useForgetSavedPassword();
 
   const handleStartEdit = () => {
     setIsEditing(true);
@@ -81,24 +82,14 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
   };
 
   const handleDeleteConnection = async () => {
-    try {
-      await commands.deleteSshConnection(connection.id);
-      setShowDeleteDialog(false);
-      toast.success("Connection deleted");
-      // Notify parent that connection was deleted
-      onDelete();
-    } catch (error) {
-      toast.error(`Failed to delete connection: ${error}`);
-    }
+    await deleteConnectionMutation.mutateAsync(connection.id);
+    setShowDeleteDialog(false);
+    // Notify parent that connection was deleted
+    onDelete();
   };
 
   const handleForgetPassword = async () => {
-    try {
-      await commands.forgetSavedPassword(connection.id);
-      toast.success("Password forgotten");
-    } catch (error) {
-      toast.error(`Failed to forget password: ${error}`);
-    }
+    await forgetPasswordMutation.mutateAsync(connection.id);
   };
 
   // Check if connection has a saved password
