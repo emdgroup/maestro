@@ -40,7 +40,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       setState,
       setLoading,
       setError,
-      clearError,
     } = useConfigStore();
 
     const { register, handleSubmit, reset, control } = useForm<ProjectSettingsFormData>({

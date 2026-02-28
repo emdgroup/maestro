@@ -127,13 +127,13 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
       try {
         // Save connection to database using service hook (parsing happens in Rust)
-        const result = await createSshConnectionMutation.mutateAsync({
+        // Returns the connection ID
+        const connectionIdResult = await createSshConnectionMutation.mutateAsync({
           connectionString,
           authMethod: "Agent", // Default to Agent auth
         });
-        // Result should be the connection ID from the service
-        if (result) {
-          await initiateConnection(result.id);
+        if (connectionIdResult) {
+          await initiateConnection(connectionIdResult);
         }
       } catch (error) {
         // Error toast is handled by service layer

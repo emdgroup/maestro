@@ -118,17 +118,21 @@ export function FilePicker({
       }
 
       if (isLocal) {
-        const result = await listLocalDirsMutation.mutateAsync(path);
-        if (result.status === "ok") {
-          setDirectories(result.data);
+        try {
+          const result = await listLocalDirsMutation.mutateAsync(path);
+          setDirectories(result);
+        } catch (error) {
+          setDirectories([]);
         }
       } else {
-        const result = await listRemoteDirsMutation.mutateAsync({
-          connectionId: connection!.id,
-          path,
-        });
-        if (result.status === "ok") {
-          setDirectories(result.data);
+        try {
+          const result = await listRemoteDirsMutation.mutateAsync({
+            connectionId: connection!.id,
+            path,
+          });
+          setDirectories(result);
+        } catch (error) {
+          setDirectories([]);
         }
       }
     },

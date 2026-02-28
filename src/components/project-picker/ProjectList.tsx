@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { ProjectListItem, ProjectsListLayout } from "@/components";
 import { useProjectPickerNavigation } from "@/utils/hooks";
-import { useRecentProjects, useCreateProject, useProjectById, useRemoveProject } from "@/services";
+import { useRecentProjects, useCreateProject, useRemoveProject } from "@/services";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
