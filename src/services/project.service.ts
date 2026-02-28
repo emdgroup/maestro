@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib";
 import { toast } from "sonner";
 import type { ProjectConfigRequest } from "@/types";
 
