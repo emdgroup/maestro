@@ -9,6 +9,21 @@ interface ExecutionTerminalProps {
   isActive: boolean;
 }
 
+// Maximum terminal output buffer size (1MB) to prevent memory leaks
+const MAX_TERMINAL_OUTPUT_SIZE = 1024 * 1024;
+
+/**
+ * Append new content to terminal output, truncating old content if size limit is exceeded
+ */
+function appendToTerminalOutput(prev: string, message: string): string {
+  const newOutput = prev + message;
+  if (newOutput.length > MAX_TERMINAL_OUTPUT_SIZE) {
+    const truncateAt = newOutput.length - MAX_TERMINAL_OUTPUT_SIZE;
+    return "... (older output truncated) ...\n" + newOutput.slice(truncateAt);
+  }
+  return newOutput;
+}
+
 export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: ExecutionTerminalProps) {
   const [terminalOutput, setTerminalOutput] = useState<string>("");
   const [inputValue, setInputValue] = useState<string>("");
@@ -50,9 +65,9 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         const channel = new Channel<string>();
         channelRef.current = channel;
 
-        // Set up the on_message handler
+        // Set up the on_message handler with buffer size limiting
         channel.onmessage = (message: string) => {
-          setTerminalOutput((prev) => prev + message);
+          setTerminalOutput((prev) => appendToTerminalOutput(prev, message));
         };
 
         // Call executionService to attach terminal with the channel
@@ -89,7 +104,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       }
 
       // Echo input to terminal for visual feedback
-      setTerminalOutput((prev) => prev + inputValue + "\n");
+      setTerminalOutput((prev) => appendToTerminalOutput(prev, inputValue + "\n"));
 
       // Send input to PTY using execution service
       await api.sendTerminalInput(taskId, inputValue + "\n");
@@ -108,7 +123,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
   const handleSendCtrlC = async () => {
     try {
       setSending(true);
-      setTerminalOutput((prev) => prev + "^C\n");
+      setTerminalOutput((prev) => appendToTerminalOutput(prev, "^C\n"));
       await api.sendTerminalInput(taskId, "\x03"); // Ctrl+C
       setError(null);
     } catch (err) {

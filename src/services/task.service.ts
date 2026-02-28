@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib";
+import { api, createErrorToastHandler } from "@/lib";
 import { toast } from "sonner";
 
 import type { Task, TaskConfigRequest } from "@/types";
@@ -81,11 +81,7 @@ export function useCreateTaskMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to create task"),
   });
 }
 
@@ -101,11 +97,7 @@ export function useUpdateTask() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to update task"),
   });
 }
 
@@ -118,11 +110,7 @@ export function useCancelExecutionMutation() {
     onSuccess: () => {
       toast.success("Execution cancelled");
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to cancel execution: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to cancel execution"),
   });
 }
 
@@ -140,11 +128,7 @@ export function useUpdateTaskSettingsMutation() {
         queryKey: taskQueryKeys.settingsByTask(variables.taskId),
       });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to update task settings: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to update task settings"),
   });
 }
 
@@ -164,11 +148,7 @@ export function useSaveTaskReviewMutation() {
       generalFeedback: string | null;
       perFileComments: Array<[string, string]> | null;
     }) => api.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
-    onError: (error) => {
-      toast.error(
-        `Failed to save review: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to save review"),
   });
 }
 
@@ -184,11 +164,7 @@ export function useApproveTaskAndMergeMutation() {
       toast.success("Approval submitted. Merge starting...");
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to approve task: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to approve task"),
   });
 }
 
@@ -212,10 +188,6 @@ export function useRequestChangesMutation() {
       toast.info("Changes requested. Task returned to In Progress.");
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to request changes: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to request changes"),
   });
 }

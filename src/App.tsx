@@ -188,7 +188,7 @@ function App() {
     currentProject?.path || "null",
   );
 
-  const appContent = (
+  return (
     <>
       {appLoading || settingsLoading ? (
         <div className="app">
@@ -297,8 +297,6 @@ function App() {
       )}
     </>
   );
-
-  return appContent;
 }
 
 export default App;

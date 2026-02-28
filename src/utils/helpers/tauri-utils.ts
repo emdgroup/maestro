@@ -32,17 +32,20 @@ export const api = new Proxy(commands, {
     // Only wrap functions, pass through other properties
     if (typeof original === "function") {
       return async (...args: unknown[]) => {
-        // @ts-ignore
-        const result_2 = await original(...args);
-        // Unwrap Result type
-        if (result_2 && typeof result_2 === "object" && "status" in result_2) {
-          if (result_2.status === "ok") {
-            return result_2.data;
+        const result = await (original as (...args: unknown[]) => Promise<unknown>)(...args);
+
+        // Unwrap Result type using discriminated union check
+        if (result && typeof result === "object" && "status" in result) {
+          const typedResult = result as Result<unknown, unknown>;
+          if (typedResult.status === "ok") {
+            return typedResult.data;
           } else {
-            throw new Error(result_2.error as string);
+            throw new Error(String(typedResult.error));
           }
         }
-        return result_2;
+
+        // Pass through non-Result values (shouldn't happen with current bindings)
+        return result;
       };
     }
 
