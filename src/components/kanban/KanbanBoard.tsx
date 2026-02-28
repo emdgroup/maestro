@@ -11,12 +11,12 @@ import {
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { toast } from "sonner";
-import { KanbanColumn } from "./KanbanColumn";
+import { KanbanColumn } from "@/components";
 import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "@/components/common/ReviewModal";
 import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
-import { api } from "@/lib/tauri-utils.ts";
+import { api } from "@/lib";
 
 export interface KanbanBoardProps {
   projectId: number;
