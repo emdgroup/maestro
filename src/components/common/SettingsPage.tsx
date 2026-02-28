@@ -9,8 +9,9 @@ import {
   AVAILABLE_SKILLS,
   AVAILABLE_MODELS,
 } from "@/store/configStore";
-import { commands, ProjectConfigRequest } from "@/types/bindings";
+import type { ProjectConfigRequest } from "@/types/bindings";
 import { Bot, Server, Sparkles } from "lucide-react";
+import { useProjectSettings, useUpdateProjectSettings } from "@/services";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
@@ -63,58 +64,59 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       },
     });
 
+    // Service hooks for settings
+    const projectSettingsQuery = useProjectSettings(projectId);
+    const updateProjectSettingsMutation = useUpdateProjectSettings();
+
     // Fetch settings on mount
     useEffect(() => {
-      async function fetchSettings() {
-        setLoading(true);
-        clearError();
+      if (projectSettingsQuery.data) {
+        const response = projectSettingsQuery.data;
+        // Convert arrays to checkbox records
+        const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
+          (acc, server) => {
+            acc[server] = response.mcp_allowlist?.includes(server) ?? false;
+            return acc;
+          },
+          {} as Record<string, boolean>,
+        );
 
-        try {
-          const result = await commands.getProjectSettings(projectId);
+        const skills_record = AVAILABLE_SKILLS.reduce(
+          (acc, skill) => {
+            acc[skill] = response.skills_default?.includes(skill) ?? false;
+            return acc;
+          },
+          {} as Record<string, boolean>,
+        );
 
-          if (result.status === "ok") {
-            const response = result.data;
-            // Convert arrays to checkbox records
-            const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
-              (acc, server) => {
-                acc[server] = response.mcp_allowlist?.includes(server) ?? false;
-                return acc;
-              },
-              {} as Record<string, boolean>,
-            );
+        setState({
+          model_default: response.model_default,
+          mcp_allowlist: response.mcp_allowlist || [],
+          skills_default: response.skills_default || [],
+        });
 
-            const skills_record = AVAILABLE_SKILLS.reduce(
-              (acc, skill) => {
-                acc[skill] = response.skills_default?.includes(skill) ?? false;
-                return acc;
-              },
-              {} as Record<string, boolean>,
-            );
+        reset({
+          model_default: response.model_default,
+          mcp_servers: mcp_servers_record,
+          skills: skills_record,
+        });
 
-            setState({
-              model_default: response.model_default,
-              mcp_allowlist: response.mcp_allowlist || [],
-              skills_default: response.skills_default || [],
-            });
-
-            reset({
-              model_default: response.model_default,
-              mcp_servers: mcp_servers_record,
-              skills: skills_record,
-            });
-          }
-
-          setLoading(false);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : "Failed to load settings";
-          setError(errorMessage);
-          setLoading(false);
-          console.error("Failed to fetch project settings:", err);
-        }
+        setLoading(false);
       }
 
-      fetchSettings();
-    }, [projectId, setLoading, clearError, setState, reset, setError]);
+      if (projectSettingsQuery.isLoading) {
+        setLoading(true);
+      }
+
+      if (projectSettingsQuery.error) {
+        const errorMessage =
+          projectSettingsQuery.error instanceof Error
+            ? projectSettingsQuery.error.message
+            : "Failed to load settings";
+        setError(errorMessage);
+        setLoading(false);
+      }
+    }, [projectSettingsQuery.data, projectSettingsQuery.isLoading, projectSettingsQuery.error, setState, reset, setLoading, setError]);
 
     const onSubmit = async (data: ProjectSettingsFormData) => {
       if (!data.model_default) {
@@ -140,7 +142,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           skills_default,
         };
 
-        await commands.updateProjectSettings(projectId, request);
+        await updateProjectSettingsMutation.mutateAsync({
+          projectId,
+          config: request,
+        });
 
         setState({
           model_default: data.model_default,
