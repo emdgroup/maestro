@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
-import { api } from "@/lib/tauri-utils.ts";
+import { api } from "@/lib";
 
 // Theme type definition
 export type ThemeValue = "light" | "dark" | "system";

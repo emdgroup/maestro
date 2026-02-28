@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib";
 import { toast } from "sonner";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 
