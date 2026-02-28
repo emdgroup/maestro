@@ -1,12 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSelectedProject } from "@/store/projectStore";
-import { AppHeader, ActionBar, ToasterRoot } from "@/components/common";
+import { AppHeader, ActionBar } from "@/components/common";
 import { TaskModal } from "@/components/kanban";
 import { TaskDetail, ImportSettings } from "@/components/task";
 import type { SettingsPageHandle } from "@/components/common";
-import { ThemeProvider } from "@/providers/ThemeProvider";
-import { QueryProvider } from "@/providers/QueryProvider";
 import { useBoardStore } from "@/store/boardStore";
 import { useRecentProjects } from "@/utils/hooks";
 import type { ActionBarAction } from "@/components/common";
@@ -300,14 +298,7 @@ function App() {
     </>
   );
 
-  return (
-    <QueryProvider>
-      <ThemeProvider>
-        <ToasterRoot />
-        {appContent}
-      </ThemeProvider>
-    </QueryProvider>
-  );
+  return appContent;
 }
 
 export default App;

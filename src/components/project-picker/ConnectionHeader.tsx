@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
-import { commands, SshConnection } from "@/types/bindings";
+import { commands, SshConnection } from "@/types";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import {

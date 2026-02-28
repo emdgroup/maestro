@@ -87,7 +87,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::db::initialize_schema(&conn).unwrap();
 
-        let settings = load_settings(&conn).unwrap();
+        let _settings = load_settings(&conn).unwrap();
     }
 
     #[test]
