@@ -1,14 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib";
 import { toast } from "sonner";
 
-import type {
-  Task,
-  TaskStatus,
-  ExecutionLog,
-  ProjectConfigResponse,
-  ProjectConfigRequest,
-} from "@/types";
+import type { Task, TaskConfigRequest } from "@/types";
 
 /**
  * Query key factory for task-related queries
@@ -23,8 +17,7 @@ const taskQueryKeys = {
   logs: () => [...taskQueryKeys.all, "logs"] as const,
   logsByTask: (taskId: number) => [...taskQueryKeys.logs(), { taskId }] as const,
   settings: () => [...taskQueryKeys.all, "settings"] as const,
-  settingsByTask: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.settings(), { projectId, taskId }] as const,
+  settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
 };
 
 /**
@@ -59,18 +52,6 @@ export function useExecutionLogsQuery(taskId: number | null) {
 }
 
 /**
- * Query hook for fetching task settings/configuration
- */
-export function useTaskSettingsQuery(projectId: number | null, taskId: number | null) {
-  return useQuery({
-    queryKey: taskQueryKeys.settingsByTask(projectId!, taskId!),
-    queryFn: () => api.getTaskSettings(projectId!, taskId!),
-    enabled: projectId !== null && taskId !== null,
-    staleTime: 60000, // 60 seconds—settings change rarely
-  });
-}
-
-/**
  * Query hook for fetching diff for review (always fresh, no cache)
  */
 export function useDiffForReviewQuery(taskId: number | null) {
@@ -89,9 +70,16 @@ export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: Task) => api.createTask(request),
+    mutationFn: (request: Task) =>
+      api.createTask(
+        request.project_id,
+        request.name,
+        request.description,
+        request.acceptance_criteria || "",
+        request.skills,
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
       toast.error(
@@ -104,78 +92,18 @@ export function useCreateTaskMutation() {
 /**
  * Mutation hook for updating task details
  */
-export function useUpdateTaskMutation() {
+export function useUpdateTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) =>
-      api.updateTask(taskId, updates),
+      api.updateTask(taskId, updates.status || null, updates.description || null),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
     },
     onError: (error) => {
       toast.error(
         `Failed to update task: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
-  });
-}
-
-/**
- * Mutation hook for updating task status with optimistic updates
- */
-export function useUpdateTaskStatusMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ taskId, status }: { taskId: number; status: TaskStatus }) =>
-      api.updateTaskStatus(taskId, status),
-    onMutate: async ({ taskId, status }) => {
-      // Cancel outgoing queries to prevent overwriting optimistic update
-      await queryClient.cancelQueries({ queryKey: taskQueryKeys.detail(taskId) });
-
-      // Snapshot previous value for rollback
-      const previousTask = queryClient.getQueryData<Task>(taskQueryKeys.detail(taskId));
-
-      // Optimistically update cache
-      queryClient.setQueryData<Task>(taskQueryKeys.detail(taskId), (old) => {
-        if (!old) return old;
-        return { ...old, status };
-      });
-
-      return { previousTask, taskId };
-    },
-    onError: (error, _variables, context) => {
-      // Rollback on error
-      if (context?.previousTask) {
-        queryClient.setQueryData(taskQueryKeys.detail(context.taskId), context.previousTask);
-      }
-      toast.error(
-        `Failed to update task status: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
-    onSettled: (_data, _error, variables) => {
-      // Always refetch to ensure cache is consistent
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(variables.taskId) });
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-  });
-}
-
-/**
- * Mutation hook for retrying task execution
- */
-export function useRetryExecutionMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (logId: number) => api.retryExecution(logId),
-    onSuccess: (data: ExecutionLog) => {
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.logsByTask(data.task_id) });
-    },
-    onError: (error) => {
-      toast.error(
-        `Failed to retry execution: ${error instanceof Error ? error.message : String(error)}`,
       );
     },
   });
@@ -205,18 +133,11 @@ export function useUpdateTaskSettingsMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      config,
-    }: {
-      projectId: number;
-      taskId: number;
-      config: ProjectConfigRequest;
-    }) => api.updateTaskSettings(projectId, taskId, config),
+    mutationFn: ({ taskId, config }: { taskId: number; config: TaskConfigRequest }) =>
+      api.updateTaskSettings(taskId, config),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.settingsByTask(variables.projectId, variables.taskId),
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.settingsByTask(variables.taskId),
       });
     },
     onError: (error) => {
@@ -261,7 +182,7 @@ export function useApproveTaskAndMergeMutation() {
     mutationFn: (taskId: number) => api.approveTaskAndMerge(taskId),
     onSuccess: () => {
       toast.success("Approval submitted. Merge starting...");
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
       toast.error(
@@ -289,7 +210,7 @@ export function useRequestChangesMutation() {
     }) => api.requestChanges(taskId, generalFeedback, perFileComments),
     onSuccess: () => {
       toast.info("Changes requested. Task returned to In Progress.");
-      queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: (error) => {
       toast.error(

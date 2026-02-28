@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { executionService, taskService } from "@/services";
 import { Task, TaskStatus } from "@/types/bindings";
+import { api } from "@/lib";
 
 export interface BoardState {
   tasks: Task[];
@@ -61,11 +61,7 @@ export const useBoardStore = create<BoardState>()(
     executeTask: async (projectId: number, taskId: number, repoPath: string) => {
       try {
         // Call executionService to spawn agent
-        const executionLogId = await executionService.spawnAgentExecution(
-          projectId,
-          taskId,
-          repoPath,
-        );
+        const executionLogId = await api.spawnAgentExecution(projectId, taskId, repoPath);
 
         // Update task status to InProgress using immer middleware
         set((state) => {
@@ -88,7 +84,7 @@ export const useBoardStore = create<BoardState>()(
           state.pausingTaskIds.add(taskId);
         });
 
-        await executionService.pauseAgentExecution(taskId);
+        await api.pauseAgentExecution(taskId);
 
         // Backend updates database directly. TaskCard will reload execution log.
       } catch (error) {
@@ -109,11 +105,7 @@ export const useBoardStore = create<BoardState>()(
         });
 
         // Call executionService to resume agent (reuses same config, creates new execution log)
-        const executionLogId = await executionService.resumeAgentExecution(
-          taskId,
-          projectId,
-          repoPath,
-        );
+        const executionLogId = await api.resumeAgentExecution(taskId, projectId, repoPath);
 
         // Update task status to InProgress
         set((state) => {
@@ -143,7 +135,7 @@ export const useBoardStore = create<BoardState>()(
         // Call cancelExecution handler if available, otherwise just mark as Done
         // TODO: cancel_execution expects logId, not taskId - this needs to fetch the log first
         try {
-          await taskService.cancelExecution(taskId);
+          await api.cancelExecution(taskId);
         } catch (err) {
           console.warn("cancelExecution handler not available, marking task manually", err);
         }
@@ -177,7 +169,7 @@ export const useBoardStore = create<BoardState>()(
       const state = get();
       if (state.activeTerminalTaskId !== null) {
         try {
-          await executionService.detachTerminal(state.activeTerminalTaskId);
+          await api.detachTerminal(state.activeTerminalTaskId);
         } catch (err) {
           console.error("Error detaching terminal:", err);
         }

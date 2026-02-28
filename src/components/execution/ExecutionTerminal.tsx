@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Channel } from "@tauri-apps/api/core";
-import { executionService } from "@/services";
+import { api } from "@/lib/tauri-utils.ts";
 
 interface ExecutionTerminalProps {
   taskId: number;
@@ -29,7 +29,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const detachTerminal = useCallback(async () => {
     try {
-      await executionService.detachTerminal(taskId);
+      await api.detachTerminal(taskId);
       console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
     } catch (err) {
       console.error("Detach terminal error:", err);
@@ -56,7 +56,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         };
 
         // Call executionService to attach terminal with the channel
-        await executionService.attachTerminal(taskId, channel.toString());
+        await api.attachTerminal(taskId, channel, null);
 
         console.log(`[ExecutionTerminal] Attached to task ${taskId}`);
         setLoading(false);
@@ -92,7 +92,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       setTerminalOutput((prev) => prev + inputValue + "\n");
 
       // Send input to PTY using execution service
-      await executionService.sendTerminalInput(taskId, inputValue + "\n");
+      await api.sendTerminalInput(taskId, inputValue + "\n");
 
       setInputValue("");
       setError(null);
@@ -109,7 +109,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     try {
       setSending(true);
       setTerminalOutput((prev) => prev + "^C\n");
-      await executionService.sendTerminalInput(taskId, "\x03"); // Ctrl+C
+      await api.sendTerminalInput(taskId, "\x03"); // Ctrl+C
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

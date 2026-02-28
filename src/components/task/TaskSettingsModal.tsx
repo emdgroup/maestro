@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { taskService } from "@/services";
 import {
   Dialog,
   DialogPortal,
@@ -17,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "@/store/configStore";
 import type { Task, TaskConfigRequest } from "@/types/bindings";
 import { X } from "lucide-react";
+import { api } from "@/lib/tauri-utils.ts";
 
 interface TaskSettingsModalProps {
   isOpen: boolean;
@@ -99,7 +99,7 @@ export function TaskSettingsModal({ isOpen, onClose, task }: TaskSettingsModalPr
         skills_override: skills_override_final,
       };
 
-      await taskService.updateTaskSettings(task.project_id, task.id, request as any);
+      await api.updateTaskSettings(task.id, request);
 
       onClose();
     } catch (err) {

@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/utils/helpers/tauri-utils";
-import type { Project } from "@/types/bindings";
 
 /**
  * Query key factory for connection projects

@@ -121,15 +121,8 @@ export function useUpdateSshConnection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      connectionId,
-      displayName,
-    }: {
-      connectionId: number;
-      displayName: string;
-    }) => {
-      api.renameSshConnection(connectionId, displayName);
-    },
+    mutationFn: ({ connectionId, displayName }: { connectionId: number; displayName: string }) =>
+      api.renameSshConnection(connectionId, displayName),
     onMutate: async ({ connectionId, displayName }) => {
       // Cancel any outgoing refetches to prevent overwriting our optimistic update
       await queryClient.cancelQueries({ queryKey: connectionQueryKeys.list() });
@@ -174,9 +167,7 @@ export function useDeleteSshConnection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (connectionId: number) => {
-      api.deleteSshConnection(connectionId);
-    },
+    mutationFn: (connectionId: number) => api.deleteSshConnection(connectionId),
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch without deleted connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
@@ -193,9 +184,7 @@ export function useDeleteSshConnection() {
  */
 export function useForgetSavedPassword() {
   return useMutation({
-    mutationFn: (connectionId: number) => {
-      api.forgetSavedPassword(connectionId);
-    },
+    mutationFn: (connectionId: number) => api.forgetSavedPassword(connectionId),
     onSuccess: () => {
       toast.success("Password forgotten successfully");
     },

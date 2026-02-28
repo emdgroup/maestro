@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/utils/helpers/tauri-utils";
 import { toast } from "sonner";
+import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 
 /**
  * Execution service providing type-safe operations for task execution and terminal management.
@@ -81,8 +82,14 @@ export function useResumeExecutionMutation() {
  */
 export function useAttachTerminalMutation() {
   return useMutation({
-    mutationFn: async ({ taskId, outputChannel }: { taskId: number; outputChannel: string }) => {
-      return await api.attachTerminal(taskId, outputChannel);
+    mutationFn: async ({
+      taskId,
+      outputChannel,
+    }: {
+      taskId: number;
+      outputChannel: TAURI_CHANNEL<string>;
+    }) => {
+      return await api.attachTerminal(taskId, outputChannel, null);
     },
     onError: (error) => {
       toast.error(`Failed to attach terminal: ${error}`);

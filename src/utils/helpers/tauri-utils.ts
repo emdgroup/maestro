@@ -1,39 +1,6 @@
 import { commands, type Result } from "@/types/bindings";
 
 /**
- * Tauri IPC Communication Utilities
- *
- * This module provides utilities for communicating with the Rust backend:
- *
- * 1. `api` (recommended): Proxy that automatically unwraps Result types
- *    - Usage: `await api.getProjects()`
- *    - Returns: `Promise<T>` (throws on error)
- *    - Benefits: Less boilerplate, same type safety
- *
- * 2. `unwrap` (legacy): Manual unwrapping function
- *    - Usage: `await unwrap(commands.getProjects())`
- *    - Deprecated: Use `api` proxy instead
- *
- * All service files should use the `api` proxy for consistency.
- */
-
-/**
- * Unwraps a Tauri Result<T, E> into a Promise<T>
- * Throws the error if the result is an error status
- * This makes Tauri commands compatible with React Query's error handling
- *
- * @deprecated Use `api` proxy instead for automatic unwrapping
- */
-export async function unwrap<T, E>(resultPromise: Promise<Result<T, E>>): Promise<T> {
-  const result = await resultPromise;
-  if (result.status === "ok") {
-    return result.data;
-  } else {
-    throw new Error(result.error as string);
-  }
-}
-
-/**
  * Type transformation: Convert commands returning Promise<Result<T, E>>
  * to functions returning Promise<T>
  */
@@ -64,19 +31,18 @@ export const api = new Proxy(commands, {
 
     // Only wrap functions, pass through other properties
     if (typeof original === "function") {
-      return (...args: unknown[]) => {
-        return original(...args).then((result: any) => {
-          // Unwrap Result type
-          if (result && typeof result === "object" && "status" in result) {
-            if (result.status === "ok") {
-              return result.data;
-            } else {
-              throw new Error(result.error as string);
-            }
+      return async (...args: unknown[]) => {
+        // @ts-ignore
+        const result_2 = await original(...args);
+        // Unwrap Result type
+        if (result_2 && typeof result_2 === "object" && "status" in result_2) {
+          if (result_2.status === "ok") {
+            return result_2.data;
+          } else {
+            throw new Error(result_2.error as string);
           }
-          // Pass through non-Result values (shouldn't happen with current bindings)
-          return result;
-        });
+        }
+        return result_2;
       };
     }
 

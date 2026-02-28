@@ -8,7 +8,6 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { taskService } from "@/services";
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { toast } from "sonner";
@@ -17,6 +16,7 @@ import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "@/components/common/ReviewModal";
 import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
+import { api } from "@/lib/tauri-utils.ts";
 
 export interface KanbanBoardProps {
   projectId: number;
@@ -73,7 +73,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const fetchTasks = async () => {
       try {
         setIsLoading(true);
-        const tasks = await taskService.getTasks(projectId);
+        const tasks = await api.getTasks(projectId);
         loadTasks(tasks);
         setErrorMessage(null);
 
@@ -93,7 +93,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     // Set up periodic refresh to detect merge completion
     const interval = setInterval(async () => {
       try {
-        const tasks = await taskService.getTasks(projectId);
+        const tasks = await api.getTasks(projectId);
         loadTasks(tasks);
 
         // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
@@ -164,7 +164,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     try {
       // Update task status in database using task service
-      await taskService.updateTask(taskId, { status: toStatus } as any);
+      await api.updateTask(taskId, { status: toStatus } as any, null);
 
       // Update local store
       updateTaskStatus(taskId, toStatus);

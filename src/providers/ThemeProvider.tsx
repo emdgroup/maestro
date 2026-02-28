@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { settingsService } from "@/services";
 import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
+import { api } from "@/lib/tauri-utils.ts";
 
 // Theme type definition
 export type ThemeValue = "light" | "dark" | "system";
@@ -41,7 +41,7 @@ async function loadSystemAccentColor(): Promise<void> {
     const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
     // Get system accent color from settings service
-    const rgb = await settingsService.getSystemAccentColor();
+    const rgb = await api.getSystemAccentColor();
     console.log("[Theme] System accent color (RGB):", rgb);
 
     // Convert RGB to oklch to extract hue
@@ -103,7 +103,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setSystemTheme(system);
 
         // Load saved theme preference from database using settings service
-        const settings = await settingsService.getSettings();
+        const settings = await api.getSettings();
         const savedTheme = (settings.theme_preference as ThemeValue) || "system";
         setThemeState(savedTheme);
 
@@ -139,13 +139,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       applyTheme(newTheme, systemTheme);
 
       // Persist to database using settings service
-      const settings = await settingsService.getSettings();
+      const settings = await api.getSettings();
       const updatedSettings: AppSettings = {
         ...settings,
         theme_preference: newTheme,
         updated_at: new Date().toISOString(),
       };
-      await settingsService.saveSettings(updatedSettings);
+      await api.saveSettings(updatedSettings);
     } catch (err) {
       console.error("Failed to save theme preference:", err);
       // Revert state on error
