@@ -3,7 +3,7 @@ import { ExecutionLog } from "@/types/bindings";
 import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
 import { useBoardStore } from "@/store/boardStore";
 import { toast } from "sonner";
-import { api } from "@/lib/tauri-utils.ts";
+import { api } from "@/lib";
 
 interface ExecutionHistoryProps {
   taskId: number;

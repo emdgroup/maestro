@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { api } from "@/lib/tauri-utils";
+import { api } from "@/lib";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
