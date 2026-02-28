@@ -14,6 +14,13 @@ const connectionQueryKeys = {
   details: () => [...connectionQueryKeys.baseKey, "detail"] as const,
   detail: (connectionId: number | string) =>
     [...connectionQueryKeys.details(), connectionId] as const,
+  fileBrowser: () => [...connectionQueryKeys.baseKey, "file-browser"] as const,
+  localDirs: (path: string) =>
+    [...connectionQueryKeys.fileBrowser(), "local", path] as const,
+  remoteDirs: (connectionId: number, path: string) =>
+    [...connectionQueryKeys.fileBrowser(), "remote", connectionId, path] as const,
+  defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
+  drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
 };
 
 /**
@@ -191,5 +198,56 @@ export function useForgetSavedPassword() {
     onError: (error) => {
       toast.error(`Failed to forget password: ${error}`);
     },
+  });
+}
+
+/**
+ * Mutation hook for listing local directories
+ * Used by file browser to navigate local filesystem
+ */
+export function useListLocalDirectories() {
+  return useMutation({
+    mutationFn: (path: string) => api.listLocalDirectories(path),
+    onError: (error) => {
+      toast.error(`Failed to list directories: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for listing remote directories via SSH
+ * Used by file browser to navigate remote filesystem
+ */
+export function useListRemoteDirectories() {
+  return useMutation({
+    mutationFn: ({ connectionId, path }: { connectionId: number; path: string }) =>
+      api.listRemoteDirectories(connectionId, path),
+    onError: (error) => {
+      toast.error(`Failed to list directories: ${error}`);
+    },
+  });
+}
+
+/**
+ * Query hook for getting default file picker path
+ * Returns the user's default directory for file selection (platform-dependent)
+ */
+export function useGetDefaultFilePickerPath() {
+  return useQuery({
+    queryKey: connectionQueryKeys.defaultPath(),
+    queryFn: () => api.getDefaultFilePickerPath(),
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Query hook for listing available drives on Windows
+ * Returns array of drive letters (e.g., ["C:", "D:"])
+ */
+export function useListDrives() {
+  return useQuery({
+    queryKey: connectionQueryKeys.drives(),
+    queryFn: () => api.listDrives(),
+    staleTime: Infinity,
   });
 }
