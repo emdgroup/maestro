@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/utils/helpers/tauri-utils";
 import { toast } from "sonner";
-import { commands, SshAuthMethod, SshConnection } from "@/types/bindings";
+import { SshAuthMethod, SshConnection } from "@/types/bindings";
 
 /**
  * Query key factory for SSH connection-related queries
@@ -22,11 +23,8 @@ const connectionQueryKeys = {
 export function useSshConnections() {
   return useQuery({
     queryKey: connectionQueryKeys.list(),
-    queryFn: async () => {
-      const result = await commands.getSshConnections();
-      if (result.status === "ok") {
-        return result.data;
-      }
+    queryFn: () => {
+      return api.getSshConnections();
     },
   });
 }
@@ -38,7 +36,7 @@ export function useSshConnections() {
 export function useSshConnectionById(connectionId: number) {
   return useQuery({
     queryKey: connectionQueryKeys.detail(connectionId),
-    queryFn: () => commands.getSshConnection(connectionId),
+    queryFn: () => api.getSshConnection(connectionId),
   });
 }
 
@@ -47,14 +45,14 @@ export function useSshConnectionById(connectionId: number) {
  */
 export function useCreateSshConnection() {
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       connectionString,
       authMethod,
     }: {
       connectionString: string;
       authMethod: SshAuthMethod;
     }) => {
-      return await commands.saveSshConnection(connectionString, authMethod);
+      return api.saveSshConnection(connectionString, authMethod);
     },
     onSuccess: () => {
       toast.success("SSH connection created successfully");
@@ -72,8 +70,8 @@ export function useConnectSsh() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ connectionId }: { connectionId: number }) => {
-      return await commands.connectSshWithoutCredentials(connectionId);
+    mutationFn: ({ connectionId }: { connectionId: number }) => {
+      return api.connectSshWithoutCredentials(connectionId);
     },
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
@@ -93,7 +91,7 @@ export function useConnectSshWithCreds() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       connectionId,
       password,
       savePassword,
@@ -102,7 +100,7 @@ export function useConnectSshWithCreds() {
       password: string;
       savePassword: boolean;
     }) => {
-      return await commands.connectSshWithPassword(connectionId, password, savePassword);
+      return api.connectSshWithPassword(connectionId, password, savePassword);
     },
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
@@ -123,14 +121,14 @@ export function useUpdateSshConnection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       connectionId,
       displayName,
     }: {
       connectionId: number;
       displayName: string;
     }) => {
-      await commands.renameSshConnection(connectionId, displayName);
+      api.renameSshConnection(connectionId, displayName);
     },
     onMutate: async ({ connectionId, displayName }) => {
       // Cancel any outgoing refetches to prevent overwriting our optimistic update
@@ -176,8 +174,8 @@ export function useDeleteSshConnection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (connectionId: number) => {
-      await commands.deleteSshConnection(connectionId);
+    mutationFn: (connectionId: number) => {
+      api.deleteSshConnection(connectionId);
     },
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch without deleted connection
@@ -195,8 +193,8 @@ export function useDeleteSshConnection() {
  */
 export function useForgetSavedPassword() {
   return useMutation({
-    mutationFn: async (connectionId: number) => {
-      await commands.forgetSavedPassword(connectionId);
+    mutationFn: (connectionId: number) => {
+      api.forgetSavedPassword(connectionId);
     },
     onSuccess: () => {
       toast.success("Password forgotten successfully");

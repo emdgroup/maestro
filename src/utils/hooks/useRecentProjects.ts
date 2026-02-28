@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ipc } from "@/services/ipc";
-import type { Project } from "@/types/bindings.ts";
+import { api } from "@/utils/helpers/tauri-utils";
+import type { Project } from "@/types/bindings";
 
 /**
  * Query key factory for connection projects
@@ -19,9 +19,7 @@ export const connectionProjectsQueryKeys = {
 export function useRecentProjects(connectionId: number | undefined | null) {
   return useQuery({
     queryKey: connectionProjectsQueryKeys.byConnection(connectionId),
-    queryFn: async () => {
-      return ipc.invoke<Project[]>("get_connection_projects", { connectionId });
-    },
+    queryFn: () => api.getConnectionProjects(connectionId || null),
     enabled: connectionId !== null && connectionId !== undefined,
     staleTime: 300000, // 5 minutes - projects don't change often
     refetchOnWindowFocus: true,

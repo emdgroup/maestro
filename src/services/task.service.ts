@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/utils/helpers/tauri-utils";
 import { toast } from "sonner";
-import { ipc } from "./ipc";
+
 import type {
   Task,
   TaskStatus,
@@ -13,7 +14,7 @@ import type {
  * Query key factory for task-related queries
  * Ensures consistent cache invalidation across components
  */
-export const taskQueryKeys = {
+const taskQueryKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskQueryKeys.all, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
@@ -30,129 +31,6 @@ export const taskQueryKeys = {
  * Task service providing type-safe operations for task management.
  * All task-related IPC calls are centralized here.
  */
-export const taskService = {
-  /**
-   * Get all tasks for a project
-   */
-  async getTasks(projectId: number): Promise<Task[]> {
-    return ipc.invoke<Task[]>("get_tasks", { projectId });
-  },
-
-  /**
-   * Create a new task
-   */
-  async createTask(request: Task): Promise<Task> {
-    return ipc.invoke<Task>("create_task", { request });
-  },
-
-  /**
-   * Update task status and other properties
-   */
-  async updateTask(taskId: number, updates: Partial<Task>): Promise<Task> {
-    return ipc.invoke<Task>("update_task", { taskId, updates });
-  },
-
-  /**
-   * Update task status (convenience method)
-   */
-  async updateTaskStatus(taskId: number, status: TaskStatus): Promise<Task> {
-    return ipc.invoke<Task>("update_task_status", { taskId, status });
-  },
-
-  /**
-   * Get execution logs for a task
-   */
-  async getExecutionLogs(taskId: number): Promise<ExecutionLog[]> {
-    return ipc.invoke<ExecutionLog[]>("get_execution_logs", { taskId });
-  },
-
-  /**
-   * Retry execution of a task
-   */
-  async retryExecution(logId: number): Promise<ExecutionLog> {
-    return ipc.invoke<ExecutionLog>("retry_execution", { logId });
-  },
-
-  /**
-   * Cancel execution of a task
-   */
-  async cancelExecution(logId: number): Promise<void> {
-    return ipc.invoke<void>("cancel_execution", { logId });
-  },
-
-  /**
-   * Get task settings/configuration
-   */
-  async getTaskSettings(projectId: number, taskId: number): Promise<ProjectConfigResponse> {
-    return ipc.invoke<ProjectConfigResponse>("get_project_settings", { projectId, taskId });
-  },
-
-  /**
-   * Update task settings/configuration
-   */
-  async updateTaskSettings(
-    projectId: number,
-    taskId: number,
-    config: ProjectConfigRequest,
-  ): Promise<ProjectConfigResponse> {
-    return ipc.invoke<ProjectConfigResponse>("update_task_settings", {
-      projectId,
-      taskId,
-      config,
-    });
-  },
-
-  /**
-   * Get diff for review
-   */
-  async getDiffForReview(taskId: number): Promise<string> {
-    return ipc.invoke<string>("get_diff_for_review", { taskId });
-  },
-
-  /**
-   * Save task review with decision and feedback
-   */
-  async saveTaskReview(
-    taskId: number,
-    decision: string,
-    generalFeedback: string | null,
-    perFileComments: Array<[string, string]> | null,
-  ): Promise<{ success: boolean; review_id: number }> {
-    return ipc.invoke<{ success: boolean; review_id: number }>("save_task_review", {
-      taskId,
-      decision,
-      generalFeedback,
-      perFileComments,
-    });
-  },
-
-  /**
-   * Approve task and start merge process
-   */
-  async approveTaskAndMerge(taskId: number): Promise<{ merging: boolean; message: string }> {
-    return ipc.invoke<{ merging: boolean; message: string }>("approve_task_and_merge", {
-      task_id: taskId,
-    });
-  },
-
-  /**
-   * Request changes for a task
-   */
-  async requestChanges(
-    taskId: number,
-    generalFeedback: string | null,
-    perFileComments: Array<[string, string]> | null,
-  ): Promise<{ success: boolean; review_id: number; task_status: string }> {
-    return ipc.invoke<{ success: boolean; review_id: number; task_status: string }>(
-      "request_changes",
-      {
-        task_id: taskId,
-        general_feedback: generalFeedback,
-        per_file_comments: perFileComments,
-      },
-    );
-  },
-};
 
 /**
  * Query hook for fetching all tasks for a project
@@ -160,7 +38,7 @@ export const taskService = {
 export function useTasksQuery(projectId: number | null) {
   return useQuery({
     queryKey: taskQueryKeys.list(projectId!),
-    queryFn: () => taskService.getTasks(projectId!),
+    queryFn: () => api.getTasks(projectId!),
     enabled: projectId !== null,
     staleTime: 30000, // 30 seconds—tasks change fairly frequently
     refetchOnWindowFocus: true,
@@ -173,7 +51,7 @@ export function useTasksQuery(projectId: number | null) {
 export function useExecutionLogsQuery(taskId: number | null) {
   return useQuery({
     queryKey: taskQueryKeys.logsByTask(taskId!),
-    queryFn: () => taskService.getExecutionLogs(taskId!),
+    queryFn: () => api.getExecutionLogs(taskId!),
     enabled: taskId !== null,
     staleTime: 10000, // 10 seconds—logs update frequently
     refetchOnWindowFocus: true,
@@ -186,7 +64,7 @@ export function useExecutionLogsQuery(taskId: number | null) {
 export function useTaskSettingsQuery(projectId: number | null, taskId: number | null) {
   return useQuery({
     queryKey: taskQueryKeys.settingsByTask(projectId!, taskId!),
-    queryFn: () => taskService.getTaskSettings(projectId!, taskId!),
+    queryFn: () => api.getTaskSettings(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
     staleTime: 60000, // 60 seconds—settings change rarely
   });
@@ -198,7 +76,7 @@ export function useTaskSettingsQuery(projectId: number | null, taskId: number | 
 export function useDiffForReviewQuery(taskId: number | null) {
   return useQuery({
     queryKey: taskQueryKeys.detail(taskId!),
-    queryFn: () => taskService.getDiffForReview(taskId!),
+    queryFn: () => api.getDiffForReview(taskId!),
     enabled: taskId !== null,
     staleTime: 0, // Always fetch fresh—diffs should reflect current state
   });
@@ -211,7 +89,7 @@ export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: Task) => taskService.createTask(request),
+    mutationFn: (request: Task) => api.createTask(request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -231,7 +109,7 @@ export function useUpdateTaskMutation() {
 
   return useMutation({
     mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) =>
-      taskService.updateTask(taskId, updates),
+      api.updateTask(taskId, updates),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
     },
@@ -251,7 +129,7 @@ export function useUpdateTaskStatusMutation() {
 
   return useMutation({
     mutationFn: ({ taskId, status }: { taskId: number; status: TaskStatus }) =>
-      taskService.updateTaskStatus(taskId, status),
+      api.updateTaskStatus(taskId, status),
     onMutate: async ({ taskId, status }) => {
       // Cancel outgoing queries to prevent overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: taskQueryKeys.detail(taskId) });
@@ -291,7 +169,7 @@ export function useRetryExecutionMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (logId: number) => taskService.retryExecution(logId),
+    mutationFn: (logId: number) => api.retryExecution(logId),
     onSuccess: (data: ExecutionLog) => {
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.logsByTask(data.task_id) });
     },
@@ -308,7 +186,7 @@ export function useRetryExecutionMutation() {
  */
 export function useCancelExecutionMutation() {
   return useMutation({
-    mutationFn: (logId: number) => taskService.cancelExecution(logId),
+    mutationFn: (logId: number) => api.cancelExecution(logId),
     onSuccess: () => {
       toast.success("Execution cancelled");
     },
@@ -335,7 +213,7 @@ export function useUpdateTaskSettingsMutation() {
       projectId: number;
       taskId: number;
       config: ProjectConfigRequest;
-    }) => taskService.updateTaskSettings(projectId, taskId, config),
+    }) => api.updateTaskSettings(projectId, taskId, config),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: taskQueryKeys.settingsByTask(variables.projectId, variables.taskId),
@@ -364,7 +242,7 @@ export function useSaveTaskReviewMutation() {
       decision: string;
       generalFeedback: string | null;
       perFileComments: Array<[string, string]> | null;
-    }) => taskService.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
+    }) => api.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
     onError: (error) => {
       toast.error(
         `Failed to save review: ${error instanceof Error ? error.message : String(error)}`,
@@ -380,7 +258,7 @@ export function useApproveTaskAndMergeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: number) => taskService.approveTaskAndMerge(taskId),
+    mutationFn: (taskId: number) => api.approveTaskAndMerge(taskId),
     onSuccess: () => {
       toast.success("Approval submitted. Merge starting...");
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
@@ -408,7 +286,7 @@ export function useRequestChangesMutation() {
       taskId: number;
       generalFeedback: string | null;
       perFileComments: Array<[string, string]> | null;
-    }) => taskService.requestChanges(taskId, generalFeedback, perFileComments),
+    }) => api.requestChanges(taskId, generalFeedback, perFileComments),
     onSuccess: () => {
       toast.info("Changes requested. Task returned to In Progress.");
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });

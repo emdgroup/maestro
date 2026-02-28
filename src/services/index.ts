@@ -1,9 +1,14 @@
 /**
  * Centralized service layer for all backend communication.
- * All services use the IPC wrapper for consistent error handling and logging.
+ * All services use TanStack Query hooks with the `api` proxy pattern.
+ *
+ * The `api` proxy automatically unwraps Tauri Result<T, E> types
+ * and throws errors for React Query's error handling.
  */
 
-export { ipc } from "./ipc";
-export { taskService } from "./task.service";
-export { settingsService } from "./settings.service";
-export { executionService } from "./execution.service";
+// Re-export all hooks from individual services
+export * from "./connection.service";
+export * from "./execution.service";
+export * from "./project.service";
+export * from "./settings.service";
+export * from "./task.service";

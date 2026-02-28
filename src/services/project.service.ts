@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/utils/helpers/tauri-utils";
 import { toast } from "sonner";
-import { ipc } from "./ipc";
+
 import type {
   Project,
   ProjectConfigResponse,
@@ -12,124 +13,6 @@ import type {
  * Project service providing type-safe operations for project management.
  * All project-related IPC calls are centralized here.
  */
-const projectService = {
-  /**
-   * Get all projects
-   */
-  async getProjects(): Promise<Project[]> {
-    return ipc.invoke<Project[]>("get_projects");
-  },
-
-  /**
-   * Get project details by ID
-   */
-  async getProject(projectId: number): Promise<Project> {
-    return ipc.invoke<Project>("get_project", { projectId });
-  },
-
-  /**
-   * Create a new project
-   */
-  async createProject(name: string, path: string, description?: string): Promise<Project> {
-    return ipc.invoke<Project>("create_project", {
-      name,
-      path,
-      description: description || "",
-    });
-  },
-
-  /**
-   * Remove a project
-   */
-  async removeProject(projectId: number): Promise<void> {
-    return ipc.invoke<void>("remove_project", { projectId });
-  },
-
-  /**
-   * Get project configuration/settings
-   */
-  async getProjectSettings(projectId: number): Promise<ProjectConfigResponse> {
-    return ipc.invoke<ProjectConfigResponse>("get_project_settings", {
-      projectId,
-    });
-  },
-
-  /**
-   * Update project configuration/settings
-   */
-  async updateProjectSettings(
-    projectId: number,
-    config: ProjectConfigRequest,
-  ): Promise<ProjectConfigResponse> {
-    return ipc.invoke<ProjectConfigResponse>("update_project_settings", {
-      projectId,
-      config,
-    });
-  },
-
-  /**
-   * Save import configuration for a project
-   */
-  async saveImportConfig(projectId: number, importConfig: Record<string, unknown>): Promise<void> {
-    return ipc.invoke<void>("save_import_config", {
-      projectId,
-      importConfig,
-    });
-  },
-
-  /**
-   * Get application settings (legacy name for compatibility)
-   */
-  async getSettings(): Promise<AppSettings> {
-    return ipc.invoke<AppSettings>("get_settings");
-  },
-
-  /**
-   * Get or create a project by path
-   */
-  async getOrCreateProject(path: string, description?: string): Promise<Project> {
-    return ipc.invoke<Project>("get_or_create_project", {
-      path,
-      description: description || "",
-    });
-  },
-
-  /**
-   * Sync GitHub issues
-   */
-  async syncGithubIssues(
-    projectId: number,
-    owner: string,
-    repo: string,
-    token: string,
-  ): Promise<{ imported_count: number; error_message?: string }> {
-    return ipc.invoke<{ imported_count: number; error_message?: string }>("sync_github_issues", {
-      projectId,
-      owner,
-      repo,
-      token,
-    });
-  },
-
-  /**
-   * Sync Jira issues
-   */
-  async syncJiraIssues(
-    projectId: number,
-    host: string,
-    email: string,
-    token: string,
-    jql: string,
-  ): Promise<{ imported_count: number; error_message?: string }> {
-    return ipc.invoke<{ imported_count: number; error_message?: string }>("sync_jira_issues", {
-      projectId,
-      host,
-      email,
-      token,
-      jql,
-    });
-  },
-};
 
 /**
  * Query key factory for project-related queries
@@ -151,7 +34,7 @@ const projectQueryKeys = {
 export function useProjects() {
   return useQuery({
     queryKey: projectQueryKeys.list(),
-    queryFn: () => projectService.getProjects(),
+    queryFn: () => api.getProjects(),
     staleTime: Infinity,
   });
 }
@@ -162,7 +45,7 @@ export function useProjects() {
 export function useProjectById(projectId: number) {
   return useQuery({
     queryKey: projectQueryKeys.detail(projectId),
-    queryFn: () => projectService.getProject(projectId),
+    queryFn: () => api.getProject(projectId),
     staleTime: Infinity,
   });
 }
@@ -173,7 +56,7 @@ export function useProjectById(projectId: number) {
 export function useProjectSettings(projectId: number) {
   return useQuery({
     queryKey: projectQueryKeys.settingsDetail(projectId),
-    queryFn: () => projectService.getProjectSettings(projectId),
+    queryFn: () => api.getProjectSettings(projectId),
     staleTime: Infinity,
   });
 }
@@ -193,7 +76,7 @@ export function useCreateProject() {
       name: string;
       path: string;
       description?: string;
-    }) => projectService.createProject(name, path, description),
+    }) => api.createProject(name, path, description),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
     },
@@ -212,7 +95,7 @@ export function useRemoveProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (projectId: number) => projectService.removeProject(projectId),
+    mutationFn: (projectId: number) => api.removeProject(projectId),
     onSuccess: (_data, projectId) => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.lists() });
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.detail(projectId) });
@@ -233,7 +116,7 @@ export function useUpdateProjectSettings() {
 
   return useMutation({
     mutationFn: ({ projectId, config }: { projectId: number; config: ProjectConfigRequest }) =>
-      projectService.updateProjectSettings(projectId, config),
+      api.updateProjectSettings(projectId, config),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(variables.projectId),
@@ -260,7 +143,7 @@ export function useSaveImportConfig() {
     }: {
       projectId: number;
       importConfig: Record<string, unknown>;
-    }) => projectService.saveImportConfig(projectId, importConfig),
+    }) => api.saveImportConfig(projectId, importConfig),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(variables.projectId),
@@ -289,7 +172,7 @@ export function useSyncGithubIssues() {
       owner: string;
       repo: string;
       token: string;
-    }) => projectService.syncGithubIssues(projectId, owner, repo, token),
+    }) => api.syncGithubIssues(projectId, owner, repo, token),
     onSuccess: (data) => {
       toast.success(`Synced ${data.imported_count} issues from GitHub`);
     },
@@ -318,7 +201,7 @@ export function useSyncJiraIssues() {
       email: string;
       token: string;
       jql: string;
-    }) => projectService.syncJiraIssues(projectId, host, email, token, jql),
+    }) => api.syncJiraIssues(projectId, host, email, token, jql),
     onSuccess: (data) => {
       toast.success(`Synced ${data.imported_count} issues from Jira`);
     },
