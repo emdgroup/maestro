@@ -3,3 +3,4 @@ export * from "./diff-utils";
 export * from "./ui-utils";
 export * from "./tauri-utils";
 export * from "./error-utils";
+export * from "./page-actions";

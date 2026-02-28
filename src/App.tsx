@@ -4,11 +4,16 @@ import { useSelectedProject } from "@/store/projectStore";
 import { AppHeader, ActionBar } from "@/components/common";
 import type { SettingsPageHandle } from "@/components/common";
 import { useBoardStore } from "@/store/boardStore";
-import type { ActionBarAction } from "@/components/common";
-import { Plus, Save, RotateCcw } from "lucide-react";
-import type { AppSettings, Project, Task } from "@/types/bindings";
+import type { Project, Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
+import { useSettings } from "@/services/settings.service";
+import {
+  usePageRouting,
+  getPageActions,
+  slideVariants,
+  PAGE_TRANSITION_DURATION,
+  PAGE_TRANSITION_EASING
+} from "@/utils";
 import { toast } from "sonner";
 import "./App.css";
 
@@ -38,48 +43,14 @@ function App() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [activePage, setActivePage] = useState<"kanban" | "agents" | "worktrees" | "settings">(
-    "kanban",
-  );
-  const [slideDirection, setSlideDirection] = useState(1);
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
-  // Query hooks for settings and mutations
+  // Query hooks for settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useSettings();
-  const { mutate: saveSettings } = useSaveSettings();
 
-  // Page order for determining slide direction
-  const pageOrder = { kanban: 0, agents: 1, worktrees: 2, settings: 3 };
-
-  // Define slide variants for consistent animation
-  const slideVariants = {
-    enter: (direction: number) => ({
-      x: `${100 * direction}%`,
-      opacity: 0,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-    },
-    exit: (direction: number) => ({
-      x: `${-100 * direction}%`,
-      opacity: 0,
-    }),
-  };
-
-  // Update active page and calculate slide direction
-  const handlePageChange = (page: typeof activePage) => {
-    if (page === activePage) return; // Don't animate if clicking same tab
-
-    const currentIndex = pageOrder[activePage];
-    const newIndex = pageOrder[page];
-    // 1 = moving right (new page > current), -1 = moving left (new page < current)
-    const direction = newIndex > currentIndex ? 1 : -1;
-
-    setSlideDirection(direction);
-    setActivePage(page);
-  };
+  // Page routing with slide animations
+  const { activePage, slideDirection, handlePageChange } = usePageRouting("kanban");
 
   // Initialize app when settings are loaded
   useEffect(() => {
@@ -107,26 +78,9 @@ function App() {
     setCurrentProject(selectedProject);
   }, [selectedProject]);
 
-  async function handleProjectSelected(project: Project) {
-    try {
-      console.log(`[DEBUG] App.tsx: handleProjectSelected starting with path: ${project.path}`);
-      console.log("[DEBUG] App.tsx: Project created/loaded successfully", project);
-      setCurrentProject(project);
-
-      const newSettings: AppSettings = {
-        theme_preference: settings?.theme_preference || "system",
-        updated_at: new Date().toISOString(),
-      };
-
-      console.log("[DEBUG] App.tsx: Saving settings with new project path");
-      saveSettings(newSettings);
-
-      console.log("[DEBUG] App.tsx: Project selected, main UI should now be visible");
-    } catch (err) {
-      console.error("[DEBUG] App.tsx: Failed in handleProjectSelected:", err);
-      // Show error to user
-      toast.error(`Failed to load project: ${err}`);
-    }
+  function handleProjectSelected(project: Project) {
+    console.log(`[DEBUG] App.tsx: Project selected - ${project.name} (${project.path})`);
+    setCurrentProject(project);
   }
 
   function handleTaskCreated(newTask: Task) {
@@ -138,50 +92,12 @@ function App() {
     setShowImportSettings(false);
   }
 
-  // Define page-specific actions
-  function getPageActions(): ActionBarAction[] {
-    switch (activePage) {
-      case "kanban":
-        return [
-          {
-            id: "add-task",
-            label: "Add Task",
-            icon: Plus,
-            variant: "accent",
-            onClick: () => setShowNewTaskModal(true),
-            align: "right",
-          },
-        ];
-      case "agents":
-        return [];
-      case "worktrees":
-        return [];
-      case "settings":
-        return [
-          {
-            id: "reset",
-            label: "Reset to Defaults",
-            icon: RotateCcw,
-            variant: "ghost",
-            onClick: () => {
-              settingsPageRef.current?.resetToDefaults();
-            },
-          },
-          {
-            id: "save",
-            label: "Save",
-            icon: Save,
-            variant: "accent",
-            onClick: async () => {
-              await settingsPageRef.current?.save();
-            },
-            align: "right",
-          },
-        ];
-      default:
-        return [];
-    }
-  }
+  // Get page-specific actions using utility function
+  const pageActions = getPageActions(activePage, {
+    onAddTask: () => setShowNewTaskModal(true),
+    onResetSettings: () => settingsPageRef.current?.resetToDefaults(),
+    onSaveSettings: async () => await settingsPageRef.current?.save(),
+  });
 
   return (
     <>
@@ -201,7 +117,7 @@ function App() {
             onBackToPicker={() => setCurrentProject(null)}
             agentCount={0}
           />
-          <ActionBar actions={getPageActions()} />
+          <ActionBar actions={pageActions} />
           <main className="flex-1 overflow-hidden relative">
             <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-sm text-muted-foreground">Loading...</p></div>}>
               <AnimatePresence initial={false} custom={slideDirection}>
@@ -213,7 +129,7 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <KanbanView
@@ -232,7 +148,7 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
@@ -247,7 +163,7 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <WorktreesView projectId={currentProject.id} worktrees={[]} />
@@ -262,7 +178,7 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
