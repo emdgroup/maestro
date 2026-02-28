@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-27T00:46:00.000Z"
+last_updated: "2026-02-28T00:00:00.000Z"
 progress:
-  total_phases: 22
-  completed_phases: 19
+  total_phases: 23
+  completed_phases: 20
   total_plans: 77
   completed_plans: 77
 ---
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-Phase: 20 of 22 (Refactor Frontend to use TanStack Query)
-Plan: 7 of 7 in current phase - COMPLETE
-Status: Phase 20-07 executed successfully (Wave 3 verification complete)
-Last activity: 2026-02-27 00:55 — Phase 20-07 complete (Wave 3 Verification: 0 direct invoke() remaining, 37 hooks verified, production build validated)
+Phase: 21 of 23 (Refactor Components Using Commands Object)
+Plan: 1 of 1 in current phase - COMPLETE
+Status: Phase 21 complete - 5 components refactored, service layer abstraction complete
+Last activity: 2026-02-28 — Phase 21-01 executed successfully
 
-**Next Action:** Execute Phase 21 (Query Optimization & Monitoring)
+**Next Action:** Phase 22 or production deployment
 
-Progress: [████████████████████] 100% (20/22 phases complete + 7/7 phase 20 plans complete)
+Progress: [████████████████████] 91% (21/23 phases complete)
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Progress: [████████████████████] 100% (2
 | Phase 20-05 P05 | 0.067 | 3 tasks | 5 files |
 | Phase 20-06 P06 | 0.042 | 3 tasks | 5 files |
 | Phase 20-07 P07 | 0.010 | 4 tasks | 2 files |
+| Phase 21-01 P01 | 0.083 | 8 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,7 @@ None currently.
 - Phase 18 added: Maestro Folder Architecture & Rebranding - Migrate from database-centric to project-local .maestro folder storage; rebrand from "GSD Orchestrator" to "Maestro"
 - Phase 19 added: Frontend Architecture Refactoring - Reorganize src/ to follow standard project structure with views/, services/, and grouped components
 - Phase 20 added: Refactor Frontend to use TanStack Query - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
+- Phase 21 added: Refactor Components Using Commands Object - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
 
 ## Session Continuity
 
@@ -387,3 +389,15 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
 - Wave 2 (Component Migration): 9 UI components migrated (3 plans)
 - Wave 3 (Verification): 0 regressions, production validated (1 plan)
 - Total: 37 TanStack Query hooks, 0 direct invoke() calls, ready for Phase 21
+
+**PHASE 21 COMPLETE** ✓ (2026-02-28)
+- Task 1: Extended connection.service.ts with 4 new file browser hooks
+- Task 2: Verified project.service.ts has all required hooks
+- Task 3: Refactored ProjectList.tsx to use service hooks
+- Task 4: Refactored ConnectionHeader.tsx to use service hooks
+- Task 5: Refactored FilePicker.tsx to use service hooks
+- Task 6: Refactored SettingsPage.tsx to use service hooks
+- Task 7: Refactored useSshConnectionManager.ts to use service hooks
+- Task 8: Comprehensive verification - 0 direct commands usage, TypeScript clean, build passes
+- Total: 5 components refactored, 15 command usages eliminated, service layer complete
+- Metrics: 0.083h duration, 8 commits, 6 files modified, 0 deviations
