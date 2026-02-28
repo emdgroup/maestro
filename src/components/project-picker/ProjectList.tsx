@@ -1,14 +1,13 @@
 import { toast } from "sonner";
 import { ProjectListItem, ProjectsListLayout } from "@/components";
 import { useProjectPickerNavigation } from "@/utils/hooks";
-import { useRecentProjects } from "@/services";
+import { useRecentProjects, useCreateProject, useProjectById, useRemoveProject } from "@/services";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
 import { Folder } from "lucide-react";
 import { ConnectionHeader, FilePicker } from "@/components/project-picker";
 import { Dialog, DialogContent } from "@/ui/dialog.tsx";
 import { useState } from "react";
-import { commands } from "@/types";
 
 /**
  * Unified component for displaying and managing project lists.
@@ -28,6 +27,10 @@ export function ProjectList() {
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();
 
+  // Initialize service hooks
+  const createProjectMutation = useCreateProject();
+  const removeProjectMutation = useRemoveProject();
+
   /**
    * Handle project selection from FilePicker
    * Creates project in database and sets it as selected in store
@@ -35,36 +38,36 @@ export function ProjectList() {
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
-      const result = await commands.createProject(selectedPath, connectionId ?? null);
-      if (result.status === "ok") {
-        setSelectedProject(result.data);
-        setShowFilePickerModal(false);
-      }
+      const result = await createProjectMutation.mutateAsync({
+        path: selectedPath,
+        connectionId: connectionId ?? 0,
+      });
+      setSelectedProject(result);
+      setShowFilePickerModal(false);
     } catch (error) {
-      toast.error(`Failed to open project: ${error}`);
+      // Error toast is handled by the mutation hook
     } finally {
       setProjectLoading(false);
     }
   };
 
-  const handleProjectClick = async (projectId: number) => {
-    try {
-      const result = await commands.getProject(projectId);
-      if (result.status === "ok") {
-        setSelectedProject(result.data);
-      }
-    } catch (error) {
-      toast.error(`Failed to open project: ${error}`);
+  const handleProjectClick = (projectId: number) => {
+    // Find the project from the recent list (already cached)
+    const project = recentProjects.find((p) => p.id === projectId);
+    if (project) {
+      setSelectedProject(project);
+    } else {
+      toast.error("Project not found in recent list");
     }
   };
 
   const handleRemoveProject = async (projectId: number) => {
     try {
-      await commands.removeProject(projectId);
+      await removeProjectMutation.mutateAsync(projectId);
       await refetch();
       toast.success("Project removed from recent list");
     } catch (error) {
-      toast.error(`Failed to remove project: ${error}`);
+      // Error toast is handled by the mutation hook
     }
   };
 
