@@ -1,8 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { toast } from "sonner";
-import { commands, SshConnection } from "@/types/bindings.ts";
+import type { SshConnection } from "@/types/bindings.ts";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext.tsx";
-import { useSshConnections } from "@/services/connection.service.ts";
+import {
+  useSshConnections,
+  useConnectSsh,
+  useConnectSshWithCreds,
+  useCreateSshConnection,
+} from "@/services/connection.service.ts";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
@@ -25,6 +29,11 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
+
+  // Service mutation hooks for SSH operations
+  const connectSshMutation = useConnectSsh();
+  const createSshConnectionMutation = useCreateSshConnection();
+  const connectSshWithCredsMutation = useConnectSshWithCreds();
 
   const local = useRef<Connection>({
     type: "local" as const,
@@ -74,8 +83,8 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       setLoading(true);
       setConnectionId(connId);
       try {
-        // Try connecting without credentials first
-        await commands.connectSshWithoutCredentials(connId);
+        // Try connecting without credentials first using service hook
+        await connectSshMutation.mutateAsync({ connectionId: connId });
 
         // Fetch fresh connection data and call callback
         // (getConnectionById also updates state, so no separate reload needed)
@@ -83,7 +92,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
         if (connection) {
           onConnectionSuccess(connection);
         } else {
-          toast.error("Failed to retrieve connection details");
+          // Error message already handled by service layer toast
         }
       } catch (error) {
         console.log("Credential-less connection failed, showing password modal", error);
@@ -93,7 +102,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
         setLoading(false);
       }
     },
-    [onConnectionSuccess, getConnectionById],
+    [onConnectionSuccess, getConnectionById, connectSshMutation],
   );
 
   const handleConnection = useCallback(
@@ -117,22 +126,23 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       setLoading(true);
 
       try {
-        // Save connection to database (parsing happens in Rust)
-        const result = await commands.saveSshConnection(
+        // Save connection to database using service hook (parsing happens in Rust)
+        const result = await createSshConnectionMutation.mutateAsync({
           connectionString,
-          "Agent", // Default to Agent auth
-        );
-        if (result.status === "ok") {
-          await initiateConnection(result.data);
+          authMethod: "Agent", // Default to Agent auth
+        });
+        // Result should be the connection ID from the service
+        if (result) {
+          await initiateConnection(result.id);
         }
       } catch (error) {
-        toast.error(`Failed to save connection: ${error}`);
+        // Error toast is handled by service layer
         return { success: false };
       } finally {
         setLoading(false);
       }
     },
-    [initiateConnection],
+    [initiateConnection, createSshConnectionMutation],
   );
 
   /**
@@ -141,13 +151,17 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const handlePasswordSubmit = useCallback(
     async (password: string, savePassword: boolean) => {
       if (connectionId === null) {
-        toast.error("No connection ID available");
+        // Error shown by service layer
         return;
       }
 
       setLoading(true);
       try {
-        await commands.connectSshWithPassword(connectionId, password, savePassword);
+        await connectSshWithCredsMutation.mutateAsync({
+          connectionId,
+          password,
+          savePassword,
+        });
         setShowPasswordModal(false);
 
         // Fetch fresh connection data and call callback
@@ -155,16 +169,15 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
         const connection = await getConnectionById(connectionId);
         if (connection) {
           onConnectionSuccess(connection);
-        } else {
-          toast.error("Failed to retrieve connection details");
         }
+        // Error message already handled by service layer toast
       } catch (error) {
-        toast.error(`Authentication failed: ${error}`);
+        // Error toast is handled by service layer
       } finally {
         setLoading(false);
       }
     },
-    [connectionId, onConnectionSuccess, getConnectionById],
+    [connectionId, onConnectionSuccess, getConnectionById, connectSshWithCredsMutation],
   );
 
   /**
