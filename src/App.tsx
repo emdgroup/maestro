@@ -12,21 +12,23 @@ import {
   getPageActions,
   slideVariants,
   PAGE_TRANSITION_DURATION,
-  PAGE_TRANSITION_EASING
+  PAGE_TRANSITION_EASING,
 } from "@/utils";
 import { toast } from "sonner";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
-const KanbanView = lazy(() => import("@/views").then(m => ({ default: m.KanbanView })));
-const AgentsView = lazy(() => import("@/views").then(m => ({ default: m.AgentsView })));
-const WorktreesView = lazy(() => import("@/views").then(m => ({ default: m.WorktreesView })));
-const SettingsView = lazy(() => import("@/views").then(m => ({ default: m.SettingsView })));
+const KanbanView = lazy(() => import("@/views").then((m) => ({ default: m.KanbanView })));
+const AgentsView = lazy(() => import("@/views").then((m) => ({ default: m.AgentsView })));
+const WorktreesView = lazy(() => import("@/views").then((m) => ({ default: m.WorktreesView })));
+const SettingsView = lazy(() => import("@/views").then((m) => ({ default: m.SettingsView })));
 
 // Lazy load modals for code splitting (performance optimization)
-const TaskModal = lazy(() => import("@/components/kanban").then(m => ({ default: m.TaskModal })));
-const TaskDetail = lazy(() => import("@/components/task").then(m => ({ default: m.TaskDetail })));
-const ImportSettings = lazy(() => import("@/components/task").then(m => ({ default: m.ImportSettings })));
+const TaskModal = lazy(() => import("@/components/kanban").then((m) => ({ default: m.TaskModal })));
+const TaskDetail = lazy(() => import("@/components/task").then((m) => ({ default: m.TaskDetail })));
+const ImportSettings = lazy(() =>
+  import("@/components/task").then((m) => ({ default: m.ImportSettings })),
+);
 
 function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -119,7 +121,13 @@ function App() {
           />
           <ActionBar actions={pageActions} />
           <main className="flex-1 overflow-hidden relative">
-            <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-sm text-muted-foreground">Loading...</p></div>}>
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-muted-foreground">Loading...</p>
+                </div>
+              }
+            >
               <AnimatePresence initial={false} custom={slideDirection}>
                 {activePage === "kanban" && (
                   <motion.div
@@ -129,7 +137,10 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
+                    transition={{
+                      duration: PAGE_TRANSITION_DURATION,
+                      ease: PAGE_TRANSITION_EASING,
+                    }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <KanbanView
@@ -148,7 +159,10 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
+                    transition={{
+                      duration: PAGE_TRANSITION_DURATION,
+                      ease: PAGE_TRANSITION_EASING,
+                    }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
@@ -163,7 +177,10 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
+                    transition={{
+                      duration: PAGE_TRANSITION_DURATION,
+                      ease: PAGE_TRANSITION_EASING,
+                    }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <WorktreesView projectId={currentProject.id} worktrees={[]} />
@@ -178,7 +195,10 @@ function App() {
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
+                    transition={{
+                      duration: PAGE_TRANSITION_DURATION,
+                      ease: PAGE_TRANSITION_EASING,
+                    }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
                     <SettingsView ref={settingsPageRef} projectId={currentProject.id} />

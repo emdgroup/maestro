@@ -271,12 +271,15 @@ pub fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Get connection details before deleting (for keyring cleanup)
     let SshConnection {host, username, ..} = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
+
+    remove_projects_by_connection_id(app_state.clone(), connection_id);
+
+    println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
     conn.execute(

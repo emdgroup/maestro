@@ -98,6 +98,23 @@ pub fn remove_project(
     Ok(())
 }
 
+/// remove projects by connection id
+#[tauri::command]
+pub fn remove_projects_by_connection_id(
+    app_state: State<Arc<AppState>>,
+    connection_id: i32,
+) -> Result<(), String> {
+    println!("remove_projects_by_connection_id({}) called via IPC", connection_id);
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Delete from database
+    conn.execute("DELETE FROM projects WHERE connection_id = ?",[connection_id])
+        .map_err(|e| e.to_string())?;
+
+    println!("Deleted projects matching connection: {}", connection_id);
+    Ok(())
+}
+
 /// Create a new project
 #[tauri::command]
 #[specta::specta]

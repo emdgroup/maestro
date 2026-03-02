@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-02-28T00:00:00.000Z"
 progress:
   total_phases: 23
-  completed_phases: 20
-  total_plans: 77
-  completed_plans: 77
+  completed_phases: 21
+  total_plans: 78
+  completed_plans: 78
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -85,6 +85,7 @@ Progress: [████████████████████] 91% (21
 - Phase 20-05: 0.067h (Migrate Kanban Workflow Components to TanStack Query Hooks - 3 components (SyncButton, TaskCard, TaskModal), 2 sync mutations added, 60+ lines state mgmt removed)
 - Phase 20-06: 0.042h (Migrate Final Components and Hooks to TanStack Query - 3 components (FilePicker, ImportSettings, useRecentProjects), Wave 2 complete, 9/9 components migrated)
 - Phase 20-07: 0.010h (Wave 3 Verification: Verify 0 direct invoke() calls remain, audit hook consistency, validate build, generate completion report - 37 total hooks verified, 2 regressions auto-fixed)
+- Phase 21-01: 0.083h (Refactor Components Using Commands Object - 4 new file browser hooks in connection.service, refactored 5 files (ProjectList, ConnectionHeader, FilePicker, SettingsPage, useSshConnectionManager) to service hooks, eliminated all 15 direct commands usages, grep verified 0 remaining)
 
 *Updated after each plan completion*
 | Phase 19 P04 | 0.16 | 2 tasks | 12 files |

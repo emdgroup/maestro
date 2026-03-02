@@ -17,8 +17,9 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 17: Polish & Testing** - Final QA, edge cases, production build validation
 - [x] **Phase 17.1: Critical UI Fixes (INSERTED)** - Fix production folder selection, match reference design, verify with Playwright
 - [x] **Phase 18: Maestro Folder Architecture & Rebranding** - Migrate to project-local .maestro folder for state/settings, rename project to Maestro
-- [ ] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
-- [ ] **Phase 20: Refactor Frontend to use TanStack Query** - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
+- [x] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
+- [x] **Phase 20: Refactor Frontend to use TanStack Query** - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
+- [x] **Phase 21: Refactor Components Using Commands Object** - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
 
 ## Phase Details
 
@@ -347,10 +348,56 @@ This phase modernizes the frontend data layer by adopting TanStack Query as the 
 
 ---
 
+### Phase 21: Refactor Components Using Commands Object
+
+**Goal**: Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
+
+**Depends on**: Phase 20
+
+**Requirements**: None (architectural improvement)
+
+**Success Criteria** (what must be TRUE):
+  1. No components directly import or use the `commands` object from bindings.ts
+  2. All components use service hooks from service layer for IPC operations
+  3. Type safety maintained through service layer abstractions
+  4. Loading and error states properly managed through service hooks
+  5. Production build passes with no TypeScript errors
+
+**Plans**: 1 plan
+
+Plans:
+- [x] 21-PLAN.md — Extend connection.service.ts with 4 file browser hooks; verify project.service.ts hooks; refactor ProjectList, ConnectionHeader, FilePicker, SettingsPage, useSshConnectionManager to service hooks; eliminate all 15 direct commands usages
+
+**Details:**
+
+This phase completes the architectural refactoring by eliminating direct usage of the auto-generated `commands` object from TypeScript bindings. After Phase 19 (service layer creation) and Phase 20 (TanStack Query integration), some components may still directly import and use the `commands` object instead of going through the service layer.
+
+**Current Issue:**
+- Some components may directly use `commands.someCommand()` from bindings.ts
+- Bypasses service layer abstraction and TanStack Query benefits
+- Inconsistent patterns across codebase
+
+**Target State:**
+- All IPC operations go through service layer (src/services/)
+- Components use hooks from services (useQuery/useMutation patterns)
+- `commands` object only used internally by service layer
+- Consistent error handling and loading states everywhere
+
+**Migration Approach:**
+1. Audit codebase for direct `commands` imports
+2. For each component using `commands` directly:
+   - Identify which commands are being called
+   - Replace with corresponding service hooks
+   - Remove direct `commands` import
+3. Verify no direct `commands` usage remains outside service layer
+4. Run production build to confirm type safety
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 → 19
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 → 19 → 20 → 21
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
@@ -362,9 +409,10 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 
 | 17.1 - Critical UI Fixes (INSERTED) | 4 | Complete | 2026-02-11 |
 | 18 - Maestro Folder Architecture & Rebranding | 4 | Complete | 2026-02-23 |
 | 19 - Frontend Architecture Refactoring | 6 | Complete | 2026-02-26 |
-| 20 - Refactor Frontend to use TanStack Query | 6/7 | In Progress | 2026-02-27 |
+| 20 - Refactor Frontend to use TanStack Query | 7 | Complete | 2026-02-27 |
+| 21 - Refactor Components Using Commands Object | 1 | Complete | 2026-02-28 |
 
-**Total v1.1 work:** 21 plans across 9 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + 6 from Phase 19 + 7 from Phase 20)
+**Total v1.1 work:** 34 plans across 10 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + 6 from Phase 19 + 7 from Phase 20 + 1 from Phase 21)
 
 ---
 

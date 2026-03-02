@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import type { ProjectConfigRequest } from "@/types";
+import {localConnectionId} from "@/contexts/ConnectionContext.tsx";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -12,12 +13,12 @@ import type { ProjectConfigRequest } from "@/types";
  * Query key factory for project-related queries
  * Ensures consistent cache invalidation across components
  */
-const projectQueryKeys = {
+export const projectQueryKeys = {
   baseKey: ["projects"] as const,
   list: () => [...projectQueryKeys.baseKey, "list"] as const,
-  listByConnection: (connectionId: number) => [...projectQueryKeys.list(), connectionId] as const,
-  details: () => [...projectQueryKeys.baseKey, "details"] as const,
-  detail: (id: number) => [...projectQueryKeys.details(), id] as const,
+  listByConnection: (connectionId: number | string) =>
+    [...projectQueryKeys.list(), connectionId] as const,
+  details: (id: number) => [...projectQueryKeys.baseKey, "details", id] as const,
   settings: () => [...projectQueryKeys.baseKey, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
 };
@@ -38,9 +39,9 @@ export function useProjects() {
  */
 export function useRecentProjects(connectionId: number | undefined | null) {
   return useQuery({
-    queryKey: projectQueryKeys.listByConnection(connectionId || 0),
+    queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
     queryFn: () => api.getConnectionProjects(connectionId || null),
-    enabled: !!connectionId,
+    staleTime: Infinity,
   });
 }
 
@@ -49,7 +50,7 @@ export function useRecentProjects(connectionId: number | undefined | null) {
  */
 export function useProjectById(projectId: number) {
   return useQuery({
-    queryKey: projectQueryKeys.detail(projectId),
+    queryKey: projectQueryKeys.details(projectId),
     queryFn: () => api.getProject(projectId),
     staleTime: Infinity,
   });
@@ -73,10 +74,12 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ path, connectionId }: { path: string; connectionId: number }) =>
+    mutationFn: ({ path, connectionId }: { path: string; connectionId: number | null }) =>
       api.createProject(path, connectionId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.list() });
+    onSuccess: (_data, { connectionId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
+      });
     },
     onError: (error) => {
       toast.error(
@@ -89,14 +92,14 @@ export function useCreateProject() {
 /**
  * Mutation hook for removing a project
  */
-export function useRemoveProject() {
+export function useRemoveProject(connectionId: number | string | null | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (projectId: number) => api.removeProject(projectId),
     onSuccess: (_data, projectId) => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.detail(projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.details(projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId) })
     },
     onError: (error) => {
       toast.error(
@@ -115,9 +118,9 @@ export function useUpdateProjectSettings() {
   return useMutation({
     mutationFn: ({ projectId, config }: { projectId: number; config: ProjectConfigRequest }) =>
       api.updateProjectSettings(projectId, config),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.settingsDetail(variables.projectId),
+        queryKey: projectQueryKeys.settingsDetail(projectId),
       });
     },
     onError: (error) => {
@@ -142,9 +145,9 @@ export function useSaveImportConfig() {
       projectId: number;
       importConfig: Record<string, unknown>;
     }) => api.saveImportConfig(projectId, "jira", JSON.parse(importConfig.toString())),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.settingsDetail(variables.projectId),
+        queryKey: projectQueryKeys.settingsDetail(projectId),
       });
     },
     onError: (error) => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { Button } from "@/ui/button";
 import type { SshConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
@@ -12,11 +12,11 @@ import {
   BreadcrumbSeparator,
 } from "@/ui/breadcrumb";
 import {
-  useListLocalDirectories,
-  useListRemoteDirectories,
-  useGetDefaultFilePickerPath,
-  useListDrives,
-} from "@/services/connection.service";
+  usePathNavigation,
+  useKeyboardNavigation,
+  useFilePickerInitialization,
+} from "@/utils/hooks";
+import { useListDirectories } from "@/services";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
@@ -32,269 +32,111 @@ export function FilePicker({
   loading: externalLoading = false,
 }: FilePickerProps) {
   const isLocal = !connection;
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const [currentPath, setCurrentPath] = useState<string>("");
-  const [directories, setDirectories] = useState<string[]>([]);
-  const [drives, setDrives] = useState<string[]>([]);
-  const [showHidden, setShowHidden] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  // Custom hooks handle all business logic
+  const keyboard = useKeyboardNavigation();
+  const initialization = useFilePickerInitialization(isLocal, connection);
+  const navigation = usePathNavigation(isLocal, initialization.drives);
+  const { data: directories = [], isLoading: directoriesLoading } = useListDirectories(
+    connection?.id,
+    navigation.currentPath,
+  );
 
-  const directoryButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  // Set initial path when initialization completes
+  useEffect(() => {
+    if (initialization.isInitialized && initialization.initialPath && !navigation.currentPath) {
+      navigation.setCurrentPath(initialization.initialPath);
+    }
+  }, [initialization, navigation]);
 
   // Filter directories based on showHidden toggle
-  const visibleDirectories = showHidden
+  const visibleDirectories = initialization.showHidden
     ? directories
     : directories.filter((dir) => !dir.startsWith("."));
 
-  const handleDirectoryClick = useCallback(
-    (dirName: string) => {
-      // Handle drive selection on Windows
-      if (currentPath === DRIVES_ROOT) {
-        setCurrentPath(dirName);
-        return;
-      }
-
-      // Handle normal directory navigation
-      let newPath: string;
-
-      // Check if current path is a drive root (e.g., "C:/")
-      if (/^[A-Z]:\/$/i.test(currentPath)) {
-        newPath = `${currentPath}${dirName}`;
-      } else if (currentPath === "/") {
-        newPath = `/${dirName}`;
-      } else {
-        newPath = `${currentPath}/${dirName}`;
-      }
-
-      setCurrentPath(newPath);
-    },
-    [currentPath],
-  );
-
-  const handleParentDirectory = useCallback(() => {
-    // Special case: at drives root, can't go up
-    if (currentPath === DRIVES_ROOT) {
-      return;
-    }
-
-    // Check if we're at a drive root on Windows (e.g., "C:/")
-    if (isLocal && drives.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
-      // Go back to drives list
-      setCurrentPath(DRIVES_ROOT);
-      return;
-    }
-
-    // Unix-style or nested Windows path
-    const parts = currentPath.split("/").filter(Boolean);
-    if (parts.length > 0) {
-      parts.pop();
-
-      // Check if after popping, we have a drive letter (e.g., ["C:"])
-      if (parts.length === 1 && /^[A-Z]:$/i.test(parts[0])) {
-        setCurrentPath(`${parts[0]}/`);
-      } else if (parts.length === 0) {
-        // No parts left, go to root
-        setCurrentPath("/");
-      } else {
-        // Check if first part is a Windows drive letter
-        const isWindowsPath = /^[A-Z]:$/i.test(parts[0]);
-        const newPath = isWindowsPath ? parts.join("/") : "/" + parts.join("/");
-        setCurrentPath(newPath);
-      }
-    }
-  }, [isLocal, currentPath, drives]);
-
-  // Service hooks for file operations
-  const listLocalDirsMutation = useListLocalDirectories();
-  const listRemoteDirsMutation = useListRemoteDirectories();
-
-  const loadDirectories = useCallback(
-    async (path: string) => {
-      // Special case: show drives on Windows when at drives root
-      if (path === DRIVES_ROOT) {
-        setDirectories([]);
-        return;
-      }
-
-      if (isLocal) {
-        try {
-          const result = await listLocalDirsMutation.mutateAsync(path);
-          setDirectories(result);
-        } catch (error) {
-          setDirectories([]);
-        }
-      } else {
-        try {
-          const result = await listRemoteDirsMutation.mutateAsync({
-            connectionId: connection!.id,
-            path,
-          });
-          setDirectories(result);
-        } catch (error) {
-          setDirectories([]);
-        }
-      }
-    },
-    [isLocal, connection?.id, listLocalDirsMutation, listRemoteDirsMutation],
-  );
-
-  const handleBreadcrumbClick = useCallback(
-    (index: number) => {
-      if (index === -1) {
-        // Root click - on Windows with drives, go to drives root
-        if (isLocal && drives.length > 0) {
-          setCurrentPath(DRIVES_ROOT);
-        } else {
-          setCurrentPath("/");
-        }
-        return;
-      }
-
-      const parts = currentPath.split("/").filter(Boolean);
-      const selectedPart = parts.slice(0, index + 1);
-
-      // Check if we're clicking on a drive letter
-      if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
-        setCurrentPath(`${selectedPart[0]}/`);
-      } else {
-        // Check if first part is a Windows drive letter
-        const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
-        const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
-        setCurrentPath(newPath);
-      }
-    },
-    [isLocal, drives, currentPath],
-  );
-
-  // Service hook for getting default path
-  const getDefaultPathQuery = useGetDefaultFilePickerPath();
-
-  // Initialize default path on mount
+  // Single effect to load directories when path changes
   useEffect(() => {
-    async function initializePath() {
-      if (isLocal && !isInitialized) {
-        try {
-          const data = getDefaultPathQuery.data;
-          if (data) {
-            setCurrentPath(data);
-            setIsInitialized(true);
-          } else {
-            setCurrentPath("/");
-            setIsInitialized(true);
-          }
-        } catch (error) {
-          console.error("Failed to get default path:", error);
-          setCurrentPath("/");
-          setIsInitialized(true);
-        }
-      } else if (!isLocal && !isInitialized) {
-        // For remote connections, use /home/username
-        const remotePath = `/home/${connection!.username}`;
-        setCurrentPath(remotePath);
-        setIsInitialized(true);
-      }
+    if (initialization.isInitialized && navigation.currentPath) {
+      keyboard.setSelectedIndex(-1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    navigation.currentPath,
+    initialization.isInitialized,
+    // loader.loadDirectories is stable, but we omit to avoid any potential re-render loops
+    // keyboard.setSelectedIndex is stable from useState
+  ]);
 
-    void initializePath();
-  }, [isLocal, isInitialized, connection, getDefaultPathQuery.data]);
-
-  // Service hook for loading drives
-  const listDrivesQuery = useListDrives();
-
-  // Load drives on Windows (local only)
-  useEffect(() => {
-    if (isLocal && isInitialized && listDrivesQuery.data) {
-      setDrives(listDrivesQuery.data);
-    }
-  }, [isLocal, isInitialized, listDrivesQuery.data]);
-
-  useEffect(() => {
-    if (isInitialized && currentPath) {
-      void loadDirectories(currentPath);
-      setSelectedIndex(-1); // Reset selection when path changes
-    }
-  }, [currentPath, isInitialized, loadDirectories]);
-
-  // Compute loading state from mutations
-  const loading = listLocalDirsMutation.isPending || listRemoteDirsMutation.isPending || getDefaultPathQuery.isLoading || listDrivesQuery.isLoading;
-
-  // Keyboard navigation
+  // Keyboard navigation effect
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const showingDrives = isLocal && currentPath === DRIVES_ROOT;
-      const itemList = showingDrives ? drives : visibleDirectories;
-      const hasParent = !showingDrives && currentPath !== "/" && currentPath !== DRIVES_ROOT;
+      // Only handle navigation keys - don't interfere with other inputs
+      if (!["ArrowDown", "ArrowUp", "Enter", "Backspace"].includes(e.key)) {
+        return;
+      }
+
+      const showingDrives = isLocal && navigation.currentPath === DRIVES_ROOT;
+      const itemList = showingDrives ? initialization.drives : visibleDirectories;
+      const hasParent =
+        !showingDrives && navigation.currentPath !== "/" && navigation.currentPath !== DRIVES_ROOT;
       const totalItems = hasParent ? itemList.length + 1 : itemList.length;
 
       // Arrow key navigation
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((prev) => {
+        keyboard.setSelectedIndex((prev) => {
           const next = prev + 1;
           return next >= totalItems ? 0 : next;
         });
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((prev) => {
+        keyboard.setSelectedIndex((prev) => {
           const next = prev - 1;
           return next < 0 ? totalItems - 1 : next;
         });
-      } else if (e.key === "Enter" && selectedIndex >= 0) {
+      } else if (e.key === "Enter" && keyboard.selectedIndex >= 0) {
         e.preventDefault();
         // Execute the selected item
-        if (hasParent && selectedIndex === 0) {
-          handleParentDirectory();
+        if (hasParent && keyboard.selectedIndex === 0) {
+          navigation.navigateToParent();
         } else {
-          const itemIndex = hasParent ? selectedIndex - 1 : selectedIndex;
+          const itemIndex = hasParent ? keyboard.selectedIndex - 1 : keyboard.selectedIndex;
           const item = itemList[itemIndex];
           if (item) {
-            handleDirectoryClick(item);
+            navigation.navigateToDirectory(item);
           }
         }
       } else if (e.key === "Backspace" && !showingDrives) {
         e.preventDefault();
-        handleParentDirectory();
+        navigation.navigateToParent();
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    selectedIndex,
-    currentPath,
-    drives,
-    directories,
-    showHidden,
-    isLocal,
-    handleDirectoryClick,
-    handleParentDirectory,
-    visibleDirectories,
-  ]);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    if (selectedIndex >= 0) {
-      const button = directoryButtonRefs.current.get(selectedIndex);
-      if (button) {
-        button.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
+    const container = containerRef.current;
+    if (container) {
+      // Focus container to receive keyboard events
+      container.focus();
+      container.addEventListener("keydown", handleKeyDown);
+      return () => container.removeEventListener("keydown", handleKeyDown);
     }
-  }, [selectedIndex]);
 
-  function handleSelectCurrentDirectory() {
-    // Always use current directory
-    onProjectSelect(currentPath, connection?.id);
-  }
+    return undefined;
+  }, [keyboard, navigation, initialization.drives, visibleDirectories, isLocal]);
 
-  // Parse path into breadcrumb parts
-  const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);
+  const handleSelectCurrentDirectory = useCallback(() => {
+    onProjectSelect(navigation.currentPath, connection?.id);
+  }, [navigation.currentPath, connection?.id, onProjectSelect]);
 
-  // Check if we're showing drives
-  const showingDrives = isLocal && currentPath === DRIVES_ROOT;
+  // Compute loading state
+  const loading = directoriesLoading || initialization.isLoading;
 
   return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      className="flex flex-col h-full max-h-full overflow-hidden outline-none"
+    >
       <div className="text-center p-6 pb-4 shrink-0">
         <h2 className="text-2xl font-semibold mb-2">Select Project Directory</h2>
         {connection && (
@@ -314,16 +156,16 @@ export function FilePicker({
                   render={(props) => (
                     <button
                       {...props}
-                      onClick={() => handleBreadcrumbClick(-1)}
+                      onClick={() => navigation.navigateToBreadcrumb(-1)}
                       className="flex items-center gap-1 text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
                     >
                       <Home className="w-4 h-4" />
-                      <span>{showingDrives ? "Drives" : "Root"}</span>
+                      <span>{navigation.isDrivesRoot ? "Drives" : "Root"}</span>
                     </button>
                   )}
                 />
               </BreadcrumbItem>
-              {pathParts.map((part: string, index: number) => (
+              {navigation.pathParts.map((part: string, index: number) => (
                 <div key={index} className="contents">
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
@@ -331,7 +173,7 @@ export function FilePicker({
                       render={(props) => (
                         <button
                           {...props}
-                          onClick={() => handleBreadcrumbClick(index)}
+                          onClick={() => navigation.navigateToBreadcrumb(index)}
                           className="text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
                         >
                           {part}
@@ -352,21 +194,21 @@ export function FilePicker({
           ) : (
             <div className="divide-y divide-border">
               {/* Show drives on Windows when at drives root */}
-              {showingDrives ? (
-                drives.length === 0 ? (
+              {navigation.isDrivesRoot ? (
+                initialization.drives.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No drives found</p>
                 ) : (
-                  drives.map((drive, index) => (
+                  initialization.drives.map((drive, index) => (
                     <button
                       key={drive}
                       ref={(el) => {
-                        if (el) directoryButtonRefs.current.set(index, el);
-                        else directoryButtonRefs.current.delete(index);
+                        if (el) keyboard.directoryButtonRefs.current.set(index, el);
+                        else keyboard.directoryButtonRefs.current.delete(index);
                       }}
-                      onClick={() => handleDirectoryClick(drive)}
+                      onClick={() => navigation.navigateToDirectory(drive)}
                       disabled={loading}
                       className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                        selectedIndex === index ? "bg-accent" : ""
+                        keyboard.selectedIndex === index ? "bg-accent" : ""
                       }`}
                     >
                       <HardDrive className="w-4 h-4 shrink-0" />
@@ -377,15 +219,17 @@ export function FilePicker({
               ) : (
                 <>
                   {/* Parent directory ".." button - show unless at root or drives root */}
-                  {currentPath !== "/" && currentPath !== DRIVES_ROOT && (
+                  {navigation.currentPath !== "/" && navigation.currentPath !== DRIVES_ROOT && (
                     <button
                       ref={(el) => {
-                        if (el) directoryButtonRefs.current.set(0, el);
-                        else directoryButtonRefs.current.delete(0);
+                        if (el) keyboard.directoryButtonRefs.current.set(0, el);
+                        else keyboard.directoryButtonRefs.current.delete(0);
                       }}
-                      onClick={handleParentDirectory}
+                      onClick={navigation.navigateToParent}
                       disabled={loading}
-                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset`}
+                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+                        keyboard.selectedIndex === 0 ? "bg-accent" : ""
+                      }`}
                     >
                       <FolderUp className="w-4 h-4 shrink-0" />
                       <span className="truncate">..</span>
@@ -399,19 +243,20 @@ export function FilePicker({
                     </p>
                   ) : (
                     visibleDirectories.map((dir, index) => {
-                      const hasParent = currentPath !== "/" && currentPath !== DRIVES_ROOT;
+                      const hasParent =
+                        navigation.currentPath !== "/" && navigation.currentPath !== DRIVES_ROOT;
                       const itemIndex = hasParent ? index + 1 : index;
                       return (
                         <button
                           key={dir}
                           ref={(el) => {
-                            if (el) directoryButtonRefs.current.set(itemIndex, el);
-                            else directoryButtonRefs.current.delete(itemIndex);
+                            if (el) keyboard.directoryButtonRefs.current.set(itemIndex, el);
+                            else keyboard.directoryButtonRefs.current.delete(itemIndex);
                           }}
-                          onClick={() => handleDirectoryClick(dir)}
+                          onClick={() => navigation.navigateToDirectory(dir)}
                           disabled={loading}
                           className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                            selectedIndex === itemIndex ? "bg-accent" : ""
+                            keyboard.selectedIndex === itemIndex ? "bg-accent" : ""
                           }`}
                         >
                           <Folder className="size-4 shrink-0" />
@@ -431,8 +276,8 @@ export function FilePicker({
           <div className="flex items-center gap-2 shrink-0">
             <Switch
               id="show-hidden"
-              checked={showHidden}
-              onCheckedChange={(checked) => setShowHidden(checked)}
+              checked={initialization.showHidden}
+              onCheckedChange={(checked) => initialization.setShowHidden(checked)}
               className="focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 data-checked:bg-accent data-unchecked:bg-muted-foreground/25 dark:data-unchecked:bg-muted-foreground/25"
             />
             <Label
@@ -445,13 +290,13 @@ export function FilePicker({
 
           <div className="ml-auto">
             <p className="text-xs text-muted-foreground font-mono truncate">
-              {showingDrives ? "Select a drive" : currentPath}
+              {navigation.isDrivesRoot ? "Select a drive" : navigation.currentPath}
             </p>
           </div>
 
           <Button
             onClick={handleSelectCurrentDirectory}
-            disabled={loading || externalLoading || showingDrives}
+            disabled={loading || externalLoading || navigation.isDrivesRoot}
             variant="accent"
             size="default"
             className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"

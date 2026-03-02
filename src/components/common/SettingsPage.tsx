@@ -115,7 +115,15 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         setError(errorMessage);
         setLoading(false);
       }
-    }, [projectSettingsQuery.data, projectSettingsQuery.isLoading, projectSettingsQuery.error, setState, reset, setLoading, setError]);
+    }, [
+      projectSettingsQuery.data,
+      projectSettingsQuery.isLoading,
+      projectSettingsQuery.error,
+      setState,
+      reset,
+      setLoading,
+      setError,
+    ]);
 
     const onSubmit = async (data: ProjectSettingsFormData) => {
       if (!data.model_default) {

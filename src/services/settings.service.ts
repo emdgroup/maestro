@@ -27,8 +27,7 @@ export function useSettings() {
   return useQuery({
     queryKey: settingsQueryKeys.lists(),
     queryFn: () => api.getSettings(),
-    staleTime: 600000, // 10 minutes - settings rarely change
-    refetchOnWindowFocus: true, // Refetch if user switches windows
+    staleTime: Infinity,
   });
 }
 

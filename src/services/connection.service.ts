@@ -1,24 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
-import { SshAuthMethod, SshConnection } from "@/types/bindings";
+import { SshAuthMethod } from "@/types/bindings";
 
 /**
  * Query key factory for SSH connection-related queries
  * Ensures consistent cache invalidation across components
  */
-const connectionQueryKeys = {
+export const connectionQueryKeys = {
   baseKey: ["ssh-connections"] as const,
-  lists: () => [...connectionQueryKeys.baseKey, "list"] as const,
-  list: () => [...connectionQueryKeys.lists()] as const,
-  details: () => [...connectionQueryKeys.baseKey, "detail"] as const,
-  detail: (connectionId: number | string) =>
-    [...connectionQueryKeys.details(), connectionId] as const,
+  list: () => [...connectionQueryKeys.baseKey, "list"] as const,
+  details: (connectionId: number | string) =>
+    [...connectionQueryKeys.baseKey, "detail", connectionId] as const,
   fileBrowser: () => [...connectionQueryKeys.baseKey, "file-browser"] as const,
-  localDirs: (path: string) =>
-    [...connectionQueryKeys.fileBrowser(), "local", path] as const,
-  remoteDirs: (connectionId: number, path: string) =>
-    [...connectionQueryKeys.fileBrowser(), "remote", connectionId, path] as const,
+  dirs: (connectionId: number | null | undefined, path: string) =>
+    [...connectionQueryKeys.fileBrowser(), connectionId ?? "local", path] as const,
   defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
 };
@@ -30,9 +26,7 @@ const connectionQueryKeys = {
 export function useSshConnections() {
   return useQuery({
     queryKey: connectionQueryKeys.list(),
-    queryFn: () => {
-      return api.getSshConnections();
-    },
+    queryFn: () => api.getSshConnections(),
   });
 }
 
@@ -42,7 +36,7 @@ export function useSshConnections() {
  */
 export function useSshConnectionById(connectionId: number) {
   return useQuery({
-    queryKey: connectionQueryKeys.detail(connectionId),
+    queryKey: connectionQueryKeys.details(connectionId),
     queryFn: () => api.getSshConnection(connectionId),
   });
 }
@@ -58,9 +52,7 @@ export function useCreateSshConnection() {
     }: {
       connectionString: string;
       authMethod: SshAuthMethod;
-    }) => {
-      return api.saveSshConnection(connectionString, authMethod);
-    },
+    }) => api.saveSshConnection(connectionString, authMethod),
     onSuccess: () => {
       toast.success("SSH connection created successfully");
     },
@@ -77,16 +69,12 @@ export function useConnectSsh() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ connectionId }: { connectionId: number }) => {
-      return api.connectSshWithoutCredentials(connectionId);
-    },
+    mutationFn: ({ connectionId }: { connectionId: number }) =>
+      api.connectSshWithoutCredentials(connectionId),
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection created successfully");
-    },
-    onError: (error) => {
-      toast.error(`Failed to create SSH connection: ${error}`);
     },
   });
 }
@@ -106,16 +94,14 @@ export function useConnectSshWithCreds() {
       connectionId: number;
       password: string;
       savePassword: boolean;
-    }) => {
-      return api.connectSshWithPassword(connectionId, password, savePassword);
-    },
+    }) => api.connectSshWithPassword(connectionId, password, savePassword),
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection created successfully");
     },
     onError: (error) => {
-      toast.error(`Failed to create SSH connection: ${error}`);
+      toast.error(`Failed to connect: ${error}`);
     },
   });
 }
@@ -130,39 +116,12 @@ export function useUpdateSshConnection() {
   return useMutation({
     mutationFn: ({ connectionId, displayName }: { connectionId: number; displayName: string }) =>
       api.renameSshConnection(connectionId, displayName),
-    onMutate: async ({ connectionId, displayName }) => {
-      // Cancel any outgoing refetches to prevent overwriting our optimistic update
-      await queryClient.cancelQueries({ queryKey: connectionQueryKeys.list() });
-
-      // Snapshot the previous value for rollback on error
-      const previousConnections = queryClient.getQueryData<SshConnection[]>(
-        connectionQueryKeys.list(),
-      );
-
-      // Optimistically update the cache
-      queryClient.setQueryData<SshConnection[]>(connectionQueryKeys.list(), (old) => {
-        if (!old) return old;
-        return old.map((conn) =>
-          conn.id === connectionId ? { ...conn, display_name: displayName } : conn,
-        );
-      });
-
-      // Return context with snapshot for potential rollback
-      return { previousConnections };
-    },
-    onError: (error, _variables, context) => {
-      // Rollback to previous state on error
-      if (context?.previousConnections) {
-        queryClient.setQueryData(connectionQueryKeys.list(), context.previousConnections);
-      }
-      toast.error(`Failed to rename connection: ${error}`);
-    },
-    onSuccess: () => {
+    onSuccess: (_data, {connectionId}) => {
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.details(connectionId)})
       toast.success("Connection renamed successfully");
     },
-    onSettled: async () => {
-      // Always refetch after mutation to ensure cache is in sync with server
-      await queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
+    onError: (error) => {
+      toast.error(`Failed to rename connection: ${error}`);
     },
   });
 }
@@ -202,29 +161,15 @@ export function useForgetSavedPassword() {
 }
 
 /**
- * Mutation hook for listing local directories
- * Used by file browser to navigate local filesystem
- */
-export function useListLocalDirectories() {
-  return useMutation({
-    mutationFn: (path: string) => api.listLocalDirectories(path),
-    onError: (error) => {
-      toast.error(`Failed to list directories: ${error}`);
-    },
-  });
-}
-
-/**
  * Mutation hook for listing remote directories via SSH
  * Used by file browser to navigate remote filesystem
  */
-export function useListRemoteDirectories() {
-  return useMutation({
-    mutationFn: ({ connectionId, path }: { connectionId: number; path: string }) =>
-      api.listRemoteDirectories(connectionId, path),
-    onError: (error) => {
-      toast.error(`Failed to list directories: ${error}`);
-    },
+export function useListDirectories(connectionId: number | null | undefined, path: string) {
+  return useQuery({
+    queryKey: connectionQueryKeys.dirs(connectionId, path),
+    queryFn: connectionId
+      ? () => api.listRemoteDirectories(connectionId, path)
+      : () => api.listLocalDirectories(path),
   });
 }
 

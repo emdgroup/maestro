@@ -1,7 +1,6 @@
-import React, { useState } from "react";
+import React, {useRef, useState} from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
-import type { SshConnection } from "@/types";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,52 +19,54 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { useUpdateSshConnection, useDeleteSshConnection, useForgetSavedPassword } from "@/services/connection.service.ts";
+import {
+  useUpdateSshConnection,
+  useDeleteSshConnection,
+  useForgetSavedPassword,
+  useSshConnectionById,
+} from "@/services/connection.service.ts";
 
 interface ConnectionHeaderProps {
-  connection: SshConnection;
+  connectionId: number;
   onDelete: () => void;
-  onEditName: (name: string) => void;
 }
 
 /**
  * Header component for displaying and managing an SSH connection.
  * Handles rename, delete, and forget password operations.
  */
-export function ConnectionHeader({ connection, onDelete, onEditName }: ConnectionHeaderProps) {
+export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const { data: connection } = useSshConnectionById(connectionId);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Use TanStack Query mutations for all operations
-  const updateConnectionMutation = useUpdateSshConnection();
-  const deleteConnectionMutation = useDeleteSshConnection();
-  const forgetPasswordMutation = useForgetSavedPassword();
+  const { mutate: editConnectionName } = useUpdateSshConnection();
+  const { mutate: deleteConnection, isPending: deletePending } = useDeleteSshConnection();
+  const { mutate: forgetPassword } = useForgetSavedPassword();
 
   const handleStartEdit = () => {
-    setIsEditing(true);
-    setEditName(connection.display_name || connection.connection_string);
+    if (connection && inputRef.current) {
+      setIsEditing(true);
+      inputRef.current.select();
+      setEditName(connection.display_name ?? connection.connection_string);
+    }
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = () => {
     if (
-      !editName.trim() ||
-      editName.trim() === (connection.display_name ?? connection.connection_string)
+      connection &&
+      editName.trim() &&
+      editName.trim() !== (connection.display_name ?? connection.connection_string)
     ) {
-      setIsEditing(false);
-      return;
+      editConnectionName({
+        connectionId: connection.id,
+        displayName: editName.trim(),
+      });
     }
-
-    // Use mutation - it will automatically invalidate cache and update UI everywhere
-    await updateConnectionMutation.mutateAsync({
-      connectionId: connection.id,
-      displayName: editName.trim(),
-    });
-
     setIsEditing(false);
-
-    // Also update local state in ConnectionContext
-    onEditName(editName.trim());
   };
 
   const handleCancelEdit = () => {
@@ -75,25 +76,27 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
 
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
-      void handleSaveEdit();
+      handleSaveEdit();
     } else if (e.key === "Escape") {
       handleCancelEdit();
     }
   };
 
-  const handleDeleteConnection = async () => {
-    await deleteConnectionMutation.mutateAsync(connection.id);
-    setShowDeleteDialog(false);
-    // Notify parent that connection was deleted
-    onDelete();
-  };
-
-  const handleForgetPassword = async () => {
-    await forgetPasswordMutation.mutateAsync(connection.id);
+  const handleDeleteConnection = () => {
+    if (connection) {
+      deleteConnection(connection.id, {
+        onSuccess: () => {
+          setShowDeleteDialog(false);
+          // Notify parent that connection was deleted
+          onDelete();
+        },
+      });
+    }
   };
 
   // Check if connection has a saved password
   const hasSavedPassword =
+    connection &&
     typeof connection.auth_method === "object" &&
     "Password" in connection.auth_method &&
     connection.auth_method.Password.save_password;
@@ -104,6 +107,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
       {isEditing ? (
         <div className="flex-1 flex items-center gap-2">
           <Input
+            ref={inputRef}
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onKeyDown={handleEditKeyDown}
@@ -112,7 +116,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
             autoFocus
           />
         </div>
-      ) : (
+      ) : connection ? (
         <>
           <h2 className="text-lg font-semibold truncate flex-1">
             {connection.display_name || connection.connection_string}
@@ -137,7 +141,7 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
             <DropdownMenuContent className="w-auto" align="end">
               {hasSavedPassword && (
                 <>
-                  <DropdownMenuItem onClick={handleForgetPassword}>
+                  <DropdownMenuItem onClick={() => forgetPassword(connection.id)}>
                     <KeyRound className="size-4" />
                     Forget password
                   </DropdownMenuItem>
@@ -151,29 +155,37 @@ export function ConnectionHeader({ connection, onDelete, onEditName }: Connectio
             </DropdownMenuContent>
           </DropdownMenu>
         </>
+      ) : (
+        <></>
       )}
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete SSH Connection</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the connection to{" "}
-              <span className="font-mono">
-                {connection.display_name || connection.connection_string}
-              </span>
-              ? This will also remove all associated projects from recent history. This action
-              cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConnection} variant="destructive">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {connection && (
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete SSH Connection</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete the connection to{" "}
+                <span className="font-mono">
+                  {connection.display_name || connection.connection_string}
+                </span>
+                ? This will also remove all associated projects from recent history. This action
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteConnection}
+                variant="destructive"
+                disabled={deletePending}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }

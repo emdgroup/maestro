@@ -13,6 +13,7 @@ export function useProjectPickerNavigation() {
   const { activeConnection, setActiveConnection, setView } = useConnectionContext();
 
   useEffect(() => {
+    console.debug("changing view");
     if (activeConnection) {
       setView("projects");
     } else {

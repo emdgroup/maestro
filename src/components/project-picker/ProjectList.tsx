@@ -13,23 +13,21 @@ import { useState } from "react";
  * Unified component for displaying and managing project lists.
  * Handles both local and remote (SSH) projects.
  *
- * Replaces LocalProjectsList and RemoteProjectsList with a single implementation.
  */
 export function ProjectList() {
-  const { activeConnection, setActiveConnection } = useConnectionContext();
+  const { activeConnection } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
   const {
     data: recentProjects = [],
     isLoading: loading,
-    refetch,
   } = useRecentProjects(activeConnection?.sshConnection?.id);
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();
 
   // Initialize service hooks
-  const createProjectMutation = useCreateProject();
-  const removeProjectMutation = useRemoveProject();
+  const { mutateAsync: createProject } = useCreateProject();
+  const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
 
   /**
    * Handle project selection from FilePicker
@@ -38,14 +36,12 @@ export function ProjectList() {
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
-      const result = await createProjectMutation.mutateAsync({
+      const result = await createProject({
         path: selectedPath,
-        connectionId: connectionId ?? 0,
+        connectionId: connectionId ?? null, // Use null for local projects, not 0
       });
       setSelectedProject(result);
       setShowFilePickerModal(false);
-    } catch (error) {
-      // Error toast is handled by the mutation hook
     } finally {
       setProjectLoading(false);
     }
@@ -62,19 +58,8 @@ export function ProjectList() {
   };
 
   const handleRemoveProject = async (projectId: number) => {
-    try {
-      await removeProjectMutation.mutateAsync(projectId);
-      await refetch();
-      toast.success("Project removed from recent list");
-    } catch (error) {
-      // Error toast is handled by the mutation hook
-    }
-  };
-
-  const handleConnectionRename = (displayName: string) => {
-    if (activeConnection) {
-      setActiveConnection({ ...activeConnection, displayName });
-    }
+    removeProject(projectId);
+    toast.success("Project removed from recent list");
   };
 
   return (
@@ -84,8 +69,7 @@ export function ProjectList() {
           headerContent={
             activeConnection.type === "ssh" && activeConnection.sshConnection ? (
               <ConnectionHeader
-                connection={activeConnection.sshConnection}
-                onEditName={handleConnectionRename}
+                connectionId={activeConnection.sshConnection.id}
                 onDelete={navigateToConnections}
               />
             ) : (
