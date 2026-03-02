@@ -1,4 +1,4 @@
-import React, {useRef, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
@@ -47,10 +47,15 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
   const { mutate: deleteConnection, isPending: deletePending } = useDeleteSshConnection();
   const { mutate: forgetPassword } = useForgetSavedPassword();
 
-  const handleStartEdit = () => {
-    if (connection && inputRef.current) {
-      setIsEditing(true);
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
       inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleStartEdit = () => {
+    if (connection) {
+      setIsEditing(true);
       setEditName(connection.display_name ?? connection.connection_string);
     }
   };
@@ -58,7 +63,6 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
   const handleSaveEdit = () => {
     if (
       connection &&
-      editName.trim() &&
       editName.trim() !== (connection.display_name ?? connection.connection_string)
     ) {
       editConnectionName({
@@ -112,7 +116,7 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
             onChange={(e) => setEditName(e.target.value)}
             onKeyDown={handleEditKeyDown}
             onBlur={handleSaveEdit}
-            className="flex-1 font-mono text-sm h-8"
+            className="flex-1 font-mono text-sm h-8 selection:bg-accent selection:text-accent-foreground"
             autoFocus
           />
         </div>

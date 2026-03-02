@@ -4,6 +4,7 @@ use chrono::Utc;
 
 use crate::models::{ConnectionStatus};
 use crate::db::AppState;
+use crate::remove_projects_by_connection_id;
 use crate::ssh::{RemoteSshSession, PasswordManager};
 use crate::ssh::session::{SshAuthMethod, SshConnection};
 
@@ -276,7 +277,8 @@ pub fn delete_ssh_connection(
     let SshConnection {host, username, ..} = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
-    remove_projects_by_connection_id(app_state.clone(), connection_id);
+    remove_projects_by_connection_id(app_state.clone(), connection_id)
+        .map_err(|e| format!("Could not remove projects: {}", e))?;
 
     println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;

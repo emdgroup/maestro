@@ -118,6 +118,7 @@ export function useUpdateSshConnection() {
       api.renameSshConnection(connectionId, displayName),
     onSuccess: (_data, {connectionId}) => {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.details(connectionId)})
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list()})
       toast.success("Connection renamed successfully");
     },
     onError: (error) => {

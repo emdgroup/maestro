@@ -31,9 +31,9 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
 
   // Service mutation hooks for SSH operations
-  const connectSshMutation = useConnectSsh();
-  const createSshConnectionMutation = useCreateSshConnection();
-  const connectSshWithCredsMutation = useConnectSshWithCreds();
+  const {mutate: connectSsh} = useConnectSsh();
+  const {mutate: createSshConnection} = useCreateSshConnection();
+  const {mutate: connectSshWithCreds} = useConnectSshWithCreds();
 
   const local = useRef<Connection>({
     type: "local" as const,
@@ -82,27 +82,18 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     async (connId: number) => {
       setLoading(true);
       setConnectionId(connId);
-      try {
-        // Try connecting without credentials first using service hook
-        await connectSshMutation.mutateAsync({ connectionId: connId });
-
-        // Fetch fresh connection data and call callback
-        // (getConnectionById also updates state, so no separate reload needed)
-        const connection = await getConnectionById(connId);
-        if (connection) {
-          onConnectionSuccess(connection);
-        } else {
-          // Error message already handled by service layer toast
-        }
-      } catch (error) {
-        console.log("Credential-less connection failed, showing password modal", error);
-        // Show password modal on auth failure
-        setShowPasswordModal(true);
-      } finally {
-        setLoading(false);
-      }
+      connectSsh({ connectionId: connId }, {
+        onSuccess: async () => {
+          const connection = await getConnectionById(connId);
+          if (connection) {
+            onConnectionSuccess(connection);
+          }
+        },
+        onError: () => setShowPasswordModal(true),
+        onSettled: () => setLoading(false)
+      })
     },
-    [onConnectionSuccess, getConnectionById, connectSshMutation],
+    [onConnectionSuccess, getConnectionById, connectSsh],
   );
 
   const handleConnection = useCallback(
@@ -122,27 +113,18 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
    */
   const handleNewConnection = useCallback(
     async (connectionString: string) => {
-      console.log(`New connection: ${connectionString}`);
       setLoading(true);
-
-      try {
-        // Save connection to database using service hook (parsing happens in Rust)
-        // Returns the connection ID
-        const connectionIdResult = await createSshConnectionMutation.mutateAsync({
-          connectionString,
-          authMethod: "Agent", // Default to Agent auth
-        });
-        if (connectionIdResult) {
+      createSshConnection({
+        connectionString,
+        authMethod: "Agent", // Default to Agent auth
+      }, {
+        onSuccess: async (connectionIdResult) => {
           await initiateConnection(connectionIdResult);
-        }
-      } catch (error) {
-        // Error toast is handled by service layer
-        return { success: false };
-      } finally {
-        setLoading(false);
-      }
+        },
+        onSettled: () => setLoading(false)
+      });
     },
-    [initiateConnection, createSshConnectionMutation],
+    [initiateConnection, createSshConnection],
   );
 
   /**
@@ -156,28 +138,24 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       }
 
       setLoading(true);
-      try {
-        await connectSshWithCredsMutation.mutateAsync({
-          connectionId,
-          password,
-          savePassword,
-        });
-        setShowPasswordModal(false);
-
-        // Fetch fresh connection data and call callback
-        // (getConnectionById also updates state, so no separate reload needed)
-        const connection = await getConnectionById(connectionId);
-        if (connection) {
-          onConnectionSuccess(connection);
+      connectSshWithCreds({
+        connectionId,
+        password,
+        savePassword,
+      }, {
+        onSuccess: async () => {
+          const connection = await getConnectionById(connectionId);
+          if (connection) {
+            onConnectionSuccess(connection);
+          }
+        },
+        onSettled: () => {
+          setShowPasswordModal(false);
+          setLoading(false);
         }
-        // Error message already handled by service layer toast
-      } catch (error) {
-        // Error toast is handled by service layer
-      } finally {
-        setLoading(false);
-      }
+      });
     },
-    [connectionId, onConnectionSuccess, getConnectionById, connectSshWithCredsMutation],
+    [connectionId, onConnectionSuccess, getConnectionById, connectSshWithCreds],
   );
 
   /**
