@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-02-28T00:00:00.000Z"
 progress:
   total_phases: 23
-  completed_phases: 21
-  total_plans: 78
-  completed_plans: 78
+  completed_phases: 22
+  total_plans: 79
+  completed_plans: 79
 ---
 
 # Project State: v1.1 UI/UX Polish
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-Phase: 21 of 23 (Refactor Components Using Commands Object)
+Phase: 22 of 23 (Auto-remove Stale Projects)
 Plan: 1 of 1 in current phase - COMPLETE
-Status: Phase 21 complete - 5 components refactored, service layer abstraction complete
-Last activity: 2026-02-28 — Phase 21-01 executed successfully
+Status: Phase 22 complete - get_connection_projects async with stale project cleanup (local + SSH)
+Last activity: 2026-03-16 — Phase 22-01 executed successfully
 
-**Next Action:** Phase 22 or production deployment
+**Next Action:** Phase 23 or production deployment
 
-Progress: [████████████████████] 91% (21/23 phases complete)
+Progress: [█████████████████████] 96% (22/23 phases complete)
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Progress: [████████████████████] 91% (21
 | Phase 20-06 P06 | 0.042 | 3 tasks | 5 files |
 | Phase 20-07 P07 | 0.010 | 4 tasks | 2 files |
 | Phase 21-01 P01 | 0.083 | 8 tasks | 6 files |
+| Phase 22-01 P01 | 0.099 | 5 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -183,13 +184,14 @@ None currently.
 - Phase 19 added: Frontend Architecture Refactoring - Reorganize src/ to follow standard project structure with views/, services/, and grouped components
 - Phase 20 added: Refactor Frontend to use TanStack Query - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 - Phase 21 added: Refactor Components Using Commands Object - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
+- Phase 22 added: Auto-remove Stale Projects - get_connection_projects made async, drops db lock before path validation, collect_stale_project_ids helper validates local (std::fs) and SSH (test -d) paths
 
 ## Session Continuity
 
-Current session: 2026-02-26 (Phase 19-04 executed)
-Completed: Phase 19-04 - Replace Scattered invoke() Calls with Service Layer (COMPLETE)
-Status: Phase 19-04/6 complete; 18.67/19 phases effective complete
-Session timestamp: 2026-02-26 21:10:53Z
+Current session: 2026-03-16 (Phase 22-01 executed)
+Completed: Phase 22-01 - Validate Project Paths in get_connection_projects (Local + SSH) (COMPLETE)
+Status: Phase 22 complete; 22/23 phases complete
+Session timestamp: 2026-03-16T15:29:00Z
 
 ---
 

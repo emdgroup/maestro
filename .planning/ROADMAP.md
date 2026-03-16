@@ -20,7 +20,7 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
 - [x] **Phase 20: Refactor Frontend to use TanStack Query** - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 - [x] **Phase 21: Refactor Components Using Commands Object** - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
-- [ ] **Phase 22: Auto-remove Stale Projects** - Validate local project paths on fetch and silently remove missing ones before displaying the list
+- [x] **Phase 22: Auto-remove Stale Projects** - Validate local project paths on fetch and silently remove missing ones before displaying the list
 
 ## Phase Details
 
@@ -414,7 +414,7 @@ This phase completes the architectural refactoring by eliminating direct usage o
 **Plans**: 1 plan
 
 Plans:
-- [ ] 22-01-PLAN.md — Validate project paths (local via std::fs, SSH via active session) in `get_connection_projects`; delete stale entries from DB before returning the filtered list
+- [x] 22-01-PLAN.md — Validate project paths (local via std::fs, SSH via active session) in `get_connection_projects`; delete stale entries from DB before returning the filtered list
 
 ---
 
