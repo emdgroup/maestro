@@ -1,4 +1,33 @@
-# Project Milestones: AI Agent Orchestrator
+# Project Milestones: Maestro
+
+## v1.1 UI/UX Polish (Shipped: 2026-03-16)
+
+**Delivered:** Transformed Maestro from functional to beautiful — modern UI with Tailwind CSS + shadcn/ui, complete frontend architecture overhaul, Maestro rebranding with project-local storage, and transparent stale project cleanup.
+
+**Phases completed:** 13-22 (36 plans total)
+
+**Key accomplishments:**
+
+- Eliminated mock IPC leak from production builds and cleared all Rust build warnings — clean production foundation (Phase 13)
+- Modern UI foundation: Tailwind CSS 4.1 + shadcn/ui + complete theming system (light/dark/system) with no flash-on-startup and OS accent color integration (Phases 14-15)
+- Complete page redesigns matching modern mockup aesthetic: Kanban board with animated status dots, App Header with inline project dropdown and tab navigation, Agent Monitor split-pane, Worktree Manager cards, Settings redesign (Phases 16, 17, 17.1)
+- Maestro rebranding (from "GSD Orchestrator") with project-local `.maestro/` folder architecture for per-project state and settings storage (Phase 18)
+- Frontend architecture overhaul: views/, services/, domain-grouped components, TanStack Query for all IPC operations (37 hooks), service layer replacing all direct `commands` usage (Phases 19-21)
+- Auto-remove stale projects: transparent background cleanup of dead project entries when fetching project list — works for both local (std::fs) and SSH connections (Phase 22)
+
+**Stats:**
+
+- 281 commits
+- 15,398 TypeScript LOC | 6,553 Rust LOC
+- 11 phases, 36 plans
+- 35 days (2026-02-09 → 2026-03-16)
+- 775 files changed, 100K+ insertions
+
+**Git range:** `75a8865` → `d966509`
+
+**What's next:** v1.2 milestone (or v2.0 with advanced features)
+
+---
 
 ## v1.0 MVP (Shipped: 2026-02-09)
 
