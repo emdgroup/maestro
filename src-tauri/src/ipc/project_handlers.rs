@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
-use rusqlite::{params, ToSql};
+use rusqlite::params;
 use crate::models::{Project, Task, TaskStatus};
 use crate::db::{AppState, project_storage};
 
@@ -29,24 +29,111 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 /// Get list of all projects per connections
 #[tauri::command]
 #[specta::specta]
-pub fn get_connection_projects(app_state: State<Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
+pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
     println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-    let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
-        Some(id) => ("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
-        None => ("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
+    // ── Step 1: fetch projects (db lock held briefly, then dropped) ──────────
+    let projects: Vec<Project> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let result = match connection_id {
+            Some(id) => {
+                let mut stmt = conn
+                    .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC")
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt.query_map(rusqlite::params![id], Project::from_row)
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?;
+                rows
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC")
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt.query_map([], Project::from_row)
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?;
+                rows
+            }
+        };
+        result
+        // conn drops here — lock released before async work below
     };
-    let mut stmt = conn.prepare(query)
-        .map_err(|e| e.to_string())?;
 
-    let projects = stmt
-        .query_map(params, Project::from_row)
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+    // ── Step 2: validate paths ───────────────────────────────────────────────
+    let stale_ids = collect_stale_project_ids(&projects, connection_id, &app_state).await;
 
-    Ok(projects)
+    // ── Step 3: delete stale projects and return filtered list ───────────────
+    if !stale_ids.is_empty() {
+        println!(
+            "get_connection_projects: removing {} stale project(s): {:?}",
+            stale_ids.len(),
+            stale_ids
+        );
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        for id in &stale_ids {
+            conn.execute("DELETE FROM projects WHERE id = ?", [id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(projects.into_iter().filter(|p| !stale_ids.contains(&p.id)).collect())
+}
+
+/// Returns the IDs of projects whose paths no longer exist.
+/// - Local connections: checks path existence with std::fs.
+/// - SSH connections: runs `test -d` via the active SSH session.
+///   If no session is found (should not happen in normal flow), skips validation.
+async fn collect_stale_project_ids(
+    projects: &[Project],
+    connection_id: Option<i32>,
+    app_state: &Arc<AppState>,
+) -> Vec<i32> {
+    match connection_id {
+        // ── Local: synchronous filesystem check ─────────────────────────────
+        None => projects
+            .iter()
+            .filter(|p| !std::path::Path::new(&p.path).exists())
+            .map(|p| p.id)
+            .collect(),
+
+        // ── SSH: check via active session ────────────────────────────────────
+        Some(conn_id) => {
+            let session = match app_state.get_ssh_session(conn_id).await {
+                Some(s) => s,
+                None => {
+                    println!(
+                        "collect_stale_project_ids: no SSH session for connection {}, skipping validation",
+                        conn_id
+                    );
+                    return vec![];
+                }
+            };
+
+            let mut stale = Vec::new();
+            for project in projects {
+                // Escape any double-quotes in the path to prevent shell injection
+                let safe_path = project.path.replace('"', "\\\"");
+                let cmd = format!("test -d \"{}\" && echo ok || echo missing", safe_path);
+                match session.execute_command(&cmd).await {
+                    Ok(output) => {
+                        if output.trim() != "ok" {
+                            stale.push(project.id);
+                        }
+                    }
+                    Err(e) => {
+                        // On command error, err on the side of caution: keep the project
+                        println!(
+                            "collect_stale_project_ids: failed to check path '{}': {}",
+                            project.path, e
+                        );
+                    }
+                }
+            }
+            stale
+        }
+    }
 }
 
 /// Get project by id

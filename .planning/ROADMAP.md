@@ -20,6 +20,7 @@ This milestone fixes critical v1.0 bugs (mock IPC leak, Rust warnings) then tran
 - [x] **Phase 19: Frontend Architecture Refactoring** - Reorganize src/ to follow standard structure with views/, services/, and grouped components
 - [x] **Phase 20: Refactor Frontend to use TanStack Query** - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 - [x] **Phase 21: Refactor Components Using Commands Object** - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
+- [ ] **Phase 22: Auto-remove Stale Projects** - Validate local project paths on fetch and silently remove missing ones before displaying the list
 
 ## Phase Details
 
@@ -394,10 +395,33 @@ This phase completes the architectural refactoring by eliminating direct usage o
 
 ---
 
+### Phase 22: Auto-remove Stale Projects
+
+**Goal**: When fetching projects for a connection, automatically validate that project paths still exist and silently remove those that don't before returning the list — so the user never sees dead entries.
+
+**Depends on**: Phase 21
+
+**Requirements**: None (UX improvement)
+
+**Success Criteria** (what must be TRUE):
+  1. Local projects whose paths no longer exist on disk are deleted from the database before `get_connection_projects` returns
+  2. SSH projects whose remote paths no longer exist are deleted using the active SSH session
+  3. The returned project list contains only projects with valid, existing paths
+  4. SSH projects are validated using the active SSH session; if no session is found, validation is skipped for that connection.
+  5. SSH validation is skipped gracefully if no active session is found (fail-safe)
+  6. `cargo build` passes with no errors
+
+**Plans**: 1 plan
+
+Plans:
+- [ ] 22-01-PLAN.md — Validate project paths (local via std::fs, SSH via active session) in `get_connection_projects`; delete stale entries from DB before returning the filtered list
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 → 19 → 20 → 21
+Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 → 19 → 20 → 21 → 22
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
@@ -411,8 +435,9 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 17.1 → 18 
 | 19 - Frontend Architecture Refactoring | 6 | Complete | 2026-02-26 |
 | 20 - Refactor Frontend to use TanStack Query | 7 | Complete | 2026-02-27 |
 | 21 - Refactor Components Using Commands Object | 1 | Complete | 2026-02-28 |
+| 22 - Auto-remove Stale Projects | 1 | Pending | - |
 
-**Total v1.1 work:** 34 plans across 10 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + 6 from Phase 19 + 7 from Phase 20 + 1 from Phase 21)
+**Total v1.1 work:** 35 plans across 11 phases (13 original + 4 from urgent insertion Phase 17.1 + 4 from Phase 18 + 6 from Phase 19 + 7 from Phase 20 + 1 from Phase 21 + 1 from Phase 22)
 
 ---
 
