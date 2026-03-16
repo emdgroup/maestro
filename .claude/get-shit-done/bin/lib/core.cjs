@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { MODEL_PROFILES } = require('./model-profiles.cjs');
 
 // ─── Path helpers ────────────────────────────────────────────────────────────
 
@@ -12,22 +13,6 @@ const { execSync } = require('child_process');
 function toPosixPath(p) {
   return p.split(path.sep).join('/');
 }
-
-// ─── Model Profile Table ─────────────────────────────────────────────────────
-
-const MODEL_PROFILES = {
-  'gsd-planner':              { quality: 'opus', balanced: 'opus',   budget: 'sonnet' },
-  'gsd-roadmapper':           { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
-  'gsd-executor':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
-  'gsd-phase-researcher':     { quality: 'opus', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-project-researcher':   { quality: 'opus', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-research-synthesizer': { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-debugger':             { quality: 'opus', balanced: 'sonnet', budget: 'sonnet' },
-  'gsd-codebase-mapper':      { quality: 'sonnet', balanced: 'haiku', budget: 'haiku' },
-  'gsd-verifier':             { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-plan-checker':         { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
-  'gsd-integration-checker':  { quality: 'sonnet', balanced: 'sonnet', budget: 'haiku' },
-};
 
 // ─── Output helpers ───────────────────────────────────────────────────────────
 
@@ -76,7 +61,7 @@ function loadConfig(cwd) {
     research: true,
     plan_checker: true,
     verifier: true,
-    nyquist_validation: false,
+    nyquist_validation: true,
     parallelization: true,
     brave_search: false,
   };
@@ -84,6 +69,14 @@ function loadConfig(cwd) {
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
     const parsed = JSON.parse(raw);
+
+    // Migrate deprecated "depth" key to "granularity" with value mapping
+    if ('depth' in parsed && !('granularity' in parsed)) {
+      const depthToGranularity = { quick: 'coarse', standard: 'standard', comprehensive: 'fine' };
+      parsed.granularity = depthToGranularity[parsed.depth] || parsed.depth;
+      delete parsed.depth;
+      try { fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf-8'); } catch {}
+    }
 
     const get = (key, nested) => {
       if (parsed[key] !== undefined) return parsed[key];
@@ -124,7 +117,11 @@ function loadConfig(cwd) {
 
 function isGitIgnored(cwd, targetPath) {
   try {
-    execSync('git check-ignore -q -- ' + targetPath.replace(/[^a-zA-Z0-9._\-/]/g, ''), {
+    // --no-index checks .gitignore rules regardless of whether the file is tracked.
+    // Without it, git check-ignore returns "not ignored" for tracked files even when
+    // .gitignore explicitly lists them — a common source of confusion when .planning/
+    // was committed before being added to .gitignore.
+    execSync('git check-ignore -q --no-index -- ' + targetPath.replace(/[^a-zA-Z0-9._\-/]/g, ''), {
       cwd,
       stdio: 'pipe',
     });
@@ -315,6 +312,34 @@ function getArchivedPhaseDirs(cwd) {
   return results;
 }
 
+// ─── Roadmap milestone scoping ───────────────────────────────────────────────
+
+/**
+ * Strip shipped milestone content wrapped in <details> blocks.
+ * Used to isolate current milestone phases when searching ROADMAP.md
+ * for phase headings or checkboxes — prevents matching archived milestone
+ * phases that share the same numbers as current milestone phases.
+ */
+function stripShippedMilestones(content) {
+  return content.replace(/<details>[\s\S]*?<\/details>/gi, '');
+}
+
+/**
+ * Replace a pattern only in the current milestone section of ROADMAP.md
+ * (everything after the last </details> close tag). Used for write operations
+ * that must not accidentally modify archived milestone checkboxes/tables.
+ */
+function replaceInCurrentMilestone(content, pattern, replacement) {
+  const lastDetailsClose = content.lastIndexOf('</details>');
+  if (lastDetailsClose === -1) {
+    return content.replace(pattern, replacement);
+  }
+  const offset = lastDetailsClose + '</details>'.length;
+  const before = content.slice(0, offset);
+  const after = content.slice(offset);
+  return before + after.replace(pattern, replacement);
+}
+
 // ─── Roadmap & model utilities ────────────────────────────────────────────────
 
 function getRoadmapPhaseInternal(cwd, phaseNum) {
@@ -323,7 +348,7 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
   if (!fs.existsSync(roadmapPath)) return null;
 
   try {
-    const content = fs.readFileSync(roadmapPath, 'utf-8');
+    const content = stripShippedMilestones(fs.readFileSync(roadmapPath, 'utf-8'));
     const escapedPhase = escapeRegex(phaseNum.toString());
     const phasePattern = new RegExp(`#{2,4}\\s*Phase\\s+${escapedPhase}:\\s*([^\\n]+)`, 'i');
     const headerMatch = content.match(phasePattern);
@@ -336,7 +361,7 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
     const sectionEnd = nextHeaderMatch ? headerIndex + nextHeaderMatch.index : content.length;
     const section = content.slice(headerIndex, sectionEnd).trim();
 
-    const goalMatch = section.match(/\*\*Goal:\*\*\s*([^\n]+)/i);
+    const goalMatch = section.match(/\*\*Goal(?:\*\*:|\*?\*?:\*\*)\s*([^\n]+)/i);
     const goal = goalMatch ? goalMatch[1].trim() : null;
 
     return {
@@ -361,9 +386,10 @@ function resolveModelInternal(cwd, agentType) {
   }
 
   // Fall back to profile lookup
-  const profile = config.model_profile || 'balanced';
+  const profile = String(config.model_profile || 'balanced').toLowerCase();
   const agentModels = MODEL_PROFILES[agentType];
   if (!agentModels) return 'sonnet';
+  if (profile === 'inherit') return 'inherit';
   const resolved = agentModels[profile] || agentModels['balanced'] || 'sonnet';
   return resolved === 'opus' ? 'inherit' : resolved;
 }
@@ -388,8 +414,19 @@ function generateSlugInternal(text) {
 function getMilestoneInfo(cwd) {
   try {
     const roadmap = fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8');
-    // Strip <details>...</details> blocks so shipped milestones don't interfere
-    const cleaned = roadmap.replace(/<details>[\s\S]*?<\/details>/gi, '');
+
+    // First: check for list-format roadmaps using 🚧 (in-progress) marker
+    // e.g. "- 🚧 **v2.1 Belgium** — Phases 24-28 (in progress)"
+    const inProgressMatch = roadmap.match(/🚧\s*\*\*v(\d+\.\d+)\s+([^*]+)\*\*/);
+    if (inProgressMatch) {
+      return {
+        version: 'v' + inProgressMatch[1],
+        name: inProgressMatch[2].trim(),
+      };
+    }
+
+    // Second: heading-format roadmaps — strip shipped milestones in <details> blocks
+    const cleaned = stripShippedMilestones(roadmap);
     // Extract version and name from the same ## heading for consistency
     const headingMatch = cleaned.match(/## .*v(\d+\.\d+)[:\s]+([^\n(]+)/);
     if (headingMatch) {
@@ -409,8 +446,42 @@ function getMilestoneInfo(cwd) {
   }
 }
 
+/**
+ * Returns a filter function that checks whether a phase directory belongs
+ * to the current milestone based on ROADMAP.md phase headings.
+ * If no ROADMAP exists or no phases are listed, returns a pass-all filter.
+ */
+function getMilestonePhaseFilter(cwd) {
+  const milestonePhaseNums = new Set();
+  try {
+    const roadmap = stripShippedMilestones(fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8'));
+    const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:/gi;
+    let m;
+    while ((m = phasePattern.exec(roadmap)) !== null) {
+      milestonePhaseNums.add(m[1]);
+    }
+  } catch {}
+
+  if (milestonePhaseNums.size === 0) {
+    const passAll = () => true;
+    passAll.phaseCount = 0;
+    return passAll;
+  }
+
+  const normalized = new Set(
+    [...milestonePhaseNums].map(n => (n.replace(/^0+/, '') || '0').toLowerCase())
+  );
+
+  function isDirInMilestone(dirName) {
+    const m = dirName.match(/^0*(\d+[A-Za-z]?(?:\.\d+)*)/);
+    if (!m) return false;
+    return normalized.has(m[1].toLowerCase());
+  }
+  isDirInMilestone.phaseCount = milestonePhaseNums.size;
+  return isDirInMilestone;
+}
+
 module.exports = {
-  MODEL_PROFILES,
   output,
   error,
   safeReadFile,
@@ -428,5 +499,8 @@ module.exports = {
   pathExistsInternal,
   generateSlugInternal,
   getMilestoneInfo,
+  getMilestonePhaseFilter,
+  stripShippedMilestones,
+  replaceInCurrentMilestone,
   toPosixPath,
 };

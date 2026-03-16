@@ -14,8 +14,15 @@ See `.planning/PROJECT.md` for detailed project goals, current milestone progres
 
 ```bash
 pnpm dev              # Start Vite dev server (port 5173)
-pnpm build            # Build frontend (outputs to dist/)
+pnpm build            # Build frontend (tsc + vite build + bundle verification)
 pnpm preview          # Preview production build
+pnpm test             # Run Vitest unit tests
+pnpm test:e2e         # Run Playwright E2E tests
+pnpm test:e2e:ui      # Run Playwright tests with interactive UI
+pnpm lint             # Run oxlint
+pnpm lint:fix         # Auto-fix lint issues
+pnpm format           # Check formatting with oxfmt
+pnpm format:fix       # Fix formatting with oxfmt
 ```
 
 ### Tauri Development
@@ -23,6 +30,7 @@ pnpm preview          # Preview production build
 ```bash
 pnpm tauri:dev        # Run Tauri app in dev mode (starts Vite + Tauri)
 pnpm tauri build      # Build production Tauri app
+pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
 ```
 
 ### Rust Backend
@@ -48,10 +56,15 @@ cargo check           # Check compilation without building
 
 **Frontend (`src/`):**
 
-- `App.tsx` - Main app component, handles project selection flow and settings
-- `components/` - React components (KanbanBoard, TaskCard, TaskModal, ProjectPicker, etc.)
-- `store/boardStore.ts` - Zustand store for task state management with Immer
-- `types/bindings.ts` - Auto-generated TypeScript types from Rust (via ts-rs)
+- `App.tsx` - Main app component, handles routing between views
+- `views/` - Top-level page views (AgentsView, KanbanView, ProjectPickerView, SettingsView, WorktreesView)
+- `components/` - Reusable components organized by domain (kanban, task, project-picker, execution, common, ui)
+- `contexts/` - React contexts (ConnectionContext, KanbanContext)
+- `services/` - Service layer wrapping Tauri IPC (connection, execution, project, settings, task)
+- `store/` - Zustand stores: boardStore, configStore, projectStore, reviewStore
+- `utils/hooks/` - Custom React hooks
+- `utils/helpers/` - Utility functions
+- `types/bindings.ts` - Auto-generated TypeScript types from Rust (via tauri-specta)
 
 **Backend (`src-tauri/src/`):**
 
@@ -61,14 +74,14 @@ cargo check           # Check compilation without building
   - `connection.rs` - Database initialization and AppState management
   - `schema.rs` - SQL schema definitions (projects, tasks, worktrees, execution_logs, settings)
   - `settings.rs` - Settings persistence (load/save operations)
-- `models/` - Domain models with Serialize/Deserialize/TS derives
-  - `task.rs` - Task model and TaskStatus enum
-  - `project.rs` - Project model
-  - `worktree.rs` - Worktree model and WorktreeStatus enum
-  - `execution_log.rs` - ExecutionLog model and ExecutionStatus enum
-  - `settings.rs` - AppSettings model
-- `ipc/` - Tauri IPC command handlers
-  - `handlers.rs` - All Tauri commands (get_projects, create_task, update_task, etc.)
+- `models/` - Domain models with Serialize/Deserialize/TS derives (task, project, worktree, execution_log, settings, review, sync, etc.)
+- `ipc/` - Tauri IPC command handlers split by domain
+  - `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`
+  - `settings_handlers.rs`, `ssh_handlers.rs`, `filesystem_handlers.rs`, `review_handlers.rs`
+- `git/` - Git operations
+- `ssh/` - SSH connection management (client, session, password manager)
+- `process/` - Agent CLI process spawning, including PTY sessions
+- `websocket/` - WebSocket communication
 - `error.rs` - Custom error types for the app
 
 ### Database Schema
@@ -96,7 +109,7 @@ import { invoke } from "@tauri-apps/api/core";
 const tasks = await invoke<Task[]>("get_tasks", { projectId: 1 });
 ```
 
-Rust handlers in `src-tauri/src/ipc/handlers.rs` are marked with `#[tauri::command]` and registered in `main.rs`.
+Rust handlers are marked with `#[tauri::command]`, split across domain-specific files in `src-tauri/src/ipc/`, and registered via `tauri-specta` in `lib.rs`.
 
 ## Key Patterns
 
@@ -124,7 +137,7 @@ When modifying Rust models:
 
 1. Add/update struct with `#[derive(Serialize, Deserialize, TS)]` and `#[ts(export)]`
 2. Configure export directory in `Cargo.toml`: `export_dir = "../src/types"`
-3. Build the Rust project (`cargo build`) to generate TypeScript types
+3. Run `pnpm tauri:gen` to generate TypeScript types (runs `cargo test generate_typescript_bindings`)
 4. TypeScript types appear in `src/types/bindings.ts`
 5. Import and use in React components
 
@@ -143,6 +156,11 @@ When modifying Rust models:
 - Rust modules use snake_case filenames
 - Store files in `src/store/` (camelCase with "Store" suffix)
 - Generated types in `src/types/`
+
+### Import Conventions
+
+- Use direct imports; barrel `index.ts` files have been removed from all domain directories
+- Use path aliases `@/hooks`, `@/lib` for hooks and helpers, `@/ui` for UI components (see `tsconfig.json` for full alias map)
 
 ### Naming
 
