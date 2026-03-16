@@ -24,7 +24,7 @@ import {
   useDeleteSshConnection,
   useForgetSavedPassword,
   useSshConnectionById,
-} from "@/services/connection.service.ts";
+} from "@/services/connection.service";
 
 interface ConnectionHeaderProps {
   connectionId: number;

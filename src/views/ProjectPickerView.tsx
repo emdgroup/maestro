@@ -1,6 +1,6 @@
-import { ProjectPicker } from "@/components/project-picker";
+import { ProjectPicker } from "@/components/project-picker/ProjectPicker";
 import React from "react";
-import { ConnectionProvider } from "@/contexts/ConnectionContext.tsx";
+import { ConnectionProvider } from "@/contexts/ConnectionContext";
 
 /**
  * ProjectPickerView - Page-level orchestrator for the project selection first-run screen

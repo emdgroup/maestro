@@ -1,4 +1,4 @@
-import { AgentMonitor } from "@/components/execution";
+import { AgentMonitor } from "@/components/execution/AgentMonitor";
 
 interface AgentStatus {
   id: number;

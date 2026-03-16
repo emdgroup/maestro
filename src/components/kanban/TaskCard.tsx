@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Task } from "@/types/bindings";
 import { useBoardStore } from "@/store/boardStore";
 import { useExecutionLogsQuery } from "@/services/task.service";
+import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
 
@@ -55,8 +56,6 @@ function formatElapsedTime(startedAt?: string): string {
 interface TaskCardProps {
   task: Task;
   isDragging?: boolean;
-  projectPath?: string;
-  onTaskClick?: (task: Task) => void;
   onReviewClick?: (taskId: number, taskName: string) => void;
   onSettingsClick?: (task: Task) => void;
 }
@@ -64,17 +63,17 @@ interface TaskCardProps {
 export const TaskCard: React.FC<TaskCardProps> = ({
   task,
   isDragging = false,
-  projectPath = "",
-  onTaskClick,
   onReviewClick,
   onSettingsClick,
 }) => {
+  // Get context from KanbanProvider
+  const { projectPath, onTaskClick } = useKanban();
+
   const [isExecuting, setIsExecuting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState("0s");
   const store = useBoardStore();
 
   // Load latest execution logs using TanStack Query
@@ -82,17 +81,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const executionLog = logs.length > 0 ? logs[0] : null;
 
-  // Update elapsed time every 1 second for running tasks
-  useEffect(() => {
-    if (task.status !== "InProgress" || !executionLog?.started_at) {
-      return;
+  // Calculate elapsed time as a computed value (no polling)
+  const elapsedTime = useMemo(() => {
+    if (task.status === "InProgress" && executionLog?.started_at) {
+      return formatElapsedTime(executionLog.started_at);
     }
-
-    const interval = setInterval(() => {
-      setElapsedTime(formatElapsedTime(executionLog.started_at));
-    }, 1000);
-
-    return () => clearInterval(interval);
+    return "0s";
   }, [task.status, executionLog?.started_at]);
 
   // Don't make imported tasks draggable - they are read-only

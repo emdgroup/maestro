@@ -1,12 +1,14 @@
 import { toast } from "sonner";
-import { ProjectListItem, ProjectsListLayout } from "@/components";
+import { ProjectListItem } from "@/components/project-picker/ProjectListItem";
+import { ProjectsListLayout } from "@/components/project-picker/ProjectsListLayout";
 import { useProjectPickerNavigation } from "@/utils/hooks";
-import { useRecentProjects, useCreateProject, useRemoveProject } from "@/services";
+import { useRecentProjects, useCreateProject, useRemoveProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
+import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder } from "lucide-react";
-import { ConnectionHeader, FilePicker } from "@/components/project-picker";
-import { Dialog, DialogContent } from "@/ui/dialog.tsx";
+import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";
+import { FilePicker } from "@/components/project-picker/FilePicker";
+import { Dialog, DialogContent } from "@/ui/dialog";
 import { useState } from "react";
 
 /**

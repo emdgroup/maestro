@@ -1,4 +1,4 @@
-import { WorktreeManager } from "@/components/execution";
+import { WorktreeManager } from "@/components/execution/WorktreeManager";
 
 interface WorktreeInfo {
   id: number;

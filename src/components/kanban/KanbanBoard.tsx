@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -11,18 +11,14 @@ import {
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { toast } from "sonner";
-import { KanbanColumn } from "@/components";
+import { KanbanColumn } from "@/components/kanban/KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "@/components/common/ReviewModal";
 import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
+import { useKanban } from "@/contexts/KanbanContext";
+import { useTasksQuery } from "@/services/task.service";
 import { api } from "@/lib";
-
-export interface KanbanBoardProps {
-  projectId: number;
-  projectPath?: string;
-  onTaskClick?: (task: Task) => void;
-}
 
 const COLUMN_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
 
@@ -36,11 +32,10 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   Done: "Done",
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({
-  projectId,
-  projectPath = "",
-  onTaskClick,
-}) => {
+export const KanbanBoard = () => {
+  // Get project context from KanbanProvider
+  const { projectId } = useKanban();
+
   const {
     loadTasks,
     updateTaskStatus,
@@ -50,7 +45,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     isTerminalOpen,
     closeTerminal,
   } = useBoardStore();
-  const [isLoading, setIsLoading] = useState(true);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -68,53 +63,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const previousTasksRef = useRef<Map<number, TaskStatus>>(new Map());
 
-  // Load tasks on mount
+  // Replace manual polling with TanStack Query
+  const { data: tasks, isLoading } = useTasksQuery(projectId);
+
+  // Load tasks into store when query returns data
   useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        setIsLoading(true);
-        const tasks = await api.getTasks(projectId);
-        loadTasks(tasks);
-        setErrorMessage(null);
+    if (tasks) {
+      loadTasks(tasks);
 
-        // Update previous state for merge detection
-        const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
-        previousTasksRef.current = taskStatusMap;
-      } catch (err) {
-        console.error("Failed to load tasks:", err);
-        setErrorMessage("Failed to load tasks. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchTasks();
-
-    // Set up periodic refresh to detect merge completion
-    const interval = setInterval(async () => {
-      try {
-        const tasks = await api.getTasks(projectId);
-        loadTasks(tasks);
-
-        // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
-        for (const task of tasks) {
-          const prevStatus = previousTasksRef.current.get(task.id);
-          if (prevStatus === "Merging" && task.status === "Done") {
-            toast.success(`✓ Merge complete: "${task.name}" is Done`);
-          } else if (prevStatus === "Merging" && task.status === "InProgress") {
-            toast.error(`Merge conflict for "${task.name}", task returned to In Progress`);
-          }
+      // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
+      for (const task of tasks) {
+        const prevStatus = previousTasksRef.current.get(task.id);
+        if (prevStatus === "Merging" && task.status === "Done") {
+          toast.success(`✓ Merge complete: "${task.name}" is Done`);
+        } else if (prevStatus === "Merging" && task.status === "InProgress") {
+          toast.error(`Merge conflict for "${task.name}", task returned to In Progress`);
         }
-
-        const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
-        previousTasksRef.current = taskStatusMap;
-      } catch (err) {
-        console.error("Failed to refresh tasks:", err);
       }
-    }, 3000); // Refresh every 3 seconds
 
-    return () => clearInterval(interval);
-  }, [projectId, loadTasks]);
+      // Update previous state for merge detection
+      const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
+      previousTasksRef.current = taskStatusMap;
+    }
+  }, [tasks, loadTasks]);
 
   const isValidTransition = (
     _fromStatus: TaskStatus,
@@ -211,8 +182,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               columnTitle={COLUMN_TITLES[status]}
               tasks={getTasksForColumn(status)}
               status={status}
-              projectPath={projectPath}
-              onTaskClick={onTaskClick}
               onReviewClick={(taskId, taskName) => {
                 setSelectedTaskId(taskId);
                 setSelectedTaskName(taskName);

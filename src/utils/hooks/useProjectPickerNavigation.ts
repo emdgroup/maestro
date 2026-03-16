@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { Connection, useConnectionContext } from "@/contexts/ConnectionContext.tsx";
+import { Connection, useConnectionContext } from "@/contexts/ConnectionContext";
 
 /**
  * Custom hook for managing ProjectPicker navigation state.

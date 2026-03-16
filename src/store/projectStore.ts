@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Project } from "@/types";
+import type { Project } from "@/types/bindings";
 
 interface ProjectStore {
   selectedProject: Project | null;

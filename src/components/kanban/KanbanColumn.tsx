@@ -9,8 +9,6 @@ interface KanbanColumnProps {
   columnTitle: string;
   tasks: Task[];
   status: TaskStatus;
-  projectPath?: string;
-  onTaskClick?: (task: Task) => void;
   onReviewClick?: (taskId: number, taskName: string) => void;
   onSettingsClick?: (task: Task) => void;
 }
@@ -46,8 +44,6 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   columnTitle,
   tasks,
   status,
-  projectPath = "",
-  onTaskClick,
   onReviewClick,
   onSettingsClick,
 }) => {
@@ -76,8 +72,6 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
           <TaskCard
             key={task.id}
             task={task}
-            projectPath={projectPath}
-            onTaskClick={onTaskClick}
             onReviewClick={onReviewClick}
             onSettingsClick={onSettingsClick}
           />

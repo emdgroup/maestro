@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from "react";
-import type { SshConnection } from "@/types";
+import type { SshConnection } from "@/types/bindings";
 
 type View = "connections" | "projects";
 
@@ -21,7 +21,7 @@ interface ConnectionContextValue {
   setView: (view: View) => void;
 }
 
-const ConnectionContext = createContext<ConnectionContextValue | null>(null);
+export const ConnectionContext = createContext<ConnectionContextValue | null>(null);
 
 interface ConnectionProviderProps {
   children: ReactNode;

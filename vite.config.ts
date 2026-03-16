@@ -10,7 +10,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [tsconfigPaths(), react(), tailwindcss()],
   test: {
-    include: ["./src"],
+    include: ["./src/**/*.{test,spec}.{ts,tsx}"],
+    environment: 'happy-dom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

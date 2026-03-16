@@ -1,6 +1,7 @@
-import { ConnectionList, ProjectList } from "@/components";
+import { ConnectionList } from "@/components/project-picker/ConnectionList";
+import { ProjectList } from "@/components/project-picker/ProjectList";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
-import { useConnectionContext } from "@/contexts/ConnectionContext.tsx";
+import { useConnectionContext } from "@/contexts/ConnectionContext";
 
 export function ProjectPicker() {
   const { view } = useConnectionContext();

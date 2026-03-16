@@ -1,12 +1,14 @@
+// Minimal barrel file for @/ui path alias
+// Re-exports all UI components
 export * from "./accordion";
-export * from "./alert-dialog";
 export * from "./alert";
+export * from "./alert-dialog";
 export * from "./aspect-ratio";
 export * from "./avatar";
 export * from "./badge";
 export * from "./breadcrumb";
-export * from "./button-group";
 export * from "./button";
+export * from "./button-group";
 export * from "./calendar";
 export * from "./card";
 export * from "./carousel";
@@ -23,9 +25,9 @@ export * from "./dropdown-menu";
 export * from "./empty";
 export * from "./field";
 export * from "./hover-card";
+export * from "./input";
 export * from "./input-group";
 export * from "./input-otp";
-export * from "./input";
 export * from "./item";
 export * from "./kbd";
 export * from "./label";
@@ -50,6 +52,6 @@ export * from "./switch";
 export * from "./table";
 export * from "./tabs";
 export * from "./textarea";
-export * from "./toggle-group";
 export * from "./toggle";
+export * from "./toggle-group";
 export * from "./tooltip";

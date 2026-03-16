@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, createErrorToastHandler } from "@/lib";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest } from "@/types";
+import type { Task, TaskConfigRequest } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -34,6 +34,8 @@ export function useTasksQuery(projectId: number | null) {
     queryFn: () => api.getTasks(projectId!),
     enabled: projectId !== null,
     staleTime: 30000, // 30 seconds—tasks change fairly frequently
+    refetchInterval: 3000, // Poll every 3 seconds for task updates
+    refetchIntervalInBackground: false, // Don't poll when app is in background
     refetchOnWindowFocus: true,
   });
 }
@@ -47,6 +49,8 @@ export function useExecutionLogsQuery(taskId: number | null) {
     queryFn: () => api.getExecutionLogs(taskId!),
     enabled: taskId !== null,
     staleTime: 10000, // 10 seconds—logs update frequently
+    refetchInterval: 5000, // Poll every 5 seconds for log updates
+    refetchIntervalInBackground: false, // Don't poll when app is in background
     refetchOnWindowFocus: true,
   });
 }

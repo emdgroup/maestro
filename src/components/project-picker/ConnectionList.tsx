@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui";
 import { Input } from "@/components/ui";
-import { PasswordModal } from "@/components/task";
-import { useSshConnectionManager } from "@/hooks";
-import { useProjectPickerNavigation } from "@/hooks";
+import { PasswordModal } from "@/components/task/PasswordModal";
+import { useSshConnectionManager } from "@/utils/hooks/useSshConnectionManager";
+import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 
 export function ConnectionList() {
   const [connectionString, setConnectionString] = useState("");

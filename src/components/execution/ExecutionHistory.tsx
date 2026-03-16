@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExecutionLog } from "@/types/bindings";
 import { showErrorToast, showSuccessToast } from "@/components/common/ErrorToast";
 import { useBoardStore } from "@/store/boardStore";
+import { useExecutionLogsQuery } from "@/services/task.service";
 import { toast } from "sonner";
 import { api } from "@/lib";
 
@@ -41,84 +42,70 @@ export function ExecutionHistory({
   projectPath,
   taskName,
 }: ExecutionHistoryProps) {
-  const [logs, setLogs] = useState<ExecutionLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const previousLogsRef = useRef<ExecutionLog[]>([]);
   const store = useBoardStore();
 
-  const loadExecutionLogs = useCallback(async () => {
-    try {
-      if (loading) {
-        // Only show loading state on initial load, not on polling
-        setLoading(true);
-      }
-      setError(null);
-      const logs = await api.getExecutionLogs(taskId);
+  // Replace manual polling with TanStack Query
+  const {
+    data: logs = [],
+    isLoading: loading,
+    error: queryError
+  } = useExecutionLogsQuery(taskId);
 
-      // Check for new paused executions and show notification
-      const previousLogs = previousLogsRef.current;
-      const newPausedLogs = logs.filter(
-        (log) =>
-          log.status === "paused" &&
-          !previousLogs.find((prevLog) => prevLog.id === log.id && prevLog.status === "paused"),
-      );
+  const error = queryError ? (queryError instanceof Error ? queryError.message : "Failed to load execution logs") : null;
 
-      if (newPausedLogs.length > 0 && previousLogs.length > 0) {
-        // Only show notification if this isn't the initial load
-        showErrorToast(`Execution failed! ${newPausedLogs.length} task(s) paused for review.`);
-      }
-
-      // Detect NEW failures (logs that are 'failed' now but weren't 'failed' before)
-      const newFailedLogs = logs.filter(
-        (log) =>
-          log.status === "failed" &&
-          !previousLogs.find((prevLog) => prevLog.id === log.id && prevLog.status === "failed"),
-      );
-
-      // Show toast for each new failure (only if this isn't the initial load)
-      if (newFailedLogs.length > 0 && previousLogs.length > 0) {
-        newFailedLogs.forEach((log) => {
-          const errorType = log.error_event?.error_type || "Unknown Error";
-          const displayName = taskName || `Task ${taskId}`;
-          const message = `Failed: ${displayName} — ${errorType}`;
-          toast.error(message, { duration: 10000 }); // 10s auto-dismiss
-        });
-      }
-
-      previousLogsRef.current = logs;
-      setLogs(logs);
-
-      if (logs.length > 0 && !selectedLogId) {
-        setSelectedLogId(logs[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load execution logs");
-    } finally {
-      if (loading) {
-        setLoading(false);
-      }
-    }
-  }, [loading, taskName, selectedLogId, taskId]);
-
+  // Set initial selected log when logs load
   useEffect(() => {
-    void loadExecutionLogs();
-    // Poll for execution status changes every 5 seconds
-    const interval = setInterval(loadExecutionLogs, 5000);
-    return () => clearInterval(interval);
-  }, [taskId, loadExecutionLogs]);
+    if (logs.length > 0 && !selectedLogId) {
+      setSelectedLogId(logs[0].id);
+    }
+  }, [logs, selectedLogId]);
+
+  // Monitor logs for changes and show notifications
+  useEffect(() => {
+    if (!logs.length) return;
+
+    const previousLogs = previousLogsRef.current;
+
+    // Check for new paused executions
+    const newPausedLogs = logs.filter(
+      (log) =>
+        log.status === "paused" &&
+        !previousLogs.find((prevLog) => prevLog.id === log.id && prevLog.status === "paused"),
+    );
+
+    if (newPausedLogs.length > 0 && previousLogs.length > 0) {
+      showErrorToast(`Execution failed! ${newPausedLogs.length} task(s) paused for review.`);
+    }
+
+    // Detect new failures
+    const newFailedLogs = logs.filter(
+      (log) =>
+        log.status === "failed" &&
+        !previousLogs.find((prevLog) => prevLog.id === log.id && prevLog.status === "failed"),
+    );
+
+    if (newFailedLogs.length > 0 && previousLogs.length > 0) {
+      newFailedLogs.forEach((log) => {
+        const errorType = log.error_event?.error_type || "Unknown Error";
+        const displayName = taskName || `Task ${taskId}`;
+        toast.error(`Failed: ${displayName} — ${errorType}`, { duration: 10000 });
+      });
+    }
+
+    previousLogsRef.current = logs;
+  }, [logs, taskName, taskId]);
 
   const handleRetry = async () => {
     try {
       setRetrying(true);
       await api.retryExecution(projectId, taskId, projectPath);
-      // Reload logs to show the new execution
-      await loadExecutionLogs();
+      // TanStack Query will automatically refetch
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to retry execution");
+      showErrorToast(err instanceof Error ? err.message : "Failed to retry execution");
     } finally {
       setRetrying(false);
     }
@@ -127,10 +114,9 @@ export function ExecutionHistory({
   const handleCancel = async (logId: number) => {
     try {
       await api.cancelExecution(logId);
-      // Reload logs to show updated status
-      await loadExecutionLogs();
+      // TanStack Query will automatically refetch
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cancel execution");
+      showErrorToast(err instanceof Error ? err.message : "Failed to cancel execution");
     }
   };
 

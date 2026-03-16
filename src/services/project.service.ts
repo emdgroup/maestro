@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
-import type { ProjectConfigRequest } from "@/types";
-import {localConnectionId} from "@/contexts/ConnectionContext.tsx";
+import type { ProjectConfigRequest } from "@/types/bindings";
+import {localConnectionId} from "@/contexts/ConnectionContext";
 
 /**
  * Project service providing type-safe operations for project management.

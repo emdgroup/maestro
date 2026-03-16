@@ -5,7 +5,7 @@ import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Badge } from "@/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import type { Task } from "@/types";
+import type { Task } from "@/types/bindings";
 
 export interface TaskFormData {
   title: string;

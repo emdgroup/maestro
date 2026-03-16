@@ -11,7 +11,7 @@ import {
 } from "@/store/configStore";
 import type { ProjectConfigRequest } from "@/types/bindings";
 import { Bot, Server, Sparkles } from "lucide-react";
-import { useProjectSettings, useUpdateProjectSettings } from "@/services";
+import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {

@@ -1,88 +1,60 @@
 import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSelectedProject } from "@/store/projectStore";
-import { AppHeader, ActionBar } from "@/components/common";
-import type { SettingsPageHandle } from "@/components/common";
+import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
+import { AppHeader } from "@/components/common/AppHeader";
+import { ActionBar } from "@/components/common/ActionBar";
+import type { SettingsPageHandle } from "@/components/common/SettingsPage";
 import { useBoardStore } from "@/store/boardStore";
 import type { Project, Task } from "@/types/bindings";
-import { ProjectPickerView } from "@/views";
+import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
-import {
-  usePageRouting,
-  getPageActions,
-  slideVariants,
-  PAGE_TRANSITION_DURATION,
-  PAGE_TRANSITION_EASING,
-} from "@/utils";
+import { usePageRouting } from "@/utils/hooks";
+import { getPageActions } from "@/utils/helpers/page-actions";
+import { slideVariants, PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
+import { KanbanProvider } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
-const KanbanView = lazy(() => import("@/views").then((m) => ({ default: m.KanbanView })));
-const AgentsView = lazy(() => import("@/views").then((m) => ({ default: m.AgentsView })));
-const WorktreesView = lazy(() => import("@/views").then((m) => ({ default: m.WorktreesView })));
-const SettingsView = lazy(() => import("@/views").then((m) => ({ default: m.SettingsView })));
+const KanbanView = lazy(() => import("@/views/KanbanView").then((m) => ({ default: m.KanbanView })));
+const AgentsView = lazy(() => import("@/views/AgentsView").then((m) => ({ default: m.AgentsView })));
+const WorktreesView = lazy(() => import("@/views/WorktreesView").then((m) => ({ default: m.WorktreesView })));
+const SettingsView = lazy(() => import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })));
 
 // Lazy load modals for code splitting (performance optimization)
-const TaskModal = lazy(() => import("@/components/kanban").then((m) => ({ default: m.TaskModal })));
-const TaskDetail = lazy(() => import("@/components/task").then((m) => ({ default: m.TaskDetail })));
+const TaskModal = lazy(() => import("@/components/kanban/TaskModal").then((m) => ({ default: m.TaskModal })));
+const TaskDetail = lazy(() => import("@/components/task/TaskDetail").then((m) => ({ default: m.TaskDetail })));
 const ImportSettings = lazy(() =>
-  import("@/components/task").then((m) => ({ default: m.ImportSettings })),
+  import("@/components/task/ImportSettings").then((m) => ({ default: m.ImportSettings })),
 );
 
 function App() {
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
-  const [appLoading, setAppLoading] = useState(true);
-
-  // Subscribe to project store for project selection
-  const selectedProject = useSelectedProject();
-
-  // Check if Tauri is available on mount (Tauri 2 uses __TAURI__)
-  console.log(
-    "[DEBUG] App.tsx: Tauri available?",
-    typeof (window as any).__TAURI__ !== "undefined",
-  );
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Subscribe to project store for project selection
+  const currentProject = useSelectedProject();
+  const { clearSelectedProject } = useSelectedProjectActions();
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
   // Query hooks for settings
-  const { data: settings, isLoading: settingsLoading, error: settingsError } = useSettings();
+  const { isLoading: settingsLoading, error: settingsError } = useSettings();
 
   // Page routing with slide animations
   const { activePage, slideDirection, handlePageChange } = usePageRouting("kanban");
 
-  // Initialize app when settings are loaded
+  // Log settings errors (if any)
   useEffect(() => {
-    async function initialize() {
-      if (settingsError) {
-        console.error("[DEBUG] App.tsx: Failed to load settings:", settingsError);
-        toast.error("Failed to load settings");
-        setAppLoading(false);
-        return;
-      }
-
-      if (!settings) {
-        // Still loading
-        return;
-      }
-
-      setAppLoading(false);
+    if (settingsError) {
+      console.error("[DEBUG] App.tsx: Failed to load settings:", settingsError);
+      toast.error("Failed to load settings");
     }
+  }, [settingsError]);
 
-    void initialize();
-  }, [settings, settingsError]);
-
-  // Handle project selection from project store
-  useEffect(() => {
-    setCurrentProject(selectedProject);
-  }, [selectedProject]);
-
-  function handleProjectSelected(project: Project) {
-    console.log(`[DEBUG] App.tsx: Project selected - ${project.name} (${project.path})`);
-    setCurrentProject(project);
+  function handleProjectSelected(_project: Project) {
+    // Project is now managed by projectStore, no need to set local state
   }
 
   function handleTaskCreated(newTask: Task) {
@@ -101,11 +73,21 @@ function App() {
     onSaveSettings: async () => await settingsPageRef.current?.save(),
   });
 
+  const fallback = (
+    <div className="flex items-center justify-center h-full">
+      <p className="text-sm text-muted-foreground">Loading...</p>
+    </div>
+  );
+
   return (
     <>
-      {appLoading || settingsLoading ? (
+      {settingsLoading ? (
         <div className="app">
           <p>Loading...</p>
+        </div>
+      ) : settingsError ? (
+        <div className="app">
+          <p>Error loading settings: {settingsError.message}</p>
         </div>
       ) : !currentProject ? (
         <ProjectPickerView />
@@ -116,18 +98,11 @@ function App() {
             activeView={activePage}
             onViewChange={handlePageChange}
             onProjectChange={handleProjectSelected}
-            onBackToPicker={() => setCurrentProject(null)}
+            onBackToPicker={clearSelectedProject}
             agentCount={0}
           />
           <ActionBar actions={pageActions} />
           <main className="flex-1 overflow-hidden relative">
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                </div>
-              }
-            >
               <AnimatePresence initial={false} custom={slideDirection}>
                 {activePage === "kanban" && (
                   <motion.div
@@ -143,11 +118,17 @@ function App() {
                     }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
-                    <KanbanView
+                    <Suspense
+                      fallback={fallback}
+                    >
+                    <KanbanProvider
                       projectId={currentProject.id}
                       projectPath={currentProject.path}
                       onTaskClick={setSelectedTask}
-                    />
+                    >
+                      <KanbanView />
+                    </KanbanProvider>
+                    </Suspense>
                   </motion.div>
                 )}
 
@@ -165,7 +146,11 @@ function App() {
                     }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
+                    <Suspense
+                      fallback={fallback}
+                    >
                     <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
+                    </Suspense>
                   </motion.div>
                 )}
 
@@ -183,7 +168,11 @@ function App() {
                     }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
+                    <Suspense
+                      fallback={fallback}
+                    >
                     <WorktreesView projectId={currentProject.id} worktrees={[]} />
+                    </Suspense>
                   </motion.div>
                 )}
 
@@ -201,11 +190,14 @@ function App() {
                     }}
                     className="absolute inset-0 overflow-auto custom-scrollbar"
                   >
+                    <Suspense
+                      fallback={fallback}
+                    >
                     <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
+                    </Suspense>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </Suspense>
 
             {/* Modals and Overlays - lazy loaded for performance */}
             <Suspense fallback={null}>

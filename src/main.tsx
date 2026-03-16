@@ -2,9 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "@/App";
 import "./index.css";
-import { QueryProvider } from "@/providers/QueryProvider.tsx";
-import { ToasterRoot } from "@/components";
-import { ThemeProvider } from "@/providers/ThemeProvider.tsx";
+import { QueryProvider } from "@/providers/QueryProvider";
+import { ToasterRoot } from "@/components/common/ErrorToast";
+import { ThemeProvider } from "@/providers/ThemeProvider";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Detect and apply system theme synchronously before React renders

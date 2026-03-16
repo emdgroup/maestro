@@ -16,7 +16,7 @@ import {
   useKeyboardNavigation,
   useFilePickerInitialization,
 } from "@/utils/hooks";
-import { useListDirectories } from "@/services";
+import { useListDirectories } from "@/services/connection.service";
 
 interface FilePickerProps {
   connection?: SshConnection | null;

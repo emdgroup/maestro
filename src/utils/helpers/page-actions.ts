@@ -1,5 +1,5 @@
 import { Plus, Save, RotateCcw } from "lucide-react";
-import type { ActionBarAction } from "@/components/common";
+import type { ActionBarAction } from "@/components/common/ActionBar";
 
 export type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 

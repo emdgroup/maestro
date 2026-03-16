@@ -1,12 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { SshConnection } from "@/types/bindings.ts";
-import { Connection, localConnectionId } from "@/contexts/ConnectionContext.tsx";
+import type { SshConnection } from "@/types/bindings";
+import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
   useSshConnections,
   useConnectSsh,
   useConnectSshWithCreds,
   useCreateSshConnection,
-} from "@/services/connection.service.ts";
+} from "@/services/connection.service";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
