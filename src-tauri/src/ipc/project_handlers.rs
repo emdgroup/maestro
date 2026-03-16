@@ -6,6 +6,41 @@ use rusqlite::params;
 use crate::models::{Project, Task, TaskStatus};
 use crate::db::{AppState, project_storage};
 
+/// Fetch projects for a connection from an open DB connection.
+/// Isolated into a helper so all borrow-checker temporaries are fully dropped
+/// before the caller proceeds to async SSH I/O.
+fn fetch_projects_from_db(
+    conn: &rusqlite::Connection,
+    connection_id: Option<i32>,
+) -> Result<Vec<Project>, String> {
+    match connection_id {
+        Some(id) => {
+            let mut stmt = conn
+                .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC")
+                .map_err(|e| e.to_string())?;
+            // Bind result to a named variable so the `?`-temporary is dropped
+            // before `stmt` goes out of scope (avoids E0597).
+            let rows: Vec<Project> = stmt
+                .query_map(rusqlite::params![id], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            Ok(rows)
+        }
+        None => {
+            let mut stmt = conn
+                .prepare("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC")
+                .map_err(|e| e.to_string())?;
+            let rows: Vec<Project> = stmt
+                .query_map([], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            Ok(rows)
+        }
+    }
+}
+
 /// Get list of all projects
 #[tauri::command]
 #[specta::specta]
@@ -32,32 +67,10 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
     println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
 
-    // ── Step 1: fetch projects (db lock held briefly, then dropped) ──────────
+    // ── Step 1: fetch projects (db lock acquired and released in this block) ─
     let projects: Vec<Project> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let result = match connection_id {
-            Some(id) => {
-                let mut stmt = conn
-                    .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC")
-                    .map_err(|e| e.to_string())?;
-                let rows = stmt.query_map(rusqlite::params![id], Project::from_row)
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?;
-                rows
-            }
-            None => {
-                let mut stmt = conn
-                    .prepare("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC")
-                    .map_err(|e| e.to_string())?;
-                let rows = stmt.query_map([], Project::from_row)
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?;
-                rows
-            }
-        };
-        result
+        fetch_projects_from_db(&conn, connection_id)?
         // conn drops here — lock released before async work below
     };
 
