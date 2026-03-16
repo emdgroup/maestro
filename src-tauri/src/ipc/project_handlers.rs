@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, ToSql};
 use crate::models::{Project, Task, TaskStatus};
 use crate::db::{AppState, project_storage};
 
@@ -13,32 +13,20 @@ fn fetch_projects_from_db(
     conn: &rusqlite::Connection,
     connection_id: Option<i32>,
 ) -> Result<Vec<Project>, String> {
-    match connection_id {
-        Some(id) => {
-            let mut stmt = conn
-                .prepare("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC")
-                .map_err(|e| e.to_string())?;
-            // Bind result to a named variable so the `?`-temporary is dropped
-            // before `stmt` goes out of scope (avoids E0597).
-            let rows: Vec<Project> = stmt
-                .query_map(rusqlite::params![id], Project::from_row)
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| e.to_string())?;
-            Ok(rows)
-        }
-        None => {
-            let mut stmt = conn
-                .prepare("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC")
-                .map_err(|e| e.to_string())?;
-            let rows: Vec<Project> = stmt
-                .query_map([], Project::from_row)
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| e.to_string())?;
-            Ok(rows)
-        }
-    }
+
+    let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
+        Some(id) => ("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
+        None => ("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
+    };
+    let mut stmt = conn.prepare(query)
+        .map_err(|e| e.to_string())?;
+
+    let projects = stmt
+        .query_map(params, Project::from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(projects)
 }
 
 /// Get list of all projects
