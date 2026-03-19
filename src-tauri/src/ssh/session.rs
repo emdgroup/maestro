@@ -235,6 +235,56 @@ impl RemoteSshSession {
         Ok(())
     }
 
+    /// Establish SSH connection using an explicit key file path and optional passphrase
+    pub async fn connect_with_key(&self, key_path: Option<String>, passphrase: Option<String>) -> Result<(), SshError> {
+        let mut state = self.state.lock().await;
+        *state = SshConnectionState::Connecting;
+        drop(state);
+
+        let host = &self.ssh_connection.host;
+        let port = &self.ssh_connection.port;
+        let username = &self.ssh_connection.username;
+
+        let tcp_stream = TcpStream::connect(format!("{}:{}", host, port))
+            .map_err(|e| SshError::ConnectionError(format!("Failed to connect to {}:{}: {}", host, port, e)))?;
+
+        tcp_stream.set_read_timeout(Some(Duration::from_secs(10)))
+            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
+        tcp_stream.set_write_timeout(Some(Duration::from_secs(10)))
+            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
+
+        let mut session = Session::new()
+            .map_err(|e| SshError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        session.set_tcp_stream(tcp_stream);
+        session.handshake()
+            .map_err(|e| SshError::ConnectionError(format!("SSH handshake failed: {}", e)))?;
+
+        let fallback_path;
+        let path: &str = if let Some(ref p) = key_path {
+            p.as_str()
+        } else if let SshAuthMethod::KeyFile { path } = &self.ssh_connection.auth_method {
+            fallback_path = path.clone();
+            fallback_path.as_str()
+        } else {
+            return Err(SshError::AuthenticationError("No key path provided".to_string()));
+        };
+
+        session.userauth_pubkey_file(username, None, Path::new(path), passphrase.as_deref())
+            .map_err(|e| SshError::AuthenticationError(format!("Public key authentication failed: {}", e)))?;
+
+        if !session.authenticated() {
+            return Err(SshError::AuthenticationError(
+                "Authentication failed: SSH server did not grant access".to_string(),
+            ));
+        }
+
+        *self.session.lock().await = Some(session);
+        *self.state.lock().await = SshConnectionState::Connected;
+        self.reconnect_attempts.store(0, Ordering::SeqCst);
+
+        Ok(())
+    }
+
     /// Disconnect from the SSH server
     pub async fn disconnect(&self) {
         *self.session.lock().await = None;

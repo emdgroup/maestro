@@ -49,13 +49,13 @@ export function ExecutionHistory({
   const store = useBoardStore();
 
   // Replace manual polling with TanStack Query
-  const {
-    data: logs = [],
-    isLoading: loading,
-    error: queryError
-  } = useExecutionLogsQuery(taskId);
+  const { data: logs = [], isLoading: loading, error: queryError } = useExecutionLogsQuery(taskId);
 
-  const error = queryError ? (queryError instanceof Error ? queryError.message : "Failed to load execution logs") : null;
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : "Failed to load execution logs"
+    : null;
 
   // Set initial selected log when logs load
   useEffect(() => {

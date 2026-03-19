@@ -11,8 +11,8 @@ export default defineConfig(async () => ({
   plugins: [tsconfigPaths(), react(), tailwindcss()],
   test: {
     include: ["./src/**/*.{test,spec}.{ts,tsx}"],
-    environment: 'happy-dom',
-    setupFiles: ['./src/test/setup.ts'],
+    environment: "happy-dom",
+    setupFiles: ["./src/test/setup.ts"],
     globals: true,
   },
 

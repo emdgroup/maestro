@@ -10,20 +10,36 @@ import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { usePageRouting } from "@/utils/hooks";
 import { getPageActions } from "@/utils/helpers/page-actions";
-import { slideVariants, PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
+import {
+  slideVariants,
+  PAGE_TRANSITION_DURATION,
+  PAGE_TRANSITION_EASING,
+} from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
-const KanbanView = lazy(() => import("@/views/KanbanView").then((m) => ({ default: m.KanbanView })));
-const AgentsView = lazy(() => import("@/views/AgentsView").then((m) => ({ default: m.AgentsView })));
-const WorktreesView = lazy(() => import("@/views/WorktreesView").then((m) => ({ default: m.WorktreesView })));
-const SettingsView = lazy(() => import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })));
+const KanbanView = lazy(() =>
+  import("@/views/KanbanView").then((m) => ({ default: m.KanbanView })),
+);
+const AgentsView = lazy(() =>
+  import("@/views/AgentsView").then((m) => ({ default: m.AgentsView })),
+);
+const WorktreesView = lazy(() =>
+  import("@/views/WorktreesView").then((m) => ({ default: m.WorktreesView })),
+);
+const SettingsView = lazy(() =>
+  import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
 
 // Lazy load modals for code splitting (performance optimization)
-const TaskModal = lazy(() => import("@/components/kanban/TaskModal").then((m) => ({ default: m.TaskModal })));
-const TaskDetail = lazy(() => import("@/components/task/TaskDetail").then((m) => ({ default: m.TaskDetail })));
+const TaskModal = lazy(() =>
+  import("@/components/kanban/TaskModal").then((m) => ({ default: m.TaskModal })),
+);
+const TaskDetail = lazy(() =>
+  import("@/components/task/TaskDetail").then((m) => ({ default: m.TaskDetail })),
+);
 const ImportSettings = lazy(() =>
   import("@/components/task/ImportSettings").then((m) => ({ default: m.ImportSettings })),
 );
@@ -103,24 +119,22 @@ function App() {
           />
           <ActionBar actions={pageActions} />
           <main className="flex-1 overflow-hidden relative">
-              <AnimatePresence initial={false} custom={slideDirection}>
-                {activePage === "kanban" && (
-                  <motion.div
-                    key="kanban"
-                    custom={slideDirection}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{
-                      duration: PAGE_TRANSITION_DURATION,
-                      ease: PAGE_TRANSITION_EASING,
-                    }}
-                    className="absolute inset-0 overflow-auto custom-scrollbar"
-                  >
-                    <Suspense
-                      fallback={fallback}
-                    >
+            <AnimatePresence initial={false} custom={slideDirection}>
+              {activePage === "kanban" && (
+                <motion.div
+                  key="kanban"
+                  custom={slideDirection}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    duration: PAGE_TRANSITION_DURATION,
+                    ease: PAGE_TRANSITION_EASING,
+                  }}
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
+                >
+                  <Suspense fallback={fallback}>
                     <KanbanProvider
                       projectId={currentProject.id}
                       projectPath={currentProject.path}
@@ -128,76 +142,70 @@ function App() {
                     >
                       <KanbanView />
                     </KanbanProvider>
-                    </Suspense>
-                  </motion.div>
-                )}
+                  </Suspense>
+                </motion.div>
+              )}
 
-                {activePage === "agents" && (
-                  <motion.div
-                    key="agents"
-                    custom={slideDirection}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{
-                      duration: PAGE_TRANSITION_DURATION,
-                      ease: PAGE_TRANSITION_EASING,
-                    }}
-                    className="absolute inset-0 overflow-auto custom-scrollbar"
-                  >
-                    <Suspense
-                      fallback={fallback}
-                    >
+              {activePage === "agents" && (
+                <motion.div
+                  key="agents"
+                  custom={slideDirection}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    duration: PAGE_TRANSITION_DURATION,
+                    ease: PAGE_TRANSITION_EASING,
+                  }}
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
+                >
+                  <Suspense fallback={fallback}>
                     <AgentsView projectId={currentProject.id} agents={[]} activeAgentId={null} />
-                    </Suspense>
-                  </motion.div>
-                )}
+                  </Suspense>
+                </motion.div>
+              )}
 
-                {activePage === "worktrees" && (
-                  <motion.div
-                    key="worktrees"
-                    custom={slideDirection}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{
-                      duration: PAGE_TRANSITION_DURATION,
-                      ease: PAGE_TRANSITION_EASING,
-                    }}
-                    className="absolute inset-0 overflow-auto custom-scrollbar"
-                  >
-                    <Suspense
-                      fallback={fallback}
-                    >
+              {activePage === "worktrees" && (
+                <motion.div
+                  key="worktrees"
+                  custom={slideDirection}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    duration: PAGE_TRANSITION_DURATION,
+                    ease: PAGE_TRANSITION_EASING,
+                  }}
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
+                >
+                  <Suspense fallback={fallback}>
                     <WorktreesView projectId={currentProject.id} worktrees={[]} />
-                    </Suspense>
-                  </motion.div>
-                )}
+                  </Suspense>
+                </motion.div>
+              )}
 
-                {activePage === "settings" && (
-                  <motion.div
-                    key="settings"
-                    custom={slideDirection}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{
-                      duration: PAGE_TRANSITION_DURATION,
-                      ease: PAGE_TRANSITION_EASING,
-                    }}
-                    className="absolute inset-0 overflow-auto custom-scrollbar"
-                  >
-                    <Suspense
-                      fallback={fallback}
-                    >
+              {activePage === "settings" && (
+                <motion.div
+                  key="settings"
+                  custom={slideDirection}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    duration: PAGE_TRANSITION_DURATION,
+                    ease: PAGE_TRANSITION_EASING,
+                  }}
+                  className="absolute inset-0 overflow-auto custom-scrollbar"
+                >
+                  <Suspense fallback={fallback}>
                     <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
-                    </Suspense>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  </Suspense>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Modals and Overlays - lazy loaded for performance */}
             <Suspense fallback={null}>

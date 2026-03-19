@@ -19,10 +19,9 @@ import { useState } from "react";
 export function ProjectList() {
   const { activeConnection } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const {
-    data: recentProjects = [],
-    isLoading: loading,
-  } = useRecentProjects(activeConnection?.sshConnection?.id);
+  const { data: recentProjects = [], isLoading: loading } = useRecentProjects(
+    activeConnection?.sshConnection?.id,
+  );
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();

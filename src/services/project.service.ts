@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import type { ProjectConfigRequest } from "@/types/bindings";
-import {localConnectionId} from "@/contexts/ConnectionContext";
+import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -99,7 +99,9 @@ export function useRemoveProject(connectionId: number | string | null | undefine
     mutationFn: (projectId: number) => api.removeProject(projectId),
     onSuccess: (_data, projectId) => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.details(projectId) });
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId) })
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
+      });
     },
     onError: (error) => {
       toast.error(

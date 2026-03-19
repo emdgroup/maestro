@@ -107,6 +107,32 @@ export function useConnectSshWithCreds() {
 }
 
 /**
+ * Mutation hook for connecting to SSH with a key file
+ */
+export function useConnectSshWithKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      connectionId,
+      keyPath,
+      passphrase,
+    }: {
+      connectionId: number;
+      keyPath: string;
+      passphrase?: string;
+    }) => api.connectSshWithKey(connectionId, keyPath, passphrase ?? null),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
+      toast.success("SSH connection created successfully");
+    },
+    onError: (error) => {
+      toast.error(`Failed to connect: ${error}`);
+    },
+  });
+}
+
+/**
  * Mutation hook for updating SSH connection display name
  * Uses optimistic updates for instant UI feedback
  */
@@ -116,9 +142,9 @@ export function useUpdateSshConnection() {
   return useMutation({
     mutationFn: ({ connectionId, displayName }: { connectionId: number; displayName: string }) =>
       api.renameSshConnection(connectionId, displayName),
-    onSuccess: (_data, {connectionId}) => {
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.details(connectionId)})
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list()})
+    onSuccess: (_data, { connectionId }) => {
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.details(connectionId) });
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("Connection renamed successfully");
     },
     onError: (error) => {

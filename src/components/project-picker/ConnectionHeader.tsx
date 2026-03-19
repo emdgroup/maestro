@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";

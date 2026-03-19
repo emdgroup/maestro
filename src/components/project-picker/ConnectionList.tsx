@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui";
 import { Input } from "@/components/ui";
-import { PasswordModal } from "@/components/task/PasswordModal";
+import { SshAuthModal } from "@/components/project-picker/SshAuthModal.tsx";
 import { useSshConnectionManager } from "@/utils/hooks/useSshConnectionManager";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 
@@ -11,13 +11,14 @@ export function ConnectionList() {
   const { navigateToProjects } = useProjectPickerNavigation();
 
   const {
+    username,
     connections,
     loading,
-    showPasswordModal,
+    showAuthModal,
     handleNewConnection,
     handleConnection,
-    handlePasswordSubmit,
-    handlePasswordCancel,
+    handleAuthSubmit,
+    handleAuthCancel,
   } = useSshConnectionManager({ onConnectionSuccess: navigateToProjects });
 
   const handleConnect = async () => {
@@ -109,12 +110,12 @@ export function ConnectionList() {
         </div>
       </div>
 
-      {/* Password Modal */}
-      <PasswordModal
-        open={showPasswordModal}
-        connectionString={connectionString}
-        onSubmit={handlePasswordSubmit}
-        onCancel={handlePasswordCancel}
+      {/* SSH Auth Modal */}
+      <SshAuthModal
+        open={showAuthModal}
+        username={username}
+        onSubmit={handleAuthSubmit}
+        onCancel={handleAuthCancel}
         loading={loading}
       />
     </>

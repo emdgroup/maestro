@@ -940,6 +940,24 @@ export const commands = {
     }
   },
   /**
+   * Connect to SSH using a key file (with optional passphrase)
+   */
+  async connectSshWithKey(
+    connectionId: number,
+    keyPath: string,
+    passphrase: string | null,
+  ): Promise<Result<number, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("connect_ssh_with_key", { connectionId, keyPath, passphrase }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * List directories on remote host
    */
   async listRemoteDirectories(
