@@ -64,6 +64,7 @@ function loadConfig(cwd) {
     nyquist_validation: true,
     parallelization: true,
     brave_search: false,
+    resolve_model_ids: false, // when true, resolve aliases (opus/sonnet/haiku) to full model IDs
   };
 
   try {
@@ -106,6 +107,7 @@ function loadConfig(cwd) {
       nyquist_validation: get('nyquist_validation', { section: 'workflow', field: 'nyquist_validation' }) ?? defaults.nyquist_validation,
       parallelization,
       brave_search: get('brave_search') ?? defaults.brave_search,
+      resolve_model_ids: get('resolve_model_ids') ?? defaults.resolve_model_ids,
       model_overrides: parsed.model_overrides || null,
     };
   } catch {
@@ -129,6 +131,110 @@ function isGitIgnored(cwd, targetPath) {
   } catch {
     return false;
   }
+}
+
+// ─── Markdown normalization ─────────────────────────────────────────────────
+
+/**
+ * Normalize markdown to fix common markdownlint violations.
+ * Applied at write points so GSD-generated .planning/ files are IDE-friendly.
+ *
+ * Rules enforced:
+ *   MD022 — Blank lines around headings
+ *   MD031 — Blank lines around fenced code blocks
+ *   MD032 — Blank lines around lists
+ *   MD012 — No multiple consecutive blank lines (collapsed to 2 max)
+ *   MD047 — Files end with a single newline
+ */
+function normalizeMd(content) {
+  if (!content || typeof content !== 'string') return content;
+
+  // Normalize line endings to LF for consistent processing
+  let text = content.replace(/\r\n/g, '\n');
+
+  const lines = text.split('\n');
+  const result = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = i > 0 ? lines[i - 1] : '';
+    const prevTrimmed = prev.trimEnd();
+    const trimmed = line.trimEnd();
+
+    // MD022: Blank line before headings (skip first line and frontmatter delimiters)
+    if (/^#{1,6}\s/.test(trimmed) && i > 0 && prevTrimmed !== '' && prevTrimmed !== '---') {
+      result.push('');
+    }
+
+    // MD031: Blank line before fenced code blocks
+    if (/^```/.test(trimmed) && i > 0 && prevTrimmed !== '' && !isInsideFencedBlock(lines, i)) {
+      result.push('');
+    }
+
+    // MD032: Blank line before lists (- item, * item, N. item, - [ ] item)
+    if (/^(\s*[-*+]\s|\s*\d+\.\s)/.test(line) && i > 0 &&
+        prevTrimmed !== '' && !/^(\s*[-*+]\s|\s*\d+\.\s)/.test(prev) &&
+        prevTrimmed !== '---') {
+      result.push('');
+    }
+
+    result.push(line);
+
+    // MD022: Blank line after headings
+    if (/^#{1,6}\s/.test(trimmed) && i < lines.length - 1) {
+      const next = lines[i + 1];
+      if (next !== undefined && next.trimEnd() !== '') {
+        result.push('');
+      }
+    }
+
+    // MD031: Blank line after closing fenced code blocks
+    if (/^```\s*$/.test(trimmed) && isClosingFence(lines, i) && i < lines.length - 1) {
+      const next = lines[i + 1];
+      if (next !== undefined && next.trimEnd() !== '') {
+        result.push('');
+      }
+    }
+
+    // MD032: Blank line after last list item in a block
+    if (/^(\s*[-*+]\s|\s*\d+\.\s)/.test(line) && i < lines.length - 1) {
+      const next = lines[i + 1];
+      if (next !== undefined && next.trimEnd() !== '' &&
+          !/^(\s*[-*+]\s|\s*\d+\.\s)/.test(next) &&
+          !/^\s/.test(next)) {
+        // Only add blank line if next line is not a continuation/indented line
+        result.push('');
+      }
+    }
+  }
+
+  text = result.join('\n');
+
+  // MD012: Collapse 3+ consecutive blank lines to 2
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // MD047: Ensure file ends with exactly one newline
+  text = text.replace(/\n*$/, '\n');
+
+  return text;
+}
+
+/** Check if line index i is inside an already-open fenced code block */
+function isInsideFencedBlock(lines, i) {
+  let fenceCount = 0;
+  for (let j = 0; j < i; j++) {
+    if (/^```/.test(lines[j].trimEnd())) fenceCount++;
+  }
+  return fenceCount % 2 === 1;
+}
+
+/** Check if a ``` line is a closing fence (odd number of fences up to and including this one) */
+function isClosingFence(lines, i) {
+  let fenceCount = 0;
+  for (let j = 0; j <= i; j++) {
+    if (/^```/.test(lines[j].trimEnd())) fenceCount++;
+  }
+  return fenceCount % 2 === 0;
 }
 
 function execGit(cwd, args) {
@@ -317,6 +423,91 @@ function stripShippedMilestones(content) {
 }
 
 /**
+ * Extract the current milestone section from ROADMAP.md by positive lookup.
+ *
+ * Instead of stripping <details> blocks (negative heuristic that breaks if
+ * agents wrap the current milestone in <details>), this finds the section
+ * matching the current milestone version and returns only that content.
+ *
+ * Falls back to stripShippedMilestones() if:
+ * - cwd is not provided
+ * - STATE.md doesn't exist or has no milestone field
+ * - Version can't be found in ROADMAP.md
+ *
+ * @param {string} content - Full ROADMAP.md content
+ * @param {string} [cwd] - Working directory for reading STATE.md
+ * @returns {string} Content scoped to current milestone
+ */
+function extractCurrentMilestone(content, cwd) {
+  if (!cwd) return stripShippedMilestones(content);
+
+  // 1. Get current milestone version from STATE.md frontmatter
+  let version = null;
+  try {
+    const statePath = path.join(cwd, '.planning', 'STATE.md');
+    if (fs.existsSync(statePath)) {
+      const stateRaw = fs.readFileSync(statePath, 'utf-8');
+      const milestoneMatch = stateRaw.match(/^milestone:\s*(.+)/m);
+      if (milestoneMatch) {
+        version = milestoneMatch[1].trim();
+      }
+    }
+  } catch {}
+
+  // 2. Fallback: derive version from getMilestoneInfo pattern in ROADMAP.md itself
+  if (!version) {
+    // Check for 🚧 in-progress marker
+    const inProgressMatch = content.match(/🚧\s*\*\*v(\d+\.\d+)\s/);
+    if (inProgressMatch) {
+      version = 'v' + inProgressMatch[1];
+    }
+  }
+
+  if (!version) return stripShippedMilestones(content);
+
+  // 3. Find the section matching this version
+  // Match headings like: ## Roadmap v3.0: Name, ## v3.0 Name, etc.
+  const escapedVersion = escapeRegex(version);
+  const sectionPattern = new RegExp(
+    `(^#{1,3}\\s+.*${escapedVersion}[^\\n]*)`,
+    'mi'
+  );
+  const sectionMatch = content.match(sectionPattern);
+
+  if (!sectionMatch) return stripShippedMilestones(content);
+
+  const sectionStart = sectionMatch.index;
+
+  // Find the end: next milestone heading at same or higher level, or EOF
+  // Milestone headings look like: ## v2.0, ## Roadmap v2.0, ## ✅ v1.0, etc.
+  const headingLevel = sectionMatch[1].match(/^(#{1,3})\s/)[1].length;
+  const restContent = content.slice(sectionStart + sectionMatch[0].length);
+  const nextMilestonePattern = new RegExp(
+    `^#{1,${headingLevel}}\\s+(?:.*v\\d+\\.\\d+|✅|📋|🚧)`,
+    'mi'
+  );
+  const nextMatch = restContent.match(nextMilestonePattern);
+
+  let sectionEnd;
+  if (nextMatch) {
+    sectionEnd = sectionStart + sectionMatch[0].length + nextMatch.index;
+  } else {
+    sectionEnd = content.length;
+  }
+
+  // Return everything before the current milestone section (non-milestone content
+  // like title, overview) plus the current milestone section
+  const beforeMilestones = content.slice(0, sectionStart);
+  const currentSection = content.slice(sectionStart, sectionEnd);
+
+  // Also include any content before the first milestone heading (title, overview, etc.)
+  // but strip any <details> blocks in it (these are definitely shipped)
+  const preamble = beforeMilestones.replace(/<details>[\s\S]*?<\/details>/gi, '');
+
+  return preamble + currentSection;
+}
+
+/**
  * Replace a pattern only in the current milestone section of ROADMAP.md
  * (everything after the last </details> close tag). Used for write operations
  * that must not accidentally modify archived milestone checkboxes/tables.
@@ -340,7 +531,7 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
   if (!fs.existsSync(roadmapPath)) return null;
 
   try {
-    const content = stripShippedMilestones(fs.readFileSync(roadmapPath, 'utf-8'));
+    const content = extractCurrentMilestone(fs.readFileSync(roadmapPath, 'utf-8'), cwd);
     const escapedPhase = escapeRegex(phaseNum.toString());
     const phasePattern = new RegExp(`#{2,4}\\s*Phase\\s+${escapedPhase}:\\s*([^\\n]+)`, 'i');
     const headerMatch = content.match(phasePattern);
@@ -368,6 +559,19 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
   }
 }
 
+// ─── Model alias resolution ───────────────────────────────────────────────────
+
+/**
+ * Map short model aliases to full model IDs.
+ * Updated each release to match current model versions.
+ * Users can override with model_overrides in config.json for custom/latest models.
+ */
+const MODEL_ALIAS_MAP = {
+  'opus': 'claude-opus-4-0',
+  'sonnet': 'claude-sonnet-4-5',
+  'haiku': 'claude-haiku-3-5',
+};
+
 function resolveModelInternal(cwd, agentType) {
   const config = loadConfig(cwd);
 
@@ -382,7 +586,15 @@ function resolveModelInternal(cwd, agentType) {
   const agentModels = MODEL_PROFILES[agentType];
   if (!agentModels) return 'sonnet';
   if (profile === 'inherit') return 'inherit';
-  return agentModels[profile] || agentModels['balanced'] || 'sonnet';
+  const alias = agentModels[profile] || agentModels['balanced'] || 'sonnet';
+
+  // If resolve_model_ids is true, map alias to full model ID
+  // This prevents 404s when the Task tool passes aliases directly to the API
+  if (config.resolve_model_ids) {
+    return MODEL_ALIAS_MAP[alias] || alias;
+  }
+
+  return alias;
 }
 
 // ─── Misc utilities ───────────────────────────────────────────────────────────
@@ -445,7 +657,7 @@ function getMilestoneInfo(cwd) {
 function getMilestonePhaseFilter(cwd) {
   const milestonePhaseNums = new Set();
   try {
-    const roadmap = stripShippedMilestones(fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8'));
+    const roadmap = extractCurrentMilestone(fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8'), cwd);
     const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:/gi;
     let m;
     while ((m = phasePattern.exec(roadmap)) !== null) {
@@ -479,6 +691,7 @@ module.exports = {
   loadConfig,
   isGitIgnored,
   execGit,
+  normalizeMd,
   escapeRegex,
   normalizePhaseName,
   comparePhaseNum,
@@ -492,6 +705,8 @@ module.exports = {
   getMilestoneInfo,
   getMilestonePhaseFilter,
   stripShippedMilestones,
+  extractCurrentMilestone,
   replaceInCurrentMilestone,
   toPosixPath,
+  MODEL_ALIAS_MAP,
 };

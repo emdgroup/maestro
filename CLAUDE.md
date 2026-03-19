@@ -29,7 +29,7 @@ pnpm format:fix       # Fix formatting with oxfmt
 
 ```bash
 pnpm tauri:dev        # Run Tauri app in dev mode (starts Vite + Tauri)
-pnpm tauri build      # Build production Tauri app
+pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Build production Tauri app
 pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
 ```
 

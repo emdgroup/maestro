@@ -14,6 +14,9 @@
  *   state update <field> <value>       Update a STATE.md field
  *   state get [section]                Get STATE.md content or section
  *   state patch --field val ...        Batch update STATE.md fields
+ *   state begin-phase --phase N --name S --plans C  Update STATE.md for new phase start
+ *   state signal-waiting --type T --question Q --options "A|B" --phase P  Write WAITING.json signal
+ *   state signal-resume                Remove WAITING.json signal
  *   resolve-model <agent-type>         Get model for agent based on profile
  *   find-phase <phase>                 Find phase directory by number
  *   commit <message> [--files f1 f2]   Commit planning docs
@@ -139,6 +142,8 @@ const milestone = require('./lib/milestone.cjs');
 const commands = require('./lib/commands.cjs');
 const init = require('./lib/init.cjs');
 const frontmatter = require('./lib/frontmatter.cjs');
+const profilePipeline = require('./lib/profile-pipeline.cjs');
+const profileOutput = require('./lib/profile-output.cjs');
 
 // ─── CLI Router ───────────────────────────────────────────────────────────────
 
@@ -241,6 +246,32 @@ async function main() {
           stopped_at: stoppedIdx !== -1 ? args[stoppedIdx + 1] : null,
           resume_file: resumeIdx !== -1 ? args[resumeIdx + 1] : 'None',
         }, raw);
+      } else if (subcommand === 'begin-phase') {
+        const phaseIdx = args.indexOf('--phase');
+        const nameIdx = args.indexOf('--name');
+        const plansIdx = args.indexOf('--plans');
+        state.cmdStateBeginPhase(
+          cwd,
+          phaseIdx !== -1 ? args[phaseIdx + 1] : null,
+          nameIdx !== -1 ? args[nameIdx + 1] : null,
+          plansIdx !== -1 ? parseInt(args[plansIdx + 1], 10) : null,
+          raw
+        );
+      } else if (subcommand === 'signal-waiting') {
+        const typeIdx = args.indexOf('--type');
+        const qIdx = args.indexOf('--question');
+        const optIdx = args.indexOf('--options');
+        const phaseIdx = args.indexOf('--phase');
+        state.cmdSignalWaiting(
+          cwd,
+          typeIdx !== -1 ? args[typeIdx + 1] : null,
+          qIdx !== -1 ? args[qIdx + 1] : null,
+          optIdx !== -1 ? args[optIdx + 1] : null,
+          phaseIdx !== -1 ? args[phaseIdx + 1] : null,
+          raw
+        );
+      } else if (subcommand === 'signal-resume') {
+        state.cmdSignalResume(cwd, raw);
       } else {
         state.cmdStateLoad(cwd, raw);
       }
@@ -592,6 +623,94 @@ async function main() {
         limit: limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : 10,
         freshness: freshnessIdx !== -1 ? args[freshnessIdx + 1] : null,
       }, raw);
+      break;
+    }
+
+    // ─── Profiling Pipeline ────────────────────────────────────────────────
+
+    case 'scan-sessions': {
+      const pathIdx = args.indexOf('--path');
+      const sessionsPath = pathIdx !== -1 ? args[pathIdx + 1] : null;
+      const verboseFlag = args.includes('--verbose');
+      const jsonFlag = args.includes('--json');
+      await profilePipeline.cmdScanSessions(sessionsPath, { verbose: verboseFlag, json: jsonFlag }, raw);
+      break;
+    }
+
+    case 'extract-messages': {
+      const sessionIdx = args.indexOf('--session');
+      const sessionId = sessionIdx !== -1 ? args[sessionIdx + 1] : null;
+      const limitIdx = args.indexOf('--limit');
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
+      const pathIdx = args.indexOf('--path');
+      const sessionsPath = pathIdx !== -1 ? args[pathIdx + 1] : null;
+      const projectArg = args[1];
+      if (!projectArg || projectArg.startsWith('--')) {
+        error('Usage: gsd-tools extract-messages <project> [--session <id>] [--limit N] [--path <dir>]\nRun scan-sessions first to see available projects.');
+      }
+      await profilePipeline.cmdExtractMessages(projectArg, { sessionId, limit }, raw, sessionsPath);
+      break;
+    }
+
+    case 'profile-sample': {
+      const pathIdx = args.indexOf('--path');
+      const sessionsPath = pathIdx !== -1 ? args[pathIdx + 1] : null;
+      const limitIdx = args.indexOf('--limit');
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : 150;
+      const maxPerIdx = args.indexOf('--max-per-project');
+      const maxPerProject = maxPerIdx !== -1 ? parseInt(args[maxPerIdx + 1], 10) : null;
+      const maxCharsIdx = args.indexOf('--max-chars');
+      const maxChars = maxCharsIdx !== -1 ? parseInt(args[maxCharsIdx + 1], 10) : 500;
+      await profilePipeline.cmdProfileSample(sessionsPath, { limit, maxPerProject, maxChars }, raw);
+      break;
+    }
+
+    // ─── Profile Output ──────────────────────────────────────────────────
+
+    case 'write-profile': {
+      const inputIdx = args.indexOf('--input');
+      const inputPath = inputIdx !== -1 ? args[inputIdx + 1] : null;
+      if (!inputPath) error('--input <analysis-json-path> is required');
+      const outputIdx = args.indexOf('--output');
+      const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+      profileOutput.cmdWriteProfile(cwd, { input: inputPath, output: outputPath }, raw);
+      break;
+    }
+
+    case 'profile-questionnaire': {
+      const answersIdx = args.indexOf('--answers');
+      const answers = answersIdx !== -1 ? args[answersIdx + 1] : null;
+      profileOutput.cmdProfileQuestionnaire({ answers }, raw);
+      break;
+    }
+
+    case 'generate-dev-preferences': {
+      const analysisIdx = args.indexOf('--analysis');
+      const analysisPath = analysisIdx !== -1 ? args[analysisIdx + 1] : null;
+      const outputIdx = args.indexOf('--output');
+      const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+      const stackIdx = args.indexOf('--stack');
+      const stack = stackIdx !== -1 ? args[stackIdx + 1] : null;
+      profileOutput.cmdGenerateDevPreferences(cwd, { analysis: analysisPath, output: outputPath, stack }, raw);
+      break;
+    }
+
+    case 'generate-claude-profile': {
+      const analysisIdx = args.indexOf('--analysis');
+      const analysisPath = analysisIdx !== -1 ? args[analysisIdx + 1] : null;
+      const outputIdx = args.indexOf('--output');
+      const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+      const globalFlag = args.includes('--global');
+      profileOutput.cmdGenerateClaudeProfile(cwd, { analysis: analysisPath, output: outputPath, global: globalFlag }, raw);
+      break;
+    }
+
+    case 'generate-claude-md': {
+      const outputIdx = args.indexOf('--output');
+      const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+      const autoFlag = args.includes('--auto');
+      const forceFlag = args.includes('--force');
+      profileOutput.cmdGenerateClaudeMd(cwd, { output: outputPath, auto: autoFlag, force: forceFlag }, raw);
       break;
     }
 
