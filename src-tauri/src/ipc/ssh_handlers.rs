@@ -282,6 +282,13 @@ pub async fn connect_ssh_with_key(
 
     connection.auth_method = SshAuthMethod::KeyFile { path: key_path.clone(), save_passphrase };
 
+    // If no passphrase was provided, try loading it from the OS keyring
+    let passphrase = if passphrase.is_none() {
+        PasswordManager::get_passphrase(&key_path).ok().map(|p| p.to_string())
+    } else {
+        passphrase
+    };
+
     let session = RemoteSshSession::new(connection.clone());
     session.connect_with_key(Some(key_path.clone()), passphrase.clone()).await
         .map_err(|e| e.to_string())?;
