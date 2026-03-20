@@ -1,6 +1,3 @@
-use ssh2::Session;
-use std::io::Read;
-use std::net::TcpStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -12,8 +9,26 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use specta::Type;
 use zeroize::Zeroizing;
+use russh::client::{self, Handle};
+use russh::keys::agent::client::AgentClient;
+use russh::ChannelMsg;
+use russh::keys::PrivateKeyWithHashAlg;
 use crate::ssh::error::SshError;
 use crate::ssh::PasswordManager;
+
+/// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
+struct SshClientHandler;
+
+impl client::Handler for SshClientHandler {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _server_public_key: &russh::keys::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
 
 /// Saved SSH connection for quick reconnection
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -58,7 +73,7 @@ pub enum SshConnectionState {
 
 /// Manages a persistent SSH connection for a remote project
 pub struct RemoteSshSession {
-    session: Arc<Mutex<Option<Session>>>,
+    handle: Arc<Mutex<Option<Handle<SshClientHandler>>>>,
     ssh_connection: SshConnection,
     state: Arc<Mutex<SshConnectionState>>,
     reconnect_attempts: Arc<AtomicUsize>,
@@ -78,7 +93,6 @@ impl FromSql for SshAuthMethod {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let json = value.as_str()?;
 
-        // Provide better error messages when deserialization fails
         if json.is_empty() {
             return Err(rusqlite::types::FromSqlError::Other(
                 "SshAuthMethod cannot be deserialized from empty string".into()
@@ -95,7 +109,6 @@ impl FromSql for SshAuthMethod {
 
 impl SshConnection {
     /// Parse an SshConnection from a rusqlite Row
-    /// Expects columns in order
     pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         Ok(SshConnection {
             id: row.get(0)?,
@@ -114,7 +127,7 @@ impl SshConnection {
 impl Clone for RemoteSshSession {
     fn clone(&self) -> Self {
         Self {
-            session: self.session.clone(),
+            handle: self.handle.clone(),
             ssh_connection: self.ssh_connection.clone(),
             state: self.state.clone(),
             reconnect_attempts: self.reconnect_attempts.clone(),
@@ -134,11 +147,92 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+/// Open a russh connection (TCP + SSH handshake) to the configured host
+async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClientHandler>, SshError> {
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(Duration::from_secs(10)),
+        ..Default::default()
+    });
+    let addr = format!("{}:{}", host, port);
+    client::connect(config, addr.as_str(), SshClientHandler)
+        .await
+        .map_err(|e| SshError::ConnectionError(format!(
+            "Failed to connect to {}:{}: {}", host, port, e
+        )))
+}
+
+/// Authenticate via SSH agent (platform-specific)
+async fn authenticate_via_agent(
+    handle: &mut Handle<SshClientHandler>,
+    username: &str,
+) -> Result<bool, SshError> {
+    #[cfg(unix)]
+    {
+        let mut agent = AgentClient::connect_env()
+            .await
+            .map_err(|e| SshError::AuthenticationError(
+                format!("SSH agent connect failed: {}", e)
+            ))?;
+        let identities = agent.request_identities()
+            .await
+            .map_err(|e| SshError::AuthenticationError(
+                format!("Failed to list agent keys: {}", e)
+            ))?;
+        for pubkey in &identities {
+            let result = handle
+                .authenticate_publickey_with(username, pubkey.clone(), None, &mut agent)
+                .await
+                .map_err(|e| SshError::AuthenticationError(
+                    format!("Agent authentication failed: {:?}", e)
+                ))?;
+            if result.success() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    #[cfg(windows)]
+    {
+        // Connect to the Windows OpenSSH agent via its named pipe
+        let pipe = tokio::net::windows::named_pipe::ClientOptions::new()
+            .open(r"\\.\pipe\openssh-ssh-agent")
+            .map_err(|e| SshError::AuthenticationError(
+                format!("Failed to connect to Windows SSH agent pipe: {}", e)
+            ))?;
+        let mut agent = AgentClient::connect(pipe);
+        let identities = agent.request_identities()
+            .await
+            .map_err(|e| SshError::AuthenticationError(
+                format!("Failed to list agent keys: {}", e)
+            ))?;
+        for pubkey in &identities {
+            let result = handle
+                .authenticate_publickey_with(username, pubkey.clone(), None, &mut agent)
+                .await
+                .map_err(|e| SshError::AuthenticationError(
+                    format!("Agent authentication failed: {:?}", e)
+                ))?;
+            if result.success() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(SshError::AuthenticationError(
+            "SSH agent authentication is not supported on this platform".to_string()
+        ))
+    }
+}
+
 impl RemoteSshSession {
     /// Create a new SSH session with the given configuration
     pub fn new(ssh_connection: SshConnection) -> Self {
         Self {
-            session: Arc::new(Mutex::new(None)),
+            handle: Arc::new(Mutex::new(None)),
             ssh_connection,
             state: Arc::new(Mutex::new(SshConnectionState::Initial)),
             reconnect_attempts: Arc::new(AtomicUsize::new(0)),
@@ -149,46 +243,39 @@ impl RemoteSshSession {
 
     /// Establish SSH connection with authentication
     pub async fn connect(&self, password: Option<String>) -> Result<(), SshError> {
-        let mut state = self.state.lock().await;
-        *state = SshConnectionState::Connecting;
-        drop(state);
+        *self.state.lock().await = SshConnectionState::Connecting;
 
-        // Parse host and port from config
         let host = &self.ssh_connection.host;
-        let port = &self.ssh_connection.port;
-        let username = &self.ssh_connection.username;
+        let port = self.ssh_connection.port;
+        let username = self.ssh_connection.username.clone();
 
-        // Create TCP connection with timeout
-        let tcp_stream = TcpStream::connect(format!("{}:{}", host, port))
-            .map_err(|e| {
-                SshError::ConnectionError(format!(
-                    "Failed to connect to {}:{}: {}",
-                    host, port, e
-                ))
-            })?;
+        let mut handle = open_handle(host, port).await?;
 
-        // Set TCP connection timeout
-        tcp_stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
+        let auth_result = match &self.ssh_connection.auth_method {
+            SshAuthMethod::Password { save_password } => {
+                let pwd: Zeroizing<String> = if *save_password {
+                    PasswordManager::get_password(host, &username).map_err(|e| {
+                        SshError::AuthenticationError(format!("Failed to retrieve password: {}", e))
+                    })?
+                } else {
+                    let connection_string = format!("{username}@{host}");
+                    let mem_password = password.ok_or_else(|| {
+                        SshError::AuthenticationError(format!(
+                            "No password found for {connection_string}"
+                        ))
+                    })?;
+                    *self.session_password.lock().await = Some(mem_password.clone());
+                    Zeroizing::new(mem_password)
+                };
 
-        tcp_stream
-            .set_write_timeout(Some(Duration::from_secs(10)))
-            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
+                handle
+                    .authenticate_password(&username, pwd.as_str())
+                    .await
+                    .map_err(|e| SshError::AuthenticationError(format!(
+                        "Password authentication failed: {}", e
+                    )))?
+            }
 
-        // Create SSH session
-        let mut session = Session::new()
-            .map_err(|e| SshError::ConnectionError(format!("Failed to create session: {}", e)))?;
-
-        session.set_tcp_stream(tcp_stream);
-
-        // Perform SSH handshake
-        session.handshake().map_err(|e| {
-            SshError::ConnectionError(format!("SSH handshake failed: {}", e))
-        })?;
-
-        // Authenticate based on configured method
-        match &self.ssh_connection.auth_method {
             SshAuthMethod::KeyFile { path, save_passphrase } => {
                 let expanded = expand_tilde(path);
                 let mem_passphrase = self.key_passphrase.lock().await.clone();
@@ -199,93 +286,76 @@ impl RemoteSshSession {
                 } else {
                     None
                 };
-                println!("Key auth (reconnect): username={}, key_path='{}'", username, expanded);
+
                 if !Path::new(&expanded).exists() {
                     return Err(SshError::AuthenticationError(format!(
                         "Key file not found on reconnect: '{}'", expanded
                     )));
                 }
-                let normalized = expanded.replace('\\', "/");
-                session
-                    .userauth_pubkey_file(username, None, Path::new(&normalized), passphrase.as_deref())
-                    .map_err(|e| {
-                        SshError::AuthenticationError(format!(
-                            "Public key authentication failed for '{}' on reconnect: {}",
-                            expanded, e
-                        ))
-                    })?;
+
+                let key = russh::keys::load_secret_key(Path::new(&expanded), passphrase.as_deref())
+                    .map_err(|e| SshError::AuthenticationError(format!(
+                        "Failed to load key '{}': {}", expanded, e
+                    )))?;
+
+                let hash_alg = handle.best_supported_rsa_hash()
+                    .await
+                    .map_err(|e| SshError::ConnectionError(format!(
+                        "Failed to query RSA hash algorithms: {}", e
+                    )))?
+                    .flatten();
+
+                handle
+                    .authenticate_publickey(
+                        &username,
+                        PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
+                    )
+                    .await
+                    .map_err(|e| SshError::AuthenticationError(format!(
+                        "Public key authentication failed for '{}' on reconnect: {}", expanded, e
+                    )))?
             }
+
             SshAuthMethod::Agent => {
-                session.userauth_agent(username).map_err(|e| {
-                    SshError::AuthenticationError(format!("SSH agent authentication failed: {}", e))
-                })?;
+                let authenticated = authenticate_via_agent(&mut handle, &username).await?;
+                if !authenticated {
+                    return Err(SshError::AuthenticationError(
+                        "SSH agent: no key was accepted by the server".to_string()
+                    ));
+                }
+                // Return early — already confirmed authenticated
+                *self.handle.lock().await = Some(handle);
+                *self.state.lock().await = SshConnectionState::Connected;
+                self.reconnect_attempts.store(0, Ordering::SeqCst);
+                return Ok(());
             }
-            SshAuthMethod::Password { save_password } => {
-                // Retrieve password from OS keyring
-                let pwd = if save_password.clone() {
-                    PasswordManager::get_password(host, username).map_err(|e| {
-                        SshError::AuthenticationError(format!("Failed to retrieve password: {}", e))
-                    })?
-                } else {
-                    let connection_string = format!("{username}@{host}");
-                    let mem_password = password.as_ref().cloned().ok_or_else(|| {
-                        SshError::AuthenticationError(format!(
-                            "No password found for {connection_string}"
-                        ))
-                    })?;
-                    *self.session_password.lock().await = Some(mem_password.clone());
-                    Zeroizing::new(mem_password)
-                };
+        };
 
-                session
-                .userauth_password(username, &pwd)
-                .map_err(|e| {
-                    SshError::AuthenticationError(format!(
-                        "Password authentication failed: {}",
-                        e
-                    ))
-                })?;
-            }
-        }
-
-        // Verify authentication succeeded
-        if !session.authenticated() {
+        if !auth_result.success() {
             return Err(SshError::AuthenticationError(
                 "Authentication failed: SSH server did not grant access".to_string(),
             ));
         }
 
-        // Store session and update state
-        *self.session.lock().await = Some(session);
+        *self.handle.lock().await = Some(handle);
         *self.state.lock().await = SshConnectionState::Connected;
         self.reconnect_attempts.store(0, Ordering::SeqCst);
 
         Ok(())
     }
 
-    /// Establish SSH connection using an explicit key file path and optional passphrase
-    pub async fn connect_with_key(&self, key_path: Option<String>, passphrase: Option<String>) -> Result<(), SshError> {
-        let mut state = self.state.lock().await;
-        *state = SshConnectionState::Connecting;
-        drop(state);
+    /// Establish SSH connection using an explicit key file path and optional passphrase.
+    /// This is the primary path for interactive key auth from the UI.
+    pub async fn connect_with_key(
+        &self,
+        key_path: Option<String>,
+        passphrase: Option<String>,
+    ) -> Result<(), SshError> {
+        *self.state.lock().await = SshConnectionState::Connecting;
 
         let host = &self.ssh_connection.host;
-        let port = &self.ssh_connection.port;
-        let username = &self.ssh_connection.username;
-
-        let tcp_stream = TcpStream::connect(format!("{}:{}", host, port))
-            .map_err(|e| SshError::ConnectionError(format!("Failed to connect to {}:{}: {}", host, port, e)))?;
-
-        tcp_stream.set_read_timeout(Some(Duration::from_secs(10)))
-            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
-        tcp_stream.set_write_timeout(Some(Duration::from_secs(10)))
-            .map_err(|e| SshError::ConnectionError(format!("Failed to set timeout: {}", e)))?;
-
-        let mut session = Session::new()
-            .map_err(|e| SshError::ConnectionError(format!("Failed to create session: {}", e)))?;
-        session.set_tcp_stream(tcp_stream);
-        session.handshake()
-            .map_err(|e| SshError::ConnectionError(format!("SSH handshake failed: {}", e)))?;
+        let port = self.ssh_connection.port;
+        let username = self.ssh_connection.username.clone();
 
         let fallback_path;
         let path: &str = if let Some(ref p) = key_path {
@@ -308,13 +378,12 @@ impl RemoteSshSession {
             )));
         }
 
-        // Read the file to detect format before handing to libssh2
+        // Read the file to detect if it is a public key (user error)
         let key_data = std::fs::read_to_string(&expanded)
             .map_err(|e| SshError::AuthenticationError(format!(
                 "Cannot read key file '{}': {}", expanded, e
             )))?;
 
-        // Reject public key files immediately
         if key_data.starts_with("ssh-") || key_data.starts_with("ecdsa-")
             || key_data.contains("BEGIN PUBLIC KEY")
         {
@@ -323,47 +392,43 @@ impl RemoteSshSession {
             ));
         }
 
-        // libssh2 compiled without OpenSSL cannot parse OpenSSH-format keys
-        // (the format used by default for ed25519, and optionally for RSA/ECDSA).
-        // Legacy PEM keys (BEGIN RSA PRIVATE KEY / BEGIN EC PRIVATE KEY) work fine.
-        if key_data.contains("BEGIN OPENSSH PRIVATE KEY") {
-            return Err(SshError::AuthenticationError(
-                "OpenSSH-format keys (ed25519, or RSA/ECDSA generated with newer ssh-keygen) \
-                are not supported by the bundled SSH library.\n\n\
-                Options:\n\
-                1. Use SSH Agent auth — add your key with: ssh-add ~/.ssh/id_ed25519\n\
-                2. Generate a legacy RSA key: ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/id_rsa_maestro\n\
-                3. Convert an existing RSA/ECDSA key to PEM: ssh-keygen -p -m PEM -f ~/.ssh/id_rsa"
-                    .to_string()
-            ));
-        }
+        println!("Key format: {} bytes", key_data.len());
 
-        println!("Key format: PEM, size: {} bytes", key_data.len());
-
-        // Store the passphrase so it can be reused on reconnection
+        // Store the passphrase so reconnection can reuse it
         *self.key_passphrase.lock().await = passphrase.clone();
 
-        // Query which auth methods the server actually supports (best-effort)
-        let server_methods = session.auth_methods(username)
-            .unwrap_or("(could not query server auth methods)");
-        println!("Server supported auth methods: {}", server_methods);
+        let mut handle = open_handle(host, port).await?;
 
-        // Normalize Windows backslashes → forward slashes for libssh2's fopen()
-        let normalized = expanded.replace('\\', "/");
-        session.userauth_pubkey_file(username, None, Path::new(&normalized), passphrase.as_deref())
+        // russh-keys handles all formats natively (OpenSSH ed25519, RSA PEM, ECDSA, …)
+        let key = russh::keys::load_secret_key(Path::new(&expanded), passphrase.as_deref())
             .map_err(|e| SshError::AuthenticationError(format!(
-                "Public key authentication failed for '{}': {}. Server accepts: {}",
-                expanded, e, server_methods
+                "Failed to load key '{}': {}", expanded, e
             )))?;
 
-        if !session.authenticated() {
+        let hash_alg = handle.best_supported_rsa_hash()
+            .await
+            .map_err(|e| SshError::ConnectionError(format!(
+                "Failed to query RSA hash algorithms: {}", e
+            )))?
+            .flatten();
+
+        let auth_result = handle
+            .authenticate_publickey(
+                &username,
+                PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
+            )
+            .await
+            .map_err(|e| SshError::AuthenticationError(format!(
+                "Public key authentication failed for '{}': {}", expanded, e
+            )))?;
+
+        if !auth_result.success() {
             return Err(SshError::AuthenticationError(format!(
-                "Server did not grant access for '{}'. Server accepts: {}",
-                expanded, server_methods
+                "Server did not grant access for '{}'", expanded
             )));
         }
 
-        *self.session.lock().await = Some(session);
+        *self.handle.lock().await = Some(handle);
         *self.state.lock().await = SshConnectionState::Connected;
         self.reconnect_attempts.store(0, Ordering::SeqCst);
 
@@ -372,7 +437,7 @@ impl RemoteSshSession {
 
     /// Disconnect from the SSH server
     pub async fn disconnect(&self) {
-        *self.session.lock().await = None;
+        *self.handle.lock().await = None;
         *self.state.lock().await = SshConnectionState::Disconnected;
     }
 
@@ -388,47 +453,59 @@ impl RemoteSshSession {
 
     /// Execute a command on the remote host
     pub async fn execute_command(&self, cmd: &str) -> Result<String, SshError> {
-        // Ensure connection is established, reconnect if needed
         if !self.is_connected().await {
             self.reconnect_if_needed().await?;
         }
 
-        let mut session = self.session.lock().await;
-        let session = session.as_mut().ok_or(SshError::ConnectionError(
-            "No active SSH session".to_string(),
-        ))?;
+        // Open a channel while holding the mutex, then release it.
+        // channel_open_session() takes &self so we only need a shared ref.
+        let mut channel = {
+            let guard = self.handle.lock().await;
+            let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                "No active SSH session".to_string(),
+            ))?;
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| SshError::ConnectionError(format!("Failed to create channel: {}", e)))?
+        };
 
-        // Create channel and execute command
-        let mut channel = session
-            .channel_session()
-            .map_err(|e| SshError::ConnectionError(format!("Failed to create channel: {}", e)))?;
-
-        channel.exec(cmd).map_err(|e| {
-            SshError::CommandExecutionError {
+        channel
+            .exec(true, cmd.as_bytes())
+            .await
+            .map_err(|e| SshError::CommandExecutionError {
                 exit_code: -1,
                 stderr: format!("Failed to execute command: {}", e),
-            }
-        })?;
+            })?;
 
-        // Read output
-        let mut output = String::new();
-        channel.read_to_string(&mut output).map_err(|e| {
-            SshError::CommandExecutionError {
-                exit_code: -1,
-                stderr: format!("Failed to read output: {}", e),
-            }
-        })?;
+        let mut stdout = String::new();
+        let mut stderr_buf = String::new();
+        let mut exit_code = 0i32;
 
-        // Check exit status
-        let exit_code = channel.exit_status().unwrap_or(-1);
+        loop {
+            match channel.wait().await {
+                None => break,
+                Some(ChannelMsg::Data { ref data }) => {
+                    stdout.push_str(&String::from_utf8_lossy(data));
+                }
+                Some(ChannelMsg::ExtendedData { ref data, ext }) if ext == 1 => {
+                    stderr_buf.push_str(&String::from_utf8_lossy(data));
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = exit_status as i32;
+                }
+                _ => {}
+            }
+        }
+
         if exit_code != 0 {
             return Err(SshError::CommandExecutionError {
                 exit_code,
-                stderr: output,
+                stderr: if stderr_buf.is_empty() { stdout } else { stderr_buf },
             });
         }
 
-        Ok(output)
+        Ok(stdout)
     }
 
     /// Reconnect if needed with exponential backoff
@@ -442,7 +519,6 @@ impl RemoteSshSession {
                 self.connect(password).await
             }
             SshConnectionState::Connecting => {
-                // Wait for connection in progress
                 let mut attempts = 0;
                 while *self.state.lock().await == SshConnectionState::Connecting && attempts < 50 {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -451,9 +527,7 @@ impl RemoteSshSession {
                 if self.is_connected().await {
                     Ok(())
                 } else {
-                    Err(SshError::ConnectionError(
-                        "Connection timeout".to_string(),
-                    ))
+                    Err(SshError::ConnectionError("Connection timeout".to_string()))
                 }
             }
             SshConnectionState::Reconnecting => {
@@ -464,7 +538,6 @@ impl RemoteSshSession {
                     ));
                 }
 
-                // Exponential backoff: 100ms * 2^attempt
                 let delay_ms = 100u64 * 2u64.pow(attempt as u32);
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
