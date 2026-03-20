@@ -150,7 +150,7 @@ fn expand_tilde(path: &str) -> String {
 /// Open a russh connection (TCP + SSH handshake) to the configured host
 async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClientHandler>, SshError> {
     let config = Arc::new(client::Config {
-        inactivity_timeout: Some(Duration::from_secs(10)),
+        inactivity_timeout: Some(Duration::from_secs(300)),
         ..Default::default()
     });
     let addr = format!("{}:{}", host, port);
@@ -459,15 +459,34 @@ impl RemoteSshSession {
 
         // Open a channel while holding the mutex, then release it.
         // channel_open_session() takes &self so we only need a shared ref.
+        // If channel open fails, the underlying connection may have dropped silently
+        // (e.g. inactivity timeout on the server). Mark as disconnected and retry once.
         let mut channel = {
-            let guard = self.handle.lock().await;
-            let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                "No active SSH session".to_string(),
-            ))?;
-            handle
-                .channel_open_session()
-                .await
-                .map_err(|e| SshError::ConnectionError(format!("Failed to create channel: {}", e)))?
+            let open_result = {
+                let guard = self.handle.lock().await;
+                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                    "No active SSH session".to_string(),
+                ))?;
+                handle.channel_open_session().await
+            };
+
+            match open_result {
+                Ok(ch) => ch,
+                Err(e) => {
+                    // Connection was silently dropped — reconnect and try once more
+                    println!("Channel open failed ({}), reconnecting…", e);
+                    *self.state.lock().await = SshConnectionState::Disconnected;
+                    self.reconnect_if_needed().await?;
+                    let guard = self.handle.lock().await;
+                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                        "No active SSH session after reconnect".to_string(),
+                    ))?;
+                    handle
+                        .channel_open_session()
+                        .await
+                        .map_err(|e2| SshError::ConnectionError(format!("Failed to create channel after reconnect: {}", e2)))?
+                }
+            }
         };
 
         channel
