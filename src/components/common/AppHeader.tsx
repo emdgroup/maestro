@@ -1,7 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
-import { cn } from "@/lib";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import {
   Select,
@@ -98,33 +97,35 @@ export function AppHeader({
       </div>
 
       {/* Center section: Tab Navigation */}
-      <nav className="flex items-center gap-1 flex-1 justify-center">
-        {VIEWS.map((view) => {
-          const Icon = view.icon;
-          const isActive = activeView === view.id;
-          return (
-            <button
-              key={view.id}
-              onClick={() => onViewChange(view.id)}
-              className={cn(
-                "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus:border focus:border-solid focus:border-accent",
-                isActive
-                  ? "text-accent bg-muted"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-              )}
-            >
-              <Icon className="size-3.5" />
-              <span>{view.label}</span>
-              {isActive && (
-                <motion.div
-                  layoutId="activeTabIndicator"
-                  className="absolute inset-0 bg-muted rounded-md -z-10"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
-            </button>
-          );
-        })}
+      <nav className="flex items-center flex-1 justify-center">
+        <div className="relative grid grid-cols-4 rounded-lg bg-muted p-1">
+          <motion.span
+            className="absolute inset-y-1 left-1 rounded-md bg-background shadow-sm"
+            style={{ width: "calc((100% - 0.5rem) / 4)" }}
+            animate={{ x: `calc(${VIEWS.findIndex((v) => v.id === activeView)} * 100%)` }}
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+          />
+          {VIEWS.map((view) => {
+            const Icon = view.icon;
+            const isActive = activeView === view.id;
+            return (
+              <button
+                key={view.id}
+                onClick={() => onViewChange(view.id)}
+                className="relative z-10 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none"
+              >
+                <motion.span
+                  animate={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center gap-1.5"
+                >
+                  <Icon className="size-3.5" />
+                  {view.label}
+                </motion.span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Right section: Status indicator + Theme switcher */}
