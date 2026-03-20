@@ -133,11 +133,13 @@ export function useConnectSshWithKey() {
       connectionId,
       keyPath,
       passphrase,
+      savePassphrase,
     }: {
       connectionId: number;
       keyPath: string;
       passphrase?: string;
-    }) => api.connectSshWithKey(connectionId, keyPath, passphrase ?? null),
+      savePassphrase: boolean;
+    }) => api.connectSshWithKey(connectionId, keyPath, passphrase ?? null, savePassphrase),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection successful");

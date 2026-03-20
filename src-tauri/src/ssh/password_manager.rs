@@ -43,4 +43,34 @@ impl PasswordManager {
 
         Ok(())
     }
+
+    /// Store SSH key passphrase in OS keyring, keyed by the key file path
+    pub fn store_passphrase(key_path: &str, passphrase: String) -> Result<(), String> {
+        let entry = Entry::new("maestro.ssh.key", key_path)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        entry
+            .set_password(&passphrase)
+            .map_err(|e| format!("Failed to save passphrase: {}", e))?;
+        Ok(())
+    }
+
+    /// Retrieve SSH key passphrase from OS keyring
+    pub fn get_passphrase(key_path: &str) -> Result<Zeroizing<String>, String> {
+        let entry = Entry::new("maestro.ssh.key", key_path)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        let passphrase = entry
+            .get_password()
+            .map_err(|e| format!("Passphrase not found: {}", e))?;
+        Ok(Zeroizing::new(passphrase))
+    }
+
+    /// Delete SSH key passphrase from OS keyring
+    pub fn delete_passphrase(key_path: &str) -> Result<(), String> {
+        let entry = Entry::new("maestro.ssh.key", key_path)
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        entry
+            .delete_credential()
+            .map_err(|e| format!("Failed to delete passphrase: {}", e))?;
+        Ok(())
+    }
 }

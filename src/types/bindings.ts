@@ -3,1291 +3,1026 @@
 
 /** user-defined commands **/
 
+
 export const commands = {
-  /**
-   * Get list of all projects
-   */
-  async getProjects(): Promise<Result<Project[], string>> {
+/**
+ * Get list of all projects
+ */
+async getProjects() : Promise<Result<Project[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_projects") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get list of all projects per connections
-   */
-  async getConnectionProjects(connectionId: number | null): Promise<Result<Project[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_projects") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get list of all projects per connections
+ */
+async getConnectionProjects(connectionId: number | null) : Promise<Result<Project[], string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("get_connection_projects", { connectionId }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Create a new project
-   */
-  async createProject(path: string, connectionId: number | null): Promise<Result<Project, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_connection_projects", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a new project
+ */
+async createProject(path: string, connectionId: number | null) : Promise<Result<Project, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connectionId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get project by id
-   */
-  async getProject(projectId: number): Promise<Result<Project, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get project by id
+ */
+async getProject(projectId: number) : Promise<Result<Project, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_project", { projectId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * remove project by id
-   */
-  async removeProject(projectId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_project", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * remove project by id
+ */
+async removeProject(projectId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("remove_project", { projectId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get list of all tasks for a project
-   */
-  async getTasks(projectId: number): Promise<Result<Task[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("remove_project", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get list of all tasks for a project
+ */
+async getTasks(projectId: number) : Promise<Result<Task[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_tasks", { projectId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Create a new task with validation
-   */
-  async createTask(
-    projectId: number,
-    name: string,
-    description: string,
-    acceptanceCriteria: string,
-    skills: string[],
-  ): Promise<Result<Task, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_tasks", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a new task with validation
+ */
+async createTask(projectId: number, name: string, description: string, acceptanceCriteria: string, skills: string[]) : Promise<Result<Task, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("create_task", {
-          projectId,
-          name,
-          description,
-          acceptanceCriteria,
-          skills,
-        }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Update a task's status or other fields
-   */
-  async updateTask(
-    taskId: number,
-    status: string | null,
-    description: string | null,
-  ): Promise<Result<Task, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("create_task", { projectId, name, description, acceptanceCriteria, skills }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update a task's status or other fields
+ */
+async updateTask(taskId: number, status: string | null, description: string | null) : Promise<Result<Task, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("update_task", { taskId, status, description }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get current application settings from the database
-   *
-   * Loads all stored settings including project paths, default model,
-   * MCP allowlist defaults, and skills defaults.
-   *
-   * # Arguments
-   * * `app_state` - The application state containing the database connection
-   *
-   * # Returns
-   * * `Result<AppSettings, String>` - The current application settings or an error message
-   *
-   * # Errors
-   * Returns a string error if:
-   * - The database lock cannot be acquired
-   * - The settings cannot be loaded from the database
-   */
-  async getSettings(): Promise<Result<AppSettings, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get current application settings from the database
+ * 
+ * Loads all stored settings including project paths, default model,
+ * MCP allowlist defaults, and skills defaults.
+ * 
+ * # Arguments
+ * * `app_state` - The application state containing the database connection
+ * 
+ * # Returns
+ * * `Result<AppSettings, String>` - The current application settings or an error message
+ * 
+ * # Errors
+ * Returns a string error if:
+ * - The database lock cannot be acquired
+ * - The settings cannot be loaded from the database
+ */
+async getSettings() : Promise<Result<AppSettings, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_settings") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Save application settings to the database
-   *
-   * Persists all application settings including project paths, default model,
-   * MCP allowlist defaults, and skills defaults to the settings table.
-   *
-   * # Arguments
-   * * `app_state` - The application state containing the database connection
-   * * `settings` - The application settings to persist
-   *
-   * # Returns
-   * * `Result<(), String>` - Success or an error message
-   *
-   * # Errors
-   * Returns a string error if:
-   * - The database lock cannot be acquired
-   * - The settings cannot be saved to the database
-   */
-  async saveSettings(settings: AppSettings): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save application settings to the database
+ * 
+ * Persists all application settings including project paths, default model,
+ * MCP allowlist defaults, and skills defaults to the settings table.
+ * 
+ * # Arguments
+ * * `app_state` - The application state containing the database connection
+ * * `settings` - The application settings to persist
+ * 
+ * # Returns
+ * * `Result<(), String>` - Success or an error message
+ * 
+ * # Errors
+ * Returns a string error if:
+ * - The database lock cannot be acquired
+ * - The settings cannot be saved to the database
+ */
+async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("save_settings", { settings }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Sync issues from GitHub repository
-   *
-   * Fetches open issues from a GitHub repository using the GitHub REST API and
-   * imports them as tasks into the specified project. Supports both creating new
-   * tasks and updating existing ones if the issue has already been imported.
-   *
-   * # Arguments
-   * * `state` - The application state containing the database connection
-   * * `project_id` - The ID of the project to import issues into
-   * * `owner` - The GitHub repository owner
-   * * `repo` - The GitHub repository name
-   * * `token` - A GitHub personal access token with repo read permissions
-   *
-   * # Returns
-   * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
-   *
-   * # Errors
-   * Returns a string error if:
-   * - The GitHub API request fails
-   * - The response cannot be parsed as JSON
-   * - The database lock cannot be acquired
-   * - A database transaction fails
-   *
-   * # Implementation Details
-   * - Fetches only open issues (state=open)
-   * - Retrieves up to 100 issues per request
-   * - Creates a database transaction to ensure atomicity
-   * - Uses the issue number as the external_id
-   * - Sets all imported tasks to "Backlog" status initially
-   */
-  async syncGithubIssues(
-    projectId: number,
-    owner: string,
-    repo: string,
-    token: string,
-  ): Promise<Result<SyncResult, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("save_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sync issues from GitHub repository
+ * 
+ * Fetches open issues from a GitHub repository using the GitHub REST API and
+ * imports them as tasks into the specified project. Supports both creating new
+ * tasks and updating existing ones if the issue has already been imported.
+ * 
+ * # Arguments
+ * * `state` - The application state containing the database connection
+ * * `project_id` - The ID of the project to import issues into
+ * * `owner` - The GitHub repository owner
+ * * `repo` - The GitHub repository name
+ * * `token` - A GitHub personal access token with repo read permissions
+ * 
+ * # Returns
+ * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
+ * 
+ * # Errors
+ * Returns a string error if:
+ * - The GitHub API request fails
+ * - The response cannot be parsed as JSON
+ * - The database lock cannot be acquired
+ * - A database transaction fails
+ * 
+ * # Implementation Details
+ * - Fetches only open issues (state=open)
+ * - Retrieves up to 100 issues per request
+ * - Creates a database transaction to ensure atomicity
+ * - Uses the issue number as the external_id
+ * - Sets all imported tasks to "Backlog" status initially
+ */
+async syncGithubIssues(projectId: number, owner: string, repo: string, token: string) : Promise<Result<SyncResult, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("sync_github_issues", { projectId, owner, repo, token }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Sync issues from Jira
-   *
-   * Fetches issues from a Jira instance using the Jira REST API and imports them
-   * as tasks into the specified project. Supports both creating new tasks and
-   * updating existing ones if the issue has already been imported.
-   *
-   * # Arguments
-   * * `state` - The application state containing the database connection
-   * * `project_id` - The ID of the project to import issues into
-   * * `host` - The Jira instance hostname (e.g., "your-instance.atlassian.net")
-   * * `email` - The Jira user email for authentication
-   * * `api_token` - A Jira API token for the user
-   * * `jql` - A Jira Query Language (JQL) string to filter issues (e.g., "project = PROJ AND status = 'To Do'")
-   *
-   * # Returns
-   * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
-   *
-   * # Errors
-   * Returns a string error if:
-   * - The Jira API request fails
-   * - The HTTP response indicates an error
-   * - The response cannot be parsed as JSON
-   * - The database lock cannot be acquired
-   * - A database transaction fails
-   *
-   * # Implementation Details
-   * - Uses HTTP Basic authentication with base64 encoded credentials
-   * - Sends JQL query as a request parameter
-   * - Creates a database transaction to ensure atomicity
-   * - Uses the issue key (e.g., "PROJ-123") as the external_id
-   * - Sets all imported tasks to "Backlog" status initially
-   */
-  async syncJiraIssues(
-    projectId: number,
-    host: string,
-    email: string,
-    apiToken: string,
-    jql: string,
-  ): Promise<Result<SyncResult, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("sync_github_issues", { projectId, owner, repo, token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sync issues from Jira
+ * 
+ * Fetches issues from a Jira instance using the Jira REST API and imports them
+ * as tasks into the specified project. Supports both creating new tasks and
+ * updating existing ones if the issue has already been imported.
+ * 
+ * # Arguments
+ * * `state` - The application state containing the database connection
+ * * `project_id` - The ID of the project to import issues into
+ * * `host` - The Jira instance hostname (e.g., "your-instance.atlassian.net")
+ * * `email` - The Jira user email for authentication
+ * * `api_token` - A Jira API token for the user
+ * * `jql` - A Jira Query Language (JQL) string to filter issues (e.g., "project = PROJ AND status = 'To Do'")
+ * 
+ * # Returns
+ * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
+ * 
+ * # Errors
+ * Returns a string error if:
+ * - The Jira API request fails
+ * - The HTTP response indicates an error
+ * - The response cannot be parsed as JSON
+ * - The database lock cannot be acquired
+ * - A database transaction fails
+ * 
+ * # Implementation Details
+ * - Uses HTTP Basic authentication with base64 encoded credentials
+ * - Sends JQL query as a request parameter
+ * - Creates a database transaction to ensure atomicity
+ * - Uses the issue key (e.g., "PROJ-123") as the external_id
+ * - Sets all imported tasks to "Backlog" status initially
+ */
+async syncJiraIssues(projectId: number, host: string, email: string, apiToken: string, jql: string) : Promise<Result<SyncResult, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("sync_jira_issues", { projectId, host, email, apiToken, jql }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Save import configuration to settings
-   *
-   * Persists import provider configuration (GitHub or Jira) to the settings table
-   * for later retrieval and reuse in subsequent import operations.
-   *
-   * # Arguments
-   * * `state` - The application state containing the database connection
-   * * `project_id` - The ID of the project (for reference, not stored in config)
-   * * `provider` - The import provider name ("github" or "jira")
-   * * `config` - The configuration as a JSON value (provider-specific structure)
-   *
-   * # Returns
-   * * `Result<(), String>` - Success or an error message
-   *
-   * # Errors
-   * Returns a string error if:
-   * - The provider is not "github" or "jira"
-   * - The database lock cannot be acquired
-   * - The config cannot be serialized to JSON
-   * - The database INSERT fails
-   *
-   * # Implementation Details
-   * - Validates that provider is either "github" or "jira"
-   * - Stores config as JSON string in settings table with key format: "import_config_{provider}"
-   * - Uses INSERT OR REPLACE to update existing configs
-   * - Records the timestamp of the save operation
-   */
-  async saveImportConfig(
-    projectId: number,
-    provider: string,
-    config: JsonValue,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("sync_jira_issues", { projectId, host, email, apiToken, jql }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save import configuration to settings
+ * 
+ * Persists import provider configuration (GitHub or Jira) to the settings table
+ * for later retrieval and reuse in subsequent import operations.
+ * 
+ * # Arguments
+ * * `state` - The application state containing the database connection
+ * * `project_id` - The ID of the project (for reference, not stored in config)
+ * * `provider` - The import provider name ("github" or "jira")
+ * * `config` - The configuration as a JSON value (provider-specific structure)
+ * 
+ * # Returns
+ * * `Result<(), String>` - Success or an error message
+ * 
+ * # Errors
+ * Returns a string error if:
+ * - The provider is not "github" or "jira"
+ * - The database lock cannot be acquired
+ * - The config cannot be serialized to JSON
+ * - The database INSERT fails
+ * 
+ * # Implementation Details
+ * - Validates that provider is either "github" or "jira"
+ * - Stores config as JSON string in settings table with key format: "import_config_{provider}"
+ * - Uses INSERT OR REPLACE to update existing configs
+ * - Records the timestamp of the save operation
+ */
+async saveImportConfig(projectId: number, provider: string, config: JsonValue) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("save_import_config", { projectId, provider, config }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Lease worktree from pool for task execution with automatic retry and pool expansion
-   *
-   * When no worktrees are available:
-   * 1. Retries up to 3 times with exponential backoff (500ms, 1s, 1.5s)
-   * 2. On each retry, checks again for available worktrees
-   * 3. After retries exhausted, attempts pool expansion (creates new worktree)
-   * 4. Returns error only if all retries and expansion fail
-   */
-  async leaseWorktree(
-    projectId: number,
-    taskId: number,
-    repoPath: string,
-  ): Promise<Result<Worktree, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("save_import_config", { projectId, provider, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Lease worktree from pool for task execution with automatic retry and pool expansion
+ * 
+ * When no worktrees are available:
+ * 1. Retries up to 3 times with exponential backoff (500ms, 1s, 1.5s)
+ * 2. On each retry, checks again for available worktrees
+ * 3. After retries exhausted, attempts pool expansion (creates new worktree)
+ * 4. Returns error only if all retries and expansion fail
+ */
+async leaseWorktree(projectId: number, taskId: number, repoPath: string) : Promise<Result<Worktree, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("lease_worktree", { projectId, taskId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Return worktree to pool after task completion
-   */
-  async returnWorktree(worktreeId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("lease_worktree", { projectId, taskId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return worktree to pool after task completion
+ */
+async returnWorktree(worktreeId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("return_worktree", { worktreeId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get current pool status for monitoring
-   */
-  async getPoolStatus(projectId: number): Promise<Result<PoolStatus, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("return_worktree", { worktreeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get current pool status for monitoring
+ */
+async getPoolStatus(projectId: number) : Promise<Result<PoolStatus, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_pool_status", { projectId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Delete worktree and associated branch after task merge
-   *
-   * This function implements safe deletion with recovery for failures:
-   * 1. Marks worktree as 'Dirty' (failure-proof flag, survives crashes)
-   * 2. Calls async sidecar to delete worktree + branch (safe git sequence)
-   * 3. Removes from database on success
-   *
-   * If any step fails, worktree remains 'Dirty' for manual recovery.
-   *
-   * # Arguments
-   * * `project_id` - Project owning the worktree
-   * * `worktree_id` - ID of worktree to clean
-   * * `repo_path` - Path to git repository
-   * * `state` - Tauri app state with database connection
-   *
-   * # Returns
-   * `Ok(())` on successful cleanup, `Err(msg)` on failure
-   *
-   * # Safety
-   * Uses database transaction to ensure atomicity. Sidecar call via tokio (async-safe).
-   * If sidecar fails, worktree stays marked 'Dirty' for retry.
-   *
-   * # Async Context
-   * MUST use tokio::process::Command (NOT std::process::Command) to avoid blocking.
-   */
-  async cleanupWorktree(
-    projectId: number,
-    worktreeId: number,
-    repoPath: string,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_pool_status", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete worktree and associated branch after task merge
+ * 
+ * This function implements safe deletion with recovery for failures:
+ * 1. Marks worktree as 'Dirty' (failure-proof flag, survives crashes)
+ * 2. Calls async sidecar to delete worktree + branch (safe git sequence)
+ * 3. Removes from database on success
+ * 
+ * If any step fails, worktree remains 'Dirty' for manual recovery.
+ * 
+ * # Arguments
+ * * `project_id` - Project owning the worktree
+ * * `worktree_id` - ID of worktree to clean
+ * * `repo_path` - Path to git repository
+ * * `state` - Tauri app state with database connection
+ * 
+ * # Returns
+ * `Ok(())` on successful cleanup, `Err(msg)` on failure
+ * 
+ * # Safety
+ * Uses database transaction to ensure atomicity. Sidecar call via tokio (async-safe).
+ * If sidecar fails, worktree stays marked 'Dirty' for retry.
+ * 
+ * # Async Context
+ * MUST use tokio::process::Command (NOT std::process::Command) to avoid blocking.
+ */
+async cleanupWorktree(projectId: number, worktreeId: number, repoPath: string) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("cleanup_worktree", { projectId, worktreeId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Recover worktrees stuck in 'Dirty' state
-   *
-   * Called on app startup to retry cleanup of worktrees that failed mid-operation.
-   * Prevents orphaned worktrees from accumulating and blocking the pool.
-   *
-   * # Arguments
-   * * `project_id` - Project to recover worktrees for
-   * * `repo_path` - Path to git repository
-   * * `state` - Tauri app state with database connection
-   *
-   * # Returns
-   * Vec of successfully recovered worktree IDs (for logging)
-   *
-   * # Integration
-   * Should be invoked in App.tsx useEffect on project load (see Phase 2 integration point)
-   */
-  async recoverDirtyWorktrees(
-    projectId: number,
-    repoPath: string,
-  ): Promise<Result<number[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("cleanup_worktree", { projectId, worktreeId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Recover worktrees stuck in 'Dirty' state
+ * 
+ * Called on app startup to retry cleanup of worktrees that failed mid-operation.
+ * Prevents orphaned worktrees from accumulating and blocking the pool.
+ * 
+ * # Arguments
+ * * `project_id` - Project to recover worktrees for
+ * * `repo_path` - Path to git repository
+ * * `state` - Tauri app state with database connection
+ * 
+ * # Returns
+ * Vec of successfully recovered worktree IDs (for logging)
+ * 
+ * # Integration
+ * Should be invoked in App.tsx useEffect on project load (see Phase 2 integration point)
+ */
+async recoverDirtyWorktrees(projectId: number, repoPath: string) : Promise<Result<number[], string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("recover_dirty_worktrees", { projectId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Pre-create worktree pool on project open
-   *
-   * Creates database entries for available worktrees to enable instant allocation.
-   * Actual git worktree creation happens lazily when worktree is leased for task execution.
-   *
-   * Design:
-   * - Creates 3 database entries in 'available' state
-   * - Lazy git worktree creation on first lease (avoids slow disk I/O at startup)
-   * - If pool already initialized, returns current pool status
-   * - Idempotent: safe to call multiple times
-   *
-   * # Arguments
-   * * `project_id` - Project to initialize pool for
-   * * `repo_path` - Path to git repository
-   * * `pool_size` - Optional pool size (default: 3). Override for testing.
-   * * `state` - Tauri app state with database connection
-   *
-   * # Returns
-   * Current PoolStatus showing total, available, leased, dirty counts
-   *
-   * # Integration
-   * Should be called in App.tsx useEffect after project is selected:
-   * ```typescript
-   * await invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
-   * ```
-   */
-  async initializeWorktreePool(
-    projectId: number,
-    repoPath: string,
-    poolSize: number | null,
-  ): Promise<Result<PoolStatus, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("recover_dirty_worktrees", { projectId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Pre-create worktree pool on project open
+ * 
+ * Creates database entries for available worktrees to enable instant allocation.
+ * Actual git worktree creation happens lazily when worktree is leased for task execution.
+ * 
+ * Design:
+ * - Creates 3 database entries in 'available' state
+ * - Lazy git worktree creation on first lease (avoids slow disk I/O at startup)
+ * - If pool already initialized, returns current pool status
+ * - Idempotent: safe to call multiple times
+ * 
+ * # Arguments
+ * * `project_id` - Project to initialize pool for
+ * * `repo_path` - Path to git repository
+ * * `pool_size` - Optional pool size (default: 3). Override for testing.
+ * * `state` - Tauri app state with database connection
+ * 
+ * # Returns
+ * Current PoolStatus showing total, available, leased, dirty counts
+ * 
+ * # Integration
+ * Should be called in App.tsx useEffect after project is selected:
+ * ```typescript
+ * await invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
+ * ```
+ */
+async initializeWorktreePool(projectId: number, repoPath: string, poolSize: number | null) : Promise<Result<PoolStatus, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("initialize_worktree_pool", { projectId, repoPath, poolSize }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Spawn agent execution for a task
-   *
-   * This handler creates an execution log record, spawns the agent CLI process
-   * in a background tokio task, and returns immediately with the execution log ID.
-   * The process continues running after the IPC returns.
-   *
-   * # Arguments
-   * * `app_state` - Tauri app state with database connection
-   * * `project_id` - Project ID (for context)
-   * * `task_id` - Task ID to execute
-   * * `repo_path` - Repository path for the agent
-   *
-   * # Returns
-   * Execution log ID that tracks the execution
-   *
-   * # Async Behavior
-   * - Creates execution log synchronously
-   * - Spawns background task with tokio::spawn
-   * - Returns immediately (process continues in background)
-   * - Background task captures output and marks completion
-   * - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
-   */
-  async spawnAgentExecution(
-    projectId: number,
-    taskId: number,
-    repoPath: string,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("initialize_worktree_pool", { projectId, repoPath, poolSize }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Spawn agent execution for a task
+ * 
+ * This handler creates an execution log record, spawns the agent CLI process
+ * in a background tokio task, and returns immediately with the execution log ID.
+ * The process continues running after the IPC returns.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with database connection
+ * * `project_id` - Project ID (for context)
+ * * `task_id` - Task ID to execute
+ * * `repo_path` - Repository path for the agent
+ * 
+ * # Returns
+ * Execution log ID that tracks the execution
+ * 
+ * # Async Behavior
+ * - Creates execution log synchronously
+ * - Spawns background task with tokio::spawn
+ * - Returns immediately (process continues in background)
+ * - Background task captures output and marks completion
+ * - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
+ */
+async spawnAgentExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("spawn_agent_execution", { projectId, taskId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get execution logs for a task
-   */
-  async getExecutionLogs(taskId: number): Promise<Result<ExecutionLog[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("spawn_agent_execution", { projectId, taskId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get execution logs for a task
+ */
+async getExecutionLogs(taskId: number) : Promise<Result<ExecutionLog[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_execution_logs", { taskId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Retry a paused execution
-   */
-  async retryExecution(
-    projectId: number,
-    taskId: number,
-    repoPath: string,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_execution_logs", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Retry a paused execution
+ */
+async retryExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("retry_execution", { projectId, taskId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Cancel a paused execution
-   */
-  async cancelExecution(logId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("retry_execution", { projectId, taskId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel a paused execution
+ */
+async cancelExecution(logId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("cancel_execution", { logId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Attach to a PTY session and stream output to frontend
-   *
-   * Opens a Tauri channel and begins streaming PTY output to the frontend.
-   * Optionally prepends terminal history from the execution log (if available).
-   * The streaming continues until the PTY process ends or the channel is closed.
-   *
-   * # Arguments
-   * * `app_state` - Tauri app state with PTY sessions
-   * * `task_id` - Task ID to attach to
-   * * `output_channel` - Tauri IPC channel for streaming output
-   * * `include_history` - If true, prepend terminal_output from execution log to stream
-   *
-   * # Returns
-   * `Result<(), String>` - Ok if streaming started, Err if task not found
-   *
-   * # Behavior
-   * When `include_history` is true:
-   * 1. Fetches the terminal_output from the most recent execution log
-   * 2. Sends entire history as initial message to establish context
-   * 3. Then continues streaming live PTY output as normal
-   * This ensures the frontend sees the full terminal context when attaching.
-   */
-  async attachTerminal(
-    taskId: number,
-    outputChannel: TAURI_CHANNEL<string>,
-    includeHistory: boolean | null,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_execution", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Attach to a PTY session and stream output to frontend
+ * 
+ * Opens a Tauri channel and begins streaming PTY output to the frontend.
+ * Optionally prepends terminal history from the execution log (if available).
+ * The streaming continues until the PTY process ends or the channel is closed.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with PTY sessions
+ * * `task_id` - Task ID to attach to
+ * * `output_channel` - Tauri IPC channel for streaming output
+ * * `include_history` - If true, prepend terminal_output from execution log to stream
+ * 
+ * # Returns
+ * `Result<(), String>` - Ok if streaming started, Err if task not found
+ * 
+ * # Behavior
+ * When `include_history` is true:
+ * 1. Fetches the terminal_output from the most recent execution log
+ * 2. Sends entire history as initial message to establish context
+ * 3. Then continues streaming live PTY output as normal
+ * This ensures the frontend sees the full terminal context when attaching.
+ */
+async attachTerminal(taskId: number, outputChannel: TAURI_CHANNEL<string>, includeHistory: boolean | null) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("attach_terminal", { taskId, outputChannel, includeHistory }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Send input to a PTY session
-   *
-   * Writes data to the PTY master, which is delivered to the child process stdin.
-   * Supports special control sequences:
-   * - "\x03" (Ctrl+C) → sends SIGINT signal (interrupt) via PTY layer
-   * - "\x1a" (Ctrl+Z) → sends SIGTSTP signal (suspend) via PTY layer
-   * - Regular text and newlines → written directly to PTY stdin
-   *
-   * The PTY layer automatically converts control sequences to signals that are
-   * delivered to the foreground process group.
-   *
-   * # Arguments
-   * * `app_state` - Tauri app state with PTY sessions
-   * * `task_id` - Task ID of the PTY session
-   * * `input` - Data to send to the PTY (can be control sequences or regular text)
-   *
-   * # Returns
-   * `Result<(), String>` - Ok if input sent, Err if session not found or write failed
-   *
-   * # Examples
-   * - Regular text: "ls -la\n" → written to stdin
-   * - Ctrl+C: "\x03" → converted to SIGINT by PTY layer
-   * - Ctrl+Z: "\x1a" → converted to SIGTSTP by PTY layer
-   */
-  async sendTerminalInput(taskId: number, input: string): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("attach_terminal", { taskId, outputChannel, includeHistory }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Send input to a PTY session
+ * 
+ * Writes data to the PTY master, which is delivered to the child process stdin.
+ * Supports special control sequences:
+ * - "\x03" (Ctrl+C) → sends SIGINT signal (interrupt) via PTY layer
+ * - "\x1a" (Ctrl+Z) → sends SIGTSTP signal (suspend) via PTY layer
+ * - Regular text and newlines → written directly to PTY stdin
+ * 
+ * The PTY layer automatically converts control sequences to signals that are
+ * delivered to the foreground process group.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with PTY sessions
+ * * `task_id` - Task ID of the PTY session
+ * * `input` - Data to send to the PTY (can be control sequences or regular text)
+ * 
+ * # Returns
+ * `Result<(), String>` - Ok if input sent, Err if session not found or write failed
+ * 
+ * # Examples
+ * - Regular text: "ls -la\n" → written to stdin
+ * - Ctrl+C: "\x03" → converted to SIGINT by PTY layer
+ * - Ctrl+Z: "\x1a" → converted to SIGTSTP by PTY layer
+ */
+async sendTerminalInput(taskId: number, input: string) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("send_terminal_input", { taskId, input }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Resize a PTY session to new dimensions
-   *
-   * Changes the terminal size and sends SIGWINCH to the PTY process.
-   * Used when the frontend terminal is resized.
-   *
-   * # Arguments
-   * * `app_state` - Tauri app state with PTY sessions
-   * * `task_id` - Task ID of the PTY session
-   * * `cols` - New column width
-   * * `rows` - New row height
-   *
-   * # Returns
-   * `Result<(), String>` - Ok if resized, Err if session not found or resize failed
-   */
-  async resizeTerminal(taskId: number, cols: number, rows: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("send_terminal_input", { taskId, input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resize a PTY session to new dimensions
+ * 
+ * Changes the terminal size and sends SIGWINCH to the PTY process.
+ * Used when the frontend terminal is resized.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with PTY sessions
+ * * `task_id` - Task ID of the PTY session
+ * * `cols` - New column width
+ * * `rows` - New row height
+ * 
+ * # Returns
+ * `Result<(), String>` - Ok if resized, Err if session not found or resize failed
+ */
+async resizeTerminal(taskId: number, cols: number, rows: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("resize_terminal", { taskId, cols, rows }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Detach from a PTY session
-   *
-   * Stops streaming PTY output to the frontend.
-   * The actual cleanup happens when the channel is dropped on the frontend.
-   * The streaming tasks in attach_terminal will exit when they detect the channel is closed.
-   */
-  async detachTerminal(taskId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("resize_terminal", { taskId, cols, rows }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Detach from a PTY session
+ * 
+ * Stops streaming PTY output to the frontend.
+ * The actual cleanup happens when the channel is dropped on the frontend.
+ * The streaming tasks in attach_terminal will exit when they detect the channel is closed.
+ */
+async detachTerminal(taskId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("detach_terminal", { taskId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Pause a running agent execution by sending SIGSTOP to the process
-   */
-  async pauseAgentExecution(taskId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("detach_terminal", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Pause a running agent execution by sending SIGSTOP to the process
+ */
+async pauseAgentExecution(taskId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("pause_agent_execution", { taskId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Resume a paused agent execution by creating a new execution and spawning the agent again
-   */
-  async resumeAgentExecution(
-    taskId: number,
-    projectId: number,
-    repoPath: string,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("pause_agent_execution", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resume a paused agent execution by creating a new execution and spawning the agent again
+ */
+async resumeAgentExecution(taskId: number, projectId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("resume_agent_execution", { taskId, projectId, repoPath }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Append terminal output to an execution log for persistence
-   *
-   * Persists streamed PTY output to the database for execution history.
-   * Called periodically (via tokio::time::interval) or when accumulating large chunks
-   * to avoid excessive database writes.
-   *
-   * # Arguments
-   * * `state` - Tauri app state with database connection
-   * * `task_id` - Task ID being executed
-   * * `output` - Terminal output chunk to append
-   *
-   * # Returns
-   * `Result<(), String>` - Ok if append successful, Err on database error
-   *
-   * # Behavior
-   * - Appends output to most recent execution log for this task
-   * - Uses COALESCE to handle NULL terminal_output gracefully
-   * - Only updates logs with status 'running', 'failed', or 'complete'
-   */
-  async appendTerminalOutput(taskId: number, output: string): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("resume_agent_execution", { taskId, projectId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Append terminal output to an execution log for persistence
+ * 
+ * Persists streamed PTY output to the database for execution history.
+ * Called periodically (via tokio::time::interval) or when accumulating large chunks
+ * to avoid excessive database writes.
+ * 
+ * # Arguments
+ * * `state` - Tauri app state with database connection
+ * * `task_id` - Task ID being executed
+ * * `output` - Terminal output chunk to append
+ * 
+ * # Returns
+ * `Result<(), String>` - Ok if append successful, Err on database error
+ * 
+ * # Behavior
+ * - Appends output to most recent execution log for this task
+ * - Uses COALESCE to handle NULL terminal_output gracefully
+ * - Only updates logs with status 'running', 'failed', or 'complete'
+ */
+async appendTerminalOutput(taskId: number, output: string) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("append_terminal_output", { taskId, output }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get diff for review: generates unified diff between task branch and main
-   *
-   * For local projects, invokes Node.js sidecar to generate diff.
-   * For remote projects, uses git dispatcher over SSH.
-   *
-   * Returns the unified diff as a string with 6 context lines.
-   */
-  async getDiffForReview(taskId: number): Promise<Result<string, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("append_terminal_output", { taskId, output }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get diff for review: generates unified diff between task branch and main
+ * 
+ * For local projects, invokes Node.js sidecar to generate diff.
+ * For remote projects, uses git dispatcher over SSH.
+ * 
+ * Returns the unified diff as a string with 6 context lines.
+ */
+async getDiffForReview(taskId: number) : Promise<Result<string, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_diff_for_review", { taskId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Save task review with feedback and per-file comments
-   *
-   * Creates a new review record with decision (Approve, RequestChanges, etc.)
-   * and optional general feedback. Per-file comments are stored separately
-   * linked to the review record.
-   *
-   * Returns JSON object with success flag and review_id.
-   */
-  async saveTaskReview(
-    taskId: number,
-    decision: string,
-    generalFeedback: string | null,
-    perFileComments: [string, string][] | null,
-  ): Promise<Result<JsonValue, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_diff_for_review", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save task review with feedback and per-file comments
+ * 
+ * Creates a new review record with decision (Approve, RequestChanges, etc.)
+ * and optional general feedback. Per-file comments are stored separately
+ * linked to the review record.
+ * 
+ * Returns JSON object with success flag and review_id.
+ */
+async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<JsonValue, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("save_task_review", {
-          taskId,
-          decision,
-          generalFeedback,
-          perFileComments,
-        }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Request changes on a task: saves feedback and moves task back to InProgress
-   *
-   * Creates a RequestChanges review with general feedback and per-file comments,
-   * then transitions the task status back to InProgress for the agent to rework.
-   *
-   * Returns JSON object with success flag, review_id, and updated task_status.
-   */
-  async requestChanges(
-    taskId: number,
-    generalFeedback: string | null,
-    perFileComments: [string, string][] | null,
-  ): Promise<Result<JsonValue, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("save_task_review", { taskId, decision, generalFeedback, perFileComments }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Request changes on a task: saves feedback and moves task back to InProgress
+ * 
+ * Creates a RequestChanges review with general feedback and per-file comments,
+ * then transitions the task status back to InProgress for the agent to rework.
+ * 
+ * Returns JSON object with success flag, review_id, and updated task_status.
+ */
+async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<JsonValue, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("request_changes", { taskId, generalFeedback, perFileComments }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Approve task and initiate automatic merge to main branch
-   *
-   * Orchestrates the complete merge workflow:
-   * 1. Updates task status to "Merging" (transient state)
-   * 2. Spawns async background task to perform squash merge
-   * 3. On success: updates task to "Done", cleans up worktree, returns to pool
-   * 4. On conflict: rejects task back to "InProgress", saves conflict feedback
-   * 5. Emits Tauri events for frontend UI updates and notifications
-   *
-   * Returns immediately with "merging started" confirmation.
-   * Frontend listens for merge_complete or merge_error events for final status.
-   */
-  async approveTaskAndMerge(taskId: number): Promise<Result<JsonValue, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("request_changes", { taskId, generalFeedback, perFileComments }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Approve task and initiate automatic merge to main branch
+ * 
+ * Orchestrates the complete merge workflow:
+ * 1. Updates task status to "Merging" (transient state)
+ * 2. Spawns async background task to perform squash merge
+ * 3. On success: updates task to "Done", cleans up worktree, returns to pool
+ * 4. On conflict: rejects task back to "InProgress", saves conflict feedback
+ * 5. Emits Tauri events for frontend UI updates and notifications
+ * 
+ * Returns immediately with "merging started" confirmation.
+ * Frontend listens for merge_complete or merge_error events for final status.
+ */
+async approveTaskAndMerge(taskId: number) : Promise<Result<JsonValue, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get project-level configuration (model default, MCP allowlist, skills default)
-   */
-  async getProjectSettings(projectId: number): Promise<Result<ProjectConfigResponse, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get project-level configuration (model default, MCP allowlist, skills default)
+ */
+async getProjectSettings(projectId: number) : Promise<Result<ProjectConfigResponse, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_project_settings", { projectId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Update project-level configuration
-   */
-  async updateProjectSettings(
-    projectId: number,
-    settings: ProjectConfigRequest,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_project_settings", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update project-level configuration
+ */
+async updateProjectSettings(projectId: number, settings: ProjectConfigRequest) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("update_project_settings", { projectId, settings }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Update task-level configuration overrides
-   */
-  async updateTaskSettings(
-    taskId: number,
-    settings: TaskConfigRequest,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("update_project_settings", { projectId, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update task-level configuration overrides
+ */
+async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("update_task_settings", { taskId, settings }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get all saved SSH connections
-   */
-  async getSshConnections(): Promise<Result<SshConnection[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { taskId, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get all saved SSH connections
+ */
+async getSshConnections() : Promise<Result<SshConnection[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_ssh_connections") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get a specific SSH connection
-   */
-  async getSshConnection(connectionId: number): Promise<Result<SshConnection, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_ssh_connections") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get a specific SSH connection
+ */
+async getSshConnection(connectionId: number) : Promise<Result<SshConnection, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_ssh_connection", { connectionId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get the current connection status for a connection
-   */
-  async getSshConnectionStatus(connectionId: number): Promise<Result<ConnectionStatus, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_ssh_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get the current connection status for a connection
+ */
+async getSshConnectionStatus(connectionId: number) : Promise<Result<ConnectionStatus, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("get_ssh_connection_status", { connectionId }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Save a new SSH connection to the database
-   */
-  async saveSshConnection(
-    connectionString: string,
-    authMethod: SshAuthMethod,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_ssh_connection_status", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save a new SSH connection to the database
+ */
+async saveSshConnection(connectionString: string, authMethod: SshAuthMethod) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("save_ssh_connection", { connectionString, authMethod }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Attempt to connect to SSH without requiring credentials (uses saved password, agent, or key file)
-   */
-  async connectSshWithoutCredentials(connectionId: number): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("save_ssh_connection", { connectionString, authMethod }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Attempt to connect to SSH without requiring credentials (uses saved password, agent, or key file)
+ */
+async connectSshWithoutCredentials(connectionId: number) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("connect_ssh_without_credentials", { connectionId }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Connect to SSH using a password (fallback when credential-less connection fails)
-   */
-  async connectSshWithPassword(
-    connectionId: number,
-    password: string,
-    savePassword: boolean,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("connect_ssh_without_credentials", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Connect to SSH using a password (fallback when credential-less connection fails)
+ */
+async connectSshWithPassword(connectionId: number, password: string, savePassword: boolean) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("connect_ssh_with_password", {
-          connectionId,
-          password,
-          savePassword,
-        }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Connect to SSH using the SSH agent
-   */
-  async connectSshWithAgent(connectionId: number): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("connect_ssh_with_password", { connectionId, password, savePassword }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Connect to SSH using the SSH agent
+ */
+async connectSshWithAgent(connectionId: number) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("connect_ssh_with_agent", { connectionId }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Connect to SSH using a key file (with optional passphrase)
-   */
-  async connectSshWithKey(
-    connectionId: number,
-    keyPath: string,
-    passphrase: string | null,
-  ): Promise<Result<number, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("connect_ssh_with_agent", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Connect to SSH using a key file (with optional passphrase)
+ */
+async connectSshWithKey(connectionId: number, keyPath: string, passphrase: string | null, savePassphrase: boolean) : Promise<Result<number, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("connect_ssh_with_key", { connectionId, keyPath, passphrase }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * List directories on remote host
-   */
-  async listRemoteDirectories(
-    connectionId: number,
-    path: string,
-  ): Promise<Result<string[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("connect_ssh_with_key", { connectionId, keyPath, passphrase, savePassphrase }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List directories on remote host
+ */
+async listRemoteDirectories(connectionId: number, path: string) : Promise<Result<string[], string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_remote_directories", { connectionId, path }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * List subdirectories in a local filesystem path
-   */
-  async listLocalDirectories(path: string): Promise<Result<string[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("list_remote_directories", { connectionId, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List subdirectories in a local filesystem path
+ */
+async listLocalDirectories(path: string) : Promise<Result<string[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_local_directories", { path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get the default file picker path based on the current platform
-   */
-  async getDefaultFilePickerPath(): Promise<Result<string, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("list_local_directories", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get the default file picker path based on the current platform
+ */
+async getDefaultFilePickerPath() : Promise<Result<string, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_default_file_picker_path") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * List available drives (Windows only)
-   */
-  async listDrives(): Promise<Result<string[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_default_file_picker_path") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List available drives (Windows only)
+ */
+async listDrives() : Promise<Result<string[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_drives") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Get system accent color as RGB values
-   * Returns [r, g, b] where each value is 0-255
-   */
-  async getSystemAccentColor(): Promise<Result<number[], string>> {
+    return { status: "ok", data: await TAURI_INVOKE("list_drives") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get system accent color as RGB values
+ * Returns [r, g, b] where each value is 0-255
+ */
+async getSystemAccentColor() : Promise<Result<number[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("get_system_accent_color") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Delete an SSH connection from the database
-   */
-  async deleteSshConnection(connectionId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("get_system_accent_color") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete an SSH connection from the database
+ */
+async deleteSshConnection(connectionId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("delete_ssh_connection", { connectionId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Remove saved password from OS Keyring
-   */
-  async forgetSavedPassword(connectionId: number): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("delete_ssh_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remove saved password from OS Keyring
+ */
+async forgetSavedPassword(connectionId: number) : Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("forget_saved_password", { connectionId }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Rename an SSH connection (set display name)
-   */
-  async renameSshConnection(
-    connectionId: number,
-    displayName: string,
-  ): Promise<Result<null, string>> {
+    return { status: "ok", data: await TAURI_INVOKE("forget_saved_password", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Rename an SSH connection (set display name)
+ */
+async renameSshConnection(connectionId: number, displayName: string) : Promise<Result<null, string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("rename_ssh_connection", { connectionId, displayName }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-};
+    return { status: "ok", data: await TAURI_INVOKE("rename_ssh_connection", { connectionId, displayName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+}
+}
 
 /** user-defined events **/
 
+
+
 /** user-defined constants **/
+
+
 
 /** user-defined types **/
 
-export type AppSettings = { theme_preference: string | null; updated_at: string };
+export type AppSettings = { theme_preference: string | null; updated_at: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
-export type ConnectionStatus = {
-  connection_id: number;
-  connected: boolean;
-  disconnected_reason: string | null;
-};
-export type ErrorEvent = {
-  error_type: string;
-  message: string;
-  suggestions: string[];
-  detected_at: string;
-};
-export type ExecutionLog = {
-  id: number;
-  task_id: number;
-  output: string;
-  terminal_output: string | null;
-  status: ExecutionStatus;
-  started_at: string;
-  completed_at: string | null;
-  error_event: ErrorEvent | null;
-};
-export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled";
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | Partial<{ [key in string]: JsonValue }>;
+export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
+export type ErrorEvent = { error_type: string; message: string; suggestions: string[]; detected_at: string }
+export type ExecutionLog = { id: number; task_id: number; output: string; terminal_output: string | null; status: ExecutionStatus; started_at: string; completed_at: string | null; error_event: ErrorEvent | null }
+export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled"
+export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Pool status for monitoring
  */
-export type PoolStatus = {
-  total: number;
-  available: number;
-  leased: number;
-  in_use: number;
-  dirty: number;
-  utilization_percent: number;
-};
-export type Project = {
-  id: number;
-  name: string;
-  path: string;
-  created_at: string;
-  updated_at: string;
-  last_opened: string | null;
-  connection_id: number | null;
-};
-export type ProjectConfigRequest = {
-  model_default: string;
-  mcp_allowlist: string[];
-  skills_default: string[];
-};
-export type ProjectConfigResponse = {
-  model_default: string;
-  mcp_allowlist: string[];
-  skills_default: string[];
-};
+export type PoolStatus = { total: number; available: number; leased: number; in_use: number; dirty: number; utilization_percent: number }
+export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
+export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
+export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
 /**
  * SSH authentication method configuration
  */
-export type SshAuthMethod =
-  /**
-   * Authenticate using a private key file
-   */
-  | { KeyFile: { path: string } }
-  /**
-   * Authenticate using SSH agent
-   */
-  | "Agent"
-  /**
-   * Authenticate using password (stored in OS keyring)
-   */
-  | { Password: { save_password: boolean } };
+export type SshAuthMethod = 
+/**
+ * Authenticate using a private key file
+ */
+{ KeyFile: { path: string; save_passphrase: boolean } } | 
+/**
+ * Authenticate using SSH agent
+ */
+"Agent" | 
+/**
+ * Authenticate using password (stored in OS keyring)
+ */
+{ Password: { save_password: boolean } }
 /**
  * Saved SSH connection for quick reconnection
  */
-export type SshConnection = {
-  id: number;
-  connection_string: string;
-  username: string;
-  host: string;
-  port: number;
-  auth_method: SshAuthMethod;
-  display_name: string | null;
-  last_used_at: string;
-  created_at: string;
-};
-export type SyncResult = {
-  imported_count: number;
-  updated_count: number;
-  error_message?: string | null;
-};
-export type TAURI_CHANNEL<TSend> = null;
-export type Task = {
-  id: number;
-  project_id: number;
-  name: string;
-  description: string;
-  acceptance_criteria?: string | null;
-  status: TaskStatus;
-  external_id?: string | null;
-  is_imported?: boolean | null;
-  import_source?: string | null;
-  skills: string[];
-  model_override?: string | null;
-  mcp_allowlist?: string[] | null;
-  skills_override?: string[] | null;
-  created_at: string;
-  updated_at: string;
-};
-export type TaskConfigRequest = {
-  model_override?: string | null;
-  mcp_allowlist?: string[] | null;
-  skills_override?: string[] | null;
-};
-export type TaskStatus =
-  | "Backlog"
-  | "Ready"
-  | "InProgress"
-  | "Review"
-  | "Merging"
-  | "Failed"
-  | "Done";
+export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
+export type SyncResult = { imported_count: number; updated_count: number; error_message?: string | null }
+export type TAURI_CHANNEL<TSend> = null
+export type Task = { id: number; project_id: number; name: string; description: string; acceptance_criteria?: string | null; status: TaskStatus; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; created_at: string; updated_at: string }
+export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
+export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Merging" | "Failed" | "Done"
 /**
  * Worktree record from database
  */
-export type Worktree = {
-  id: number;
-  project_id: number;
-  branch_name: string;
-  path: string;
-  status: WorktreeStatus;
-  leased_at: string | null;
-  returned_at: string | null;
-  created_at: string;
-};
+export type Worktree = { id: number; project_id: number; branch_name: string; path: string; status: WorktreeStatus; leased_at: string | null; returned_at: string | null; created_at: string }
 /**
  * Worktree status state machine
  */
-export type WorktreeStatus =
-  /**
-   * Ready to lease for task execution
-   */
-  | "Available"
-  /**
-   * Leased to a task but not yet actively executing
-   */
-  | "Leased"
-  /**
-   * Actively executing agent
-   */
-  | "InUse"
-  /**
-   * Failed cleanup, needs recovery
-   */
-  | "Dirty";
+export type WorktreeStatus = 
+/**
+ * Ready to lease for task execution
+ */
+"Available" | 
+/**
+ * Leased to a task but not yet actively executing
+ */
+"Leased" | 
+/**
+ * Actively executing agent
+ */
+"InUse" | 
+/**
+ * Failed cleanup, needs recovery
+ */
+"Dirty"
 
 /** tauri-specta globals **/
 
-import { invoke as TAURI_INVOKE, Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
+import {
+	invoke as TAURI_INVOKE,
+	Channel as TAURI_CHANNEL,
+} from "@tauri-apps/api/core";
 import * as TAURI_API_EVENT from "@tauri-apps/api/event";
 import { type WebviewWindow as __WebviewWindow__ } from "@tauri-apps/api/webviewWindow";
 
 type __EventObj__<T> = {
-  listen: (cb: TAURI_API_EVENT.EventCallback<T>) => ReturnType<typeof TAURI_API_EVENT.listen<T>>;
-  once: (cb: TAURI_API_EVENT.EventCallback<T>) => ReturnType<typeof TAURI_API_EVENT.once<T>>;
-  emit: null extends T
-    ? (payload?: T) => ReturnType<typeof TAURI_API_EVENT.emit>
-    : (payload: T) => ReturnType<typeof TAURI_API_EVENT.emit>;
+	listen: (
+		cb: TAURI_API_EVENT.EventCallback<T>,
+	) => ReturnType<typeof TAURI_API_EVENT.listen<T>>;
+	once: (
+		cb: TAURI_API_EVENT.EventCallback<T>,
+	) => ReturnType<typeof TAURI_API_EVENT.once<T>>;
+	emit: null extends T
+		? (payload?: T) => ReturnType<typeof TAURI_API_EVENT.emit>
+		: (payload: T) => ReturnType<typeof TAURI_API_EVENT.emit>;
 };
 
-export type Result<T, E> = { status: "ok"; data: T } | { status: "error"; error: E };
+export type Result<T, E> =
+	| { status: "ok"; data: T }
+	| { status: "error"; error: E };
 
-function __makeEvents__<T extends Record<string, any>>(mappings: Record<keyof T, string>) {
-  return new Proxy(
-    {} as unknown as {
-      [K in keyof T]: __EventObj__<T[K]> & {
-        (handle: __WebviewWindow__): __EventObj__<T[K]>;
-      };
-    },
-    {
-      get: (_, event) => {
-        const name = mappings[event as keyof T];
+function __makeEvents__<T extends Record<string, any>>(
+	mappings: Record<keyof T, string>,
+) {
+	return new Proxy(
+		{} as unknown as {
+			[K in keyof T]: __EventObj__<T[K]> & {
+				(handle: __WebviewWindow__): __EventObj__<T[K]>;
+			};
+		},
+		{
+			get: (_, event) => {
+				const name = mappings[event as keyof T];
 
-        return new Proxy((() => {}) as any, {
-          apply: (_, __, [window]: [__WebviewWindow__]) => ({
-            listen: (arg: any) => window.listen(name, arg),
-            once: (arg: any) => window.once(name, arg),
-            emit: (arg: any) => window.emit(name, arg),
-          }),
-          get: (_, command: keyof __EventObj__<any>) => {
-            switch (command) {
-              case "listen":
-                return (arg: any) => TAURI_API_EVENT.listen(name, arg);
-              case "once":
-                return (arg: any) => TAURI_API_EVENT.once(name, arg);
-              case "emit":
-                return (arg: any) => TAURI_API_EVENT.emit(name, arg);
-            }
-          },
-        });
-      },
-    },
-  );
+				return new Proxy((() => {}) as any, {
+					apply: (_, __, [window]: [__WebviewWindow__]) => ({
+						listen: (arg: any) => window.listen(name, arg),
+						once: (arg: any) => window.once(name, arg),
+						emit: (arg: any) => window.emit(name, arg),
+					}),
+					get: (_, command: keyof __EventObj__<any>) => {
+						switch (command) {
+							case "listen":
+								return (arg: any) => TAURI_API_EVENT.listen(name, arg);
+							case "once":
+								return (arg: any) => TAURI_API_EVENT.once(name, arg);
+							case "emit":
+								return (arg: any) => TAURI_API_EVENT.emit(name, arg);
+						}
+					},
+				});
+			},
+		},
+	);
 }

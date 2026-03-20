@@ -37,7 +37,7 @@ pub struct SshConnection {
 pub enum SshAuthMethod {
     /// Authenticate using a private key file
     #[serde(rename = "KeyFile")]
-    KeyFile { path: String },
+    KeyFile { path: String, save_passphrase: bool },
     /// Authenticate using SSH agent
     #[serde(rename = "Agent")]
     Agent,
@@ -189,9 +189,16 @@ impl RemoteSshSession {
 
         // Authenticate based on configured method
         match &self.ssh_connection.auth_method {
-            SshAuthMethod::KeyFile { path } => {
+            SshAuthMethod::KeyFile { path, save_passphrase } => {
                 let expanded = expand_tilde(path);
-                let stored_passphrase = self.key_passphrase.lock().await.clone();
+                let mem_passphrase = self.key_passphrase.lock().await.clone();
+                let passphrase = if mem_passphrase.is_some() {
+                    mem_passphrase
+                } else if *save_passphrase {
+                    PasswordManager::get_passphrase(&expanded).ok().map(|p| p.to_string())
+                } else {
+                    None
+                };
                 println!("Key auth (reconnect): username={}, key_path='{}'", username, expanded);
                 if !Path::new(&expanded).exists() {
                     return Err(SshError::AuthenticationError(format!(
@@ -200,7 +207,7 @@ impl RemoteSshSession {
                 }
                 let normalized = expanded.replace('\\', "/");
                 session
-                    .userauth_pubkey_file(username, None, Path::new(&normalized), stored_passphrase.as_deref())
+                    .userauth_pubkey_file(username, None, Path::new(&normalized), passphrase.as_deref())
                     .map_err(|e| {
                         SshError::AuthenticationError(format!(
                             "Public key authentication failed for '{}' on reconnect: {}",
@@ -283,7 +290,7 @@ impl RemoteSshSession {
         let fallback_path;
         let path: &str = if let Some(ref p) = key_path {
             p.as_str()
-        } else if let SshAuthMethod::KeyFile { path } = &self.ssh_connection.auth_method {
+        } else if let SshAuthMethod::KeyFile { path, .. } = &self.ssh_connection.auth_method {
             fallback_path = path.clone();
             fallback_path.as_str()
         } else {

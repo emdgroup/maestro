@@ -13,6 +13,7 @@ export function ConnectionList() {
   const {
     username,
     connections,
+    savedKeyFiles,
     loading,
     showAuthModal,
     handleNewConnection,
@@ -114,6 +115,7 @@ export function ConnectionList() {
       <SshAuthModal
         open={showAuthModal}
         username={username}
+        savedKeyFiles={savedKeyFiles}
         onSubmit={handleAuthSubmit}
         onCancel={handleAuthCancel}
         loading={loading}

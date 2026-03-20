@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { SshConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
@@ -66,6 +66,25 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   useEffect(() => {
     setConnections([local.current, ...sshConnections.map(buildConnection)]);
   }, [sshConnections, buildConnection]);
+
+  /**
+   * Unique SSH key file paths used across all saved connections.
+   * Deduplicated by path; hasSavedPassphrase=true wins when the same path appears multiple times.
+   */
+  const savedKeyFiles = useMemo(() => {
+    const keyMap = new Map<string, boolean>();
+    for (const conn of sshConnections) {
+      const method = conn.auth_method;
+      if (typeof method === "object" && "KeyFile" in method) {
+        const { path, save_passphrase } = method.KeyFile;
+        keyMap.set(path, (keyMap.get(path) ?? false) || save_passphrase);
+      }
+    }
+    return Array.from(keyMap.entries()).map(([path, hasSavedPassphrase]) => ({
+      path,
+      hasSavedPassphrase,
+    }));
+  }, [sshConnections]);
 
   /**
    * Helper to fetch a connection by ID and construct Connection object
@@ -180,6 +199,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
             connectionId,
             keyPath: auth.keyPath,
             passphrase: auth.passphrase,
+            savePassphrase: auth.savePassphrase,
           },
           {...options},
         );
@@ -214,6 +234,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   return {
     username,
     connections,
+    savedKeyFiles,
     showAuthModal,
     loading,
     handleConnection,

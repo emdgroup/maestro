@@ -273,17 +273,27 @@ pub async fn connect_ssh_with_key(
     connection_id: i32,
     key_path: String,
     passphrase: Option<String>,
+    save_passphrase: bool,
 ) -> Result<i32, String> {
-    println!("connect_ssh_with_key(connection_id={}) called via IPC", connection_id);
+    println!("connect_ssh_with_key(connection_id={}, save_passphrase={}) called via IPC", connection_id, save_passphrase);
 
     let mut connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
-    connection.auth_method = SshAuthMethod::KeyFile { path: key_path.clone() };
+    connection.auth_method = SshAuthMethod::KeyFile { path: key_path.clone(), save_passphrase };
 
     let session = RemoteSshSession::new(connection.clone());
-    session.connect_with_key(Some(key_path), passphrase).await
+    session.connect_with_key(Some(key_path.clone()), passphrase.clone()).await
         .map_err(|e| e.to_string())?;
+
+    // Persist passphrase to OS keyring after successful auth
+    if save_passphrase {
+        if let Some(ref p) = passphrase {
+            PasswordManager::store_passphrase(&key_path, p.clone())
+                .map_err(|e| format!("Failed to save passphrase: {}", e))?;
+            println!("Passphrase saved to OS keyring for key: {}", key_path);
+        }
+    }
 
     app_state.set_ssh_session(connection_id, session).await;
 
@@ -344,7 +354,7 @@ pub fn delete_ssh_connection(
 ) -> Result<(), String> {
 
     // Get connection details before deleting (for keyring cleanup)
-    let SshConnection {host, username, ..} = get_ssh_connection(connection_id, app_state.clone())
+    let SshConnection {host, username, auth_method, ..} = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
     remove_projects_by_connection_id(app_state.clone(), connection_id)
@@ -360,8 +370,11 @@ pub fn delete_ssh_connection(
     )
     .map_err(|e| e.to_string())?;
 
-    // Optionally delete password from keyring (ignore errors)
+    // Clean up keyring entries (ignore errors)
     let _ = PasswordManager::delete_password(&host, &username);
+    if let SshAuthMethod::KeyFile { path, save_passphrase: true } = auth_method {
+        let _ = PasswordManager::delete_passphrase(&path);
+    }
 
     println!("Deleted SSH connection: {}", connection_id);
     Ok(())
