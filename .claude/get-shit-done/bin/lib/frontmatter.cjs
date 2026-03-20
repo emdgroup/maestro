@@ -10,7 +10,11 @@ const { safeReadFile, normalizeMd, output, error } = require('./core.cjs');
 
 function extractFrontmatter(content) {
   const frontmatter = {};
-  const match = content.match(/^---\r?\n([\s\S]+?)\r?\n---/);
+  // Find ALL frontmatter blocks at the start of the file.
+  // If multiple blocks exist (corruption from CRLF mismatch), use the LAST one
+  // since it represents the most recent state sync.
+  const allBlocks = [...content.matchAll(/(?:^|\n)\s*---\r?\n([\s\S]+?)\r?\n---/g)];
+  const match = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
   if (!match) return frontmatter;
 
   const yaml = match[1];
@@ -232,6 +236,8 @@ const FRONTMATTER_SCHEMAS = {
 
 function cmdFrontmatterGet(cwd, filePath, field, raw) {
   if (!filePath) { error('file path required'); }
+  // Path traversal guard: reject null bytes
+  if (filePath.includes('\0')) { error('file path contains null bytes'); }
   const fullPath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
   const content = safeReadFile(fullPath);
   if (!content) { output({ error: 'File not found', path: filePath }, raw); return; }
@@ -247,6 +253,8 @@ function cmdFrontmatterGet(cwd, filePath, field, raw) {
 
 function cmdFrontmatterSet(cwd, filePath, field, value, raw) {
   if (!filePath || !field || value === undefined) { error('file, field, and value required'); }
+  // Path traversal guard: reject null bytes
+  if (filePath.includes('\0')) { error('file path contains null bytes'); }
   const fullPath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
   if (!fs.existsSync(fullPath)) { output({ error: 'File not found', path: filePath }, raw); return; }
   const content = fs.readFileSync(fullPath, 'utf-8');

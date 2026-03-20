@@ -19,7 +19,7 @@ INIT=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
-Extract from init JSON: `executor_model`, `commit_docs`, `phase_dir`, `phase_number`, `plans`, `summaries`, `incomplete_plans`, `state_path`, `config_path`.
+Extract from init JSON: `executor_model`, `commit_docs`, `sub_repos`, `phase_dir`, `phase_number`, `plans`, `summaries`, `incomplete_plans`, `state_path`, `config_path`.
 
 If `.planning/` missing: error.
 </step>
@@ -234,6 +234,10 @@ See `/home/m306213/workspace/maestro/.claude/get-shit-done/references/tdd.md` fo
 
 Your commits may trigger pre-commit hooks. Auto-fix hooks handle themselves transparently — files get fixed and re-staged automatically.
 
+**If running as a parallel executor agent (spawned by execute-phase):**
+Use `--no-verify` on all commits. Pre-commit hooks cause build lock contention when multiple agents commit simultaneously (e.g., cargo lock fights in Rust projects). The orchestrator validates once after all agents complete.
+
+**If running as the sole executor (sequential mode):**
 If a commit is BLOCKED by a hook:
 
 1. The `git commit` command fails with hook error output
@@ -241,9 +245,7 @@ If a commit is BLOCKED by a hook:
 3. Fix the issue (type error, lint violation, secret leak, etc.)
 4. `git add` the fixed files
 5. Retry the commit
-6. Do NOT use `--no-verify`
-
-This is normal and expected. Budget 1-2 retry cycles per commit.
+6. Budget 1-2 retry cycles per commit
 </precommit_failure_handling>
 
 <task_commit>
@@ -273,6 +275,20 @@ git add src/types/user.ts
 | `chore` | Config/deps | chore(08-02): add bcrypt dependency |
 
 **4. Format:** `{type}({phase}-{plan}): {description}` with bullet points for key changes.
+
+<sub_repos_commit_flow>
+**Sub-repos mode:** If `sub_repos` is configured (non-empty array from init context), use `commit-to-subrepo` instead of standard git commit. This routes files to their correct sub-repo based on path prefix.
+
+```bash
+node /home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs commit-to-subrepo "{type}({phase}-{plan}): {description}" --files file1 file2 ...
+```
+
+The command groups files by sub-repo prefix and commits atomically to each. Returns JSON: `{ committed: true, repos: { "backend": { hash: "abc", files: [...] }, ... } }`.
+
+Record hashes from each repo in the response for SUMMARY tracking.
+
+**If `sub_repos` is empty or not set:** Use standard git commit flow below.
+</sub_repos_commit_flow>
 
 **5. Record hash:**
 ```bash
