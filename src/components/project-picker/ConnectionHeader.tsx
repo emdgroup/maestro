@@ -25,6 +25,7 @@ import {
   useForgetSavedPassword,
   useSshConnectionById,
 } from "@/services/connection.service";
+import {toast} from "sonner";
 
 interface ConnectionHeaderProps {
   connectionId: number;
@@ -92,6 +93,7 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
         onSuccess: () => {
           setShowDeleteDialog(false);
           // Notify parent that connection was deleted
+          toast.success("Connection deleted successfully");
           onDelete();
         },
       });

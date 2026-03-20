@@ -61,6 +61,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::save_ssh_connection,
             crate::ipc::connect_ssh_without_credentials,
             crate::ipc::connect_ssh_with_password,
+            crate::ipc::connect_ssh_with_agent,
             crate::ipc::connect_ssh_with_key,
             crate::ipc::list_remote_directories,
             crate::ipc::list_local_directories,

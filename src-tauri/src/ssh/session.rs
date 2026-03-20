@@ -63,6 +63,7 @@ pub struct RemoteSshSession {
     state: Arc<Mutex<SshConnectionState>>,
     reconnect_attempts: Arc<AtomicUsize>,
     session_password: Arc<Mutex<Option<String>>>,
+    key_passphrase: Arc<Mutex<Option<String>>>,
 }
 
 impl ToSql for SshAuthMethod {
@@ -118,8 +119,19 @@ impl Clone for RemoteSshSession {
             state: self.state.clone(),
             reconnect_attempts: self.reconnect_attempts.clone(),
             session_password: self.session_password.clone(),
+            key_passphrase: self.key_passphrase.clone(),
         }
     }
+}
+
+/// Expand a leading `~` to the user's home directory
+fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return path.replacen('~', &home, 1);
+        }
+    }
+    path.to_string()
 }
 
 impl RemoteSshSession {
@@ -131,6 +143,7 @@ impl RemoteSshSession {
             state: Arc::new(Mutex::new(SshConnectionState::Initial)),
             reconnect_attempts: Arc::new(AtomicUsize::new(0)),
             session_password: Arc::new(Mutex::new(None)),
+            key_passphrase: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -177,13 +190,21 @@ impl RemoteSshSession {
         // Authenticate based on configured method
         match &self.ssh_connection.auth_method {
             SshAuthMethod::KeyFile { path } => {
-                let key_path = Path::new(path);
+                let expanded = expand_tilde(path);
+                let stored_passphrase = self.key_passphrase.lock().await.clone();
+                println!("Key auth (reconnect): username={}, key_path='{}'", username, expanded);
+                if !Path::new(&expanded).exists() {
+                    return Err(SshError::AuthenticationError(format!(
+                        "Key file not found on reconnect: '{}'", expanded
+                    )));
+                }
+                let normalized = expanded.replace('\\', "/");
                 session
-                    .userauth_pubkey_file(username, None, key_path, None)
+                    .userauth_pubkey_file(username, None, Path::new(&normalized), stored_passphrase.as_deref())
                     .map_err(|e| {
                         SshError::AuthenticationError(format!(
-                            "Public key authentication failed: {}",
-                            e
+                            "Public key authentication failed for '{}' on reconnect: {}",
+                            expanded, e
                         ))
                     })?;
             }
@@ -269,13 +290,70 @@ impl RemoteSshSession {
             return Err(SshError::AuthenticationError("No key path provided".to_string()));
         };
 
-        session.userauth_pubkey_file(username, None, Path::new(path), passphrase.as_deref())
-            .map_err(|e| SshError::AuthenticationError(format!("Public key authentication failed: {}", e)))?;
+        let expanded = expand_tilde(path);
+
+        println!("Key auth: username={}, key_path='{}' (original: '{}')", username, expanded, path);
+
+        if !Path::new(&expanded).exists() {
+            return Err(SshError::AuthenticationError(format!(
+                "Key file not found: '{}'. Check the path and try again.",
+                expanded
+            )));
+        }
+
+        // Read the file to detect format before handing to libssh2
+        let key_data = std::fs::read_to_string(&expanded)
+            .map_err(|e| SshError::AuthenticationError(format!(
+                "Cannot read key file '{}': {}", expanded, e
+            )))?;
+
+        // Reject public key files immediately
+        if key_data.starts_with("ssh-") || key_data.starts_with("ecdsa-")
+            || key_data.contains("BEGIN PUBLIC KEY")
+        {
+            return Err(SshError::AuthenticationError(
+                "This is a public key file (.pub). Please select the matching private key file (no .pub extension).".to_string()
+            ));
+        }
+
+        // libssh2 compiled without OpenSSL cannot parse OpenSSH-format keys
+        // (the format used by default for ed25519, and optionally for RSA/ECDSA).
+        // Legacy PEM keys (BEGIN RSA PRIVATE KEY / BEGIN EC PRIVATE KEY) work fine.
+        if key_data.contains("BEGIN OPENSSH PRIVATE KEY") {
+            return Err(SshError::AuthenticationError(
+                "OpenSSH-format keys (ed25519, or RSA/ECDSA generated with newer ssh-keygen) \
+                are not supported by the bundled SSH library.\n\n\
+                Options:\n\
+                1. Use SSH Agent auth — add your key with: ssh-add ~/.ssh/id_ed25519\n\
+                2. Generate a legacy RSA key: ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/id_rsa_maestro\n\
+                3. Convert an existing RSA/ECDSA key to PEM: ssh-keygen -p -m PEM -f ~/.ssh/id_rsa"
+                    .to_string()
+            ));
+        }
+
+        println!("Key format: PEM, size: {} bytes", key_data.len());
+
+        // Store the passphrase so it can be reused on reconnection
+        *self.key_passphrase.lock().await = passphrase.clone();
+
+        // Query which auth methods the server actually supports (best-effort)
+        let server_methods = session.auth_methods(username)
+            .unwrap_or("(could not query server auth methods)");
+        println!("Server supported auth methods: {}", server_methods);
+
+        // Normalize Windows backslashes → forward slashes for libssh2's fopen()
+        let normalized = expanded.replace('\\', "/");
+        session.userauth_pubkey_file(username, None, Path::new(&normalized), passphrase.as_deref())
+            .map_err(|e| SshError::AuthenticationError(format!(
+                "Public key authentication failed for '{}': {}. Server accepts: {}",
+                expanded, e, server_methods
+            )))?;
 
         if !session.authenticated() {
-            return Err(SshError::AuthenticationError(
-                "Authentication failed: SSH server did not grant access".to_string(),
-            ));
+            return Err(SshError::AuthenticationError(format!(
+                "Server did not grant access for '{}'. Server accepts: {}",
+                expanded, server_methods
+            )));
         }
 
         *self.session.lock().await = Some(session);

@@ -940,6 +940,20 @@ export const commands = {
     }
   },
   /**
+   * Connect to SSH using the SSH agent
+   */
+  async connectSshWithAgent(connectionId: number): Promise<Result<number, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("connect_ssh_with_agent", { connectionId }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Connect to SSH using a key file (with optional passphrase)
    */
   async connectSshWithKey(

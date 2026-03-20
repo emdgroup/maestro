@@ -231,6 +231,40 @@ pub async fn connect_ssh_with_password(
     Ok(connection_id)
 }
 
+/// Connect to SSH using the SSH agent
+#[tauri::command]
+#[specta::specta]
+pub async fn connect_ssh_with_agent(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+) -> Result<i32, String> {
+    println!("connect_ssh_with_agent(connection_id={}) called via IPC", connection_id);
+
+    let mut connection = get_ssh_connection(connection_id, app_state.clone())
+        .map_err(|e| format!("Connection not found: {}", e))?;
+
+    connection.auth_method = SshAuthMethod::Agent;
+
+    let session = RemoteSshSession::new(connection.clone());
+    session.connect(None).await
+        .map_err(|e| format!("SSH agent authentication failed: {}", e))?;
+
+    app_state.set_ssh_session(connection_id, session).await;
+
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&connection.auth_method, &now, &now, connection_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    println!("SSH connection established via agent for connection_id: {}", connection_id);
+    Ok(connection_id)
+}
+
 /// Connect to SSH using a key file (with optional passphrase)
 #[tauri::command]
 #[specta::specta]
@@ -249,7 +283,7 @@ pub async fn connect_ssh_with_key(
 
     let session = RemoteSshSession::new(connection.clone());
     session.connect_with_key(Some(key_path), passphrase).await
-        .map_err(|e| format!("SSH connection failed: {}", e))?;
+        .map_err(|e| e.to_string())?;
 
     app_state.set_ssh_session(connection_id, session).await;
 

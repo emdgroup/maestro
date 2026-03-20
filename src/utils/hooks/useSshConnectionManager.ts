@@ -4,9 +4,11 @@ import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
   useSshConnections,
   useConnectSsh,
+  useConnectSshWithAgent,
   useConnectSshWithCreds,
   useConnectSshWithKey,
   useCreateSshConnection,
+  useDeleteSshConnection,
 } from "@/services/connection.service";
 import type { AuthSubmission } from "@/components/project-picker/SshAuthModal";
 
@@ -31,13 +33,16 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isNewConnection, setIsNewConnection] = useState(false);
   const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
 
   // Service mutation hooks for SSH operations
   const { mutate: connectSsh } = useConnectSsh();
+  const { mutate: connectSshWithAgent } = useConnectSshWithAgent();
   const { mutate: createSshConnection } = useCreateSshConnection();
   const { mutate: connectSshWithCreds } = useConnectSshWithCreds();
   const { mutate: connectSshWithKey } = useConnectSshWithKey();
+  const { mutate: deleteSshConnection } = useDeleteSshConnection();
 
   const local = useRef<Connection>({
     type: "local" as const,
@@ -105,6 +110,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
   const handleConnection = useCallback(
     async (connection: Connection) => {
+      setIsNewConnection(false);
       setUsername(connection.sshConnection?.username ?? "");
       if (connection.type === "local") {
         onConnectionSuccess(local.current);
@@ -122,6 +128,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const handleNewConnection = useCallback(
     async (connectionString: string) => {
       setLoading(true);
+      setIsNewConnection(true);
       setUsername(connectionString.split("@")[0]);
       createSshConnection(
         {
@@ -145,6 +152,16 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const handleAuthSubmit = useCallback(
     async (auth: AuthSubmission) => {
       if (connectionId === null) return;
+      const options = {
+        onSuccess: async () => {
+          const connection = await getConnectionById(connectionId);
+          if (connection) onConnectionSuccess(connection);
+          setShowAuthModal(false);
+        },
+        onSettled: () => {
+          setLoading(false);
+        },
+      }
 
       setLoading(true);
 
@@ -155,16 +172,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
             password: auth.password,
             savePassword: auth.savePassword,
           },
-          {
-            onSuccess: async () => {
-              const connection = await getConnectionById(connectionId);
-              if (connection) onConnectionSuccess(connection);
-            },
-            onSettled: () => {
-              setShowAuthModal(false);
-              setLoading(false);
-            },
-          },
+          {...options}
         );
       } else if (auth.method === "key-file") {
         connectSshWithKey(
@@ -173,31 +181,13 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
             keyPath: auth.keyPath,
             passphrase: auth.passphrase,
           },
-          {
-            onSuccess: async () => {
-              const connection = await getConnectionById(connectionId);
-              if (connection) onConnectionSuccess(connection);
-            },
-            onSettled: () => {
-              setShowAuthModal(false);
-              setLoading(false);
-            },
-          },
+          {...options},
         );
       } else {
-        // agent — retry without credentials
-        connectSsh(
+        // agent — use dedicated agent auth handler
+        connectSshWithAgent(
           { connectionId },
-          {
-            onSuccess: async () => {
-              const connection = await getConnectionById(connectionId);
-              if (connection) onConnectionSuccess(connection);
-            },
-            onSettled: () => {
-              setShowAuthModal(false);
-              setLoading(false);
-            },
-          },
+          {...options},
         );
       }
     },
@@ -207,7 +197,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       getConnectionById,
       connectSshWithCreds,
       connectSshWithKey,
-      connectSsh,
+      connectSshWithAgent
     ],
   );
 
@@ -215,8 +205,11 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
    * Handle auth modal cancellation
    */
   const handleAuthCancel = useCallback(() => {
+    if (isNewConnection && !!connectionId) {
+      void deleteSshConnection(connectionId)
+    }
     setShowAuthModal(false);
-  }, []);
+  }, [isNewConnection, connectionId, deleteSshConnection]);
 
   return {
     username,

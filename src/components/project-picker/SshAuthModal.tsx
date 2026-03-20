@@ -155,8 +155,7 @@ function KeyFileAuth({ loading, onSubmit }: AuthProps) {
     const selected = await openFilePicker({
       title: "Select SSH Private Key",
       defaultPath: sshDir,
-      multiple: false,
-      filters: [{ name: "SSH Keys", extensions: ["pem", "ppk", "key", "pub", ""] }],
+      multiple: false
     });
     if (selected) setKeyPath(selected as string);
   }, []);
@@ -241,9 +240,9 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
         <div className="flex items-start gap-3">
           <ShieldUser className="size-5 text-muted-foreground mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium">SSH Agent Forwarding</p>
+            <p className="text-sm font-medium">SSH Agent Connection</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Connect using your running SSH agent. Ensure the agent has your key loaded.
+              Maestro will connect automatically to your running SSH agent. If it does not, ensure the agent is running and has your key loaded.
             </p>
           </div>
         </div>
@@ -253,7 +252,7 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           {showInstructions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          Setup instructions
+           instructions
         </button>
         {showInstructions && (
           <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">

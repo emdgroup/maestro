@@ -53,9 +53,6 @@ export function useCreateSshConnection() {
       connectionString: string;
       authMethod: SshAuthMethod;
     }) => api.saveSshConnection(connectionString, authMethod),
-    onSuccess: () => {
-      toast.success("SSH connection created successfully");
-    },
     onError: (error) => {
       toast.error(`Failed to create SSH connection: ${error}`);
     },
@@ -74,7 +71,7 @@ export function useConnectSsh() {
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection created successfully");
+      toast.success("SSH connection successful");
     },
   });
 }
@@ -98,10 +95,29 @@ export function useConnectSshWithCreds() {
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch with new connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection created successfully");
+      toast.success("SSH connection successful");
     },
     onError: (error) => {
       toast.error(`Failed to connect: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for connecting to SSH via SSH agent
+ */
+export function useConnectSshWithAgent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ connectionId }: { connectionId: number }) =>
+      api.connectSshWithAgent(connectionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
+      toast.success("SSH connection successful");
+    },
+    onError: (error) => {
+      toast.error(`Failed to connect via agent: ${error}`);
     },
   });
 }
@@ -124,7 +140,7 @@ export function useConnectSshWithKey() {
     }) => api.connectSshWithKey(connectionId, keyPath, passphrase ?? null),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection created successfully");
+      toast.success("SSH connection successful");
     },
     onError: (error) => {
       toast.error(`Failed to connect: ${error}`);
@@ -145,7 +161,7 @@ export function useUpdateSshConnection() {
     onSuccess: (_data, { connectionId }) => {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.details(connectionId) });
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("Connection renamed successfully");
+      toast.success("Connection renamed");
     },
     onError: (error) => {
       toast.error(`Failed to rename connection: ${error}`);
@@ -164,7 +180,6 @@ export function useDeleteSshConnection() {
     onSuccess: () => {
       // Invalidate the SSH connections list to refetch without deleted connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("Connection deleted successfully");
     },
     onError: (error) => {
       toast.error(`Failed to delete connection: ${error}`);
