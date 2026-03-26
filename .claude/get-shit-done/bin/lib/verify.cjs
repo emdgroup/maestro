@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { safeReadFile, loadConfig, normalizePhaseName, execGit, findPhaseInternal, getMilestoneInfo, stripShippedMilestones, extractCurrentMilestone, output, error } = require('./core.cjs');
+const { safeReadFile, loadConfig, normalizePhaseName, execGit, findPhaseInternal, getMilestoneInfo, stripShippedMilestones, extractCurrentMilestone, planningDir, planningRoot, output, error, checkAgentsInstalled } = require('./core.cjs');
 const { extractFrontmatter, parseMustHavesBlock } = require('./frontmatter.cjs');
 const { writeStateMd } = require('./state.cjs');
 
@@ -396,8 +396,8 @@ function cmdVerifyKeyLinks(cwd, planFilePath, raw) {
 }
 
 function cmdValidateConsistency(cwd, raw) {
-  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
-  const phasesDir = path.join(cwd, '.planning', 'phases');
+  const roadmapPath = path.join(planningDir(cwd), 'ROADMAP.md');
+  const phasesDir = path.join(planningDir(cwd), 'phases');
   const errors = [];
   const warnings = [];
 
@@ -533,12 +533,13 @@ function cmdValidateHealth(cwd, options, raw) {
     return;
   }
 
-  const planningDir = path.join(cwd, '.planning');
-  const projectPath = path.join(planningDir, 'PROJECT.md');
-  const roadmapPath = path.join(planningDir, 'ROADMAP.md');
-  const statePath = path.join(planningDir, 'STATE.md');
-  const configPath = path.join(planningDir, 'config.json');
-  const phasesDir = path.join(planningDir, 'phases');
+  const planBase = planningDir(cwd);
+  const planRoot = planningRoot(cwd);
+  const projectPath = path.join(planRoot, 'PROJECT.md');
+  const roadmapPath = path.join(planBase, 'ROADMAP.md');
+  const statePath = path.join(planBase, 'STATE.md');
+  const configPath = path.join(planRoot, 'config.json');
+  const phasesDir = path.join(planBase, 'phases');
 
   const errors = [];
   const warnings = [];
@@ -554,7 +555,7 @@ function cmdValidateHealth(cwd, options, raw) {
   };
 
   // ─── Check 1: .planning/ exists ───────────────────────────────────────────
-  if (!fs.existsSync(planningDir)) {
+  if (!fs.existsSync(planBase)) {
     addIssue('error', 'E001', '.planning/ directory not found', 'Run /gsd:new-project to initialize');
     output({
       status: 'broken',
@@ -698,6 +699,24 @@ function cmdValidateHealth(cwd, options, raw) {
     }
   } catch { /* intentionally empty */ }
 
+  // ─── Check 7c: Agent installation (#1371) ──────────────────────────────────
+  // Verify GSD agents are installed. Missing agents cause Task(subagent_type=...)
+  // to silently fall back to general-purpose, losing specialized instructions.
+  try {
+    const agentStatus = checkAgentsInstalled();
+    if (!agentStatus.agents_installed) {
+      if (agentStatus.installed_agents.length === 0) {
+        addIssue('warning', 'W010',
+          `No GSD agents found in ${agentStatus.agents_dir} — Task(subagent_type="gsd-*") will fall back to general-purpose`,
+          'Run the GSD installer: npx get-shit-done-cc@latest');
+      } else {
+        addIssue('warning', 'W010',
+          `Missing ${agentStatus.missing_agents.length} GSD agents: ${agentStatus.missing_agents.join(', ')} — affected workflows will fall back to general-purpose`,
+          'Run the GSD installer: npx get-shit-done-cc@latest');
+      }
+    }
+  } catch { /* intentionally empty — agent check is non-blocking */ }
+
   // ─── Check 8: Run existing consistency checks ─────────────────────────────
   // Inline subset of cmdValidateConsistency
   if (fs.existsSync(roadmapPath)) {
@@ -837,6 +856,24 @@ function cmdValidateHealth(cwd, options, raw) {
   }, raw);
 }
 
+/**
+ * Validate agent installation status (#1371).
+ * Returns detailed information about which agents are installed and which are missing.
+ */
+function cmdValidateAgents(cwd, raw) {
+  const { MODEL_PROFILES } = require('./model-profiles.cjs');
+  const agentStatus = checkAgentsInstalled();
+  const expected = Object.keys(MODEL_PROFILES);
+
+  output({
+    agents_dir: agentStatus.agents_dir,
+    agents_found: agentStatus.agents_installed,
+    installed: agentStatus.installed_agents,
+    missing: agentStatus.missing_agents,
+    expected,
+  }, raw);
+}
+
 module.exports = {
   cmdVerifySummary,
   cmdVerifyPlanStructure,
@@ -847,4 +884,5 @@ module.exports = {
   cmdVerifyKeyLinks,
   cmdValidateConsistency,
   cmdValidateHealth,
+  cmdValidateAgents,
 };

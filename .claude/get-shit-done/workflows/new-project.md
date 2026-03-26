@@ -6,6 +6,13 @@ Initialize a new project through unified flow: questioning, research (optional),
 Read all files referenced by the invoking prompt's execution_context before starting.
 </required_reading>
 
+<available_agent_types>
+Valid GSD subagent types (use exact names — do not fall back to 'general-purpose'):
+- gsd-project-researcher — Researches project-level technical decisions
+- gsd-research-synthesizer — Synthesizes findings from parallel research agents
+- gsd-roadmapper — Creates phased execution roadmaps
+</available_agent_types>
+
 <auto_mode>
 
 ## Auto Mode Detection
@@ -52,6 +59,9 @@ The document should describe what you want to build.
 ```bash
 INIT=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" init new-project)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
+AGENT_SKILLS_RESEARCHER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-project-researcher 2>/dev/null)
+AGENT_SKILLS_SYNTHESIZER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-synthesizer 2>/dev/null)
+AGENT_SKILLS_ROADMAPPER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-roadmapper 2>/dev/null)
 ```
 
 Parse JSON for: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `project_exists`, `has_codebase_map`, `planning_exists`, `has_existing_code`, `has_package_file`, `is_brownfield`, `needs_codebase_map`, `has_git`, `project_path`.
@@ -218,7 +228,7 @@ Ask inline (freeform, NOT AskUserQuestion):
 
 Wait for their response. This gives you the context needed to ask intelligent follow-up questions.
 
-**Research-before-questions mode:** Check if `research_questions` is enabled in `.planning/config.json` (or the config from init context). When enabled, before asking follow-up questions about a topic area:
+**Research-before-questions mode:** Check if `workflow.research_before_questions` is enabled in `.planning/config.json` (or the config from init context). When enabled, before asking follow-up questions about a topic area:
 
 1. Do a brief web search for best practices related to what the user described
 2. Mention key findings naturally as you ask questions (e.g., "Most projects like this use X — is that what you're thinking, or something different?")
@@ -623,6 +633,8 @@ What's the standard 2025 stack for [domain]?
 - {project_path} (Project context and goals)
 </files_to_read>
 
+${AGENT_SKILLS_RESEARCHER}
+
 <downstream_consumer>
 Your STACK.md feeds into roadmap creation. Be prescriptive:
 - Specific libraries with versions
@@ -660,6 +672,8 @@ What features do [domain] products have? What's table stakes vs differentiating?
 <files_to_read>
 - {project_path} (Project context)
 </files_to_read>
+
+${AGENT_SKILLS_RESEARCHER}
 
 <downstream_consumer>
 Your FEATURES.md feeds into requirements definition. Categorize clearly:
@@ -699,6 +713,8 @@ How are [domain] systems typically structured? What are major components?
 - {project_path} (Project context)
 </files_to_read>
 
+${AGENT_SKILLS_RESEARCHER}
+
 <downstream_consumer>
 Your ARCHITECTURE.md informs phase structure in roadmap. Include:
 - Component boundaries (what talks to what)
@@ -737,6 +753,8 @@ What do [domain] projects commonly get wrong? Critical mistakes?
 - {project_path} (Project context)
 </files_to_read>
 
+${AGENT_SKILLS_RESEARCHER}
+
 <downstream_consumer>
 Your PITFALLS.md prevents mistakes in roadmap/planning. For each pitfall:
 - Warning signs (how to detect early)
@@ -771,6 +789,8 @@ Synthesize research outputs into SUMMARY.md.
 - .planning/research/ARCHITECTURE.md
 - .planning/research/PITFALLS.md
 </files_to_read>
+
+${AGENT_SKILLS_SYNTHESIZER}
 
 <output>
 Write to: .planning/research/SUMMARY.md
@@ -977,6 +997,8 @@ Task(prompt="
 - .planning/config.json (Granularity and mode settings)
 </files_to_read>
 
+${AGENT_SKILLS_ROADMAPPER}
+
 </planning_context>
 
 <instructions>
@@ -1071,6 +1093,8 @@ Use AskUserQuestion:
   - .planning/ROADMAP.md (Current roadmap to revise)
   </files_to_read>
 
+  ${AGENT_SKILLS_ROADMAPPER}
+
   Update the roadmap based on feedback. Edit files in place.
   Return ROADMAP REVISED with changes made.
   </revision>
@@ -1130,6 +1154,37 @@ Present completion summary:
 Exit skill and invoke SlashCommand("/gsd:discuss-phase 1 --auto")
 
 **If interactive mode:**
+
+Check if Phase 1 has UI indicators (look for `**UI hint**: yes` in Phase 1 detail section of ROADMAP.md):
+
+```bash
+PHASE1_SECTION=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" roadmap get-phase 1 2>/dev/null)
+PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" || echo "false")
+```
+
+**If Phase 1 has UI (`PHASE1_HAS_UI` is `true`):**
+
+```
+───────────────────────────────────────────────────────────────
+
+## ▶ Next Up
+
+**Phase 1: [Phase Name]** — [Goal from ROADMAP.md]
+
+/gsd:discuss-phase 1 — gather context and clarify approach
+
+<sub>/clear first → fresh context window</sub>
+
+---
+
+**Also available:**
+- /gsd:ui-phase 1 — generate UI design contract (recommended for frontend phases)
+- /gsd:plan-phase 1 — skip discussion, plan directly
+
+───────────────────────────────────────────────────────────────
+```
+
+**If Phase 1 has no UI:**
 
 ```
 ───────────────────────────────────────────────────────────────

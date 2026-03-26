@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { escapeRegex, loadConfig, getMilestoneInfo, getMilestonePhaseFilter, normalizeMd, planningPaths, output, error } = require('./core.cjs');
+const { escapeRegex, loadConfig, getMilestoneInfo, getMilestonePhaseFilter, normalizeMd, planningDir, planningPaths, output, error } = require('./core.cjs');
 const { extractFrontmatter, reconstructFrontmatter } = require('./frontmatter.cjs');
 
 /** Shorthand — every state command needs this path */
@@ -239,6 +239,32 @@ function stateReplaceFieldWithFallback(content, primary, fallback, value) {
   return content;
 }
 
+/**
+ * Update fields within the ## Current Position section of STATE.md.
+ * This keeps the Current Position body in sync with the bold frontmatter fields.
+ * Only updates fields that already exist in the section; does not add new lines.
+ * Fixes #1365: advance-plan could not update Status/Last activity after begin-phase.
+ */
+function updateCurrentPositionFields(content, fields) {
+  const posPattern = /(##\s*Current Position\s*\n)([\s\S]*?)(?=\n##|$)/i;
+  const posMatch = content.match(posPattern);
+  if (!posMatch) return content;
+
+  let posBody = posMatch[2];
+
+  if (fields.status && /^Status:/m.test(posBody)) {
+    posBody = posBody.replace(/^Status:.*$/m, `Status: ${fields.status}`);
+  }
+  if (fields.lastActivity && /^Last activity:/im.test(posBody)) {
+    posBody = posBody.replace(/^Last activity:.*$/im, `Last activity: ${fields.lastActivity}`);
+  }
+  if (fields.plan && /^Plan:/m.test(posBody)) {
+    posBody = posBody.replace(/^Plan:.*$/m, `Plan: ${fields.plan}`);
+  }
+
+  return content.replace(posPattern, `${posMatch[1]}${posBody}`);
+}
+
 function cmdStateAdvancePlan(cwd, raw) {
   const statePath = planningPaths(cwd).state;
   if (!fs.existsSync(statePath)) { output({ error: 'STATE.md not found' }, raw); return; }
@@ -273,19 +299,23 @@ function cmdStateAdvancePlan(cwd, raw) {
   if (currentPlan >= totalPlans) {
     content = stateReplaceFieldWithFallback(content, 'Status', null, 'Phase complete — ready for verification');
     content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
+    content = updateCurrentPositionFields(content, { status: 'Phase complete — ready for verification', lastActivity: today });
     writeStateMd(statePath, content, cwd);
     output({ advanced: false, reason: 'last_plan', current_plan: currentPlan, total_plans: totalPlans, status: 'ready_for_verification' }, raw, 'false');
   } else {
     const newPlan = currentPlan + 1;
+    let planDisplayValue;
     if (useCompoundFormat) {
       // Preserve compound format: "X of Y in current phase" → replace X only
-      const newPlanValue = planField.replace(/^\d+/, String(newPlan));
-      content = stateReplaceField(content, 'Plan', newPlanValue) || content;
+      planDisplayValue = planField.replace(/^\d+/, String(newPlan));
+      content = stateReplaceField(content, 'Plan', planDisplayValue) || content;
     } else {
+      planDisplayValue = `${newPlan} of ${totalPlans}`;
       content = stateReplaceField(content, 'Current Plan', String(newPlan)) || content;
     }
     content = stateReplaceFieldWithFallback(content, 'Status', null, 'Ready to execute');
     content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
+    content = updateCurrentPositionFields(content, { status: 'Ready to execute', lastActivity: today, plan: planDisplayValue });
     writeStateMd(statePath, content, cwd);
     output({ advanced: true, previous_plan: currentPlan, current_plan: newPlan, total_plans: totalPlans }, raw, 'true');
   }
@@ -733,9 +763,20 @@ function stripFrontmatter(content) {
 }
 
 function syncStateFrontmatter(content, cwd) {
+  // Read existing frontmatter BEFORE stripping — it may contain values
+  // that the body no longer has (e.g., Status field removed by an agent).
+  const existingFm = extractFrontmatter(content);
   const body = stripFrontmatter(content);
-  const fm = buildStateFrontmatter(body, cwd);
-  const yamlStr = reconstructFrontmatter(fm);
+  const derivedFm = buildStateFrontmatter(body, cwd);
+
+  // Preserve existing frontmatter status when body-derived status is 'unknown'.
+  // This prevents a missing Status: field in the body from overwriting a
+  // previously valid status (e.g., 'executing' → 'unknown').
+  if (derivedFm.status === 'unknown' && existingFm.status && existingFm.status !== 'unknown') {
+    derivedFm.status = existingFm.status;
+  }
+
+  const yamlStr = reconstructFrontmatter(derivedFm);
   return `---\n${yamlStr}\n---\n\n${body}`;
 }
 
@@ -871,12 +912,44 @@ function cmdStateBeginPhase(cwd, phaseNumber, phaseName, planCount, raw) {
     updated.push('Current focus');
   }
 
-  // Update ## Current Position section (#1104)
+  // Update ## Current Position section (#1104, #1365)
+  // Update individual fields within Current Position instead of replacing the
+  // entire section, so that Status, Last activity, and Progress are preserved.
   const positionPattern = /(##\s*Current Position\s*\n)([\s\S]*?)(?=\n##|$)/i;
   const positionMatch = content.match(positionPattern);
   if (positionMatch) {
-    const newPosition = `Phase: ${phaseNumber}${phaseName ? ` (${phaseName})` : ''} — EXECUTING\nPlan: 1 of ${planCount || '?'}\n`;
-    content = content.replace(positionPattern, (_match, header) => `${header}${newPosition}`);
+    const header = positionMatch[1];
+    let posBody = positionMatch[2];
+
+    // Update or insert Phase line
+    const newPhase = `Phase: ${phaseNumber}${phaseName ? ` (${phaseName})` : ''} — EXECUTING`;
+    if (/^Phase:/m.test(posBody)) {
+      posBody = posBody.replace(/^Phase:.*$/m, newPhase);
+    } else {
+      posBody = newPhase + '\n' + posBody;
+    }
+
+    // Update or insert Plan line
+    const newPlan = `Plan: 1 of ${planCount || '?'}`;
+    if (/^Plan:/m.test(posBody)) {
+      posBody = posBody.replace(/^Plan:.*$/m, newPlan);
+    } else {
+      posBody = posBody.replace(/^(Phase:.*$)/m, `$1\n${newPlan}`);
+    }
+
+    // Update Status line if present
+    const newStatus = `Status: Executing Phase ${phaseNumber}`;
+    if (/^Status:/m.test(posBody)) {
+      posBody = posBody.replace(/^Status:.*$/m, newStatus);
+    }
+
+    // Update Last activity line if present
+    const newActivity = `Last activity: ${today} -- Phase ${phaseNumber} execution started`;
+    if (/^Last activity:/im.test(posBody)) {
+      posBody = posBody.replace(/^Last activity:.*$/im, newActivity);
+    }
+
+    content = content.replace(positionPattern, `${header}${posBody}`);
     updated.push('Current Position');
   }
 
@@ -894,7 +967,7 @@ function cmdStateBeginPhase(cwd, phaseNumber, phaseName, planCount, raw) {
  * Fixes #1034.
  */
 function cmdSignalWaiting(cwd, type, question, options, phase, raw) {
-  const gsdDir = fs.existsSync(path.join(cwd, '.gsd')) ? path.join(cwd, '.gsd') : path.join(cwd, '.planning');
+  const gsdDir = fs.existsSync(path.join(cwd, '.gsd')) ? path.join(cwd, '.gsd') : planningDir(cwd);
   const waitingPath = path.join(gsdDir, 'WAITING.json');
 
   const signal = {
@@ -921,7 +994,7 @@ function cmdSignalWaiting(cwd, type, question, options, phase, raw) {
 function cmdSignalResume(cwd, raw) {
   const paths = [
     path.join(cwd, '.gsd', 'WAITING.json'),
-    path.join(cwd, '.planning', 'WAITING.json'),
+    path.join(planningDir(cwd), 'WAITING.json'),
   ];
 
   let removed = false;

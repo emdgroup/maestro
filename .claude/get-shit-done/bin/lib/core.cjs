@@ -58,13 +58,22 @@ function findProjectRoot(startDir) {
   const root = path.parse(resolved).root;
   const homedir = require('os').homedir();
 
-  // Check if startDir or any of its ancestors (up to but not including a
+  // If startDir already contains .planning/, it IS the project root.
+  // Do not walk up to a parent workspace that also has .planning/ (#1362).
+  const ownPlanning = path.join(resolved, '.planning');
+  if (fs.existsSync(ownPlanning) && fs.statSync(ownPlanning).isDirectory()) {
+    return startDir;
+  }
+
+  // Check if startDir or any of its ancestors (up to AND including the
   // candidate project root) contains a .git directory. This handles both
-  // `backend/` (direct sub-repo) and `backend/src/modules/` (nested inside).
+  // `backend/` (direct sub-repo) and `backend/src/modules/` (nested inside),
+  // as well as the common case where .git lives at the same level as .planning/.
   function isInsideGitRepo(candidateParent) {
     let d = resolved;
-    while (d !== candidateParent && d !== root) {
+    while (d !== root) {
       if (fs.existsSync(path.join(d, '.git'))) return true;
+      if (d === candidateParent) break;
       d = path.dirname(d);
     }
     return false;
@@ -112,26 +121,66 @@ function findProjectRoot(startDir) {
 
 // ─── Output helpers ───────────────────────────────────────────────────────────
 
+/**
+ * Remove stale gsd-* temp files/dirs older than maxAgeMs (default: 5 minutes).
+ * Runs opportunistically before each new temp file write to prevent unbounded accumulation.
+ * @param {string} prefix - filename prefix to match (e.g., 'gsd-')
+ * @param {object} opts
+ * @param {number} opts.maxAgeMs - max age in ms before removal (default: 5 min)
+ * @param {boolean} opts.dirsOnly - if true, only remove directories (default: false)
+ */
+function reapStaleTempFiles(prefix = 'gsd-', { maxAgeMs = 5 * 60 * 1000, dirsOnly = false } = {}) {
+  try {
+    const tmpDir = require('os').tmpdir();
+    const now = Date.now();
+    const entries = fs.readdirSync(tmpDir);
+    for (const entry of entries) {
+      if (!entry.startsWith(prefix)) continue;
+      const fullPath = path.join(tmpDir, entry);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (now - stat.mtimeMs > maxAgeMs) {
+          if (stat.isDirectory()) {
+            fs.rmSync(fullPath, { recursive: true, force: true });
+          } else if (!dirsOnly) {
+            fs.unlinkSync(fullPath);
+          }
+        }
+      } catch {
+        // File may have been removed between readdir and stat — ignore
+      }
+    }
+  } catch {
+    // Non-critical — don't let cleanup failures break output
+  }
+}
+
 function output(result, raw, rawValue) {
+  let data;
   if (raw && rawValue !== undefined) {
-    process.stdout.write(String(rawValue));
+    data = String(rawValue);
   } else {
     const json = JSON.stringify(result, null, 2);
     // Large payloads exceed Claude Code's Bash tool buffer (~50KB).
     // Write to tmpfile and output the path prefixed with @file: so callers can detect it.
     if (json.length > 50000) {
+      reapStaleTempFiles();
       const tmpPath = path.join(require('os').tmpdir(), `gsd-${Date.now()}.json`);
       fs.writeFileSync(tmpPath, json, 'utf-8');
-      process.stdout.write('@file:' + tmpPath);
+      data = '@file:' + tmpPath;
     } else {
-      process.stdout.write(json);
+      data = json;
     }
   }
-  process.exit(0);
+  // process.stdout.write() is async when stdout is a pipe — process.exit()
+  // can tear down the process before the reader consumes the buffer.
+  // fs.writeSync(1, ...) blocks until the kernel accepts the bytes, and
+  // skipping process.exit() lets the event loop drain naturally.
+  fs.writeSync(1, data);
 }
 
 function error(message) {
-  process.stderr.write('Error: ' + message + '\n');
+  fs.writeSync(2, 'Error: ' + message + '\n');
   process.exit(1);
 }
 
@@ -165,7 +214,7 @@ function loadConfig(cwd) {
     exa_search: false,
     text_mode: false, // when true, use plain-text numbered lists instead of AskUserQuestion menus
     sub_repos: [],
-    resolve_model_ids: false, // when true, resolve aliases (opus/sonnet/haiku) to full model IDs
+    resolve_model_ids: false, // false: return alias as-is | true: map to full Claude model ID | "omit": return '' (runtime uses its default)
     context_window: 200000, // default 200k; set to 1000000 for Opus/Sonnet 4.6 1M models
     phase_naming: 'sequential', // 'sequential' (default, auto-increment) or 'custom' (arbitrary string IDs)
   };
@@ -260,6 +309,7 @@ function loadConfig(cwd) {
       context_window: get('context_window') ?? defaults.context_window,
       phase_naming: get('phase_naming') ?? defaults.phase_naming,
       model_overrides: parsed.model_overrides || null,
+      agent_skills: parsed.agent_skills || {},
     };
   } catch {
     return defaults;
@@ -411,6 +461,12 @@ function execGit(cwd, args) {
  * Returns the main worktree path, or cwd if not in a worktree.
  */
 function resolveWorktreeRoot(cwd) {
+  // If the current directory already has its own .planning/, respect it.
+  // This handles linked worktrees with independent planning state (e.g., Conductor workspaces).
+  if (fs.existsSync(path.join(cwd, '.planning'))) {
+    return cwd;
+  }
+
   // Check if we're in a linked worktree
   const gitDir = execGit(cwd, ['rev-parse', '--git-dir']);
   const commonDir = execGit(cwd, ['rev-parse', '--git-common-dir']);
@@ -483,23 +539,76 @@ function withPlanningLock(cwd, fn) {
   return fn();
 }
 
-/** Get the .planning directory path */
-function planningDir(cwd) {
+/**
+ * Get the .planning directory path, workstream-aware.
+ * When a workstream is active (via explicit ws arg or GSD_WORKSTREAM env var),
+ * returns `.planning/workstreams/{ws}/`. Otherwise returns `.planning/`.
+ *
+ * @param {string} cwd - project root
+ * @param {string} [ws] - explicit workstream name; if omitted, checks GSD_WORKSTREAM env var
+ */
+function planningDir(cwd, ws) {
+  if (ws === undefined) ws = process.env.GSD_WORKSTREAM || null;
+  if (!ws) return path.join(cwd, '.planning');
+  return path.join(cwd, '.planning', 'workstreams', ws);
+}
+
+/** Always returns the root .planning/ path, ignoring workstreams. For shared resources. */
+function planningRoot(cwd) {
   return path.join(cwd, '.planning');
 }
 
-/** Get common .planning file paths */
-function planningPaths(cwd) {
-  const base = path.join(cwd, '.planning');
+/**
+ * Get common .planning file paths, workstream-aware.
+ * Scoped paths (state, roadmap, phases, requirements) resolve to the active workstream.
+ * Shared paths (project, config) always resolve to the root .planning/.
+ */
+function planningPaths(cwd, ws) {
+  const base = planningDir(cwd, ws);
+  const root = path.join(cwd, '.planning');
   return {
     planning: base,
     state: path.join(base, 'STATE.md'),
     roadmap: path.join(base, 'ROADMAP.md'),
-    project: path.join(base, 'PROJECT.md'),
-    config: path.join(base, 'config.json'),
+    project: path.join(root, 'PROJECT.md'),
+    config: path.join(root, 'config.json'),
     phases: path.join(base, 'phases'),
     requirements: path.join(base, 'REQUIREMENTS.md'),
   };
+}
+
+// ─── Active Workstream Detection ─────────────────────────────────────────────
+
+/**
+ * Get the active workstream name from .planning/active-workstream file.
+ * Returns null if no active workstream or file doesn't exist.
+ */
+function getActiveWorkstream(cwd) {
+  const filePath = path.join(planningRoot(cwd), 'active-workstream');
+  try {
+    const name = fs.readFileSync(filePath, 'utf-8').trim();
+    if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) return null;
+    const wsDir = path.join(planningRoot(cwd), 'workstreams', name);
+    if (!fs.existsSync(wsDir)) return null;
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set the active workstream. Pass null to clear.
+ */
+function setActiveWorkstream(cwd, name) {
+  const filePath = path.join(planningRoot(cwd), 'active-workstream');
+  if (!name) {
+    try { fs.unlinkSync(filePath); } catch {}
+    return;
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    throw new Error('Invalid workstream name: must be alphanumeric, hyphens, and underscores only');
+  }
+  fs.writeFileSync(filePath, name + '\n', 'utf-8');
 }
 
 // ─── Phase utilities ──────────────────────────────────────────────────────────
@@ -553,8 +662,7 @@ function comparePhaseNum(a, b) {
 
 function searchPhaseInDir(baseDir, relBase, normalized) {
   try {
-    const entries = fs.readdirSync(baseDir, { withFileTypes: true });
-    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => comparePhaseNum(a, b));
+    const dirs = readSubdirectories(baseDir, true);
     // Match: starts with normalized (numeric) OR contains normalized as prefix segment (custom ID)
     const match = dirs.find(d => {
       if (d.startsWith(normalized)) return true;
@@ -571,13 +679,9 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
     const phaseNumber = dirMatch ? dirMatch[1] : normalized;
     const phaseName = dirMatch && dirMatch[2] ? dirMatch[2] : null;
     const phaseDir = path.join(baseDir, match);
-    const phaseFiles = fs.readdirSync(phaseDir);
-
-    const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').sort();
-    const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').sort();
-    const hasResearch = phaseFiles.some(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
-    const hasContext = phaseFiles.some(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
-    const hasVerification = phaseFiles.some(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
+    const { plans: unsortedPlans, summaries: unsortedSummaries, hasResearch, hasContext, hasVerification, hasReviews } = getPhaseFileStats(phaseDir);
+    const plans = unsortedPlans.sort();
+    const summaries = unsortedSummaries.sort();
 
     const completedPlanIds = new Set(
       summaries.map(s => s.replace('-SUMMARY.md', '').replace('SUMMARY.md', ''))
@@ -599,6 +703,7 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
       has_research: hasResearch,
       has_context: hasContext,
       has_verification: hasVerification,
+      has_reviews: hasReviews,
     };
   } catch {
     return null;
@@ -608,11 +713,12 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
 function findPhaseInternal(cwd, phase) {
   if (!phase) return null;
 
-  const phasesDir = path.join(cwd, '.planning', 'phases');
+  const phasesDir = path.join(planningDir(cwd), 'phases');
   const normalized = normalizePhaseName(phase);
 
   // Search current phases first
-  const current = searchPhaseInDir(phasesDir, '.planning/phases', normalized);
+  const relPhasesDir = toPosixPath(path.relative(cwd, phasesDir));
+  const current = searchPhaseInDir(phasesDir, relPhasesDir, normalized);
   if (current) return current;
 
   // Search archived milestone phases (newest first)
@@ -660,8 +766,7 @@ function getArchivedPhaseDirs(cwd) {
     for (const archiveName of phaseDirs) {
       const version = archiveName.match(/^(v[\d.]+)-phases$/)[1];
       const archivePath = path.join(milestonesDir, archiveName);
-      const entries = fs.readdirSync(archivePath, { withFileTypes: true });
-      const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => comparePhaseNum(a, b));
+      const dirs = readSubdirectories(archivePath, true);
 
       for (const dir of dirs) {
         results.push({
@@ -711,7 +816,7 @@ function extractCurrentMilestone(content, cwd) {
   // 1. Get current milestone version from STATE.md frontmatter
   let version = null;
   try {
-    const statePath = path.join(cwd, '.planning', 'STATE.md');
+    const statePath = path.join(planningDir(cwd), 'STATE.md');
     if (fs.existsSync(statePath)) {
       const stateRaw = fs.readFileSync(statePath, 'utf-8');
       const milestoneMatch = stateRaw.match(/^milestone:\s*(.+)/m);
@@ -794,7 +899,7 @@ function replaceInCurrentMilestone(content, pattern, replacement) {
 
 function getRoadmapPhaseInternal(cwd, phaseNum) {
   if (!phaseNum) return null;
-  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
+  const roadmapPath = path.join(planningDir(cwd), 'ROADMAP.md');
   if (!fs.existsSync(roadmapPath)) return null;
 
   try {
@@ -827,6 +932,58 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
   }
 }
 
+// ─── Agent installation validation (#1371) ───────────────────────────────────
+
+/**
+ * Resolve the agents directory from the GSD install location.
+ * gsd-tools.cjs lives at <configDir>/get-shit-done/bin/gsd-tools.cjs,
+ * so agents/ is at <configDir>/agents/.
+ *
+ * @returns {string} Absolute path to the agents directory
+ */
+function getAgentsDir() {
+  // __dirname is get-shit-done/bin/lib/ → go up 3 levels to configDir
+  return path.join(__dirname, '..', '..', '..', 'agents');
+}
+
+/**
+ * Check which GSD agents are installed on disk.
+ * Returns an object with installation status and details.
+ *
+ * @returns {{ agents_installed: boolean, missing_agents: string[], installed_agents: string[], agents_dir: string }}
+ */
+function checkAgentsInstalled() {
+  const agentsDir = getAgentsDir();
+  const expectedAgents = Object.keys(MODEL_PROFILES);
+  const installed = [];
+  const missing = [];
+
+  if (!fs.existsSync(agentsDir)) {
+    return {
+      agents_installed: false,
+      missing_agents: expectedAgents,
+      installed_agents: [],
+      agents_dir: agentsDir,
+    };
+  }
+
+  for (const agent of expectedAgents) {
+    const agentFile = path.join(agentsDir, `${agent}.md`);
+    if (fs.existsSync(agentFile)) {
+      installed.push(agent);
+    } else {
+      missing.push(agent);
+    }
+  }
+
+  return {
+    agents_installed: installed.length > 0 && missing.length === 0,
+    missing_agents: missing,
+    installed_agents: installed,
+    agents_dir: agentsDir,
+  };
+}
+
 // ─── Model alias resolution ───────────────────────────────────────────────────
 
 /**
@@ -843,10 +1000,18 @@ const MODEL_ALIAS_MAP = {
 function resolveModelInternal(cwd, agentType) {
   const config = loadConfig(cwd);
 
-  // Check per-agent override first
+  // Check per-agent override first — always respected regardless of resolve_model_ids.
+  // Users who set fully-qualified model IDs (e.g., "openai/gpt-5.4") get exactly that.
   const override = config.model_overrides?.[agentType];
   if (override) {
     return override;
+  }
+
+  // resolve_model_ids: "omit" — return empty string so the runtime uses its configured
+  // default model. For non-Claude runtimes (OpenCode, Codex, etc.) that don't recognize
+  // Claude aliases (opus/sonnet/haiku/inherit). Set automatically during install. See #1156.
+  if (config.resolve_model_ids === 'omit') {
+    return '';
   }
 
   // Fall back to profile lookup
@@ -856,8 +1021,8 @@ function resolveModelInternal(cwd, agentType) {
   if (profile === 'inherit') return 'inherit';
   const alias = agentModels[profile] || agentModels['balanced'] || 'sonnet';
 
-  // If resolve_model_ids is true, map alias to full model ID
-  // This prevents 404s when the Task tool passes aliases directly to the API
+  // resolve_model_ids: true — map alias to full Claude model ID
+  // Prevents 404s when the Task tool passes aliases directly to the API
   if (config.resolve_model_ids) {
     return MODEL_ALIAS_MAP[alias] || alias;
   }
@@ -901,7 +1066,7 @@ function generateSlugInternal(text) {
 
 function getMilestoneInfo(cwd) {
   try {
-    const roadmap = fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8');
+    const roadmap = fs.readFileSync(path.join(planningDir(cwd), 'ROADMAP.md'), 'utf-8');
 
     // First: check for list-format roadmaps using 🚧 (in-progress) marker
     // e.g. "- 🚧 **v2.1 Belgium** — Phases 24-28 (in progress)"
@@ -944,7 +1109,7 @@ function getMilestoneInfo(cwd) {
 function getMilestonePhaseFilter(cwd) {
   const milestonePhaseNums = new Set();
   try {
-    const roadmap = extractCurrentMilestone(fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8'), cwd);
+    const roadmap = extractCurrentMilestone(fs.readFileSync(path.join(planningDir(cwd), 'ROADMAP.md'), 'utf-8'), cwd);
     // Match both numeric phases (Phase 1:) and custom IDs (Phase PROJ-42:)
     const phasePattern = /#{2,4}\s*Phase\s+([\w][\w.-]*)\s*:/gi;
     let m;
@@ -976,6 +1141,50 @@ function getMilestonePhaseFilter(cwd) {
   return isDirInMilestone;
 }
 
+// ─── Phase file helpers ──────────────────────────────────────────────────────
+
+/** Filter a file list to just PLAN.md / *-PLAN.md entries. */
+function filterPlanFiles(files) {
+  return files.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md');
+}
+
+/** Filter a file list to just SUMMARY.md / *-SUMMARY.md entries. */
+function filterSummaryFiles(files) {
+  return files.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md');
+}
+
+/**
+ * Read a phase directory and return counts/flags for common file types.
+ * Returns an object with plans[], summaries[], and boolean flags for
+ * research/context/verification files.
+ */
+function getPhaseFileStats(phaseDir) {
+  const files = fs.readdirSync(phaseDir);
+  return {
+    plans: filterPlanFiles(files),
+    summaries: filterSummaryFiles(files),
+    hasResearch: files.some(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md'),
+    hasContext: files.some(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md'),
+    hasVerification: files.some(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md'),
+    hasReviews: files.some(f => f.endsWith('-REVIEWS.md') || f === 'REVIEWS.md'),
+  };
+}
+
+/**
+ * Read immediate child directories from a path.
+ * Returns [] if the path doesn't exist or can't be read.
+ * Pass sort=true to apply comparePhaseNum ordering.
+ */
+function readSubdirectories(dirPath, sort = false) {
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+    return sort ? dirs.sort((a, b) => comparePhaseNum(a, b)) : dirs;
+  } catch {
+    return [];
+  }
+}
+
 module.exports = {
   output,
   error,
@@ -1005,7 +1214,17 @@ module.exports = {
   withPlanningLock,
   findProjectRoot,
   detectSubRepos,
+  reapStaleTempFiles,
   MODEL_ALIAS_MAP,
   planningDir,
+  planningRoot,
   planningPaths,
+  getActiveWorkstream,
+  setActiveWorkstream,
+  filterPlanFiles,
+  filterSummaryFiles,
+  getPhaseFileStats,
+  readSubdirectories,
+  getAgentsDir,
+  checkAgentsInstalled,
 };

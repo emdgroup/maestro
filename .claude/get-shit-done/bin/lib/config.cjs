@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { output, error } = require('./core.cjs');
+const { output, error, planningRoot } = require('./core.cjs');
 const {
   VALID_PROFILES,
   getAgentToModelMapForProfile,
@@ -18,16 +18,33 @@ const VALID_CONFIG_KEYS = new Set([
   'workflow.nyquist_validation', 'workflow.ui_phase', 'workflow.ui_safety_gate',
   'workflow.auto_advance', 'workflow.node_repair', 'workflow.node_repair_budget',
   'workflow.text_mode',
+  'workflow.research_before_questions',
+  'workflow.discuss_mode',
+  'workflow.skip_discuss',
   'workflow._auto_chain_active',
   'git.branching_strategy', 'git.phase_branch_template', 'git.milestone_branch_template', 'git.quick_branch_template',
   'planning.commit_docs', 'planning.search_gitignored',
   'hooks.context_warnings',
 ]);
 
+/**
+ * Check whether a config key path is valid.
+ * Supports exact matches from VALID_CONFIG_KEYS plus dynamic patterns
+ * like `agent_skills.<agent-type>` where the sub-key is freeform.
+ */
+function isValidConfigKey(keyPath) {
+  if (VALID_CONFIG_KEYS.has(keyPath)) return true;
+  // Allow agent_skills.<agent-type> with any agent type string
+  if (/^agent_skills\.[a-zA-Z0-9_-]+$/.test(keyPath)) return true;
+  return false;
+}
+
 const CONFIG_KEY_SUGGESTIONS = {
   'workflow.nyquist_validation_enabled': 'workflow.nyquist_validation',
   'agents.nyquist_validation_enabled': 'workflow.nyquist_validation',
   'nyquist.validation_enabled': 'workflow.nyquist_validation',
+  'hooks.research_questions': 'workflow.research_before_questions',
+  'workflow.research_questions': 'workflow.research_before_questions',
 };
 
 function validateKnownConfigKeyPath(keyPath) {
@@ -108,10 +125,14 @@ function buildNewProjectConfig(userChoices) {
       ui_phase: true,
       ui_safety_gate: true,
       text_mode: false,
+      research_before_questions: false,
+      discuss_mode: 'discuss',
+      skip_discuss: false,
     },
     hooks: {
       context_warnings: true,
     },
+    agent_skills: {},
   };
 
   // Three-level deep merge: hardcoded <- userDefaults <- choices
@@ -134,6 +155,11 @@ function buildNewProjectConfig(userChoices) {
       ...(userDefaults.hooks || {}),
       ...(choices.hooks || {}),
     },
+    agent_skills: {
+      ...hardcoded.agent_skills,
+      ...(userDefaults.agent_skills || {}),
+      ...(choices.agent_skills || {}),
+    },
   };
 }
 
@@ -147,8 +173,8 @@ function buildNewProjectConfig(userChoices) {
  * Idempotent: if config.json already exists, returns { created: false }.
  */
 function cmdConfigNewProject(cwd, choicesJson, raw) {
-  const configPath = path.join(cwd, '.planning', 'config.json');
-  const planningDir = path.join(cwd, '.planning');
+  const planningBase = planningRoot(cwd);
+  const configPath = path.join(planningBase, 'config.json');
 
   // Idempotent: don't overwrite existing config
   if (fs.existsSync(configPath)) {
@@ -168,8 +194,8 @@ function cmdConfigNewProject(cwd, choicesJson, raw) {
 
   // Ensure .planning directory exists
   try {
-    if (!fs.existsSync(planningDir)) {
-      fs.mkdirSync(planningDir, { recursive: true });
+    if (!fs.existsSync(planningBase)) {
+      fs.mkdirSync(planningBase, { recursive: true });
     }
   } catch (err) {
     error('Failed to create .planning directory: ' + err.message);
@@ -192,13 +218,13 @@ function cmdConfigNewProject(cwd, choicesJson, raw) {
  * the happy path. But note that `error()` will still `exit(1)` out of the process.
  */
 function ensureConfigFile(cwd) {
-  const configPath = path.join(cwd, '.planning', 'config.json');
-  const planningDir = path.join(cwd, '.planning');
+  const planningBase = planningRoot(cwd);
+  const configPath = path.join(planningBase, 'config.json');
 
   // Ensure .planning directory exists
   try {
-    if (!fs.existsSync(planningDir)) {
-      fs.mkdirSync(planningDir, { recursive: true });
+    if (!fs.existsSync(planningBase)) {
+      fs.mkdirSync(planningBase, { recursive: true });
     }
   } catch (err) {
     error('Failed to create .planning directory: ' + err.message);
@@ -242,7 +268,7 @@ function cmdConfigEnsureSection(cwd, raw) {
  * the happy path. But note that `error()` will still `exit(1)` out of the process.
  */
 function setConfigValue(cwd, keyPath, parsedValue) {
-  const configPath = path.join(cwd, '.planning', 'config.json');
+  const configPath = path.join(planningRoot(cwd), 'config.json');
 
   // Load existing config or start with empty object
   let config = {};
@@ -290,22 +316,25 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
 
   validateKnownConfigKeyPath(keyPath);
 
-  if (!VALID_CONFIG_KEYS.has(keyPath)) {
-    error(`Unknown config key: "${keyPath}". Valid keys: ${[...VALID_CONFIG_KEYS].sort().join(', ')}`);
+  if (!isValidConfigKey(keyPath)) {
+    error(`Unknown config key: "${keyPath}". Valid keys: ${[...VALID_CONFIG_KEYS].sort().join(', ')}, agent_skills.<agent-type>`);
   }
 
-  // Parse value (handle booleans and numbers)
+  // Parse value (handle booleans, numbers, and JSON arrays/objects)
   let parsedValue = value;
   if (value === 'true') parsedValue = true;
   else if (value === 'false') parsedValue = false;
   else if (!isNaN(value) && value !== '') parsedValue = Number(value);
+  else if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+    try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
+  }
 
   const setConfigValueResult = setConfigValue(cwd, keyPath, parsedValue);
   output(setConfigValueResult, raw, `${keyPath}=${parsedValue}`);
 }
 
 function cmdConfigGet(cwd, keyPath, raw) {
-  const configPath = path.join(cwd, '.planning', 'config.json');
+  const configPath = path.join(planningRoot(cwd), 'config.json');
 
   if (!keyPath) {
     error('Usage: config-get <key.path>');

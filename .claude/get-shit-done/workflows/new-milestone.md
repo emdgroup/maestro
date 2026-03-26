@@ -10,6 +10,13 @@ Read all files referenced by the invoking prompt's execution_context before star
 
 </required_reading>
 
+<available_agent_types>
+Valid GSD subagent types (use exact names — do not fall back to 'general-purpose'):
+- gsd-project-researcher — Researches project-level technical decisions
+- gsd-research-synthesizer — Synthesizes findings from parallel research agents
+- gsd-roadmapper — Creates phased execution roadmaps
+</available_agent_types>
+
 <process>
 
 ## 1. Load Context
@@ -42,6 +49,38 @@ If the flag is absent, keep the current behavior of continuing phase numbering f
 - Parse last version from MILESTONES.md
 - Suggest next version (v1.0 → v1.1, or v2.0 for major)
 - Confirm with user
+
+## 3.5. Verify Milestone Understanding
+
+Before writing any files, present a summary of what was gathered and ask for confirmation.
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ GSD ► MILESTONE SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Milestone v[X.Y]: [Name]**
+
+**Goal:** [One sentence]
+
+**Target features:**
+- [Feature 1]
+- [Feature 2]
+- [Feature 3]
+
+**Key context:** [Any important constraints, decisions, or notes from questioning]
+```
+
+AskUserQuestion:
+- header: "Confirm?"
+- question: "Does this capture what you want to build in this milestone?"
+- options:
+  - "Looks good" — Proceed to write PROJECT.md
+  - "Adjust" — Let me correct or add details
+
+**If "Adjust":** Ask what needs changing (plain text, NOT AskUserQuestion). Incorporate changes, re-present the summary. Loop until "Looks good" is selected.
+
+**If "Looks good":** Proceed to Step 4.
 
 ## 4. Update PROJECT.md
 
@@ -107,6 +146,9 @@ node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" c
 ```bash
 INIT=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" init new-milestone)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
+AGENT_SKILLS_RESEARCHER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-project-researcher 2>/dev/null)
+AGENT_SKILLS_SYNTHESIZER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-synthesizer 2>/dev/null)
+AGENT_SKILLS_ROADMAPPER=$(node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" agent-skills gsd-roadmapper 2>/dev/null)
 ```
 
 Extract from init JSON: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `research_enabled`, `current_milestone`, `project_exists`, `roadmap_exists`, `latest_completed_milestone`, `phase_dir_count`, `phase_archive_path`.
@@ -129,7 +171,7 @@ Then verify `.planning/phases/` no longer contains old milestone directories bef
 
 If `phase_dir_count > 0` but `phase_archive_path` is missing:
 - Stop and explain that reset numbering is unsafe without a completed milestone archive target.
-- Tell the user to complete/archive the previous milestone first, then rerun `/gsd:new-milestone --reset-phase-numbers`.
+- Tell the user to complete/archive the previous milestone first, then rerun `/gsd:new-milestone --reset-phase-numbers ${GSD_WS}`.
 
 ## 8. Research Decision
 
@@ -183,6 +225,8 @@ Focus ONLY on what's needed for the NEW features.
 - .planning/PROJECT.md (Project context)
 </files_to_read>
 
+${AGENT_SKILLS_RESEARCHER}
+
 <downstream_consumer>{CONSUMER}</downstream_consumer>
 
 <quality_gate>{GATES}</quality_gate>
@@ -216,6 +260,8 @@ Synthesize research outputs into SUMMARY.md.
 - .planning/research/ARCHITECTURE.md
 - .planning/research/PITFALLS.md
 </files_to_read>
+
+${AGENT_SKILLS_SYNTHESIZER}
 
 Write to: .planning/research/SUMMARY.md
 Use template: /home/m306213/workspace/maestro/.claude/get-shit-done/templates/research-project/SUMMARY.md
@@ -331,6 +377,9 @@ Task(prompt="
 - .planning/config.json
 - .planning/MILESTONES.md
 </files_to_read>
+
+${AGENT_SKILLS_ROADMAPPER}
+
 </planning_context>
 
 <instructions>
@@ -410,11 +459,11 @@ node "/home/m306213/workspace/maestro/.claude/get-shit-done/bin/gsd-tools.cjs" c
 
 **Phase [N]: [Phase Name]** — [Goal]
 
-`/gsd:discuss-phase [N]` — gather context and clarify approach
+`/gsd:discuss-phase [N] ${GSD_WS}` — gather context and clarify approach
 
 <sub>`/clear` first → fresh context window</sub>
 
-Also: `/gsd:plan-phase [N]` — skip discussion, plan directly
+Also: `/gsd:plan-phase [N] ${GSD_WS}` — skip discussion, plan directly
 ```
 
 </process>
@@ -431,7 +480,7 @@ Also: `/gsd:plan-phase [N]` — skip discussion, plan directly
 - [ ] User feedback incorporated (if any)
 - [ ] Phase numbering mode respected (continued or reset)
 - [ ] All commits made (if planning docs committed)
-- [ ] User knows next step: `/gsd:discuss-phase [N]`
+- [ ] User knows next step: `/gsd:discuss-phase [N] ${GSD_WS}`
 
 **Atomic commits:** Each phase commits its artifacts immediately.
 </success_criteria>
