@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from "react";
-import { useDraggable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { Task } from "@/types/bindings";
 import { useBoardStore } from "@/store/boardStore";
+import { api } from "@/lib";
 import { useExecutionLogsQuery } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
@@ -16,12 +15,10 @@ function getStatusDotColor(status: string): string {
     case "InProgress":
       return "bg-warning";
     case "Review":
-    case "Merging":
       return "bg-secondary";
     case "Ready":
       return "bg-accent";
     case "Backlog":
-    case "Failed":
     default:
       return "bg-muted";
   }
@@ -55,23 +52,21 @@ function formatElapsedTime(startedAt?: string): string {
 
 interface TaskCardProps {
   task: Task;
-  isDragging?: boolean;
   onReviewClick?: (taskId: number, taskName: string) => void;
   onSettingsClick?: (task: Task) => void;
+  onArchiveClick?: (taskId: number) => void;
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   task,
-  isDragging = false,
   onReviewClick,
   onSettingsClick,
+  onArchiveClick,
 }) => {
   // Get context from KanbanProvider
   const { projectPath, onTaskClick } = useKanban();
 
   const [isExecuting, setIsExecuting] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [isAborting, setIsAborting] = useState(false);
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
@@ -89,25 +84,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return "0s";
   }, [task.status, executionLog?.started_at]);
 
-  // Don't make imported tasks draggable - they are read-only
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    isDragging: isActivelyDragging,
-  } = useDraggable({
-    id: task.id,
-    disabled: !!task.is_imported,
-  });
-
-  // If this is the overlay card, don't apply transform
-  // If this is being actively dragged, hide it (the overlay will show)
-  const style = {
-    transform: isDragging ? undefined : CSS.Translate.toString(transform),
-    opacity: isActivelyDragging ? 0 : 1,
-    cursor: task.is_imported ? "default" : "grab",
-  };
 
   const handleExecute = async () => {
     setIsExecuting(true);
@@ -131,42 +107,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         return "🔄 Running";
       case "Review":
         return "👀 Review";
-      case "Merging":
-        return "⚙️ Merging";
       case "Done":
         return "✅ Done";
-      case "Failed":
-        return "❌ Failed";
       case "Backlog":
         return "📋 Backlog";
       case "Ready":
         return "🚀 Ready";
+      case "Cancelled":
+        return "🚫 Cancelled";
       default:
         return status;
-    }
-  };
-
-  const handleRetry = async () => {
-    setIsRetrying(true);
-    try {
-      toast.success(`Retrying: ${task.name}`);
-      await store.resumeExecution(task.project_id, task.id, projectPath);
-    } catch (error) {
-      toast.error(`Resume failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsRetrying(false);
-    }
-  };
-
-  const handleAbort = async () => {
-    setIsAborting(true);
-    try {
-      toast.success(`Task aborted: ${task.name}`);
-      await store.abortExecution(task.project_id, task.id);
-    } catch (error) {
-      toast.error(`Abort failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsAborting(false);
     }
   };
 
@@ -194,15 +144,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     }
   };
 
+  const handleBackToBacklog = async () => {
+    try {
+      await api.updateTask(task.id, "Backlog", null);
+      store.updateTaskStatus(task.id, "Backlog");
+      toast.success(`"${task.name}" moved back to Backlog`);
+    } catch (error) {
+      toast.error(
+        `Failed to move task: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
   return (
     <div
-      ref={!isDragging ? setNodeRef : undefined}
-      style={style}
-      {...(!isDragging && !task.is_imported ? listeners : {})}
-      {...(!isDragging && !task.is_imported ? attributes : {})}
-      className={`rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 ${
-        !task.is_imported ? "cursor-grab hover:shadow-md hover:border-ring" : "cursor-default"
-      } ${task.status === "Failed" ? "bg-error/10 border-error/30" : ""}`}
+      className="rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 cursor-default hover:shadow-md hover:border-ring"
       onContextMenu={(e) => {
         e.preventDefault();
         setMenuOpen(true);
@@ -265,11 +221,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             {getStatusLabel(task.status)}
           </span>
         )}
-        {task.status === "Merging" && (
-          <div className="mt-1 text-xs italic text-muted-foreground animate-pulse">
-            Merge in progress...
-          </div>
-        )}
         {task.is_imported && (
           <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-success/10 text-success">
             🔒 Read-only
@@ -277,24 +228,28 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         )}
       </div>
 
-      {task.status === "Failed" && (
-        <div className="mt-2 p-2 bg-error/10 border border-error/30 rounded text-xs text-error max-h-16 overflow-hidden">
-          <div className="font-semibold mb-1">Error Details:</div>
-          <div className="text-error/80">Click task to view full error details and suggestions</div>
-        </div>
-      )}
       {task.status === "Ready" && (
-        <button
-          onClick={handleExecute}
-          disabled={isExecuting}
-          className={`mt-2 w-full px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
-            isExecuting
-              ? "bg-muted text-muted-foreground cursor-not-allowed"
-              : "bg-accent text-accent-foreground hover:shadow-md"
-          }`}
-        >
-          {isExecuting ? "Executing..." : "Execute"}
-        </button>
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={handleExecute}
+            disabled={isExecuting}
+            className={`flex-1 px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
+              isExecuting
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                : "bg-accent text-accent-foreground hover:shadow-md"
+            }`}
+          >
+            {isExecuting ? "Executing..." : "Execute"}
+          </button>
+          <button
+            onClick={handleBackToBacklog}
+            disabled={isExecuting}
+            className="px-3 py-2 text-sm font-semibold rounded transition-all duration-200 bg-muted text-muted-foreground hover:bg-muted/80 hover:shadow-md"
+            title="Move back to Backlog"
+          >
+            Back
+          </button>
+        </div>
       )}
       {task.status === "Review" && (
         <button
@@ -305,45 +260,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           Review
         </button>
       )}
-      {task.status === "Failed" && (
-        <div className="mt-2 flex gap-2 flex-wrap">
-          <button
-            onClick={handleRetry}
-            disabled={isRetrying || isAborting}
-            className={`flex-1 min-w-14 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
-              isRetrying || isAborting
-                ? "bg-muted text-muted-foreground cursor-not-allowed"
-                : "bg-success text-success-foreground hover:shadow-md"
-            }`}
-            title="Retry execution with same command"
-          >
-            {isRetrying ? "⏳" : "🔄 Resume"}
-          </button>
-          <button
-            onClick={handleAbort}
-            disabled={isAborting || isRetrying}
-            className={`flex-1 min-w-14 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
-              isAborting || isRetrying
-                ? "bg-muted text-muted-foreground cursor-not-allowed"
-                : "bg-error text-error-foreground hover:shadow-md"
-            }`}
-            title="Mark task as failed and stop recovery"
-          >
-            {isAborting ? "⏳" : "⏹️ Abort"}
-          </button>
-          <button
-            onClick={() => onTaskClick?.(task)}
-            disabled={isRetrying || isAborting}
-            className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
-              isRetrying || isAborting
-                ? "bg-muted text-muted-foreground cursor-not-allowed"
-                : "bg-accent text-accent-foreground hover:shadow-md"
-            }`}
-            title="Attach terminal to debug"
-          >
-            🔌 Terminal
-          </button>
-        </div>
+      {task.status === "Done" && !task.archived_at && (
+        <button
+          onClick={() => onArchiveClick?.(task.id)}
+          className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded bg-muted text-muted-foreground hover:bg-muted/80 hover:shadow-md transition-all duration-200"
+          title="Archive this task"
+        >
+          Archive
+        </button>
       )}
       {task.status === "InProgress" && executionLog && (
         <div className="mt-2 flex gap-2 flex-wrap">

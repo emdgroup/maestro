@@ -7,8 +7,6 @@ export interface BoardState {
   tasks: Task[];
   activeTerminalTaskId: number | null;
   isTerminalOpen: boolean;
-  retryingTaskIds: Set<number>;
-  abortingTaskIds: Set<number>;
   pausingTaskIds: Set<number>;
   loadTasks: (tasks: Task[]) => void;
   updateTaskStatus: (taskId: number, newStatus: TaskStatus) => void;
@@ -28,8 +26,6 @@ export const useBoardStore = create<BoardState>()(
     tasks: [],
     activeTerminalTaskId: null,
     isTerminalOpen: false,
-    retryingTaskIds: new Set<number>(),
-    abortingTaskIds: new Set<number>(),
     pausingTaskIds: new Set<number>(),
 
     loadTasks: (tasks: Task[]) =>
@@ -99,11 +95,6 @@ export const useBoardStore = create<BoardState>()(
 
     resumeExecution: async (projectId: number, taskId: number, repoPath: string) => {
       try {
-        // Track retrying state
-        set((state) => {
-          state.retryingTaskIds.add(taskId);
-        });
-
         // Call executionService to resume agent (reuses same config, creates new execution log)
         const executionLogId = await api.resumeAgentExecution(taskId, projectId, repoPath);
 
@@ -119,20 +110,12 @@ export const useBoardStore = create<BoardState>()(
       } catch (error) {
         console.error("Resume execution failed:", error);
         throw error;
-      } finally {
-        set((state) => {
-          state.retryingTaskIds.delete(taskId);
-        });
       }
     },
 
     abortExecution: async (_projectId: number, taskId: number) => {
       try {
-        set((state) => {
-          state.abortingTaskIds.add(taskId);
-        });
-
-        // Call cancelExecution handler if available, otherwise just mark as Done
+        // Call cancelExecution handler if available
         // TODO: cancel_execution expects logId, not taskId - this needs to fetch the log first
         try {
           await api.cancelExecution(taskId);
@@ -140,20 +123,16 @@ export const useBoardStore = create<BoardState>()(
           console.warn("cancelExecution handler not available, marking task manually", err);
         }
 
-        // Update task status to Done
+        // Update task status to Cancelled
         set((state) => {
           const task = state.tasks.find((t) => t.id === taskId);
           if (task) {
-            task.status = "Done";
+            task.status = "Cancelled";
           }
         });
       } catch (error) {
         console.error("Abort execution failed:", error);
         throw error;
-      } finally {
-        set((state) => {
-          state.abortingTaskIds.delete(taskId);
-        });
       }
     },
 

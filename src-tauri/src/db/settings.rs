@@ -41,8 +41,20 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
 
     let theme_preference = settings_map.get("theme_preference").cloned();
 
+    let auto_mode = settings_map
+        .get("auto_mode")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let max_concurrent_agents = settings_map
+        .get("max_concurrent_agents")
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(3);
+
     Ok(AppSettings {
         theme_preference,
+        auto_mode,
+        max_concurrent_agents,
         updated_at,
     })
 }
@@ -53,9 +65,13 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
 /// into the settings table.
 pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<(), AppError> {
 
-    // Build key-value pairs
+    // Build key-value pairs for simple string fields
+    let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
+    let max_concurrent_str = settings.max_concurrent_agents.to_string();
     let pairs = vec![
         ("theme_preference", settings.theme_preference.as_ref().map(|s| s.as_str()).unwrap_or("system")),
+        ("auto_mode", auto_mode_str),
+        ("max_concurrent_agents", max_concurrent_str.as_str()),
         ("updated_at", &settings.updated_at),
     ];
 
@@ -97,6 +113,8 @@ mod tests {
 
         let settings = AppSettings {
             theme_preference: Some("dark".to_string()),
+            auto_mode: false,
+            max_concurrent_agents: 3,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 

@@ -2,9 +2,14 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
 
-use crate::models::{Project, MergeOutcome};
+use crate::models::{Project, MergeOutcome, Task};
 use crate::db::{AppState, get_git_connection};
 use crate::git;
+
+const TASK_SELECT: &str =
+    "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
+     origin_branch, archived_at, external_id, is_imported, import_source, skills, \
+     model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks";
 
 /// Get diff for review: generates unified diff between task branch and main
 ///
@@ -238,24 +243,23 @@ pub async fn request_changes(
 // Merge Automation and Conflict Handling
 // ============================================================================
 
-/// Approve task and initiate automatic merge to main branch
+/// Approve task and perform synchronous merge to main branch
 ///
-/// Orchestrates the complete merge workflow:
-/// 1. Updates task status to "Merging" (transient state)
-/// 2. Spawns async background task to perform squash merge
+/// Orchestrates the complete merge workflow synchronously:
+/// 1. Queries task details and worktree info
+/// 2. Calls Node.js sidecar to perform squash merge (awaits completion)
 /// 3. On success: updates task to "Done", cleans up worktree, returns to pool
 /// 4. On conflict: rejects task back to "InProgress", saves conflict feedback
-/// 5. Emits Tauri events for frontend UI updates and notifications
 ///
-/// Returns immediately with "merging started" confirmation.
-/// Frontend listens for merge_complete or merge_error events for final status.
+/// Returns the final task status directly: Done on success, InProgress on conflict.
 #[tauri::command]
 #[specta::specta]
 pub async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
+    merge_strategy: String,
 ) -> Result<serde_json::Value, String> {
-    println!("approve_task_and_merge({}) called", task_id);
+    println!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
 
     // 1. Query task details and worktree info
     let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
@@ -287,107 +291,60 @@ pub async fn approve_task_and_merge(
         (t_name, w_branch, w_path, w_id, p_id, p_path)
     };
 
-    // 2. Update task status to "Merging"
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
+    // 2. Build full worktree path
+    let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-        conn.execute(
-            "UPDATE tasks SET status = 'Merging', updated_at = ? WHERE id = ?",
-            rusqlite::params![&now, task_id],
-        )
-        .map_err(|e| format!("Failed to update task status: {}", e))?;
+    println!(
+        "[merge] Starting synchronous merge for task {} (branch: {})",
+        task_id, branch_name
+    );
 
-        println!("✓ Task {} status updated to Merging", task_id);
+    // 3. Call Node.js sidecar to perform squash merge (await synchronously)
+    let sidecar_result = tokio::process::Command::new("node")
+        .args(&[
+            "sidecar/dist/index.js",
+            "--merge",
+            &full_worktree_path,
+            &task_id.to_string(),
+            &branch_name,
+            &task_name,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn merge sidecar: {}", e))?;
+
+    if !sidecar_result.status.success() {
+        let stderr = String::from_utf8_lossy(&sidecar_result.stderr);
+        return Err(format!("Merge sidecar failed: {}", stderr));
     }
 
-    // 3. Spawn async merge operation in background
-    let app_state_clone = app_state.inner().clone();
+    let stdout = String::from_utf8_lossy(&sidecar_result.stdout);
+    let merge_outcome = serde_json::from_str::<MergeOutcome>(&stdout)
+        .map_err(|e| format!("Failed to parse merge outcome: {} (stdout: {})", e, stdout))?;
 
-    tokio::spawn(async move {
-        println!(
-            "[merge] Starting async merge for task {} (branch: {})",
-            task_id, branch_name
-        );
-
-        // Build full worktree path
-        let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
-
-        // Call Node.js sidecar to perform squash merge
-        let sidecar_result = tokio::process::Command::new("node")
-            .args(&[
-                "sidecar/dist/index.js",
-                "--merge",
-                &full_worktree_path,
-                &task_id.to_string(),
-                &branch_name,
-                &task_name,
-            ])
-            .output()
-            .await;
-
-        match sidecar_result {
-            Ok(output) => {
-                if output.status.success() {
-                    // Parse stdout as JSON to extract MergeOutcome
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-
-                    match serde_json::from_str::<MergeOutcome>(&stdout) {
-                        Ok(merge_outcome) => {
-                            if merge_outcome.success {
-                                // Merge succeeded - cleanup and mark task Done
-                                println!("[merge] ✓ Merge succeeded for task {}", task_id);
-
-                                if let Err(e) = finalize_successful_merge(
-                                    &app_state_clone,
-                                    task_id,
-                                    worktree_id,
-                                    &full_worktree_path,
-                                    &repo_path,
-                                    &branch_name,
-                                ).await {
-                                    eprintln!("[merge] Merge finalization error: {}", e);
-                                } else {
-                                    println!("[merge] ✓ Merge finalized successfully for task {}", task_id);
-                                }
-                            } else if !merge_outcome.conflicts.is_empty() {
-                                // Merge had conflicts - reject and move back to InProgress
-                                println!("[merge] Merge conflict detected for task {}", task_id);
-
-                                if let Err(e) = reject_merge_on_conflict(
-                                    &app_state_clone,
-                                    task_id,
-                                    &merge_outcome.conflicts,
-                                ).await {
-                                    eprintln!("[merge] Failed to reject on conflict: {}", e);
-                                } else {
-                                    println!("[merge] Task {} rejected to InProgress due to merge conflict", task_id);
-                                }
-                            } else {
-                                // Other error - leave task in Merging state and log
-                                eprintln!("[merge] Merge error: {}", merge_outcome.message.unwrap_or_default());
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("[merge] Failed to parse merge outcome JSON: {}", e);
-                            eprintln!("[merge] stdout: {}", stdout);
-                        }
-                    }
-                } else {
-                    // Merge process exited with error
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("[merge] Sidecar exited with error for task {}: {}", task_id, stderr);
-                }
-            }
-            Err(e) => {
-                eprintln!("[merge] Sidecar error for task {}: {}", task_id, e);
-            }
-        }
-
-        println!("[merge] Async merge operation complete for task {}", task_id);
-    });
-
-    Ok(serde_json::json!({ "merging": true, "message": "Merge started" }))
+    if merge_outcome.success {
+        // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
+        println!("[merge] Merge succeeded for task {}", task_id);
+        finalize_successful_merge(
+            app_state.inner(),
+            task_id,
+            worktree_id,
+            &full_worktree_path,
+            &repo_path,
+            &branch_name,
+        )
+        .await?;
+        println!("[merge] Merge finalized for task {}", task_id);
+        Ok(serde_json::json!({ "success": true, "task_status": "Done" }))
+    } else if !merge_outcome.conflicts.is_empty() {
+        // 4b. Merge had conflicts - reject back to InProgress
+        println!("[merge] Merge conflict for task {}", task_id);
+        reject_merge_on_conflict(app_state.inner(), task_id, &merge_outcome.conflicts).await?;
+        Ok(serde_json::json!({ "success": false, "task_status": "InProgress", "conflicts": merge_outcome.conflicts }))
+    } else {
+        // 4c. Merge reported failure without conflicts - return error
+        Err(merge_outcome.message.unwrap_or_else(|| "Merge failed with unknown error".to_string()))
+    }
 }
 
 /// Finalize successful merge: update task to Done, cleanup worktree from disk, return to pool
@@ -481,6 +438,85 @@ pub(crate) async fn finalize_successful_merge(
     println!("[finalize] ✓ Merge finalization complete for task {}", task_id);
 
     Ok(())
+}
+
+/// Reject a task in review with one of three actions
+///
+/// Handles the three rejection paths from the review panel:
+/// - "SendToBacklog": moves task back to Backlog status (worktree cleanup is a TODO)
+/// - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
+/// - "CancelTask": moves task to Cancelled status (worktree cleanup is a TODO)
+///
+/// Returns the updated Task.
+#[tauri::command]
+#[specta::specta]
+pub async fn reject_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    action: String,
+    instruction: Option<String>,
+) -> Result<Task, String> {
+    println!("reject_review({}, action={}) called", task_id, action);
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    match action.as_str() {
+        "SendToBacklog" => {
+            // Move task back to Backlog; worktree cleanup is a TODO for full implementation
+            conn.execute(
+                "UPDATE tasks SET status = 'Backlog', updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task status: {}", e))?;
+
+            println!("[reject_review] Task {} moved to Backlog", task_id);
+            // TODO: delete worktree for this task
+        }
+        "ResumeWithInstructions" => {
+            let instr = instruction.ok_or_else(|| {
+                "instruction is required for ResumeWithInstructions action".to_string()
+            })?;
+
+            // Move task back to InProgress
+            conn.execute(
+                "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task status: {}", e))?;
+
+            // Save the instruction so the agent can pick it up
+            conn.execute(
+                "INSERT INTO task_instructions (task_id, content, source, created_at) VALUES (?, ?, 'review', ?)",
+                rusqlite::params![task_id, &instr, &now],
+            )
+            .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
+
+            println!("[reject_review] Task {} resumed with instructions", task_id);
+        }
+        "CancelTask" => {
+            // Move task to Cancelled; worktree cleanup is a TODO for full implementation
+            conn.execute(
+                "UPDATE tasks SET status = 'Cancelled', updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task status: {}", e))?;
+
+            println!("[reject_review] Task {} cancelled", task_id);
+            // TODO: delete worktree for this task
+        }
+        _ => {
+            return Err(format!(
+                "Unknown reject action '{}'. Expected SendToBacklog, ResumeWithInstructions, or CancelTask",
+                action
+            ));
+        }
+    }
+
+    // Read back the updated task
+    let query = format!("{} WHERE id = ?", TASK_SELECT);
+    conn.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| format!("Failed to read updated task: {}", e))
 }
 
 /// Reject merge and move task back to InProgress with conflict feedback

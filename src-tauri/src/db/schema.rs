@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
-pub const SCHEMA_V1: &str = r#"
+pub const SCHEMA_V2: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     description TEXT,
     acceptance_criteria TEXT,
     status TEXT NOT NULL DEFAULT 'Backlog',
+    priority TEXT NOT NULL DEFAULT 'Medium',
+    origin_branch TEXT,
+    archived_at TEXT,
     external_id TEXT,
     is_imported INTEGER DEFAULT 0,
     import_source TEXT,
@@ -35,6 +38,27 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- Task relationships table: stores dependencies between tasks
+CREATE TABLE IF NOT EXISTS task_relationships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_task_id INTEGER NOT NULL,
+    to_task_id INTEGER NOT NULL,
+    relationship_type TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (from_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Task instructions table: stores instruction log entries for tasks
+CREATE TABLE IF NOT EXISTS task_instructions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
 -- Worktrees table: stores git worktree instances
@@ -133,12 +157,27 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
         |row| row.get(0),
     ).unwrap_or(0);
 
-    // Initialize schema if needed
+    // Initialize or migrate schema
     if current_version < SCHEMA_VERSION {
-        // Execute complete schema
-        conn.execute_batch(SCHEMA_V1)?;
-
-        // Set schema version
+        if current_version > 0 {
+            // Drop all tables to recreate with new schema (no production data to preserve)
+            conn.execute_batch(r#"
+                PRAGMA foreign_keys = OFF;
+                DROP TABLE IF EXISTS review_comments;
+                DROP TABLE IF EXISTS task_reviews;
+                DROP TABLE IF EXISTS task_instructions;
+                DROP TABLE IF EXISTS task_relationships;
+                DROP TABLE IF EXISTS execution_logs;
+                DROP TABLE IF EXISTS worktrees;
+                DROP TABLE IF EXISTS tasks;
+                DROP TABLE IF EXISTS known_hosts;
+                DROP TABLE IF EXISTS projects;
+                DROP TABLE IF EXISTS ssh_connections;
+                DROP TABLE IF EXISTS settings;
+                PRAGMA foreign_keys = ON;
+            "#)?;
+        }
+        conn.execute_batch(SCHEMA_V2)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -175,6 +214,8 @@ mod tests {
         assert!(tables.contains(&"settings".to_string()));
         assert!(tables.contains(&"task_reviews".to_string()));
         assert!(tables.contains(&"review_comments".to_string()));
+        assert!(tables.contains(&"task_relationships".to_string()));
+        assert!(tables.contains(&"task_instructions".to_string()));
         assert!(tables.contains(&"known_hosts".to_string()));
         assert!(tables.contains(&"ssh_connections".to_string()));
 

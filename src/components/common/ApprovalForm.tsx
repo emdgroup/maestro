@@ -6,7 +6,7 @@ import { Textarea } from "@/ui/textarea";
 import {
   useSaveTaskReviewMutation,
   useApproveTaskAndMergeMutation,
-  useRequestChangesMutation,
+  useRejectReviewMutation,
 } from "@/services/task.service";
 
 interface ApprovalFormProps {
@@ -16,7 +16,13 @@ interface ApprovalFormProps {
   onClose: () => void;
 }
 
-type Decision = "Approve" | "RequestChanges" | null;
+type MergeStrategy = "CommitAndMerge" | "CommitAndPush" | "CommitOnly";
+
+const MERGE_STRATEGY_LABELS: Record<MergeStrategy, string> = {
+  CommitAndMerge: "Commit + Merge",
+  CommitAndPush: "Commit + Push",
+  CommitOnly: "Commit only",
+};
 
 export const ApprovalForm: React.FC<ApprovalFormProps> = ({
   taskId,
@@ -24,182 +30,234 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
   onApprove,
   onClose,
 }) => {
-  const [decision, setDecision] = useState<Decision>(null);
-  const [generalFeedback, setGeneralFeedback] = useState("");
-  const [perFileComments, setPerFileComments] = useState<Map<string, string>>(new Map());
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [mergeStrategy, setMergeStrategy] = useState<MergeStrategy>("CommitAndMerge");
+
+  // Backlog rejection state
+  const [backlogComment, setBacklogComment] = useState("");
+
+  // Resume with instructions state
+  const [resumeInstruction, setResumeInstruction] = useState("");
+
+  // Cancel confirmation state
+  const [cancelConfirmPending, setCancelConfirmPending] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   // Mutation hooks
   const { mutate: saveReview, isPending: isSavingReview } = useSaveTaskReviewMutation();
   const { mutate: approveAndMerge, isPending: isApproving } = useApproveTaskAndMergeMutation();
-  const { mutate: requestChanges, isPending: isRequestingChanges } = useRequestChangesMutation();
+  const { mutate: rejectReview, isPending: isRejecting } = useRejectReviewMutation();
 
-  const loading = isSavingReview || isApproving || isRequestingChanges;
+  const loading = isSavingReview || isApproving || isRejecting;
 
-  const toggleFileExpanded = (filePath: string) => {
-    const updated = new Set(expandedFiles);
-    if (updated.has(filePath)) {
-      updated.delete(filePath);
-    } else {
-      updated.add(filePath);
-    }
-    setExpandedFiles(updated);
-  };
-
-  const updateFileComment = (filePath: string, comment: string) => {
-    const updated = new Map(perFileComments);
-    if (comment.trim()) {
-      updated.set(filePath, comment);
-    } else {
-      updated.delete(filePath);
-    }
-    setPerFileComments(updated);
-  };
-
-  const handleSubmit = () => {
-    if (!decision) {
-      setError("Please select Approve or Request Changes");
-      return;
-    }
-
+  const handleApprove = () => {
     setError(null);
 
-    // Convert per-file comments map to array of tuples
-    const perFileCommentsArray = Array.from(perFileComments.entries());
-
-    if (decision === "Approve") {
-      // 1. Save review feedback first
-      saveReview(
-        {
-          taskId: taskId,
-          decision: "Approve",
-          generalFeedback: generalFeedback || null,
-          perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
-        },
-        {
-          onSuccess: () => {
-            // 2. Initiate merge process
-            approveAndMerge(taskId, {
+    // Save review feedback then trigger merge
+    saveReview(
+      {
+        taskId,
+        decision: "Approve",
+        generalFeedback: null,
+        perFileComments: null,
+      },
+      {
+        onSuccess: () => {
+          approveAndMerge(
+            { taskId, mergeStrategy },
+            {
               onSuccess: () => {
-                // Wait a moment then trigger onApprove callback to close modal
                 setTimeout(onApprove, 500);
               },
-            });
-          },
+            },
+          );
         },
-      );
-    } else if (decision === "RequestChanges") {
-      // Call request_changes handler
-      requestChanges(
-        {
-          taskId: taskId,
-          generalFeedback: generalFeedback || null,
-          perFileComments: perFileCommentsArray.length > 0 ? perFileCommentsArray : null,
+      },
+    );
+  };
+
+  const handleSendToBacklog = () => {
+    setError(null);
+    rejectReview(
+      {
+        taskId,
+        action: "SendToBacklog",
+        instruction: backlogComment.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          onClose();
         },
-        {
-          onSuccess: () => {
-            onClose();
-          },
-        },
-      );
+      },
+    );
+  };
+
+  const handleResumeWithInstructions = () => {
+    if (!resumeInstruction.trim()) {
+      setError("Instructions are required when resuming the task.");
+      return;
     }
+    setError(null);
+    rejectReview(
+      {
+        taskId,
+        action: "ResumeWithInstructions",
+        instruction: resumeInstruction.trim(),
+      },
+      {
+        onSuccess: () => {
+          onClose();
+        },
+      },
+    );
+  };
+
+  const handleCancelTask = () => {
+    if (!cancelConfirmPending) {
+      setCancelConfirmPending(true);
+      return;
+    }
+    setError(null);
+    rejectReview(
+      { taskId, action: "CancelTask" },
+      {
+        onSuccess: () => {
+          onClose();
+        },
+      },
+    );
   };
 
   return (
     <div className="approval-form">
+      {/* Accept section */}
       <div className="approval-form-section">
-        <h3 className="approval-form-heading">Decision Required</h3>
+        <h3 className="approval-form-heading">Accept</h3>
         <div className="approval-form-radio-group">
-          <div className="flex items-center space-x-2">
-            <input
-              id="decision-approve"
-              type="radio"
-              name="decision"
-              value="Approve"
-              checked={decision === "Approve"}
-              onChange={() => setDecision("Approve")}
-              disabled={loading}
-              className="h-4 w-4"
-            />
-            <Label htmlFor="decision-approve" className="cursor-pointer">
-              Approve
-            </Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <input
-              id="decision-request"
-              type="radio"
-              name="decision"
-              value="RequestChanges"
-              checked={decision === "RequestChanges"}
-              onChange={() => setDecision("RequestChanges")}
-              disabled={loading}
-              className="h-4 w-4"
-            />
-            <Label htmlFor="decision-request" className="cursor-pointer">
-              Request Changes
-            </Label>
-          </div>
+          {(Object.keys(MERGE_STRATEGY_LABELS) as MergeStrategy[]).map((strategy) => (
+            <div key={strategy} className="flex items-center space-x-2">
+              <input
+                id={`strategy-${strategy}`}
+                type="radio"
+                name="mergeStrategy"
+                value={strategy}
+                checked={mergeStrategy === strategy}
+                onChange={() => setMergeStrategy(strategy)}
+                disabled={loading}
+                className="h-4 w-4"
+              />
+              <Label htmlFor={`strategy-${strategy}`} className="cursor-pointer">
+                {MERGE_STRATEGY_LABELS[strategy]}
+              </Label>
+            </div>
+          ))}
+        </div>
+        <Button
+          onClick={handleApprove}
+          disabled={loading}
+          className="approval-form-approve-btn mt-3"
+        >
+          {isApproving || isSavingReview ? "Approving..." : "Approve"}
+        </Button>
+      </div>
+
+      {/* Reject section */}
+      <div className="approval-form-section">
+        <h3 className="approval-form-heading">Reject</h3>
+
+        {/* Send to Backlog */}
+        <div className="approval-form-reject-action">
+          <Label htmlFor="backlog-comment" className="approval-form-reject-label">
+            Send to Backlog
+          </Label>
+          <Textarea
+            id="backlog-comment"
+            placeholder="Optional comment..."
+            value={backlogComment}
+            onChange={(e) => setBacklogComment(e.target.value)}
+            disabled={loading}
+            rows={2}
+            className="approval-form-textarea"
+          />
+          <Button
+            onClick={handleSendToBacklog}
+            disabled={loading}
+            variant="outline"
+            className="approval-form-reject-btn mt-1"
+          >
+            {isRejecting ? "Sending..." : "Send to Backlog"}
+          </Button>
+        </div>
+
+        {/* Resume with Instructions */}
+        <div className="approval-form-reject-action mt-4">
+          <Label htmlFor="resume-instruction" className="approval-form-reject-label">
+            Resume with Instructions
+          </Label>
+          <Textarea
+            id="resume-instruction"
+            placeholder="Required: describe what the agent should do..."
+            value={resumeInstruction}
+            onChange={(e) => setResumeInstruction(e.target.value)}
+            disabled={loading}
+            rows={3}
+            className="approval-form-textarea"
+          />
+          <Button
+            onClick={handleResumeWithInstructions}
+            disabled={loading || !resumeInstruction.trim()}
+            variant="outline"
+            className="approval-form-reject-btn mt-1"
+          >
+            {isRejecting ? "Sending..." : "Resume with Instructions"}
+          </Button>
+        </div>
+
+        {/* Cancel Task */}
+        <div className="approval-form-reject-action mt-4">
+          <Button
+            onClick={handleCancelTask}
+            disabled={loading}
+            variant="outline"
+            className="approval-form-cancel-btn"
+          >
+            {cancelConfirmPending
+              ? "Confirm Cancel Task"
+              : isRejecting
+                ? "Cancelling..."
+                : "Cancel Task"}
+          </Button>
+          {cancelConfirmPending && (
+            <p className="approval-form-cancel-confirm-text mt-1 text-xs text-muted-foreground">
+              Click again to confirm. This action cannot be undone.
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="approval-form-section">
-        <Label htmlFor="general-feedback">General Feedback (Optional)</Label>
-        <Textarea
-          id="general-feedback"
-          placeholder="Enter feedback for the developer..."
-          value={generalFeedback}
-          onChange={(e) => setGeneralFeedback(e.target.value)}
-          disabled={loading}
-          rows={4}
-          className="approval-form-textarea"
-        />
-      </div>
-
-      <div className="approval-form-section">
-        <details className="approval-form-details">
-          <summary className="approval-form-summary">
-            Per-File Comments ({perFileComments.size} of {diffFiles.length} files)
-          </summary>
-          <div className="approval-form-per-file">
-            {diffFiles.map((file) => (
-              <div key={file.fileName} className="approval-form-file-comment">
-                <button
-                  className="approval-form-file-toggle"
-                  onClick={() => toggleFileExpanded(file.fileName)}
-                  disabled={loading}
-                >
-                  {expandedFiles.has(file.fileName) ? "▼" : "▶"}
+      {/* Per-file comments (kept for reference, collapsed by default) */}
+      {diffFiles.length > 0 && (
+        <div className="approval-form-section">
+          <details className="approval-form-details">
+            <summary className="approval-form-summary">
+              Files in this review ({diffFiles.length})
+            </summary>
+            <div className="approval-form-per-file">
+              {diffFiles.map((file) => (
+                <div key={file.fileName} className="approval-form-file-comment">
                   <span className="approval-form-file-name">{file.fileName}</span>
-                  {perFileComments.has(file.fileName) && (
-                    <span className="approval-form-file-has-comment">●</span>
-                  )}
-                </button>
-                {expandedFiles.has(file.fileName) && (
-                  <Textarea
-                    placeholder={`Comment on ${file.fileName}...`}
-                    value={perFileComments.get(file.fileName) || ""}
-                    onChange={(e) => updateFileComment(file.fileName, e.target.value)}
-                    disabled={loading}
-                    rows={3}
-                    className="approval-form-file-textarea"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </details>
-      </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
 
       {error && <div className="approval-form-error">{error}</div>}
 
       <div className="approval-form-actions">
         <Button onClick={onClose} disabled={loading} variant="outline">
-          Cancel
-        </Button>
-        <Button onClick={handleSubmit} disabled={loading || !decision}>
-          {loading ? "Saving..." : "Submit"}
+          Back
         </Button>
       </div>
     </div>

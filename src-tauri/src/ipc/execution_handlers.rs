@@ -3,7 +3,7 @@ use tauri::State;
 use chrono::Utc;
 use std::io::Read;
 
-use crate::models::{Task, TaskStatus, ErrorEvent, ExecutionLog, ExecutionStatus};
+use crate::models::{Task, ErrorEvent, ExecutionLog, ExecutionStatus};
 use crate::db::AppState;
 use crate::process::{spawn_agent_cli_pty, ExecutionConfig};
 use crate::process::spawn_agent_execution as spawn_agent_execution_dispatcher;
@@ -126,46 +126,12 @@ pub async fn spawn_agent_execution(
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let result = conn.query_row(
-            "SELECT id, project_id, name, description, acceptance_criteria, status, external_id, is_imported, import_source, skills, model_override, mcp_allowlist, skills_override, created_at, updated_at
+            "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
+             origin_branch, archived_at, external_id, is_imported, import_source, skills, \
+             model_override, mcp_allowlist, skills_override, created_at, updated_at \
              FROM tasks WHERE id = ?",
             [task_id],
-            |row| {
-                let status_str: String = row.get(5)?;
-                let status = match status_str.as_str() {
-                    "Backlog" => TaskStatus::Backlog,
-                    "Ready" => TaskStatus::Ready,
-                    "InProgress" => TaskStatus::InProgress,
-                    "Review" => TaskStatus::Review,
-                    "Merging" => TaskStatus::Merging,
-                    "Failed" => TaskStatus::Failed,
-                    _ => TaskStatus::Done,
-                };
-
-                let skills_json: String = row.get(9)?;
-                let skills: Vec<String> = serde_json::from_str(&skills_json).unwrap_or_default();
-                let mcp_json: Option<String> = row.get(11)?;
-                let mcp_allowlist = mcp_json.and_then(|j| serde_json::from_str(&j).ok());
-                let skills_json: Option<String> = row.get(12)?;
-                let skills_override = skills_json.and_then(|j| serde_json::from_str(&j).ok());
-
-                Ok(Task {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    name: row.get(2)?,
-                    description: row.get(3)?,
-                    acceptance_criteria: row.get(4)?,
-                    status,
-                    external_id: row.get(6)?,
-                    is_imported: row.get(7)?,
-                    import_source: row.get(8)?,
-                    skills,
-                    model_override: row.get(10)?,
-                    mcp_allowlist,
-                    skills_override,
-                    created_at: row.get(13)?,
-                    updated_at: row.get(14)?,
-                })
-            },
+            Task::from_row,
         );
         drop(conn);
         result.map_err(|e| format!("Failed to load task: {}", e))?
@@ -404,6 +370,84 @@ pub async fn spawn_agent_execution(
     // 7. Return execution_log id immediately (process runs in background)
     println!("✓ Spawned background agent task, execution log id: {}", exec_log_id);
     Ok(exec_log_id)
+}
+
+/// Drain the Ready queue for auto-mode execution
+///
+/// Checks if auto_mode is enabled in settings. If so, counts currently running
+/// executions for the project and returns task IDs that should be started next,
+/// up to max_concurrent_agents. Tasks are ordered by priority (Urgent, High,
+/// Medium, Low) then creation date.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with database connection
+/// * `project_id` - Project to drain the queue for
+/// * `project_path` - Repository path (reserved for future use)
+///
+/// # Returns
+/// Vec of task_ids that should be executed. Frontend calls spawn_agent_execution for each.
+/// Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
+#[tauri::command]
+#[specta::specta]
+pub async fn drain_ready_queue(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    project_path: String,
+) -> Result<Vec<i32>, String> {
+    println!("drain_ready_queue(project={}) called", project_id);
+    let _ = project_path; // reserved for future use
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Load settings to check auto_mode and max_concurrent_agents
+    let settings = crate::db::settings::load_settings(&conn)
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    if !settings.auto_mode {
+        println!("drain_ready_queue: auto_mode is disabled, returning empty");
+        return Ok(vec![]);
+    }
+
+    // Count currently running executions for this project
+    let running_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM execution_logs el
+         INNER JOIN tasks t ON t.id = el.task_id
+         WHERE t.project_id = ? AND el.status = 'running'",
+        rusqlite::params![project_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("Failed to count running executions: {}", e))?;
+
+    let slots_available = settings.max_concurrent_agents - running_count;
+    if slots_available <= 0 {
+        println!("drain_ready_queue: no slots available ({} running, max {})",
+            running_count, settings.max_concurrent_agents);
+        return Ok(vec![]);
+    }
+
+    // Get Ready tasks ordered by priority then created_at
+    // Priority order: Urgent=0, High=1, Medium=2, Low=3
+    let mut stmt = conn.prepare(
+        "SELECT id FROM tasks
+         WHERE project_id = ? AND status = 'Ready'
+         ORDER BY CASE priority
+             WHEN 'Urgent' THEN 0
+             WHEN 'High' THEN 1
+             WHEN 'Medium' THEN 2
+             WHEN 'Low' THEN 3
+             ELSE 4
+         END ASC, created_at ASC
+         LIMIT ?"
+    ).map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let task_ids: Vec<i32> = stmt.query_map(
+        rusqlite::params![project_id, slots_available],
+        |row| row.get(0),
+    ).map_err(|e| format!("Failed to query ready tasks: {}", e))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    println!("drain_ready_queue: found {} task(s) to start", task_ids.len());
+    Ok(task_ids)
 }
 
 /// Get execution logs for a task

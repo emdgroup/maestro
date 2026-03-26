@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, createErrorToastHandler } from "@/lib";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest } from "@/types/bindings";
+import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -18,6 +18,8 @@ const taskQueryKeys = {
   logsByTask: (taskId: number) => [...taskQueryKeys.logs(), { taskId }] as const,
   settings: () => [...taskQueryKeys.all, "settings"] as const,
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
+  relationships: (taskId: number) => [...taskQueryKeys.all, "relationships", taskId] as const,
+  instructions: (taskId: number) => [...taskQueryKeys.all, "instructions", taskId] as const,
 };
 
 /**
@@ -157,18 +159,50 @@ export function useSaveTaskReviewMutation() {
 }
 
 /**
- * Mutation hook for approving task and starting merge
+ * Mutation hook for approving task and performing synchronous merge
  */
 export function useApproveTaskAndMergeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: number) => api.approveTaskAndMerge(taskId),
-    onSuccess: () => {
-      toast.success("Approval submitted. Merge starting...");
+    mutationFn: ({ taskId, mergeStrategy }: { taskId: number; mergeStrategy: string }) =>
+      api.approveTaskAndMerge(taskId, mergeStrategy),
+    onSuccess: (result: unknown) => {
+      const data = result as { success: boolean; task_status: string; conflicts?: string[] };
+      if (data.success) {
+        toast.success("Merge complete. Task moved to Done.");
+      } else {
+        toast.error(
+          `Merge conflict detected. Task returned to In Progress. Conflicts: ${(data.conflicts ?? []).join(", ")}`,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to approve task"),
+  });
+}
+
+/**
+ * Mutation hook for rejecting a review with one of three actions:
+ * SendToBacklog, ResumeWithInstructions, CancelTask
+ */
+export function useRejectReviewMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      action,
+      instruction,
+    }: {
+      taskId: number;
+      action: string;
+      instruction?: string;
+    }) => api.rejectReview(taskId, action, instruction ?? null),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to reject review"),
   });
 }
 
@@ -193,5 +227,125 @@ export function useRequestChangesMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to request changes"),
+  });
+}
+
+/**
+ * Mutation hook for archiving a task (sets archived_at timestamp)
+ */
+export function useArchiveTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.archiveTask(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+      toast.success("Task archived");
+    },
+    onError: createErrorToastHandler("Failed to archive task"),
+  });
+}
+
+/**
+ * Mutation hook for deleting a task
+ */
+export function useDeleteTaskMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: number) => api.deleteTask(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to delete task"),
+  });
+}
+
+/**
+ * Query hook for fetching task relationships
+ */
+export function useTaskRelationshipsQuery(taskId: number | null) {
+  return useQuery<TaskRelationship[]>({
+    queryKey: taskQueryKeys.relationships(taskId!),
+    queryFn: () => api.getTaskRelationships(taskId!),
+    enabled: taskId !== null,
+  });
+}
+
+/**
+ * Mutation hook for adding a task relationship
+ */
+export function useAddTaskRelationshipMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      fromTaskId,
+      toTaskId,
+      relationshipType,
+    }: {
+      fromTaskId: number;
+      toTaskId: number;
+      relationshipType: string;
+    }) => api.addTaskRelationship(fromTaskId, toTaskId, relationshipType),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.relationships(variables.fromTaskId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to add relationship"),
+  });
+}
+
+/**
+ * Mutation hook for removing a task relationship
+ */
+export function useRemoveTaskRelationshipMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ relationshipId }: { relationshipId: number; taskId: number }) =>
+      api.removeTaskRelationship(relationshipId),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.relationships(variables.taskId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to remove relationship"),
+  });
+}
+
+/**
+ * Query hook for fetching task instructions log
+ */
+export function useTaskInstructionsQuery(taskId: number | null) {
+  return useQuery<TaskInstruction[]>({
+    queryKey: taskQueryKeys.instructions(taskId!),
+    queryFn: () => api.getTaskInstructions(taskId!),
+    enabled: taskId !== null,
+  });
+}
+
+/**
+ * Mutation hook for adding an instruction to a task
+ */
+export function useAddTaskInstructionMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      content,
+      source,
+    }: {
+      taskId: number;
+      content: string;
+      source: string;
+    }) => api.addTaskInstruction(taskId, content, source),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.instructions(variables.taskId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to add instruction"),
   });
 }

@@ -94,6 +94,83 @@ async updateTask(taskId: number, status: string | null, description: string | nu
 }
 },
 /**
+ * Archive a task by setting its archived_at timestamp
+ */
+async archiveTask(taskId: number) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_task", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a task by id
+ */
+async deleteTask(taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_task", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get relationships for a task
+ */
+async getTaskRelationships(taskId: number) : Promise<Result<TaskRelationship[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_task_relationships", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add a relationship between two tasks
+ */
+async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { fromTaskId, toTaskId, relationshipType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remove a task relationship
+ */
+async removeTaskRelationship(relationshipId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_task_relationship", { relationshipId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get instructions log for a task
+ */
+async getTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_task_instructions", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add an instruction entry to a task's log
+ */
+async addTaskInstruction(taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { taskId, content, source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get current application settings from the database
  * 
  * Loads all stored settings including project paths, default model,
@@ -425,6 +502,31 @@ async spawnAgentExecution(projectId: number, taskId: number, repoPath: string) :
 }
 },
 /**
+ * Drain the Ready queue for auto-mode execution
+ * 
+ * Checks if auto_mode is enabled in settings. If so, counts currently running
+ * executions for the project and returns task IDs that should be started next,
+ * up to max_concurrent_agents. Tasks are ordered by priority (Urgent, High,
+ * Medium, Low) then creation date.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with database connection
+ * * `project_id` - Project to drain the queue for
+ * * `project_path` - Repository path (reserved for future use)
+ * 
+ * # Returns
+ * Vec of task_ids that should be executed. Frontend calls spawn_agent_execution for each.
+ * Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
+ */
+async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("drain_ready_queue", { projectId, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get execution logs for a task
  */
 async getExecutionLogs(taskId: number) : Promise<Result<ExecutionLog[], string>> {
@@ -659,21 +761,37 @@ async requestChanges(taskId: number, generalFeedback: string | null, perFileComm
 }
 },
 /**
- * Approve task and initiate automatic merge to main branch
+ * Approve task and perform synchronous merge to main branch
  * 
- * Orchestrates the complete merge workflow:
- * 1. Updates task status to "Merging" (transient state)
- * 2. Spawns async background task to perform squash merge
+ * Orchestrates the complete merge workflow synchronously:
+ * 1. Queries task details and worktree info
+ * 2. Calls Node.js sidecar to perform squash merge (awaits completion)
  * 3. On success: updates task to "Done", cleans up worktree, returns to pool
  * 4. On conflict: rejects task back to "InProgress", saves conflict feedback
- * 5. Emits Tauri events for frontend UI updates and notifications
  * 
- * Returns immediately with "merging started" confirmation.
- * Frontend listens for merge_complete or merge_error events for final status.
+ * Returns the final task status directly: Done on success, InProgress on conflict.
  */
-async approveTaskAndMerge(taskId: number) : Promise<Result<JsonValue, string>> {
+async approveTaskAndMerge(taskId: number, mergeStrategy: string) : Promise<Result<JsonValue, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reject a task in review with one of three actions
+ * 
+ * Handles the three rejection paths from the review panel:
+ * - "SendToBacklog": moves task back to Backlog status (worktree cleanup is a TODO)
+ * - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
+ * - "CancelTask": moves task to Cancelled status (worktree cleanup is a TODO)
+ * 
+ * Returns the updated Task.
+ */
+async rejectReview(taskId: number, action: string, instruction: string | null) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reject_review", { taskId, action, instruction }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -901,7 +1019,7 @@ async renameSshConnection(connectionId: number, displayName: string) : Promise<R
 
 /** user-defined types **/
 
-export type AppSettings = { theme_preference: string | null; updated_at: string }
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; updated_at: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -939,9 +1057,12 @@ export type SshAuthMethod =
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type SyncResult = { imported_count: number; updated_count: number; error_message?: string | null }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; name: string; description: string; acceptance_criteria?: string | null; status: TaskStatus; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; created_at: string; updated_at: string }
+export type Task = { id: number; project_id: number; name: string; description: string; acceptance_criteria?: string | null; status: TaskStatus; priority: TaskPriority; origin_branch?: string | null; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; created_at: string; updated_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
-export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Merging" | "Failed" | "Done"
+export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
+export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
+export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
+export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
 /**
  * Worktree record from database
  */

@@ -9,7 +9,7 @@ pub mod websocket;
 
 pub use db::{init_db, AppState, get_git_connection};
 pub use error::AppError;
-pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, WorktreeStatus, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot};
+pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeStatus, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot};
 pub use process::{spawn_agent_cli, ProcessOutput, spawn_agent_cli_pty, PtySession};
 pub use ipc::*;
 
@@ -26,6 +26,13 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_tasks,
             crate::ipc::create_task,
             crate::ipc::update_task,
+            crate::ipc::archive_task,
+            crate::ipc::delete_task,
+            crate::ipc::get_task_relationships,
+            crate::ipc::add_task_relationship,
+            crate::ipc::remove_task_relationship,
+            crate::ipc::get_task_instructions,
+            crate::ipc::add_task_instruction,
             crate::ipc::get_settings,
             crate::ipc::save_settings,
             crate::ipc::sync_github_issues,
@@ -38,6 +45,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::recover_dirty_worktrees,
             crate::ipc::initialize_worktree_pool,
             crate::ipc::spawn_agent_execution,
+            crate::ipc::drain_ready_queue,
             crate::ipc::get_execution_logs,
             crate::ipc::retry_execution,
             crate::ipc::cancel_execution,
@@ -52,6 +60,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::save_task_review,
             crate::ipc::request_changes,
             crate::ipc::approve_task_and_merge,
+            crate::ipc::reject_review,
             crate::ipc::get_project_settings,
             crate::ipc::update_project_settings,
             crate::ipc::update_task_settings,

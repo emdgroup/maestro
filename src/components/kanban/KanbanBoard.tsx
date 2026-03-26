@@ -1,35 +1,22 @@
-import { useEffect, useState, useRef } from "react";
-import {
-  DndContext,
-  DragEndEvent,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
+import { useEffect, useState } from "react";
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
-import { toast } from "sonner";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
-import { TaskCard } from "./TaskCard";
 import { ReviewModal } from "@/components/common/ReviewModal";
 import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useTasksQuery } from "@/services/task.service";
-import { api } from "@/lib";
 
-const COLUMN_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
+const COLUMN_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done", "Cancelled"];
 
 const COLUMN_TITLES: Record<TaskStatus, string> = {
   Backlog: "Backlog",
   Ready: "Ready",
   InProgress: "In Progress",
   Review: "Review",
-  Merging: "Review",
-  Failed: "Failed",
   Done: "Done",
+  Cancelled: "Cancelled",
 };
 
 export const KanbanBoard = () => {
@@ -38,7 +25,6 @@ export const KanbanBoard = () => {
 
   const {
     loadTasks,
-    updateTaskStatus,
     getTasksByStatus,
     getTasks,
     activeTerminalTaskId,
@@ -46,22 +32,10 @@ export const KanbanBoard = () => {
     closeTerminal,
   } = useBoardStore();
 
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
   const [selectedTaskForSettings, setSelectedTaskForSettings] = useState<Task | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-  );
-
-  const previousTasksRef = useRef<Map<number, TaskStatus>>(new Map());
 
   // Replace manual polling with TanStack Query
   const { data: tasks, isLoading } = useTasksQuery(projectId);
@@ -70,135 +44,32 @@ export const KanbanBoard = () => {
   useEffect(() => {
     if (tasks) {
       loadTasks(tasks);
-
-      // Detect merge completion (Merging -> Done or Merging -> InProgress on conflict)
-      for (const task of tasks) {
-        const prevStatus = previousTasksRef.current.get(task.id);
-        if (prevStatus === "Merging" && task.status === "Done") {
-          toast.success(`✓ Merge complete: "${task.name}" is Done`);
-        } else if (prevStatus === "Merging" && task.status === "InProgress") {
-          toast.error(`Merge conflict for "${task.name}", task returned to In Progress`);
-        }
-      }
-
-      // Update previous state for merge detection
-      const taskStatusMap = new Map(tasks.map((t) => [t.id, t.status]));
-      previousTasksRef.current = taskStatusMap;
     }
   }, [tasks, loadTasks]);
-
-  const isValidTransition = (
-    _fromStatus: TaskStatus,
-    _toStatus: TaskStatus,
-    _taskId: number,
-  ): boolean => {
-    // For MVP: allow free movement between Backlog and Ready
-    // Other columns are managed by agents (in future phases)
-    // For now, allow all transitions (validation will be added in Phase 3)
-    return true;
-  };
-
-  const handleDragStart = (event: { active: { id: string | number } }) => {
-    const taskId =
-      typeof event.active.id === "string" ? parseInt(event.active.id, 10) : event.active.id;
-    const task = getTasks().find((t) => t.id === taskId);
-    setActiveTask(task || null);
-  };
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveTask(null);
-
-    if (!over) {
-      return;
-    }
-
-    const taskId = typeof active.id === "string" ? parseInt(active.id, 10) : active.id;
-    const task = getTasks().find((t) => t.id === taskId);
-
-    if (!task) {
-      return;
-    }
-
-    const fromStatus = task.status;
-    const toStatus = over.id as TaskStatus;
-
-    if (fromStatus === toStatus) {
-      return;
-    }
-
-    // Validate the transition
-    if (!isValidTransition(fromStatus, toStatus, taskId)) {
-      setErrorMessage("Invalid transition for this task");
-      return;
-    }
-
-    try {
-      // Update task status in database using task service
-      await api.updateTask(taskId, { status: toStatus } as any, null);
-
-      // Update local store
-      updateTaskStatus(taskId, toStatus);
-      setErrorMessage(null);
-    } catch (err) {
-      console.error("Failed to update task:", err);
-      setErrorMessage("Failed to update task. Please try again.");
-    }
-  };
 
   if (isLoading) {
     return <div className="kanban-board">Loading tasks...</div>;
   }
 
-  // Helper: Get tasks for column, including Merging tasks in Review column
-  const getTasksForColumn = (status: TaskStatus): Task[] => {
-    const tasks = getTasksByStatus(status);
-
-    // Include Merging tasks in the Review column
-    if (status === "Review") {
-      const mergingTasks = getTasksByStatus("Merging");
-      return [...tasks, ...mergingTasks];
-    }
-
-    return tasks;
-  };
-
   return (
     <div className="h-full flex flex-col">
-      {errorMessage && (
-        <div className="p-4 mb-4 bg-error text-error-foreground rounded-lg">{errorMessage}</div>
-      )}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-5 gap-4 p-4 bg-background flex-1">
-          {COLUMN_STATUSES.map((status) => (
-            <KanbanColumn
-              key={status}
-              columnId={status}
-              columnTitle={COLUMN_TITLES[status]}
-              tasks={getTasksForColumn(status)}
-              status={status}
-              onReviewClick={(taskId, taskName) => {
-                setSelectedTaskId(taskId);
-                setSelectedTaskName(taskName);
-                setReviewModalOpen(true);
-              }}
-              onSettingsClick={(task) => setSelectedTaskForSettings(task)}
-            />
-          ))}
-        </div>
-        <DragOverlay>
-          {activeTask ? (
-            <div className="opacity-50">
-              <TaskCard task={activeTask} isDragging />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      <div className="grid grid-cols-6 p-4 bg-background flex-1">
+        {COLUMN_STATUSES.map((status) => (
+          <KanbanColumn
+            key={status}
+            columnId={status}
+            columnTitle={COLUMN_TITLES[status]}
+            tasks={getTasksByStatus(status)}
+            status={status}
+            onReviewClick={(taskId, taskName) => {
+              setSelectedTaskId(taskId);
+              setSelectedTaskName(taskName);
+              setReviewModalOpen(true);
+            }}
+            onSettingsClick={(task) => setSelectedTaskForSettings(task)}
+          />
+        ))}
+      </div>
       {reviewModalOpen && selectedTaskId && (
         <ReviewModal
           taskId={selectedTaskId}
@@ -213,7 +84,7 @@ export const KanbanBoard = () => {
       )}
       {selectedTaskForSettings && (
         <TaskSettingsModal
-          isOpen={selectedTaskForSettings !== null}
+          isOpen={!!selectedTaskForSettings}
           onClose={() => setSelectedTaskForSettings(null)}
           task={selectedTaskForSettings}
           projectId={projectId}

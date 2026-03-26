@@ -12,6 +12,8 @@ export interface TaskFormData {
   description: string;
   acceptanceCriteria: string;
   skills: string[];
+  priority: "Urgent" | "High" | "Medium" | "Low";
+  originBranch: string;
 }
 
 interface TaskFormProps {
@@ -40,6 +42,8 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
     mode: "onBlur",
     defaultValues: {
       skills: [],
+      priority: "Medium",
+      originBranch: "",
     },
   });
 
@@ -49,6 +53,8 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
         created_at: "",
         id: 0,
         status: "Backlog",
+        priority: data.priority,
+        origin_branch: data.originBranch || null,
         updated_at: "",
         project_id: projectId,
         name: data.title,
@@ -122,6 +128,37 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
         {errors.acceptanceCriteria && (
           <span className="text-destructive text-xs mt-1">{errors.acceptanceCriteria.message}</span>
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="priority">Priority</Label>
+        <Controller
+          name="priority"
+          control={control}
+          render={({ field: { value, onChange } }) => (
+            <Select value={value} onValueChange={onChange}>
+              <SelectTrigger id="priority" className="w-full">
+                <SelectValue placeholder="Select priority..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Urgent">Urgent</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="originBranch">Origin Branch (Optional)</Label>
+        <Input
+          id="originBranch"
+          type="text"
+          placeholder="e.g. main"
+          {...register("originBranch")}
+        />
       </div>
 
       <div className="flex flex-col gap-2">

@@ -12,7 +12,7 @@ pub mod project_state;
 
 pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
-pub use task::{Task, TaskStatus, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
+pub use task::{Task, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest};
 pub use worktree::{Worktree, WorktreeStatus, PoolStatus};
 pub use execution_log::{ExecutionLog, ExecutionStatus, ErrorEvent};
 pub use settings::AppSettings;

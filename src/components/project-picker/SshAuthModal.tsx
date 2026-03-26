@@ -150,6 +150,21 @@ function PasswordAuth({ username, loading, onSubmit }: AuthProps & { username: s
 }
 
 // ---------------------------------------------------------------------------
+// OS detection
+// ---------------------------------------------------------------------------
+
+type OsPlatform = "macos" | "linux" | "windows";
+
+function detectOs(): OsPlatform {
+  const ua = navigator.userAgent;
+  if (ua.includes("Win")) return "windows";
+  if (ua.includes("Mac")) return "macos";
+  return "linux";
+}
+
+const OS = detectOs();
+
+// ---------------------------------------------------------------------------
 // KeyFileAuth
 // ---------------------------------------------------------------------------
 
@@ -159,6 +174,7 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
   const [passphrase, setPassphrase] = useState("");
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [savePassphrase, setSavePassphrase] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const selectedSaved = savedKeyFiles.find((k) => k.path === selectedSavedPath) ?? null;
   const activePath = (selectedSavedPath ?? keyPath).trim();
@@ -324,6 +340,45 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
           </Field>
         )}
       </FieldGroup>
+
+      <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3 mt-4">
+        <div className="flex items-start gap-3">
+          <FileKey className="size-5 text-muted-foreground mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">SSH Key Connection</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Ensure you have generated your SSH key pair and copied your public key on the remote server.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowInstructions(!showInstructions)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {showInstructions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          Setup instructions
+        </button>
+        {showInstructions && (
+          <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
+            <div className="space-y-1.5">
+              <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">Generate a new SSH key pair (if you don't have one).</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">Key types: ed25519 (recommended), rsa or ecdsa.</p>
+              <p className="text-foreground">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">Keys are saved to <span className="font-mono text-foreground">{OS === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}</span> by default</p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="font-sans font-medium text-foreground text-xs">Authorize on server (remote)</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">
+                Copy the contents of your public key file (e.g. <span className="font-mono text-foreground">id_ed25519.pub</span>) and
+                place it into <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the remote server.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       <AuthFooter loading={loading} disabled={!activePath} />
     </form>
   );
@@ -349,7 +404,7 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
           <div>
             <p className="text-sm font-medium">SSH Agent Connection</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Maestro will connect automatically to your running SSH agent. If it does not, ensure the agent is running and has your key loaded.
+              Ensure you have a running SSH agent with your key loaded. Check instructions for help.
             </p>
           </div>
         </div>
@@ -359,19 +414,43 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           {showInstructions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-           instructions
+           Setup instructions
         </button>
         {showInstructions && (
           <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">
             <p className="font-sans font-medium text-foreground text-xs mb-2">
-              Run these commands on your local machine:
+              On your local environment:
             </p>
-            <p># Start the SSH agent</p>
-            <p className="text-foreground">{'eval "$(ssh-agent -s)"'}</p>
-            <p className="mt-1"># Verify key is loaded</p>
-            <p className="text-foreground">ssh-add -l</p>
-            <p className="mt-1"># Add your private key</p>
-            <p className="text-foreground">ssh-add ~/.ssh/id_ed25519</p>
+            {OS === "windows" && (
+              <>
+                <p># Enable and start the SSH agent service (run as Admin)</p>
+                <p className="text-foreground">Get-Service ssh-agent | Set-Service -StartupType Automatic</p>
+                <p className="text-foreground">Start-Service ssh-agent</p>
+                <p className="mt-1"># Verify key is loaded</p>
+                <p className="text-foreground">ssh-add -l</p>
+                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
+                <p className="text-foreground">ssh-add $env:USERPROFILE\.ssh\id_ed25519</p>
+              </>
+            )}
+            {OS === "macos" && (
+              <>
+                <p># macOS starts ssh-agent automatically</p>
+                <p className="mt-1"># Verify key is loaded</p>
+                <p className="text-foreground">ssh-add -l</p>
+                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519</p>
+                <p className="text-foreground">ssh-add --apple-use-keychain ~/.ssh/id_ed25519</p>
+              </>
+            )}
+            {OS === "linux" && (
+              <>
+                <p># Start the SSH agent</p>
+                <p className="text-foreground">eval "$(ssh-agent -s)"</p>
+                <p className="mt-1"># Verify key is loaded</p>
+                <p className="text-foreground">ssh-add -l</p>
+                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
+                <p className="text-foreground">ssh-add ~/.ssh/id_ed25519</p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -454,7 +533,7 @@ export function SshAuthModal({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>SSH Authentication Required</DialogTitle>
           <DialogDescription>

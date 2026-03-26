@@ -5,7 +5,7 @@ import { AppHeader } from "@/components/common/AppHeader";
 import { ActionBar } from "@/components/common/ActionBar";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
 import { useBoardStore } from "@/store/boardStore";
-import type { Project, Task } from "@/types/bindings";
+import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { usePageRouting } from "@/utils/hooks";
@@ -51,7 +51,7 @@ function App() {
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
-  const { clearSelectedProject } = useSelectedProjectActions();
+  const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
   const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
@@ -68,10 +68,6 @@ function App() {
       toast.error("Failed to load settings");
     }
   }, [settingsError]);
-
-  function handleProjectSelected(_project: Project) {
-    // Project is now managed by projectStore, no need to set local state
-  }
 
   function handleTaskCreated(newTask: Task) {
     addTask(newTask);
@@ -113,7 +109,7 @@ function App() {
             currentProject={currentProject}
             activeView={activePage}
             onViewChange={handlePageChange}
-            onProjectChange={handleProjectSelected}
+            onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
             agentCount={0}
           />
