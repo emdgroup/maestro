@@ -1,8 +1,8 @@
 {
-  "version": "1.29.0",
-  "timestamp": "2026-03-26T09:38:38.444Z",
+  "version": "1.30.0",
+  "timestamp": "2026-03-27T09:23:26.129Z",
   "files": {
-    "get-shit-done/VERSION": "46ff3be92ef80d0b6ff3000eb4310ec5e08b6e5ab34dbc021f082ba70f707bb3",
+    "get-shit-done/VERSION": "539402d2694f8bdccbced843d22a2efdea47865e66833e92d06d2bfedee9ce02",
     "get-shit-done/bin/gsd-tools.cjs": "af10545eae9b4339a12dee0b30048830f52788e62aefb3cba489d67c3236ab74",
     "get-shit-done/bin/lib/commands.cjs": "95a7ff9eda6a8099aa26dbc4b3cc97d1d8c414bf106540b274c7e871dd73fdb7",
     "get-shit-done/bin/lib/config.cjs": "81939c753ec935de151a81c7df2a53dad2f279bf2369c1d64a380a6220257bbf",
@@ -210,10 +210,10 @@
     "agents/gsd-ui-researcher.md": "d09cd4eb25b916cb7eea0dea12b0bdd47e0654c253ebf2ed670545e2897ddab0",
     "agents/gsd-user-profiler.md": "898d31546b0c783b797d683903a40f9a3eca0c9fba651fdf5e126fa2f781b9ea",
     "agents/gsd-verifier.md": "be7a3a35dd79dbb31c658174f5a7b9b4155990146c069deb7351854e35c3493a",
-    "hooks/gsd-check-update.js": "b2c886e9e370341094dfbf4300dcd0910e5c6cc46c387da1d86c3a79b0b392b6",
-    "hooks/gsd-context-monitor.js": "8cacd356733bf845c0f873eef960d2e7e7f368ebbee9b28dec9adade441bd3df",
-    "hooks/gsd-prompt-guard.js": "6e0185eb8128d47a215b8ac38a1ed5aa5e21685955420766e19749f2f77af25f",
-    "hooks/gsd-statusline.js": "70d35683eb44f820e47a10b72e93b130cf794159f894d929306ce77c23ad892f",
-    "hooks/gsd-workflow-guard.js": "c3e410c528789f54843e6a4319b5b8770c01c0f48cfea3a771ac9622e606990e"
+    "hooks/gsd-check-update.js": "39a6555598841163de07793305d36a33558475011fe601a95e13229c82d9f56e",
+    "hooks/gsd-context-monitor.js": "32c190d5d2bb69a5e39b24f8e0ce74506ca5cd265cc35fc175e2257afdbbce98",
+    "hooks/gsd-prompt-guard.js": "cc5cdd909ab9e38aab3477ac6b0a437f3ba6e58e0176d44ef41696d9548c325f",
+    "hooks/gsd-statusline.js": "519180b7a3a0804507c99116f59b8e4d6f5a8919d5f03380f6d0656b4d6696f3",
+    "hooks/gsd-workflow-guard.js": "0e2ae090ddd7f2db530974d3bfb3cdfa18edcd7a5cc839cc8b1a3670984f1453"
   }
 }

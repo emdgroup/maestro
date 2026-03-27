@@ -1,6 +1,5 @@
 {
   "mode": "yolo",
-  "depth": "comprehensive",
   "parallelization": false,
   "commit_docs": false,
   "model_profile": "balanced",
@@ -11,5 +10,6 @@
   },
   "git": {
     "branching_strategy": "none"
-  }
+  },
+  "granularity": "fine"
 }
