@@ -5,6 +5,7 @@ interface KanbanContextValue {
   projectId: number;
   projectPath: string;
   onTaskClick: (task: Task) => void;
+  onAddTask: () => void;
 }
 
 const KanbanContext = createContext<KanbanContextValue | null>(null);
@@ -14,6 +15,7 @@ interface KanbanProviderProps {
   projectId: number;
   projectPath: string;
   onTaskClick: (task: Task) => void;
+  onAddTask: () => void;
 }
 
 export function KanbanProvider({
@@ -21,9 +23,10 @@ export function KanbanProvider({
   projectId,
   projectPath,
   onTaskClick,
+  onAddTask,
 }: KanbanProviderProps) {
   return (
-    <KanbanContext.Provider value={{ projectId, projectPath, onTaskClick }}>
+    <KanbanContext.Provider value={{ projectId, projectPath, onTaskClick, onAddTask }}>
       {children}
     </KanbanContext.Provider>
   );

@@ -2,14 +2,12 @@ import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
-import { ActionBar } from "@/components/common/ActionBar";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
 import { useBoardStore } from "@/store/boardStore";
 import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { usePageRouting } from "@/utils/hooks";
-import { getPageActions } from "@/utils/helpers/page-actions";
 import {
   slideVariants,
   PAGE_TRANSITION_DURATION,
@@ -78,13 +76,6 @@ function App() {
     setShowImportSettings(false);
   }
 
-  // Get page-specific actions using utility function
-  const pageActions = getPageActions(activePage, {
-    onAddTask: () => setShowNewTaskModal(true),
-    onResetSettings: () => settingsPageRef.current?.resetToDefaults(),
-    onSaveSettings: async () => await settingsPageRef.current?.save(),
-  });
-
   const fallback = (
     <div className="flex items-center justify-center h-full">
       <p className="text-sm text-muted-foreground">Loading...</p>
@@ -113,7 +104,6 @@ function App() {
             onBackToPicker={clearSelectedProject}
             agentCount={0}
           />
-          <ActionBar actions={pageActions} />
           <main className="flex-1 overflow-hidden relative">
             <AnimatePresence initial={false} custom={slideDirection}>
               {activePage === "kanban" && (
@@ -135,6 +125,7 @@ function App() {
                       projectId={currentProject.id}
                       projectPath={currentProject.path}
                       onTaskClick={setSelectedTask}
+                      onAddTask={() => setShowNewTaskModal(true)}
                     >
                       <KanbanView />
                     </KanbanProvider>

@@ -15,12 +15,12 @@ interface KanbanColumnProps {
 
 const getColumnBorderColor = (status: TaskStatus): string => {
   const colors: Record<TaskStatus, string> = {
-    Backlog: "border-l-slate-400",
-    Ready: "border-l-blue-500",
-    InProgress: "border-l-amber-500",
-    Review: "border-l-purple-500",
-    Done: "border-l-green-500",
-    Cancelled: "border-l-destructive",
+    Backlog: "border-t-slate-400",
+    Ready: "border-t-blue-500",
+    InProgress: "border-t-amber-500",
+    Review: "border-t-purple-500",
+    Done: "border-t-green-500",
+    Cancelled: "border-t-destructive",
   };
   return colors[status] || "border-l-slate-400";
 };
@@ -50,7 +50,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
   return (
     <div
-      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-card shadow-sm overflow-hidden border-l-4 ${borderColor}`}
+      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-card shadow-sm overflow-hidden border-t-4 ${borderColor}`}
     >
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
         <h3 className="font-semibold text-base text-foreground">{columnTitle}</h3>

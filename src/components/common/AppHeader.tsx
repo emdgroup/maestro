@@ -129,7 +129,7 @@ export function AppHeader({
                     ) : null
                   }
                 >
-                  <div className="relative z-10 flex items-center gap-2 w-full">
+                  <div className="relative z-10 flex items-center gap-2">
                     <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
                       <div className="font-medium text-foreground">{project.name}</div>
                       <div className="text-xs text-muted-foreground truncate">{project.path}</div>
@@ -139,7 +139,7 @@ export function AppHeader({
               ))}
               {onBackToPicker && (
                 <>
-                  <SelectSeparator />
+                  {recentProjects.length > 1 && <SelectSeparator />}
                   <SelectItem
                     value={BACK_TO_PICKER_VALUE}
                     className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"

@@ -1,70 +1,103 @@
 import { useState } from "react";
-import { motion, LayoutGroup } from "framer-motion";
+import { LayoutList, Kanban, Archive, Plus } from "lucide-react";
 import { BacklogView } from "@/components/views/BacklogView";
 import { BoardView } from "@/components/views/BoardView";
 import { ArchiveView } from "@/components/views/ArchiveView";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/ui/tooltip";
+import { Button } from "@/ui/button";
+import { useKanban } from "@/contexts/KanbanContext";
 
 type SubView = "backlog" | "board" | "archive";
+type ArchiveFilter = "all" | "Done" | "Cancelled";
 
-const SUB_VIEWS: Array<{ id: SubView; label: string }> = [
-  { id: "backlog", label: "Backlog" },
-  { id: "board", label: "Board" },
-  { id: "archive", label: "Archive" },
+const SUB_VIEWS: Array<{ id: SubView; label: string; icon: React.ElementType }> = [
+  { id: "backlog", label: "Backlog", icon: LayoutList },
+  { id: "board", label: "Board", icon: Kanban },
+  { id: "archive", label: "Archive", icon: Archive },
 ];
 
 /**
  * KanbanView - Page-level orchestrator for the Kanban board screen.
- * Renders a sub-view switcher (Backlog / Board / Archive) and the active sub-view.
- *
- * Context: Uses KanbanProvider for project data and callbacks (no prop drilling)
+ * Renders an action bar and the active sub-view (Backlog / Board / Archive).
  */
 export const KanbanView: React.FC = () => {
+  const { onAddTask } = useKanban();
   const [activeSubView, setActiveSubView] = useState<SubView>("board");
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>("all");
 
   return (
     <div className="flex flex-col h-full">
-      {/* Sub-view tab bar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0">
-        <LayoutGroup id="kanban-subview-tabs">
-          <div className="relative flex items-center gap-1 rounded-lg bg-muted p-1">
-            <motion.span
-              className="absolute inset-y-1 left-1 rounded-md bg-background shadow-sm"
-              style={{ width: "calc((100% - 0.5rem) / 3)" }}
-              animate={{
-                x: `calc(${SUB_VIEWS.findIndex((v) => v.id === activeSubView)} * 100%)`,
-              }}
-              transition={{ type: "spring", stiffness: 500, damping: 35 }}
-            />
-            {SUB_VIEWS.map((view) => {
-              const isActive = activeSubView === view.id;
-              return (
-                <button
-                  key={view.id}
-                  onClick={() => setActiveSubView(view.id)}
-                  className={`relative z-10 px-4 py-1.5 text-xs font-medium rounded-md transition-colors outline-none ${
-                    isActive ? "" : "cursor-pointer hover:bg-background/50"
-                  }`}
-                >
-                  <motion.span
-                    animate={{
-                      color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
-                    }}
-                    transition={{ duration: 0.15 }}
+      {/* Action bar */}
+      <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
+        {/* Left slot */}
+        <div className="flex items-center gap-2">
+          {activeSubView === "backlog" && (
+            <Button variant="accent" size="sm" onClick={onAddTask} className="h-8">
+              <Plus className="w-4 h-4" />
+              Add Task
+            </Button>
+          )}
+          {activeSubView === "archive" && (
+            <>
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={archiveSearch}
+                onChange={(e) => setArchiveSearch(e.target.value)}
+                className="h-8 w-48 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+              />
+              <ToggleGroup variant="outline" size="sm" defaultValue={["All"]} >
+                {(["All", "Done", "Cancelled"] as ArchiveFilter[]).map((f) => (
+                  <ToggleGroupItem
+                    key={f}
+                    value={f}
+                    pressed={archiveFilter === f}
+                    onClick={() => setArchiveFilter(f)}
+                    className="text-xs px-3"
                   >
-                    {view.label}
-                  </motion.span>
-                </button>
-              );
-            })}
-          </div>
-        </LayoutGroup>
+                    {f}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </>
+          )}
+        </div>
+
+        {/* Right slot — sub-view switcher */}
+        <TooltipProvider delay={300}>
+          <ToggleGroup variant="outline" size="sm" defaultValue={["board"]}>
+            {SUB_VIEWS.map((view) => (
+              <Tooltip key={view.id}>
+                <TooltipTrigger
+                  render={
+                    <ToggleGroupItem
+                      value={view.id}
+                      pressed={activeSubView === view.id}
+                      onClick={() => setActiveSubView(view.id)}
+                      aria-label={view.label}
+                    >
+                      <view.icon className="size-4" />
+                    </ToggleGroupItem>
+                  }
+                />
+                <TooltipContent side="bottom" sideOffset={8}>
+                  {view.label}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </ToggleGroup>
+        </TooltipProvider>
       </div>
 
       {/* Active sub-view */}
       <div className="flex-1 min-h-0">
         {activeSubView === "backlog" && <BacklogView />}
         {activeSubView === "board" && <BoardView />}
-        {activeSubView === "archive" && <ArchiveView />}
+        {activeSubView === "archive" && (
+          <ArchiveView search={archiveSearch} filter={archiveFilter} />
+        )}
       </div>
     </div>
   );

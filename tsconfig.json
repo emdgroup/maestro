@@ -14,14 +14,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Base URL and Path aliases */
-    "baseUrl": "./",
-
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": false,
 
     /* Path aliases - imported from shared config */
     "paths": {
