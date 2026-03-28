@@ -79,6 +79,17 @@ Plans:
 - [x] 23-01-PLAN.md — Create navigationStore with TDD (store + tests)
 - [x] 23-02-PLAN.md — Rewire all consumers to use navigationStore, delete usePageRouting
 
+### Phase 24: Improve project picker screen: auto-detect and init git on select, add Clone Project button (git URL + target path), add Create Project button (name + target path + git init)
+
+**Goal:** Enhance the project picker with auto-git-init on folder select, a Clone Project dialog (URL + target path), and a Create Project dialog (parent dir + folder name + git init), all surfaced as a 3-button footer in the projects panel.
+**Requirements**: P24-GIT-INIT, P24-CLONE, P24-CREATE, P24-FOOTER
+**Depends on:** Phase 23
+**Plans:** 1/2 plans executed
+
+Plans:
+- [x] 24-01-PLAN.md — Backend: Rust IPC commands (git_init_project, clone_project, create_new_project) + bindings + TanStack Query hooks
+- [ ] 24-02-PLAN.md — Frontend: 3-button footer, CloneProjectDialog, CreateProjectDialog, auto-git-init wiring
+
 ---
 
 *Roadmap created: 2026-02-09*

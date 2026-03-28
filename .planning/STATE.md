@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-last_updated: "2026-03-28T14:31:49.049Z"
+last_updated: "2026-03-28T18:16:11.513Z"
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State: v1.2 (Next Milestone)
@@ -18,11 +18,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-16)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 23 — add-in-app-routing-for-deep-linking-to-specific-screens
+**Current focus:** Phase 24 — improve-project-picker-screen-auto-detect-and-init-git-on-select-add-clone-project-button-git-url-target-path-add-create-project-button-name-target-path-git-init
 
 ## Current Position
 
-Phase: 23 (add-in-app-routing-for-deep-linking-to-specific-screens) — EXECUTING
+Phase: 24 (improve-project-picker-screen-auto-detect-and-init-git-on-select-add-clone-project-button-git-url-target-path-add-create-project-button-name-target-path-git-init) — EXECUTING
 Plan: 2 of 2
 
 ## Performance Metrics
@@ -97,6 +97,7 @@ Plan: 2 of 2
 | Phase 22-01 P01 | 0.099 | 5 tasks | 2 files |
 | Phase 23 P01 | 0.021 | 1 tasks | 2 files |
 | Phase 23 P02 | 0.067 | 3 tasks | 6 files |
+| Phase 24 P01 | 0.226 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -145,6 +146,8 @@ Phase 18 Architecture Decisions:
 - Result<T, String> for all file I/O functions (Tauri IPC compatibility) ✓ IMPLEMENTED (18-02)
 - [Phase 23]: navigate() discriminated union uses 'key' in target narrowing; same-tab setActiveTab guard prevents slideDirection clobbering
 - [Phase 23]: App.tsx owns pendingTaskId consumption since TaskDetail is rendered there; pending entity ID pattern uses effectiveId override approach
+- [Phase 24]: Inline DB logic in async IPC commands instead of calling create_project() to avoid State<'_> lifetime issues after .await points
+- [Phase 24]: useCreateNewProject.onError does not toast (Create dialog shows inline errors); useCloneProject.onError does toast (git failures are server-side)
 
 ### Pending Todos
 
@@ -193,6 +196,7 @@ None currently.
 - Phase 21 added: Refactor Components Using Commands Object - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
 - Phase 22 added: Auto-remove Stale Projects - get_connection_projects made async, drops db lock before path validation, collect_stale_project_ids helper validates local (std::fs) and SSH (test -d) paths
 - Phase 23 added: Add in-app routing for deep linking to specific screens
+- Phase 24 added: Improve project picker screen — auto-detect and init git on select, Clone Project button (git URL + target path), Create Project button (name + target path + git init)
 
 ## Session Continuity
 
