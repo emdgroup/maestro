@@ -50,7 +50,7 @@ export function ProjectList() {
       // Auto-init git if needed (silently — IPC is a no-op if .git already exists)
       // Only for local projects (connectionId undefined/null means local)
       if (!connectionId) {
-        await gitInitProject(selectedPath);
+        await gitInitProject({ path: selectedPath, connectionId: null });
       }
       const result = await createProject({
         path: selectedPath,
@@ -130,10 +130,18 @@ export function ProjectList() {
         </Dialog>
 
         {/* Clone Project Dialog */}
-        <CloneProjectDialog open={showCloneDialog} onOpenChange={setShowCloneDialog} />
+        <CloneProjectDialog
+          open={showCloneDialog}
+          onOpenChange={setShowCloneDialog}
+          connection={activeConnection?.sshConnection ?? null}
+        />
 
         {/* Create Project Dialog */}
-        <CreateProjectDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+        <CreateProjectDialog
+          open={showCreateDialog}
+          onOpenChange={setShowCreateDialog}
+          connection={activeConnection?.sshConnection ?? null}
+        />
       </>
     )
   );

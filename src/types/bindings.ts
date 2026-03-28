@@ -63,9 +63,9 @@ async removeProject(projectId: number) : Promise<Result<null, string>> {
 /**
  * Initialize git in an existing directory (no-op if already a git repo)
  */
-async gitInitProject(path: string) : Promise<Result<null, string>> {
+async gitInitProject(path: string, connectionId: number | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("git_init_project", { path }) };
+    return { status: "ok", data: await TAURI_INVOKE("git_init_project", { path, connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -74,9 +74,9 @@ async gitInitProject(path: string) : Promise<Result<null, string>> {
 /**
  * Clone a git repository and register it as a project
  */
-async cloneProject(url: string, targetPath: string) : Promise<Result<Project, string>> {
+async cloneProject(url: string, targetPath: string, connectionId: number | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath, connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -85,9 +85,9 @@ async cloneProject(url: string, targetPath: string) : Promise<Result<Project, st
 /**
  * Create a new project directory, git init it, and register as a project
  */
-async createNewProject(parentDir: string, folderName: string) : Promise<Result<Project, string>> {
+async createNewProject(parentDir: string, folderName: string, connectionId: number | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_new_project", { parentDir, folderName }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_new_project", { parentDir, folderName, connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

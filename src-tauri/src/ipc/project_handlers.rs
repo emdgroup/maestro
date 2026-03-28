@@ -206,22 +206,54 @@ pub fn remove_projects_by_connection_id(
 /// Initialize git in an existing directory (no-op if already a git repo)
 #[tauri::command]
 #[specta::specta]
-pub async fn git_init_project(path: String) -> Result<(), String> {
-    let git_dir = std::path::Path::new(&path).join(".git");
-    if git_dir.exists() {
-        return Ok(()); // Already a git repo, nothing to do
-    }
-    let output = tokio::process::Command::new("git")
-        .args(["init", &path])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn git: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
+pub async fn git_init_project(
+    app_state: State<'_, Arc<AppState>>,
+    path: String,
+    connection_id: Option<i32>,
+) -> Result<(), String> {
+    match connection_id {
+        Some(conn_id) => {
+            let session = app_state
+                .get_ssh_session(conn_id)
+                .await
+                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            let safe_path = path.replace('"', "\\\"");
+            // No-op if already a git repo
+            let check = session
+                .execute_command(&format!("test -d \"{}/.git\" && echo yes || echo no", safe_path))
+                .await
+                .map_err(|e| format!("SSH check failed: {}", e))?;
+            if check.trim() == "yes" {
+                return Ok(());
+            }
+            let output = session
+                .execute_command(&format!("git init \"{}\"", safe_path))
+                .await
+                .map_err(|e| format!("SSH git init failed: {}", e))?;
+            if output.contains("Initialized") || output.contains("Reinitialized") {
+                Ok(())
+            } else {
+                Err(format!("git init failed: {}", output))
+            }
+        }
+        None => {
+            let git_dir = std::path::Path::new(&path).join(".git");
+            if git_dir.exists() {
+                return Ok(()); // Already a git repo, nothing to do
+            }
+            let output = tokio::process::Command::new("git")
+                .args(["init", &path])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn git: {}", e))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
+            }
+        }
     }
 }
 
@@ -232,27 +264,46 @@ pub async fn clone_project(
     app_state: State<'_, Arc<AppState>>,
     url: String,
     target_path: String,
+    connection_id: Option<i32>,
 ) -> Result<Project, String> {
-    // Step 1: git clone
-    let output = tokio::process::Command::new("git")
-        .args(["clone", &url, &target_path])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn git: {}", e))?;
-    if !output.status.success() {
-        return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+    // Step 1: git clone (local or remote)
+    match connection_id {
+        Some(conn_id) => {
+            let session = app_state
+                .get_ssh_session(conn_id)
+                .await
+                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            let safe_url = url.replace('"', "\\\"");
+            let safe_path = target_path.replace('"', "\\\"");
+            let output = session
+                .execute_command(&format!("git clone \"{}\" \"{}\"", safe_url, safe_path))
+                .await
+                .map_err(|e| format!("SSH git clone failed: {}", e))?;
+            if output.contains("error:") || output.contains("fatal:") {
+                return Err(format!("git clone failed: {}", output));
+            }
+        }
+        None => {
+            let output = tokio::process::Command::new("git")
+                .args(["clone", &url, &target_path])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn git: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
     }
 
-    // Step 2: Register in DB + init .maestro
-    // Inline the DB logic to avoid State<'_> lifetime issues after .await
+    // Step 2: Register in DB
     let db = app_state.inner().clone();
     let project_id = {
         let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS NULL",
-            rusqlite::params![target_path],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
+            rusqlite::params![target_path, connection_id],
             |row| row.get(0),
         ).ok();
         existing.unwrap_or_else(|| {
@@ -264,14 +315,17 @@ pub async fn clone_project(
                 .to_string();
             conn.execute(
                 "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![name, target_path, now, now, None::<i32>, now],
+                rusqlite::params![name, target_path, now, now, connection_id, now],
             ).expect("Failed to insert project");
             conn.last_insert_rowid() as i32
         })
     };
 
-    crate::db::project_storage::create_project_maestro_folder(&target_path)
-        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    // Step 3: Init .maestro folder (local only — no local fs path for remote projects)
+    if connection_id.is_none() {
+        crate::db::project_storage::create_project_maestro_folder(&target_path)
+            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    }
 
     let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
@@ -288,56 +342,82 @@ pub async fn create_new_project(
     app_state: State<'_, Arc<AppState>>,
     parent_dir: String,
     folder_name: String,
+    connection_id: Option<i32>,
 ) -> Result<Project, String> {
-    let full_path = std::path::Path::new(&parent_dir).join(&folder_name);
-    let full_path_str = full_path
-        .to_str()
-        .ok_or_else(|| "Invalid path characters".to_string())?
-        .to_string();
+    // Build full path string (works for both local and remote — remote paths are POSIX)
+    let full_path_str = format!("{}/{}", parent_dir.trim_end_matches('/'), folder_name);
 
-    // Step 1: Check if directory already exists
-    if full_path.exists() {
-        return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+    match connection_id {
+        Some(conn_id) => {
+            let session = app_state
+                .get_ssh_session(conn_id)
+                .await
+                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            let safe_path = full_path_str.replace('"', "\\\"");
+            // Step 1: Check existence
+            let exists = session
+                .execute_command(&format!("test -d \"{}\" && echo yes || echo no", safe_path))
+                .await
+                .map_err(|e| format!("SSH check failed: {}", e))?;
+            if exists.trim() == "yes" {
+                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+            }
+            // Step 2: Create dir + git init
+            let output = session
+                .execute_command(&format!("mkdir -p \"{}\" && git init \"{}\"", safe_path, safe_path))
+                .await
+                .map_err(|e| format!("SSH create failed: {}", e))?;
+            if output.contains("error:") || output.contains("fatal:") {
+                return Err(format!("Remote create failed: {}", output));
+            }
+        }
+        None => {
+            let full_path = std::path::Path::new(&parent_dir).join(&folder_name);
+            // Step 1: Check if directory already exists
+            if full_path.exists() {
+                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+            }
+            // Step 2: Create directory
+            std::fs::create_dir_all(&full_path)
+                .map_err(|e| format!("Failed to create directory: {}", e))?;
+            // Step 3: git init
+            let output = tokio::process::Command::new("git")
+                .args(["init", &full_path_str])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn git: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
     }
 
-    // Step 2: Create directory
-    std::fs::create_dir_all(&full_path)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
-
-    // Step 3: git init inside the new directory
-    let output = tokio::process::Command::new("git")
-        .args(["init", &full_path_str])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn git: {}", e))?;
-    if !output.status.success() {
-        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
-    }
-
-    // Step 4: Register in DB + init .maestro
-    // Inline the DB logic to avoid State<'_> lifetime issues after .await
+    // Register in DB
     let db = app_state.inner().clone();
     let project_id = {
         let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS NULL",
-            rusqlite::params![full_path_str],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
+            rusqlite::params![full_path_str, connection_id],
             |row| row.get(0),
         ).ok();
         existing.unwrap_or_else(|| {
             let now = chrono::Utc::now().to_rfc3339();
             conn.execute(
                 "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![folder_name, full_path_str, now, now, None::<i32>, now],
+                rusqlite::params![folder_name, full_path_str, now, now, connection_id, now],
             ).expect("Failed to insert project");
             conn.last_insert_rowid() as i32
         })
     };
 
-    crate::db::project_storage::create_project_maestro_folder(&full_path_str)
-        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    // Init .maestro folder (local only)
+    if connection_id.is_none() {
+        crate::db::project_storage::create_project_maestro_folder(&full_path_str)
+            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    }
 
     let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(

@@ -166,7 +166,8 @@ export function useSaveImportConfig() {
  */
 export function useGitInitProject() {
   return useMutation({
-    mutationFn: (path: string) => api.gitInitProject(path),
+    mutationFn: ({ path, connectionId }: { path: string; connectionId: number | null }) =>
+      api.gitInitProject(path, connectionId),
     // No cache invalidation needed — this is a pre-step before createProject
     // No toast on success — this is a silent auto-init
     onError: (error) => {
@@ -184,11 +185,18 @@ export function useGitInitProject() {
 export function useCloneProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ url, targetPath }: { url: string; targetPath: string }) =>
-      api.cloneProject(url, targetPath),
-    onSuccess: () => {
+    mutationFn: ({
+      url,
+      targetPath,
+      connectionId,
+    }: {
+      url: string;
+      targetPath: string;
+      connectionId: number | null;
+    }) => api.cloneProject(url, targetPath, connectionId),
+    onSuccess: (_, { connectionId }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection("local"),
+        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
       });
       toast.success("Project cloned successfully");
     },
@@ -208,11 +216,18 @@ export function useCloneProject() {
 export function useCreateNewProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ parentDir, folderName }: { parentDir: string; folderName: string }) =>
-      api.createNewProject(parentDir, folderName),
-    onSuccess: () => {
+    mutationFn: ({
+      parentDir,
+      folderName,
+      connectionId,
+    }: {
+      parentDir: string;
+      folderName: string;
+      connectionId: number | null;
+    }) => api.createNewProject(parentDir, folderName, connectionId),
+    onSuccess: (_, { connectionId }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection("local"),
+        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
       });
       toast.success("Project created successfully");
     },

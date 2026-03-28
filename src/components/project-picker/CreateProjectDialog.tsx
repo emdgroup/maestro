@@ -13,14 +13,16 @@ import { Label } from "@/ui/label";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCreateNewProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import type { SshConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  connection: SshConnection | null;
 }
 
-export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
+export function CreateProjectDialog({ open, onOpenChange, connection }: CreateProjectDialogProps) {
   const [parentDir, setParentDir] = useState("");
   const [folderName, setFolderName] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -40,6 +42,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
       const project = await createNewProject({
         parentDir: parentDir.trim(),
         folderName: folderName.trim(),
+        connectionId: connection?.id ?? null,
       });
       setSelectedProject(project);
       // Reset form and close
@@ -138,7 +141,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
       <Dialog open={showDirPicker} onOpenChange={setShowDirPicker}>
         <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
           <FilePicker
-            connection={null}
+            connection={connection}
             onProjectSelect={(path) => handleBrowse(path)}
             loading={false}
           />

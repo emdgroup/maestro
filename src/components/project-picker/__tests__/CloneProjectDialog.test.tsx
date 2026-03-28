@@ -26,7 +26,7 @@ function renderDialog(open = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <CloneProjectDialog open={open} onOpenChange={vi.fn()} />
+      <CloneProjectDialog open={open} onOpenChange={vi.fn()} connection={null} />
     </QueryClientProvider>,
   );
 }

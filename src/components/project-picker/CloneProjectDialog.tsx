@@ -13,14 +13,16 @@ import { Label } from "@/ui/label";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCloneProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import type { SshConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
 interface CloneProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  connection: SshConnection | null;
 }
 
-export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogProps) {
+export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProjectDialogProps) {
   const [url, setUrl] = useState("");
   const [targetPath, setTargetPath] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -37,7 +39,11 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
   const handleSubmit = async () => {
     if (!url.trim() || !targetPath.trim()) return;
     try {
-      const project = await cloneProject({ url: url.trim(), targetPath: targetPath.trim() });
+      const project = await cloneProject({
+        url: url.trim(),
+        targetPath: targetPath.trim(),
+        connectionId: connection?.id ?? null,
+      });
       setSelectedProject(project);
       // Reset form and close
       setUrl("");
@@ -124,7 +130,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
       <Dialog open={showDirPicker} onOpenChange={setShowDirPicker}>
         <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
           <FilePicker
-            connection={null}
+            connection={connection}
             onProjectSelect={(path) => handleBrowse(path)}
             loading={false}
           />
