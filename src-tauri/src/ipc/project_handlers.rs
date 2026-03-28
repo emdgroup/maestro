@@ -203,6 +203,150 @@ pub fn remove_projects_by_connection_id(
     Ok(())
 }
 
+/// Initialize git in an existing directory (no-op if already a git repo)
+#[tauri::command]
+#[specta::specta]
+pub async fn git_init_project(path: String) -> Result<(), String> {
+    let git_dir = std::path::Path::new(&path).join(".git");
+    if git_dir.exists() {
+        return Ok(()); // Already a git repo, nothing to do
+    }
+    let output = tokio::process::Command::new("git")
+        .args(["init", &path])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+/// Clone a git repository and register it as a project
+#[tauri::command]
+#[specta::specta]
+pub async fn clone_project(
+    app_state: State<'_, Arc<AppState>>,
+    url: String,
+    target_path: String,
+) -> Result<Project, String> {
+    // Step 1: git clone
+    let output = tokio::process::Command::new("git")
+        .args(["clone", &url, &target_path])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // Step 2: Register in DB + init .maestro
+    // Inline the DB logic to avoid State<'_> lifetime issues after .await
+    let db = app_state.inner().clone();
+    let project_id = {
+        let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let existing: Option<i32> = conn.query_row(
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS NULL",
+            rusqlite::params![target_path],
+            |row| row.get(0),
+        ).ok();
+        existing.unwrap_or_else(|| {
+            let now = chrono::Utc::now().to_rfc3339();
+            let name = std::path::Path::new(&target_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Untitled")
+                .to_string();
+            conn.execute(
+                "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                rusqlite::params![name, target_path, now, now, None::<i32>, now],
+            ).expect("Failed to insert project");
+            conn.last_insert_rowid() as i32
+        })
+    };
+
+    crate::db::project_storage::create_project_maestro_folder(&target_path)
+        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+
+    let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT * FROM projects WHERE id = ?",
+        rusqlite::params![project_id],
+        Project::from_row,
+    ).map_err(|e| e.to_string())
+}
+
+/// Create a new project directory, git init it, and register as a project
+#[tauri::command]
+#[specta::specta]
+pub async fn create_new_project(
+    app_state: State<'_, Arc<AppState>>,
+    parent_dir: String,
+    folder_name: String,
+) -> Result<Project, String> {
+    let full_path = std::path::Path::new(&parent_dir).join(&folder_name);
+    let full_path_str = full_path
+        .to_str()
+        .ok_or_else(|| "Invalid path characters".to_string())?
+        .to_string();
+
+    // Step 1: Check if directory already exists
+    if full_path.exists() {
+        return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+    }
+
+    // Step 2: Create directory
+    std::fs::create_dir_all(&full_path)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    // Step 3: git init inside the new directory
+    let output = tokio::process::Command::new("git")
+        .args(["init", &full_path_str])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // Step 4: Register in DB + init .maestro
+    // Inline the DB logic to avoid State<'_> lifetime issues after .await
+    let db = app_state.inner().clone();
+    let project_id = {
+        let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let existing: Option<i32> = conn.query_row(
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS NULL",
+            rusqlite::params![full_path_str],
+            |row| row.get(0),
+        ).ok();
+        existing.unwrap_or_else(|| {
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                rusqlite::params![folder_name, full_path_str, now, now, None::<i32>, now],
+            ).expect("Failed to insert project");
+            conn.last_insert_rowid() as i32
+        })
+    };
+
+    crate::db::project_storage::create_project_maestro_folder(&full_path_str)
+        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+
+    let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT * FROM projects WHERE id = ?",
+        rusqlite::params![project_id],
+        Project::from_row,
+    ).map_err(|e| e.to_string())
+}
+
 /// Create a new project
 #[tauri::command]
 #[specta::specta]

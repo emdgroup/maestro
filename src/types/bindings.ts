@@ -61,6 +61,39 @@ async removeProject(projectId: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Initialize git in an existing directory (no-op if already a git repo)
+ */
+async gitInitProject(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("git_init_project", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Clone a git repository and register it as a project
+ */
+async cloneProject(url: string, targetPath: string) : Promise<Result<Project, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a new project directory, git init it, and register as a project
+ */
+async createNewProject(parentDir: string, folderName: string) : Promise<Result<Project, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_new_project", { parentDir, folderName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get list of all tasks for a project
  */
 async getTasks(projectId: number) : Promise<Result<Task[], string>> {
@@ -85,9 +118,9 @@ async createTask(projectId: number, name: string, description: string, acceptanc
 /**
  * Update a task's status or other fields
  */
-async updateTask(taskId: number, status: string | null, description: string | null) : Promise<Result<Task, string>> {
+async updateTask(taskId: number, status: string | null, description: string | null, name: string | null, priority: string | null, acceptanceCriteria: string | null, originBranch: string | null, skills: string[] | null) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description, name, priority, acceptanceCriteria, originBranch, skills }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
