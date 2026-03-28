@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { WorktreeManager } from "@/components/execution/WorktreeManager";
+import { usePendingWorktreeId, useNavigationActions } from "@/store/navigationStore";
 
 interface WorktreeInfo {
   id: number;
@@ -24,6 +26,25 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
   worktrees = [],
   onWorktreeClick,
 }) => {
+  const pendingWorktreeId = usePendingWorktreeId();
+  const { clearPendingWorktree } = useNavigationActions();
+
+  // When a pending worktree ID is set by navigate(), pass it as the highlighted worktree
+  const highlightedWorktreeId = pendingWorktreeId ? Number(pendingWorktreeId) : null;
+
+  useEffect(() => {
+    if (pendingWorktreeId) {
+      clearPendingWorktree();
+    }
+  }, [pendingWorktreeId, clearPendingWorktree]);
+
+  // Simulate selection by triggering onWorktreeClick when highlighted worktree is set
+  useEffect(() => {
+    if (highlightedWorktreeId && onWorktreeClick) {
+      onWorktreeClick(highlightedWorktreeId);
+    }
+  }, [highlightedWorktreeId, onWorktreeClick]);
+
   return (
     <WorktreeManager
       projectId={projectId}
