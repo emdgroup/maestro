@@ -7,7 +7,12 @@ import { useBoardStore } from "@/store/boardStore";
 import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
-import { usePageRouting } from "@/utils/hooks";
+import {
+  useActiveTab,
+  useSlideDirection,
+  usePendingTaskId,
+  useNavigationActions,
+} from "@/store/navigationStore";
 import {
   slideVariants,
   PAGE_TRANSITION_DURATION,
@@ -56,8 +61,22 @@ function App() {
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError } = useSettings();
 
-  // Page routing with slide animations
-  const { activePage, slideDirection, handlePageChange } = usePageRouting("kanban");
+  // Page routing backed by navigationStore
+  const activeTab = useActiveTab();
+  const slideDirection = useSlideDirection();
+  const { setActiveTab, clearPendingTask } = useNavigationActions();
+
+  // Consume pendingTaskId from store to open TaskDetail sheet
+  const pendingTaskId = usePendingTaskId();
+  const tasks = useBoardStore((s) => s.tasks);
+
+  useEffect(() => {
+    if (pendingTaskId) {
+      const task = tasks.find((t) => String(t.id) === pendingTaskId) ?? null;
+      setSelectedTask(task);
+      clearPendingTask();
+    }
+  }, [pendingTaskId, tasks, clearPendingTask]);
 
   // Log settings errors (if any)
   useEffect(() => {
@@ -98,15 +117,15 @@ function App() {
         <div className="app flex flex-col h-screen bg-background">
           <AppHeader
             currentProject={currentProject}
-            activeView={activePage}
-            onViewChange={handlePageChange}
+            activeView={activeTab}
+            onViewChange={setActiveTab}
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
             agentCount={0}
           />
           <main className="flex-1 overflow-hidden relative">
             <AnimatePresence initial={false} custom={slideDirection}>
-              {activePage === "kanban" && (
+              {activeTab === "kanban" && (
                 <motion.div
                   key="kanban"
                   custom={slideDirection}
@@ -133,7 +152,7 @@ function App() {
                 </motion.div>
               )}
 
-              {activePage === "agents" && (
+              {activeTab === "agents" && (
                 <motion.div
                   key="agents"
                   custom={slideDirection}
@@ -153,7 +172,7 @@ function App() {
                 </motion.div>
               )}
 
-              {activePage === "worktrees" && (
+              {activeTab === "worktrees" && (
                 <motion.div
                   key="worktrees"
                   custom={slideDirection}
@@ -173,7 +192,7 @@ function App() {
                 </motion.div>
               )}
 
-              {activePage === "settings" && (
+              {activeTab === "settings" && (
                 <motion.div
                   key="settings"
                   custom={slideDirection}

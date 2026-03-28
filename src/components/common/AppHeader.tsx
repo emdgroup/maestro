@@ -13,8 +13,7 @@ import {
 import type { Project } from "@/types/bindings";
 import { useRecentProjects } from "@/services/project.service";
 import { invoke } from "@tauri-apps/api/core";
-
-type ViewType = "kanban" | "agents" | "worktrees" | "settings";
+import type { ViewType } from "@/store/navigationStore";
 
 interface AppHeaderProps {
   currentProject: Project;
