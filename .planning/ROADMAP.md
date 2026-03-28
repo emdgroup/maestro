@@ -68,6 +68,17 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full details.
 | 21 - Refactor Components to Service Hooks | v1.1 | 1/1 | Complete | 2026-02-28 |
 | 22 - Auto-remove Stale Projects | v1.1 | 1/1 | Complete | 2026-03-16 |
 
+### Phase 23: Add in-app routing for deep linking to specific screens
+
+**Goal:** Replace usePageRouting local state with a Zustand navigationStore that enables programmatic navigation from any component via a discriminated union API (navigate({ taskId }), navigate({ view }), etc.)
+**Requirements**: NAV-STORE, NAV-WIRE
+**Depends on:** Phase 22
+**Plans:** 1/2 plans executed
+
+Plans:
+- [x] 23-01-PLAN.md — Create navigationStore with TDD (store + tests)
+- [ ] 23-02-PLAN.md — Rewire all consumers to use navigationStore, delete usePageRouting
+
 ---
 
 *Roadmap created: 2026-02-09*

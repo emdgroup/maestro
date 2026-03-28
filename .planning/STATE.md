@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
+milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-03-16T00:00:00.000Z"
+status: completed
+last_updated: "2026-03-28T14:26:50.060Z"
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State: v1.2 (Next Milestone)
@@ -18,22 +18,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-16)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Planning next milestone (v1.2)
+**Current focus:** Phase 23 — add-in-app-routing-for-deep-linking-to-specific-screens
 
 ## Current Position
 
-Phase: Not started
-Plan: Not started
-Status: v1.1 milestone complete — ready to plan v1.2
-Last activity: 2026-03-16 — v1.1 milestone archived
-
-**Next Action:** Run `/gsd:new-milestone` to define v1.2 goals
-
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (new milestone)
+Phase: 23 (add-in-app-routing-for-deep-linking-to-specific-screens) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed across all phases: 21
 - Average duration: 0.118 hours
 - Total execution time: 2.46 hours
@@ -52,6 +47,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (new
 | 19 | 3+ | 0.16h | 0.053h |
 
 **Recent Trend:**
+
 - Phase 13-01: 0.1h (Bug fixes - clean build, mock code exclusion)
 - Phase 13-02: 0.09h (Documentation - pattern reference and code comments)
 - Phase 14-01: 0.05h (Tailwind CSS setup - foundation for component styling)
@@ -99,12 +95,14 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (new
 | Phase 20-07 P07 | 0.010 | 4 tasks | 2 files |
 | Phase 21-01 P01 | 0.083 | 8 tasks | 6 files |
 | Phase 22-01 P01 | 0.099 | 5 tasks | 2 files |
+| Phase 23 P01 | 0.021 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 From v1.1 planning:
+
 - Phase 13 prioritized: Bug fixes must complete before UI work (clean foundation principle) ✓ COMPLETED
 - Tailwind 4.1 + @tailwindcss/vite chosen: Official recommendation, 8kB bundle savings, native Vite integration ✓ IMPLEMENTED (14-01)
 - shadcn/ui approach: Copy-paste workflow reduces coupling, theme-aware via CSS variables ✓ IMPLEMENTED (15-01)
@@ -116,38 +114,44 @@ From v1.1 planning:
 - Component library via shadcn/ui: 11 core components installed (Button, Card, Input, Dialog, Badge, Select, Checkbox, Label, Textarea, Tabs, Popover) ✓ IMPLEMENTED (15-01)
 
 Phase 15 Status:
+
 - Phase 15-01: shadcn/ui foundation complete (components, CSS variables, TypeScript aliases) ✓ COMPLETE
 - Phase 15-02: Component migration complete (TaskSettingsModal, ReviewModal, ApprovalForm, TaskModal, TaskForm to shadcn/ui) ✓ COMPLETE
 - Phase 15-03: Design system complete (HSL color variables, typography scale, font loading, WCAG AA compliance) ✓ COMPLETE
 
 Phase 16 Status:
+
 - Phase 16-01: Kanban board redesign complete (grid layout, status dots, hover effects, animations) ✓ COMPLETE
 - Phase 16-02: Header and navigation complete (multi-page routing, split-pane layouts) ✓ COMPLETE
 
 Phase 17 Status:
+
 - Phase 17-01: Production build validation complete (CSS coverage, dark mode, responsive layouts, visual regression analysis) ✓ COMPLETE
 - Phase 17-02: Accessibility audit complete (WCAG AA compliance achieved, color contrast fixed, prefers-reduced-motion added) ✓ COMPLETE
 
 Phase 18 Status:
+
 - Phase 18-01: ProjectConfig and ProjectState models complete (JSON serialization with serde, save/load methods, defaults) ✓ COMPLETE
 - Phase 18-02: Project Storage File I/O layer complete (6 utility functions, graceful defaults for new projects, cross-platform path handling) ✓ COMPLETE
 - Phase 18-03: Maestro rebranding complete (tauri.conf.json, Cargo.toml, CLAUDE.md, README.md updated) ✓ COMPLETE
 - Phase 18-04: IPC Handler Integration complete (create_project calls project_storage::create_project_maestro_folder) ✓ COMPLETE
 
 Phase 18 Architecture Decisions:
+
 - Use .maestro folder per-project for settings.json and state.json (instead of global database)
 - Wrapper functions for clarity (export_config_to_settings, export_state_to_file) ✓ IMPLEMENTED (18-02)
 - Graceful fallback pattern for new projects (return defaults if .maestro doesn't exist) ✓ IMPLEMENTED (18-02)
 - Result<T, String> for all file I/O functions (Tauri IPC compatibility) ✓ IMPLEMENTED (18-02)
+- [Phase 23]: navigate() discriminated union uses 'key' in target narrowing; same-tab setActiveTab guard prevents slideDirection clobbering
 
 ### Pending Todos
 
 None currently.
 
-
 ### Blockers/Concerns
 
 **COMPLETE - Phase 17.1 FULLY COMPLETE (2026-02-11):**
+
 - ✓ Phase 17.1-01 COMPLETE: Production IPC logging infrastructure
   - safeInvoke wrapper created with [Tauri] console logging
   - ProjectPicker instrumented with [DEBUG] statements
@@ -170,6 +174,7 @@ None currently.
   - Test infrastructure ready for regression detection (pnpm test:e2e)
 
 **Phase 17.1 Impact Summary:**
+
 - ✓ UI now has modern aesthetic matching exemple/ design patterns
 - ✓ UX improved: Project switching from header dropdown instead of full-screen modal
 - ✓ Navigation: Compact tab bar with icons and active state styling
@@ -185,6 +190,7 @@ None currently.
 - Phase 20 added: Refactor Frontend to use TanStack Query - Replace direct invoke() calls with TanStack Query hooks for data fetching, caching, and mutations
 - Phase 21 added: Refactor Components Using Commands Object - Refactor any component using directly "commands" object from @src/types/bindings.ts to use service hooks instead
 - Phase 22 added: Auto-remove Stale Projects - get_connection_projects made async, drops db lock before path validation, collect_stale_project_ids helper validates local (std::fs) and SSH (test -d) paths
+- Phase 23 added: Add in-app routing for deep linking to specific screens
 
 ## Session Continuity
 
@@ -202,6 +208,7 @@ v1.1 UI/UX Polish milestone - 18 of 19 phases complete + Phase 19 architecture r
 Phase 19-05 (Organize Utils Layer - Hooks and Helpers) COMPLETE 2026-02-26.
 
 **Phase 19 Plan Status:**
+
 - 19-01: COMPLETE - Extract Page-Level Components to Views
 - 19-02: COMPLETE - Organize Domain-Grouped Services Layer
 - 19-03: COMPLETE - Organize Reusable Components into Domain-Specific Folders
@@ -210,6 +217,7 @@ Phase 19-05 (Organize Utils Layer - Hooks and Helpers) COMPLETE 2026-02-26.
 - 19-06: PENDING - Implement Feature Modules
 
 Phase 18 (Maestro Folder Architecture & Rebranding) complete:
+
 - ✓ 18-01: ProjectConfig and ProjectState models with JSON serialization (COMPLETE)
   - Rust models with load/save methods for .maestro/settings.json and .maestro/state.json
   - TypeScript bindings generated and available at src/types/bindings.ts
@@ -232,6 +240,7 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
 **Phase 18 VERIFIED:** All 4 success criteria met (verified 2026-02-23). Architecture shift complete: project-local storage established, rebranding complete, all integration points wired.
 
 **Phase 19 Status - IN PROGRESS:**
+
 - Phase 19-01 COMPLETE (2026-02-26): Extract Page-Level Components to Views
   - Views directory created with 5 orchestrator components
   - KanbanView, AgentsView, SettingsView, ProjectPickerView, WorktreesView
@@ -283,6 +292,7 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
 *Updated: 2026-02-26 — Phase 19-05 complete (Utils layer organization); 5/6 plans complete (83%)*
 
 **Phase 20 Status - IN PROGRESS:**
+
 - Phase 20-01 COMPLETE (2026-02-26): Add TanStack Query Hooks to Task and Project Services
   - 10 TanStack Query hooks added to task.service.ts (useTasksQuery, useExecutionLogsQuery, useTaskSettingsQuery, useDiffForReviewQuery, useCreateTaskMutation, useUpdateTaskMutation, useUpdateTaskStatusMutation, useRetryExecutionMutation, useCancelExecutionMutation, useUpdateTaskSettingsMutation)
   - 7 TanStack Query hooks added to project.service.ts (useProjectsQuery, useProjectQuery, useProjectSettingsQuery, useCreateProjectMutation, useRemoveProjectMutation, useUpdateProjectSettingsMutation, useSaveImportConfigMutation)
@@ -388,12 +398,14 @@ Phase 18 (Maestro Folder Architecture & Rebranding) complete:
 *Updated: 2026-02-27 00:55 — Phase 20-07 COMPLETE (Wave 3 verification); 7/7 plans complete (100%)*
 
 **PHASE 20 COMPLETE** ✓
+
 - Wave 1 (Infrastructure): 21 hooks created across 5 services (3 plans)
 - Wave 2 (Component Migration): 9 UI components migrated (3 plans)
 - Wave 3 (Verification): 0 regressions, production validated (1 plan)
 - Total: 37 TanStack Query hooks, 0 direct invoke() calls, ready for Phase 21
 
 **PHASE 21 COMPLETE** ✓ (2026-02-28)
+
 - Task 1: Extended connection.service.ts with 4 new file browser hooks
 - Task 2: Verified project.service.ts has all required hooks
 - Task 3: Refactored ProjectList.tsx to use service hooks
