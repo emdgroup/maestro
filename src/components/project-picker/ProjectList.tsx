@@ -1,8 +1,15 @@
 import { toast } from "sonner";
 import { ProjectListItem } from "@/components/project-picker/ProjectListItem";
 import { ProjectsListLayout } from "@/components/project-picker/ProjectsListLayout";
+import { CloneProjectDialog } from "@/components/project-picker/CloneProjectDialog";
+import { CreateProjectDialog } from "@/components/project-picker/CreateProjectDialog";
 import { useProjectPickerNavigation } from "@/utils/hooks";
-import { useRecentProjects, useCreateProject, useRemoveProject } from "@/services/project.service";
+import {
+  useRecentProjects,
+  useCreateProject,
+  useRemoveProject,
+  useGitInitProject,
+} from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder } from "lucide-react";
@@ -23,20 +30,28 @@ export function ProjectList() {
     activeConnection?.sshConnection?.id,
   );
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();
 
   // Initialize service hooks
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
+  const { mutateAsync: gitInitProject } = useGitInitProject();
 
   /**
-   * Handle project selection from FilePicker
-   * Creates project in database and sets it as selected in store
+   * Handle project selection from FilePicker.
+   * Auto-initializes git silently before creating the project for local paths.
    */
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
+      // Auto-init git if needed (silently — IPC is a no-op if .git already exists)
+      // Only for local projects (connectionId undefined/null means local)
+      if (!connectionId) {
+        await gitInitProject(selectedPath);
+      }
       const result = await createProject({
         path: selectedPath,
         connectionId: connectionId ?? null, // Use null for local projects, not 0
@@ -82,6 +97,8 @@ export function ProjectList() {
           }
           onBack={navigateToConnections}
           onSelectNewClick={() => setShowFilePickerModal(true)}
+          onCloneClick={() => setShowCloneDialog(true)}
+          onCreateClick={() => setShowCreateDialog(true)}
           loading={loading}
         >
           {recentProjects.length === 0 ? (
@@ -100,6 +117,7 @@ export function ProjectList() {
             </ul>
           )}
         </ProjectsListLayout>
+
         {/* File Picker Modal (Local or Remote) */}
         <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
           <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
@@ -110,6 +128,12 @@ export function ProjectList() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Clone Project Dialog */}
+        <CloneProjectDialog open={showCloneDialog} onOpenChange={setShowCloneDialog} />
+
+        {/* Create Project Dialog */}
+        <CreateProjectDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
       </>
     )
   );

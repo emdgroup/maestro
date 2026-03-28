@@ -50,7 +50,7 @@ vi.mock("@/store/projectStore", () => ({
 
 // Mock child components to isolate
 vi.mock("../ProjectsListLayout", () => ({
-  ProjectsListLayout: ({ children, ...props }: { children: React.ReactNode; [key: string]: unknown }) => (
+  ProjectsListLayout: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="projects-list-layout">{children}</div>
   ),
 }));
@@ -95,7 +95,7 @@ describe("ProjectList", () => {
           value={{
             view: "projects",
             setView: vi.fn(),
-            activeConnection: { type: "local", id: 0 },
+            activeConnection: { type: "local", id: 0, displayName: "Local" },
             setActiveConnection: vi.fn(),
           }}
         >
