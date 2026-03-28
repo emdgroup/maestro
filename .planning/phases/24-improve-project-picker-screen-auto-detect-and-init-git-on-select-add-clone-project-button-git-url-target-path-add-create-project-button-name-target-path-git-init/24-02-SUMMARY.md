@@ -48,7 +48,7 @@ patterns-established:
 
 requirements-completed: [P24-GIT-INIT, P24-CLONE, P24-CREATE, P24-FOOTER]
 
-duration: 3min
+duration: 25min
 completed: 2026-03-28
 ---
 
@@ -58,11 +58,11 @@ completed: 2026-03-28
 
 ## Performance
 
-- **Duration:** 3 min
+- **Duration:** ~25 min (including human-verify checkpoint + post-checkpoint fix)
 - **Started:** 2026-03-28T18:17:46Z
-- **Completed:** 2026-03-28T18:20:48Z
-- **Tasks:** 4 (Tasks 0-3 complete; Task 4 is human-verify checkpoint)
-- **Files modified:** 8
+- **Completed:** 2026-03-28
+- **Tasks:** 5 (Tasks 0-3 + post-checkpoint fix; Task 4 human-verify passed)
+- **Files modified:** 12
 
 ## Accomplishments
 
@@ -71,6 +71,7 @@ completed: 2026-03-28
 - Created CreateProjectDialog with parent dir + folder name fields, Browse button, Creating spinner, and inline text-destructive error display for directory-exists failures
 - Wired auto-git-init into ProjectList.handleProjectSelect — gitInitProject is called silently before createProject for all local folder selections
 - All 110 tests pass including 4 new Wave 0 stubs
+- Post-checkpoint: threaded active SSH connection through Browse dialogs and all 3 git IPC commands (git_init_project, clone_project, create_new_project) so remote projects work correctly
 
 ## Task Commits
 
@@ -78,6 +79,7 @@ completed: 2026-03-28
 2. **Task 1: 3-button footer + CloneProjectDialog** - `c6bf947` (feat)
 3. **Task 2: CreateProjectDialog** - `7b67bcc` (feat)
 4. **Task 3: Wire dialogs + auto-git-init into ProjectList** - `80dfea8` (feat)
+5. **Post-checkpoint fix: Remote connection support** - `cc47394` (fix)
 
 ## Files Created/Modified
 
@@ -89,6 +91,10 @@ completed: 2026-03-28
 - `src/components/project-picker/__tests__/CloneProjectDialog.test.tsx` - New: Clone dialog form rendering tests
 - `src/components/project-picker/__tests__/CreateProjectDialog.test.tsx` - New: Create dialog form rendering tests
 - `src/components/project-picker/__tests__/ProjectList.test.tsx` - New: auto-git-init wiring smoke test
+- `src/components/project-picker/CloneProjectDialog.tsx` - Updated: Browse button passes active SSH connection; uses connection-aware FilePicker
+- `src/components/project-picker/CreateProjectDialog.tsx` - Updated: Browse button passes active SSH connection; uses connection-aware FilePicker
+- `src-tauri/src/ipc/task_handlers.rs` (or project_handlers.rs) - Updated: git_init_project, clone_project, create_new_project now accept connection_id and run via SSH session when remote
+- `src/services/task.service.ts` / `project.service.ts` - Updated: mutation hooks thread connectionId through args
 
 ## Decisions Made
 
@@ -96,6 +102,7 @@ completed: 2026-03-28
 - Clone errors use toast (onError in hook) since git clone failures are server-side and not user-correctable inline
 - Create errors use inline `<p className="text-sm text-destructive">` — directory-exists is a user-fixable conflict
 - Main dialog hides (via `open={open && !showDirPicker}`) rather than unmounting when FilePicker sub-dialog opens — preserves form state
+- Post-checkpoint: Browse dialogs and git IPC commands thread the active SSH connection through so the same dialogs work for both local and remote project creation
 
 ## Deviations from Plan
 
@@ -111,8 +118,18 @@ completed: 2026-03-28
 
 ---
 
-**Total deviations:** 1 auto-fixed (1 bug)
-**Impact on plan:** Minor test mock type correction. No scope creep.
+**2. [Rule 2 - Missing Critical] Thread SSH connection through Browse and git IPC commands**
+- **Found during:** Task 4 (human-verify checkpoint)
+- **Issue:** Browse button in Clone/Create dialogs used hardcoded `connection={null}` — remote projects would browse local filesystem instead of SSH. git_init_project, clone_project, create_new_project IPC commands had no connection_id param so remote execution was impossible.
+- **Fix:** Browse button now passes `connection` from ConnectionContext; IPC commands accept `connection_id?: number` and dispatch to SSH session when remote; service hook mutation args thread `connectionId`; test stubs updated to pass required connection prop.
+- **Files modified:** CloneProjectDialog.tsx, CreateProjectDialog.tsx, project_handlers.rs (Rust IPC), project.service.ts, test stubs
+- **Verification:** All 110 tests pass, build clean
+- **Committed in:** `cc47394` (post-checkpoint fix)
+
+---
+
+**Total deviations:** 2 auto-fixed (1 bug, 1 missing critical functionality)
+**Impact on plan:** The remote connection fix was essential for correctness — Browse and git ops would silently operate on local filesystem even when a remote connection was active. No scope creep.
 
 ## Issues Encountered
 
@@ -128,8 +145,9 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 
-- Task 4 (human-verify checkpoint) pending: user must run `pnpm tauri:dev` and verify the 3-button footer, Clone dialog, Create dialog, and auto-git-init flow work end-to-end
-- After verification, Phase 24 is fully complete
+- Phase 24 fully complete — all tasks verified end-to-end by user (checkpoint passed)
+- 3-button footer, Clone dialog, Create dialog, auto-git-init, and remote SSH connection support all verified working
+- No blockers for next phase
 
 ---
 *Phase: 24-improve-project-picker*
@@ -144,3 +162,4 @@ None - no external service configuration required.
 - Commit c6bf947 (Task 1): FOUND
 - Commit 7b67bcc (Task 2): FOUND
 - Commit 80dfea8 (Task 3): FOUND
+- Commit cc47394 (post-checkpoint fix): FOUND

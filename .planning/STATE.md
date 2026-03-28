@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-last_updated: "2026-03-28T18:22:09.572Z"
+last_updated: "2026-03-28T19:06:19.284Z"
 progress:
   total_phases: 2
   completed_phases: 2
@@ -99,6 +99,7 @@ Plan: 2 of 2
 | Phase 23 P02 | 0.067 | 3 tasks | 6 files |
 | Phase 24 P01 | 0.226 | 2 tasks | 4 files |
 | Phase 24 P02 | 0.05 | 4 tasks | 8 files |
+| Phase 24 P02 | 0.42 | 5 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,8 @@ Phase 18 Architecture Decisions:
 - [Phase 24]: useCreateNewProject.onError does not toast (Create dialog shows inline errors); useCloneProject.onError does toast (git failures are server-side)
 - [Phase 24]: Dual-dialog visibility pattern: main dialog hidden via open={open && !showDirPicker} while FilePicker sub-dialog is open, preserving form state
 - [Phase 24]: Create dialog shows inline text-destructive errors; Clone dialog uses onError toast — split based on whether error is user-correctable
+- [Phase 24]: Browse button uses active SSH connection from ConnectionContext (not hardcoded null) so remote projects browse via SSH
+- [Phase 24]: git_init_project, clone_project, create_new_project IPC commands accept connection_id and dispatch to SSH session when remote
 
 ### Pending Todos
 
