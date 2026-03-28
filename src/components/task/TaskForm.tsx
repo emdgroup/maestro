@@ -1,17 +1,17 @@
+import { useEffect } from "react";
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
-import { Badge } from "@/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import type { Task } from "@/types/bindings";
+import { useProjectBranchesQuery } from "@/services/task.service";
 
 export interface TaskFormData {
   title: string;
   description: string;
   acceptanceCriteria: string;
-  skills: string[];
   priority: "Urgent" | "High" | "Medium" | "Low";
   originBranch: string;
 }
@@ -21,31 +21,38 @@ interface TaskFormProps {
   isLoading: boolean;
   onCancel: () => void;
   projectId: number;
+  initialValues?: Partial<TaskFormData>;
+  submitLabel?: string;
 }
 
-const AVAILABLE_SKILLS = [
-  "debugging",
-  "testing",
-  "documentation",
-  "performance",
-  "security",
-  "refactoring",
-];
-
-export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormProps) {
+export function TaskForm({ onSubmit, isLoading, onCancel, projectId, initialValues, submitLabel = "Create Task" }: TaskFormProps) {
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<TaskFormData>({
     mode: "onBlur",
     defaultValues: {
-      skills: [],
       priority: "Medium",
-      originBranch: "",
+      originBranch: initialValues?.originBranch ?? "",
+      ...initialValues,
     },
   });
+
+  const { data: branchData } = useProjectBranchesQuery(projectId);
+  // branchData is [string[], string] (branches, currentBranch) — api proxy unwraps Result
+  const branches: string[] = branchData ? branchData[0] : [];
+  const currentBranch: string = branchData ? branchData[1] : "";
+
+  // Set default origin branch to the current checked-out branch when
+  // branch data loads and form has no initial value
+  useEffect(() => {
+    if (currentBranch && !initialValues?.originBranch) {
+      setValue("originBranch", currentBranch);
+    }
+  }, [currentBranch, initialValues?.originBranch, setValue]);
 
   const submitHandler: SubmitHandler<TaskFormData> = async (data) => {
     try {
@@ -60,7 +67,7 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
         name: data.title,
         description: data.description,
         acceptance_criteria: data.acceptanceCriteria,
-        skills: data.skills,
+        skills: [],
       });
     } catch (error) {
       console.error("Form submission error:", error);
@@ -153,66 +160,38 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId }: TaskFormP
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="originBranch">Origin Branch (Optional)</Label>
-        <Input
-          id="originBranch"
-          type="text"
-          placeholder="e.g. main"
-          {...register("originBranch")}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="skills">Skills (Optional)</Label>
-        <Controller
-          name="skills"
-          control={control}
-          render={({ field: { value, onChange } }) => (
-            <div>
-              <Select
-                value={value.length > 0 ? value[0] : ""}
-                onValueChange={(newVal) => {
-                  if (newVal && value.includes(newVal)) {
-                    onChange(value.filter((s) => s !== newVal));
-                  } else {
-                    onChange([...value, newVal]);
-                  }
-                }}
-              >
-                <SelectTrigger id="skills" className="w-full">
-                  <SelectValue placeholder="Select skills..." />
+        {branches.length > 0 ? (
+          <Controller
+            name="originBranch"
+            control={control}
+            render={({ field: { value, onChange } }) => (
+              <Select value={value} onValueChange={onChange}>
+                <SelectTrigger id="originBranch" className="w-full">
+                  <SelectValue placeholder="Select branch..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {AVAILABLE_SKILLS.map((skill) => (
-                    <SelectItem key={skill} value={skill}>
-                      {skill}
+                  {branches.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {value.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {value.map((skill) => (
-                    <Badge key={skill} variant="default" className="gap-2 py-1.5 px-3">
-                      {skill}
-                      <button
-                        type="button"
-                        onClick={() => onChange(value.filter((s) => s !== skill))}
-                        className="text-lg opacity-80 hover:opacity-100 transition-opacity"
-                      >
-                        ×
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        />
+            )}
+          />
+        ) : (
+          <Input
+            id="originBranch"
+            type="text"
+            placeholder="e.g. main"
+            {...register("originBranch")}
+          />
+        )}
       </div>
 
       <div className="flex gap-4 mt-4 justify-end">
         <Button type="submit" disabled={isLoading}>
-          {isLoading ? "Creating..." : "Create Task"}
+          {isLoading ? `${submitLabel}...` : submitLabel}
         </Button>
         <Button type="button" onClick={onCancel} disabled={isLoading} variant="outline">
           Cancel

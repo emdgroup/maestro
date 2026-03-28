@@ -36,6 +36,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::remove_task_relationship,
             crate::ipc::get_task_instructions,
             crate::ipc::add_task_instruction,
+            crate::ipc::list_project_branches,
             crate::ipc::get_settings,
             crate::ipc::save_settings,
             crate::ipc::sync_github_issues,

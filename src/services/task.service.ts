@@ -99,9 +99,19 @@ export function useUpdateTask() {
 
   return useMutation({
     mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) =>
-      api.updateTask(taskId, updates.status || null, updates.description || null),
+      api.updateTask(
+        taskId,
+        updates.status ?? null,
+        updates.description ?? null,
+        updates.name ?? null,
+        updates.priority ?? null,
+        updates.acceptance_criteria ?? null,
+        updates.origin_branch ?? null,
+        updates.skills ?? null,
+      ),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to update task"),
   });
@@ -322,6 +332,19 @@ export function useTaskInstructionsQuery(taskId: number | null) {
     queryKey: taskQueryKeys.instructions(taskId!),
     queryFn: () => api.getTaskInstructions(taskId!),
     enabled: taskId !== null,
+  });
+}
+
+/**
+ * Query hook for listing git branches of a project
+ * Returns [branches, currentBranch] tuple
+ */
+export function useProjectBranchesQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: [...taskQueryKeys.all, "branches", projectId],
+    queryFn: () => api.listProjectBranches(projectId!),
+    enabled: projectId !== null,
+    staleTime: 60000, // 1 minute — branches don't change that often
   });
 }
 

@@ -83,6 +83,11 @@ pub fn update_task(
     task_id: i32,
     status: Option<String>,
     description: Option<String>,
+    name: Option<String>,
+    priority: Option<String>,
+    acceptance_criteria: Option<String>,
+    origin_branch: Option<String>,
+    skills: Option<Vec<String>>,
 ) -> Result<Task, String> {
     println!("update_task({}) called via IPC", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -104,7 +109,56 @@ pub fn update_task(
         .map_err(|e| e.to_string())?;
     }
 
-    if status.is_none() && description.is_none() {
+    if let Some(ref new_name) = name {
+        conn.execute(
+            "UPDATE tasks SET name = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&new_name, &now, task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ref new_priority) = priority {
+        conn.execute(
+            "UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&new_priority, &now, task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ref new_ac) = acceptance_criteria {
+        conn.execute(
+            "UPDATE tasks SET acceptance_criteria = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&new_ac, &now, task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ref new_branch) = origin_branch {
+        conn.execute(
+            "UPDATE tasks SET origin_branch = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&new_branch, &now, task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ref new_skills) = skills {
+        let skills_json = serde_json::to_string(new_skills)
+            .map_err(|e| format!("JSON serialization failed: {}", e))?;
+        conn.execute(
+            "UPDATE tasks SET skills = ?, updated_at = ? WHERE id = ?",
+            rusqlite::params![&skills_json, &now, task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if status.is_none()
+        && description.is_none()
+        && name.is_none()
+        && priority.is_none()
+        && acceptance_criteria.is_none()
+        && origin_branch.is_none()
+        && skills.is_none()
+    {
         conn.execute(
             "UPDATE tasks SET updated_at = ? WHERE id = ?",
             rusqlite::params![&now, task_id],
@@ -303,4 +357,36 @@ pub fn add_task_instruction(
 
     let id = conn.last_insert_rowid() as i32;
     Ok(TaskInstruction { id, task_id, content, source, created_at: now })
+}
+
+/// List git branches and the current branch for a project
+///
+/// Returns a tuple of (branches, current_branch).
+/// Falls back to ([], "main") if the project is not a git repo or git is unavailable.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_project_branches(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<(Vec<String>, String), String> {
+    println!("list_project_branches({}) called via IPC", project_id);
+
+    // Look up the project to get its path
+    let project = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            crate::models::Project::from_row,
+        )
+        .map_err(|e| e.to_string())?
+    };
+
+    let git_conn = crate::db::get_git_connection(&project, &app_state).await
+        .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
+
+    let branches = crate::git::list_branches(&git_conn).await.unwrap_or_default();
+    let current_branch = crate::git::get_current_branch(&git_conn).await.unwrap_or_else(|_| "main".to_string());
+
+    Ok((branches, current_branch))
 }

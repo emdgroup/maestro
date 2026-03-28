@@ -315,20 +315,6 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
                 </div>
               )}
 
-              {/* Skills — always read-only */}
-              {task.skills && task.skills.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-foreground">Skills</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {task.skills.map((skill) => (
-                      <Badge key={skill} variant="secondary">
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Status — always read-only */}
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-foreground">Status</h3>

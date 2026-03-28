@@ -95,6 +95,21 @@ pub async fn list_branches(
     }
 }
 
+/// Get the currently checked-out branch in the project (local or remote)
+pub async fn get_current_branch(
+    conn: &GitConnection,
+) -> Result<String, String> {
+    match conn {
+        GitConnection::Local { path } => {
+            get_current_branch_local(path).await
+        }
+        GitConnection::Remote { .. } => {
+            // Remote current branch detection not implemented; default to main
+            Ok("main".to_string())
+        }
+    }
+}
+
 // ============================================================================
 // Local git operation implementations
 // ============================================================================
@@ -139,9 +154,57 @@ async fn git_status_local(
 }
 
 async fn list_branches_local(
-    _path: &str,
+    path: &str,
 ) -> Result<Vec<String>, String> {
-    // TODO: Phase 3-01 sidecar integration
-    // Call: node sidecar/dist/index.js --list-branches {path}
-    Err("Local git operations not yet implemented in dispatcher".to_string())
+    let output = std::process::Command::new("git")
+        .args(["branch", "-a"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| format!("Failed to run git branch: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git branch failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut branches: Vec<String> = stdout
+        .lines()
+        .map(|line| {
+            // Strip leading whitespace and the current-branch asterisk
+            let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '*').trim();
+            // Strip "remotes/origin/" prefix for remote-tracking branches
+            trimmed
+                .strip_prefix("remotes/origin/")
+                .unwrap_or(trimmed)
+                .to_string()
+        })
+        .filter(|b| !b.is_empty() && !b.contains("HEAD ->") && !b.contains("HEAD"))
+        .collect();
+
+    // Deduplicate (local + remote-tracking may share names)
+    branches.sort();
+    branches.dedup();
+    Ok(branches)
+}
+
+async fn get_current_branch_local(
+    path: &str,
+) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| format!("Failed to run git rev-parse: {}", e))?;
+
+    if !output.status.success() {
+        return Ok("main".to_string());
+    }
+
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if branch.is_empty() || branch == "HEAD" {
+        Ok("main".to_string())
+    } else {
+        Ok(branch)
+    }
 }

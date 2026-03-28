@@ -204,6 +204,20 @@ async addTaskInstruction(taskId: number, content: string, source: string) : Prom
 }
 },
 /**
+ * List git branches and the current branch for a project
+ * 
+ * Returns a tuple of (branches, current_branch).
+ * Falls back to ([], "main") if the project is not a git repo or git is unavailable.
+ */
+async listProjectBranches(projectId: number) : Promise<Result<[string[], string], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_project_branches", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get current application settings from the database
  * 
  * Loads all stored settings including project paths, default model,
