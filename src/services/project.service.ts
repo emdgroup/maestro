@@ -161,6 +161,70 @@ export function useSaveImportConfig() {
 }
 
 /**
+ * Mutation hook for initializing git in a non-git directory.
+ * Called silently before createProject when user selects a non-git folder.
+ */
+export function useGitInitProject() {
+  return useMutation({
+    mutationFn: (path: string) => api.gitInitProject(path),
+    // No cache invalidation needed — this is a pre-step before createProject
+    // No toast on success — this is a silent auto-init
+    onError: (error) => {
+      toast.error(
+        `Failed to initialize git: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+  });
+}
+
+/**
+ * Mutation hook for cloning a git repo and registering it as a project.
+ * Returns the created Project on success.
+ */
+export function useCloneProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ url, targetPath }: { url: string; targetPath: string }) =>
+      api.cloneProject(url, targetPath),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.listByConnection("local"),
+      });
+      toast.success("Project cloned successfully");
+    },
+    onError: (error) => {
+      toast.error(
+        `Clone failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+  });
+}
+
+/**
+ * Mutation hook for creating a new project directory with git init.
+ * Returns the created Project on success.
+ * Note: onError does NOT show a toast — the Create dialog shows inline errors.
+ */
+export function useCreateNewProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ parentDir, folderName }: { parentDir: string; folderName: string }) =>
+      api.createNewProject(parentDir, folderName),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.listByConnection("local"),
+      });
+      toast.success("Project created successfully");
+    },
+    onError: (error) => {
+      // Don't toast here — Create dialog shows inline errors
+      // The caller catches the error and displays it in the form
+      console.error("Create project failed:", error);
+    },
+  });
+}
+
+/**
  * Mutation hook for syncing GitHub issues
  */
 export function useSyncGithubIssues() {

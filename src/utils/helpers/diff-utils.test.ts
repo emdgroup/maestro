@@ -54,7 +54,7 @@ describe("parseDiffString", () => {
     const result = parseDiffString(diff);
     expect(result).toHaveLength(1);
     expect(result[0].fileName).toBe("src/foo.ts");
-    expect(result[0].newFile.fileName).toBe("src/foo.ts");
+    expect(result[0].newFile?.fileName).toBe("src/foo.ts");
     expect(result[0].hunks).toContain("@@ -1,3 +1,4 @@");
     expect(result[0].hunks).toContain("-removed line");
     expect(result[0].hunks).toContain("+added line");
