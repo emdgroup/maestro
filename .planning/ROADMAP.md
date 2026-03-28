@@ -73,11 +73,11 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full details.
 **Goal:** Replace usePageRouting local state with a Zustand navigationStore that enables programmatic navigation from any component via a discriminated union API (navigate({ taskId }), navigate({ view }), etc.)
 **Requirements**: NAV-STORE, NAV-WIRE
 **Depends on:** Phase 22
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 23-01-PLAN.md — Create navigationStore with TDD (store + tests)
-- [ ] 23-02-PLAN.md — Rewire all consumers to use navigationStore, delete usePageRouting
+- [x] 23-02-PLAN.md — Rewire all consumers to use navigationStore, delete usePageRouting
 
 ---
 
