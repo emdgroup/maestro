@@ -1,5 +1,5 @@
 import { Button } from "@/ui/button";
-import { ChevronLeft, FolderPlus } from "lucide-react";
+import { ChevronLeft, FolderOpen, FolderPlus, GitFork } from "lucide-react";
 import { ReactNode, useEffect } from "react";
 
 interface ProjectsListLayoutProps {
@@ -9,22 +9,28 @@ interface ProjectsListLayoutProps {
   children: ReactNode;
   /** Callback when back button is clicked */
   onBack: () => void;
-  /** Callback when "Select New Project" is clicked */
+  /** Callback when "Select Existing" is clicked */
   onSelectNewClick: () => void;
+  /** Callback when "Clone" is clicked */
+  onCloneClick: () => void;
+  /** Callback when "Create" is clicked */
+  onCreateClick: () => void;
   /** Whether the component is in a loading state */
   loading?: boolean;
 }
 
 /**
  * Shared layout wrapper for project list components.
- * Provides consistent structure: header with back button, scrollable content area, and footer with action button.
- * Keyboard navigation: Esc goes back, Tab navigates between projects and action button.
+ * Provides consistent structure: header with back button, scrollable content area, and footer with three action buttons.
+ * Keyboard navigation: Esc goes back, Tab navigates between projects and action buttons.
  */
 export function ProjectsListLayout({
   headerContent,
   children,
   onBack,
   onSelectNewClick,
+  onCloneClick,
+  onCreateClick,
   loading = false,
 }: ProjectsListLayoutProps) {
   // Handle Esc key to go back
@@ -58,16 +64,36 @@ export function ProjectsListLayout({
 
       <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">{children}</div>
 
-      <div className="pt-4 border-t border-border">
+      <div className="pt-4 border-t border-border flex gap-2">
         <Button
           onClick={onSelectNewClick}
           disabled={loading}
+          variant="outline"
+          size="sm"
+          className="flex-1"
+        >
+          <FolderOpen className="size-4" />
+          Select Existing
+        </Button>
+        <Button
+          onClick={onCloneClick}
+          disabled={loading}
+          variant="outline"
+          size="sm"
+          className="flex-1"
+        >
+          <GitFork className="size-4" />
+          Clone
+        </Button>
+        <Button
+          onClick={onCreateClick}
+          disabled={loading}
           variant="default"
-          size="lg"
-          className="w-full focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+          size="sm"
+          className="flex-1"
         >
           <FolderPlus className="size-4" />
-          {loading ? "Loading..." : "Select New Project"}
+          Create
         </Button>
       </div>
     </div>
