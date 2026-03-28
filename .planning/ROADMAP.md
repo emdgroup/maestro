@@ -84,11 +84,11 @@ Plans:
 **Goal:** Enhance the project picker with auto-git-init on folder select, a Clone Project dialog (URL + target path), and a Create Project dialog (parent dir + folder name + git init), all surfaced as a 3-button footer in the projects panel.
 **Requirements**: P24-GIT-INIT, P24-CLONE, P24-CREATE, P24-FOOTER
 **Depends on:** Phase 23
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 24-01-PLAN.md — Backend: Rust IPC commands (git_init_project, clone_project, create_new_project) + bindings + TanStack Query hooks
-- [ ] 24-02-PLAN.md — Frontend: 3-button footer, CloneProjectDialog, CreateProjectDialog, auto-git-init wiring
+- [x] 24-02-PLAN.md — Frontend: 3-button footer, CloneProjectDialog, CreateProjectDialog, auto-git-init wiring
 
 ---
 

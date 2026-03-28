@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-last_updated: "2026-03-28T18:16:11.513Z"
+last_updated: "2026-03-28T18:22:09.572Z"
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State: v1.2 (Next Milestone)
@@ -98,6 +98,7 @@ Plan: 2 of 2
 | Phase 23 P01 | 0.021 | 1 tasks | 2 files |
 | Phase 23 P02 | 0.067 | 3 tasks | 6 files |
 | Phase 24 P01 | 0.226 | 2 tasks | 4 files |
+| Phase 24 P02 | 0.05 | 4 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Phase 18 Architecture Decisions:
 - [Phase 23]: App.tsx owns pendingTaskId consumption since TaskDetail is rendered there; pending entity ID pattern uses effectiveId override approach
 - [Phase 24]: Inline DB logic in async IPC commands instead of calling create_project() to avoid State<'_> lifetime issues after .await points
 - [Phase 24]: useCreateNewProject.onError does not toast (Create dialog shows inline errors); useCloneProject.onError does toast (git failures are server-side)
+- [Phase 24]: Dual-dialog visibility pattern: main dialog hidden via open={open && !showDirPicker} while FilePicker sub-dialog is open, preserving form state
+- [Phase 24]: Create dialog shows inline text-destructive errors; Clone dialog uses onError toast — split based on whether error is user-correctable
 
 ### Pending Todos
 
