@@ -1,5 +1,36 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { formatDistanceStrict } from "date-fns";
+import { cn } from "@/lib";
+import { TerminalComponent } from "@/components/execution/Terminal";
+import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
+import { Input } from "@/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import type { ExecutionWithTask } from "@/types/bindings";
+
+const STATUS_FILTERS = ["All", "running", "complete", "failed"] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+const STATUS_DOT: Record<string, string> = {
+  running: "bg-warning animate-pulse",
+  complete: "bg-success",
+  failed: "bg-destructive",
+  paused: "bg-muted-foreground",
+  cancelled: "bg-muted",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  running: "Running",
+  complete: "Done",
+  failed: "Failed",
+  paused: "Paused",
+  cancelled: "Cancelled",
+};
+
+function formatElapsed(startedAt: string, completedAt: string | null): string {
+  const start = new Date(startedAt);
+  const end = completedAt ? new Date(completedAt) : new Date();
+  return formatDistanceStrict(start, end);
+}
 
 interface AgentMonitorProps {
   executions: ExecutionWithTask[];
@@ -12,127 +43,109 @@ export function AgentMonitor({
   selectedTaskId,
   onSelect,
 }: AgentMonitorProps) {
-  // Adapt new props to existing local variable names for stub UI (Plan 02 will rewrite)
-  const agents = executions.map((e) => ({
-    id: e.task_id,
-    name: e.task_name,
-    status: e.status === "running" ? ("Running" as const) : ("Idle" as const),
-  }));
-  const activeAgentId = selectedTaskId;
-  const onAgentSelect = onSelect;
-  const [terminalOutput] = useState<string>(
-    "Terminal output will appear here...\n[INFO] System ready\n[INFO] Waiting for agent tasks...",
-  );
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Running":
-        return "bg-warning animate-pulse";
-      case "Idle":
-        return "bg-muted";
-      case "Error":
-        return "bg-error";
-      default:
-        return "bg-muted";
-    }
-  };
+  const filteredExecutions = useMemo(() => {
+    return executions
+      .slice()
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+      .filter((e) => statusFilter === "All" || e.status === statusFilter)
+      .filter((e) =>
+        search.trim() === "" || e.task_name.toLowerCase().includes(search.toLowerCase())
+      );
+  }, [executions, statusFilter, search]);
 
-  const getStatusTextColor = (status: string) => {
-    switch (status) {
-      case "Running":
-        return "text-warning";
-      case "Idle":
-        return "text-muted-foreground";
-      case "Error":
-        return "text-error";
-      default:
-        return "text-muted-foreground";
-    }
-  };
-
-  const handleAgentClick = (agentId: number) => {
-    onAgentSelect?.(agentId);
-  };
+  const selectedExecution = executions.find((e) => e.task_id === selectedTaskId);
 
   return (
-    <div className="flex gap-4 h-full bg-background p-4">
-      {/* Left sidebar: Agent list */}
-      <div className="w-64 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-hidden">
-        {/* Sidebar header */}
+    <div className="flex h-full">
+      {/* Sidebar */}
+      <div className="w-72 flex flex-col border-r border-border bg-card shrink-0">
+        {/* Header */}
         <div className="px-3 py-3 border-b border-border bg-muted/30 font-semibold text-sm">
           Agents
         </div>
 
-        {/* Agent list */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {agents.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-8 text-center">
-              No agents available
-            </div>
-          ) : (
-            agents.map((agent) => (
-              <div
-                key={agent.id}
-                onClick={() => handleAgentClick(agent.id)}
-                className={`
-                  p-3 rounded-lg border border-border cursor-pointer
-                  transition-all duration-200
-                  ${
-                    activeAgentId === agent.id
-                      ? "bg-accent/10 border-ring shadow-md"
-                      : "bg-card hover:shadow-md hover:border-ring"
-                  }
-                `}
+        {/* Filter toolbar */}
+        <div className="h-12 border-b border-border bg-muted/30 flex items-center px-3 gap-2 shrink-0">
+          <Input
+            type="text"
+            placeholder="Search agents..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 w-32 text-sm"
+          />
+          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
+            {STATUS_FILTERS.map((f) => (
+              <ToggleGroupItem
+                key={f}
+                value={f}
+                pressed={statusFilter === f}
+                onClick={() => setStatusFilter(f)}
+                className="text-xs px-2"
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span
-                    className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(
-                      agent.status,
-                    )}`}
-                  ></span>
-                  <span className="font-medium text-sm text-foreground truncate">{agent.name}</span>
-                </div>
-                <div className={`text-xs font-medium ${getStatusTextColor(agent.status)}`}>
-                  {agent.status}
-                </div>
-              </div>
-            ))
+                {f === "All" ? "All" : (STATUS_LABEL[f] ?? f)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+
+        {/* Execution list */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredExecutions.length === 0 && (
+            <div className="text-xs text-muted-foreground py-8 text-center">
+              No agents match your filter
+            </div>
           )}
+          {filteredExecutions.map((execution) => (
+            <div
+              key={execution.id}
+              onClick={() => onSelect(execution.task_id)}
+              className={cn(
+                "px-3 py-3 cursor-pointer border-l-2 transition-colors",
+                execution.task_id === selectedTaskId
+                  ? "border-ring bg-muted/20"
+                  : "border-transparent hover:bg-muted/10"
+              )}
+            >
+              {/* Line 1: status dot + task name */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0",
+                    STATUS_DOT[execution.status] ?? "bg-muted"
+                  )}
+                />
+                <span className="text-sm font-medium truncate">{execution.task_name}</span>
+              </div>
+              {/* Line 2: status label + elapsed time */}
+              <div className="text-xs text-muted-foreground mt-0.5 pl-4">
+                {STATUS_LABEL[execution.status] ?? execution.status} &middot;{" "}
+                {formatElapsed(execution.started_at, execution.completed_at)}
+              </div>
+              {/* Line 3: branch name in monospace */}
+              {execution.branch_name && (
+                <div className="text-xs text-muted-foreground font-mono mt-0.5 pl-4 truncate">
+                  {execution.branch_name}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Right pane: Terminal output */}
-      <div className="flex-1 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-hidden">
-        {/* Terminal header */}
-        <div className="px-4 py-3 border-b border-border bg-muted/30 font-semibold text-sm flex items-center justify-between">
-          <span>Terminal Output</span>
-          {activeAgentId && (
-            <span className="text-xs text-muted-foreground ml-2">Agent #{activeAgentId}</span>
-          )}
-        </div>
-
-        {/* Terminal output */}
-        <div className="flex-1 overflow-y-auto p-4 font-mono text-sm bg-muted/5">
-          {terminalOutput.split("\n").map((line, idx) => {
-            let lineClassName = "text-foreground";
-
-            if (line.includes("[INFO]")) {
-              lineClassName = "text-accent";
-            } else if (line.includes("[WARN]")) {
-              lineClassName = "text-warning";
-            } else if (line.includes("[ERROR]")) {
-              lineClassName = "text-error";
-            } else if (line.includes("[SUCCESS]")) {
-              lineClassName = "text-success";
-            }
-
-            return (
-              <div key={idx} className={`leading-relaxed ${lineClassName}`}>
-                {line || "\u00A0"}
-              </div>
-            );
-          })}
-        </div>
+      {/* Terminal pane */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {selectedExecution?.status === "running" ? (
+          <TerminalComponent key={selectedExecution.task_id} taskId={selectedExecution.task_id} />
+        ) : selectedExecution ? (
+          <DeadSessionTerminal key={selectedExecution.id} execution={selectedExecution} />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+            Select an agent to view its terminal
+          </div>
+        )}
       </div>
     </div>
   );
