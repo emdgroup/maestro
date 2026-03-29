@@ -109,7 +109,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 Plans:
 - [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
 - [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
-- [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
+- [x] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
 **UI hint**: no
 
@@ -145,7 +145,7 @@ Plans:
 **Plans**: 4 plans
 Plans:
 - [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
-- [ ] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
+- [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
 - [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
 **UI hint**: yes
@@ -177,7 +177,7 @@ Plans:
   5. Clicking a task name on a worktree card navigates to Kanban view and highlights that task
 **Plans**: 4 plans
 Plans:
-- [ ] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
+- [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
 - [ ] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
 - [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
@@ -233,7 +233,7 @@ Plans:
 | 13-22 | v1.1 | 36/36 | Complete | 2026-03-16 |
 | 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
-| 25 - Backend Overhaul | v1.3 | 2/4 | In Progress|  |
+| 25 - Backend Overhaul | v1.3 | 3/4 | In Progress|  |
 | 26 - Agents View | v1.3 | 0/? | Not started | - |
 | 27 - Worktrees View | v1.3 | 0/? | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
