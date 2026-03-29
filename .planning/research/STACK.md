@@ -1,333 +1,196 @@
-# Technology Stack - UI Redesign
+# Stack Research
 
-**Project:** GSD Agent Orchestrator (Tauri + React)
-**Researched:** 2026-02-09
-**Focus:** Tailwind CSS + shadcn/ui + Theming additions to existing stack
+**Domain:** Tauri 2 desktop app — v1.3 Agents & Worktrees views + on-demand worktree backend
+**Researched:** 2026-03-29
+**Confidence:** HIGH (all versions verified against npm registry and docs.rs)
 
-## Executive Summary
+## What Already Exists (Do Not Re-Add)
 
-The current app uses basic CSS with CSS variables for theming. This research recommends upgrading to:
-
-1. **Tailwind CSS 4.1** with `@tailwindcss/vite` plugin (replaces hand-written CSS)
-2. **shadcn/ui 0.9.5+** component library (builds on Radix UI + Tailwind)
-3. **Custom theme provider** using Tailwind's CSS variable approach + localStorage (no next-themes dependency)
-4. **CSS Modules** for edge cases where Tailwind utilities are insufficient
-
-This approach keeps the Tauri + Vite + React stack intact while dramatically improving UI consistency, maintainability, and visual polish.
+| Package | Installed Version | Latest Stable | Status |
+|---------|-------------------|---------------|--------|
+| `@xterm/xterm` | `^6.0.0` | 6.0.0 | At latest |
+| `@xterm/addon-fit` | `^0.11.0` | 0.11.0 | At latest |
+| `@xterm/addon-attach` | `^0.12.0` | 0.12.0 | At latest |
+| `@git-diff-view/react` | `^0.1.3` | 0.1.3 | Reuse from review flow |
+| `portable-pty` (Rust) | `0.9.0` | — | PTY sessions, no change needed |
 
 ---
 
-## Recommended Stack
+## New Frontend Packages Needed
 
-### Core Styling
+### Core Technologies
 
-| Technology | Version | Purpose | Why |
-|---|---|---|---|
-| **Tailwind CSS** | 4.1.18 | Utility-first CSS framework | Biggest jump in productivity. Modern CSS features (container queries, cascade layers, wide-gamut colors), smaller bundle (~10kB), no hand-written CSS maintenance |
-| **@tailwindcss/vite** | 4.1.18 | Vite plugin for Tailwind | Simpler than PostCSS setup, optimized for Vite build pipeline, native HMR support in Tauri dev mode |
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `@xterm/addon-search` | `^0.16.0` | In-terminal text search for agent output | Official xtermjs addon, latest stable. Agent logs are long — search is essential. Same namespace/API surface as existing addons, zero integration friction |
+| `@xterm/addon-web-links` | `^0.12.0` | Clickable URLs in terminal output | Official addon, latest stable. Agent output frequently contains file paths and https:// links. Makes terminal output actionable |
 
-### Component Library
+### Supporting Libraries
 
-| Technology | Version | Purpose | Why |
-|---|---|---|---|
-| **shadcn/ui** | 0.9.5+ | Pre-built Radix UI components styled with Tailwind | 80+ components (buttons, forms, dialogs, tables), copy-paste architecture (composable, customizable), theme-aware via CSS variables |
-| **class-variance-authority** | 0.7.1 | Component variant composition | Pairs perfectly with shadcn/ui for flexible, typed component APIs (e.g., `button({ variant: 'primary', size: 'sm' })`) |
-| **clsx** | 2.1.1 | Conditional className utility | Cleaner syntax than ternaries in JSX, works with Tailwind classes |
-| **tailwind-merge** | 3.4.0 | Merge Tailwind class lists intelligently | Prevents class specificity conflicts (e.g., `merge('px-2', 'px-4')` → `px-4`) |
+None needed. All other frontend requirements (diff rendering, state, IPC) are already covered by existing packages.
 
-### Theming
+---
 
-| Technology | Version | Purpose | Why |
-|---|---|---|---|
-| **Tailwind dark mode (CSS variables)** | Native in 4.1 | Dark/light mode support | Built-in, no external dependency. Tailwind's `darkMode: ['class']` + CSS variables for seamless theme switching. Detects system preference via `prefers-color-scheme` by default |
-| **Custom theme hook** | Local | React hook for theme state + localStorage | Replaces next-themes (which is Next.js-only). Simple custom implementation: 3-line hook that reads/writes to localStorage and manages data-theme attribute |
+## New Rust Crates Needed
+
+### Core Technologies
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `git2` | `0.20.4` | Git worktree listing, per-worktree diffs, status | Bindings to libgit2 (battle-tested C library). Provides `Repository::worktrees()`, `diff_tree_to_workdir_with_index()`, `statuses()` — exactly what the Worktrees view needs. Released 2026-02-02 |
+| `notify` | `8.2.0` | Real-time worktree file watching | Cross-platform (macOS FSEvents, Linux inotify, Windows ReadDirectoryChangesW). Use `recommended_watcher()` → emit Tauri events on change. Released 2025-08-03 |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
-|---|---|---|---|
-| **Radix UI** | Latest (pinned in shadcn/ui) | Headless component primitives | Automatically included via shadcn/ui, no direct dependency needed |
-| **lucide-react** | Latest | Icon library | For dashboard icons (Tasks, Agents, Worktrees, Settings). Pairs well with shadcn/ui |
-| **sonner** | 1.5.0+ | Toast notifications | Already in project, works great with Tailwind theming |
-| **react-hook-form** | 7.50.0+ | Form state management | Already in project, pairs well with shadcn/ui forms |
-| **@dnd-kit/*** | 6.3.1+ | Drag-and-drop for Kanban | No changes needed, Tailwind doesn't interfere |
-| **@xterm/xterm** | 5.3.0+ | Terminal emulator | No changes, custom CSS modules for terminal styling |
-
-### Removed (No Longer Needed)
-
-| What | Why |
-|---|---|
-| Hand-written global CSS (index.css, component-level CSS files) | Replaced by Tailwind utilities in JSX |
-| CSS color variables (legacy approach) | Replaced by shadcn/ui's HSL-based CSS variables + Tailwind theme tokens |
-| Custom buttons, form inputs, modals | Replaced by shadcn/ui pre-built components |
+|---------|---------|---------|-------------|
+| `notify` async feature | via `notify` | Tokio-compatible event stream | Enable if you want `async` watcher; otherwise use `spawn_blocking` around the sync channel loop |
 
 ---
 
-## Installation Plan
-
-### Phase 1: Dependencies
+## Installation
 
 ```bash
-# Core Tailwind + Vite integration
-pnpm add -D tailwindcss @tailwindcss/vite
-
-# Component library foundation
-pnpm add class-variance-authority clsx tailwind-merge
-pnpm add @radix-ui/react-slot lucide-react
-
-# Optional but recommended: icons library already matched
-# (lucide-react chosen over feather for more icons and active maintenance)
+# Frontend — two missing xterm addons
+pnpm add @xterm/addon-search@^0.16.0 @xterm/addon-web-links@^0.12.0
 ```
 
-### Phase 2: Vite Configuration
+```toml
+# src-tauri/Cargo.toml — add to [dependencies]
 
-Update `vite.config.ts`:
+# Git operations — vendored libgit2 avoids system dependency (matches rusqlite bundled pattern)
+git2 = { version = "0.20.4", features = ["vendored-libgit2"] }
 
-```typescript
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite"; // ADD THIS
-
-export default defineConfig(async () => ({
-  plugins: [
-    tailwindcss(),  // ADD THIS - before react
-    react(),
-  ],
-  // ... rest of config
-}));
+# File watching — cross-platform, used directly (no Tauri plugin wrapper for v2)
+notify = "8.2.0"
 ```
 
-### Phase 3: Tailwind Configuration
+---
 
-Create `tailwind.config.ts`:
+## API Reference
 
-```typescript
-import type { Config } from "tailwindcss"
+### git2: Worktree Listing
 
-const config: Config = {
-  darkMode: ['class'],
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {
-      colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-      },
-    },
-  },
-  plugins: [],
+```rust
+let repo = Repository::open(project_path)?;
+let worktrees = repo.worktrees()?;           // StringArray of worktree names
+for name in worktrees.iter().flatten() {
+    let wt = repo.find_worktree(name)?;
+    let wt_path = wt.path();                 // &Path — open as separate repo for diff
+    let is_locked = wt.is_locked();
 }
-
-export default config
 ```
 
-### Phase 4: CSS Entry Point
+### git2: Per-Worktree Diff vs HEAD
 
-Replace `src/index.css` with Tailwind imports and CSS variables.
-
-### Phase 5: Initialize shadcn/ui
-
-```bash
-pnpm dlx shadcn-ui@latest init
+```rust
+let wt_repo = Repository::open(worktree_path)?;
+let head_commit = wt_repo.head()?.peel_to_commit()?;
+let head_tree = head_commit.tree()?;
+// Includes both staged and unstaged changes
+let diff = wt_repo.diff_tree_to_workdir_with_index(Some(&head_tree), None)?;
+let stats = diff.stats()?;
+// stats.files_changed(), stats.insertions(), stats.deletions()
 ```
 
-### Phase 6: Add Components
+### git2: Worktree Status (Zombie Detection)
 
-```bash
-pnpm dlx shadcn-ui@latest add button card dialog dropdown-menu input select tabs
+```rust
+let statuses = wt_repo.statuses(None)?;
+// Iterate StatusEntry items; check status flags (INDEX_NEW, WT_MODIFIED, CONFLICTED, etc.)
+// A worktree with no associated task record and no changes = zombie candidate
 ```
 
----
+### notify: Worktree File Watching (Tauri 2 Pattern)
 
-## Migration Path from Current CSS
+```rust
+use notify::{recommended_watcher, RecursiveMode, Watcher};
+use std::sync::mpsc;
 
-### Step 1: Preserve Existing Functionality
-- Current Radix UI usage stays until replaced by shadcn equivalents
-- Existing CSS modules gradually replace with Tailwind
+let (tx, rx) = mpsc::channel();
+let mut watcher = recommended_watcher(tx)?;
+watcher.watch(worktree_path, RecursiveMode::Recursive)?;
 
-### Step 2: Component-by-Component Replacement
-
-| Current | Target | Notes |
-|---|---|---|
-| Hand-written .button CSS | Button from shadcn/ui | Use variant and size props |
-| Hand-written forms | shadcn/ui form components | Integrates with react-hook-form |
-| Custom cards | Card from shadcn/ui | Replaces .app-* CSS |
-| TaskModal, ReviewModal | Dialog from shadcn/ui | Already using Radix Dialog |
-| Custom table styling | Table from shadcn/ui | For execution history |
-| Status badges | Badge from shadcn/ui | Clean styling |
-
-### Step 3: Delete Old CSS Files
-
-Once migrated:
-- Delete `src/styles/*.css`
-- Delete `src/components/*/*.css`
-- Keep CSS modules ONLY for terminal styling and complex layouts
-
----
-
-## Versions & Compatibility
-
-| Dependency | Version | Tauri Compatibility | Notes |
-|---|---|---|---|
-| Tailwind CSS | 4.1.18 | ✓ Full | No breaking changes for Vite/React 19 |
-| @tailwindcss/vite | 4.1.18 | ✓ Full | Recommended for Vite projects |
-| shadcn/ui | 0.9.5+ | ✓ Full | Vite setup officially supported |
-| class-variance-authority | 0.7.1 | ✓ Full | Pure JS, no dependencies |
-| React | 19.2.4 | ✓ Full | Tailwind 4 supports React 19 |
-| Tauri | 2.10+ | ✓ Full | No Tailwind-specific interactions |
-
----
-
-## Tailwind 4 vs 3: Why 4.1?
-
-| Feature | Tailwind 3.4 | Tailwind 4.1 | Impact |
-|---|---|---|---|
-| **Bundle size** | ~18kB | ~10kB | 8kB savings in production |
-| **@tailwindcss/vite** | No | Yes | Much simpler Vite setup |
-| **CSS Variables** | Limited | Full modern support | Better theming flexibility |
-| **Container queries** | Experimental | Stable | Responsive components |
-| **Wide gamut colors** | No | Yes | More vibrant palette |
-
-**Recommendation:** Use 4.1.18. Bundle savings + simpler setup justify the upgrade.
+// Run in tokio::task::spawn_blocking to avoid blocking async runtime
+tokio::task::spawn_blocking(move || {
+    for event in rx {
+        // emit Tauri event to frontend
+        app_handle.emit("worktree-changed", payload)?;
+    }
+});
+```
 
 ---
 
 ## Alternatives Considered
 
-### Why Not PostCSS + Tailwind 3?
-
-@tailwindcss/vite is objectively better for Vite projects:
-- Simpler setup (no postcss.config.js)
-- Faster HMR in Tauri dev mode
-- 8kB smaller bundle
-- Native Vite plugin optimization
-
-### Why Not next-themes?
-
-next-themes is Next.js-only. Custom hook is:
-- Tauri-compatible
-- Lightweight (20 lines of code)
-- Zero bundle overhead
-- Full system dark mode support
-
-### Why Not Radix Themes?
-
-Radix Themes is a full design system (like Material UI). shadcn/ui + Tailwind is:
-- More lightweight
-- Already uses Radix UI primitives
-- More flexible theming
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| `git2` | `gix` (gitoxide) | When eliminating C dependencies is the top priority; gix API is still stabilizing as of 2026 |
+| `git2` | Shell `git` commands (already in codebase) | For simple one-off operations; git2 is better for structured diff/status data |
+| `notify` | `tauri-plugin-fs-watch` | Never — that plugin is Tauri v1 only and not maintained for v2 |
+| `notify` polling fallback (`PollWatcher`) | `notify` with native backend | Only if native backend is unreliable for a specific deployment environment |
+| `@xterm/addon-search` | Custom search overlay | Never — the official addon is maintained by the xtermjs team and matches the existing addon pattern exactly |
 
 ---
 
-## TypeScript Support
+## What NOT to Add
 
-All packages are fully typed:
-- tailwindcss has built-in types
-- shadcn/ui components are JSX with full TS support
-- class-variance-authority provides typed component props
-- Custom useTheme hook is fully typed
-
-No additional @types/* packages needed.
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `tauri-plugin-fs-watch` | Tauri v1 only — repo is read-only mirror, no v2 version exists | `notify` crate directly in Rust |
+| `@xterm/addon-canvas` | Canvas renderer addon; xterm v6 defaults to WebGL — switching renderers is not needed | N/A |
+| `diff2html` or `react-diff-viewer` | Already have `@git-diff-view/react` from review flow — reuse it | `@git-diff-view/react` |
+| `libgit2-sys` directly | Low-level C FFI bindings; `git2` is the safe Rust wrapper | `git2` |
+| `watchexec-lib` | Designed for CLI tool use (re-running commands), not embedded app use | `notify` |
+| `gix` (gitoxide) | Pure-Rust alternative to git2, but API is still stabilizing and lacks worktree support maturity | `git2` |
 
 ---
 
-## Performance Implications
+## Version Compatibility
 
-### Production Build
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@xterm/addon-search@0.16.0` | `@xterm/xterm@6.0.0` | Same `@xterm/*` npm namespace — guaranteed compatibility |
+| `@xterm/addon-web-links@0.12.0` | `@xterm/xterm@6.0.0` | Same namespace — guaranteed compatibility |
+| `git2@0.20.4` | libgit2 >= 1.8 (bundled via `vendored-libgit2` feature) | Mirrors how `rusqlite = { features = ["bundled"] }` works — no system dep |
+| `notify@8.2.0` | `tokio@1.x` | Use `spawn_blocking` for sync channel OR enable `notify`'s `async` feature for native async |
 
-```
-Current (hand-written CSS): ~8kB gzip
-New (Tailwind 4.1): ~3kB gzip
-Savings: ~5kB (37% reduction)
-```
+---
 
-### Development
+## Stack Patterns by Variant
 
-- HMR faster with @tailwindcss/vite (native Vite plugin)
-- Component previews in Tauri dev mode feel snappier
+**If worktree watching is per-view (only active while Worktrees view is open):**
+- Start the `notify` watcher when the Worktrees view mounts, stop it on unmount
+- Frontend calls a `start_worktree_watch` IPC command, backend drops the watcher when the frontend calls `stop_worktree_watch`
 
-### Runtime
+**If worktree watching is always-on (background daemon):**
+- Hold the watcher in `AppState` (behind a Mutex)
+- Start on project open, stop on project close
+- Higher complexity — only worth it if other views need live worktree status
 
-- CSS variables for theming → zero runtime overhead
-- Theme switching is instant (DOM class toggle)
-- No additional JS libraries at runtime
+**If diff display is a quick summary (files changed / lines +/-):**
+- Use `git2` stats only: `diff.stats()?.files_changed()`, `insertions()`, `deletions()`
+- No need to stream patch data
+
+**If diff display is full patch view (Worktrees view shows file-by-file diff):**
+- Use `diff.print(DiffFormat::Patch, callback)` to collect unified diff string
+- Pass to `@git-diff-view/react` (already installed) for rendering — consistent with review flow
 
 ---
 
 ## Sources
 
-- **Tailwind CSS 4.1:** https://tailwindcss.com (official, v4.1.18)
-- **@tailwindcss/vite:** https://tailwindcss.com/docs/installation
-- **shadcn/ui:** https://ui.shadcn.com (Vite setup)
-- **Tailwind dark mode:** https://tailwindcss.com/docs/dark-mode
-- **Reference mockup:** /exemple/agent-cli-orchestration/ (Tailwind 3.4 + shadcn/ui)
+- npm registry `/@xterm/addon-search` — `dist-tags.latest: 0.16.0` (verified 2026-03-29)
+- npm registry `/@xterm/addon-web-links` — `dist-tags.latest: 0.12.0` (verified 2026-03-29)
+- npm registry `/@xterm/xterm` — `dist-tags.latest: 6.0.0` (verified 2026-03-29)
+- npm registry `/@xterm/addon-fit` — `dist-tags.latest: 0.11.0` — already installed at latest (verified 2026-03-29)
+- npm registry `/@xterm/addon-attach` — `dist-tags.latest: 0.12.0` — already installed at latest (verified 2026-03-29)
+- https://docs.rs/git2/latest/git2/ — version 0.20.4, released 2026-02-02; Repository struct diff/worktree/status APIs confirmed (HIGH confidence)
+- https://docs.rs/notify/latest/notify/ — version 8.2.0, released 2025-08-03; cross-platform API confirmed (HIGH confidence)
+- https://github.com/tauri-apps/tauri-plugin-fs-watch — confirmed Tauri v1 only, no v2 version (MEDIUM confidence via repo inspection)
 
 ---
 
-## Migration Timeline Estimate
-
-| Phase | Tasks | Duration |
-|---|---|---|
-| 1. Setup | Install deps, vite.config, tailwind.config.ts | 30 min |
-| 2. CSS foundation | Replace index.css, add useTheme hook, init shadcn/ui | 1 hour |
-| 3. Core components | Replace buttons, cards, dialogs, forms | 3-4 hours |
-| 4. Page layouts | Kanban, agent monitor, worktree manager, settings | 4-6 hours |
-| 5. Fine-tuning | Responsive, dark mode polish, edge cases | 2-3 hours |
-| 6. Testing | Visual regression, viewport testing | 2 hours |
-| **Total** | Full UI redesign | **12-16 hours** |
-
----
-
-## Key Decisions
-
-| Decision | Rationale |
-|---|---|
-| **Tailwind 4.1 + @tailwindcss/vite** | Smallest bundle, fastest HMR, no PostCSS config |
-| **shadcn/ui for components** | Pre-built, accessible, theme-aware, copy-paste |
-| **Custom theme hook (not next-themes)** | Tauri-compatible, lightweight, flexible |
-| **CSS variables for theming** | System dark mode + manual toggle, instant switch |
-| **Keep CSS Modules for edge cases** | Tailwind feels verbose for complex layouts |
-| **Delete old CSS files** | Single source of truth, reduce maintenance |
-
----
-
-## Confidence Level
-
-**HIGH confidence** for all recommendations:
-- Tailwind 4.1 is production-ready (millions of projects use v4+)
-- shadcn/ui explicitly documents Vite support
-- CSS variables + class-based dark mode is native browser feature
-- Custom theme hook is trivial React pattern
-- All versions are current as of 2026-02-09
-
-The only potential unknowns surface during component migration (Phase 3-4) for xterm terminal and diff viewer styling, but won't block the overall approach.
+*Stack research for: Maestro v1.3 — Agents & Worktrees views + on-demand worktree backend*
+*Researched: 2026-03-29*

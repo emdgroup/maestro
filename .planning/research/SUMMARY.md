@@ -1,276 +1,227 @@
-# UI Redesign Research Summary
+# Research Summary: Maestro v1.3
 
-**Project:** GSD Agent Orchestrator v1.1 UI/UX Polish
-**Domain:** Desktop app UI framework modernization (Tailwind CSS + shadcn/ui integration in Tauri 2)
-**Researched:** 2026-02-09
+**Project:** Maestro — Tauri 2 + React 19 desktop app for AI agent orchestration
+**Domain:** Desktop agent monitoring + git worktree management views with backend overhaul
+**Researched:** 2026-03-29
 **Confidence:** HIGH
+
+---
+
+## Synthesis Headline
+
+v1.3 is the **"Make It Real"** milestone. Two placeholder views get replaced with real data and real behavior. Three key themes:
+
+1. **Replace pool with on-demand worktrees** — remove the pool allocation system entirely; create one worktree per task at execution time, delete it on completion
+2. **Wire the Agents view** — real execution list from the DB, live xterm.js terminal attached via Tauri channel, graceful handling of dead PTY sessions
+3. **Wire the Worktrees view** — real git worktree cards from `git worktree list`, right-panel diff view reusing existing `@git-diff-view/react`, zombie detection and cleanup
+
+---
 
 ## Executive Summary
 
-The v1.1 redesign should standardize on **Tailwind CSS 4.1 + @tailwindcss/vite + shadcn/ui 0.9.5+** as the UI framework, replacing hand-written CSS with a utility-first approach. This modernization improves consistency, maintainability, and bundle size (5kB savings) while maintaining the existing Tauri + React 19 stack. The design itself is already established in the mockup (`exemple/agent-cli-orchestration/`) with dark-first theme, green accent color, monospace terminal output, and modern status indicators.
+Maestro v1.3 has an unusually high reuse ratio. Nearly every component needed for the two new views already exists and works: `TerminalComponent`/`ExecutionTerminal` for the live terminal pane, `@git-diff-view/react` for the diff detail panel, `navigationStore` deep linking, TanStack Query service layer, and PTY attach/detach/resize IPC commands. The milestone is primarily about connecting existing pieces to real data — the blocker is a backend that currently serves fake data (hard-coded cards, static sidebar items) and a pool-based worktree model that must be replaced before either view can function correctly.
 
-The migration introduces moderate risk primarily from CSS conflicts during transition and dynamic class name purging in Tailwind production builds. These risks are well-understood and preventable through careful phase planning and testing. The recommended approach is incremental component-by-component migration with parallel CSS systems during transition, phased deletion of old CSS files, and production build validation at each step.
+The backend overhaul is the critical path. Pool removal touches two dangerous spots in `execution_handlers.rs`: the `lease_worktree()` call at spawn time and the `return_worktree` finalization block at completion time. Both must be replaced atomically with on-demand create and delete logic, and the real `git worktree add` implementation (currently a TODO stub in `git/mod.rs`) must exist before either change is made. Only after the backend phase is complete and tested can the frontend phases safely proceed — the views depend on three new IPC commands that do not exist yet (`list_worktrees_with_status`, `list_executions_with_task_info`, `get_worktree_diff`).
 
-Key risks are manageable: dynamic class names can be audited and refactored, CSS conflicts can be isolated by renaming old files, and theme persistence can use Tauri's store API instead of localStorage. The architecture is proven in thousands of production apps and integrates seamlessly with existing dnd-kit drag-drop, Radix UI Dialog, and Sonner toast components.
+The biggest technical risks are the blocking tokio issue (existing git subprocess calls use `std::process::Command` in async handlers — must be converted to `tokio::process::Command` for all new IPC) and the xterm.js lifecycle (Terminal.dispose() + FitAddon + ResizeObserver must all be wired or the Agents view leaks memory on every navigation). Both are well-understood and preventable if the build order is respected.
+
+---
 
 ## Key Findings
 
-### Recommended Stack
+### Stack Additions
 
-From STACK.md, the recommended technology approach prioritizes production efficiency and developer experience:
+The existing stack covers nearly everything. Minimal new packages needed.
 
-**Core technologies:**
-- **Tailwind CSS 4.1.18** — Utility-first CSS generation with @tailwindcss/vite plugin. Chosen over v3 for 8kB bundle savings, faster HMR in dev mode, and simpler Vite integration (no PostCSS config needed).
-- **@tailwindcss/vite 4.1.18** — Vite plugin for Tailwind. Replaces PostCSS setup, native HMR support in Tauri dev mode, smaller bundle output.
-- **shadcn/ui 0.9.5+** — Pre-built, accessible Radix UI components styled with Tailwind. Copy-paste architecture (not npm dependency), theme-aware via CSS variables. 80+ components covers buttons, forms, dialogs, tables, badges.
-- **class-variance-authority 0.7.1** — Component variant composition for flexible, typed component APIs (e.g., `button({ variant: 'primary', size: 'sm' })`).
-- **next-themes** — Theme provider for light/dark mode switching. Works in non-Next.js React. Persists to localStorage and provides system preference detection.
-- **CSS Modules (hybrid)** — For complex layouts, animations, and edge cases where Tailwind utilities feel verbose. Colocated with components.
+**New Rust crates (required):**
+- `git2 = { version = "0.20.4", features = ["vendored-libgit2"] }` — worktree listing, per-worktree diffs, status queries; mirrors how `rusqlite = { features = ["bundled"] }` works, no system dependency
+- `notify = "8.2.0"` — cross-platform file watching (macOS FSEvents, Linux inotify, Windows ReadDirectoryChanges); use `spawn_blocking` for the sync channel loop
 
-**Removed (no longer needed):**
-- Hand-written global CSS files (index.css, component-level CSS)
-- CSS color variables (legacy approach)
-- Custom buttons, form inputs, modals (replaced by shadcn/ui)
+**New frontend packages (optional):**
+- `@xterm/addon-web-links@^0.12.0` — clickable URLs in terminal output; same `@xterm/*` namespace, zero friction; add if time permits
 
-### Expected Features
+**Do not add:** `tauri-plugin-fs-watch` (Tauri v1 only, no v2 version), `gix`/gitoxide (API still stabilizing), any second diff library (reuse `@git-diff-view/react`), `@xterm/addon-search` (deferred to v2 — `ExecutionHistory` already covers completed log search).
 
-From UI_FEATURES.md, the feature landscape defines what makes the interface feel "modern" vs. what's competitive:
+### Feature Decisions
 
-**Must have (table stakes — define "modern UI"):**
-- Dark theme support (CSS variables, next-themes or Zustand store)
-- Monospace terminal output (JetBrains Mono font, 10-12px size)
-- Status indicators with visual hierarchy (colored dots, animated pulse for running)
-- Compact spacing (power-user friendly, text-xs/h-7)
-- Drag-drop Kanban with visual feedback (column highlight, card lift, smooth transitions)
-- Smooth hover state transitions (<100ms via CSS)
-- Accessible modal dialogs (Radix UI, focus trap, Escape key)
-- Proper color contrast (WCAG AA, 4.5:1 minimum)
-- Semantic color meanings (green=success, red=error, yellow=warning, blue=info)
-- Scrollable containers with custom styling (thin scrollbar, muted color)
+**In for v1.3:**
+- Agents view: real execution list via `list_executions_with_task_info` IPC, live xterm.js terminal, status indicators, elapsed time, task name per execution, dead session fallback to DB history, search/filter by status
+- Worktrees view: real git worktree cards via `list_worktrees_with_status` IPC, right-panel diff via `get_worktree_diff` + `@git-diff-view/react`, zombie/prunable badge, delete with confirmation, task link per card, agent status badge per card
+- Backend: on-demand worktree creation in spawn path, deletion on completion, schema v3, 5 pool IPC commands removed, 5 new commands added
 
-**Should have (differentiators):**
-- Inline agent assignment indicators (small pill in card footer)
-- Real-time elapsed time badges (1s updates, blue pulsing)
-- Terminal-style log output with semantic prefixes ([OUT], [ERR], [SYS], [CALL], [RES])
-- Agent monitor sidebar (split view: left agent list, right terminal output)
-- Column-level task counts (badge showing count per status)
-- Colored column accent dots (visual consistency with status)
-- Copy-to-clipboard on logs (right-click or button, toast feedback)
-- Worktree pool status badge (resource constraint visibility)
-- Error state prominence (red badge, error message snippet)
-- Collapse/expand columns (toggle to hide/show, state persisted)
-- Search/filter UI (status, agent, priority dropdowns)
+**Anti-features — explicitly out for v1.3:**
+- Multiple terminals side-by-side or tab strips (sidebar row IS the tab selector)
+- Manual worktree creation from the Worktrees view (worktrees are agent-created per task)
+- Git operations (merge/push/rebase) in the Worktrees view (review flow already owns this)
+- Real-time git status polling on a background interval (expensive; refresh on view open + explicit button is sufficient)
+- Agent scheduling or queuing from the Agents view (Kanban is the dispatcher)
 
-**Anti-features to avoid:**
-- Animated transitions everywhere (distracting, performance hit)
-- Infinite scrolling terminal logs (DOM bloat, browser lag)
-- Customizable color themes (maintenance burden, accessibility fragile)
-- Multi-select task checkboxes (UI complexity, rarely used)
-- Task nesting/sub-tasks (defeats Kanban purpose)
-- Real-time graph animations (expensive, defer to v2)
-- Glassmorphism or heavy gradients (reduces readability, ages fast)
-- Hover tooltips on everything (tooltip storms)
-- Animated loading spinners (overdone, jarring)
-- Light mode as default (contradicts CLI affinity, dark-first better)
-- Fixed header/sidebar (reduces screen real estate)
-- Full-width task modals (overwhelming, compact modal better)
+**Deferred to v2:**
+- `prune_worktrees` batch zombie cleanup IPC (manual delete per-card works for now)
+- Uncommitted file count inline on worktree card (requires `git diff --stat` per worktree at list time — too expensive)
+- `@xterm/addon-search` for live in-terminal search
 
 ### Architecture Approach
 
-From ARCHITECTURE.md, the technical structure keeps existing React + Tauri integration intact while layering modern UI tooling:
+The architecture is strictly layered: Views own TanStack Query hooks and pass data as props to display components. This is the established codebase pattern and must not be broken. The two joined IPC commands (`list_worktrees_with_status`, `list_executions_with_task_info`) must be backend SQL joins — never derive them in the frontend by combining multiple IPC round trips.
 
-**System layers (bottom to top):**
-1. **React Components Layer** — App-specific components (KanbanBoard, TaskCard, etc.)
-2. **Tailwind + CSS Modules Layer** — Utility CSS generation + scoped component styles
-3. **Theme Provider Layer** — next-themes for theme state + localStorage persistence
-4. **Build & Configuration Layer** — Vite + @tailwindcss/vite + PostCSS (optional)
+**Component changes:**
+- `AgentMonitor.tsx` — full rewrite from placeholder; sidebar from `ExecutionWithTask[]`, terminal pane reusing existing `ExecutionTerminal`
+- `WorktreeManager.tsx` — full rewrite from placeholder; card grid from `WorktreeWithStatus[]`, right panel reusing `DiffViewer`
+- `worktree_handlers.rs` — full rewrite in place; remove 5 pool commands, add 5 new commands
+- `execution_handlers.rs` — extend with `list_executions_with_task_info`; modify spawn/resume to call on-demand create; finalization blocks delete not return
+- `models/worktree.rs` — remove `WorktreeStatus` pool enum; add `task_id` FK, `WorktreeWithStatus`, `ExecutionWithTask` view models
+- `db/schema.rs` — bump to schema v3; drop pool columns, add `task_id` FK and `git_status` column
 
-**Major components:**
-1. **shadcn/ui components** (`src/components/ui/`) — Third-party pre-built components, theme-aware via CSS variables
-2. **App-specific components** (`src/components/`) — KanbanBoard, TaskCard, ProjectPicker, AgentMonitor, etc.
-3. **Tailwind utilities** — Layout, spacing, typography, colors via class names
-4. **CSS Modules** — Component-specific one-off styles (animations, complex layouts)
-5. **ThemeProvider** — Wraps entire app, manages theme state + localStorage/Tauri store
-6. **Vite + @tailwindcss/vite** — Compiles Tailwind utilities at dev/build time
-
-**Key patterns:**
-- **Hybrid Tailwind + CSS Modules** — Tailwind for 90% of styling, CSS Modules only for complex state-based styles or animations
-- **Theme Provider at Root** — Single source of truth for theme state via `useTheme()` hook
-- **CSS Variables for Colors** — Tailwind 4's @theme directive, updates dynamically without rebuilding
-- **Data-Attribute Dark Mode** — Use `data-theme="dark"` instead of class (cleaner for desktop apps)
-- **Incremental Component Migration** — Convert components one-by-one, keeping old CSS files until replacement complete
+**Data flow:** Execution sidebar uses 2-second TanStack Query polling (no Tauri event channel needed — status transitions are infrequent). Terminal pane uses existing Tauri Channel + `attach_terminal`/`detach_terminal` keyed by `task_id` (this key must not change — PTY sessions in `AppState` are keyed by `task_id` throughout).
 
 ### Critical Pitfalls
 
-From PITFALLS.md, the top risks and mitigation strategies:
+1. **Pool removal breaks `spawn_agent_execution` before `create_worktree_local` is implemented** — `lease_worktree()` is called at line 120 of `execution_handlers.rs`; removing it without a working `git worktree add` implementation causes PTY spawn to fail with "No such file or directory". Prevention: implement and verify real on-demand worktree creation as a standalone IPC command first; replace the `lease_worktree` call site only after that command is confirmed to produce a real directory on disk.
 
-1. **Dynamic Class Names Purged by Tailwind** — Tailwind scans source for static class strings. Runtime-constructed classes are removed in production builds. **Mitigation:** Always use static class strings (e.g., `error ? 'text-red-600' : 'text-green-600'`), use safelist config for predictable values, or use CSS variables with inline styles for truly dynamic values.
+2. **Return-to-pool finalization block left in `execution_handlers.rs` after pool removal** — Both `spawn_agent_execution` and `resume_agent_execution` tokio closures contain a finalization block that writes `status = 'Available'` back to the DB. This must be replaced with delete logic in the same commit that removes `lease_worktree`. Leaving it produces ghost DB rows that pass the "looks done" check. Prevention: audit every write of `status = 'Available'` in both handler files before declaring pool removal complete.
 
-2. **Theme Flash on App Startup** — Tauri app renders light theme by default, then dark CSS loads after React renders, causing visible flicker. **Mitigation:** Inject theme detection script in `<head>` BEFORE React loads (synchronous, runs before render), configure Tailwind for class-based dark mode, use Tauri system theme detection API on startup.
+3. **`std::process::Command` blocking the tokio runtime in async IPC handlers** — `list_branches_local` and `get_current_branch_local` already have this bug; any new git IPC that copies the pattern will queue all concurrent IPC during the subprocess. Prevention: use `tokio::process::Command` for all subprocess calls in async handlers; if using the `git2` crate (synchronous API), wrap in `tokio::task::spawn_blocking`.
 
-3. **CSS Conflicts Between Old and New** — Hand-written CSS (specificity wars) conflicts with Tailwind utilities during migration. **Mitigation:** Migrate components completely (don't mix systems), rename old CSS files to `.migrate-old.css` (exclude from build), use CSS layers to control specificity, keep CSS Modules only for animations/complex selectors.
+4. **xterm.js Terminal not disposed on React unmount** — Every navigation away from the Agents view without calling `Terminal.dispose()` leaks a DOM canvas + event listeners + a background tokio streaming task (the PTY backend task keeps running until the channel is detected closed). Prevention: always structure the terminal `useEffect` with explicit `terminal.dispose()` + `observer.disconnect()` + channel close in the cleanup function.
 
-4. **Content Configuration Missing or Incorrect** — Tailwind doesn't scan all source files, so classes are purged in production. Works in dev, fails in production. **Mitigation:** Verify `content` glob patterns in `tailwind.config.ts` match file structure, test production build locally (`pnpm build && pnpm preview`), ensure @tailwindcss/vite plugin present in vite.config.ts.
+5. **Dead PTY session causes blank terminal instead of showing history** — `pty_sessions` in `AppState` is in-memory only; it is empty after app restart and for all completed tasks. Calling `attach_terminal` for a non-running execution results in a silent empty channel. Prevention: check `ExecutionLog.status` before calling `attach_terminal`; for non-running executions, fetch `terminal_output` from the DB and write it directly to xterm.js — never call `attach_terminal` on a completed or failed execution.
 
-5. **Radix UI Unstyled Components** — Radix components ship unstyled by design. Adding Radix directly without CSS leaves components broken-looking. **Mitigation:** Use shadcn/ui wrappers (already styled with Tailwind), or manually add Tailwind classes if using Radix directly.
+---
 
 ## Implications for Roadmap
 
-Based on research dependencies, suggested phase structure for v1.1 UI redesign:
+Phases continue from 24. The dependency graph is strict: backend first, then the two frontend views, then cleanup.
 
-### Phase 1: Tailwind + Theme Foundation (1-1.5 days)
-**Rationale:** Must establish CSS framework and theme system before components can be styled. Theming requires synchronous setup to avoid flash-of-unstyled-content on startup.
+### Phase 25: Backend Overhaul — Pool Removal + On-Demand Worktrees + Schema v3
 
-**Delivers:**
-- Tailwind 4.1 installed + @tailwindcss/vite plugin configured in vite.config.ts
-- tailwind.config.ts with CSS variables for color palette (dark theme default)
-- Theme detection script injected in index.html (prevents flash)
-- next-themes integrated with ThemeProvider wrapper in App.tsx
-- CSS entry point (src/index.css) with `@import "tailwindcss"`
-- shadcn/ui initialized with components.json
-
-**Addresses features:** Dark theme support, semantic colors
-
-**Avoids pitfalls:** Theme flash, missing content config, missing @tailwindcss/vite plugin, CSS conflicts (by establishing Tailwind as primary system)
-
-**Research flags:** NONE — all patterns well-documented in official Tailwind/shadcn/next-themes docs
-
-### Phase 2: Core Component Migration (2-3 days)
-**Rationale:** Once foundation is ready, migrate most-used components to shadcn/ui. Establishes pattern for remaining components. Focus on components used across multiple pages (Button, Card, Input, Dialog, Badge).
+**Rationale:** Every other phase depends on this. The three new IPC commands don't exist yet. Pool removal must be complete and tested before any execution flow is touched in later phases. Frontend views still use placeholder data so there are no regressions during this phase.
 
 **Delivers:**
-- Button from shadcn/ui (replaces custom button CSS)
-- Card from shadcn/ui (replaces custom card styling)
-- Dialog from shadcn/ui (already using Radix, seamless swap)
-- Input from shadcn/ui (for forms, search filters)
-- Badge from shadcn/ui (status indicators, tags)
-- Select from shadcn/ui (for dropdowns, filters)
-- Delete corresponding old CSS files (button.css, card.css, etc.)
+- Schema v3 migration (drop pool columns, add `task_id` FK + `git_status`)
+- `models/worktree.rs` overhauled (`WorktreeWithStatus`, `ExecutionWithTask` added; pool enum removed)
+- `git/mod.rs` local stubs implemented: real `git worktree add/remove` via `tokio::process::Command`
+- `worktree_handlers.rs` rewritten: 5 pool commands removed, 5 new commands added (`list_worktrees_with_status`, `get_worktree_diff`, `create_worktree`, `delete_worktree`, `cleanup_zombie_worktrees`)
+- `execution_handlers.rs` modified: spawn/resume use on-demand create; finalization blocks delete not return
+- `execution_handlers.rs` extended: `list_executions_with_task_info` added
+- `lib.rs` command registration updated
+- `pnpm tauri:gen` run to regenerate `bindings.ts`
 
-**Addresses features:** Table stakes UI features (clean component baseline)
+**Pitfalls to avoid:** Pitfalls 1 and 2 (pool removal atomicity), Pitfall 3 (tokio blocking in all new git IPC)
 
-**Avoids pitfalls:** Radix UI unstyled components, CSS conflicts (by deleting old files after migration)
+**Research flag:** Standard patterns — all integration points confirmed via codebase inspection. No additional research needed.
 
-**Research flags:** NONE — shadcn/ui copy-paste workflow is standard
+---
 
-### Phase 3: Page Layout Redesign (2-3 days)
-**Rationale:** With core components ready, redesign main pages using Tailwind utilities + shadcn components. Focus on dense, compact layout (mockup shows text-xs, h-7 buttons, minimal padding).
+### Phase 26: Agents View — Real Data
 
-**Delivers:**
-- ProjectPicker redesigned (simple cards, green accent on hover)
-- KanbanBoard redesigned (columns with accent dots, drag-drop visual feedback)
-- TaskCard redesigned (status badge, agent pill, elapsed time badge, error state)
-- TaskModal redesigned (form styling, inputs, validation feedback)
-- AppHeader redesigned (navigation, theme toggle button)
-
-**Implements architecture patterns:** Hybrid Tailwind + CSS Modules (for Kanban animations), CSS variables for theme colors
-
-**Addresses features:** Kanban drag feedback, status indicators, compact spacing, monospace logs (setup), semantic colors, column task counts, error state prominence
-
-**Avoids pitfalls:** Dynamic class names (audit all interpolations), CSS Modules naming conflicts (use distinct names like `.cardContainer` not `.p4`)
-
-**Research flags:** NONE — layout patterns well-established
-
-### Phase 4: Terminal & Agent Monitor (1.5-2 days)
-**Rationale:** Terminal output and agent monitor are isolated components with special styling needs. Keep CSS Modules for xterm styling complexity.
+**Rationale:** Depends only on Phase 25. Can start immediately after backend is verified. `TerminalComponent` and `ExecutionTerminal` are fully functional — this phase is primarily wiring and state management, not new component work.
 
 **Delivers:**
-- TerminalOutput component redesigned (JetBrains Mono font, 10-12px size, semantic prefix coloring)
-- ExecutionHistory table restyled with shadcn Table component
-- AgentMonitor sidebar implemented (split pane: agent list + terminal output)
-- Copy-to-clipboard on logs (onClick handler + Sonner toast)
-- Monospace terminal CSS in module files (justified complexity)
+- `useExecutionsWithTaskInfoQuery(projectId)` hook added to `execution.service.ts` (2s refetch interval)
+- `AgentMonitor.tsx` rewritten: real sidebar list, live terminal via existing `ExecutionTerminal`, status indicators, elapsed time, task name, search/filter by status
+- `AgentsView.tsx` wired to new hook; data passed as props to `AgentMonitor`
+- Dead session handling: `Running` executions attach to PTY via `attach_terminal`; all others render `terminal_output` from DB via `terminal.write(history)`
+- Tauri channel lifecycle: detach old channel + attach new one on sidebar selection change (channel keyed by `task_id`)
+- Deep link auto-select: `pendingAgentId` from `navigationStore` used for initial selection; fallback to most-recent-running execution
 
-**Implements architecture:** CSS Modules for terminal complexity, shadcn Table component
+**Pitfalls to avoid:** Pitfall 4 (xterm.js dispose/FitAddon/ResizeObserver wiring), Pitfall 5 (dead PTY blank terminal), keep PTY session key as `task_id`
 
-**Addresses features:** Monospace logs, semantic log prefixes, agent monitor sidebar, copy-to-clipboard, scrollable containers
+**Research flag:** Standard patterns. All components exist and work. No research needed.
 
-**Avoids pitfalls:** Using Radix Dialog unstyled (use shadcn wrapper)
+---
 
-**Research flags:** NONE — terminal styling is common pattern
+### Phase 27: Worktrees View — Real Data
 
-### Phase 5: Polish & Testing (1-2 days)
-**Rationale:** Final pass on responsive design, dark mode edge cases, contrast validation, and QA.
+**Rationale:** Depends only on Phase 25. Can run in parallel with Phase 26 or immediately after. `DiffViewer` and `@git-diff-view/react` are already proven in the review flow — this phase reuses them unchanged.
 
 **Delivers:**
-- Responsive design validated (Tailwind breakpoints match mockup)
-- Dark mode toggle tested (persists correctly, no flash on reload)
-- Color contrast validated (WebAIM checker or Lighthouse)
-- Production build tested locally (`pnpm tauri build`)
-- Edge case styling fixed (hover states, focus rings, disabled states)
-- Old CSS files fully deleted (single source of truth)
+- `worktree.service.ts` created with `useWorktreesQuery`, `useWorktreeDiffQuery`, `useDeleteWorktreeMutation`
+- `WorktreeManager.tsx` rewritten: card grid from `WorktreeWithStatus[]`, right panel with diff via `@git-diff-view/react`
+- Zombie/prunable badge surfaced from `is_zombie` field; manual "Clean up" action button (never auto-delete)
+- Delete worktree with confirmation dialog using existing `delete_worktree` IPC
+- Task link per card via `navigationStore.navigate()` deep link to Kanban
+- Agent status badge per card (active/idle from `execution_status` field on `WorktreeWithStatus`)
+- `WorktreesView.tsx` wired to hooks; data passed as props
 
-**Addresses features:** All table stakes + differentiators
+**Pitfalls to avoid:** Zombie detection shown in UI only — never auto-delete. DB state is a hint; `git worktree list` is authoritative for existence.
 
-**Avoids pitfalls:** Production build with purged classes (test prod build), unstyled production (verify all CSS present)
+**Research flag:** Standard patterns. All display components exist. No research needed.
 
-**Research flags:** NONE — testing is standard QA process
+---
+
+### Phase 28: Zombie Cleanup on Project Open
+
+**Rationale:** Depends on Phases 25 and 27. A cleanup pass on startup ensures the Worktrees view starts from a consistent state. Lower priority than the two view phases — app functions correctly without it, since Phase 27 surfaces zombies in the UI for manual cleanup.
+
+**Delivers:**
+- `cleanup_zombie_worktrees(project_id)` IPC command: finds worktrees where `task_id IS NULL` or task status is Done/Archived AND `git worktree list` confirms path exists, attempts `git worktree remove`, deletes DB rows
+- Called from `App.tsx` `useEffect` on project open, replacing `recover_dirty_worktrees`
+- Uses time threshold (e.g., leased_at > 10 minutes ago) to avoid false positives on actively starting agents
+
+**Pitfalls to avoid:** Zombie detection race — never auto-delete based on DB state alone; always cross-check with `git worktree list` before removal.
+
+**Research flag:** Standard patterns. No research needed.
+
+---
 
 ### Phase Ordering Rationale
 
-1. **Foundation first (Phase 1):** Tailwind + theme system must exist before any component can be styled. Theming setup is a one-time cost, cannot be done incrementally.
-2. **Core components second (Phase 2):** Button, Card, Input are used everywhere. Establishing pattern here unblocks page layouts.
-3. **Page layouts third (Phase 3):** Major work is layout. Once components exist, assemble them into pages.
-4. **Specialized components fourth (Phase 4):** Terminal and agent monitor have unique needs (CSS Modules justified). Isolated from main flow.
-5. **Polish last (Phase 5):** Testing and edge cases come after main implementation. No blockers, just quality assurance.
+- Phase 25 must come first — it is a compile-time hard dependency. Without it, three IPC commands that the views depend on do not exist.
+- Phases 26 and 27 are independent of each other and can run in parallel. Phase 26 is higher UX priority (agents view is more frequently navigated than worktrees view).
+- Phase 28 is the only optional phase for the milestone. If time-constrained, the Worktrees view zombie badge + manual delete button from Phase 27 provides adequate coverage.
+- Pool removal in Phase 25 is the riskiest moment in the milestone. The "looks done but isn't" checklist from PITFALLS.md should be run in full before Phase 25 is closed and before any execution flow is touched.
 
 ### Research Flags
 
 Phases needing deeper research during planning:
-- **NONE identified** — All major patterns are well-documented in official Tailwind, shadcn/ui, and Vite docs. Tauri integration is straightforward (no special considerations beyond normal React).
+- **None identified.** All integration points verified by direct codebase inspection. IPC signatures, component boundaries, and data flows are confirmed in source with specific file and line references.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1:** Tailwind + shadcn + next-themes integration is industry standard. Official docs cover all aspects.
-- **Phase 2:** shadcn/ui copy-paste workflow is standard for hundreds of projects.
-- **Phase 3:** Tailwind utilities + dnd-kit for drag-drop are well-established patterns.
-- **Phase 4:** Terminal styling with CSS Modules is common in dev tools.
-- **Phase 5:** Standard QA/testing (no research needed).
+- **Phase 25:** Full Rust backend work — model overhaul and IPC command surface are fully mapped. Build order is clear.
+- **Phase 26:** Frontend wiring — `TerminalComponent` and all service hook patterns already exist in the codebase.
+- **Phase 27:** Frontend wiring — `DiffViewer` and `@git-diff-view/react` usage already proven in the review flow.
+- **Phase 28:** Startup cleanup — simple IPC + idempotent `git worktree remove` calls; no new patterns.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| **Stack** | HIGH | Tailwind 4.1, shadcn/ui, next-themes all production-ready with millions of users. @tailwindcss/vite is official recommendation. Versions pinned as of 2026-02-09. |
-| **Features** | HIGH | Mockup provides explicit visual design. Industry patterns from GitHub Actions, CircleCI, Temporal align with feature choices. Table stakes vs. differentiators clearly delineated. |
-| **Architecture** | HIGH | Component layering, theme provider pattern, CSS variable approach all standard React practices. Integration with existing Tauri + Vite + React 19 stack verified against docs. |
-| **Pitfalls** | HIGH | All pitfalls have well-documented prevention strategies from official sources (Tailwind docs, Vite docs, shadcn docs). Phase-specific warnings backed by community experience. |
+| Stack | HIGH | All versions verified against npm registry and docs.rs as of 2026-03-29. Only 2 new packages needed (`git2`, `notify`). No version conflicts with existing stack. |
+| Features | HIGH | Verified against official xterm.js docs, git-worktree man page, VS Code worktree UI docs, and direct codebase inspection. Feature boundaries are clear and justified. |
+| Architecture | HIGH | Full codebase read. All integration points verified in source. IPC signatures confirmed in `lib.rs`. Reuse ratio is unusually high — most components exist and work today. |
+| Pitfalls | HIGH | All 6 critical pitfalls derived from direct source inspection with specific file:line references (e.g., `execution_handlers.rs:120`, `execution_handlers.rs:350-365`). Not theoretical — confirmed code paths. |
 
 **Overall confidence:** HIGH
 
-All recommendations backed by official documentation and proven patterns in thousands of production apps. No experimental technologies. Only standard risks are CSS conflict management and dynamic class name auditing during migration—both preventable with careful process.
+### Open Questions for Requirements
 
-### Gaps to Address
+1. **Worktree path convention on disk** — Where should on-demand worktrees be created? The old pool used `.worktree-pool/wt-{n}`. ARCHITECTURE.md recommends `.worktrees/agent-task-{id}` inside the repo root for consistency with existing git operations. This should be a named constant confirmed in REQUIREMENTS.md before Phase 25 begins.
 
-1. **xterm.js terminal styling** — CSS Modules approach for xterm justified, but specific color scheme and syntax highlighting not detailed in research. Recommend creating xterm color theme matching Tailwind dark palette during Phase 4 implementation.
+2. **`git_status` computation timing in `list_worktrees_with_status`** — Computing `git_status` requires running `git status --porcelain` per worktree at query time. For v1.3 MVP, per-query is correct and simple. REQUIREMENTS.md should state this explicitly to prevent scope creep toward a background caching layer in Phase 25.
 
-2. **Keyboard shortcuts** — UI_FEATURES.md notes "minimal keyboard shortcuts" but doesn't specify which keys. Recommend defining during Phase 3 planning (Escape for modals, Tab for nav, Cmd/Ctrl+K for search).
+3. **Schema v3 migration strategy** — ARCHITECTURE.md notes "no production data" justifies drop-and-recreate for schema v3 (existing migration pattern). This assumption should be confirmed before Phase 25. If any tester has data they care about, a proper `ALTER TABLE` migration path is needed instead of drop-and-recreate.
 
-3. **Mobile responsiveness** — Research recommends deferring to v2. v1.1 is desktop-first only. If requirement changes, responsive design would add 1-2 days to Phase 3-5.
-
-4. **Light mode timing** — Recommend deferring to v1.2. No technical blocker, but adds work for v1.1. Dark-first for v1.1, light mode follows if demand appears.
-
-5. **Accessibility depth** — Phase 5 focuses on basic tab navigation and semantic HTML. Full screen reader testing deferred to post-launch. If needed, add 1 day to Phase 5.
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- **Tailwind CSS 4.1 Documentation** — https://tailwindcss.com (official, v4.1.18 release, @tailwindcss/vite plugin, dark mode, content configuration)
-- **shadcn/ui Vite Setup** — https://ui.shadcn.com/docs/installation/vite (copy-paste workflow, components.json, path aliases)
-- **next-themes GitHub** — https://github.com/pacocoursey/next-themes (client-side theming, localStorage persistence, system preference detection)
-- **Vite Documentation** — https://vite.dev/config/ (HMR, plugin architecture, CSS module configuration)
+- npm registry — `@xterm/addon-search`, `@xterm/addon-web-links`, `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-attach` (verified 2026-03-29)
+- https://docs.rs/git2/latest/git2/ — `Repository::worktrees()`, diff, status APIs (git2 v0.20.4, released 2026-02-02)
+- https://docs.rs/notify/latest/notify/ — cross-platform watcher API (notify v8.2.0, released 2025-08-03)
+- https://git-scm.com/docs/git-worktree — porcelain format, `prunable` flag definition
+- https://xtermjs.org/docs/ — Terminal lifecycle, addon API surface
+- https://code.visualstudio.com/docs/sourcecontrol/branches-worktrees — worktree UI pattern reference
+- Codebase inspection — `execution_handlers.rs`, `worktree_handlers.rs`, `git/mod.rs`, `process/pty.rs`, `db/connection.rs`, `models/worktree.rs`, `Terminal.tsx`, `WorktreeManager.tsx`, `AgentMonitor.tsx`, `ExecutionHistory.tsx` (HIGH confidence — direct source read with line-level references)
 
 ### Secondary (MEDIUM confidence)
-- **Mockup reference** — `exemple/agent-cli-orchestration/` (Next.js app with target design)
-- **Industry references** — GitHub Actions UI, CircleCI, Temporal (implicit patterns for orchestration UI)
-
-### Tertiary (RESEARCH FILES)
-- **STACK.md** — Technology version matrix, migration path, bundle size analysis
-- **UI_FEATURES.md** — Feature landscape, anti-features, visual design system, component library selection
-- **ARCHITECTURE.md** — System layers, component responsibilities, data flow, build process, scaling considerations
-- **PITFALLS.md** — 10 pitfalls with prevention strategies, phase-specific warnings, migration checklist
+- https://github.com/tauri-apps/tauri-plugin-fs-watch — confirmed Tauri v1 only, no v2 version exists (repo inspection)
 
 ---
 
-*Research completed: 2026-02-09*
+*Research completed: 2026-03-29*
 *Synthesized by: Claude Code (GSD Research Synthesizer)*
-*Ready for roadmap creation: YES*
+*Ready for roadmap: yes*

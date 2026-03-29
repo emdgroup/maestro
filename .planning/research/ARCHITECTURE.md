@@ -1,641 +1,484 @@
-# Architecture: Tailwind 4 + shadcn/ui + Theming in Tauri 2 React
+# Architecture Research: Agents + Worktrees Views with Backend Overhaul
 
-**Domain:** UI framework migration in Tauri desktop apps
-**Researched:** 2026-02-09
-**Confidence:** HIGH (Tailwind 4 + Vite well-documented, shadcn patterns established, Tauri integration straightforward)
+**Domain:** Tauri 2 desktop app — real-time agent monitoring, on-demand worktree management
+**Researched:** 2026-03-29
+**Confidence:** HIGH (full codebase read, all integration points verified in source)
+
+---
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      React Components Layer                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
-│  │  shadcn/   │  │  Custom    │  │   Radix    │  │   Sonner   │ │
-│  │    Button  │  │ Components │  │   Dialog   │  │   Toasts   │ │
-│  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘ │
-│        │                │               │               │        │
-├────────┴────────────────┴───────────────┴───────────────┴────────┤
-│              Tailwind + CSS Modules Layer                         │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌───────────────────┐  ┌──────────────────┐  ┌────────────┐    │
-│  │  Tailwind Utilities│  │  Component.module.css  │ Theme  │    │
-│  │  (generated at    │  │  (Kanban, Terminal,  │  CSS    │    │
-│  │   build time)     │  │   etc.)            │ Vars    │    │
-│  └───────────────────┘  └──────────────────┘  └────────────┘    │
-├─────────────────────────────────────────────────────────────────┤
-│                    Theme Provider Layer                          │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │     ThemeProvider (next-themes)                           │   │
-│  │  - Manages light/dark/system modes                        │   │
-│  │  - Persists preference to localStorage                    │   │
-│  │  - Applies data-theme attribute to <html>                │   │
-│  └──────────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│                   Build & Configuration Layer                    │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌────────────────────┐  ┌─────────────────┐  ┌──────────────┐  │
-│  │  Vite + @tailwindcss  │  │  PostCSS        │  │  tailwind.   │  │
-│  │     /vite plugin       │  │  (optional)     │  │  config.ts   │  │
-│  └────────────────────┘  └─────────────────┘  └──────────────┘  │
-│                                                                   │
-│  ┌────────────────────┐  ┌─────────────────┐  ┌──────────────┐  │
-│  │  components.json   │  │  index.css      │  │  App.css     │  │
-│  │  (shadcn config)   │  │  (@import       │  │  (theme      │  │
-│  │                    │  │   tailwindcss)  │  │   overrides) │  │
-│  └────────────────────┘  └─────────────────┘  └──────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         React 19 View Layer                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │  AgentsView  │  │WorktreesView │  │  KanbanView  │  (existing)    │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘               │
+│         │                  │                                          │
+├─────────┴──────────────────┴─────────────────────────────────────────┤
+│                       Component Layer                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │ AgentMonitor │  │WorktreeMgr   │  │ExecutionTerm │  (rewritten)   │
+│  │ (real data)  │  │ (real data)  │  │  (xterm.js)  │               │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘               │
+│         │                  │                  │                       │
+├─────────┴──────────────────┴──────────────────┴──────────────────────┤
+│                    Service / TanStack Query Layer                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │execution.svc │  │ worktree.svc │  │  Tauri Chan  │  (new/extend)  │
+│  │  useQuery()  │  │  useQuery()  │  │  PTY stream  │               │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘               │
+│         │                  │                  │                       │
+├─────────┴──────────────────┴──────────────────┴──────────────────────┤
+│                   Tauri IPC Boundary (invoke)                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                        Rust Backend                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │  execution_  │  │  worktree_   │  │   git/       │               │
+│  │  handlers.rs │  │  handlers.rs │  │   mod.rs     │               │
+│  │  (existing + │  │  (rewritten) │  │  (existing)  │               │
+│  │   new cmds)  │  │              │  │              │               │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘               │
+│         │                  │                  │                       │
+│  ┌──────┴───────────────────┴──────────────────┴──────────────┐      │
+│  │                   AppState (Arc<AppState>)                   │      │
+│  │   db: Mutex<Connection>  |  pty_sessions: HashMap           │      │
+│  │   ssh_sessions: HashMap  |  ssh_passwords: HashMap          │      │
+│  └──────────────────────────────────────────────────────────────┘      │
+│                         SQLite (schema v3)                             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Implementation |
-|-----------|----------------|-----------------|
-| React Components | UI rendering, event handling, state binding | Traditional TSX components |
-| shadcn/ui | Pre-built, accessible, headless components | Copy-to-project components with Tailwind |
-| Tailwind Utilities | Layout, spacing, typography, colors | CSS class names on elements |
-| CSS Modules | Component-specific one-off styles | `.css` files alongside components |
-| ThemeProvider | Theme state management, persistence, OS detection | next-themes library wrapper |
-| Vite + @tailwindcss/vite | CSS generation, hot module reload, build output | Compile Tailwind to CSS at dev/build time |
-| PostCSS (optional) | Plugin pipeline for CSS transformations | Only needed for advanced features beyond Tailwind |
+| Component | Responsibility | Status |
+|-----------|----------------|--------|
+| `AgentsView` | Page orchestrator; consumes `pendingAgentId` from navigationStore | Exists — wire to real data |
+| `AgentMonitor` | Sidebar execution list + xterm.js terminal pane | Rewrite from placeholder |
+| `WorktreesView` | Page orchestrator; consumes `pendingWorktreeId` from navigationStore | Exists — wire to real data |
+| `WorktreeManager` | Card grid + right detail panel with git diff | Rewrite from placeholder |
+| `execution.service.ts` | TanStack Query hooks for execution logs and PTY ops | Extend with list/query hooks |
+| `worktree.service.ts` | TanStack Query hooks for worktree CRUD and diff | New file |
+| `worktree_handlers.rs` | IPC commands for listing, creating, deleting worktrees | Full rewrite |
+| `execution_handlers.rs` | IPC commands for execution + terminal streaming | Extend with list hook |
+| `models/worktree.rs` | Worktree Rust struct | Overhaul (remove pool fields, add task_id) |
 
-## Recommended Project Structure
+---
+
+## Integration Points: New vs Modified
+
+### New IPC Commands (Rust)
+
+These commands do not exist today and must be added to `worktree_handlers.rs` (or a new handler file) and registered in `lib.rs`:
+
+| Command | Signature | Purpose |
+|---------|-----------|---------|
+| `list_worktrees_with_status` | `(project_id: i32) -> Vec<WorktreeWithStatus>` | Full worktree listing with task name, branch, git_status fields for the view |
+| `get_worktree_diff` | `(project_id: i32, worktree_id: i32) -> String` | Raw unified diff for selected worktree (feeds `@git-diff-view/react`) |
+| `create_worktree` | `(project_id: i32, task_id: i32, branch_name: String) -> Worktree` | On-demand worktree creation; replaces pool allocation in spawn path |
+| `delete_worktree` | `(project_id: i32, worktree_id: i32) -> ()` | Delete worktree + branch; replaces `cleanup_worktree` in manual flow |
+| `list_executions_with_task_info` | `(project_id: i32) -> Vec<ExecutionWithTask>` | All executions for the Agents sidebar, joined with task name + status |
+
+### Modified IPC Commands (Rust)
+
+| Command | Current Behavior | Change |
+|---------|-----------------|--------|
+| `spawn_agent_execution` | Calls `lease_worktree()` (pool) | Replace lease call with `create_worktree()` on-demand; worktree created fresh per execution |
+| `resume_agent_execution` | Calls `lease_worktree()` (pool) | Same change — on-demand worktree |
+| `cleanup_worktree` | Returns worktree to pool as Available | Delete worktree entirely instead; no pool return |
+
+### Commands to Remove (Rust)
+
+These become dead code once pool logic is gone:
+
+| Command | Reason |
+|---------|--------|
+| `lease_worktree` | Pool concept removed |
+| `return_worktree` | Pool concept removed |
+| `get_pool_status` | Pool concept removed |
+| `initialize_worktree_pool` | Pool concept removed |
+| `recover_dirty_worktrees` | Replace with simpler zombie cleanup on startup |
+
+### New Frontend Services
+
+| File | Hooks | Purpose |
+|------|-------|---------|
+| `src/services/worktree.service.ts` | `useWorktreesQuery`, `useWorktreeDiffQuery`, `useCreateWorktreeMutation`, `useDeleteWorktreeMutation` | All worktree UI data needs |
+| `src/services/execution.service.ts` (extend) | `useExecutionsWithTaskInfoQuery` | Agent sidebar list data |
+
+---
+
+## Rust Model Changes
+
+### Worktree Model Overhaul
+
+**Current `models/worktree.rs`:**
+```rust
+pub enum WorktreeStatus { Available, Leased, InUse, Dirty }
+pub struct Worktree {
+    pub id: i32,
+    pub project_id: i32,
+    pub branch_name: String,
+    pub path: String,
+    pub status: WorktreeStatus,       // pool lifecycle — remove
+    pub leased_at: Option<String>,    // pool lifecycle — remove
+    pub returned_at: Option<String>,  // pool lifecycle — remove
+    pub created_at: String,
+}
+```
+
+**Recommended `models/worktree.rs` after overhaul:**
+```rust
+pub struct Worktree {
+    pub id: i32,
+    pub project_id: i32,
+    pub task_id: Option<i32>,         // FK to task currently using this worktree
+    pub branch_name: String,
+    pub path: String,
+    pub git_status: String,           // "clean" | "dirty" | "unknown"
+    pub is_zombie: bool,              // no live PTY session + no active task
+    pub created_at: String,
+}
+
+// New view model — returned by list_worktrees_with_status
+pub struct WorktreeWithStatus {
+    pub worktree: Worktree,
+    pub task_name: Option<String>,    // joined from tasks table
+    pub execution_status: Option<ExecutionStatus>,
+    pub last_commit_hash: Option<String>,
+    pub last_commit_message: Option<String>,
+    pub uncommitted_file_count: i32,
+}
+```
+
+**New execution view model — returned by list_executions_with_task_info:**
+```rust
+pub struct ExecutionWithTask {
+    pub log: ExecutionLog,
+    pub task_id: i32,
+    pub task_name: String,
+    pub task_status: TaskStatus,
+}
+```
+
+### Database Schema Change (v3)
+
+The `worktrees` table needs migration:
+
+```sql
+-- Remove pool columns, add task_id FK and git_status
+ALTER TABLE worktrees DROP COLUMN status;
+ALTER TABLE worktrees DROP COLUMN leased_at;
+ALTER TABLE worktrees DROP COLUMN returned_at;
+ALTER TABLE worktrees ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
+ALTER TABLE worktrees ADD COLUMN git_status TEXT NOT NULL DEFAULT 'unknown';
+```
+
+Increment `SCHEMA_VERSION` to 3 in `db/schema.rs`. Because there is no production data yet (app not publicly released), the existing schema migration pattern — drop all tables and recreate — is the correct approach.
+
+---
+
+## Data Flow: Real-Time Execution Status
+
+### Pattern: TanStack Query Polling for Execution List
+
+The Agents sidebar (execution list) does not need a Tauri event channel. It needs a list that refreshes when executions change. Use TanStack Query with a short `refetchInterval`:
+
+```
+User opens Agents tab
+    → useExecutionsWithTaskInfoQuery(projectId, { refetchInterval: 2000 })
+    → invoke("list_executions_with_task_info", { projectId })
+    → Rust: JOIN execution_logs + tasks, return Vec<ExecutionWithTask>
+    → Component renders sidebar list, auto-refreshes every 2s
+```
+
+The 2-second poll is sufficient because execution state changes are infrequent (seconds-long transitions) and SQLite reads are fast. A Tauri event channel for status updates would add complexity without meaningful benefit here.
+
+### Pattern: Tauri Channel for PTY Terminal Output
+
+The live terminal pane uses the existing `attach_terminal` / `detach_terminal` commands and a `Channel<String>` — this pattern already works and does not change. The new `AgentMonitor` component reuses `ExecutionTerminal` (which already wraps xterm.js) unchanged.
+
+```
+User selects execution in sidebar
+    → component calls useAttachTerminalMutation({ taskId, outputChannel })
+    → Rust streams PTY bytes over Tauri channel
+    → xterm.js Terminal receives chunks via onmessage handler
+    → On sidebar selection change: detach old channel, attach new one
+```
+
+**Key constraint:** PTY sessions are keyed by `task_id` in `AppState.pty_sessions`. The Agents view must translate "execution selected" into `task_id` (available on `ExecutionLog.task_id`). No change to the PTY session key needed.
+
+### Pattern: On-Demand Worktree Creation in spawn_agent_execution
+
+```
+User clicks "Run" on task
+    → useSpawnExecutionMutation({ projectId, taskId, repoPath })
+    → invoke("spawn_agent_execution")
+    → Rust: create execution log
+    → Rust: invoke create_worktree(project_id, task_id, branch_name)
+        → git::create_worktree(conn, branch, worktree_name)  [already exists in git/mod.rs]
+        → INSERT into worktrees with task_id FK
+    → Rust: spawn PTY, store session
+    → On completion/failure: DELETE from worktrees (not return to pool)
+```
+
+The `git::create_worktree` function in `git/mod.rs` already has the dispatcher pattern for local vs remote. The local implementation is currently a TODO stub — it must be implemented as part of v1.3 backend work.
+
+### Pattern: Git Diff at IPC Call Time (Synchronous)
+
+Git diff computation happens synchronously when `get_worktree_diff` is called. No background job needed:
+
+```
+User selects worktree card
+    → useWorktreeDiffQuery(projectId, worktreeId)
+    → invoke("get_worktree_diff", { projectId, worktreeId })
+    → Rust: lookup worktree path + branch_name from DB
+    → Rust: call git::git_diff(conn, branch, "main")  [already exists in git/mod.rs]
+    → Return unified diff string
+    → Frontend: pass to @git-diff-view/react (already used in review flow)
+```
+
+This is synchronous per-request rather than background-computed because:
+- Diff size is bounded (agent branches are typically small)
+- The existing `git::git_diff` dispatcher already handles local + remote
+- A background cache would add state management complexity without clear benefit
+
+---
+
+## Recommended Project Structure Changes
+
+### Frontend
 
 ```
 src/
 ├── components/
-│   ├── ui/                         # shadcn components (copy from CLI)
-│   │   ├── button.tsx
-│   │   ├── dialog.tsx
-│   │   ├── select.tsx
-│   │   └── [...]
-│   ├── KanbanBoard.tsx             # App-specific components
-│   ├── KanbanBoard.module.css      # Component-scoped styles (if needed)
-│   ├── TaskCard.tsx
-│   ├── TaskCard.module.css
-│   ├── ProjectPicker.tsx
-│   ├── ProjectSettingsModal.tsx
-│   └── [...]
-├── store/
-│   └── boardStore.ts              # Zustand state management
-├── styles/
-│   ├── index.css                  # Root: @import "tailwindcss"
-│   ├── App.css                    # App-level CSS variables, theme overrides
-│   └── globals.css                # (Optional) shared utility classes
-├── types/
-│   └── bindings.ts                # Auto-generated from Rust
-├── lib/
-│   └── [utilities]
-├── App.tsx                        # Root wrapped with ThemeProvider
-└── main.tsx                       # App mount point
+│   └── execution/
+│       ├── AgentMonitor.tsx        # REWRITE: real data, xterm.js terminal pane
+│       ├── WorktreeManager.tsx     # REWRITE: real data, diff detail panel
+│       ├── ExecutionTerminal.tsx   # keep — xterm.js wrapper, reuse in AgentMonitor
+│       ├── DiffViewer.tsx          # keep — used by WorktreeManager detail panel
+│       ├── Terminal.tsx            # keep
+│       ├── ExecutionHistory.tsx    # keep
+│       └── FileTree.tsx            # keep
+├── services/
+│   ├── execution.service.ts        # EXTEND: add useExecutionsWithTaskInfoQuery
+│   └── worktree.service.ts         # NEW: all worktree hooks
+└── views/
+    ├── AgentsView.tsx              # WIRE: connect to execution.service hooks
+    └── WorktreesView.tsx           # WIRE: connect to worktree.service hooks
 ```
 
-### Structure Rationale
+### Backend
 
-- **`components/ui/`:** Separate shadcn components to clarify they're third-party. Enables bulk updates or replacement.
-- **`components/`:** App-specific components stay at this level, not nested deeper (flatter structure for easier imports).
-- **`.module.css` files:** Colocated with components. CSS Modules prevent naming conflicts, improve maintainability for one-off styles.
-- **`styles/index.css`:** Single entry point for Tailwind. All theme configuration and global utilities here.
-- **`App.tsx` root level:** ThemeProvider wraps entire app, enabling theme context everywhere.
+```
+src-tauri/src/
+├── models/
+│   └── worktree.rs                 # OVERHAUL: remove pool fields, add task_id + WorktreeWithStatus
+├── ipc/
+│   ├── worktree_handlers.rs        # REWRITE: remove pool commands, add list/create/delete/diff
+│   └── execution_handlers.rs      # EXTEND: add list_executions_with_task_info
+├── git/
+│   └── mod.rs                      # IMPLEMENT: create_worktree_local, delete_worktree_local, git_diff_local stubs
+└── db/
+    └── schema.rs                   # MIGRATE: schema v3, worktrees table changes
+```
+
+---
 
 ## Architectural Patterns
 
-### Pattern 1: Tailwind + CSS Modules (Hybrid)
+### Pattern 1: View Owns Query, Component Receives Data
 
-**What:** Use Tailwind utilities for layout/spacing, CSS Modules for component-specific styles that need scoping or complexity.
+**What:** `AgentsView` and `WorktreesView` own their TanStack Query hooks. Child components (`AgentMonitor`, `WorktreeManager`) receive data as props.
 
-**When to use:**
-- Most of the time — Tailwind for 90% of styling
-- CSS Modules only when: component has complex state-based styles, needs animation definitions, or has BEM-like naming
+**When to use:** Always — this is the established pattern in the codebase. Views are page-level orchestrators; components are display units.
 
-**Trade-offs:**
-- Pro: Best of both worlds — utility speed with scoped safety
-- Pro: Easy to refactor — delete `.module.css` when component simplifies
-- Con: Two parallel style systems to maintain
-- Con: Slight build complexity for dual pipelines
+**Trade-offs:** Slight prop drilling. The alternative (components owning queries) creates scattered invalidation logic and harder testing. The existing codebase is consistent on this pattern — don't break it.
 
-**Example:**
+### Pattern 2: Tauri Channel Lifecycle Tied to Selection State
+
+**What:** When the user selects a different agent in the sidebar, detach the old terminal channel and attach the new one. Channel is created fresh per selection.
+
+**When to use:** Any time a single terminal pane must display different PTY sessions based on list selection.
+
+**Example pattern:**
 ```typescript
-// KanbanBoard.tsx
-import styles from "./KanbanBoard.module.css";
+const prevTaskIdRef = useRef<number | null>(null);
 
-export function KanbanBoard() {
-  return (
-    <div className="flex h-screen gap-4 bg-background p-4">
-      {/* Tailwind for layout */}
-      <div className={styles.column}>
-        {/* CSS Modules for component-specific animation */}
-        Backlog
-      </div>
-    </div>
-  );
-}
+useEffect(() => {
+  if (selectedTaskId === prevTaskIdRef.current) return;
+  if (prevTaskIdRef.current) detachTerminal(prevTaskIdRef.current);
+  if (selectedTaskId) attachTerminal(selectedTaskId, new Channel());
+  prevTaskIdRef.current = selectedTaskId;
+}, [selectedTaskId]);
 ```
 
-```css
-/* KanbanBoard.module.css */
-.column {
-  animation: slideIn 0.3s ease-out;
-}
+**Trade-offs:** Creates a new channel object per selection. Acceptable — channels are lightweight. The alternative (keeping one channel and re-pointing it) is not supported by the Tauri channel API.
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
-}
+### Pattern 3: Discriminated Union for Dead Session Handling
+
+**What:** An execution may exist in the database but have no live PTY session (process exited or app restarted). The frontend must handle this gracefully.
+
+**When to use:** When rendering agent cards in the sidebar and when attempting to attach terminal.
+
+**Implementation:** `attach_terminal` already returns `Err("No PTY session for task {}")`. The component should catch this error and show a "Session ended — view history" state rather than an error toast. The `ExecutionStatus` enum (Running / Complete / Failed / Paused / Cancelled) is the source of truth for this state — only `Running` status should attempt PTY attachment.
+
+### Pattern 4: On-Demand Worktree Lifecycle (replaces pool)
+
+**What:** Create exactly one worktree per task execution, delete it when done. No pre-allocation, no pool.
+
+**Lifecycle:**
+```
+spawn_agent_execution
+  → git worktree add .worktrees/task-{id} -b agent/task-{id}
+  → INSERT worktrees (task_id={id}, path=..., git_status='clean')
+  → PTY spawn in worktree path
+  → [execution runs]
+  → on complete/error: git worktree remove + branch delete
+  → DELETE FROM worktrees WHERE id=...
 ```
 
-### Pattern 2: Theme Provider at Root
+**Trade-offs:** No pre-allocation means slight startup latency per task (git worktree add takes ~200-500ms locally). This is acceptable — the pool pre-creation was premature optimization for an MVP.
 
-**What:** Wrap entire app with `<ThemeProvider>` at the topmost level to enable `useTheme` hook throughout component tree.
-
-**When to use:** Always — this is the foundation for theme switching.
-
-**Trade-offs:**
-- Pro: Single source of truth for theme state
-- Pro: Avoids prop drilling for theme
-- Con: Adds one wrapper component to React tree
-- Con: SSR complications (mitigated in Tauri — no SSR)
-
-**Example:**
-```typescript
-// App.tsx
-import { ThemeProvider } from "next-themes";
-
-export function App() {
-  return (
-    <ThemeProvider
-      attribute="data-theme"
-      defaultTheme="system"
-      enableSystem
-      storageKey="app-theme"
-    >
-      {/* All components here have access to useTheme() */}
-      <KanbanBoard />
-    </ThemeProvider>
-  );
-}
-
-// Inside any nested component
-import { useTheme } from "next-themes";
-
-function Settings() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-      Toggle theme
-    </button>
-  );
-}
-```
-
-### Pattern 3: CSS Variables for Colors (Tailwind 4 Native)
-
-**What:** Define theme colors as CSS variables using `@theme` directive. Tailwind 4 automatically exposes all theme tokens as CSS variables.
-
-**When to use:** Always in Tailwind 4. Replaces separate theme config files.
-
-**Trade-offs:**
-- Pro: Colors update dynamically without rebuilding
-- Pro: Simpler to override specific tokens
-- Pro: CSS-in-CSS (no JavaScript theme config needed)
-- Con: Requires Tailwind 4+ (breaking change from v3)
-
-**Example:**
-```css
-/* src/styles/index.css */
-@import "tailwindcss";
-
-@theme {
-  --color-primary-500: oklch(0.62 0.22 257.65);
-  --color-success-500: oklch(0.71 0.13 142.48);
-  --color-destructive-500: oklch(0.63 0.26 29.23);
-}
-```
-
-### Pattern 4: Data-Attribute Dark Mode (Tauri-Friendly)
-
-**What:** Use `data-theme` attribute (instead of class) on `<html>` for theme switching. Works better in Tauri without SSR complexity.
-
-**When to use:** In Tauri (and any non-SSR context). Simpler than class strategy.
-
-**Trade-offs:**
-- Pro: Avoids SSR hydration mismatches (none in Tauri anyway)
-- Pro: Cleaner CSS selectors with data attributes
-- Con: Class strategy is more common in web
-- Con: Requires custom CSS variant in Tailwind
-
-**Example:**
-```css
-/* src/styles/App.css */
-/* Override Tailwind's dark variant to use data attribute */
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
-```
-
-```typescript
-// ThemeProvider configuration in App.tsx
-<ThemeProvider
-  attribute="data-theme"
-  values={{
-    light: "light",
-    dark: "dark",
-    system: "system"
-  }}
->
-```
-
-### Pattern 5: Incremental Component Migration
-
-**What:** Convert existing components to shadcn one-by-one, keeping old CSS files until replacement is complete.
-
-**When to use:** During migration phase (Phase 1 of roadmap).
-
-**Trade-offs:**
-- Pro: Reduces risk — test each component change independently
-- Pro: Keeps app working throughout migration
-- Con: Temporary code duplication
-- Con: Two component libraries in use simultaneously
-
-**Example Migration Path:**
-```
-Week 1: TaskCard → shadcn Button + Card
-  - Old: TaskCard.tsx uses .css file
-  - New: KanbanBoard now imports shadcn Button
-  - Delete: TaskCard.css after full migration
-
-Week 2: KanbanBoard columns → shadcn Card
-  - Old: Custom column divs
-  - New: shadcn Card wrapper
-  - CSS Modules for drag-drop animations stay
-
-Week 3: Modals → shadcn Dialog
-  - Old: Custom modal divs with Radix
-  - New: shadcn Dialog (built on Radix already)
-  - Seamless switch — same underlying library
-```
-
-## Data Flow
-
-### Theme State Flow
-
-```
-User clicks "Dark mode" toggle
-    ↓
-useTheme().setTheme("dark") called
-    ↓
-ThemeProvider updates state + localStorage
-    ↓
-data-theme="dark" applied to <html>
-    ↓
-CSS dark: variants activate globally
-    ↓
-Component re-renders with dark colors
-    ↓
-CSS variables reflect dark theme
-```
-
-### Style Resolution Order (Highest to Lowest Priority)
-
-```
-1. Inline styles (avoid)
-   ↓
-2. CSS Modules (.module.css)
-   ↓
-3. Component-scoped CSS (imported .css files)
-   ↓
-4. Tailwind utilities (class names)
-   ↓
-5. Global CSS (App.css, index.css)
-   ↓
-6. Browser defaults
-```
-
-### Build-Time CSS Generation
-
-```
-.tsx files written by developer
-    ↓
-Vite scans for class names (e.g., "p-4 bg-background")
-    ↓
-@tailwindcss/vite plugin intercepts
-    ↓
-Generates matching CSS rules (p-4 → padding: 1rem, etc.)
-    ↓
-CSS written to bundle
-    ↓
-Browser receives optimized stylesheet (only used classes)
-```
-
-### Component Import Flow (shadcn)
-
-```
-Developer runs: pnpm dlx shadcn@latest add button
-    ↓
-CLI reads components.json config
-    ↓
-Downloads button.tsx from registry
-    ↓
-Copies to src/components/ui/button.tsx
-    ↓
-Developer imports: import { Button } from "@/components/ui/button"
-    ↓
-Button renders with project's Tailwind tokens
-    ↓
-(No npm dependency — code is yours to modify)
-```
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Single user (MVP) | Tailwind + shadcn + next-themes handles everything. No database needed for theme (localStorage sufficient). |
-| 100s of users | Theme data moves to database (if app stores user preferences server-side for future cloud features). CSS bundle stable — Tailwind outputs same file regardless of user count. |
-| 1000s of users | Consider lazy-loading shadcn components if using 50+ components. Tree-shake unused Tailwind utilities (already automatic with Vite). |
-| 10k+ users | CSS-in-JS optional if dynamic theming needed beyond light/dark. Current approach scales fine. |
-
-### Scaling Priorities
-
-1. **First optimization:** Lazy-load shadcn components (use dynamic imports for modals, settings) — biggest impact on initial load.
-2. **Second optimization:** CSS critical path inlining (Vite does this automatically) — ensures no flash of unstyled content.
-3. **Third optimization:** Theme persistence via Tauri store (instead of localStorage) — survives app updates.
-
-## Tauri-Specific Considerations
-
-### Challenge 1: No SSR (Actually an Advantage)
-
-**Problem in web apps:** Flash of wrong theme on initial page load because theme CSS loads after JavaScript hydrates.
-
-**Solution in Tauri:** No server-side rendering exists. App always renders client-side. `next-themes` script runs before React renders. **No flash possible.**
-
-**Implementation:** Use `disableTransitionOnChange={false}` safely in Tauri (transitions won't appear jarring since no hydration mismatch).
-
-```typescript
-<ThemeProvider
-  attribute="data-theme"
-  defaultTheme="system"
-  enableSystem
-  disableTransitionOnChange={false}  // Safe in Tauri
->
-```
-
-### Challenge 2: Vite HMR in Dev Mode
-
-**Problem:** Vite dev server needs to hot-reload CSS when theme changes.
-
-**Solution:** Already configured in vite.config.ts. Tauri plugin handles this.
-
-**Verification:** In `vite.config.ts`, HMR port is 5174 (different from 5173):
-```typescript
-hmr: host
-  ? { protocol: "ws", host, port: 5174 }
-  : undefined,
-```
-
-### Challenge 3: Theme Persistence Beyond localStorage
-
-**Problem:** localStorage is not ideal for desktop apps (could be lost on app update, not Tauri-aware).
-
-**Solution Option 1 (recommended):** Use Tauri's `@tauri-apps/plugin-store` for persistent theme.
-
-```typescript
-import { Store } from "@tauri-apps/plugin-store";
-
-const store = new Store(".preferences.dat");
-
-// On app init
-const savedTheme = await store.get("theme") || "system";
-setTheme(savedTheme);
-
-// On theme change
-await store.set("theme", newTheme);
-await store.save();
-```
-
-**Solution Option 2:** Keep localStorage (simpler, sufficient for MVP).
+---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Tailwind config bloat (v3 mistake, avoid in v4)
+### Anti-Pattern 1: Polling the Execution Log for Terminal Output
 
-**What people do:** Define every custom color in `tailwind.config.js` (v3 approach).
+**What people do:** Use `useQuery` with `refetchInterval` on `get_execution_logs` to get `terminal_output` text and display it in a div.
 
-**Why it's wrong:** Tailwind 4 uses CSS-first `@theme` directives. Old approach defeats simplicity advantage of v4.
+**Why it's wrong:** `terminal_output` is a TEXT column in SQLite that grows continuously. Polling it causes the entire blob to be fetched and re-rendered on every interval. xterm.js is designed to receive incremental chunks via the Tauri channel, not full replays.
 
-**Do this instead:**
-```css
-/* src/styles/App.css - NOT tailwind.config.js */
-@import "tailwindcss";
+**Do this instead:** Use the Tauri channel (`attach_terminal`) for live streaming. For dead sessions (execution completed), fetch `terminal_output` once via `get_execution_logs` and write it to xterm.js on mount with `terminal.write(history)`. The `attach_terminal` command already supports `include_history: true` for this exact use case.
 
-@theme {
-  --color-brand-500: oklch(0.55 0.20 257);
-}
-```
+### Anti-Pattern 2: Placing New IPC Commands in a New Handler File
 
-### Anti-Pattern 2: CSS Modules for everything
+**What people do:** Create `src-tauri/src/ipc/worktree_v2_handlers.rs` to avoid touching the existing worktree handler.
 
-**What people do:** Create `.module.css` files for every component, even simple layout ones.
+**Why it's wrong:** The existing `worktree_handlers.rs` exports pool commands that will be removed. Splitting into a new file leaves dead code in the old file and muddles the module structure.
 
-**Why it's wrong:** Tailwind utilities are simpler and faster. Scoping not needed for layout classes.
+**Do this instead:** Rewrite `worktree_handlers.rs` in place. Remove all pool commands, add the new list/create/delete/diff commands. Update `lib.rs` command registration to match.
 
-**Do this instead:**
-```typescript
-// Good: Use Tailwind for layout
-export function Card() {
-  return <div className="rounded-lg border p-4 shadow-sm">...</div>;
-}
+### Anti-Pattern 3: Deriving WorktreeWithStatus in the Frontend
 
-// Bad: Unnecessary scoping
-// Card.module.css with .card { border-radius: 0.5rem; ... }
-```
+**What people do:** Fetch `get_tasks`, `get_execution_logs`, and `list_worktrees` separately, then join them in React state.
 
-### Anti-Pattern 3: Global CSS with theme colors
+**Why it's wrong:** Three round-trip IPC calls on every refresh interval. Joining in JS forces extra state management. The backend can do this join cheaply in SQLite.
 
-**What people do:** Hard-code colors in global CSS (e.g., `body { background: #ffffff; }`).
+**Do this instead:** Add `list_worktrees_with_status` and `list_executions_with_task_info` as joined queries on the backend. Single IPC call per view, no frontend join logic.
 
-**Why it's wrong:** Doesn't update when theme changes. Defeats dark mode.
+### Anti-Pattern 4: Keying PTY Sessions by Execution Log ID
 
-**Do this instead:**
-```css
-/* App.css */
-body {
-  background-color: hsl(var(--background) / <alpha-value>);
-  color: hsl(var(--foreground) / <alpha-value>);
-}
-```
+**What people do:** Store PTY sessions by `exec_log_id` instead of `task_id`.
 
-### Anti-Pattern 4: Class-based dark mode in Tauri
+**Why it's wrong:** The existing system keys by `task_id` throughout (`AppState.pty_sessions: HashMap<i32, ...>`, `attach_terminal(task_id, ...)`). Changing the key breaks the entire attach/detach/input flow.
 
-**What people do:** Use `className="dark"` toggle on `<html>` (web convention).
-
-**Why it's wrong:** Works, but Tauri renders consistently. Data attributes are cleaner and prevent naming conflicts.
-
-**Do this instead:**
-```typescript
-// Use data-theme attribute (cleaner for desktop apps)
-<html data-theme="dark">
-
-// Not this:
-<html className="dark">
-```
-
-### Anti-Pattern 5: Not migrating radix-ui components to shadcn
-
-**What people do:** Keep Radix Dialog, Select, etc. and mix in shadcn.
-
-**Why it's wrong:** Duplicate dependency, inconsistent styling, larger bundle.
-
-**Do this instead:**
-```typescript
-// Existing code already uses Radix:
-import { Dialog } from "@radix-ui/react-dialog";
-
-// Replace with shadcn (which wraps Radix, same API):
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-```
-
-## Integration Points
-
-### External Libraries
-
-| Library | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| shadcn/ui | Copy components to project, customize with Tailwind | No npm dependency — CLI-based setup |
-| Tailwind CSS 4 | `@import "tailwindcss"` in CSS file | No config needed with @tailwindcss/vite |
-| next-themes | Wrap app root with ThemeProvider | Works in non-Next.js React apps |
-| PostCSS | Only if using advanced features (rarely needed) | Vite handles CSS bundling automatically |
-| Radix UI | Already in project (shadcn built on it) | Keep for Dialog, Select. No conflicts. |
-| Sonner | Toast library (compatible with all above) | Works with Tailwind styling |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Components ↔ Tailwind | CSS classes on JSX elements | One-way: component reads, Tailwind writes CSS |
-| Components ↔ Theme Provider | useTheme hook | Two-way: read theme state, dispatch setTheme |
-| Theme Provider ↔ localStorage | Automatic via next-themes | Transparent — no code needed |
-| Vite ↔ @tailwindcss/vite | Plugin architecture | Automatic — plugin intercepts CSS imports |
-| Dev server ↔ Browser | WebSocket (HMR port 5174) | Tauri + Vite handles automatically |
-
-## Build Process
-
-### Development (`pnpm tauri:dev`)
-
-```
-1. Vite starts on port 5173
-2. @tailwindcss/vite plugin initializes
-3. src/styles/index.css parsed (@import "tailwindcss")
-4. Tailwind scans .tsx files for class names
-5. CSS generated in-memory (not written to disk)
-6. React components load with Tailwind utilities
-7. Browser watches for changes (HMR port 5174)
-8. Edit .tsx → Vite detects → CSS rescanned → Instant reload
-9. Edit .css → Vite detects → CSS refreshed → Instant reload
-```
-
-### Production (`pnpm tauri build`)
-
-```
-1. TypeScript compiled to JavaScript
-2. @tailwindcss/vite plugin runs full scan
-3. Only used Tailwind utilities included in bundle
-4. CSS minified and deduplicated
-5. Output written to dist/assets/
-6. Tauri bundles dist/ into .dmg/.exe/.AppImage
-```
-
-## Common Integration Issues
-
-### Issue 1: Tailwind utilities not applying
-
-**Symptom:** Class names in JSX but no styles appear.
-
-**Cause:** CSS file not imported properly or Tailwind directive missing.
-
-**Fix:**
-```typescript
-// App.tsx or entry point MUST import CSS
-import "./styles/index.css";  // ← Include this
-
-// src/styles/index.css MUST have:
-@import "tailwindcss";  // ← Include this
-```
-
-### Issue 2: Dark mode not persisting across app restarts
-
-**Symptom:** Theme reverts to light after closing/opening app.
-
-**Cause:** Using localStorage alone (sufficient for web, not ideal for desktop).
-
-**Fix:** Migrate to Tauri store:
-```typescript
-const store = new Store(".preferences.dat");
-const savedTheme = await store.get("theme") || "system";
-```
-
-### Issue 3: CSS Modules conflict with Tailwind
-
-**Symptom:** Module CSS works but Tailwind classes stop working in same component.
-
-**Cause:** CSS Modules disabled in Vite by default for Tailwind apps.
-
-**Fix:** Ensure vite.config.ts doesn't disable modules:
-```typescript
-export default defineConfig({
-  css: {
-    modules: { auto: /\.module\.css$/ }  // ← Enable for .module.css only
-  },
-  plugins: [
-    tailwindcss(),
-    react()
-  ]
-});
-```
-
-### Issue 4: shadcn components not styled
-
-**Symptom:** shadcn components render but look unstyled (no colors, borders, etc.).
-
-**Cause:** components.json not created or Tailwind not configured before running CLI.
-
-**Fix:**
-```bash
-# 1. Set up Tailwind first:
-npm install tailwindcss @tailwindcss/vite
-# Update src/styles/index.css with @import "tailwindcss"
-
-# 2. THEN set up shadcn:
-pnpm dlx shadcn@latest init
-pnpm dlx shadcn@latest add button
-```
-
-## Migration Checklist
-
-- [ ] Install Tailwind 4 + @tailwindcss/vite + next-themes
-- [ ] Update src/styles/index.css with `@import "tailwindcss"`
-- [ ] Update vite.config.ts with `tailwindcss()` plugin
-- [ ] Update App.tsx to wrap with `<ThemeProvider>`
-- [ ] Run `pnpm dlx shadcn@latest init` to create components.json
-- [ ] Add first shadcn component: `pnpm dlx shadcn@latest add button`
-- [ ] Verify Tailwind utilities work: add `className="p-4 bg-background"` to test
-- [ ] Replace first component (suggest: Button) with shadcn equivalent
-- [ ] Set up theme toggle UI using `useTheme()` hook
-- [ ] Test dark mode toggle in dev mode
-- [ ] Update CSS Modules for components that need scoped styles
-- [ ] Delete old CSS files as components migrate
-- [ ] Test final build: `pnpm tauri build`
-
-## Sources
-
-- **Tailwind CSS 4 Documentation:** https://tailwindcss.com/docs (CSS-first configuration, @theme directive, @tailwindcss/vite plugin)
-- **Tailwind CSS v4.0 Release Blog:** https://tailwindcss.com/blog/tailwindcss-v4 (major changes, 3.78x build speed improvement)
-- **shadcn/ui Setup for Vite:** https://ui.shadcn.com/docs/installation/vite (components.json, manual component copying)
-- **next-themes GitHub:** https://github.com/pacocoursey/next-themes (client-side theming, localStorage persistence, system preference detection)
-- **Tailwind Dark Mode Docs:** https://tailwindcss.com/docs/dark-mode (class vs media strategy, @custom-variant)
-- **Vite Config Documentation:** https://vite.dev/config/ (HMR, plugin architecture, CSS module configuration)
+**Do this instead:** Keep `task_id` as the PTY session key. The Agents sidebar must track `task_id` (available on `ExecutionLog.task_id`), not `execution_log_id`.
 
 ---
-*Architecture research for: Tailwind 4 + shadcn/ui + theming integration in Tauri 2 React app*
-*Researched: 2026-02-09*
-*Confidence: HIGH — All major integration patterns validated against official documentation*
+
+## Build Order (Phase Recommendations)
+
+The dependency graph drives this order. Each phase produces a working, testable increment.
+
+### Phase 1: Backend Model Overhaul (no frontend changes)
+
+**Goal:** Remove pool model, introduce on-demand worktree model. Schema v3.
+
+**What changes:**
+- Bump `SCHEMA_VERSION` to 3
+- Drop pool columns from `worktrees` table, add `task_id` FK and `git_status`
+- Overhaul `models/worktree.rs` (remove `WorktreeStatus`, `PoolStatus`; add `WorktreeWithStatus`, `ExecutionWithTask`)
+- Implement `create_worktree_local` and `delete_worktree_local` stubs in `git/mod.rs` using `std::process::Command` for `git worktree add/remove`
+- Rewrite `worktree_handlers.rs`: remove 5 pool commands, add `list_worktrees_with_status`, `get_worktree_diff`, `create_worktree`, `delete_worktree`, `list_executions_with_task_info`
+- Modify `spawn_agent_execution` and `resume_agent_execution` to call `create_worktree` on-demand
+- Update `lib.rs` command registration
+- Run `pnpm tauri:gen` to regenerate `bindings.ts`
+
+**Dependency:** None. Frontend still works because view components use placeholder data.
+
+**Risk:** Schema migration drops all worktrees rows — safe since no production data.
+
+### Phase 2: Agents View — Real Data
+
+**Goal:** Replace `AgentMonitor` placeholder with real execution list and live terminal.
+
+**What changes:**
+- Add `useExecutionsWithTaskInfoQuery(projectId)` to `execution.service.ts`
+- Rewrite `AgentMonitor.tsx`: sidebar list driven by `ExecutionWithTask[]`, terminal pane using existing `ExecutionTerminal` (xterm.js)
+- Wire `AgentsView.tsx` to new hooks, pass data to `AgentMonitor`
+- Handle dead session gracefully (status !== Running → show history, no PTY attach attempt)
+- Search/filter execution list in component
+
+**Dependency:** Phase 1 (needs `list_executions_with_task_info` IPC command).
+
+### Phase 3: Worktrees View — Real Data
+
+**Goal:** Replace `WorktreeManager` placeholder with real worktree grid and diff detail panel.
+
+**What changes:**
+- Create `worktree.service.ts` with all worktree hooks
+- Rewrite `WorktreeManager.tsx`: card grid from `WorktreeWithStatus[]`, right panel with `@git-diff-view/react` diff display (already used in review flow)
+- Add create worktree dialog and delete confirmation
+- Wire `WorktreesView.tsx` to new hooks
+- Zombie detection: worktree with `is_zombie: true` shown with warning state and cleanup action
+
+**Dependency:** Phase 1 (needs `list_worktrees_with_status`, `get_worktree_diff`, `create_worktree`, `delete_worktree`).
+
+### Phase 4: Worktree Zombie Cleanup on Startup
+
+**Goal:** Detect and clean up orphaned worktrees on project open.
+
+**What changes:**
+- On project open (in `App.tsx` `useEffect`): call new `cleanup_zombie_worktrees(projectId)` command
+- Rust: find worktrees where `task_id IS NULL` or task status is Done/Archived, attempt `git worktree remove` for each
+- This replaces the old `recover_dirty_worktrees` pattern with a simpler, semantically correct one
+
+**Dependency:** Phase 1 and 3.
+
+---
+
+## Integration Points Summary
+
+| Boundary | Before v1.3 | After v1.3 |
+|----------|------------|------------|
+| Worktree allocation | `lease_worktree` (pool) in spawn path | `create_worktree` (on-demand) in spawn path |
+| Worktree cleanup | `return_worktree` (pool) + `cleanup_worktree` | `delete_worktree` (destroy) |
+| Agents sidebar data | Placeholder mock data in component | `list_executions_with_task_info` IPC + TanStack Query 2s interval |
+| Terminal pane | Static text, no xterm.js | `attach_terminal` Tauri channel → existing xterm.js `ExecutionTerminal` |
+| Worktrees grid data | Placeholder mock data in component | `list_worktrees_with_status` IPC + TanStack Query |
+| Worktree diff | None | `get_worktree_diff` IPC → `@git-diff-view/react` |
+| DB schema | v2 (pool columns) | v3 (task_id FK, git_status column) |
+| TypeScript bindings | `WorktreeStatus`, `PoolStatus` exported | `WorktreeWithStatus`, `ExecutionWithTask` exported |
+
+---
+
+## Confidence Assessment
+
+| Area | Confidence | Reason |
+|------|------------|--------|
+| Rust model changes | HIGH | Full source read; pool pattern fully understood; changes are straightforward |
+| IPC command surface | HIGH | All commands read; `lib.rs` registration confirmed; `git/mod.rs` dispatch pattern understood |
+| Frontend service hooks | HIGH | `execution.service.ts` pattern is consistent; `worktree.service.ts` follows exact same shape |
+| xterm.js + Tauri channel | HIGH | `attach_terminal` + `ExecutionTerminal` already exist and work; reuse is additive |
+| Git diff integration | HIGH | `@git-diff-view/react` already used in review flow; `get_worktree_diff` follows `get_diff_for_review` pattern |
+| `create_worktree_local` implementation | MEDIUM | `git::create_worktree_local` is currently a stub (TODO comment). Needs `tokio::process::Command` implementation for `git worktree add`. Remote path works (`remote.rs` already handles it). Low risk but requires testing. |
+| Schema migration safety | HIGH | No production data; existing migration pattern (drop + recreate) confirmed in `schema.rs` |
+
+---
+
+## Open Questions
+
+1. **`git worktree add` path convention:** Should worktrees be created at `.worktrees/task-{id}` relative to repo root, or in a system temp dir? The old pool used `.worktree-pool/wt-{n}`. Recommend `.worktrees/agent-task-{id}` inside the repo for consistency with the existing git operations.
+
+2. **Remote worktree creation timing:** `spawn_agent_execution` is async and runs worktree creation before spawning the PTY. For remote SSH projects, `create_worktree` calls `remote::create_remote_worktree` which involves SSH I/O. This is fine — the existing lease step was also async. No architectural change needed, but worth a note in the phase plan.
+
+3. **`list_worktrees_with_status` git_status field:** Computing `git_status` requires running `git status --porcelain` per worktree at query time. For many worktrees this could be slow. For v1.3 MVP, compute it per-query. If performance becomes a concern in v2, cache it in the DB and update on a background interval.
+
+---
+
+*Architecture research for: Maestro v1.3 Agents + Worktrees views with backend overhaul*
+*Researched: 2026-03-29*
