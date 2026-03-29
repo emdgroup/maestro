@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
@@ -12,11 +12,26 @@ import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
  * Query key factory for execution operations
  * Execution operations are primarily side-effects; included for consistency
  */
-const executionQueryKeys = {
+export const executionQueryKeys = {
   all: ["executions"] as const,
   details: () => [...executionQueryKeys.all, "detail"] as const,
   detail: (executionId: number) => [...executionQueryKeys.details(), executionId] as const,
+  withTaskInfo: (projectId: number) =>
+    [...executionQueryKeys.all, "withTaskInfo", projectId] as const,
 };
+
+/**
+ * Query hook for fetching executions with linked task info.
+ * Polls every 2 seconds for live updates in the Agents view sidebar.
+ */
+export function useExecutionsWithTaskInfoQuery(projectId: number | undefined) {
+  return useQuery({
+    queryKey: executionQueryKeys.withTaskInfo(projectId ?? 0),
+    queryFn: () => api.listExecutionsWithTaskInfo(projectId!),
+    enabled: projectId != null,
+    refetchInterval: 2000,
+  });
+}
 
 /**
  * Mutation hook for spawning agent execution

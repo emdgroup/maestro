@@ -1,48 +1,43 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { AgentMonitor } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
-
-interface AgentStatus {
-  id: number;
-  name: string;
-  status: "Running" | "Idle" | "Error";
-}
+import { useExecutionsWithTaskInfoQuery } from "@/services/execution.service";
 
 interface AgentsViewProps {
   projectId?: number;
-  agents?: AgentStatus[];
-  activeAgentId?: number | null;
-  onAgentSelect?: (agentId: number) => void;
 }
 
 /**
- * AgentsView - Page-level orchestrator for the agent monitoring screen
- * Displays active agents and their execution status with real-time terminal output
+ * AgentsView - Page-level orchestrator for the agent monitoring screen.
+ * Owns the execution data query and passes props down to AgentMonitor.
+ * Handles deep-link selection via pendingAgentId from navigationStore.
  */
-export const AgentsView: React.FC<AgentsViewProps> = ({
-  projectId,
-  agents = [],
-  activeAgentId = null,
-  onAgentSelect,
-}) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
+  const { data: executions = [] } = useExecutionsWithTaskInfoQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
 
-  // Override activeAgentId prop with pendingAgentId when set by navigate()
-  const effectiveAgentId = pendingAgentId ? Number(pendingAgentId) : activeAgentId;
-
+  // Deep-link: pendingAgentId overrides selection on first mount
   useEffect(() => {
-    if (pendingAgentId) {
-      clearPendingAgent();
+    if (pendingAgentId && executions.length > 0) {
+      const match = executions.find((e) => String(e.task_id) === pendingAgentId);
+      if (match) {
+        setSelectedTaskId(match.task_id);
+        clearPendingAgent();
+      }
+    } else if (selectedTaskId == null && executions.length > 0) {
+      // Fallback: auto-select most recent Running execution
+      const running = executions.find((e) => e.status === "running");
+      if (running) setSelectedTaskId(running.task_id);
     }
-  }, [pendingAgentId, clearPendingAgent]);
+  }, [executions, pendingAgentId, clearPendingAgent, selectedTaskId]);
 
   return (
     <AgentMonitor
-      projectId={projectId}
-      agents={agents}
-      activeAgentId={effectiveAgentId}
-      onAgentSelect={onAgentSelect}
+      executions={executions}
+      selectedTaskId={selectedTaskId}
+      onSelect={setSelectedTaskId}
     />
   );
 };

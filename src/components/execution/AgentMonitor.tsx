@@ -1,23 +1,25 @@
 import { useState } from "react";
-
-interface AgentStatus {
-  id: number;
-  name: string;
-  status: "Running" | "Idle" | "Error";
-}
+import type { ExecutionWithTask } from "@/types/bindings";
 
 interface AgentMonitorProps {
-  projectId?: number;
-  agents?: AgentStatus[];
-  activeAgentId?: number | null;
-  onAgentSelect?: (agentId: number) => void;
+  executions: ExecutionWithTask[];
+  selectedTaskId: number | null;
+  onSelect: (taskId: number) => void;
 }
 
 export function AgentMonitor({
-  agents = [],
-  activeAgentId = null,
-  onAgentSelect,
+  executions,
+  selectedTaskId,
+  onSelect,
 }: AgentMonitorProps) {
+  // Adapt new props to existing local variable names for stub UI (Plan 02 will rewrite)
+  const agents = executions.map((e) => ({
+    id: e.task_id,
+    name: e.task_name,
+    status: e.status === "running" ? ("Running" as const) : ("Idle" as const),
+  }));
+  const activeAgentId = selectedTaskId;
+  const onAgentSelect = onSelect;
   const [terminalOutput] = useState<string>(
     "Terminal output will appear here...\n[INFO] System ready\n[INFO] Waiting for agent tasks...",
   );
