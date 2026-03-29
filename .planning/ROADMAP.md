@@ -4,7 +4,8 @@
 
 - ✅ **v1.0 MVP** — Phases 1-12 (shipped 2026-02-09)
 - ✅ **v1.1 UI/UX Polish** — Phases 13-22 (shipped 2026-03-16)
-- 📋 **v1.2** — Phases 23+ (planned)
+- ✅ **v1.2 Deep Linking & Project Picker** — Phases 23-24 (shipped 2026-03-29)
+- 📋 **v1.3** — Phases 25+ (planned)
 
 ## Phases
 
@@ -47,51 +48,32 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full details.
 
 </details>
 
-### 📋 v1.2 (Planned)
+<details>
+<summary>✅ v1.2 Deep Linking & Project Picker (Phases 23-24) — SHIPPED 2026-03-29</summary>
 
-*(Run `/gsd:new-milestone` to define v1.2 goals, requirements, and phases)*
+- [x] Phase 23: Add in-app routing for deep linking to specific screens (2/2 plans) — completed 2026-03-28
+- [x] Phase 24: Improve project picker screen (2/2 plans) — completed 2026-03-28
+
+See `.planning/milestones/v1.2-ROADMAP.md` for full details.
+
+</details>
+
+### 📋 v1.3 (Planned)
+
+*(Run `/gsd:new-milestone` to define v1.3 goals, requirements, and phases)*
 
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
 | 1-12 | v1.0 | 45/45 | Complete | 2026-02-09 |
-| 13 - Bug Fixes | v1.1 | 2/2 | Complete | 2026-02-09 |
-| 14 - UI Foundation | v1.1 | 4/4 | Complete | 2026-02-10 |
-| 15 - Component & Design System | v1.1 | 3/3 | Complete | 2026-02-10 |
-| 16 - Page Redesigns | v1.1 | 2/2 | Complete | 2026-02-10 |
-| 17 - Polish & Testing | v1.1 | 2/2 | Complete | 2026-02-10 |
-| 17.1 - Critical UI Fixes (INSERTED) | v1.1 | 4/4 | Complete | 2026-02-11 |
-| 18 - Maestro Folder Architecture | v1.1 | 4/4 | Complete | 2026-02-23 |
-| 19 - Frontend Architecture Refactoring | v1.1 | 6/6 | Complete | 2026-02-26 |
-| 20 - Refactor Frontend to TanStack Query | v1.1 | 7/7 | Complete | 2026-02-27 |
-| 21 - Refactor Components to Service Hooks | v1.1 | 1/1 | Complete | 2026-02-28 |
-| 22 - Auto-remove Stale Projects | v1.1 | 1/1 | Complete | 2026-03-16 |
-
-### Phase 23: Add in-app routing for deep linking to specific screens
-
-**Goal:** Replace usePageRouting local state with a Zustand navigationStore that enables programmatic navigation from any component via a discriminated union API (navigate({ taskId }), navigate({ view }), etc.)
-**Requirements**: NAV-STORE, NAV-WIRE
-**Depends on:** Phase 22
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 23-01-PLAN.md — Create navigationStore with TDD (store + tests)
-- [x] 23-02-PLAN.md — Rewire all consumers to use navigationStore, delete usePageRouting
-
-### Phase 24: Improve project picker screen: auto-detect and init git on select, add Clone Project button (git URL + target path), add Create Project button (name + target path + git init)
-
-**Goal:** Enhance the project picker with auto-git-init on folder select, a Clone Project dialog (URL + target path), and a Create Project dialog (parent dir + folder name + git init), all surfaced as a 3-button footer in the projects panel.
-**Requirements**: P24-GIT-INIT, P24-CLONE, P24-CREATE, P24-FOOTER
-**Depends on:** Phase 23
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 24-01-PLAN.md — Backend: Rust IPC commands (git_init_project, clone_project, create_new_project) + bindings + TanStack Query hooks
-- [x] 24-02-PLAN.md — Frontend: 3-button footer, CloneProjectDialog, CreateProjectDialog, auto-git-init wiring
+| 13-22 | v1.1 | 36/36 | Complete | 2026-03-16 |
+| 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
+| 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 
 ---
 
 *Roadmap created: 2026-02-09*
 *v1.0 shipped: 2026-02-09*
 *v1.1 shipped: 2026-03-16*
+*v1.2 shipped: 2026-03-29*

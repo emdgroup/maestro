@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: completed
-last_updated: "2026-03-28T19:20:37.905Z"
+milestone: v1.2
+milestone_name: Deep Linking & Project Picker
+status: milestone_complete
+last_updated: "2026-03-29T00:00:00.000Z"
 progress:
   total_phases: 2
   completed_phases: 2
@@ -11,19 +11,18 @@ progress:
   completed_plans: 4
 ---
 
-# Project State: v1.2 (Next Milestone)
+# Project State: v1.3 (Next Milestone)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-16)
+See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 24 — improve-project-picker-screen-auto-detect-and-init-git-on-select-add-clone-project-button-git-url-target-path-add-create-project-button-name-target-path-git-init
+**Current focus:** Planning v1.3 milestone — run `/gsd:new-milestone` to define goals
 
 ## Current Position
 
-Phase: 24 (improve-project-picker-screen-auto-detect-and-init-git-on-select-add-clone-project-button-git-url-target-path-add-create-project-button-name-target-path-git-init) — EXECUTING
-Plan: 2 of 2
+v1.2 milestone complete — all phases shipped. Ready to start v1.3.
 
 ## Performance Metrics
 

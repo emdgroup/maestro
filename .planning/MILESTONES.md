@@ -1,5 +1,29 @@
 # Project Milestones: Maestro
 
+## v1.2 Deep Linking & Project Picker (Shipped: 2026-03-29)
+
+**Delivered:** Added programmatic in-app navigation via Zustand navigationStore and enhanced project picker with 3-button footer for Clone/Create workflows and auto-git-init on folder select.
+
+**Phases completed:** 23-24 (4 plans total)
+
+**Key accomplishments:**
+
+- Zustand `navigationStore` with discriminated union dispatch (`navigate({ taskId })`, `navigate({ agentId })`, `navigate({ worktreeId })`, `navigate({ view })`), slideDirection animation, and 8 selector hooks — TDD with 17 tests (Phase 23)
+- Rewired all consumers (App.tsx, AppHeader, KanbanView, AgentsView, WorktreesView) to navigationStore; deleted `usePageRouting` hook; pending entity ID pattern for cross-component deep linking (Phase 23)
+- Three async Rust IPC commands (`git_init_project`, `clone_project`, `create_new_project`) with `connection_id` support for SSH remote execution, TypeScript bindings, and TanStack Query mutation hooks (Phase 24)
+- 3-button project picker footer (Select Existing / Clone / Create) with `CloneProjectDialog` (URL + target path + Browse), `CreateProjectDialog` (parent dir + folder name + inline errors), and auto-git-init on folder select (Phase 24)
+
+**Stats:**
+
+- 20 commits
+- 2 phases, 4 plans
+- 1 day (2026-03-28 → 2026-03-29)
+- 41 files changed, 3,143 insertions / 182 deletions
+
+**Git range:** `2e6bca1` → `3e632b6`
+
+---
+
 ## v1.1 UI/UX Polish (Shipped: 2026-03-16)
 
 **Delivered:** Transformed Maestro from functional to beautiful — modern UI with Tailwind CSS + shadcn/ui, complete frontend architecture overhaul, Maestro rebranding with project-local storage, and transparent stale project cleanup.

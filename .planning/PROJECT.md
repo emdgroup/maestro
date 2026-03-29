@@ -10,23 +10,22 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 ## Current State
 
-**Latest Release:** v1.1 UI/UX Polish (shipped 2026-03-16)
+**Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
 
-**What was built in v1.1:**
-- Modern UI with Tailwind CSS 4.1 + shadcn/ui, complete theming system (light/dark/system, no FOUC)
-- Complete page redesigns: Kanban board, Agent Monitor, Worktree Manager, Settings, App Header
-- Maestro rebranding (from "GSD Orchestrator") with project-local `.maestro/` folder architecture
-- Frontend architecture overhaul: views/, services/, TanStack Query (37 hooks), service hook abstraction
-- Transparent stale project cleanup: invalid paths auto-removed on fetch (local + SSH)
-- 36 plans across 11 phases
+**What was built in v1.2:**
+- Zustand `navigationStore` with discriminated union dispatch for programmatic deep linking from any component
+- All consumers wired to navigationStore; `usePageRouting` hook deleted
+- 3 async Rust IPC commands (`git_init_project`, `clone_project`, `create_new_project`) with SSH remote support
+- 3-button project picker footer with Clone dialog, Create dialog, and auto-git-init on folder select
+- 4 plans across 2 phases
 
-**Production Status:** v1.1 ready for release ✓
+**Production Status:** v1.2 ready for release ✓
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
 - Backend: Tauri 2 (Rust) + SQLite + SSH
 - State: Zustand + Immer (global), TanStack Query (server state)
-- LOC: 15,398 TypeScript | 6,553 Rust
+- LOC: ~16,500 TypeScript | ~7,000 Rust (estimated)
 
 ## Requirements
 
@@ -76,6 +75,14 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ System accent color integration — v1.1 (Phase 17.1)
 - ✓ FiraCode/Inter typography system — v1.1 (Phase 15)
 - ✓ Compact design system (text-xs, h-7, p-3 patterns) — v1.1 (Phase 15)
+
+**v1.2 Requirements (shipped 2026-03-29):**
+
+- ✓ Programmatic in-app navigation via `navigationStore` discriminated union API — v1.2 (Phase 23)
+- ✓ Deep linking to tasks, agents, worktrees by entity ID — v1.2 (Phase 23)
+- ✓ `git init` auto-run on folder select in project picker — v1.2 (Phase 24)
+- ✓ Clone Project dialog (git URL + target path + SSH remote support) — v1.2 (Phase 24)
+- ✓ Create Project dialog (parent dir + folder name + git init) — v1.2 (Phase 24)
 
 ### Active
 
@@ -146,6 +153,12 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | .maestro/ per-project folder | Project-local state, not global DB | ✓ Good — projects are self-contained |
 | DB mutex released before async SSH I/O | Prevent deadlock in get_connection_projects | ✓ Good — helper function pattern resolves lifetime issues |
 | Stale project cleanup on fetch | Transparent, no UI change needed | ✓ Good — verified for both local + SSH |
+| Zustand navigationStore with discriminated union | Programmatic deep linking from any component without prop drilling | ✓ Good — clean API, 17 tests, replaces local usePageRouting state |
+| `navigate()` uses `'key' in target` narrowing | TypeScript discriminated union dispatch, no switch fallthrough | ✓ Good — avoids stale closure issues |
+| Inline DB logic in async IPC commands | Avoid `State<'_>` lifetime issues after `.await` points in Rust | ✓ Good — required for clone_project / create_new_project |
+| `connection_id` threaded through git IPC commands | Same dialogs work for local and SSH remote projects | ✓ Good — caught in human-verify checkpoint |
+| Dual-dialog visibility: `open={open && !showDirPicker}` | Preserves form state while sub-dialog (FilePicker) is open | ✓ Good — form not unmounted on sub-dialog open |
+| Create dialog inline errors; Clone dialog toast errors | Create failures are user-fixable (dir exists); Clone failures are server-side | ✓ Good — right UX for each error class |
 
 ---
-*Last updated: 2026-03-16 after v1.1 milestone*
+*Last updated: 2026-03-29 after v1.2 milestone*
