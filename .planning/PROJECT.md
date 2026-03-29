@@ -12,14 +12,17 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 **Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
 
-**What was built in v1.2:**
-- Zustand `navigationStore` with discriminated union dispatch for programmatic deep linking from any component
-- All consumers wired to navigationStore; `usePageRouting` hook deleted
-- 3 async Rust IPC commands (`git_init_project`, `clone_project`, `create_new_project`) with SSH remote support
-- 3-button project picker footer with Clone dialog, Create dialog, and auto-git-init on folder select
-- 4 plans across 2 phases
+**Active milestone:** v1.3 Agents & Worktrees — Phase 25 complete, Phase 26 (agents-view) next
 
-**Production Status:** v1.2 ready for release ✓
+**What was built in Phase 25 (backend-overhaul):**
+- SQLite schema migrated to v3: pool columns removed, `task_id`/`git_status` added to worktrees
+- `WorktreeWithStatus` and `ExecutionWithTask` view models replace pool-based types
+- All git stubs replaced with real `tokio::process::Command` async implementations
+- 4 new worktree IPC commands: `list_worktrees_with_status`, `get_worktree_diff`, `create_worktree`, `delete_worktree`
+- Execution handlers migrated to on-demand worktree lifecycle (create on spawn, delete on finish)
+- `list_executions_with_task_info` IPC command added; TypeScript bindings regenerated
+
+**Production Status:** v1.2 shipped ✓ | v1.3 backend foundation complete ✓
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
@@ -84,9 +87,16 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ Clone Project dialog (git URL + target path + SSH remote support) — v1.2 (Phase 24)
 - ✓ Create Project dialog (parent dir + folder name + git init) — v1.2 (Phase 24)
 
-### Active
+## Current Milestone: v1.3 Agents & Worktrees
 
-*(No active requirements — define in next milestone via `/gsd:new-milestone`)*
+**Goal:** Replace both placeholder views with fully functional, real-data-backed Agents and Worktrees management screens — including a backend overhaul from pool-based to on-demand worktree creation.
+
+**Target features:**
+- Agents view: execution log list (active + history), live xterm.js terminal attach, search/filter, graceful handling of dead sessions
+- Worktrees view: real git worktree listing with branch/task/diff info, create + delete, zombie detection and cleanup
+- Backend: remove worktree pool, on-demand worktree creation per task, new IPC for worktree listing and git diff
+
+### Active
 
 ### Out of Scope
 
@@ -161,4 +171,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | Create dialog inline errors; Clone dialog toast errors | Create failures are user-fixable (dir exists); Clone failures are server-side | ✓ Good — right UX for each error class |
 
 ---
-*Last updated: 2026-03-29 after v1.2 milestone*
+*Last updated: 2026-03-29 after v1.3 milestone start*
