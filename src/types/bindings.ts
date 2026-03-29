@@ -384,134 +384,45 @@ async saveImportConfig(projectId: number, provider: string, config: JsonValue) :
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Lease worktree from pool for task execution with automatic retry and pool expansion
- * 
- * When no worktrees are available:
- * 1. Retries up to 3 times with exponential backoff (500ms, 1s, 1.5s)
- * 2. On each retry, checks again for available worktrees
- * 3. After retries exhausted, attempts pool expansion (creates new worktree)
- * 4. Returns error only if all retries and expansion fail
- */
-async leaseWorktree(projectId: number, taskId: number, repoPath: string) : Promise<Result<Worktree, string>> {
+async listWorktreesWithStatus(projectId: number, repoPath: string) : Promise<Result<WorktreeWithStatus[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("lease_worktree", { projectId, taskId, repoPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_worktrees_with_status", { projectId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWorktreeDiff(worktreeId: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { worktreeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createWorktree(projectId: number, taskId: number | null, branchName: string, repoPath: string, worktreePath: string | null) : Promise<Result<Worktree, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, branchName, repoPath, worktreePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteWorktree(worktreeId: number, repoPath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { worktreeId, repoPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Return worktree to pool after task completion
+ * List all executions for a project, enriched with task name and worktree branch.
+ * Used by the Agents View sidebar.
  */
-async returnWorktree(worktreeId: number) : Promise<Result<null, string>> {
+async listExecutionsWithTaskInfo(projectId: number) : Promise<Result<ExecutionWithTask[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("return_worktree", { worktreeId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get current pool status for monitoring
- */
-async getPoolStatus(projectId: number) : Promise<Result<PoolStatus, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_pool_status", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Delete worktree and associated branch after task merge
- * 
- * This function implements safe deletion with recovery for failures:
- * 1. Marks worktree as 'Dirty' (failure-proof flag, survives crashes)
- * 2. Calls async sidecar to delete worktree + branch (safe git sequence)
- * 3. Removes from database on success
- * 
- * If any step fails, worktree remains 'Dirty' for manual recovery.
- * 
- * # Arguments
- * * `project_id` - Project owning the worktree
- * * `worktree_id` - ID of worktree to clean
- * * `repo_path` - Path to git repository
- * * `state` - Tauri app state with database connection
- * 
- * # Returns
- * `Ok(())` on successful cleanup, `Err(msg)` on failure
- * 
- * # Safety
- * Uses database transaction to ensure atomicity. Sidecar call via tokio (async-safe).
- * If sidecar fails, worktree stays marked 'Dirty' for retry.
- * 
- * # Async Context
- * MUST use tokio::process::Command (NOT std::process::Command) to avoid blocking.
- */
-async cleanupWorktree(projectId: number, worktreeId: number, repoPath: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cleanup_worktree", { projectId, worktreeId, repoPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Recover worktrees stuck in 'Dirty' state
- * 
- * Called on app startup to retry cleanup of worktrees that failed mid-operation.
- * Prevents orphaned worktrees from accumulating and blocking the pool.
- * 
- * # Arguments
- * * `project_id` - Project to recover worktrees for
- * * `repo_path` - Path to git repository
- * * `state` - Tauri app state with database connection
- * 
- * # Returns
- * Vec of successfully recovered worktree IDs (for logging)
- * 
- * # Integration
- * Should be invoked in App.tsx useEffect on project load (see Phase 2 integration point)
- */
-async recoverDirtyWorktrees(projectId: number, repoPath: string) : Promise<Result<number[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("recover_dirty_worktrees", { projectId, repoPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Pre-create worktree pool on project open
- * 
- * Creates database entries for available worktrees to enable instant allocation.
- * Actual git worktree creation happens lazily when worktree is leased for task execution.
- * 
- * Design:
- * - Creates 3 database entries in 'available' state
- * - Lazy git worktree creation on first lease (avoids slow disk I/O at startup)
- * - If pool already initialized, returns current pool status
- * - Idempotent: safe to call multiple times
- * 
- * # Arguments
- * * `project_id` - Project to initialize pool for
- * * `repo_path` - Path to git repository
- * * `pool_size` - Optional pool size (default: 3). Override for testing.
- * * `state` - Tauri app state with database connection
- * 
- * # Returns
- * Current PoolStatus showing total, available, leased, dirty counts
- * 
- * # Integration
- * Should be called in App.tsx useEffect after project is selected:
- * ```typescript
- * await invoke("initialize_worktree_pool", { projectId: project.id, repoPath: project.path });
- * ```
- */
-async initializeWorktreePool(projectId: number, repoPath: string, poolSize: number | null) : Promise<Result<PoolStatus, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("initialize_worktree_pool", { projectId, repoPath, poolSize }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_executions_with_task_info", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1074,11 +985,11 @@ export type ConnectionStatus = { connection_id: number; connected: boolean; disc
 export type ErrorEvent = { error_type: string; message: string; suggestions: string[]; detected_at: string }
 export type ExecutionLog = { id: number; task_id: number; output: string; terminal_output: string | null; status: ExecutionStatus; started_at: string; completed_at: string | null; error_event: ErrorEvent | null }
 export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled"
-export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
- * Pool status for monitoring
+ * View model for the Agents view — execution log enriched with task and worktree info
  */
-export type PoolStatus = { total: number; available: number; leased: number; in_use: number; dirty: number; utilization_percent: number }
+export type ExecutionWithTask = { id: number; task_id: number; task_name: string; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
+export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
 export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
@@ -1111,29 +1022,13 @@ export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
 /**
- * Worktree record from database
+ * Worktree record from database (schema v3)
  */
-export type Worktree = { id: number; project_id: number; branch_name: string; path: string; status: WorktreeStatus; leased_at: string | null; returned_at: string | null; created_at: string }
+export type Worktree = { id: number; project_id: number; task_id: number | null; branch_name: string; path: string; git_status: string | null; created_at: string }
 /**
- * Worktree status state machine
+ * View model for the Worktrees view — enriched with task info and derived status fields
  */
-export type WorktreeStatus = 
-/**
- * Ready to lease for task execution
- */
-"Available" | 
-/**
- * Leased to a task but not yet actively executing
- */
-"Leased" | 
-/**
- * Actively executing agent
- */
-"InUse" | 
-/**
- * Failed cleanup, needs recovery
- */
-"Dirty"
+export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean }
 
 /** tauri-specta globals **/
 
