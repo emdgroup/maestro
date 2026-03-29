@@ -62,11 +62,17 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       });
     });
 
+    // Auto-resize terminal when container changes size
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+    });
+    resizeObserver.observe(terminalRef.current);
+
     // Cleanup on unmount
     return () => {
+      resizeObserver.disconnect();
+      api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
-      // Channel drop is implicit - when this component unmounts,
-      // the channel reference is released and backend detects EOF
     };
   }, [taskId]);
 
