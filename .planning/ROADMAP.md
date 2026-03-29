@@ -87,7 +87,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 ---
 
 - [x] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen (completed 2026-03-29)
-- [ ] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search
+- [x] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search (completed 2026-03-29)
 - [ ] **Phase 27: Worktrees View** — Real worktree cards, right-panel diff, zombie badge, manual create/delete
 - [ ] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, replaces `recover_dirty_worktrees` *(lower priority — can be deferred if time-constrained)*
 
@@ -145,7 +145,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 26-01-PLAN.md — Query hook + AgentsView data owner + Terminal cleanup
-- [ ] 26-02-PLAN.md — AgentMonitor rewrite + DeadSessionTerminal
+- [x] 26-02-PLAN.md — AgentMonitor rewrite + DeadSessionTerminal
 **UI hint**: yes
 
 **Key deliverables:**
@@ -232,7 +232,7 @@ Plans:
 | 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 26 - Agents View | v1.3 | 1/2 | In Progress|  |
+| 26 - Agents View | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 27 - Worktrees View | v1.3 | 0/? | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-29T22:17:51.279Z"
+last_updated: "2026-03-29T22:21:52.089Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -105,6 +105,7 @@ Plan: 2 of 2
 | Phase 25 P03 | 0.035 | 2 tasks | 3 files |
 | Phase 25 P04 | 0.086 | 2 tasks | 3 files |
 | Phase 26-agents-view P01 | 0.031 | 2 tasks | 5 files |
+| Phase 26-agents-view P02 | 0.033 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,7 @@ Phase 18 Architecture Decisions:
 - [Phase 25]: list_executions_with_task_info uses LEFT JOIN worktrees so executions with no active worktree still appear after completion cleanup
 - [Phase 26-agents-view]: AgentsView owns TanStack Query call; AgentMonitor is a pure display component receiving props
 - [Phase 26-agents-view]: detachTerminal .catch(() => {}) suppresses errors when PTY already ended on task completion
+- [Phase 26-agents-view]: DeadSessionTerminal never calls attachTerminal/detachTerminal; uses write-only xterm.js with disableStdin:true and writes terminal_output from DB on mount
 
 ### Pending Todos
 
