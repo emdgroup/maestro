@@ -1,92 +1,438 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
+use chrono::Utc;
 
-use crate::models::Worktree;
+use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR};
 use crate::db::AppState;
 
-// NOTE: This file will be fully rewritten in Plan 03 (worktree IPC overhaul).
-// All function bodies are stubbed with todo!() to keep cargo check green
-// while models/worktree.rs is being migrated from pool-based to task-based design.
-
 // ============================================================================
-// Worktree Leasing (STUB — Plan 03 will rewrite)
+// list_worktrees_with_status — REQ-06
 // ============================================================================
 
 #[tauri::command]
 #[specta::specta]
-pub async fn lease_worktree(
-    _app_state: State<'_, Arc<AppState>>,
-    _project_id: i32,
-    _task_id: i32,
-    _repo_path: String,
+pub async fn list_worktrees_with_status(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    repo_path: String,
+) -> Result<Vec<WorktreeWithStatus>, String> {
+    println!("list_worktrees_with_status(project={}) called", project_id);
+
+    // Step 1: Get on-disk worktrees
+    let disk_worktrees = crate::git::list_worktrees_local(&repo_path).await?;
+
+    // Step 2: Filter out main worktree (the repo root itself)
+    let disk_worktrees: Vec<_> = disk_worktrees
+        .into_iter()
+        .filter(|wt| wt.path != repo_path)
+        .collect();
+
+    // Step 3: Query DB for all worktrees for this project, enriched with task/execution info
+    struct DbWorktreeRow {
+        id: i32,
+        project_id: i32,
+        task_id: Option<i32>,
+        branch_name: String,
+        path: String,
+        created_at: String,
+        task_name: Option<String>,
+        agent_status: Option<String>,
+    }
+
+    let db_rows: Vec<DbWorktreeRow> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at,
+                    t.name AS task_name,
+                    el.status AS agent_status
+             FROM worktrees w
+             LEFT JOIN tasks t ON t.id = w.task_id
+             LEFT JOIN execution_logs el ON el.task_id = w.task_id
+                 AND el.id = (SELECT id FROM execution_logs WHERE task_id = w.task_id ORDER BY started_at DESC LIMIT 1)
+             WHERE w.project_id = ?"
+        ).map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows: Vec<DbWorktreeRow> = stmt
+            .query_map(rusqlite::params![project_id], |row| {
+                Ok(DbWorktreeRow {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    task_id: row.get(2)?,
+                    branch_name: row.get(3)?,
+                    path: row.get(4)?,
+                    created_at: row.get(5)?,
+                    task_name: row.get(6)?,
+                    agent_status: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query worktrees: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+
+    // Step 4: Build a HashMap<abs_path, DB row> keyed by absolute path
+    let db_map: HashMap<String, &DbWorktreeRow> = db_rows
+        .iter()
+        .map(|row| {
+            let abs_path = format!("{}/{}", repo_path, row.path);
+            (abs_path, row)
+        })
+        .collect();
+
+    // Step 5: Run parallel git status per on-disk worktree
+    let handles: Vec<_> = disk_worktrees
+        .iter()
+        .map(|wt| {
+            let path = wt.path.clone();
+            tokio::spawn(async move {
+                let status = crate::git::get_worktree_status_local(&path)
+                    .await
+                    .unwrap_or_default();
+                (path, status)
+            })
+        })
+        .collect();
+
+    let mut status_map: HashMap<String, String> = HashMap::new();
+    for handle in handles {
+        if let Ok((path, status)) = handle.await {
+            status_map.insert(path, status);
+        }
+    }
+
+    // Step 6: Build WorktreeWithStatus vec
+    // Track which DB paths were matched by an on-disk worktree
+    let mut matched_db_ids: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut result: Vec<WorktreeWithStatus> = Vec::new();
+
+    for wt in &disk_worktrees {
+        let git_status = status_map.get(&wt.path).cloned().unwrap_or_default();
+        if let Some(db_row) = db_map.get(&wt.path) {
+            matched_db_ids.insert(db_row.id);
+            let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
+            result.push(WorktreeWithStatus {
+                id: Some(db_row.id),
+                project_id: Some(db_row.project_id),
+                task_id: db_row.task_id,
+                branch_name: db_row.branch_name.clone(),
+                path: db_row.path.clone(),
+                git_status,
+                created_at: Some(db_row.created_at.clone()),
+                task_name: db_row.task_name.clone(),
+                agent_status: db_row.agent_status.clone(),
+                is_zombie,
+                is_orphan: false,
+            });
+        } else {
+            // On-disk but not in DB — orphan entry
+            let branch_name = wt.branch.clone().unwrap_or_else(|| "unknown".to_string());
+            result.push(WorktreeWithStatus {
+                id: None,
+                project_id: None,
+                task_id: None,
+                branch_name,
+                path: wt.path.clone(),
+                git_status,
+                created_at: None,
+                task_name: None,
+                agent_status: None,
+                is_zombie: false,
+                is_orphan: true,
+            });
+        }
+    }
+
+    // Step 7: Auto-delete DB rows not matched by any on-disk worktree
+    let unmatched_db_ids: Vec<i32> = db_rows
+        .iter()
+        .filter(|row| !matched_db_ids.contains(&row.id))
+        .map(|row| row.id)
+        .collect();
+
+    if !unmatched_db_ids.is_empty() {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        for id in &unmatched_db_ids {
+            let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]);
+        }
+        println!(
+            "list_worktrees_with_status: auto-deleted {} stale DB rows",
+            unmatched_db_ids.len()
+        );
+    }
+
+    // Sort by created_at descending (None goes last)
+    result.sort_by(|a, b| {
+        match (&b.created_at, &a.created_at) {
+            (Some(b_ts), Some(a_ts)) => b_ts.cmp(a_ts),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.path.cmp(&b.path),
+        }
+    });
+
+    println!(
+        "list_worktrees_with_status: returning {} worktrees",
+        result.len()
+    );
+    Ok(result)
+}
+
+// ============================================================================
+// get_worktree_diff — REQ-07
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_worktree_diff(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+) -> Result<String, String> {
+    println!("get_worktree_diff(worktree={}) called", worktree_id);
+
+    // Step 1: Query DB for worktree path and branch_name
+    let (wt_path, branch_name, project_id): (String, String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, branch_name, project_id FROM worktrees WHERE id = ?",
+            rusqlite::params![worktree_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+
+    // Step 2: Get project repo_path
+    let repo_path: String = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path FROM projects WHERE id = ?",
+            rusqlite::params![project_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Project {} not found: {}", project_id, e))?
+    };
+
+    // Step 3: Construct absolute worktree path
+    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+
+    // Step 4: Compute diff using git2 inside spawn_blocking
+    let worktree_abs_clone = worktree_abs.clone();
+    let branch_clone = branch_name.clone();
+
+    let diff_result = tokio::task::spawn_blocking(move || {
+        let repo = git2::Repository::open(&worktree_abs_clone)
+            .map_err(|e| format!("Failed to open repo at {}: {}", worktree_abs_clone, e))?;
+
+        // Get HEAD tree
+        let head = repo
+            .head()
+            .map_err(|e| format!("Failed to get HEAD: {}", e))?;
+        let head_tree = head
+            .peel_to_tree()
+            .map_err(|e| format!("Failed to peel HEAD to tree: {}", e))?;
+
+        // Try origin/{branch} first
+        let origin_ref = format!("refs/remotes/origin/{}", branch_clone);
+        let diff = match repo.revparse_single(&origin_ref) {
+            Ok(origin_obj) => {
+                let origin_tree = origin_obj
+                    .peel_to_tree()
+                    .map_err(|e| format!("Failed to peel origin to tree: {}", e))?;
+                // Diff origin_tree -> HEAD tree (shows what changed in the worktree vs upstream)
+                repo.diff_tree_to_tree(Some(&origin_tree), Some(&head_tree), None)
+                    .map_err(|e| format!("Failed to compute diff: {}", e))?
+            }
+            Err(_) => {
+                // Fallback: diff working dir against HEAD (uncommitted changes)
+                repo.diff_tree_to_workdir_with_index(Some(&head_tree), None)
+                    .map_err(|e| format!("Failed to compute workdir diff: {}", e))?
+            }
+        };
+
+        // Convert to unified diff string
+        let mut diff_string = String::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            let origin = line.origin();
+            if origin == '+' || origin == '-' || origin == ' ' {
+                diff_string.push(origin);
+            }
+            diff_string.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
+            true
+        })
+        .map_err(|e| format!("Failed to format diff: {}", e))?;
+
+        Ok::<String, String>(diff_string)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {}", e))??;
+
+    println!(
+        "get_worktree_diff: returning {} bytes for worktree {}",
+        diff_result.len(),
+        worktree_id
+    );
+    Ok(diff_result)
+}
+
+// ============================================================================
+// create_worktree — REQ-08
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: Option<i32>,
+    branch_name: String,
+    repo_path: String,
+    worktree_path: Option<String>,
 ) -> Result<Worktree, String> {
-    todo!("Plan 03 will rewrite lease_worktree with task-based worktree creation")
+    println!(
+        "create_worktree(project={}, task={:?}) called",
+        project_id, task_id
+    );
+
+    // Step 1: Determine relative worktree path
+    let relative_path = if let Some(path) = worktree_path {
+        path
+    } else if let Some(tid) = task_id {
+        crate::models::worktree_path_for_task(tid)
+    } else {
+        return Err("Either worktree_path or task_id must be provided".to_string());
+    };
+
+    // Step 2: Ensure parent directory exists
+    tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+        .await
+        .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+
+    // Step 3: Create git worktree (local only for now)
+    let git_conn = crate::models::GitConnection::Local { path: repo_path.clone() };
+    crate::git::create_worktree(&git_conn, &branch_name, &relative_path).await?;
+
+    // Step 4: Insert DB row (lock DB after async git work)
+    let now = Utc::now().to_rfc3339();
+    let worktree_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, ?, ?, ?, ?)",
+            rusqlite::params![project_id, task_id, &branch_name, &relative_path, &now],
+        )
+        .map_err(|e| format!("Failed to insert worktree: {}", e))?;
+        conn.last_insert_rowid() as i32
+    };
+
+    println!("create_worktree: created worktree {} at {}", worktree_id, relative_path);
+    Ok(Worktree {
+        id: worktree_id,
+        project_id,
+        task_id,
+        branch_name,
+        path: relative_path,
+        git_status: None,
+        created_at: now,
+    })
+}
+
+/// Internal helper for on-demand worktree creation during agent execution.
+/// Called from execution_handlers.rs — NOT an IPC command.
+pub async fn create_worktree_for_task(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: &str,
+) -> Result<(i32, String), String> {
+    let relative_path = crate::models::worktree_path_for_task(task_id);
+    let abs_path = format!("{}/{}", repo_path, relative_path);
+
+    // Ensure parent dir exists
+    tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+        .await
+        .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+
+    // Create branch name for this task
+    let branch_name = format!("task-{}", task_id);
+
+    // Create git worktree (local only for now)
+    let git_conn = crate::models::GitConnection::Local { path: repo_path.to_string() };
+    crate::git::create_worktree(&git_conn, &branch_name, &relative_path).await?;
+
+    // Insert DB row
+    let worktree_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, ?, ?, ?, ?)",
+            rusqlite::params![project_id, task_id, &branch_name, &relative_path, &now],
+        )
+        .map_err(|e| format!("Failed to insert worktree: {}", e))?;
+        conn.last_insert_rowid() as i32
+    };
+
+    Ok((worktree_id, abs_path))
 }
 
 // ============================================================================
-// Worktree Return (STUB — Plan 03 will rewrite)
+// delete_worktree — REQ-09
 // ============================================================================
 
 #[tauri::command]
 #[specta::specta]
-pub fn return_worktree(
-    _app_state: State<Arc<AppState>>,
-    _worktree_id: i32,
+pub async fn delete_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+    repo_path: String,
 ) -> Result<(), String> {
-    todo!("Plan 03 will rewrite return_worktree")
+    println!("delete_worktree(worktree={}) called", worktree_id);
+
+    // Step 1: Query DB for worktree path
+    let wt_path: String = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path FROM worktrees WHERE id = ?",
+            rusqlite::params![worktree_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+
+    // Step 2: Call git worktree remove (best effort — don't fail if already gone)
+    let git_conn = crate::models::GitConnection::Local { path: repo_path.clone() };
+    let _ = crate::git::delete_worktree(&git_conn, &wt_path).await;
+
+    // Step 3: Delete DB row
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.execute(
+        "DELETE FROM worktrees WHERE id = ?",
+        rusqlite::params![worktree_id],
+    )
+    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
+
+    println!("delete_worktree: deleted worktree {}", worktree_id);
+    Ok(())
 }
 
-// ============================================================================
-// Pool Status Monitoring (STUB — Plan 03 will rewrite)
-// ============================================================================
-
-// PoolStatus removed — replaced by WorktreeWithStatus view model
-
-#[tauri::command]
-#[specta::specta]
-pub fn get_pool_status(
-    _app_state: State<Arc<AppState>>,
-    _project_id: i32,
-) -> Result<Vec<crate::models::WorktreeWithStatus>, String> {
-    todo!("Plan 03 will rewrite get_pool_status as get_worktrees_with_status")
-}
-
-// ============================================================================
-// Worktree Cleanup (STUB — Plan 03 will rewrite)
-// ============================================================================
-
-#[tauri::command]
-#[specta::specta]
-pub async fn cleanup_worktree(
-    _app_state: State<'_, Arc<AppState>>,
-    _project_id: i32,
-    _worktree_id: i32,
-    _repo_path: String,
+/// Internal helper for worktree deletion during finalization.
+/// Called from execution_handlers.rs — NOT an IPC command.
+pub async fn delete_worktree_for_task(
+    app_state: &Arc<AppState>,
+    worktree_id: i32,
+    worktree_path: &str,
+    repo_path: &str,
 ) -> Result<(), String> {
-    todo!("Plan 03 will rewrite cleanup_worktree with git2-based deletion")
-}
+    // Best effort git worktree remove
+    let git_conn = crate::models::GitConnection::Local { path: repo_path.to_string() };
+    let _ = crate::git::delete_worktree(&git_conn, worktree_path).await;
 
-#[tauri::command]
-#[specta::specta]
-pub async fn recover_dirty_worktrees(
-    _app_state: State<'_, Arc<AppState>>,
-    _project_id: i32,
-    _repo_path: String,
-) -> Result<Vec<i32>, String> {
-    todo!("Plan 03 will rewrite recover_dirty_worktrees as zombie cleanup")
-}
+    // Delete DB row
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.execute(
+        "DELETE FROM worktrees WHERE id = ?",
+        rusqlite::params![worktree_id],
+    )
+    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
 
-// ============================================================================
-// Worktree Pool Pre-creation (STUB — Plan 03 will rewrite)
-// ============================================================================
-
-#[tauri::command]
-#[specta::specta]
-pub fn initialize_worktree_pool(
-    _app_state: State<Arc<AppState>>,
-    _project_id: i32,
-    _repo_path: String,
-    _pool_size: Option<i32>,
-) -> Result<Vec<crate::models::WorktreeWithStatus>, String> {
-    todo!("Plan 03 will rewrite initialize_worktree_pool as list_worktrees")
+    Ok(())
 }
