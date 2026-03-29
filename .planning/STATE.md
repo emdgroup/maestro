@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-29T21:15:00.924Z"
+last_updated: "2026-03-29T22:17:51.279Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 25 — backend-overhaul
+**Current focus:** Phase 26 — agents-view
 
 ## Current Position
 
-Phase: 25 (backend-overhaul) — EXECUTING
-Plan: 4 of 4
+Phase: 26 (agents-view) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -104,6 +104,7 @@ Plan: 4 of 4
 | Phase 25 P02 | 0.030 | 1 tasks | 1 files |
 | Phase 25 P03 | 0.035 | 2 tasks | 3 files |
 | Phase 25 P04 | 0.086 | 2 tasks | 3 files |
+| Phase 26-agents-view P01 | 0.031 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,8 @@ Phase 18 Architecture Decisions:
 - [Phase 25]: git2::Repository inside tokio::task::spawn_blocking for get_worktree_diff; orphan/zombie detection by cross-referencing disk vs DB state; auto-delete stale DB rows in list_worktrees_with_status
 - [Phase 25]: spawn_agent_execution and resume_agent_execution call create_worktree_for_task on entry and delete_worktree_for_task in finalization; error paths delete DB row best-effort
 - [Phase 25]: list_executions_with_task_info uses LEFT JOIN worktrees so executions with no active worktree still appear after completion cleanup
+- [Phase 26-agents-view]: AgentsView owns TanStack Query call; AgentMonitor is a pure display component receiving props
+- [Phase 26-agents-view]: detachTerminal .catch(() => {}) suppresses errors when PTY already ended on task completion
 
 ### Pending Todos
 
