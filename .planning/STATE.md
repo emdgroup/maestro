@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-29T21:00:01.843Z"
+last_updated: "2026-03-29T21:06:55.960Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -103,6 +103,7 @@ Plan: 4 of 4
 | Phase 25 P01 | 0.087 | 2 tasks | 7 files |
 | Phase 25 P02 | 0.030 | 1 tasks | 1 files |
 | Phase 25 P03 | 0.035 | 2 tasks | 3 files |
+| Phase 25 P04 | 0.086 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,8 @@ Phase 18 Architecture Decisions:
 - [Phase 25]: Use tokio::process::Command for all local git operations to avoid blocking the async runtime
 - [Phase 25]: get_worktree_status_local does not fail on non-zero exit to handle edge cases like detached HEAD gracefully
 - [Phase 25]: git2::Repository inside tokio::task::spawn_blocking for get_worktree_diff; orphan/zombie detection by cross-referencing disk vs DB state; auto-delete stale DB rows in list_worktrees_with_status
+- [Phase 25]: spawn_agent_execution and resume_agent_execution call create_worktree_for_task on entry and delete_worktree_for_task in finalization; error paths delete DB row best-effort
+- [Phase 25]: list_executions_with_task_info uses LEFT JOIN worktrees so executions with no active worktree still appear after completion cleanup
 
 ### Pending Todos
 

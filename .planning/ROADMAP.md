@@ -86,7 +86,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 
 ---
 
-- [ ] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen
+- [x] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen (completed 2026-03-29)
 - [ ] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search
 - [ ] **Phase 27: Worktrees View** — Real worktree cards, right-panel diff, zombie badge, manual create/delete
 - [ ] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, replaces `recover_dirty_worktrees` *(lower priority — can be deferred if time-constrained)*
@@ -110,7 +110,7 @@ Plans:
 - [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
 - [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
 - [x] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
-- [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
+- [x] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
 **UI hint**: no
 
 **Key deliverables:**
@@ -146,7 +146,7 @@ Plans:
 Plans:
 - [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
 - [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
-- [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
+- [x] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
 **UI hint**: yes
 
@@ -178,7 +178,7 @@ Plans:
 **Plans**: 4 plans
 Plans:
 - [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
-- [ ] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
+- [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
 - [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
 **UI hint**: yes
@@ -211,7 +211,7 @@ Plans:
   3. The `recover_dirty_worktrees` call in `App.tsx` is replaced by `cleanup_zombie_worktrees` with no other behavioral change to project open flow
 **Plans**: 4 plans
 Plans:
-- [ ] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
+- [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
 - [ ] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
 - [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
 - [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
@@ -233,7 +233,7 @@ Plans:
 | 13-22 | v1.1 | 36/36 | Complete | 2026-03-16 |
 | 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
-| 25 - Backend Overhaul | v1.3 | 3/4 | In Progress|  |
+| 25 - Backend Overhaul | v1.3 | 4/4 | Complete   | 2026-03-29 |
 | 26 - Agents View | v1.3 | 0/? | Not started | - |
 | 27 - Worktrees View | v1.3 | 0/? | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
