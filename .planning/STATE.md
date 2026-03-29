@@ -1,28 +1,29 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Deep Linking & Project Picker
-status: milestone_complete
-last_updated: "2026-03-29T00:00:00.000Z"
+milestone: v1.3
+milestone_name: Agents & Worktrees
+status: completed
+last_updated: "2026-03-29T20:53:38.843Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
+  total_phases: 4
+  completed_phases: 0
   total_plans: 4
-  completed_plans: 4
+  completed_plans: 1
 ---
 
-# Project State: v1.3 (Next Milestone)
+# Project State: v1.3 — Agents & Worktrees
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Planning v1.3 milestone — run `/gsd:new-milestone` to define goals
+**Current focus:** Phase 25 — backend-overhaul
 
 ## Current Position
 
-v1.2 milestone complete — all phases shipped. Ready to start v1.3.
+Phase: 25 (backend-overhaul) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -99,6 +100,7 @@ v1.2 milestone complete — all phases shipped. Ready to start v1.3.
 | Phase 24 P01 | 0.226 | 2 tasks | 4 files |
 | Phase 24 P02 | 0.05 | 4 tasks | 8 files |
 | Phase 24 P02 | 0.42 | 5 tasks | 12 files |
+| Phase 25 P01 | 0.087 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -153,6 +155,8 @@ Phase 18 Architecture Decisions:
 - [Phase 24]: Create dialog shows inline text-destructive errors; Clone dialog uses onError toast — split based on whether error is user-correctable
 - [Phase 24]: Browse button uses active SSH connection from ConnectionContext (not hardcoded null) so remote projects browse via SSH
 - [Phase 24]: git_init_project, clone_project, create_new_project IPC commands accept connection_id and dispatch to SSH session when remote
+- [Phase 25]: Stub worktree_handlers.rs and spawn/resume execution functions with todo!() to keep cargo check green during schema/model migration — Plan 03/04 will rewrite
+- [Phase 25]: WorktreeStatus and PoolStatus fully removed from codebase; get_pool_status return type changed to Vec<WorktreeWithStatus> to signal Plan 03 intent
 
 ### Pending Todos
 
