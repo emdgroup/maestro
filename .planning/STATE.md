@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-29T20:53:38.843Z"
+last_updated: "2026-03-29T20:56:03.223Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 25 (backend-overhaul) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -101,6 +101,7 @@ Plan: 2 of 4
 | Phase 24 P02 | 0.05 | 4 tasks | 8 files |
 | Phase 24 P02 | 0.42 | 5 tasks | 12 files |
 | Phase 25 P01 | 0.087 | 2 tasks | 7 files |
+| Phase 25 P02 | 0.030 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -157,6 +158,8 @@ Phase 18 Architecture Decisions:
 - [Phase 24]: git_init_project, clone_project, create_new_project IPC commands accept connection_id and dispatch to SSH session when remote
 - [Phase 25]: Stub worktree_handlers.rs and spawn/resume execution functions with todo!() to keep cargo check green during schema/model migration — Plan 03/04 will rewrite
 - [Phase 25]: WorktreeStatus and PoolStatus fully removed from codebase; get_pool_status return type changed to Vec<WorktreeWithStatus> to signal Plan 03 intent
+- [Phase 25]: Use tokio::process::Command for all local git operations to avoid blocking the async runtime
+- [Phase 25]: get_worktree_status_local does not fail on non-zero exit to handle edge cases like detached HEAD gracefully
 
 ### Pending Todos
 
