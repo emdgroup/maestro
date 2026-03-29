@@ -142,12 +142,10 @@ Plans:
   3. Clicking a completed/failed execution row shows the DB-stored terminal output with a "Session ended" notice — no blank terminal
   4. Navigating away from Agents view and back does not leak terminal instances (xterm.js disposed, FitAddon cleaned up, ResizeObserver disconnected)
   5. Status filter chips (All / Running / Done / Failed) and task name search correctly narrow the sidebar list client-side
-**Plans**: 4 plans
+**Plans**: 2 plans
 Plans:
-- [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
-- [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
-- [x] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
-- [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
+- [ ] 26-01-PLAN.md — Query hook + AgentsView data owner + Terminal cleanup
+- [ ] 26-02-PLAN.md — AgentMonitor rewrite + DeadSessionTerminal
 **UI hint**: yes
 
 **Key deliverables:**
@@ -234,7 +232,7 @@ Plans:
 | 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 26 - Agents View | v1.3 | 0/? | Not started | - |
+| 26 - Agents View | v1.3 | 0/2 | Not started | - |
 | 27 - Worktrees View | v1.3 | 0/? | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 
