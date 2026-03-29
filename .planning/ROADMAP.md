@@ -232,7 +232,7 @@ Plans:
 | 23 - In-app routing | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 26 - Agents View | v1.3 | 2/2 | Complete   | 2026-03-29 |
+| 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 27 - Worktrees View | v1.3 | 0/? | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 
