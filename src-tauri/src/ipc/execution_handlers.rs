@@ -3,15 +3,8 @@ use tauri::State;
 use chrono::Utc;
 use std::io::Read;
 
-use crate::models::{ExecutionLog, ExecutionStatus};
+use crate::models::{ExecutionLog, ExecutionStatus, ExecutionWithTask};
 use crate::db::AppState;
-// NOTE: spawn_agent_cli_pty, ExecutionConfig, spawn_agent_execution_dispatcher,
-// and attach_remote_stream_listener will be re-imported in Plan 04 when
-// spawn_agent_execution and resume_agent_execution are rewritten.
-
-// NOTE: spawn_agent_execution and resume_agent_execution reference the old
-// lease_worktree / pool-based worktree pattern. They are stubbed with todo!()
-// until Plan 04 rewrites them for the task-based worktree design.
 
 /// Detect error type and provide suggestions based on stderr and exit code
 ///
@@ -92,13 +85,114 @@ pub fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (Strin
 #[tauri::command]
 #[specta::specta]
 pub async fn spawn_agent_execution(
-    _app_state: State<'_, Arc<AppState>>,
-    _project_id: i32,
-    _task_id: i32,
-    _repo_path: String,
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    repo_path: String,
 ) -> Result<i32, String> {
-    // TODO: Plan 04 will rewrite this with task-based worktree creation (no pool)
-    todo!("Plan 04 will rewrite spawn_agent_execution with task-based worktree design")
+    println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
+
+    // Step 1: Create an on-demand worktree for this task
+    let app_state_arc: Arc<AppState> = (*app_state).clone();
+    let (worktree_id, worktree_path) = super::create_worktree_for_task(
+        &app_state_arc,
+        project_id,
+        task_id,
+        &repo_path,
+    ).await?;
+    println!("Created on-demand worktree {} at {}", worktree_id, worktree_path);
+
+    // Step 2: Create execution log record
+    let now = Utc::now().to_rfc3339();
+    let log_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (?, 'running', ?)",
+            rusqlite::params![task_id, &now],
+        )
+        .map_err(|e| format!("Failed to create execution log: {}", e))?;
+        conn.last_insert_rowid() as i32
+    };
+
+    println!("spawn_agent_execution: created execution log {}", log_id);
+
+    // Step 3: Update task status to InProgress
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let _ = conn.execute(
+            "UPDATE tasks SET status = 'InProgress' WHERE id = ?",
+            rusqlite::params![task_id],
+        );
+    }
+
+    // Step 4: Spawn background task for agent execution
+    let app_state_bg = app_state_arc.clone();
+    let repo_path_clone = repo_path.clone();
+    let worktree_path_clone = worktree_path.clone();
+
+    tokio::spawn(async move {
+        println!("[spawn] Background task started for log {}", log_id);
+
+        // Spawn the agent CLI in the worktree
+        let result = crate::process::spawn_agent_cli(
+            &worktree_path_clone,
+            "sidecar/dist/index.js",
+            task_id,
+        ).await;
+
+        let now = Utc::now().to_rfc3339();
+
+        match result {
+            Ok(output) => {
+                let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
+                println!("[spawn] Agent finished with status={} for log {}", final_status, log_id);
+
+                // Update execution log with result
+                if let Ok(conn) = app_state_bg.db.lock() {
+                    let _ = conn.execute(
+                        "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
+                        rusqlite::params![final_status, &now, &output.stdout, log_id],
+                    );
+                    // Update task status based on result
+                    let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
+                    let _ = conn.execute(
+                        "UPDATE tasks SET status = ? WHERE id = ?",
+                        rusqlite::params![task_status, task_id],
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[spawn] Agent execution error for log {}: {}", log_id, e);
+                if let Ok(conn) = app_state_bg.db.lock() {
+                    let _ = conn.execute(
+                        "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
+                        rusqlite::params![&now, log_id],
+                    );
+                    let _ = conn.execute(
+                        "UPDATE tasks SET status = 'Ready' WHERE id = ?",
+                        rusqlite::params![task_id],
+                    );
+                    // Best-effort delete worktree DB row on error
+                    let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
+                }
+                return;
+            }
+        }
+
+        // Finalization: delete worktree on completion (best effort)
+        if let Err(e) = super::delete_worktree_for_task(
+            &app_state_bg,
+            worktree_id,
+            &worktree_path_clone,
+            &repo_path_clone,
+        ).await {
+            eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
+        } else {
+            println!("[finalize] Deleted worktree {} on completion", worktree_id);
+        }
+    });
+
+    Ok(log_id)
 }
 
 /// Drain the Ready queue for auto-mode execution
@@ -597,11 +691,150 @@ pub async fn pause_agent_execution(
 #[tauri::command]
 #[specta::specta]
 pub async fn resume_agent_execution(
-    _app_state: State<'_, Arc<AppState>>,
-    _task_id: i32,
-    _project_id: i32,
-    _repo_path: String,
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    project_id: i32,
+    repo_path: String,
 ) -> Result<i32, String> {
-    // TODO: Plan 04 will rewrite this with task-based worktree design
-    todo!("Plan 04 will rewrite resume_agent_execution with task-based worktree design")
+    println!("resume_agent_execution(project={}, task={}) called", project_id, task_id);
+
+    // Step 1: Create an on-demand worktree for this task
+    let app_state_arc: Arc<AppState> = (*app_state).clone();
+    let (worktree_id, worktree_path) = super::create_worktree_for_task(
+        &app_state_arc,
+        project_id,
+        task_id,
+        &repo_path,
+    ).await?;
+    println!("Created on-demand worktree {} at {}", worktree_id, worktree_path);
+
+    // Step 2: Create new execution log record for resumed execution
+    let now = Utc::now().to_rfc3339();
+    let log_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (?, 'running', ?)",
+            rusqlite::params![task_id, &now],
+        )
+        .map_err(|e| format!("Failed to create execution log: {}", e))?;
+        conn.last_insert_rowid() as i32
+    };
+
+    println!("resume_agent_execution: created execution log {}", log_id);
+
+    // Step 3: Update task status to InProgress
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let _ = conn.execute(
+            "UPDATE tasks SET status = 'InProgress' WHERE id = ?",
+            rusqlite::params![task_id],
+        );
+    }
+
+    // Step 4: Spawn background task for resumed agent execution
+    let app_state_bg = app_state_arc.clone();
+    let repo_path_clone = repo_path.clone();
+    let worktree_path_clone = worktree_path.clone();
+
+    tokio::spawn(async move {
+        println!("[resume] Background task started for log {}", log_id);
+
+        let result = crate::process::spawn_agent_cli(
+            &worktree_path_clone,
+            "sidecar/dist/index.js",
+            task_id,
+        ).await;
+
+        let now = Utc::now().to_rfc3339();
+
+        match result {
+            Ok(output) => {
+                let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
+                println!("[resume] Agent finished with status={} for log {}", final_status, log_id);
+
+                if let Ok(conn) = app_state_bg.db.lock() {
+                    let _ = conn.execute(
+                        "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
+                        rusqlite::params![final_status, &now, &output.stdout, log_id],
+                    );
+                    let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
+                    let _ = conn.execute(
+                        "UPDATE tasks SET status = ? WHERE id = ?",
+                        rusqlite::params![task_status, task_id],
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[resume] Agent execution error for log {}: {}", log_id, e);
+                if let Ok(conn) = app_state_bg.db.lock() {
+                    let _ = conn.execute(
+                        "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
+                        rusqlite::params![&now, log_id],
+                    );
+                    let _ = conn.execute(
+                        "UPDATE tasks SET status = 'Ready' WHERE id = ?",
+                        rusqlite::params![task_id],
+                    );
+                    // Best-effort delete worktree DB row on error
+                    let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
+                }
+                return;
+            }
+        }
+
+        // Finalization: delete worktree on completion (best effort)
+        if let Err(e) = super::delete_worktree_for_task(
+            &app_state_bg,
+            worktree_id,
+            &worktree_path_clone,
+            &repo_path_clone,
+        ).await {
+            eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
+        } else {
+            println!("[finalize] Deleted worktree {} on completion", worktree_id);
+        }
+    });
+
+    Ok(log_id)
+}
+
+/// List all executions for a project, enriched with task name and worktree branch.
+/// Used by the Agents View sidebar.
+#[tauri::command]
+#[specta::specta]
+pub fn list_executions_with_task_info(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+) -> Result<Vec<ExecutionWithTask>, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let mut stmt = conn.prepare(
+        "SELECT el.id, el.task_id, t.name AS task_name, w.branch_name,
+                el.status, el.started_at, el.completed_at, el.terminal_output
+         FROM execution_logs el
+         INNER JOIN tasks t ON t.id = el.task_id
+         LEFT JOIN worktrees w ON w.task_id = el.task_id
+         WHERE t.project_id = ?
+         ORDER BY el.started_at DESC"
+    ).map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let results = stmt.query_map(rusqlite::params![project_id], |row| {
+        Ok(ExecutionWithTask {
+            id: row.get(0)?,
+            task_id: row.get(1)?,
+            task_name: row.get(2)?,
+            branch_name: row.get(3)?,
+            status: row.get(4)?,
+            started_at: row.get(5)?,
+            completed_at: row.get(6)?,
+            terminal_output: row.get(7)?,
+        })
+    }).map_err(|e| format!("Failed to query executions: {}", e))?;
+
+    let mut executions = Vec::new();
+    for result in results {
+        executions.push(result.map_err(|e| format!("Failed to read row: {}", e))?);
+    }
+
+    Ok(executions)
 }
