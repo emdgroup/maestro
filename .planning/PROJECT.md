@@ -12,7 +12,14 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 **Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
 
-**Active milestone:** v1.3 Agents & Worktrees — Phase 25 complete, Phase 26 (agents-view) next
+**Active milestone:** v1.3 Agents & Worktrees — Phase 26 complete, Phase 27 (worktrees-view) next
+
+**What was built in Phase 26 (agents-view):**
+- `useExecutionsWithTaskInfoQuery` polling hook (2s interval) — AgentsView as sole data owner
+- AgentMonitor rewrite: three-line sidebar rows, filter toolbar, left-border selection, terminal routing
+- `DeadSessionTerminal` for completed/failed execution history (write-only xterm.js, no PTY)
+- REQ-22 compliant Terminal cleanup: ResizeObserver.disconnect → detachTerminal → terminal.dispose
+- Deep-link resolution via `pendingAgentId` from navigationStore, auto-select fallback for running sessions
 
 **What was built in Phase 25 (backend-overhaul):**
 - SQLite schema migrated to v3: pool columns removed, `task_id`/`git_status` added to worktrees
