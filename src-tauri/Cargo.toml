@@ -33,6 +33,8 @@ specta = { version = "2.0.0-rc.20", features = ["serde_json"] }
 specta-typescript = "0.0.9"
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 urlencoding = "2.1"
+git2 = { version = "0.20.4", features = ["vendored-libgit2"] }
+notify = "8.2.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["UI_ViewManagement", "UI", "Foundation"] }

@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
-pub const SCHEMA_V2: &str = r#"
+pub const SCHEMA_V3: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -65,11 +65,10 @@ CREATE TABLE IF NOT EXISTS task_instructions (
 CREATE TABLE IF NOT EXISTS worktrees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
     branch_name TEXT NOT NULL,
     path TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available',
-    leased_at TEXT,
-    returned_at TEXT,
+    git_status TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
@@ -177,7 +176,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V2)?;
+        conn.execute_batch(SCHEMA_V3)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -230,5 +229,21 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(version, 3);
+
+        // Verify worktrees table has new v3 columns
+        let worktree_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(worktrees)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(worktree_columns.contains(&"task_id".to_string()), "task_id column should exist");
+        assert!(worktree_columns.contains(&"git_status".to_string()), "git_status column should exist");
+        assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
+        assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
+        assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");
     }
 }
