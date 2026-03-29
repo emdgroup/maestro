@@ -17,35 +17,35 @@ describe("ProjectsListLayout", () => {
     vi.clearAllMocks();
   });
 
-  it("renders three footer buttons: Select Existing, Clone, Create", () => {
+  it("renders three footer buttons: Select Project, Clone Repository, Create Project", () => {
     render(<ProjectsListLayout {...defaultProps} />);
-    expect(screen.getByText("Select Existing")).toBeInTheDocument();
-    expect(screen.getByText("Clone")).toBeInTheDocument();
-    expect(screen.getByText("Create")).toBeInTheDocument();
+    expect(screen.getByText("Select Project")).toBeInTheDocument();
+    expect(screen.getByText("Clone Repository")).toBeInTheDocument();
+    expect(screen.getByText("Create Project")).toBeInTheDocument();
   });
 
   it("disables all buttons when loading", () => {
     render(<ProjectsListLayout {...defaultProps} loading={true} />);
-    expect(screen.getByText("Select Existing").closest("button")).toBeDisabled();
-    expect(screen.getByText("Clone").closest("button")).toBeDisabled();
-    expect(screen.getByText("Create").closest("button")).toBeDisabled();
+    expect(screen.getByText("Select Project").closest("button")).toBeDisabled();
+    expect(screen.getByText("Clone Repository").closest("button")).toBeDisabled();
+    expect(screen.getByText("Create Project").closest("button")).toBeDisabled();
   });
 
-  it("calls onCloneClick when Clone button clicked", () => {
+  it("calls onCloneClick when Clone Repository button clicked", () => {
     render(<ProjectsListLayout {...defaultProps} />);
-    screen.getByText("Clone").click();
+    screen.getByText("Clone Repository").click();
     expect(defaultProps.onCloneClick).toHaveBeenCalled();
   });
 
-  it("calls onCreateClick when Create button clicked", () => {
+  it("calls onCreateClick when Create Project button clicked", () => {
     render(<ProjectsListLayout {...defaultProps} />);
-    screen.getByText("Create").click();
+    screen.getByText("Create Project").click();
     expect(defaultProps.onCreateClick).toHaveBeenCalled();
   });
 
-  it("calls onSelectNewClick when Select Existing button clicked", () => {
+  it("calls onSelectNewClick when Select Project button clicked", () => {
     render(<ProjectsListLayout {...defaultProps} />);
-    screen.getByText("Select Existing").click();
+    screen.getByText("Select Project").click();
     expect(defaultProps.onSelectNewClick).toHaveBeenCalled();
   });
 });
