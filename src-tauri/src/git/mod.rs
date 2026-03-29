@@ -2,10 +2,19 @@
 pub mod remote;
 
 use crate::models::GitConnection;
+use tokio::process::Command as TokioCommand;
+
+/// Parsed worktree entry from `git worktree list --porcelain`
+pub struct ParsedWorktree {
+    pub path: String,
+    pub branch: Option<String>,
+    pub head: String,
+    pub is_prunable: bool,
+}
 
 /// Public dispatcher: routes git operations to local OR remote based on GitConnection type
 ///
-/// For local projects: Uses simple-git CLI via Node.js sidecar
+/// For local projects: Uses tokio::process::Command to run git CLI directly
 /// For remote projects: Executes git commands via SSH
 ///
 /// Callers don't need to know the difference - just pass a GitConnection and the operation works.
@@ -110,56 +119,150 @@ pub async fn get_current_branch(
     }
 }
 
+/// List all worktrees via `git worktree list --porcelain`
+pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>, String> {
+    let output = TokioCommand::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git worktree list: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git worktree list failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_worktree_list(&stdout))
+}
+
+fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
+    output.split("\n\n")
+        .filter(|block| !block.trim().is_empty())
+        .map(|block| {
+            let mut path = String::new();
+            let mut branch = None;
+            let mut head = String::new();
+            let mut is_prunable = false;
+
+            for line in block.lines() {
+                if let Some(p) = line.strip_prefix("worktree ") {
+                    path = p.to_string();
+                } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                    branch = Some(b.to_string());
+                } else if let Some(h) = line.strip_prefix("HEAD ") {
+                    head = h.to_string();
+                } else if line.starts_with("prunable") {
+                    is_prunable = true;
+                }
+            }
+
+            ParsedWorktree { path, branch, head, is_prunable }
+        })
+        .collect()
+}
+
+/// Get git status --porcelain for a specific worktree path
+pub async fn get_worktree_status_local(worktree_abs_path: &str) -> Result<String, String> {
+    let output = TokioCommand::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(worktree_abs_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status in {}: {}", worktree_abs_path, e))?;
+
+    // Don't fail on non-zero exit — just return empty string
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 // ============================================================================
-// Local git operation implementations
+// Local git operation implementations using tokio::process::Command
 // ============================================================================
-// These are placeholders that should call the Node.js sidecar
-// Implementation depends on Phase 3-01 sidecar integration being complete
 
 async fn create_worktree_local(
-    _path: &str,
-    _branch: &str,
-    _worktree_name: &str,
+    path: &str,
+    branch: &str,
+    worktree_name: &str,
 ) -> Result<(), String> {
-    // TODO: Phase 3-01 sidecar integration
-    // Call: node sidecar/dist/index.js --create-worktree {path} {branch} {worktree_name}
-    Err("Local git operations not yet implemented in dispatcher".to_string())
+    let output = TokioCommand::new("git")
+        .args(["worktree", "add", worktree_name, "-b", branch])
+        .current_dir(path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git worktree add: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git worktree add failed: {}", stderr));
+    }
+    Ok(())
 }
 
 async fn delete_worktree_local(
-    _path: &str,
-    _worktree_name: &str,
+    path: &str,
+    worktree_name: &str,
 ) -> Result<(), String> {
-    // TODO: Phase 3-01 sidecar integration
-    // Call: node sidecar/dist/index.js --delete-worktree {path} {worktree_name}
-    Err("Local git operations not yet implemented in dispatcher".to_string())
+    let output = TokioCommand::new("git")
+        .args(["worktree", "remove", worktree_name, "--force"])
+        .current_dir(path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git worktree remove: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git worktree remove failed: {}", stderr));
+    }
+    Ok(())
 }
 
 async fn git_diff_local(
-    _path: &str,
-    _branch: &str,
-    _base_branch: &str,
+    path: &str,
+    branch: &str,
+    base_branch: &str,
 ) -> Result<String, String> {
-    // TODO: Phase 3-01 sidecar integration
-    // Call: node sidecar/dist/index.js --get-diff {path} {branch} {base_branch} {context_lines}
-    Err("Local git operations not yet implemented in dispatcher".to_string())
+    let output = TokioCommand::new("git")
+        .args(["diff", "--unified=6", &format!("{}...{}", base_branch, branch)])
+        .current_dir(path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git diff failed: {}", stderr));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 async fn git_status_local(
-    _path: &str,
+    path: &str,
 ) -> Result<String, String> {
-    // TODO: Phase 3-01 sidecar integration
-    // Call: node sidecar/dist/index.js --get-status {path}
-    Err("Local git operations not yet implemented in dispatcher".to_string())
+    let output = TokioCommand::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git status failed: {}", stderr));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 async fn list_branches_local(
     path: &str,
 ) -> Result<Vec<String>, String> {
-    let output = std::process::Command::new("git")
+    let output = TokioCommand::new("git")
         .args(["branch", "-a"])
         .current_dir(path)
         .output()
+        .await
         .map_err(|e| format!("Failed to run git branch: {}", e))?;
 
     if !output.status.success() {
@@ -191,10 +294,11 @@ async fn list_branches_local(
 async fn get_current_branch_local(
     path: &str,
 ) -> Result<String, String> {
-    let output = std::process::Command::new("git")
+    let output = TokioCommand::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(path)
         .output()
+        .await
         .map_err(|e| format!("Failed to run git rev-parse: {}", e))?;
 
     if !output.status.success() {
