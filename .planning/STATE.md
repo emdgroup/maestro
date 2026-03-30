@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T13:27:36.522Z"
+last_updated: "2026-03-30T13:34:17.103Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -114,6 +114,7 @@ Plan: 3 of 3
 | Phase 29 P02 | 0.03 | 2 tasks | 10 files |
 | Phase 30 P01 | 0.133 | 2 tasks | 6 files |
 | Phase 30 P02 | 0.313 | 2 tasks | 12 files |
+| Phase 30 P03 | 0.061 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,7 @@ Phase 18 Architecture Decisions:
 - [Phase 30]: Filter state lifted to view (AgentsView/WorktreesView) — display components are pure, matching Phase 26 AgentMonitor pattern
 - [Phase 30]: canonicalize() applied at IPC boundary in spawn/resume_agent_execution and create_worktree_for_task to fix git repo path bug
 - [Phase 30]: Schema V4: execution_logs.task_id nullable (inline FK) to support task-free interactive PTY sessions; create_worktree IPC uses origin_branch + new_branch_name; AgentMonitor selects by execution.id (not task_id) to handle null task_id
+- [Phase 30]: Select onValueChange null-coalesce: (v) => setState(v ?? '') because base-ui Select passes string | null
 
 ### Pending Todos
 
