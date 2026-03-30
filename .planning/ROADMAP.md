@@ -105,11 +105,11 @@ Plans:
 **Goal:** Fix four post-v1.3 testing issues: action bars for AgentsView/WorktreesView, Spawn Agent button for interactive sessions, "not a git repository" execution bug, and WorktreeManager create dialog improvements
 **Requirements**: TBD
 **Depends on:** Phase 29
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 30-01-PLAN.md — Fix execution path bug + add action bars to AgentsView and WorktreesView
-- [ ] 30-02-PLAN.md — Rust backend: update create_worktree IPC, add spawn_interactive_execution, update ExecutionWithTask model
+- [x] 30-02-PLAN.md — Rust backend: update create_worktree IPC, add spawn_interactive_execution, update ExecutionWithTask model
 - [ ] 30-03-PLAN.md — Frontend: redesign worktree create dialog, add Spawn Agent button + dialog
 
 ---
