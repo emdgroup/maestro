@@ -208,6 +208,7 @@ None currently.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260330-khs | move spawn agent button to top of list and rename to New Session | 2026-03-30 | b9ec20f | [260330-khs-move-spawn-agent-button-to-top-of-list-a](./quick/260330-khs-move-spawn-agent-button-to-top-of-list-a/) |
+| 260330-tb8 | fix Worktrees and Agents view bugs (cleanup modal, stale branches, delete/reconnect, interactive PTY) | 2026-03-30 | 91c459b | [260330-tb8-fix-worktrees-and-agents-view-bugs](./quick/260330-tb8-fix-worktrees-and-agents-view-bugs/) |
 
 ### Blockers/Concerns
 
