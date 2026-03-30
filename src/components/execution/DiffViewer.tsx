@@ -11,6 +11,12 @@ interface DiffViewerProps {
   error?: string;
 }
 
+const DiffPlaceholder = ({ message, variant = "muted" }: { message: string; variant?: "muted" | "error" }) => (
+  <div className={`flex items-center justify-center h-full text-sm ${variant === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+    {message}
+  </div>
+);
+
 export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error }) => {
   const [highlighter, setHighlighter] = useState<any>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
@@ -34,45 +40,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
     loadHighlighter();
   }, []);
 
-  if (highlighterError) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-destructive">
-        <p>Error loading syntax highlighter: {highlighterError}</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        Loading diff...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-destructive">
-        Error loading diff: {error}
-      </div>
-    );
-  }
-
-  if (!diffFile) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        No changes to display
-      </div>
-    );
-  }
-
-  if (!highlighter) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        Initializing syntax highlighter...
-      </div>
-    );
-  }
+  if (highlighterError) return <DiffPlaceholder message={`Error loading syntax highlighter: ${highlighterError}`} variant="error" />;
+  if (loading) return <DiffPlaceholder message="Loading diff..." />;
+  if (error) return <DiffPlaceholder message={`Error loading diff: ${error}`} variant="error" />;
+  if (!diffFile) return <DiffPlaceholder message="No changes to display" />;
+  if (!highlighter) return <DiffPlaceholder message="Initializing syntax highlighter..." />;
 
   return (
     <div className="min-h-0">

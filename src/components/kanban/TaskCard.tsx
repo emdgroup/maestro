@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Task } from "@/types/bindings";
 import { useBoardStore } from "@/store/boardStore";
-import { api } from "@/lib";
-import { useExecutionLogsQuery } from "@/services/task.service";
+import { useExecutionLogsQuery, useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
@@ -70,6 +69,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
+  const updateTask = useUpdateTask();
 
   // Load latest execution logs using TanStack Query
   const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
@@ -144,16 +144,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     }
   };
 
-  const handleBackToBacklog = async () => {
-    try {
-      await api.updateTask(task.id, "Backlog", null, null, null, null, null, null);
-      store.updateTaskStatus(task.id, "Backlog");
-      toast.success(`"${task.name}" moved back to Backlog`);
-    } catch (error) {
-      toast.error(
-        `Failed to move task: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  const handleBackToBacklog = () => {
+    updateTask.mutate(
+      { taskId: task.id, updates: { status: "Backlog" } },
+      {
+        onSuccess: () => {
+          store.updateTaskStatus(task.id, "Backlog");
+          toast.success(`"${task.name}" moved back to Backlog`);
+        },
+      },
+    );
   };
 
   return (

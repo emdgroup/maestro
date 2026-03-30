@@ -60,9 +60,11 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
 
-  const filteredTasks = backlogTasks
-    .filter((t) => priorityFilter === "All" || t.priority === priorityFilter)
-    .filter((t) => !search || t.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredTasks = backlogTasks.filter(
+    (t) =>
+      (priorityFilter === "All" || t.priority === priorityFilter) &&
+      (!search || t.name.toLowerCase().includes(search.toLowerCase())),
+  );
 
   const handlePromote = (task: Task) => {
     updateMutation.mutate({ taskId: task.id, updates: { status: "Ready" } });
