@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T11:40:24.383Z"
+last_updated: "2026-03-30T13:05:01.228Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 29 — v1-3-agents-worktrees-view-polish-and-bug-fixes
+**Current focus:** Phase 30 — v1-3-post-testing-ui-and-worktree-bug-fixes
 
 ## Current Position
 
-Phase: 29 (v1-3-agents-worktrees-view-polish-and-bug-fixes) — EXECUTING
-Plan: 2 of 2
+Phase: 30 (v1-3-post-testing-ui-and-worktree-bug-fixes) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -112,6 +112,7 @@ Plan: 2 of 2
 | Phase 28-zombie-cleanup-on-project-open P01 | 0.05 | 2 tasks | 5 files |
 | Phase 29 P01 | 0.05 | 2 tasks | 3 files |
 | Phase 29 P02 | 0.03 | 2 tasks | 10 files |
+| Phase 30 P01 | 0.133 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -184,6 +185,8 @@ Phase 18 Architecture Decisions:
 - [Phase 28-zombie-cleanup-on-project-open]: Scoped closure pattern for Rust SQLite query to satisfy borrow checker (conn + stmt lifetime)
 - [Phase 28-zombie-cleanup-on-project-open]: Silent mutation: onError logs to console but no toast — zombie cleanup is background housekeeping
 - [Phase 29]: DiffViewer uses useTheme() for component-level theme resolution; WorktreeManager checks diffLoading first to avoid empty state flash; append_terminal_output uses SQL subquery for UPDATE portability
+- [Phase 30]: Filter state lifted to view (AgentsView/WorktreesView) — display components are pure, matching Phase 26 AgentMonitor pattern
+- [Phase 30]: canonicalize() applied at IPC boundary in spawn/resume_agent_execution and create_worktree_for_task to fix git repo path bug
 
 ### Pending Todos
 
@@ -238,6 +241,7 @@ None currently.
 - Phase 27 added: Worktrees View — WorktreesView with git diff panel, status filtering, zombie detection
 - Phase 28 added: Zombie Cleanup on Project Open — auto-cleanup orphaned worktrees on project load
 - Phase 29 added: v1.3 Agents & Worktrees view polish and bug fixes
+- Phase 30 added: v1.3 post-testing UI and worktree bug fixes
 
 ## Session Continuity
 
