@@ -5,6 +5,7 @@ import { parseDiffString } from "@/lib";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +28,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "@/store/navigationStore";
 import { useWorktreeDiffQuery, useDeleteWorktreeMutation, useCreateWorktreeMutation } from "@/services/worktree.service";
+import { useProjectBranchesQuery } from "@/services/task.service";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
@@ -68,8 +70,14 @@ export function WorktreeManager({
   statusFilter,
 }: WorktreeManagerProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [originBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const { data: branchData } = useProjectBranchesQuery(projectId);
+  const branches = branchData?.[0] ?? [];
+  const currentBranch = branchData?.[1] ?? "main";
 
   const deleteMutation = useDeleteWorktreeMutation();
   const createMutation = useCreateWorktreeMutation();
@@ -112,7 +120,12 @@ export function WorktreeManager({
             variant="outline"
             size="sm"
             className="h-8 text-xs w-full"
-            onClick={() => setShowCreateDialog(true)}
+            onClick={() => {
+              setOriginBranch(currentBranch);
+              setNewBranchName("");
+              setCreateError(null);
+              setShowCreateDialog(true);
+            }}
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
             New Worktree
@@ -304,39 +317,64 @@ export function WorktreeManager({
           <DialogHeader>
             <DialogTitle>Create Worktree</DialogTitle>
             <DialogDescription>
-              Check out an existing branch in a new git worktree.
+              Check out a branch in a new git worktree. Optionally create a new branch from it.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="branch-name">Branch name</Label>
+              <Label htmlFor="origin-branch">Origin branch</Label>
+              <Select value={originBranch} onValueChange={(v) => setOriginBranch(v ?? "")}>
+                <SelectTrigger id="origin-branch">
+                  <SelectValue placeholder="Select a branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-branch-name">New branch name (optional)</Label>
               <Input
-                id="branch-name"
+                id="new-branch-name"
                 placeholder="feature/my-branch"
                 value={newBranchName}
                 onChange={(e) => setNewBranchName(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to check out the origin branch directly.
+              </p>
             </div>
+            {createError && (
+              <p className="text-sm text-destructive">{createError}</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!newBranchName.trim() || createMutation.isPending}
+              disabled={!originBranch || createMutation.isPending}
               onClick={() => {
+                setCreateError(null);
                 createMutation.mutate(
                   {
                     projectId,
                     taskId: null,
-                    originBranch: newBranchName.trim(),
-                    newBranchName: null,
+                    originBranch: originBranch,
+                    newBranchName: newBranchName.trim() || null,
                     repoPath,
                   },
                   {
                     onSuccess: () => {
                       setShowCreateDialog(false);
+                      setOriginBranch("");
                       setNewBranchName("");
+                      setCreateError(null);
+                    },
+                    onError: (error) => {
+                      setCreateError(String(error));
                     },
                   },
                 );
