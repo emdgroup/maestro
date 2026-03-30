@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: Agents & Worktrees
+milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T09:42:43.420Z"
+last_updated: "2026-03-30T11:35:00.660Z"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State: v1.3 — Agents & Worktrees (ARCHIVED 2026-03-30)
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 28 — zombie-cleanup-on-project-open
+**Current focus:** Phase 29 — v1-3-agents-worktrees-view-polish-and-bug-fixes
 
 ## Current Position
 
-Phase: 28 (zombie-cleanup-on-project-open) — EXECUTING
-Plan: 1 of 1
+Phase: 29 (v1-3-agents-worktrees-view-polish-and-bug-fixes) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -110,6 +110,7 @@ Plan: 1 of 1
 | Phase 27-worktrees-view P02 | 0.019 | 2 tasks | 3 files |
 | Phase 27-worktrees-view P03 | 0.044 | 2 tasks | 2 files |
 | Phase 28-zombie-cleanup-on-project-open P01 | 0.05 | 2 tasks | 5 files |
+| Phase 29 P01 | 0.05 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,7 @@ Phase 18 Architecture Decisions:
 - [Phase 27-03]: AlertDialogTrigger uses render prop (base-ui pattern) not asChild (Radix); projectId threaded as explicit prop to WorktreeManager; parseDiffString returns DiffFileWithName[] mapped to one DiffViewer per file
 - [Phase 28-zombie-cleanup-on-project-open]: Scoped closure pattern for Rust SQLite query to satisfy borrow checker (conn + stmt lifetime)
 - [Phase 28-zombie-cleanup-on-project-open]: Silent mutation: onError logs to console but no toast — zombie cleanup is background housekeeping
+- [Phase 29]: DiffViewer uses useTheme() for component-level theme resolution; WorktreeManager checks diffLoading first to avoid empty state flash; append_terminal_output uses SQL subquery for UPDATE portability
 
 ### Pending Todos
 
@@ -230,6 +232,11 @@ None currently.
 - Phase 22 added: Auto-remove Stale Projects - get_connection_projects made async, drops db lock before path validation, collect_stale_project_ids helper validates local (std::fs) and SSH (test -d) paths
 - Phase 23 added: Add in-app routing for deep linking to specific screens
 - Phase 24 added: Improve project picker screen — auto-detect and init git on select, Clone Project button (git URL + target path), Create Project button (name + target path + git init)
+- Phase 25 added: Backend Overhaul — worktree/execution backend rewrite for v1.3 Agents & Worktrees milestone
+- Phase 26 added: Agents View — AgentsView with xterm.js terminal, active + history list, split-pane layout
+- Phase 27 added: Worktrees View — WorktreesView with git diff panel, status filtering, zombie detection
+- Phase 28 added: Zombie Cleanup on Project Open — auto-cleanup orphaned worktrees on project load
+- Phase 29 added: v1.3 Agents & Worktrees view polish and bug fixes
 
 ## Session Continuity
 
