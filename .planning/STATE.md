@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T14:45:21.279Z"
+last_updated: "2026-03-30T15:58:35.731Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 30 — v1-3-post-testing-ui-and-worktree-bug-fixes
+**Current focus:** Phase 31 — fix-remote-ssh-worktree-bugs-git-ops-origin-branch-detection-and-worktree-path-filtering
 
 ## Current Position
 
-Phase: 30 (v1-3-post-testing-ui-and-worktree-bug-fixes) — EXECUTING
-Plan: 3 of 3
+Phase: 31 (fix-remote-ssh-worktree-bugs-git-ops-origin-branch-detection-and-worktree-path-filtering) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -115,6 +115,7 @@ Plan: 3 of 3
 | Phase 30 P01 | 0.133 | 2 tasks | 6 files |
 | Phase 30 P02 | 0.313 | 2 tasks | 12 files |
 | Phase 30 P03 | 0.061 | 2 tasks | 4 files |
+| Phase 31 P01 | 0.032 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,9 @@ Phase 18 Architecture Decisions:
 - [Phase 30]: canonicalize() applied at IPC boundary in spawn/resume_agent_execution and create_worktree_for_task to fix git repo path bug
 - [Phase 30]: Schema V4: execution_logs.task_id nullable (inline FK) to support task-free interactive PTY sessions; create_worktree IPC uses origin_branch + new_branch_name; AgentMonitor selects by execution.id (not task_id) to handle null task_id
 - [Phase 30]: Select onValueChange null-coalesce: (v) => setState(v ?? '') because base-ui Select passes string | null
+- [Phase 31]: Use project.connection_id (not project.id) as SSH session map key — connection_id is the FK to ssh_connections which is the actual key used on session insert
+- [Phase 31]: Shell single-quote all path arguments in SSH commands to handle paths with spaces correctly
+- [Phase 31]: parse_worktree_list made pub to allow reuse in remote::list_remote_worktrees without code duplication
 
 ### Pending Todos
 
@@ -251,6 +255,7 @@ None currently.
 - Phase 27 added: Worktrees View — WorktreesView with git diff panel, status filtering, zombie detection
 - Phase 28 added: Zombie Cleanup on Project Open — auto-cleanup orphaned worktrees on project load
 - Phase 29 added: v1.3 Agents & Worktrees view polish and bug fixes
+- Phase 31 added: Fix remote SSH worktree bugs: git ops, origin branch detection, and worktree path filtering
 - Phase 30 added: v1.3 post-testing UI and worktree bug fixes
 
 ## Session Continuity
