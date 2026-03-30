@@ -187,7 +187,7 @@ function App() {
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <Suspense fallback={fallback}>
-                    <WorktreesView projectId={currentProject.id} worktrees={[]} />
+                    <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
                   </Suspense>
                 </motion.div>
               )}
