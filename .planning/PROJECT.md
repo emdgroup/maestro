@@ -12,7 +12,12 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 **Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
 
-**Active milestone:** v1.3 Agents & Worktrees — Phase 27 complete, Phase 28 (zombie-cleanup-on-project-open) next
+**Active milestone:** v1.3 Agents & Worktrees — Phase 28 complete (last phase), milestone ready for ship
+
+**What was built in Phase 28 (zombie-cleanup-on-project-open):**
+- `cleanup_zombie_worktrees` Rust IPC command — queries DB for worktrees with no task / task Done/Cancelled, older than 10 min, confirmed on disk; deletes worktree + DB row
+- `useCleanupZombieWorktreesMutation` TanStack Query mutation — fires silently on project open, invalidates worktrees cache only when deletedCount > 0, errors logged not toasted
+- App.tsx `useEffect([currentProject?.id])` — triggers cleanup on every project open and project switch (Validated in Phase 28: zombie-cleanup-on-project-open)
 
 **What was built in Phase 27 (worktrees-view):**
 - `WorktreeWithStatus` extended with `diff_stat: Option<String>` populated via `git diff --shortstat` (parallel tokio spawn)
@@ -184,4 +189,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | Create dialog inline errors; Clone dialog toast errors | Create failures are user-fixable (dir exists); Clone failures are server-side | ✓ Good — right UX for each error class |
 
 ---
-*Last updated: 2026-03-30 after Phase 27 (worktrees-view) completion*
+*Last updated: 2026-03-30 after Phase 28 (zombie-cleanup-on-project-open) completion — v1.3 milestone complete*
