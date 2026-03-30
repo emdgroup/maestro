@@ -7,6 +7,7 @@ import { useBoardStore } from "@/store/boardStore";
 import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
+import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
 import {
   useActiveTab,
   useSlideDirection,
@@ -66,6 +67,9 @@ function App() {
   const slideDirection = useSlideDirection();
   const { setActiveTab, clearPendingTask } = useNavigationActions();
 
+  // Zombie worktree cleanup on project open (REQ-36)
+  const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
+
   // Consume pendingTaskId from store to open TaskDetail sheet
   const pendingTaskId = usePendingTaskId();
   const tasks = useBoardStore((s) => s.tasks);
@@ -77,6 +81,16 @@ function App() {
       clearPendingTask();
     }
   }, [pendingTaskId, tasks, clearPendingTask]);
+
+  useEffect(() => {
+    if (currentProject) {
+      cleanupZombiesMutation.mutate({
+        projectId: currentProject.id,
+        repoPath: currentProject.path,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
 
   // Log settings errors (if any)
   useEffect(() => {

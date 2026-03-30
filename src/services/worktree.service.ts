@@ -54,6 +54,30 @@ export function useDeleteWorktreeMutation() {
 }
 
 /**
+ * Mutation hook for cleaning up zombie worktrees on project open.
+ * Silent on error — this is background housekeeping, not user-initiated.
+ * Invalidates worktree list only when zombies were actually deleted.
+ */
+export function useCleanupZombieWorktreesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ projectId, repoPath }: { projectId: number; repoPath: string }) => {
+      return await api.cleanupZombieWorktrees(projectId, repoPath);
+    },
+    onSuccess: (deletedCount) => {
+      if (deletedCount > 0) {
+        queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+        console.log(`[DEBUG] cleanup_zombie_worktrees: removed ${deletedCount} zombie worktrees`);
+      }
+    },
+    onError: (error) => {
+      console.error("[DEBUG] cleanup_zombie_worktrees failed:", error);
+      // Silent: no toast — zombie cleanup is background housekeeping
+    },
+  });
+}
+
+/**
  * Mutation hook for creating a new worktree.
  * Invalidates worktree list on success.
  */
