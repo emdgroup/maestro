@@ -303,22 +303,21 @@ pub async fn create_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     task_id: Option<i32>,
-    branch_name: String,
+    origin_branch: String,
+    new_branch_name: Option<String>,
     repo_path: String,
-    worktree_path: Option<String>,
 ) -> Result<Worktree, String> {
     println!(
-        "create_worktree(project={}, task={:?}) called",
-        project_id, task_id
+        "create_worktree(project={}, task={:?}, origin={}, new={:?}) called",
+        project_id, task_id, origin_branch, new_branch_name
     );
 
-    // Step 1: Determine relative worktree path
-    let relative_path = if let Some(path) = worktree_path {
-        path
-    } else if let Some(tid) = task_id {
+    // Step 1: Determine the stored branch name and relative worktree path
+    let branch_name = new_branch_name.clone().unwrap_or_else(|| origin_branch.clone());
+    let relative_path = if let Some(tid) = task_id {
         crate::models::worktree_path_for_task(tid)
     } else {
-        return Err("Either worktree_path or task_id must be provided".to_string());
+        format!("{}/{}", WORKTREE_DIR, branch_name)
     };
 
     // Step 2: Ensure parent directory exists
@@ -327,8 +326,9 @@ pub async fn create_worktree(
         .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
 
     // Step 3: Create git worktree (local only for now)
+    // Pass new_branch_name so git can create a new branch from origin_branch, or None to checkout existing
     let git_conn = crate::models::GitConnection::Local { path: repo_path.clone() };
-    crate::git::create_worktree(&git_conn, &branch_name, &relative_path).await?;
+    crate::git::create_worktree(&git_conn, &origin_branch, &relative_path, new_branch_name.as_deref()).await?;
 
     // Step 4: Insert DB row (lock DB after async git work)
     let now = Utc::now().to_rfc3339();
@@ -380,9 +380,10 @@ pub async fn create_worktree_for_task(
     // Create branch name for this task
     let branch_name = format!("task-{}", task_id);
 
-    // Create git worktree (local only for now)
+    // Create git worktree (local only for now) — create new branch from HEAD
+    // Use "HEAD" as origin so git creates task-N from the current HEAD commit
     let git_conn = crate::models::GitConnection::Local { path: repo_path.to_string() };
-    crate::git::create_worktree(&git_conn, &branch_name, &relative_path).await?;
+    crate::git::create_worktree(&git_conn, "HEAD", &relative_path, Some(&branch_name)).await?;
 
     // Insert DB row
     let worktree_id = {

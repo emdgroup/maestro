@@ -811,6 +811,118 @@ pub async fn resume_agent_execution(
     Ok(log_id)
 }
 
+/// Spawn an interactive (task-free) PTY session on a specific branch.
+///
+/// This creates an execution log with NULL task_id, finds or creates a worktree for the
+/// given branch, and spawns an interactive PTY session keyed by log_id.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state with database connection
+/// * `project_id` - Project ID
+/// * `branch_name` - Branch to open in the worktree
+/// * `repo_path` - Repository path
+/// * `label` - Optional display label for the session
+///
+/// # Returns
+/// Execution log ID (used as PTY session key for attach_terminal)
+#[tauri::command]
+#[specta::specta]
+pub async fn spawn_interactive_execution(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    branch_name: String,
+    repo_path: String,
+    label: Option<String>,
+) -> Result<i32, String> {
+    println!(
+        "spawn_interactive_execution(project={}, branch={}, label={:?}) called",
+        project_id, branch_name, label
+    );
+    let _ = label; // reserved for future display use
+
+    // Canonicalize repo_path
+    let repo_path = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
+        .to_string_lossy()
+        .to_string();
+
+    // Step 1: Check if a worktree already exists for this branch in DB
+    let existing_worktree: Option<(i32, String)> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT id, path FROM worktrees WHERE project_id = ? AND branch_name = ?",
+            rusqlite::params![project_id, &branch_name],
+            |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)),
+        ).ok()
+    };
+
+    let worktree_abs_path: String = if let Some((_wt_id, relative_path)) = existing_worktree {
+        // Worktree exists — use its path
+        format!("{}/{}", repo_path, relative_path)
+    } else {
+        // No worktree for this branch — create one (checkout existing branch)
+        use crate::models::WORKTREE_DIR;
+        let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
+
+        // Ensure parent directory exists
+        tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+            .await
+            .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+
+        // Checkout existing branch (no new_branch — None means checkout, not create)
+        let git_conn = crate::models::GitConnection::Local { path: repo_path.clone() };
+        crate::git::create_worktree(&git_conn, &branch_name, &relative_path, None).await?;
+
+        // Insert DB row with task_id = NULL
+        let now = chrono::Utc::now().to_rfc3339();
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            conn.execute(
+                "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, NULL, ?, ?, ?)",
+                rusqlite::params![project_id, &branch_name, &relative_path, &now],
+            )
+            .map_err(|e| format!("Failed to insert worktree: {}", e))?;
+        }
+
+        format!("{}/{}", repo_path, relative_path)
+    };
+
+    // Step 2: Create execution log with task_id = NULL
+    let now = chrono::Utc::now().to_rfc3339();
+    let log_id: i32 = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (NULL, 'running', ?)",
+            rusqlite::params![&now],
+        )
+        .map_err(|e| format!("Failed to create execution log: {}", e))?;
+        conn.last_insert_rowid() as i32
+    };
+
+    println!("spawn_interactive_execution: created execution log {}", log_id);
+
+    // Step 3: Spawn interactive PTY session keyed by log_id
+    let pty_session = crate::process::spawn_agent_cli_pty(
+        log_id,
+        "claude".to_string(),
+        vec![],
+        std::path::PathBuf::from(&worktree_abs_path),
+    )
+    .await?;
+
+    let app_state_arc: Arc<AppState> = (*app_state).clone();
+    let mut sessions = app_state_arc.pty_sessions.lock().await;
+    sessions.insert(
+        log_id,
+        Arc::new(tokio::sync::Mutex::new(pty_session)),
+    );
+    drop(sessions);
+
+    println!("spawn_interactive_execution: PTY session {} started at {}", log_id, worktree_abs_path);
+    Ok(log_id)
+}
+
 /// List all executions for a project, enriched with task name and worktree branch.
 /// Used by the Agents View sidebar.
 #[tauri::command]
@@ -825,9 +937,9 @@ pub fn list_executions_with_task_info(
         "SELECT el.id, el.task_id, t.name AS task_name, w.branch_name,
                 el.status, el.started_at, el.completed_at, el.terminal_output
          FROM execution_logs el
-         INNER JOIN tasks t ON t.id = el.task_id
+         LEFT JOIN tasks t ON t.id = el.task_id
          LEFT JOIN worktrees w ON w.task_id = el.task_id
-         WHERE t.project_id = ?
+         WHERE t.project_id = ?1 OR (el.task_id IS NULL)
          ORDER BY el.started_at DESC"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 

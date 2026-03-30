@@ -20,14 +20,19 @@ pub struct ParsedWorktree {
 /// Callers don't need to know the difference - just pass a GitConnection and the operation works.
 
 /// Create a worktree on the project (local or remote)
+///
+/// `branch` is the base branch (e.g. origin branch) to create from or check out.
+/// `new_branch` is an optional name for a new branch to create from `branch`.
+/// When `new_branch` is None, the existing `branch` is checked out directly.
 pub async fn create_worktree(
     conn: &GitConnection,
     branch: &str,
     worktree_name: &str,
+    new_branch: Option<&str>,
 ) -> Result<(), String> {
     match conn {
         GitConnection::Local { path } => {
-            create_worktree_local(path, branch, worktree_name).await
+            create_worktree_local(path, branch, worktree_name, new_branch).await
         }
         GitConnection::Remote { ssh, remote_path } => {
             remote::create_remote_worktree(ssh, remote_path, branch, worktree_name)
@@ -184,9 +189,18 @@ async fn create_worktree_local(
     path: &str,
     branch: &str,
     worktree_name: &str,
+    new_branch: Option<&str>,
 ) -> Result<(), String> {
+    // When new_branch is Some: git worktree add {worktree_name} -b {new_branch} {branch}
+    // When new_branch is None: git worktree add {worktree_name} {branch}  (checkout existing)
+    let args: Vec<&str> = if let Some(nb) = new_branch {
+        vec!["worktree", "add", worktree_name, "-b", nb, branch]
+    } else {
+        vec!["worktree", "add", worktree_name, branch]
+    };
+
     let output = TokioCommand::new("git")
-        .args(["worktree", "add", worktree_name, "-b", branch])
+        .args(&args)
         .current_dir(path)
         .output()
         .await

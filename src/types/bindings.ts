@@ -400,9 +400,9 @@ async getWorktreeDiff(worktreeId: number) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async createWorktree(projectId: number, taskId: number | null, branchName: string, repoPath: string, worktreePath: string | null) : Promise<Result<Worktree, string>> {
+async createWorktree(projectId: number, taskId: number | null, originBranch: string, newBranchName: string | null, repoPath: string) : Promise<Result<Worktree, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, branchName, repoPath, worktreePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, originBranch, newBranchName, repoPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -462,6 +462,30 @@ async listExecutionsWithTaskInfo(projectId: number) : Promise<Result<ExecutionWi
 async spawnAgentExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_agent_execution", { projectId, taskId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Spawn an interactive (task-free) PTY session on a specific branch.
+ * 
+ * This creates an execution log with NULL task_id, finds or creates a worktree for the
+ * given branch, and spawns an interactive PTY session keyed by log_id.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state with database connection
+ * * `project_id` - Project ID
+ * * `branch_name` - Branch to open in the worktree
+ * * `repo_path` - Repository path
+ * * `label` - Optional display label for the session
+ * 
+ * # Returns
+ * Execution log ID (used as PTY session key for attach_terminal)
+ */
+async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, label: string | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, label }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -996,7 +1020,7 @@ export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "ca
 /**
  * View model for the Agents view — execution log enriched with task and worktree info
  */
-export type ExecutionWithTask = { id: number; task_id: number; task_name: string; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
+export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
