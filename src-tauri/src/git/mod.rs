@@ -35,7 +35,7 @@ pub async fn create_worktree(
             create_worktree_local(path, branch, worktree_name, new_branch).await
         }
         GitConnection::Remote { ssh, remote_path } => {
-            remote::create_remote_worktree(ssh, remote_path, branch, worktree_name)
+            remote::create_remote_worktree(ssh, remote_path, branch, worktree_name, new_branch)
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
@@ -117,9 +117,27 @@ pub async fn get_current_branch(
         GitConnection::Local { path } => {
             get_current_branch_local(path).await
         }
-        GitConnection::Remote { .. } => {
-            // Remote current branch detection not implemented; default to main
-            Ok("main".to_string())
+        GitConnection::Remote { ssh, remote_path } => {
+            remote::get_remote_current_branch(ssh, remote_path)
+                .await
+                .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+    }
+}
+
+/// List worktrees in the project (local or remote)
+pub async fn list_worktrees(
+    conn: &GitConnection,
+    _repo_path: &str,
+) -> Result<Vec<ParsedWorktree>, String> {
+    match conn {
+        GitConnection::Local { path } => {
+            list_worktrees_local(path).await
+        }
+        GitConnection::Remote { ssh, remote_path } => {
+            remote::list_remote_worktrees(ssh, remote_path)
+                .await
+                .map_err(|e| format!("Remote git error: {:?}", e))
         }
     }
 }
@@ -142,7 +160,7 @@ pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>
     Ok(parse_worktree_list(&stdout))
 }
 
-fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
+pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
     output.split("\n\n")
         .filter(|block| !block.trim().is_empty())
         .map(|block| {
