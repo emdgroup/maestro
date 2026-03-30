@@ -97,7 +97,9 @@ pub async fn get_git_connection(
     app_state: &AppState,
 ) -> Result<GitConnection, String> {
     if project.is_remote() {
-        let ssh_session = app_state.get_ssh_session(project.id).await
+        let conn_id = project.connection_id
+            .ok_or("Remote project has no connection_id")?;
+        let ssh_session = app_state.get_ssh_session(conn_id).await
             .ok_or("SSH session not initialized for remote project")?;
 
         Ok(GitConnection::Remote {
