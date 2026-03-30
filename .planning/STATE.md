@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T15:58:35.731Z"
+last_updated: "2026-03-30T16:05:23.233Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -116,6 +116,7 @@ Plan: 2 of 2
 | Phase 30 P02 | 0.313 | 2 tasks | 12 files |
 | Phase 30 P03 | 0.061 | 2 tasks | 4 files |
 | Phase 31 P01 | 0.032 | 2 tasks | 3 files |
+| Phase 31 P02 | 0.074 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Phase 18 Architecture Decisions:
 - [Phase 31]: Use project.connection_id (not project.id) as SSH session map key — connection_id is the FK to ssh_connections which is the actual key used on session insert
 - [Phase 31]: Shell single-quote all path arguments in SSH commands to handle paths with spaces correctly
 - [Phase 31]: parse_worktree_list made pub to allow reuse in remote::list_remote_worktrees without code duplication
+- [Phase 31]: Use ? instead of unwrap_or_else for SSH connection in create/delete IPC — fail explicitly to avoid silently operating on wrong path for remote projects
+- [Phase 31]: Gate create_dir_all on !is_remote in create_worktree IPC — SSH projects create parent dirs automatically via git worktree add
 
 ### Pending Todos
 

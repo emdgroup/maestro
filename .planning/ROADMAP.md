@@ -117,11 +117,11 @@ Plans:
 **Goal:** Fix five SSH-related bugs: wrong session key in get_git_connection, missing new_branch in remote worktree creation, hardcoded current branch for remote, unnormalized remote branch listing, and local-only worktree IPC handlers
 **Requirements**: [BUG-1, BUG-2, BUG-3, BUG-4, BUG-5]
 **Depends on:** Phase 30
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 31-01-PLAN.md — Fix core SSH git ops: session key lookup, remote worktree create, current branch, branch list normalization
-- [ ] 31-02-PLAN.md — Make worktree IPC handlers SSH-aware: list, create, delete, cleanup
+- [x] 31-02-PLAN.md — Make worktree IPC handlers SSH-aware: list, create, delete, cleanup
 
 ---
 
