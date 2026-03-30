@@ -19,8 +19,21 @@ pub async fn list_worktrees_with_status(
 ) -> Result<Vec<WorktreeWithStatus>, String> {
     println!("list_worktrees_with_status(project={}) called", project_id);
 
+    // Resolve project and git connection (local vs remote SSH)
+    let project = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            crate::models::Project::from_row,
+        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
+    };
+    let git_conn = crate::db::get_git_connection(&project, &app_state).await
+        .unwrap_or_else(|_| crate::models::GitConnection::Local { path: repo_path.clone() });
+    let is_remote = project.is_remote();
+
     // Step 1: Get on-disk worktrees
-    let disk_worktrees = crate::git::list_worktrees_local(&repo_path).await?;
+    let disk_worktrees = crate::git::list_worktrees(&git_conn, &repo_path).await?;
 
     // Step 2: Filter out main worktree (the repo root itself)
     let disk_worktrees: Vec<_> = disk_worktrees
@@ -81,38 +94,42 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree
-    let handles: Vec<_> = disk_worktrees
-        .iter()
-        .map(|wt| {
-            let path = wt.path.clone();
-            tokio::spawn(async move {
-                let status = crate::git::get_worktree_status_local(&path)
-                    .await
-                    .unwrap_or_default();
-                let diff_stat_output = tokio::process::Command::new("git")
-                    .args(["diff", "--shortstat"])
-                    .current_dir(&path)
-                    .output()
-                    .await;
-                let diff_stat = match diff_stat_output {
-                    Ok(out) => {
-                        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        if s.is_empty() { None } else { Some(s) }
-                    }
-                    Err(_) => None,
-                };
-                (path, status, diff_stat)
-            })
-        })
-        .collect();
-
+    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree (local only)
+    // For remote/SSH projects, skip per-worktree status — worktrees appear without status details
     let mut git_info: HashMap<String, (String, Option<String>)> = HashMap::new();
-    for handle in handles {
-        if let Ok((path, status, diff_stat)) = handle.await {
-            git_info.insert(path, (status, diff_stat));
+    if !is_remote {
+        let handles: Vec<_> = disk_worktrees
+            .iter()
+            .map(|wt| {
+                let path = wt.path.clone();
+                tokio::spawn(async move {
+                    let status = crate::git::get_worktree_status_local(&path)
+                        .await
+                        .unwrap_or_default();
+                    let diff_stat_output = tokio::process::Command::new("git")
+                        .args(["diff", "--shortstat"])
+                        .current_dir(&path)
+                        .output()
+                        .await;
+                    let diff_stat = match diff_stat_output {
+                        Ok(out) => {
+                            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            if s.is_empty() { None } else { Some(s) }
+                        }
+                        Err(_) => None,
+                    };
+                    (path, status, diff_stat)
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            if let Ok((path, status, diff_stat)) = handle.await {
+                git_info.insert(path, (status, diff_stat));
+            }
         }
     }
+    // For remote projects, git_info stays empty — worktrees show without per-worktree status details
 
     // Step 6: Build WorktreeWithStatus vec
     // Track which DB paths were matched by an on-disk worktree
