@@ -12,7 +12,13 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 **Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
 
-**Active milestone:** v1.3 Agents & Worktrees — Phase 26 complete, Phase 27 (worktrees-view) next
+**Active milestone:** v1.3 Agents & Worktrees — Phase 27 complete, Phase 28 (zombie-cleanup-on-project-open) next
+
+**What was built in Phase 27 (worktrees-view):**
+- `WorktreeWithStatus` extended with `diff_stat: Option<String>` populated via `git diff --shortstat` (parallel tokio spawn)
+- `worktree.service.ts` — TanStack Query hooks: `useWorktreesQuery` (5s poll), `useWorktreeDiffQuery`, `useDeleteWorktreeMutation`, `useCreateWorktreeMutation`
+- `WorktreeManager.tsx` — AgentMonitor-style `w-72` sidebar with All/Active/Modified/Idle filters + branch search, status dots, Zombie/Orphan badges, diff shortstat, task deep links
+- Right detail panel: branch metadata, task link, status badge, `formatDistanceToNow` timestamp, `DiffViewer` per-file, AlertDialog-gated delete, New Worktree creation dialog
 
 **What was built in Phase 26 (agents-view):**
 - `useExecutionsWithTaskInfoQuery` polling hook (2s interval) — AgentsView as sole data owner
@@ -178,4 +184,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | Create dialog inline errors; Clone dialog toast errors | Create failures are user-fixable (dir exists); Clone failures are server-side | ✓ Good — right UX for each error class |
 
 ---
-*Last updated: 2026-03-29 after v1.3 milestone start*
+*Last updated: 2026-03-30 after Phase 27 (worktrees-view) completion*
