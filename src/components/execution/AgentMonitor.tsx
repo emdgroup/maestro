@@ -47,8 +47,6 @@ export function AgentMonitor({
 }: AgentMonitorProps) {
   const filteredExecutions = useMemo(() => {
     return executions
-      .slice()
-      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
       .filter((e) => statusFilter === "All" || e.status === statusFilter)
       .filter((e) =>
         search.trim() === "" ||

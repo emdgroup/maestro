@@ -74,7 +74,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             onChange={(e) => setSearch(e.target.value)}
             className="h-8 w-48 text-sm"
           />
-          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
+          <ToggleGroup variant="outline" size="sm">
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
                 key={f}

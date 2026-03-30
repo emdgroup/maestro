@@ -107,26 +107,23 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    let mut status_map: HashMap<String, String> = HashMap::new();
-    let mut diff_stat_map: HashMap<String, Option<String>> = HashMap::new();
+    let mut git_info: HashMap<String, (String, Option<String>)> = HashMap::new();
     for handle in handles {
         if let Ok((path, status, diff_stat)) = handle.await {
-            status_map.insert(path.clone(), status);
-            diff_stat_map.insert(path, diff_stat);
+            git_info.insert(path, (status, diff_stat));
         }
     }
 
     // Step 6: Build WorktreeWithStatus vec
     // Track which DB paths were matched by an on-disk worktree
-    let mut matched_db_ids: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut matched_db_ids: HashSet<i32> = HashSet::new();
     let mut result: Vec<WorktreeWithStatus> = Vec::new();
 
     for wt in &disk_worktrees {
-        let git_status = status_map.get(&wt.path).cloned().unwrap_or_default();
+        let (git_status, diff_stat) = git_info.get(&wt.path).cloned().unwrap_or_default();
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
             let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
-            let diff_stat = diff_stat_map.get(&wt.path).cloned().unwrap_or(None);
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(db_row.project_id),
@@ -144,7 +141,6 @@ pub async fn list_worktrees_with_status(
         } else {
             // On-disk but not in DB — orphan entry
             let branch_name = wt.branch.clone().unwrap_or_else(|| "unknown".to_string());
-            let diff_stat = diff_stat_map.get(&wt.path).cloned().unwrap_or(None);
             result.push(WorktreeWithStatus {
                 id: None,
                 project_id: None,

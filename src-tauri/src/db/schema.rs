@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(version, 4);
 
-        // Verify worktrees table has new v3 columns
+        // Verify worktrees table has new v4 columns
         let worktree_columns: Vec<String> = conn
             .prepare("PRAGMA table_info(worktrees)")
             .unwrap()

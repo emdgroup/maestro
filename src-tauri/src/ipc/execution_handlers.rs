@@ -61,27 +61,67 @@ pub fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (Strin
     ])
 }
 
+fn canonicalize_repo_path(repo_path: &str) -> Result<String, String> {
+    std::path::Path::new(repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+async fn run_agent_background_task(
+    app_state: Arc<AppState>,
+    log_id: i32,
+    worktree_id: i32,
+    task_id: i32,
+    worktree_path: String,
+    repo_path: String,
+) {
+    let result = crate::process::spawn_agent_cli(
+        &worktree_path,
+        "sidecar/dist/index.js",
+        task_id,
+    ).await;
+
+    let now = Utc::now().to_rfc3339();
+
+    match result {
+        Ok(output) => {
+            let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
+            if let Ok(conn) = app_state.db.lock() {
+                let _ = conn.execute(
+                    "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
+                    rusqlite::params![final_status, &now, &output.stdout, log_id],
+                );
+                let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
+                let _ = conn.execute(
+                    "UPDATE tasks SET status = ? WHERE id = ?",
+                    rusqlite::params![task_status, task_id],
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("Agent execution error for log {}: {}", log_id, e);
+            if let Ok(conn) = app_state.db.lock() {
+                let _ = conn.execute(
+                    "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
+                    rusqlite::params![&now, log_id],
+                );
+                let _ = conn.execute(
+                    "UPDATE tasks SET status = 'Ready' WHERE id = ?",
+                    rusqlite::params![task_id],
+                );
+                let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
+            }
+            return;
+        }
+    }
+
+    if let Err(e) = super::delete_worktree_for_task(&app_state, worktree_id, &worktree_path, &repo_path).await {
+        eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
+    }
+}
+
 /// Spawn agent execution for a task
-///
-/// This handler creates an execution log record, spawns the agent CLI process
-/// in a background tokio task, and returns immediately with the execution log ID.
-/// The process continues running after the IPC returns.
-///
-/// # Arguments
-/// * `app_state` - Tauri app state with database connection
-/// * `project_id` - Project ID (for context)
-/// * `task_id` - Task ID to execute
-/// * `repo_path` - Repository path for the agent
-///
-/// # Returns
-/// Execution log ID that tracks the execution
-///
-/// # Async Behavior
-/// - Creates execution log synchronously
-/// - Spawns background task with tokio::spawn
-/// - Returns immediately (process continues in background)
-/// - Background task captures output and marks completion
-/// - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
 #[tauri::command]
 #[specta::specta]
 pub async fn spawn_agent_execution(
@@ -91,19 +131,8 @@ pub async fn spawn_agent_execution(
     repo_path: String,
 ) -> Result<i32, String> {
     println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
-    println!("spawn_agent_execution: repo_path='{}', is_absolute={}, exists={}",
-        repo_path,
-        std::path::Path::new(&repo_path).is_absolute(),
-        std::path::Path::new(&repo_path).is_dir());
+    let repo_path = canonicalize_repo_path(&repo_path)?;
 
-    // Canonicalize repo_path to resolve symlinks, trailing slashes, or relative path issues
-    let repo_path = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
-        .to_string_lossy()
-        .to_string();
-
-    // Step 1: Create an on-demand worktree for this task
     let app_state_arc: Arc<AppState> = (*app_state).clone();
     let (worktree_id, worktree_path) = super::create_worktree_for_task(
         &app_state_arc,
@@ -111,9 +140,7 @@ pub async fn spawn_agent_execution(
         task_id,
         &repo_path,
     ).await?;
-    println!("Created on-demand worktree {} at {}", worktree_id, worktree_path);
 
-    // Step 2: Create execution log record
     let now = Utc::now().to_rfc3339();
     let log_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -125,9 +152,6 @@ pub async fn spawn_agent_execution(
         conn.last_insert_rowid() as i32
     };
 
-    println!("spawn_agent_execution: created execution log {}", log_id);
-
-    // Step 3: Update task status to InProgress
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let _ = conn.execute(
@@ -136,72 +160,9 @@ pub async fn spawn_agent_execution(
         );
     }
 
-    // Step 4: Spawn background task for agent execution
-    let app_state_bg = app_state_arc.clone();
-    let repo_path_clone = repo_path.clone();
-    let worktree_path_clone = worktree_path.clone();
-
-    tokio::spawn(async move {
-        println!("[spawn] Background task started for log {}", log_id);
-
-        // Spawn the agent CLI in the worktree
-        let result = crate::process::spawn_agent_cli(
-            &worktree_path_clone,
-            "sidecar/dist/index.js",
-            task_id,
-        ).await;
-
-        let now = Utc::now().to_rfc3339();
-
-        match result {
-            Ok(output) => {
-                let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
-                println!("[spawn] Agent finished with status={} for log {}", final_status, log_id);
-
-                // Update execution log with result
-                if let Ok(conn) = app_state_bg.db.lock() {
-                    let _ = conn.execute(
-                        "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
-                        rusqlite::params![final_status, &now, &output.stdout, log_id],
-                    );
-                    // Update task status based on result
-                    let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = ? WHERE id = ?",
-                        rusqlite::params![task_status, task_id],
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("[spawn] Agent execution error for log {}: {}", log_id, e);
-                if let Ok(conn) = app_state_bg.db.lock() {
-                    let _ = conn.execute(
-                        "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
-                        rusqlite::params![&now, log_id],
-                    );
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = 'Ready' WHERE id = ?",
-                        rusqlite::params![task_id],
-                    );
-                    // Best-effort delete worktree DB row on error
-                    let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
-                }
-                return;
-            }
-        }
-
-        // Finalization: delete worktree on completion (best effort)
-        if let Err(e) = super::delete_worktree_for_task(
-            &app_state_bg,
-            worktree_id,
-            &worktree_path_clone,
-            &repo_path_clone,
-        ).await {
-            eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
-        } else {
-            println!("[finalize] Deleted worktree {} on completion", worktree_id);
-        }
-    });
+    tokio::spawn(run_agent_background_task(
+        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path, repo_path.clone(),
+    ));
 
     Ok(log_id)
 }
@@ -671,19 +632,11 @@ pub async fn pause_agent_execution(
 ) -> Result<(), String> {
     println!("pause_agent_execution(task={}) called", task_id);
 
-    // Get current execution log for this task
     let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
     let exec_log = crate::db::get_current_execution_log(&conn, task_id)
         .map_err(|e| format!("Failed to get execution log: {}", e))?;
-    drop(conn);
-
-    println!("[pause] Got execution log {}", exec_log.id);
-
-    // Update execution log status to Paused in database
-    let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
     crate::db::pause_execution_log(&conn, exec_log.id)
         .map_err(|e| format!("Failed to pause execution: {}", e))?;
-    drop(conn);
 
     println!("[pause] ✓ Updated execution log status to paused");
 
@@ -702,16 +655,8 @@ pub async fn resume_agent_execution(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("resume_agent_execution(project={}, task={}) called", project_id, task_id);
+    let repo_path = canonicalize_repo_path(&repo_path)?;
 
-    // Canonicalize repo_path to resolve symlinks, trailing slashes, or relative path issues
-    let repo_path = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
-        .to_string_lossy()
-        .to_string();
-
-    // Step 1: Create an on-demand worktree for this task
     let app_state_arc: Arc<AppState> = (*app_state).clone();
     let (worktree_id, worktree_path) = super::create_worktree_for_task(
         &app_state_arc,
@@ -719,9 +664,7 @@ pub async fn resume_agent_execution(
         task_id,
         &repo_path,
     ).await?;
-    println!("Created on-demand worktree {} at {}", worktree_id, worktree_path);
 
-    // Step 2: Create new execution log record for resumed execution
     let now = Utc::now().to_rfc3339();
     let log_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -733,9 +676,6 @@ pub async fn resume_agent_execution(
         conn.last_insert_rowid() as i32
     };
 
-    println!("resume_agent_execution: created execution log {}", log_id);
-
-    // Step 3: Update task status to InProgress
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let _ = conn.execute(
@@ -744,69 +684,9 @@ pub async fn resume_agent_execution(
         );
     }
 
-    // Step 4: Spawn background task for resumed agent execution
-    let app_state_bg = app_state_arc.clone();
-    let repo_path_clone = repo_path.clone();
-    let worktree_path_clone = worktree_path.clone();
-
-    tokio::spawn(async move {
-        println!("[resume] Background task started for log {}", log_id);
-
-        let result = crate::process::spawn_agent_cli(
-            &worktree_path_clone,
-            "sidecar/dist/index.js",
-            task_id,
-        ).await;
-
-        let now = Utc::now().to_rfc3339();
-
-        match result {
-            Ok(output) => {
-                let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
-                println!("[resume] Agent finished with status={} for log {}", final_status, log_id);
-
-                if let Ok(conn) = app_state_bg.db.lock() {
-                    let _ = conn.execute(
-                        "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
-                        rusqlite::params![final_status, &now, &output.stdout, log_id],
-                    );
-                    let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = ? WHERE id = ?",
-                        rusqlite::params![task_status, task_id],
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("[resume] Agent execution error for log {}: {}", log_id, e);
-                if let Ok(conn) = app_state_bg.db.lock() {
-                    let _ = conn.execute(
-                        "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
-                        rusqlite::params![&now, log_id],
-                    );
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = 'Ready' WHERE id = ?",
-                        rusqlite::params![task_id],
-                    );
-                    // Best-effort delete worktree DB row on error
-                    let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
-                }
-                return;
-            }
-        }
-
-        // Finalization: delete worktree on completion (best effort)
-        if let Err(e) = super::delete_worktree_for_task(
-            &app_state_bg,
-            worktree_id,
-            &worktree_path_clone,
-            &repo_path_clone,
-        ).await {
-            eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
-        } else {
-            println!("[finalize] Deleted worktree {} on completion", worktree_id);
-        }
-    });
+    tokio::spawn(run_agent_background_task(
+        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path, repo_path.clone(),
+    ));
 
     Ok(log_id)
 }
@@ -838,14 +718,9 @@ pub async fn spawn_interactive_execution(
         "spawn_interactive_execution(project={}, branch={}, label={:?}) called",
         project_id, branch_name, label
     );
-    let _ = label; // reserved for future display use
+    let _ = label;
 
-    // Canonicalize repo_path
-    let repo_path = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
-        .to_string_lossy()
-        .to_string();
+    let repo_path = canonicalize_repo_path(&repo_path)?;
 
     // Step 1: Check if a worktree already exists for this branch in DB
     let existing_worktree: Option<(i32, String)> = {
