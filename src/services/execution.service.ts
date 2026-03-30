@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
@@ -52,6 +52,35 @@ export function useSpawnExecutionMutation() {
     },
     onError: (error) => {
       toast.error(`Failed to spawn execution: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for spawning an interactive (task-free) PTY session on a branch.
+ * Returns the log_id which can be used as the session key for attach_terminal.
+ */
+export function useSpawnInteractiveExecutionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      branchName,
+      repoPath,
+      label,
+    }: {
+      projectId: number;
+      branchName: string;
+      repoPath: string;
+      label: string | null;
+    }) => {
+      return await api.spawnInteractiveExecution(projectId, branchName, repoPath, label);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+    },
+    onError: (error) => {
+      toast.error(`Failed to spawn interactive session: ${error}`);
     },
   });
 }

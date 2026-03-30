@@ -79,6 +79,8 @@ export function useCleanupZombieWorktreesMutation() {
 
 /**
  * Mutation hook for creating a new worktree.
+ * Accepts originBranch (base branch) and optional newBranchName (creates new branch from origin).
+ * When newBranchName is null, the existing originBranch is checked out directly.
  * Invalidates worktree list on success.
  */
 export function useCreateWorktreeMutation() {
@@ -87,17 +89,17 @@ export function useCreateWorktreeMutation() {
     mutationFn: async ({
       projectId,
       taskId,
-      branchName,
+      originBranch,
+      newBranchName,
       repoPath,
-      worktreePath,
     }: {
       projectId: number;
       taskId: number | null;
-      branchName: string;
+      originBranch: string;
+      newBranchName: string | null;
       repoPath: string;
-      worktreePath: string | null;
     }) => {
-      return await api.createWorktree(projectId, taskId, branchName, repoPath, worktreePath);
+      return await api.createWorktree(projectId, taskId, originBranch, newBranchName, repoPath);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });

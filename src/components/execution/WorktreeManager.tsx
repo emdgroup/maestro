@@ -69,7 +69,6 @@ export function WorktreeManager({
 }: WorktreeManagerProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
-  const [newWorktreePath, setNewWorktreePath] = useState("");
   const navigate = useNavigate();
 
   const deleteMutation = useDeleteWorktreeMutation();
@@ -305,7 +304,7 @@ export function WorktreeManager({
           <DialogHeader>
             <DialogTitle>Create Worktree</DialogTitle>
             <DialogDescription>
-              Create a new git worktree with a dedicated branch.
+              Check out an existing branch in a new git worktree.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -318,36 +317,26 @@ export function WorktreeManager({
                 onChange={(e) => setNewBranchName(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="worktree-path">Worktree path (relative to project root)</Label>
-              <Input
-                id="worktree-path"
-                placeholder=".maestro/worktrees/my-branch"
-                value={newWorktreePath}
-                onChange={(e) => setNewWorktreePath(e.target.value)}
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!newBranchName.trim() || !newWorktreePath.trim() || createMutation.isPending}
+              disabled={!newBranchName.trim() || createMutation.isPending}
               onClick={() => {
                 createMutation.mutate(
                   {
                     projectId,
                     taskId: null,
-                    branchName: newBranchName.trim(),
+                    originBranch: newBranchName.trim(),
+                    newBranchName: null,
                     repoPath,
-                    worktreePath: newWorktreePath.trim(),
                   },
                   {
                     onSuccess: () => {
                       setShowCreateDialog(false);
                       setNewBranchName("");
-                      setNewWorktreePath("");
                     },
                   },
                 );

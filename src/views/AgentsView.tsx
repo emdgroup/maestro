@@ -19,24 +19,24 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
   const { data: executions = [] } = useExecutionsWithTaskInfoQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
-  // Deep-link: pendingAgentId overrides selection on first mount
+  // Deep-link: pendingAgentId overrides selection on first mount (matches by task_id)
   useEffect(() => {
     if (pendingAgentId && executions.length > 0) {
       const match = executions.find((e) => String(e.task_id) === pendingAgentId);
       if (match) {
-        setSelectedTaskId(match.task_id);
+        setSelectedExecutionId(match.id);
         clearPendingAgent();
       }
-    } else if (selectedTaskId == null && executions.length > 0) {
+    } else if (selectedExecutionId == null && executions.length > 0) {
       // Fallback: auto-select most recent Running execution
       const running = executions.find((e) => e.status === "running");
-      if (running) setSelectedTaskId(running.task_id);
+      if (running) setSelectedExecutionId(running.id);
     }
-  }, [executions, pendingAgentId, clearPendingAgent, selectedTaskId]);
+  }, [executions, pendingAgentId, clearPendingAgent, selectedExecutionId]);
 
   return (
     <div className="flex flex-col h-full">
@@ -73,8 +73,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
       <div className="flex-1 min-h-0">
         <AgentMonitor
           executions={executions}
-          selectedTaskId={selectedTaskId}
-          onSelect={setSelectedTaskId}
+          selectedExecutionId={selectedExecutionId}
+          onSelect={setSelectedExecutionId}
           search={search}
           statusFilter={statusFilter}
         />

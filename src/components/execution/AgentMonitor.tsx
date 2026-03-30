@@ -32,15 +32,15 @@ function formatElapsed(startedAt: string, completedAt: string | null): string {
 
 interface AgentMonitorProps {
   executions: ExecutionWithTask[];
-  selectedTaskId: number | null;
-  onSelect: (taskId: number) => void;
+  selectedExecutionId: number | null;
+  onSelect: (executionId: number) => void;
   search: string;
   statusFilter: StatusFilter;
 }
 
 export function AgentMonitor({
   executions,
-  selectedTaskId,
+  selectedExecutionId,
   onSelect,
   search,
   statusFilter,
@@ -51,11 +51,18 @@ export function AgentMonitor({
       .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
       .filter((e) => statusFilter === "All" || e.status === statusFilter)
       .filter((e) =>
-        search.trim() === "" || e.task_name.toLowerCase().includes(search.toLowerCase())
+        search.trim() === "" ||
+        (e.task_name ?? "Interactive").toLowerCase().includes(search.toLowerCase())
       );
   }, [executions, statusFilter, search]);
 
-  const selectedExecution = executions.find((e) => e.task_id === selectedTaskId);
+  const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
+
+  // For terminal: interactive sessions (task_id null) are keyed by execution.id (log_id)
+  // Task-based sessions are keyed by task_id in the PTY session map
+  const terminalSessionId = selectedExecution
+    ? (selectedExecution.task_id ?? selectedExecution.id)
+    : null;
 
   return (
     <div className="flex h-full">
@@ -71,10 +78,10 @@ export function AgentMonitor({
           {filteredExecutions.map((execution) => (
             <div
               key={execution.id}
-              onClick={() => onSelect(execution.task_id)}
+              onClick={() => onSelect(execution.id)}
               className={cn(
                 "px-3 py-3 cursor-pointer border-l-2 transition-colors",
-                execution.task_id === selectedTaskId
+                execution.id === selectedExecutionId
                   ? "border-ring bg-muted/20"
                   : "border-transparent hover:bg-muted/10"
               )}
@@ -87,7 +94,9 @@ export function AgentMonitor({
                     STATUS_DOT[execution.status] ?? "bg-muted"
                   )}
                 />
-                <span className="text-sm font-medium truncate">{execution.task_name}</span>
+                <span className="text-sm font-medium truncate">
+                  {execution.task_name ?? "Interactive"}
+                </span>
               </div>
               {/* Line 2: status label + elapsed time */}
               <div className="text-xs text-muted-foreground mt-0.5 pl-4">
@@ -107,8 +116,8 @@ export function AgentMonitor({
 
       {/* Terminal pane */}
       <div className="flex-1 flex flex-col min-w-0">
-        {selectedExecution?.status === "running" ? (
-          <TerminalComponent key={selectedExecution.task_id} taskId={selectedExecution.task_id} />
+        {selectedExecution?.status === "running" && terminalSessionId != null ? (
+          <TerminalComponent key={terminalSessionId} taskId={terminalSessionId} />
         ) : selectedExecution ? (
           <DeadSessionTerminal key={selectedExecution.id} execution={selectedExecution} />
         ) : (
