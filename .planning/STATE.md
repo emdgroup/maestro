@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-29T22:26:10.848Z"
+last_updated: "2026-03-30T08:31:50.503Z"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 26 — agents-view
+**Current focus:** Phase 27 — worktrees-view
 
 ## Current Position
 
-Phase: 26 (agents-view) — EXECUTING
-Plan: 2 of 2
+Phase: 27 (worktrees-view) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ Plan: 2 of 2
 | Phase 25 P04 | 0.086 | 2 tasks | 3 files |
 | Phase 26-agents-view P01 | 0.031 | 2 tasks | 5 files |
 | Phase 26-agents-view P02 | 0.033 | 2 tasks | 2 files |
+| Phase 27-worktrees-view P01 | 0.036 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -170,6 +171,8 @@ Phase 18 Architecture Decisions:
 - [Phase 26-agents-view]: AgentsView owns TanStack Query call; AgentMonitor is a pure display component receiving props
 - [Phase 26-agents-view]: detachTerminal .catch(() => {}) suppresses errors when PTY already ended on task completion
 - [Phase 26-agents-view]: DeadSessionTerminal never calls attachTerminal/detachTerminal; uses write-only xterm.js with disableStdin:true and writes terminal_output from DB on mount
+- [Phase 27-01]: useWorktreesQuery polls at 5s not 2s — worktree status changes less frequently than execution status; reduces git subprocess overhead
+- [Phase 27-01]: diff_stat_map populated in same parallel tokio::spawn as status_map — single spawned closure runs git status and git diff --shortstat per worktree
 
 ### Pending Todos
 

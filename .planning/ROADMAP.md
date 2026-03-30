@@ -175,7 +175,7 @@ Plans:
   5. Clicking a task name on a worktree row navigates to Kanban view and highlights that task
 **Plans**: 3 plans
 Plans:
-- [ ] 27-01-PLAN.md — Backend diff_stat field + bindings regen + worktree.service.ts
+- [x] 27-01-PLAN.md — Backend diff_stat field + bindings regen + worktree.service.ts
 - [ ] 27-02-PLAN.md — WorktreeManager sidebar list + filter toolbar + WorktreesView wiring
 - [ ] 27-03-PLAN.md — Right detail panel + DiffViewer + delete/create dialogs
 **UI hint**: yes
@@ -229,7 +229,7 @@ Plans:
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 27 - Worktrees View | v1.3 | 0/3 | Not started | - |
+| 27 - Worktrees View | v1.3 | 1/3 | In Progress|  |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 
 ---
