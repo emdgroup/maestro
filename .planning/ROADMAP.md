@@ -88,7 +88,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 
 - [x] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen (completed 2026-03-29)
 - [x] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search (completed 2026-03-29)
-- [ ] **Phase 27: Worktrees View** — Real worktree sidebar list, right-panel diff, zombie badge, manual create/delete
+- [x] **Phase 27: Worktrees View** — Real worktree sidebar list, right-panel diff, zombie badge, manual create/delete (completed 2026-03-30)
 - [ ] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, replaces `recover_dirty_worktrees` *(lower priority — can be deferred if time-constrained)*
 
 ## Phase Details
@@ -177,7 +177,7 @@ Plans:
 Plans:
 - [x] 27-01-PLAN.md — Backend diff_stat field + bindings regen + worktree.service.ts
 - [x] 27-02-PLAN.md — WorktreeManager sidebar list + filter toolbar + WorktreesView wiring
-- [ ] 27-03-PLAN.md — Right detail panel + DiffViewer + delete/create dialogs
+- [x] 27-03-PLAN.md — Right detail panel + DiffViewer + delete/create dialogs
 **UI hint**: yes
 
 **Key deliverables:**
@@ -229,7 +229,7 @@ Plans:
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 27 - Worktrees View | v1.3 | 2/3 | In Progress|  |
+| 27 - Worktrees View | v1.3 | 3/3 | Complete   | 2026-03-30 |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 
 ---

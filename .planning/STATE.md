@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-30T08:45:38.140Z"
+last_updated: "2026-03-30T08:51:59.891Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -108,6 +108,7 @@ Plan: 3 of 3
 | Phase 26-agents-view P02 | 0.033 | 2 tasks | 2 files |
 | Phase 27-worktrees-view P01 | 0.036 | 2 tasks | 4 files |
 | Phase 27-worktrees-view P02 | 0.019 | 2 tasks | 3 files |
+| Phase 27-worktrees-view P03 | 0.044 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,7 @@ Phase 18 Architecture Decisions:
 - [Phase 27-01]: diff_stat_map populated in same parallel tokio::spawn as status_map — single spawned closure runs git status and git diff --shortstat per worktree
 - [Phase 27-02]: WorktreeManager accepts worktrees as props (pure display, matching AgentMonitor pattern)
 - [Phase 27-02]: Filter logic: Active=agent_status running, Modified=non-empty git_status, Idle=not running and clean
+- [Phase 27-03]: AlertDialogTrigger uses render prop (base-ui pattern) not asChild (Radix); projectId threaded as explicit prop to WorktreeManager; parseDiffString returns DiffFileWithName[] mapped to one DiffViewer per file
 
 ### Pending Todos
 
