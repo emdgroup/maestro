@@ -17,7 +17,6 @@ import {
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { Play } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -72,7 +71,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             placeholder="Search agents..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-48 text-sm"
+            className="h-8 w-48 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
           />
           <ToggleGroup variant="outline" size="sm">
             {STATUS_FILTERS.map((f) => (
@@ -88,21 +87,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             ))}
           </ToggleGroup>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => {
-              setSpawnBranch(currentBranch);
-              setSpawnLabel("");
-              setShowSpawnDialog(true);
-            }}
-          >
-            <Play className="w-3.5 h-3.5 mr-1" />
-            Spawn Agent
-          </Button>
-        </div>
       </div>
 
       {/* Agent monitor */}
@@ -113,6 +97,11 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           onSelect={setSelectedExecutionId}
           search={search}
           statusFilter={statusFilter}
+          onSpawn={() => {
+            setSpawnBranch(currentBranch);
+            setSpawnLabel("");
+            setShowSpawnDialog(true);
+          }}
         />
       </div>
 

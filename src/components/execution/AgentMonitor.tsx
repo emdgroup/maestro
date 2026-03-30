@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { formatDistanceStrict } from "date-fns";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib";
+import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
 import type { ExecutionWithTask } from "@/types/bindings";
@@ -36,6 +38,7 @@ interface AgentMonitorProps {
   onSelect: (executionId: number) => void;
   search: string;
   statusFilter: StatusFilter;
+  onSpawn?: () => void;
 }
 
 export function AgentMonitor({
@@ -44,6 +47,7 @@ export function AgentMonitor({
   onSelect,
   search,
   statusFilter,
+  onSpawn,
 }: AgentMonitorProps) {
   const filteredExecutions = useMemo(() => {
     return executions
@@ -66,6 +70,15 @@ export function AgentMonitor({
     <div className="flex h-full">
       {/* Sidebar */}
       <div className="w-72 flex flex-col border-r border-border bg-card shrink-0">
+        {/* New Session button */}
+        {onSpawn && (
+          <div className="px-3 py-2 border-b border-border">
+            <Button variant="outline" size="sm" className="w-full h-8 text-xs justify-start" onClick={onSpawn}>
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              New Session
+            </Button>
+          </div>
+        )}
         {/* Execution list */}
         <div className="flex-1 overflow-y-auto">
           {filteredExecutions.length === 0 && (
