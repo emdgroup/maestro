@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T13:38:59.041Z"
+last_updated: "2026-03-30T14:45:21.279Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -195,6 +195,12 @@ Phase 18 Architecture Decisions:
 ### Pending Todos
 
 None currently.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260330-khs | move spawn agent button to top of list and rename to New Session | 2026-03-30 | b9ec20f | [260330-khs-move-spawn-agent-button-to-top-of-list-a](./quick/260330-khs-move-spawn-agent-button-to-top-of-list-a/) |
 
 ### Blockers/Concerns
 
