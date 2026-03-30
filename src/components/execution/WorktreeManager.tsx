@@ -297,7 +297,9 @@ export function WorktreeManager({
 
             {/* Diff body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {selectedWorktree.git_status === "" && !diffLoading ? (
+              {diffLoading ? (
+                <DiffViewer diffFile={null} loading={true} />
+              ) : selectedWorktree.git_status === "" ? (
                 <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                   No uncommitted changes
                 </div>
@@ -310,7 +312,7 @@ export function WorktreeManager({
               ) : (
                 <DiffViewer
                   diffFile={null}
-                  loading={diffLoading}
+                  loading={false}
                   error={diffError ? String(diffError) : undefined}
                 />
               )}

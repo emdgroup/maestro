@@ -605,22 +605,17 @@ pub async fn append_terminal_output(
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-    // Append to most recent execution log for this task (typically running/active one)
+    // Subquery targets the most recent execution log for this task
     let result = conn.execute(
         "UPDATE execution_logs
-         SET terminal_output = COALESCE(terminal_output, '') || ?
-         WHERE task_id = ? AND status IN ('running', 'failed', 'complete')
-         ORDER BY id DESC LIMIT 1",
+         SET terminal_output = COALESCE(terminal_output, '') || ?1
+         WHERE id = (
+             SELECT id FROM execution_logs
+             WHERE task_id = ?2 AND status IN ('running', 'failed', 'complete')
+             ORDER BY id DESC LIMIT 1
+         )",
         rusqlite::params![&output, task_id],
     );
-
-    // Note: The ORDER BY in an UPDATE is non-standard but works in SQLite
-    // If this causes issues, we can use a subquery approach instead:
-    // UPDATE execution_logs
-    // SET terminal_output = COALESCE(terminal_output, '') || ?
-    // WHERE id = (SELECT id FROM execution_logs
-    //             WHERE task_id = ? AND status IN (...)
-    //             ORDER BY id DESC LIMIT 1)
 
     match result {
         Ok(0) => {
