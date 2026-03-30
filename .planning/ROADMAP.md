@@ -232,7 +232,7 @@ Plans:
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 27 - Worktrees View | v1.3 | Complete    | 2026-03-30 | 2026-03-30 |
-| 28 - Zombie Cleanup on Project Open | v1.3 | 1/1 | Complete   | 2026-03-30 |
+| 28 - Zombie Cleanup on Project Open | v1.3 | Complete    | 2026-03-30 | 2026-03-30 |
 
 ---
 
