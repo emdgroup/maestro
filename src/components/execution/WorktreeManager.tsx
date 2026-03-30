@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib";
 import { parseDiffString } from "@/lib";
 import { Button } from "@/ui/button";
@@ -15,7 +16,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/ui/alert-dialog";
 import {
   Dialog,
@@ -28,7 +28,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "@/store/navigationStore";
 import { useWorktreeDiffQuery, useDeleteWorktreeMutation, useCreateWorktreeMutation } from "@/services/worktree.service";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
@@ -70,10 +70,12 @@ export function WorktreeManager({
   statusFilter,
 }: WorktreeManagerProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [originBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: branchData } = useProjectBranchesQuery(projectId);
   const branches = branchData?.[0] ?? [];
@@ -121,6 +123,7 @@ export function WorktreeManager({
             size="sm"
             className="h-8 text-xs w-full"
             onClick={() => {
+              void queryClient.invalidateQueries({ queryKey: [...taskQueryKeys.all, "branches", projectId] });
               setOriginBranch(currentBranch);
               setNewBranchName("");
               setCreateError(null);
@@ -248,11 +251,16 @@ export function WorktreeManager({
                   </div>
                 </div>
                 {/* Clean up button */}
-                <AlertDialog>
-                  <AlertDialogTrigger render={<Button variant="destructive" size="sm" className="h-8 text-xs" />}>
-                    <Trash2 className="w-3.5 h-3.5 mr-1" />
-                    Clean up
-                  </AlertDialogTrigger>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Clean up
+                </Button>
+                <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
@@ -265,6 +273,7 @@ export function WorktreeManager({
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={() => {
+                          setShowDeleteDialog(false);
                           if (selectedWorktree.id != null) {
                             deleteMutation.mutate(
                               { worktreeId: selectedWorktree.id, repoPath },

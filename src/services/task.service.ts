@@ -8,7 +8,7 @@ import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction } from 
  * Query key factory for task-related queries
  * Ensures consistent cache invalidation across components
  */
-const taskQueryKeys = {
+export const taskQueryKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskQueryKeys.all, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
