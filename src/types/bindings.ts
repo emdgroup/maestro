@@ -437,27 +437,18 @@ async listExecutionsWithTaskInfo(projectId: number) : Promise<Result<ExecutionWi
 }
 },
 /**
+ * Delete an execution log and clean up its PTY session if it exists.
+ */
+async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_execution_log", { executionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Spawn agent execution for a task
- * 
- * This handler creates an execution log record, spawns the agent CLI process
- * in a background tokio task, and returns immediately with the execution log ID.
- * The process continues running after the IPC returns.
- * 
- * # Arguments
- * * `app_state` - Tauri app state with database connection
- * * `project_id` - Project ID (for context)
- * * `task_id` - Task ID to execute
- * * `repo_path` - Repository path for the agent
- * 
- * # Returns
- * Execution log ID that tracks the execution
- * 
- * # Async Behavior
- * - Creates execution log synchronously
- * - Spawns background task with tokio::spawn
- * - Returns immediately (process continues in background)
- * - Background task captures output and marks completion
- * - Failure detection: exit_code != 0 sets status to "failed" (EXEC-06)
  */
 async spawnAgentExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
     try {

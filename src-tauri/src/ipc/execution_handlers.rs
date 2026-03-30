@@ -720,7 +720,24 @@ pub async fn spawn_interactive_execution(
     );
     let _ = label;
 
-    let repo_path = canonicalize_repo_path(&repo_path)?;
+    // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
+    let project = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            crate::models::Project::from_row,
+        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
+    };
+    let git_conn = crate::db::get_git_connection(&project, &app_state).await?;
+    let is_remote = project.is_remote();
+
+    // For local projects only, canonicalize to resolve symlinks/relative paths
+    let repo_path = if is_remote {
+        repo_path
+    } else {
+        canonicalize_repo_path(&repo_path)?
+    };
 
     // Step 1: Check if a worktree already exists for this branch in DB
     let existing_worktree: Option<(i32, String)> = {
@@ -740,13 +757,14 @@ pub async fn spawn_interactive_execution(
         use crate::models::WORKTREE_DIR;
         let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
 
-        // Ensure parent directory exists
-        tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
-            .await
-            .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+        // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
+        if !is_remote {
+            tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+                .await
+                .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+        }
 
-        // Checkout existing branch (no new_branch — None means checkout, not create)
-        let git_conn = crate::models::GitConnection::Local { path: repo_path.clone() };
+        // Checkout existing branch via SSH-aware git connection (None = checkout, not create)
         crate::git::create_worktree(&git_conn, &branch_name, &relative_path, None).await?;
 
         // Insert DB row with task_id = NULL
@@ -798,6 +816,30 @@ pub async fn spawn_interactive_execution(
     Ok(log_id)
 }
 
+/// Delete an execution log and clean up its PTY session if it exists.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_execution_log(
+    app_state: State<'_, Arc<AppState>>,
+    execution_id: i32,
+) -> Result<(), String> {
+    // First, clean up PTY session if it exists
+    let mut sessions = app_state.pty_sessions.lock().await;
+    sessions.remove(&execution_id);
+    drop(sessions);
+
+    // Delete from database
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.execute(
+        "DELETE FROM execution_logs WHERE id = ?",
+        rusqlite::params![execution_id],
+    )
+    .map_err(|e| format!("Failed to delete execution log: {}", e))?;
+
+    println!("delete_execution_log: deleted execution {}", execution_id);
+    Ok(())
+}
+
 /// List all executions for a project, enriched with task name and worktree branch.
 /// Used by the Agents View sidebar.
 #[tauri::command]
@@ -813,8 +855,11 @@ pub fn list_executions_with_task_info(
                 el.status, el.started_at, el.completed_at, el.terminal_output
          FROM execution_logs el
          LEFT JOIN tasks t ON t.id = el.task_id
-         LEFT JOIN worktrees w ON w.task_id = el.task_id
-         WHERE t.project_id = ?1 OR (el.task_id IS NULL)
+         LEFT JOIN worktrees w ON (
+             (el.task_id IS NOT NULL AND w.task_id = el.task_id)
+             OR (el.task_id IS NULL AND w.task_id IS NULL AND w.project_id = ?1)
+         )
+         WHERE t.project_id = ?1 OR (el.task_id IS NULL AND w.project_id = ?1)
          ORDER BY el.started_at DESC"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 

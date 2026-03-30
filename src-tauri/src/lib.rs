@@ -48,6 +48,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::delete_worktree,
             crate::ipc::cleanup_zombie_worktrees,
             crate::ipc::list_executions_with_task_info,
+            crate::ipc::delete_execution_log,
             crate::ipc::spawn_agent_execution,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,

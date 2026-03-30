@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { formatDistanceStrict } from "date-fns";
-import { Plus } from "lucide-react";
+import { Plus, Trash2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
@@ -39,6 +39,8 @@ interface AgentMonitorProps {
   search: string;
   statusFilter: StatusFilter;
   onSpawn?: () => void;
+  onDelete?: (executionId: number) => void;
+  onReconnect?: (execution: ExecutionWithTask) => void;
 }
 
 export function AgentMonitor({
@@ -48,6 +50,8 @@ export function AgentMonitor({
   search,
   statusFilter,
   onSpawn,
+  onDelete,
+  onReconnect,
 }: AgentMonitorProps) {
   const filteredExecutions = useMemo(() => {
     return executions
@@ -73,7 +77,7 @@ export function AgentMonitor({
         {/* New Session button */}
         {onSpawn && (
           <div className="px-3 py-2 border-b border-border">
-            <Button variant="outline" size="sm" className="w-full h-8 text-xs justify-start" onClick={onSpawn}>
+            <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={onSpawn}>
               <Plus className="w-3.5 h-3.5 mr-1" />
               New Session
             </Button>
@@ -132,6 +136,55 @@ export function AgentMonitor({
 
       {/* Terminal pane */}
       <div className="flex-1 flex flex-col min-w-0">
+        {selectedExecution && (
+          <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold truncate">
+                  {selectedExecution.task_name ?? selectedExecution.branch_name ?? "Interactive session"}
+                </h3>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0",
+                    STATUS_DOT[selectedExecution.status] ?? "bg-muted"
+                  )} />
+                  <span className="text-xs text-muted-foreground">
+                    {STATUS_LABEL[selectedExecution.status] ?? selectedExecution.status}
+                  </span>
+                  {selectedExecution.branch_name && (
+                    <span className="text-xs text-muted-foreground font-mono truncate">
+                      {selectedExecution.branch_name}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedExecution.status !== "running" && onReconnect && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => onReconnect(selectedExecution)}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                    Reconnect
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => onDelete(selectedExecution.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {selectedExecution?.status === "running" && terminalSessionId != null ? (
           <TerminalComponent key={terminalSessionId} taskId={terminalSessionId} />
         ) : selectedExecution ? (

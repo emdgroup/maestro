@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
-import { useExecutionsWithTaskInfoQuery, useSpawnInteractiveExecutionMutation } from "@/services/execution.service";
+import { useExecutionsWithTaskInfoQuery, useSpawnInteractiveExecutionMutation, useDeleteExecutionMutation } from "@/services/execution.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
@@ -45,6 +45,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
   const branches = branchData?.[0] ?? [];
   const currentBranch = branchData?.[1] ?? "main";
   const spawnMutation = useSpawnInteractiveExecutionMutation();
+  const deleteMutation = useDeleteExecutionMutation();
 
   // Deep-link: pendingAgentId overrides selection on first mount (matches by task_id)
   useEffect(() => {
@@ -71,9 +72,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             placeholder="Search agents..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-48 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            className="h-8 w-48 text-sm"
           />
-          <ToggleGroup variant="outline" size="sm">
+          <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
                 key={f}
@@ -82,7 +83,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                 onClick={() => setStatusFilter(f)}
                 className="text-xs px-3"
               >
-                {f === "All" ? "All" : (STATUS_LABEL[f] ?? f)}
+                {STATUS_LABEL[f] ?? f}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -101,6 +102,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             setSpawnBranch(currentBranch);
             setSpawnLabel("");
             setShowSpawnDialog(true);
+          }}
+          onDelete={(executionId) => {
+            deleteMutation.mutate({ executionId });
+            if (selectedExecutionId === executionId) setSelectedExecutionId(null);
+          }}
+          onReconnect={(execution) => {
+            if (execution.branch_name) {
+              setSpawnBranch(execution.branch_name);
+              setSpawnLabel("");
+              setShowSpawnDialog(true);
+            }
           }}
         />
       </div>

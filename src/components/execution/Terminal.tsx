@@ -42,11 +42,20 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       terminal.write(output);
     };
 
-    // Attach to backend PTY using execution service
-    api.attachTerminal(taskId, channel, null).catch((err) => {
-      console.error("Failed to attach terminal:", err);
-      terminal.write(`\r\nError: Failed to attach terminal: ${err}\r\n`);
-    });
+    // Attach to backend PTY using execution service.
+    // Retry once after 500ms — PTY may still be initializing for interactive sessions.
+    const tryAttach = () => {
+      api.attachTerminal(taskId, channel, null).catch((err) => {
+        console.error("Failed to attach terminal:", err);
+        setTimeout(() => {
+          api.attachTerminal(taskId, channel, null).catch((err2) => {
+            console.error("Failed to attach terminal (retry):", err2);
+            terminal.write(`\r\nError: Failed to attach terminal: ${err2}\r\n`);
+          });
+        }, 500);
+      });
+    };
+    tryAttach();
 
     // Set up terminal to send input to backend
     terminal.onData((data: string) => {

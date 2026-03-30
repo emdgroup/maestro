@@ -86,6 +86,25 @@ export function useSpawnInteractiveExecutionMutation() {
 }
 
 /**
+ * Mutation hook for deleting an execution log (and cleaning up its PTY session)
+ */
+export function useDeleteExecutionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ executionId }: { executionId: number }) => {
+      return await api.deleteExecutionLog(executionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+      toast.success("Session deleted");
+    },
+    onError: (error) => {
+      toast.error(`Failed to delete session: ${error}`);
+    },
+  });
+}
+
+/**
  * Mutation hook for pausing execution
  */
 export function usePauseExecutionMutation() {
