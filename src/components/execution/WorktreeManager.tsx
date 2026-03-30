@@ -1,8 +1,34 @@
 import { useState, useMemo } from "react";
+import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib";
+import { parseDiffString } from "@/lib";
 import { Input } from "@/ui/input";
+import { Button } from "@/ui/button";
+import { Label } from "@/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import { Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "@/store/navigationStore";
+import { useWorktreeDiffQuery, useDeleteWorktreeMutation, useCreateWorktreeMutation } from "@/services/worktree.service";
+import { DiffViewer } from "@/components/execution/DiffViewer";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
@@ -28,16 +54,25 @@ interface WorktreeManagerProps {
   selectedWorktreeId: number | null;
   onSelect: (worktreeId: number | null) => void;
   repoPath: string;
+  projectId: number;
 }
 
 export function WorktreeManager({
   worktrees,
   selectedWorktreeId,
   onSelect,
+  repoPath,
+  projectId,
 }: WorktreeManagerProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [newWorktreePath, setNewWorktreePath] = useState("");
   const navigate = useNavigate();
+
+  const deleteMutation = useDeleteWorktreeMutation();
+  const createMutation = useCreateWorktreeMutation();
 
   const filteredWorktrees = useMemo(() => {
     return worktrees
@@ -55,6 +90,17 @@ export function WorktreeManager({
           wt.branch_name.toLowerCase().includes(search.toLowerCase()),
       );
   }, [worktrees, statusFilter, search]);
+
+  const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
+
+  const { data: diffString, isLoading: diffLoading, error: diffError } = useWorktreeDiffQuery(
+    selectedWorktree?.id ?? null,
+  );
+
+  const diffFiles = useMemo(() => {
+    if (!diffString) return [];
+    return parseDiffString(diffString);
+  }, [diffString]);
 
   return (
     <div className="flex h-full">
@@ -87,6 +133,17 @@ export function WorktreeManager({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          <div className="ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setShowCreateDialog(true)}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              New Worktree
+            </Button>
+          </div>
         </div>
 
         {/* Worktree list */}
@@ -172,12 +229,159 @@ export function WorktreeManager({
         </div>
       </div>
 
-      {/* Right panel — detail content added in Plan 03 */}
+      {/* Right panel */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-          Select a worktree to view details
-        </div>
+        {selectedWorktree ? (
+          <>
+            {/* Detail header */}
+            <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold font-mono">{selectedWorktree.branch_name}</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    {selectedWorktree.task_name && selectedWorktree.task_id ? (
+                      <button
+                        onClick={() => navigate({ taskId: String(selectedWorktree.task_id) })}
+                        className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        {selectedWorktree.task_name}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No task linked</span>
+                    )}
+                    {selectedWorktree.agent_status === "running" && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium">
+                        Running
+                      </span>
+                    )}
+                    {selectedWorktree.created_at && (
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(selectedWorktree.created_at), { addSuffix: true })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Clean up button */}
+                <AlertDialog>
+                  <AlertDialogTrigger render={<Button variant="destructive" size="sm" className="h-8 text-xs" />}>
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    Clean up
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will remove the worktree directory and its database record.
+                        Branch: <span className="font-mono font-medium">{selectedWorktree.branch_name}</span>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => {
+                          if (selectedWorktree.id != null) {
+                            deleteMutation.mutate(
+                              { worktreeId: selectedWorktree.id, repoPath },
+                              { onSuccess: () => onSelect(null) },
+                            );
+                          }
+                        }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+
+            {/* Diff body */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {selectedWorktree.git_status === "" && !diffLoading ? (
+                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                  No uncommitted changes
+                </div>
+              ) : diffFiles.length > 0 ? (
+                <div className="p-4 space-y-4">
+                  {diffFiles.map((file, i) => (
+                    <DiffViewer key={i} diffFile={file} loading={false} />
+                  ))}
+                </div>
+              ) : (
+                <DiffViewer
+                  diffFile={null}
+                  loading={diffLoading}
+                  error={diffError ? String(diffError) : undefined}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+            Select a worktree to view details
+          </div>
+        )}
       </div>
+
+      {/* Create Worktree dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Worktree</DialogTitle>
+            <DialogDescription>
+              Create a new git worktree with a dedicated branch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="branch-name">Branch name</Label>
+              <Input
+                id="branch-name"
+                placeholder="feature/my-branch"
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="worktree-path">Worktree path (relative to project root)</Label>
+              <Input
+                id="worktree-path"
+                placeholder=".maestro/worktrees/my-branch"
+                value={newWorktreePath}
+                onChange={(e) => setNewWorktreePath(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!newBranchName.trim() || !newWorktreePath.trim() || createMutation.isPending}
+              onClick={() => {
+                createMutation.mutate(
+                  {
+                    projectId,
+                    taskId: null,
+                    branchName: newBranchName.trim(),
+                    repoPath,
+                    worktreePath: newWorktreePath.trim(),
+                  },
+                  {
+                    onSuccess: () => {
+                      setShowCreateDialog(false);
+                      setNewBranchName("");
+                      setNewWorktreePath("");
+                    },
+                  },
+                );
+              }}
+            >
+              {createMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

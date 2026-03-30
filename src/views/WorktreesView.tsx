@@ -36,6 +36,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
       selectedWorktreeId={selectedWorktreeId}
       onSelect={setSelectedWorktreeId}
       repoPath={repoPath ?? ""}
+      projectId={projectId ?? 0}
     />
   );
 };
