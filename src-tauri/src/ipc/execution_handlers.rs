@@ -91,6 +91,17 @@ pub async fn spawn_agent_execution(
     repo_path: String,
 ) -> Result<i32, String> {
     println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
+    println!("spawn_agent_execution: repo_path='{}', is_absolute={}, exists={}",
+        repo_path,
+        std::path::Path::new(&repo_path).is_absolute(),
+        std::path::Path::new(&repo_path).is_dir());
+
+    // Canonicalize repo_path to resolve symlinks, trailing slashes, or relative path issues
+    let repo_path = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
+        .to_string_lossy()
+        .to_string();
 
     // Step 1: Create an on-demand worktree for this task
     let app_state_arc: Arc<AppState> = (*app_state).clone();
@@ -692,6 +703,13 @@ pub async fn resume_agent_execution(
     repo_path: String,
 ) -> Result<i32, String> {
     println!("resume_agent_execution(project={}, task={}) called", project_id, task_id);
+
+    // Canonicalize repo_path to resolve symlinks, trailing slashes, or relative path issues
+    let repo_path = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
+        .to_string_lossy()
+        .to_string();
 
     // Step 1: Create an on-demand worktree for this task
     let app_state_arc: Arc<AppState> = (*app_state).clone();

@@ -362,6 +362,13 @@ pub async fn create_worktree_for_task(
     task_id: i32,
     repo_path: &str,
 ) -> Result<(i32, String), String> {
+    // Canonicalize repo_path as a safety net — resolves symlinks, trailing slashes, relative paths
+    let repo_path_canon = std::path::Path::new(repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?;
+    let repo_path = repo_path_canon.to_string_lossy().to_string();
+    let repo_path = repo_path.as_str();
+
     let relative_path = crate::models::worktree_path_for_task(task_id);
     let abs_path = format!("{}/{}", repo_path, relative_path);
 
