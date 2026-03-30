@@ -416,6 +416,14 @@ async deleteWorktree(worktreeId: number, repoPath: string) : Promise<Result<null
     else return { status: "error", error: e  as any };
 }
 },
+async cleanupZombieWorktrees(projectId: number, repoPath: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cleanup_zombie_worktrees", { projectId, repoPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * List all executions for a project, enriched with task name and worktree branch.
  * Used by the Agents View sidebar.

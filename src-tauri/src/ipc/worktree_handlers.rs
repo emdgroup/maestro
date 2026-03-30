@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::State;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 
-use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR};
+use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR, GitConnection};
 use crate::db::AppState;
 
 // ============================================================================
@@ -430,6 +430,93 @@ pub async fn delete_worktree(
 
     println!("delete_worktree: deleted worktree {}", worktree_id);
     Ok(())
+}
+
+// ============================================================================
+// cleanup_zombie_worktrees — REQ-34, REQ-35, REQ-36
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cleanup_zombie_worktrees(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    repo_path: String,
+) -> Result<i32, String> {
+    println!("cleanup_zombie_worktrees(project={}) called", project_id);
+
+    let threshold = Utc::now() - Duration::minutes(10);
+
+    // Query DB for zombie candidates — lock is released after this block
+    let all_candidates: Vec<(i32, String, String)> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let result: Result<Vec<(i32, String, String)>, String> = (|| {
+            let mut stmt = conn.prepare(
+                "SELECT w.id, w.path, w.created_at
+                 FROM worktrees w
+                 LEFT JOIN tasks t ON t.id = w.task_id
+                 WHERE w.project_id = ?1
+                   AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))
+                   AND NOT EXISTS (
+                       SELECT 1 FROM execution_logs el
+                       WHERE el.task_id = w.task_id AND el.status = 'running'
+                   )"
+            ).map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+            let rows: Vec<(i32, String, String)> = stmt.query_map(rusqlite::params![project_id], |row| {
+                Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            })
+            .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+            Ok(rows)
+        })();
+        result?
+    }; // Mutex lock released here
+
+    // Filter by time threshold (only worktrees older than 10 minutes)
+    let candidates: Vec<(i32, String)> = all_candidates
+        .into_iter()
+        .filter(|(_, _, created_at)| {
+            created_at.parse::<chrono::DateTime<chrono::Utc>>()
+                .map(|dt| dt < threshold)
+                .unwrap_or(false)
+        })
+        .map(|(id, path, _)| (id, path))
+        .collect();
+
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    // Get on-disk worktree paths to confirm existence before deleting
+    let disk_worktrees = crate::git::list_worktrees_local(&repo_path).await?;
+    let disk_paths: HashSet<String> = disk_worktrees.iter().map(|wt| wt.path.clone()).collect();
+
+    let mut deleted: i32 = 0;
+
+    for (id, relative_path) in &candidates {
+        let abs_path = format!("{}/{}", repo_path, relative_path);
+        if disk_paths.contains(&abs_path) {
+            // Remove the git worktree (best-effort — don't fail the whole cleanup)
+            let git_conn = GitConnection::Local { path: repo_path.clone() };
+            let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
+
+            // Delete the DB row
+            {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
+            }
+
+            deleted += 1;
+        }
+    }
+
+    println!(
+        "cleanup_zombie_worktrees: deleted {} zombie worktrees for project {}",
+        deleted, project_id
+    );
+    Ok(deleted)
 }
 
 /// Internal helper for worktree deletion during finalization.
