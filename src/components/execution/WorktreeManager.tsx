@@ -2,10 +2,9 @@ import { useState, useMemo } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib";
 import { parseDiffString } from "@/lib";
-import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,8 +30,8 @@ import { useWorktreeDiffQuery, useDeleteWorktreeMutation, useCreateWorktreeMutat
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
-const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
+export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
+export type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 function parseDiffStat(
   raw: string | null,
@@ -55,6 +54,8 @@ interface WorktreeManagerProps {
   onSelect: (worktreeId: number | null) => void;
   repoPath: string;
   projectId: number;
+  search: string;
+  statusFilter: StatusFilter;
 }
 
 export function WorktreeManager({
@@ -63,9 +64,9 @@ export function WorktreeManager({
   onSelect,
   repoPath,
   projectId,
+  search,
+  statusFilter,
 }: WorktreeManagerProps) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [newWorktreePath, setNewWorktreePath] = useState("");
@@ -106,44 +107,17 @@ export function WorktreeManager({
     <div className="flex h-full">
       {/* Sidebar */}
       <div className="w-72 flex flex-col border-r border-border bg-card shrink-0">
-        {/* Header */}
-        <div className="px-3 py-3 border-b border-border bg-muted/30 font-semibold text-sm">
-          Worktrees
-        </div>
-
-        {/* Filter toolbar */}
-        <div className="h-12 border-b border-border bg-muted/30 flex items-center px-3 gap-2 shrink-0">
-          <Input
-            type="text"
-            placeholder="Search branches..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-32 text-sm"
-          />
-          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className="text-xs px-2"
-              >
-                {f}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <div className="ml-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setShowCreateDialog(true)}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              New Worktree
-            </Button>
-          </div>
+        {/* New Worktree button row */}
+        <div className="px-3 py-2 border-b border-border">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs w-full"
+            onClick={() => setShowCreateDialog(true)}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            New Worktree
+          </Button>
         </div>
 
         {/* Worktree list */}

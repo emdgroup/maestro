@@ -1,14 +1,12 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { formatDistanceStrict } from "date-fns";
 import { cn } from "@/lib";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
-import { Input } from "@/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import type { ExecutionWithTask } from "@/types/bindings";
 
-const STATUS_FILTERS = ["All", "running", "complete", "failed"] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
+export const STATUS_FILTERS = ["All", "running", "complete", "failed"] as const;
+export type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 const STATUS_DOT: Record<string, string> = {
   running: "bg-warning animate-pulse",
@@ -18,7 +16,7 @@ const STATUS_DOT: Record<string, string> = {
   cancelled: "bg-muted",
 };
 
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   running: "Running",
   complete: "Done",
   failed: "Failed",
@@ -36,16 +34,17 @@ interface AgentMonitorProps {
   executions: ExecutionWithTask[];
   selectedTaskId: number | null;
   onSelect: (taskId: number) => void;
+  search: string;
+  statusFilter: StatusFilter;
 }
 
 export function AgentMonitor({
   executions,
   selectedTaskId,
   onSelect,
+  search,
+  statusFilter,
 }: AgentMonitorProps) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
-
   const filteredExecutions = useMemo(() => {
     return executions
       .slice()
@@ -62,35 +61,6 @@ export function AgentMonitor({
     <div className="flex h-full">
       {/* Sidebar */}
       <div className="w-72 flex flex-col border-r border-border bg-card shrink-0">
-        {/* Header */}
-        <div className="px-3 py-3 border-b border-border bg-muted/30 font-semibold text-sm">
-          Agents
-        </div>
-
-        {/* Filter toolbar */}
-        <div className="h-12 border-b border-border bg-muted/30 flex items-center px-3 gap-2 shrink-0">
-          <Input
-            type="text"
-            placeholder="Search agents..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-32 text-sm"
-          />
-          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className="text-xs px-2"
-              >
-                {f === "All" ? "All" : (STATUS_LABEL[f] ?? f)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-
         {/* Execution list */}
         <div className="flex-1 overflow-y-auto">
           {filteredExecutions.length === 0 && (

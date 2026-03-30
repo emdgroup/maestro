@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
-import { AgentMonitor } from "@/components/execution/AgentMonitor";
+import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
+import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
 import { useExecutionsWithTaskInfoQuery } from "@/services/execution.service";
+import { Input } from "@/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -9,7 +12,7 @@ interface AgentsViewProps {
 
 /**
  * AgentsView - Page-level orchestrator for the agent monitoring screen.
- * Owns the execution data query and passes props down to AgentMonitor.
+ * Owns the execution data query and filter state, passes props down to AgentMonitor.
  * Handles deep-link selection via pendingAgentId from navigationStore.
  */
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
@@ -17,6 +20,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
   // Deep-link: pendingAgentId overrides selection on first mount
   useEffect(() => {
@@ -34,10 +39,46 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
   }, [executions, pendingAgentId, clearPendingAgent, selectedTaskId]);
 
   return (
-    <AgentMonitor
-      executions={executions}
-      selectedTaskId={selectedTaskId}
-      onSelect={setSelectedTaskId}
-    />
+    <div className="flex flex-col h-full">
+      {/* Action bar */}
+      <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
+        <div className="flex items-center gap-2">
+          <Input
+            type="text"
+            placeholder="Search agents..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 w-48 text-sm"
+          />
+          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
+            {STATUS_FILTERS.map((f) => (
+              <ToggleGroupItem
+                key={f}
+                value={f}
+                pressed={statusFilter === f}
+                onClick={() => setStatusFilter(f)}
+                className="text-xs px-3"
+              >
+                {f === "All" ? "All" : (STATUS_LABEL[f] ?? f)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Right slot — Spawn Agent button added in plan 03 */}
+        </div>
+      </div>
+
+      {/* Agent monitor */}
+      <div className="flex-1 min-h-0">
+        <AgentMonitor
+          executions={executions}
+          selectedTaskId={selectedTaskId}
+          onSelect={setSelectedTaskId}
+          search={search}
+          statusFilter={statusFilter}
+        />
+      </div>
+    </div>
   );
 };
