@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-30T08:31:50.503Z"
+last_updated: "2026-03-30T08:45:38.140Z"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 27 (worktrees-view) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ Plan: 2 of 3
 | Phase 26-agents-view P01 | 0.031 | 2 tasks | 5 files |
 | Phase 26-agents-view P02 | 0.033 | 2 tasks | 2 files |
 | Phase 27-worktrees-view P01 | 0.036 | 2 tasks | 4 files |
+| Phase 27-worktrees-view P02 | 0.019 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -173,6 +174,8 @@ Phase 18 Architecture Decisions:
 - [Phase 26-agents-view]: DeadSessionTerminal never calls attachTerminal/detachTerminal; uses write-only xterm.js with disableStdin:true and writes terminal_output from DB on mount
 - [Phase 27-01]: useWorktreesQuery polls at 5s not 2s — worktree status changes less frequently than execution status; reduces git subprocess overhead
 - [Phase 27-01]: diff_stat_map populated in same parallel tokio::spawn as status_map — single spawned closure runs git status and git diff --shortstat per worktree
+- [Phase 27-02]: WorktreeManager accepts worktrees as props (pure display, matching AgentMonitor pattern)
+- [Phase 27-02]: Filter logic: Active=agent_status running, Modified=non-empty git_status, Idle=not running and clean
 
 ### Pending Todos
 
