@@ -81,7 +81,7 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    // Step 5: Run parallel git status per on-disk worktree
+    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree
     let handles: Vec<_> = disk_worktrees
         .iter()
         .map(|wt| {
@@ -90,15 +90,29 @@ pub async fn list_worktrees_with_status(
                 let status = crate::git::get_worktree_status_local(&path)
                     .await
                     .unwrap_or_default();
-                (path, status)
+                let diff_stat_output = tokio::process::Command::new("git")
+                    .args(["diff", "--shortstat"])
+                    .current_dir(&path)
+                    .output()
+                    .await;
+                let diff_stat = match diff_stat_output {
+                    Ok(out) => {
+                        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if s.is_empty() { None } else { Some(s) }
+                    }
+                    Err(_) => None,
+                };
+                (path, status, diff_stat)
             })
         })
         .collect();
 
     let mut status_map: HashMap<String, String> = HashMap::new();
+    let mut diff_stat_map: HashMap<String, Option<String>> = HashMap::new();
     for handle in handles {
-        if let Ok((path, status)) = handle.await {
-            status_map.insert(path, status);
+        if let Ok((path, status, diff_stat)) = handle.await {
+            status_map.insert(path.clone(), status);
+            diff_stat_map.insert(path, diff_stat);
         }
     }
 
@@ -112,6 +126,7 @@ pub async fn list_worktrees_with_status(
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
             let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
+            let diff_stat = diff_stat_map.get(&wt.path).cloned().unwrap_or(None);
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(db_row.project_id),
@@ -124,10 +139,12 @@ pub async fn list_worktrees_with_status(
                 agent_status: db_row.agent_status.clone(),
                 is_zombie,
                 is_orphan: false,
+                diff_stat,
             });
         } else {
             // On-disk but not in DB — orphan entry
             let branch_name = wt.branch.clone().unwrap_or_else(|| "unknown".to_string());
+            let diff_stat = diff_stat_map.get(&wt.path).cloned().unwrap_or(None);
             result.push(WorktreeWithStatus {
                 id: None,
                 project_id: None,
@@ -140,6 +157,7 @@ pub async fn list_worktrees_with_status(
                 agent_status: None,
                 is_zombie: false,
                 is_orphan: true,
+                diff_stat,
             });
         }
     }

@@ -1028,7 +1028,7 @@ export type Worktree = { id: number; project_id: number; task_id: number | null;
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
-export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean }
+export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null }
 
 /** tauri-specta globals **/
 

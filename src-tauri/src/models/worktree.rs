@@ -38,6 +38,7 @@ pub struct WorktreeWithStatus {
     pub agent_status: Option<String>,    // from execution_logs.status join
     pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention
     pub is_orphan: bool,                 // on-disk but not in DB
+    pub diff_stat: Option<String>,       // raw output of `git diff --shortstat`; None if clean
 }
 
 /// View model for the Agents view — execution log enriched with task and worktree info
