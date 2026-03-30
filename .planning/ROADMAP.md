@@ -87,6 +87,18 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full details.
 | 26 - Agents View | v1.3 | 2/2 | Complete | 2026-03-29 |
 | 27 - Worktrees View | v1.3 | 3/3 | Complete | 2026-03-30 |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 1/1 | Complete | 2026-03-30 |
+| 29 - v1.3 Polish & Bug Fixes | v1.3 | 0/2 | In Progress | — |
+
+### Phase 29: v1.3 Agents & Worktrees view polish and bug fixes
+
+**Goal:** Fix DiffViewer dark mode and styling defects, safe SQL for terminal output, commit completed quick-task work, clean up stale todos
+**Requirements**: TBD
+**Depends on:** Phase 28
+**Plans:** 2 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — Fix DiffViewer theme/Tailwind states, SQL subquery, WorktreeManager loading
+- [ ] 29-02-PLAN.md — Commit uncommitted quick-task changes, resolve stale pending todo
 
 ---
 
