@@ -88,7 +88,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 
 - [x] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen (completed 2026-03-29)
 - [x] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search (completed 2026-03-29)
-- [ ] **Phase 27: Worktrees View** — Real worktree cards, right-panel diff, zombie badge, manual create/delete
+- [ ] **Phase 27: Worktrees View** — Real worktree sidebar list, right-panel diff, zombie badge, manual create/delete
 - [ ] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, replaces `recover_dirty_worktrees` *(lower priority — can be deferred if time-constrained)*
 
 ## Phase Details
@@ -162,34 +162,35 @@ Plans:
 ---
 
 ### Phase 27: Worktrees View
-**Goal**: The Worktrees view shows real git worktree cards with branch, task, and status info, a right-panel diff viewer, and per-card management actions including zombie detection and delete.
+**Goal**: The Worktrees view shows real worktrees in a sidebar list with branch, task, and status info, a right-panel diff viewer, and management actions including zombie detection, delete, and manual creation.
 **Depends on**: Phase 25
 **Complexity**: M
 **Requirements**: REQ-25, REQ-26, REQ-27, REQ-28, REQ-29, REQ-30, REQ-31, REQ-32, REQ-33
 **Research flag**: None — `DiffViewer` and `@git-diff-view/react` are already proven in the review flow; this phase reuses them unchanged
 **Success Criteria** (what must be TRUE):
-  1. The Worktrees view card grid shows real worktrees from `git worktree list`, with no placeholder/static data; each card displays branch name, linked task name (or "No task"), agent status badge, and last activity timestamp
-  2. Clicking a worktree card opens a right panel showing worktree metadata and a live diff of uncommitted changes vs origin branch via `@git-diff-view/react`
-  3. A worktree with `is_zombie: true` displays a "Zombie" badge on its card; the badge is informational only and never triggers auto-deletion
-  4. Clicking the "Clean up" button on any card, confirming the dialog, calls `delete_worktree` and removes the card from the list immediately via query invalidation
-  5. Clicking a task name on a worktree card navigates to Kanban view and highlights that task
-**Plans**: 4 plans
+  1. The Worktrees view sidebar list shows real worktrees from `list_worktrees_with_status`, with no placeholder/static data; each row displays status dot, branch name, linked task name (or "No task"), and diff shortstat
+  2. Clicking a worktree row opens a right panel showing worktree metadata and a live diff of uncommitted changes vs origin branch via `@git-diff-view/react`
+  3. A worktree with `is_zombie: true` displays a "Zombie" badge on its row; the badge is informational only and never triggers auto-deletion
+  4. Clicking the "Clean up" button on any worktree, confirming the dialog, calls `delete_worktree` and removes the row from the list immediately via query invalidation
+  5. Clicking a task name on a worktree row navigates to Kanban view and highlights that task
+**Plans**: 3 plans
 Plans:
-- [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
-- [x] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
-- [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
-- [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
+- [ ] 27-01-PLAN.md — Backend diff_stat field + bindings regen + worktree.service.ts
+- [ ] 27-02-PLAN.md — WorktreeManager sidebar list + filter toolbar + WorktreesView wiring
+- [ ] 27-03-PLAN.md — Right detail panel + DiffViewer + delete/create dialogs
 **UI hint**: yes
 
 **Key deliverables:**
-- `worktree.service.ts` created: `useWorktreesQuery(projectId)`, `useWorktreeDiffQuery(worktreeId)`, `useDeleteWorktreeMutation`, `useCreateWorktreeMutation`
-- `WorktreeManager.tsx` rewritten: card grid from `WorktreeWithStatus[]`, no static placeholder data
-- Card content: branch name, linked task name (or "No task"), agent status badge (active/idle), last activity timestamp
-- Zombie/prunable badge: `is_zombie: true` surfaces a "Zombie" badge; informational only, never auto-delete
-- Right panel detail: same pattern as BacklogView + BacklogTaskSheet; shows worktree metadata + git diff via `@git-diff-view/react`
-- "Clean up" action: per-card button + confirmation dialog before calling `delete_worktree`
+- `diff_stat: Option<String>` added to `WorktreeWithStatus` in Rust; `list_worktrees_with_status` runs `git diff --shortstat` per worktree
+- `worktree.service.ts` created: `useWorktreesQuery(projectId, repoPath)`, `useWorktreeDiffQuery(worktreeId)`, `useDeleteWorktreeMutation`, `useCreateWorktreeMutation`
+- `WorktreeManager.tsx` rewritten: sidebar list from `WorktreeWithStatus[]`, matching AgentMonitor layout (w-72 sidebar + right panel)
+- Sidebar row: status dot (green=clean, yellow=dirty) + branch name, task name link, diff shortstat line
+- Filter toolbar: All / Active / Modified / Idle chips + branch search input, client-side filtering
+- Zombie/orphan badges: `is_zombie` shows "Zombie" badge, `is_orphan` shows "Orphan" badge; informational only
+- Right panel detail: worktree metadata header + DiffViewer via `@git-diff-view/react`; clean worktrees show "No uncommitted changes"
+- "Clean up" action: AlertDialog confirmation before calling `delete_worktree`
+- "New Worktree" button: dialog with branch name + path inputs, calls `create_worktree` IPC
 - Task deep link: clicking task name calls `navigationStore.navigate({ taskId })`
-- "New Worktree" button in header: dialog with branch name + path inputs, calls `create_worktree` IPC, new card appears via query invalidation
 - `WorktreesView.tsx` wired: passes data as props; no direct IPC inside `WorktreeManager`
 
 ---
@@ -207,12 +208,7 @@ Plans:
   1. Opening a project with zombie worktrees (task_id IS NULL or task status Done/Archived, path confirmed by `git worktree list`, created_at older than 10 minutes) automatically removes them — they are absent from the Worktrees view on first load
   2. Worktrees created less than 10 minutes ago are never touched by the cleanup pass, even if they have no task link yet
   3. The `recover_dirty_worktrees` call in `App.tsx` is replaced by `cleanup_zombie_worktrees` with no other behavioral change to project open flow
-**Plans**: 4 plans
-Plans:
-- [x] 25-01-PLAN.md — Schema v3 + model overhaul + Cargo.toml deps
-- [ ] 25-02-PLAN.md — Git local implementations (tokio::process::Command)
-- [ ] 25-03-PLAN.md — New worktree IPC commands (list, diff, create, delete)
-- [ ] 25-04-PLAN.md — Pool removal + execution handler migration + bindings regen
+**Plans**: TBD
 **UI hint**: no
 
 **Key deliverables:**
@@ -233,7 +229,7 @@ Plans:
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 27 - Worktrees View | v1.3 | 0/? | Not started | - |
+| 27 - Worktrees View | v1.3 | 0/3 | Not started | - |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
 
 ---
@@ -291,4 +287,4 @@ Plans:
 
 ---
 
-**Next step:** Run `/gsd:plan-phase 25` to decompose Phase 25 (Backend Overhaul) into executable plans.
+**Next step:** Run `/gsd:execute-phase 27-worktrees-view` to execute Phase 27 plans.
