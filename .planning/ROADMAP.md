@@ -100,6 +100,18 @@ Plans:
 - [x] 29-01-PLAN.md — Fix DiffViewer theme/Tailwind states, SQL subquery, WorktreeManager loading
 - [x] 29-02-PLAN.md — Commit uncommitted quick-task changes, resolve stale pending todo
 
+### Phase 30: v1.3 post-testing UI and worktree bug fixes
+
+**Goal:** Fix four post-v1.3 testing issues: action bars for AgentsView/WorktreesView, Spawn Agent button for interactive sessions, "not a git repository" execution bug, and WorktreeManager create dialog improvements
+**Requirements**: TBD
+**Depends on:** Phase 29
+**Plans:** 3 plans
+
+Plans:
+- [ ] 30-01-PLAN.md — Fix execution path bug + add action bars to AgentsView and WorktreesView
+- [ ] 30-02-PLAN.md — Rust backend: update create_worktree IPC, add spawn_interactive_execution, update ExecutionWithTask model
+- [ ] 30-03-PLAN.md — Frontend: redesign worktree create dialog, add Spawn Agent button + dialog
+
 ---
 
 *Roadmap created: 2026-02-09*
