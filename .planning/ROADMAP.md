@@ -89,7 +89,7 @@ All 4 phases: **No research needed.** All integration points verified by direct 
 - [x] **Phase 25: Backend Overhaul** — Schema v3, model overhaul, pool removal, on-demand worktree create, 5 new IPC commands, bindings regen (completed 2026-03-29)
 - [x] **Phase 26: Agents View** — Real execution list, live xterm.js terminal, dead session handling, status filter/search (completed 2026-03-29)
 - [x] **Phase 27: Worktrees View** — Real worktree sidebar list, right-panel diff, zombie badge, manual create/delete (completed 2026-03-30)
-- [ ] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, replaces `recover_dirty_worktrees` *(lower priority — can be deferred if time-constrained)*
+- [x] **Phase 28: Zombie Cleanup on Project Open** — Startup cleanup pass, automatic zombie removal on project open *(lower priority — can be deferred if time-constrained)* (completed 2026-03-30)
 
 ## Phase Details
 
@@ -205,16 +205,18 @@ Plans:
 **Requirements**: REQ-34, REQ-35, REQ-36
 **Research flag**: None — simple IPC + idempotent `git worktree remove` calls; no new patterns
 **Success Criteria** (what must be TRUE):
-  1. Opening a project with zombie worktrees (task_id IS NULL or task status Done/Archived, path confirmed by `git worktree list`, created_at older than 10 minutes) automatically removes them — they are absent from the Worktrees view on first load
+  1. Opening a project with zombie worktrees (task_id IS NULL or task status Done/Cancelled, path confirmed by `git worktree list`, created_at older than 10 minutes) automatically removes them — they are absent from the Worktrees view on first load
   2. Worktrees created less than 10 minutes ago are never touched by the cleanup pass, even if they have no task link yet
-  3. The `recover_dirty_worktrees` call in `App.tsx` is replaced by `cleanup_zombie_worktrees` with no other behavioral change to project open flow
-**Plans**: TBD
+  3. A new `cleanup_zombie_worktrees` IPC command is called from `App.tsx` on project open
+**Plans**: 1 plan
+Plans:
+- [x] 28-01-PLAN.md — cleanup_zombie_worktrees IPC + frontend mutation + App.tsx wiring
 **UI hint**: no
 
 **Key deliverables:**
-- `cleanup_zombie_worktrees(project_id)` IPC command: finds worktrees where `task_id IS NULL` OR task status is Done/Archived, AND `git worktree list` confirms path exists on disk
+- `cleanup_zombie_worktrees(project_id)` IPC command: finds worktrees where `task_id IS NULL` OR task status is Done/Cancelled, AND `git worktree list` confirms path exists on disk
 - Time threshold: only considers worktrees with `created_at` older than 10 minutes (avoids false positives on actively starting agents)
-- Called from `App.tsx` `useEffect` on project open, replacing `recover_dirty_worktrees`
+- Called from `App.tsx` `useEffect` on project open
 - Never deletes based on DB state alone — `git worktree list` is authoritative for existence
 
 ---
@@ -229,8 +231,8 @@ Plans:
 | 24 - Project picker improvements | v1.2 | 2/2 | Complete | 2026-03-28 |
 | 25 - Backend Overhaul | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
 | 26 - Agents View | v1.3 | Complete    | 2026-03-29 | 2026-03-29 |
-| 27 - Worktrees View | v1.3 | 3/3 | Complete   | 2026-03-30 |
-| 28 - Zombie Cleanup on Project Open | v1.3 | 0/? | Not started (optional) | - |
+| 27 - Worktrees View | v1.3 | Complete    | 2026-03-30 | 2026-03-30 |
+| 28 - Zombie Cleanup on Project Open | v1.3 | 1/1 | Complete   | 2026-03-30 |
 
 ---
 
@@ -287,4 +289,4 @@ Plans:
 
 ---
 
-**Next step:** Run `/gsd:execute-phase 27-worktrees-view` to execute Phase 27 plans.
+**Next step:** Run `/gsd:execute-phase 28-zombie-cleanup-on-project-open` to execute Phase 28 plans.

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees
 status: completed
-last_updated: "2026-03-30T08:51:59.891Z"
+last_updated: "2026-03-30T09:31:46.736Z"
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State: v1.3 — Agents & Worktrees
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 27 — worktrees-view
+**Current focus:** Phase 28 — zombie-cleanup-on-project-open
 
 ## Current Position
 
-Phase: 27 (worktrees-view) — EXECUTING
-Plan: 3 of 3
+Phase: 28 (zombie-cleanup-on-project-open) — EXECUTING
+Plan: 1 of 1
 
 ## Performance Metrics
 
@@ -109,6 +109,7 @@ Plan: 3 of 3
 | Phase 27-worktrees-view P01 | 0.036 | 2 tasks | 4 files |
 | Phase 27-worktrees-view P02 | 0.019 | 2 tasks | 3 files |
 | Phase 27-worktrees-view P03 | 0.044 | 2 tasks | 2 files |
+| Phase 28-zombie-cleanup-on-project-open P01 | 0.05 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,8 @@ Phase 18 Architecture Decisions:
 - [Phase 27-02]: WorktreeManager accepts worktrees as props (pure display, matching AgentMonitor pattern)
 - [Phase 27-02]: Filter logic: Active=agent_status running, Modified=non-empty git_status, Idle=not running and clean
 - [Phase 27-03]: AlertDialogTrigger uses render prop (base-ui pattern) not asChild (Radix); projectId threaded as explicit prop to WorktreeManager; parseDiffString returns DiffFileWithName[] mapped to one DiffViewer per file
+- [Phase 28-zombie-cleanup-on-project-open]: Scoped closure pattern for Rust SQLite query to satisfy borrow checker (conn + stmt lifetime)
+- [Phase 28-zombie-cleanup-on-project-open]: Silent mutation: onError logs to console but no toast — zombie cleanup is background housekeeping
 
 ### Pending Todos
 
