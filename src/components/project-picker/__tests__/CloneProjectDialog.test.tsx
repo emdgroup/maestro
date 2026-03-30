@@ -35,7 +35,7 @@ describe("CloneProjectDialog", () => {
   it("renders URL and target path inputs when open", () => {
     renderDialog(true);
     expect(screen.getByLabelText("Git URL")).toBeInTheDocument();
-    expect(screen.getByLabelText("Target Path")).toBeInTheDocument();
+    expect(screen.getByLabelText("Parent Directory")).toBeInTheDocument();
   });
 
   it("renders Clone and Cancel buttons", () => {

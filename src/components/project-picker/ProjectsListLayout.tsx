@@ -68,22 +68,22 @@ export function ProjectsListLayout({
         <Button
           onClick={onSelectNewClick}
           disabled={loading}
-          variant="outline"
+          variant="default"
           size="sm"
           className="flex-1"
         >
           <FolderOpen className="size-4" />
-          Select Existing
+          Select Project
         </Button>
         <Button
           onClick={onCloneClick}
           disabled={loading}
-          variant="outline"
+          variant="default"
           size="sm"
           className="flex-1"
         >
           <GitFork className="size-4" />
-          Clone
+          Clone Repository
         </Button>
         <Button
           onClick={onCreateClick}
@@ -93,7 +93,7 @@ export function ProjectsListLayout({
           className="flex-1"
         >
           <FolderPlus className="size-4" />
-          Create
+          Create Project
         </Button>
       </div>
     </div>

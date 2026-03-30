@@ -62,7 +62,6 @@ export function BacklogTaskSheet({
             acceptance_criteria: data.acceptance_criteria,
             priority: data.priority,
             origin_branch: data.origin_branch,
-            skills: [],
           },
         },
         {

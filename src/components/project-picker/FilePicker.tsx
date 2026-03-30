@@ -297,12 +297,12 @@ export function FilePicker({
           <Button
             onClick={handleSelectCurrentDirectory}
             disabled={loading || externalLoading || navigation.isDrivesRoot}
-            variant="accent"
+            variant="default"
             size="default"
             className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
           >
             <FolderOpen className="size-4" />
-            {externalLoading ? "Opening..." : "Open Project"}
+            {externalLoading ? "Opening..." : "Open"}
           </Button>
         </div>
       </div>

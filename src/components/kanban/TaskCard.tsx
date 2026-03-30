@@ -146,7 +146,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const handleBackToBacklog = async () => {
     try {
-      await api.updateTask(task.id, "Backlog", null);
+      await api.updateTask(task.id, "Backlog", null, null, null, null, null, null);
       store.updateTaskStatus(task.id, "Backlog");
       toast.success(`"${task.name}" moved back to Backlog`);
     } catch (error) {

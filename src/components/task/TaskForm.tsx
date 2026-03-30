@@ -160,33 +160,24 @@ export function TaskForm({ onSubmit, isLoading, onCancel, projectId, initialValu
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="originBranch">Origin Branch (Optional)</Label>
-        {branches.length > 0 ? (
-          <Controller
-            name="originBranch"
-            control={control}
-            render={({ field: { value, onChange } }) => (
-              <Select value={value} onValueChange={onChange}>
-                <SelectTrigger id="originBranch" className="w-full">
-                  <SelectValue placeholder="Select branch..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch} value={branch}>
-                      {branch}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-        ) : (
-          <Input
-            id="originBranch"
-            type="text"
-            placeholder="e.g. main"
-            {...register("originBranch")}
-          />
-        )}
+        <Controller
+          name="originBranch"
+          control={control}
+          render={({ field: { value, onChange } }) => (
+            <Select value={value} onValueChange={onChange}>
+              <SelectTrigger id="originBranch" className="w-full">
+                <SelectValue placeholder="Select branch..." />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch} value={branch}>
+                    {branch}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
       </div>
 
       <div className="flex gap-4 mt-4 justify-end">

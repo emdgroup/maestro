@@ -70,25 +70,15 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Clone Project</DialogTitle>
-            <DialogDescription>Clone a git repository into a local directory.</DialogDescription>
+            <DialogDescription>Clone a git repository into a chosen directory.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="clone-url">Git URL</Label>
-              <Input
-                id="clone-url"
-                placeholder="https://github.com/user/repo.git"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                disabled={isPending}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="clone-target">Target Path</Label>
+              <Label htmlFor="clone-target">Parent Directory</Label>
               <div className="flex gap-2">
                 <Input
                   id="clone-target"
-                  placeholder="/path/to/clone/destination"
+                  placeholder="/path/to/parent"
                   value={targetPath}
                   onChange={(e) => setTargetPath(e.target.value)}
                   disabled={isPending}
@@ -103,6 +93,16 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
                   Browse
                 </Button>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="clone-url">Git URL</Label>
+              <Input
+                id="clone-url"
+                placeholder="https://github.com/user/repo.git"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                disabled={isPending}
+              />
             </div>
           </div>
           <DialogFooter>
