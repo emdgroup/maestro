@@ -1,5 +1,15 @@
 # Project Milestones: Maestro
 
+## v1.3 Agents & Worktrees (Shipped: 2026-03-30)
+
+**Phases completed:** 4 phases, 10 plans, 2 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.2 Deep Linking & Project Picker (Shipped: 2026-03-29)
 
 **Delivered:** Added programmatic in-app navigation via Zustand navigationStore and enhanced project picker with 3-button footer for Clone/Create workflows and auto-git-init on folder select.

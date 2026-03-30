@@ -10,37 +10,9 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 ## Current State
 
-**Latest Release:** v1.2 Deep Linking & Project Picker (shipped 2026-03-29)
+**Latest Release:** v1.3 Agents & Worktrees (shipped 2026-03-30)
 
-**Active milestone:** v1.3 Agents & Worktrees — Phase 28 complete (last phase), milestone ready for ship
-
-**What was built in Phase 28 (zombie-cleanup-on-project-open):**
-- `cleanup_zombie_worktrees` Rust IPC command — queries DB for worktrees with no task / task Done/Cancelled, older than 10 min, confirmed on disk; deletes worktree + DB row
-- `useCleanupZombieWorktreesMutation` TanStack Query mutation — fires silently on project open, invalidates worktrees cache only when deletedCount > 0, errors logged not toasted
-- App.tsx `useEffect([currentProject?.id])` — triggers cleanup on every project open and project switch (Validated in Phase 28: zombie-cleanup-on-project-open)
-
-**What was built in Phase 27 (worktrees-view):**
-- `WorktreeWithStatus` extended with `diff_stat: Option<String>` populated via `git diff --shortstat` (parallel tokio spawn)
-- `worktree.service.ts` — TanStack Query hooks: `useWorktreesQuery` (5s poll), `useWorktreeDiffQuery`, `useDeleteWorktreeMutation`, `useCreateWorktreeMutation`
-- `WorktreeManager.tsx` — AgentMonitor-style `w-72` sidebar with All/Active/Modified/Idle filters + branch search, status dots, Zombie/Orphan badges, diff shortstat, task deep links
-- Right detail panel: branch metadata, task link, status badge, `formatDistanceToNow` timestamp, `DiffViewer` per-file, AlertDialog-gated delete, New Worktree creation dialog
-
-**What was built in Phase 26 (agents-view):**
-- `useExecutionsWithTaskInfoQuery` polling hook (2s interval) — AgentsView as sole data owner
-- AgentMonitor rewrite: three-line sidebar rows, filter toolbar, left-border selection, terminal routing
-- `DeadSessionTerminal` for completed/failed execution history (write-only xterm.js, no PTY)
-- REQ-22 compliant Terminal cleanup: ResizeObserver.disconnect → detachTerminal → terminal.dispose
-- Deep-link resolution via `pendingAgentId` from navigationStore, auto-select fallback for running sessions
-
-**What was built in Phase 25 (backend-overhaul):**
-- SQLite schema migrated to v3: pool columns removed, `task_id`/`git_status` added to worktrees
-- `WorktreeWithStatus` and `ExecutionWithTask` view models replace pool-based types
-- All git stubs replaced with real `tokio::process::Command` async implementations
-- 4 new worktree IPC commands: `list_worktrees_with_status`, `get_worktree_diff`, `create_worktree`, `delete_worktree`
-- Execution handlers migrated to on-demand worktree lifecycle (create on spawn, delete on finish)
-- `list_executions_with_task_info` IPC command added; TypeScript bindings regenerated
-
-**Production Status:** v1.2 shipped ✓ | v1.3 backend foundation complete ✓
+**Active milestone:** v1.4 — not yet defined. Run `/gsd:new-milestone` to start planning.
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
@@ -105,16 +77,23 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ Clone Project dialog (git URL + target path + SSH remote support) — v1.2 (Phase 24)
 - ✓ Create Project dialog (parent dir + folder name + git init) — v1.2 (Phase 24)
 
-## Current Milestone: v1.3 Agents & Worktrees
+**v1.3 Requirements (shipped 2026-03-30):**
 
-**Goal:** Replace both placeholder views with fully functional, real-data-backed Agents and Worktrees management screens — including a backend overhaul from pool-based to on-demand worktree creation.
+- ✓ SQLite schema v3: on-demand worktree model (task_id, git_status), pool types removed — v1.3 (Phase 25)
+- ✓ Real git worktree add/remove via `tokio::process::Command` — v1.3 (Phase 25)
+- ✓ On-demand worktree creation per task at `.maestro/worktrees/task-{id}` — v1.3 (Phase 25)
+- ✓ 5 pool IPC commands removed; 5 new IPC commands: list, diff, create, delete, cleanup — v1.3 (Phase 25)
+- ✓ `list_executions_with_task_info` IPC; TypeScript bindings regenerated — v1.3 (Phase 25)
+- ✓ Agents view: live xterm.js terminal, execution sidebar with 2s polling, filter/search chips — v1.3 (Phase 26)
+- ✓ Dead session rendering: DB `terminal_output` written to write-only xterm.js (no PTY) — v1.3 (Phase 26)
+- ✓ REQ-22 terminal lifecycle: ResizeObserver → detachTerminal → dispose cleanup chain — v1.3 (Phase 26)
+- ✓ Worktrees view: real sidebar with diff stats, zombie badges, create/delete dialogs, DiffViewer — v1.3 (Phase 27)
+- ✓ `worktree.service.ts` with TanStack Query hooks (5s poll, diff query, mutations) — v1.3 (Phase 27)
+- ✓ Zombie cleanup on project open: automatic background removal of stale worktrees — v1.3 (Phase 28)
 
-**Target features:**
-- Agents view: execution log list (active + history), live xterm.js terminal attach, search/filter, graceful handling of dead sessions
-- Worktrees view: real git worktree listing with branch/task/diff info, create + delete, zombie detection and cleanup
-- Backend: remove worktree pool, on-demand worktree creation per task, new IPC for worktree listing and git diff
+## Next Milestone: v1.4
 
-### Active
+*Not yet planned. Run `/gsd:new-milestone` to define scope.*
 
 ### Out of Scope
 
@@ -134,15 +113,15 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 **Current codebase:**
 - Tech stack: Tauri 2 + React 19 + TypeScript + Rust backend + Node.js sidecar
 - UI: Tailwind CSS 4.1 + shadcn/ui + TanStack Query
-- Lines of code: 15,398 TypeScript | 6,553 Rust
-- Database: SQLite with schema v1, plus per-project `.maestro/` JSON files
+- Lines of code: ~16,500 TypeScript | ~7,000 Rust (estimated post-v1.3)
+- Database: SQLite with schema v3, plus per-project `.maestro/` JSON files
 - Architecture: views/ + services/ + components/{domain}/ + utils/hooks/ + utils/helpers/
 
 **Known issues:**
 - None
 
 **Technical debt:**
-- None remaining from v1.1
+- None remaining from v1.3
 
 **User feedback themes:**
 - Not yet deployed publicly (awaiting first production release)
@@ -187,6 +166,12 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | `connection_id` threaded through git IPC commands | Same dialogs work for local and SSH remote projects | ✓ Good — caught in human-verify checkpoint |
 | Dual-dialog visibility: `open={open && !showDirPicker}` | Preserves form state while sub-dialog (FilePicker) is open | ✓ Good — form not unmounted on sub-dialog open |
 | Create dialog inline errors; Clone dialog toast errors | Create failures are user-fixable (dir exists); Clone failures are server-side | ✓ Good — right UX for each error class |
+| On-demand worktree lifecycle (v1.3) | Pool-based model had idle worktrees wasting disk; on-demand is simpler and correct | ✓ Good — create at spawn, delete on finish, no pool management |
+| `tokio::process::Command` for all git subprocesses | Avoid blocking async runtime; git2 synchronous calls wrapped in `spawn_blocking` | ✓ Good — clean async model, no deadlocks |
+| View-owns-data pattern (AgentsView/WorktreesView) | Display components receive props; views own TanStack Query calls | ✓ Good — matches established pattern from v1.2 |
+| `DeadSessionTerminal` with write-only xterm.js | Non-running executions skip `attach_terminal`; render DB history directly | ✓ Good — avoids spurious PTY errors on completed sessions |
+| Zombie cleanup: silent mutation, no toast on error | Cleanup is background housekeeping; errors logged not surfaced | ✓ Good — keeps UX uncluttered on project open |
+| `diff_stat_map` in same tokio spawn as `status_map` | Single parallel closure runs git status + git diff --shortstat per worktree | ✓ Good — halves git subprocess overhead at list time |
 
 ---
-*Last updated: 2026-03-30 after Phase 28 (zombie-cleanup-on-project-open) completion — v1.3 milestone complete*
+*Last updated: 2026-03-30 after v1.3 milestone archive — v1.4 planning not yet started*
