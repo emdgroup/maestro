@@ -86,7 +86,7 @@ export function AgentMonitor({
                   : "border-transparent hover:bg-muted/10"
               )}
             >
-              {/* Line 1: status dot + task name */}
+              {/* Line 1: status dot + task/branch name */}
               <div className="flex items-center gap-2">
                 <span
                   className={cn(
@@ -95,8 +95,13 @@ export function AgentMonitor({
                   )}
                 />
                 <span className="text-sm font-medium truncate">
-                  {execution.task_name ?? "Interactive"}
+                  {execution.task_name ?? execution.branch_name ?? "Interactive session"}
                 </span>
+                {!execution.task_name && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium shrink-0">
+                    Interactive
+                  </span>
+                )}
               </div>
               {/* Line 2: status label + elapsed time */}
               <div className="text-xs text-muted-foreground mt-0.5 pl-4">

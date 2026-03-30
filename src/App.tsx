@@ -181,7 +181,7 @@ function App() {
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <Suspense fallback={fallback}>
-                    <AgentsView projectId={currentProject.id} />
+                    <AgentsView projectId={currentProject.id} repoPath={currentProject.path} />
                   </Suspense>
                 </motion.div>
               )}

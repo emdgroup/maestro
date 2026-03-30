@@ -2,12 +2,26 @@ import { useState, useEffect } from "react";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
-import { useExecutionsWithTaskInfoQuery } from "@/services/execution.service";
+import { useExecutionsWithTaskInfoQuery, useSpawnInteractiveExecutionMutation } from "@/services/execution.service";
+import { useProjectBranchesQuery } from "@/services/task.service";
 import { Input } from "@/ui/input";
+import { Button } from "@/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import { Label } from "@/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Play } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
+  repoPath?: string;
 }
 
 /**
@@ -15,13 +29,23 @@ interface AgentsViewProps {
  * Owns the execution data query and filter state, passes props down to AgentMonitor.
  * Handles deep-link selection via pendingAgentId from navigationStore.
  */
-export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) => {
   const { data: executions = [] } = useExecutionsWithTaskInfoQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
   const [selectedExecutionId, setSelectedExecutionId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+
+  // Spawn Agent dialog state
+  const [showSpawnDialog, setShowSpawnDialog] = useState(false);
+  const [spawnBranch, setSpawnBranch] = useState("");
+  const [spawnLabel, setSpawnLabel] = useState("");
+
+  const { data: branchData } = useProjectBranchesQuery(projectId ?? null);
+  const branches = branchData?.[0] ?? [];
+  const currentBranch = branchData?.[1] ?? "main";
+  const spawnMutation = useSpawnInteractiveExecutionMutation();
 
   // Deep-link: pendingAgentId overrides selection on first mount (matches by task_id)
   useEffect(() => {
@@ -65,7 +89,19 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
           </ToggleGroup>
         </div>
         <div className="flex items-center gap-2">
-          {/* Right slot — Spawn Agent button added in plan 03 */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              setSpawnBranch(currentBranch);
+              setSpawnLabel("");
+              setShowSpawnDialog(true);
+            }}
+          >
+            <Play className="w-3.5 h-3.5 mr-1" />
+            Spawn Agent
+          </Button>
         </div>
       </div>
 
@@ -79,6 +115,68 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId }) => {
           statusFilter={statusFilter}
         />
       </div>
+
+      {/* Spawn Agent dialog */}
+      <Dialog open={showSpawnDialog} onOpenChange={setShowSpawnDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Spawn Interactive Agent</DialogTitle>
+            <DialogDescription>
+              Start an interactive agent session on a branch. No task required — you drive the terminal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="spawn-branch">Branch</Label>
+              <Select value={spawnBranch} onValueChange={(v) => setSpawnBranch(v ?? "")}>
+                <SelectTrigger id="spawn-branch">
+                  <SelectValue placeholder="Select a branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="spawn-label">Label (optional)</Label>
+              <Input
+                id="spawn-label"
+                placeholder="e.g. debugging, exploration"
+                value={spawnLabel}
+                onChange={(e) => setSpawnLabel(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSpawnDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!spawnBranch || spawnMutation.isPending}
+              onClick={() => {
+                spawnMutation.mutate(
+                  {
+                    projectId: projectId!,
+                    branchName: spawnBranch,
+                    repoPath: repoPath!,
+                    label: spawnLabel.trim() || null,
+                  },
+                  {
+                    onSuccess: (logId) => {
+                      setShowSpawnDialog(false);
+                      setSelectedExecutionId(logId);
+                    },
+                  },
+                );
+              }}
+            >
+              {spawnMutation.isPending ? "Spawning..." : "Spawn"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
