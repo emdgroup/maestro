@@ -3,6 +3,7 @@ import { DiffView, DiffModeEnum } from "@git-diff-view/react";
 import { getDiffViewHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
 import { DiffFile } from "@/types/review";
+import { useTheme } from "@/providers/ThemeProvider";
 
 interface DiffViewerProps {
   diffFile: DiffFile | null;
@@ -13,6 +14,8 @@ interface DiffViewerProps {
 export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error }) => {
   const [highlighter, setHighlighter] = useState<any>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
+  const { theme, systemTheme } = useTheme();
+  const diffTheme = (theme === "system" ? systemTheme : theme) === "dark" ? "dark" : "light";
 
   // Load syntax highlighter on mount
   useEffect(() => {
@@ -33,7 +36,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
 
   if (highlighterError) {
     return (
-      <div className="diff-viewer-error">
+      <div className="flex items-center justify-center h-full text-sm text-destructive">
         <p>Error loading syntax highlighter: {highlighterError}</p>
       </div>
     );
@@ -41,48 +44,42 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
 
   if (loading) {
     return (
-      <div className="diff-viewer-container">
-        <div className="diff-viewer-loading">
-          <p>Loading diff...</p>
-        </div>
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        Loading diff...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="diff-viewer-error">
-        <p>Error loading diff: {error}</p>
+      <div className="flex items-center justify-center h-full text-sm text-destructive">
+        Error loading diff: {error}
       </div>
     );
   }
 
   if (!diffFile) {
     return (
-      <div className="diff-viewer-container">
-        <div className="diff-viewer-empty">
-          <p>No changes to display</p>
-        </div>
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        No changes to display
       </div>
     );
   }
 
   if (!highlighter) {
     return (
-      <div className="diff-viewer-container">
-        <div className="diff-viewer-loading">
-          <p>Initializing syntax highlighter...</p>
-        </div>
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        Initializing syntax highlighter...
       </div>
     );
   }
 
   return (
-    <div className="diff-viewer-container">
+    <div className="min-h-0">
       <DiffView
         data={diffFile}
         diffViewMode={DiffModeEnum.Unified}
-        diffViewTheme="light"
+        diffViewTheme={diffTheme}
         diffViewHighlight
         registerHighlighter={highlighter}
       />
