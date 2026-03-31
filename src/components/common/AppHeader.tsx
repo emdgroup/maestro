@@ -111,31 +111,33 @@ export function AppHeader({
           </SelectTrigger>
           <SelectContent className="min-w-sm max-w-lg">
             <LayoutGroup id="project-dropdown">
-              {recentProjects.filter(p => p.id !== currentProject.id).map((project) => (
-                <SelectItem
-                  key={project.id}
-                  value={project}
-                  className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
-                  onFocus={() => handleItemFocus(project.id)}
-                  onBlur={handleItemBlur}
-                  before={
-                    highlightedId === project.id ? (
-                      <motion.div
-                        layoutId="project-hover-pill"
-                        className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
-                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                      />
-                    ) : null
-                  }
-                >
-                  <div className="relative z-10 flex items-center gap-2">
-                    <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
-                      <div className="font-medium text-foreground">{project.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{project.path}</div>
+              {recentProjects
+                .filter((p) => p.id !== currentProject.id)
+                .map((project) => (
+                  <SelectItem
+                    key={project.id}
+                    value={project}
+                    className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
+                    onFocus={() => handleItemFocus(project.id)}
+                    onBlur={handleItemBlur}
+                    before={
+                      highlightedId === project.id ? (
+                        <motion.div
+                          layoutId="project-hover-pill"
+                          className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
+                          transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                        />
+                      ) : null
+                    }
+                  >
+                    <div className="relative z-10 flex items-center gap-2">
+                      <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
+                        <div className="font-medium text-foreground">{project.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{project.path}</div>
+                      </div>
                     </div>
-                  </div>
-                </SelectItem>
-              ))}
+                  </SelectItem>
+                ))}
               {onBackToPicker && (
                 <>
                   {recentProjects.length > 1 && <SelectSeparator />}
@@ -144,7 +146,6 @@ export function AppHeader({
                     className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
                     onFocus={() => handleItemFocus(BACK_TO_PICKER_VALUE)}
                     onBlur={handleItemBlur}
-
                     before={
                       highlightedId === BACK_TO_PICKER_VALUE ? (
                         <motion.div
@@ -183,7 +184,7 @@ export function AppHeader({
               <button
                 key={view.id}
                 onClick={() => onViewChange(view.id)}
-                className={`relative z-10 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? '' : 'cursor-pointer hover:bg-background/50'}`}
+                className={`relative z-10 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
               >
                 <motion.span
                   animate={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
@@ -209,7 +210,11 @@ export function AppHeader({
               ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
               : "bg-muted text-muted-foreground hover:bg-muted/80"
           }`}
-          title={autoMode ? "Auto mode: tasks in Ready are executed automatically. Click to switch to Manual." : "Manual mode: tasks must be started manually. Click to enable Auto mode."}
+          title={
+            autoMode
+              ? "Auto mode: tasks in Ready are executed automatically. Click to switch to Manual."
+              : "Manual mode: tasks must be started manually. Click to enable Auto mode."
+          }
         >
           <span
             className={`h-1.5 w-1.5 rounded-full shrink-0 ${

@@ -129,16 +129,13 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
                   <div
                     key={task.id}
                     className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors group ${
-                      isSelected
-                        ? "bg-accent/10 border-accent/40"
-                        : "bg-card hover:bg-accent/5"
+                      isSelected ? "bg-accent/10 border-accent/40" : "bg-card hover:bg-accent/5"
                     }`}
                   >
-                    <button
-                      className="flex-1 text-left min-w-0"
-                      onClick={() => openEdit(task)}
-                    >
-                      <span className="text-sm font-medium text-foreground truncate block">{task.name}</span>
+                    <button className="flex-1 text-left min-w-0" onClick={() => openEdit(task)}>
+                      <span className="text-sm font-medium text-foreground truncate block">
+                        {task.name}
+                      </span>
                     </button>
 
                     <div className="flex items-center gap-2 shrink-0">

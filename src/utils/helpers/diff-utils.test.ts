@@ -21,10 +21,9 @@ describe("extractFileNames", () => {
   });
 
   it("deduplicates repeated file entries", () => {
-    const diff = [
-      "diff --git a/src/a.ts b/src/a.ts",
-      "diff --git a/src/a.ts b/src/a.ts",
-    ].join("\n");
+    const diff = ["diff --git a/src/a.ts b/src/a.ts", "diff --git a/src/a.ts b/src/a.ts"].join(
+      "\n",
+    );
     expect(extractFileNames(diff)).toEqual(["src/a.ts"]);
   });
 
@@ -90,11 +89,7 @@ describe("parseDiffString", () => {
     ];
 
     for (const [filename, expectedLang] of cases) {
-      const diff = [
-        `diff --git a/${filename} b/${filename}`,
-        "@@ -1 +1 @@",
-        "+line",
-      ].join("\n");
+      const diff = [`diff --git a/${filename} b/${filename}`, "@@ -1 +1 @@", "+line"].join("\n");
 
       const result = parseDiffString(diff);
       expect(result[0]?.newFile?.fileLang).toBe(expectedLang);

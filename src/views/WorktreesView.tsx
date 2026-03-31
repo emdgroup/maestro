@@ -3,8 +3,9 @@ import { WorktreeManager, STATUS_FILTERS } from "@/components/execution/Worktree
 import type { StatusFilter } from "@/components/execution/WorktreeManager";
 import { usePendingWorktreeId, useNavigationActions } from "@/store/navigationStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
-import { Input } from "@/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
+import { SearchIcon } from "lucide-react";
 
 interface WorktreesViewProps {
   projectId?: number;
@@ -40,14 +41,19 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
       {/* Action bar */}
       <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <Input
-            type="text"
-            placeholder="Search branches..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-48 text-sm"
-          />
-          <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
+          <InputGroup>
+            <InputGroupInput
+              type="text"
+              placeholder="Search branches..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-48 text-sm"
+            />
+            <InputGroupAddon align="inline-start">
+              <SearchIcon className="text-muted-foreground" />
+            </InputGroupAddon>
+          </InputGroup>
+          <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
                 key={f}

@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
-import { useExecutionsWithTaskInfoQuery, useSpawnInteractiveExecutionMutation, useDeleteExecutionMutation } from "@/services/execution.service";
+import {
+  useExecutionsWithTaskInfoQuery,
+  useSpawnInteractiveExecutionMutation,
+  useDeleteExecutionMutation,
+} from "@/services/execution.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
@@ -17,6 +21,8 @@ import {
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
+import { SearchIcon } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -67,13 +73,18 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
       {/* Action bar */}
       <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <Input
-            type="text"
-            placeholder="Search agents..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-48 text-sm"
-          />
+          <InputGroup>
+            <InputGroupInput
+              type="text"
+              placeholder="Search agents..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-48 text-sm"
+            />
+            <InputGroupAddon align="inline-start">
+              <SearchIcon className="text-muted-foreground" />
+            </InputGroupAddon>
+          </InputGroup>
           <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
@@ -123,7 +134,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           <DialogHeader>
             <DialogTitle>Spawn Interactive Agent</DialogTitle>
             <DialogDescription>
-              Start an interactive agent session on a branch. No task required — you drive the terminal.
+              Start an interactive agent session on a branch. No task required — you drive the
+              terminal.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -135,7 +147,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                 </SelectTrigger>
                 <SelectContent>
                   {branches.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

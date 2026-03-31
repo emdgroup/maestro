@@ -25,7 +25,14 @@ interface TaskFormProps {
   submitLabel?: string;
 }
 
-export function TaskForm({ onSubmit, isLoading, onCancel, projectId, initialValues, submitLabel = "Create Task" }: TaskFormProps) {
+export function TaskForm({
+  onSubmit,
+  isLoading,
+  onCancel,
+  projectId,
+  initialValues,
+  submitLabel = "Create Task",
+}: TaskFormProps) {
   const {
     register,
     handleSubmit,

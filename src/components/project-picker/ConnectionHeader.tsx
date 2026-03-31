@@ -25,7 +25,7 @@ import {
   useForgetSavedPassword,
   useSshConnectionById,
 } from "@/services/connection.service";
-import {toast} from "sonner";
+import { toast } from "sonner";
 
 interface ConnectionHeaderProps {
   connectionId: number;

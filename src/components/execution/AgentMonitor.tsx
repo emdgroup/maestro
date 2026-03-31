@@ -56,9 +56,10 @@ export function AgentMonitor({
   const filteredExecutions = useMemo(() => {
     return executions
       .filter((e) => statusFilter === "All" || e.status === statusFilter)
-      .filter((e) =>
-        search.trim() === "" ||
-        (e.task_name ?? "Interactive").toLowerCase().includes(search.toLowerCase())
+      .filter(
+        (e) =>
+          search.trim() === "" ||
+          (e.task_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
       );
   }, [executions, statusFilter, search]);
 
@@ -98,7 +99,7 @@ export function AgentMonitor({
                 "px-3 py-3 cursor-pointer border-l-2 transition-colors",
                 execution.id === selectedExecutionId
                   ? "border-ring bg-muted/20"
-                  : "border-transparent hover:bg-muted/10"
+                  : "border-transparent hover:bg-muted/10",
               )}
             >
               {/* Line 1: status dot + task/branch name */}
@@ -106,7 +107,7 @@ export function AgentMonitor({
                 <span
                   className={cn(
                     "inline-block w-2 h-2 rounded-full shrink-0",
-                    STATUS_DOT[execution.status] ?? "bg-muted"
+                    STATUS_DOT[execution.status] ?? "bg-muted",
                   )}
                 />
                 <span className="text-sm font-medium truncate">
@@ -141,13 +142,17 @@ export function AgentMonitor({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold truncate">
-                  {selectedExecution.task_name ?? selectedExecution.branch_name ?? "Interactive session"}
+                  {selectedExecution.task_name ??
+                    selectedExecution.branch_name ??
+                    "Interactive session"}
                 </h3>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className={cn(
-                    "inline-block w-2 h-2 rounded-full shrink-0",
-                    STATUS_DOT[selectedExecution.status] ?? "bg-muted"
-                  )} />
+                  <span
+                    className={cn(
+                      "inline-block w-2 h-2 rounded-full shrink-0",
+                      STATUS_DOT[selectedExecution.status] ?? "bg-muted",
+                    )}
+                  />
                   <span className="text-xs text-muted-foreground">
                     {STATUS_LABEL[selectedExecution.status] ?? selectedExecution.status}
                   </span>

@@ -8,7 +8,14 @@ import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useTasksQuery } from "@/services/task.service";
 
-const COLUMN_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done", "Cancelled"];
+const COLUMN_STATUSES: Array<TaskStatus> = [
+  "Backlog",
+  "Ready",
+  "InProgress",
+  "Review",
+  "Done",
+  "Cancelled",
+];
 
 const COLUMN_TITLES: Record<TaskStatus, string> = {
   Backlog: "Backlog",

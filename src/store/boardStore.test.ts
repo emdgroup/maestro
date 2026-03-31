@@ -95,11 +95,9 @@ describe("boardStore – getTasks / getTasksByStatus", () => {
   });
 
   it("getTasksByStatus filters correctly", () => {
-    useBoardStore.getState().loadTasks([
-      makeTask(1, "Ready"),
-      makeTask(2, "Ready"),
-      makeTask(3, "Done"),
-    ]);
+    useBoardStore
+      .getState()
+      .loadTasks([makeTask(1, "Ready"), makeTask(2, "Ready"), makeTask(3, "Done")]);
     const ready = useBoardStore.getState().getTasksByStatus("Ready");
     expect(ready).toHaveLength(2);
     expect(ready.every((t) => t.status === "Ready")).toBe(true);

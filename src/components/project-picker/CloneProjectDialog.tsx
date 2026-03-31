@@ -143,7 +143,10 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
 /** Derive repo name from a git URL (last path segment without .git suffix) */
 function deriveRepoName(url: string): string {
   try {
-    const cleaned = url.trim().replace(/\/+$/, "").replace(/\.git$/, "");
+    const cleaned = url
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\.git$/, "");
     const lastSegment = cleaned.split("/").pop() ?? "";
     return lastSegment;
   } catch {

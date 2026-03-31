@@ -84,7 +84,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return "0s";
   }, [task.status, executionLog?.started_at]);
 
-
   const handleExecute = async () => {
     setIsExecuting(true);
     try {

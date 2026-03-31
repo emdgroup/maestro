@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
-pub const SCHEMA_V4: &str = r#"
+pub const SCHEMA_V5: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -142,6 +142,10 @@ CREATE TABLE IF NOT EXISTS ssh_connections (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_execution_logs_task_id ON execution_logs(task_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_worktrees_project_id ON worktrees(project_id);
+CREATE INDEX IF NOT EXISTS idx_worktrees_task_id ON worktrees(task_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
 "#;
 
 pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
@@ -175,7 +179,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V4)?;
+        conn.execute_batch(SCHEMA_V5)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -228,7 +232,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         // Verify worktrees table has new v4 columns
         let worktree_columns: Vec<String> = conn

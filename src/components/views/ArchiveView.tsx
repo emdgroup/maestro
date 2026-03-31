@@ -75,9 +75,7 @@ export function ArchiveView({ search, filter }: ArchiveViewProps) {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs text-muted-foreground">
-                  {formatDate(task.updated_at)}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatDate(task.updated_at)}</span>
 
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_BADGE_CLASSES[task.priority]}`}

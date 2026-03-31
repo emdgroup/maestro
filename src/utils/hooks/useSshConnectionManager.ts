@@ -180,7 +180,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
         onSettled: () => {
           setLoading(false);
         },
-      }
+      };
 
       setLoading(true);
 
@@ -191,7 +191,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
             password: auth.password,
             savePassword: auth.savePassword,
           },
-          {...options}
+          { ...options },
         );
       } else if (auth.method === "key-file") {
         connectSshWithKey(
@@ -201,14 +201,11 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
             passphrase: auth.passphrase,
             savePassphrase: auth.savePassphrase,
           },
-          {...options},
+          { ...options },
         );
       } else {
         // agent — use dedicated agent auth handler
-        connectSshWithAgent(
-          { connectionId },
-          {...options},
-        );
+        connectSshWithAgent({ connectionId }, { ...options });
       }
     },
     [
@@ -217,7 +214,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       getConnectionById,
       connectSshWithCreds,
       connectSshWithKey,
-      connectSshWithAgent
+      connectSshWithAgent,
     ],
   );
 
@@ -226,7 +223,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
    */
   const handleAuthCancel = useCallback(() => {
     if (isNewConnection && !!connectionId) {
-      void deleteSshConnection(connectionId)
+      void deleteSshConnection(connectionId);
     }
     setShowAuthModal(false);
   }, [isNewConnection, connectionId, deleteSshConnection]);

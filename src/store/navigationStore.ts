@@ -51,33 +51,25 @@ export const useNavigationStore = create<NavigationState>()(
       set((state) => {
         if ("taskId" in target) {
           const newTab: ViewType = "kanban";
-          state.slideDirection =
-            PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
           state.activeSubView = "board";
           state.pendingTaskId = target.taskId;
         } else if ("agentId" in target) {
           const newTab: ViewType = "agents";
-          state.slideDirection =
-            PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
           state.pendingAgentId = target.agentId;
         } else if ("worktreeId" in target) {
           const newTab: ViewType = "worktrees";
-          state.slideDirection =
-            PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
           state.pendingWorktreeId = target.worktreeId;
         } else if ("view" in target) {
           const newTab = targetViewToTab(target.view);
-          state.slideDirection =
-            PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
-          if (
-            target.view === "backlog" ||
-            target.view === "board" ||
-            target.view === "archive"
-          ) {
+          if (target.view === "backlog" || target.view === "board" || target.view === "archive") {
             state.activeSubView = target.view;
           }
         }
@@ -86,8 +78,7 @@ export const useNavigationStore = create<NavigationState>()(
     setActiveTab: (tab: ViewType) =>
       set((state) => {
         if (tab !== state.activeTab) {
-          state.slideDirection =
-            PAGE_ORDER[tab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.slideDirection = PAGE_ORDER[tab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = tab;
         }
       }),

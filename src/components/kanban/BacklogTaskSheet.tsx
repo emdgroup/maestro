@@ -86,9 +86,7 @@ export function BacklogTaskSheet({
             {mode === "create" ? "New Task" : "Edit Task"}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {mode === "create"
-              ? "Fill in the details to create a new task"
-              : "Update task details"}
+            {mode === "create" ? "Fill in the details to create a new task" : "Update task details"}
           </p>
         </div>
         <button

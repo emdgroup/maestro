@@ -168,7 +168,11 @@ const OS = detectOs();
 // KeyFileAuth
 // ---------------------------------------------------------------------------
 
-function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { savedKeyFiles?: SavedKeyFile[] }) {
+function KeyFileAuth({
+  loading,
+  onSubmit,
+  savedKeyFiles = [],
+}: AuthProps & { savedKeyFiles?: SavedKeyFile[] }) {
   const [selectedSavedPath, setSelectedSavedPath] = useState<string | null>(null);
   const [keyPath, setKeyPath] = useState("");
   const [passphrase, setPassphrase] = useState("");
@@ -206,7 +210,7 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
     onSubmit({
       method: "key-file",
       keyPath: activePath,
-      passphrase: selectedSaved?.hasSavedPassphrase ? undefined : (passphrase || undefined),
+      passphrase: selectedSaved?.hasSavedPassphrase ? undefined : passphrase || undefined,
       savePassphrase: showPassphraseInput && !!passphrase && savePassphrase,
     });
   };
@@ -239,7 +243,9 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
                     <FileKey className="size-4 text-muted-foreground shrink-0" />
                     <div className="flex flex-col min-w-0 flex-1">
                       <span className="text-sm font-medium truncate">{basename(path)}</span>
-                      <span className="text-xs text-muted-foreground font-mono truncate">{path}</span>
+                      <span className="text-xs text-muted-foreground font-mono truncate">
+                        {path}
+                      </span>
                     </div>
                     {hasSavedPassphrase && (
                       <Lock className="size-3.5 text-muted-foreground shrink-0" />
@@ -255,9 +261,14 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
         {!selectedSavedPath && (
           <Field>
             <FieldLabel htmlFor="key-path">
-              {savedKeyFiles.length > 0
-                ? "Or use a different key"
-                : <> Private Key Path<span className="text-destructive">*</span> </>}
+              {savedKeyFiles.length > 0 ? (
+                "Or use a different key"
+              ) : (
+                <>
+                  {" "}
+                  Private Key Path<span className="text-destructive">*</span>{" "}
+                </>
+              )}
             </FieldLabel>
             <ButtonGroup>
               <Input
@@ -347,7 +358,8 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
           <div>
             <p className="text-sm font-medium">SSH Key Connection</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Ensure you have generated your SSH key pair and copied your public key on the remote server.
+              Ensure you have generated your SSH key pair and copied your public key on the remote
+              server.
             </p>
           </div>
         </div>
@@ -356,23 +368,41 @@ function KeyFileAuth({ loading, onSubmit, savedKeyFiles = [] }: AuthProps & { sa
           onClick={() => setShowInstructions(!showInstructions)}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          {showInstructions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {showInstructions ? (
+            <ChevronUp className="w-3 h-3" />
+          ) : (
+            <ChevronDown className="w-3 h-3" />
+          )}
           Setup instructions
         </button>
         {showInstructions && (
           <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
             <div className="space-y-1.5">
               <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">Generate a new SSH key pair (if you don't have one).</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">Key types: ed25519 (recommended), rsa or ecdsa.</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">
+                Generate a new SSH key pair (if you don't have one).
+              </p>
+              <p className="font-sans text-muted-foreground leading-relaxed">
+                Key types: ed25519 (recommended), rsa or ecdsa.
+              </p>
               <p className="text-foreground">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">Keys are saved to <span className="font-mono text-foreground">{OS === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}</span> by default</p>
+              <p className="font-sans text-muted-foreground leading-relaxed">
+                Keys are saved to{" "}
+                <span className="font-mono text-foreground">
+                  {OS === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
+                </span>{" "}
+                by default
+              </p>
             </div>
             <div className="space-y-1.5">
-              <p className="font-sans font-medium text-foreground text-xs">Authorize on server (remote)</p>
+              <p className="font-sans font-medium text-foreground text-xs">
+                Authorize on server (remote)
+              </p>
               <p className="font-sans text-muted-foreground leading-relaxed">
-                Copy the contents of your public key file (e.g. <span className="font-mono text-foreground">id_ed25519.pub</span>) and
-                place it into <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the remote server.
+                Copy the contents of your public key file (e.g.{" "}
+                <span className="font-mono text-foreground">id_ed25519.pub</span>) and place it into{" "}
+                <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the
+                remote server.
               </p>
             </div>
           </div>
@@ -413,8 +443,12 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
           onClick={() => setShowInstructions(!showInstructions)}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          {showInstructions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-           Setup instructions
+          {showInstructions ? (
+            <ChevronUp className="w-3 h-3" />
+          ) : (
+            <ChevronDown className="w-3 h-3" />
+          )}
+          Setup instructions
         </button>
         {showInstructions && (
           <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">
@@ -424,7 +458,9 @@ function AgentAuth({ loading, onSubmit }: AuthProps) {
             {OS === "windows" && (
               <>
                 <p># Enable and start the SSH agent service (run as Admin)</p>
-                <p className="text-foreground">Get-Service ssh-agent | Set-Service -StartupType Automatic</p>
+                <p className="text-foreground">
+                  Get-Service ssh-agent | Set-Service -StartupType Automatic
+                </p>
                 <p className="text-foreground">Start-Service ssh-agent</p>
                 <p className="mt-1"># Verify key is loaded</p>
                 <p className="text-foreground">ssh-add -l</p>
@@ -526,10 +562,10 @@ export function SshAuthModal({
   const authProps = { loading, onSubmit };
 
   const authForm: Record<AuthMethod, React.ReactNode> = {
-    "password": <PasswordAuth username={username} {...authProps} />,
+    password: <PasswordAuth username={username} {...authProps} />,
     "key-file": <KeyFileAuth savedKeyFiles={savedKeyFiles} {...authProps} />,
-    "agent": <AgentAuth {...authProps} />
-  }
+    agent: <AgentAuth {...authProps} />,
+  };
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onCancel()}>

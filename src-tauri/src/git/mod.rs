@@ -128,7 +128,6 @@ pub async fn get_current_branch(
 /// List worktrees in the project (local or remote)
 pub async fn list_worktrees(
     conn: &GitConnection,
-    _repo_path: &str,
 ) -> Result<Vec<ParsedWorktree>, String> {
     match conn {
         GitConnection::Local { path } => {
@@ -158,6 +157,17 @@ pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(parse_worktree_list(&stdout))
+}
+
+/// Parse a single line from `git branch -a` output into a bare branch name.
+/// Strips leading markers (`*` current branch, `+` worktree-checked-out branch),
+/// whitespace, and the `remotes/origin/` prefix for remote-tracking refs.
+pub fn parse_branch_line(line: &str) -> String {
+    let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '*' || c == '+').trim();
+    trimmed
+        .strip_prefix("remotes/origin/")
+        .unwrap_or(trimmed)
+        .to_string()
 }
 
 pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
@@ -305,15 +315,7 @@ async fn list_branches_local(
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut branches: Vec<String> = stdout
         .lines()
-        .map(|line| {
-            // Strip leading whitespace and the current-branch asterisk
-            let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '*').trim();
-            // Strip "remotes/origin/" prefix for remote-tracking branches
-            trimmed
-                .strip_prefix("remotes/origin/")
-                .unwrap_or(trimmed)
-                .to_string()
-        })
+        .map(parse_branch_line)
         .filter(|b| !b.is_empty() && !b.contains("HEAD ->") && !b.contains("HEAD"))
         .collect();
 

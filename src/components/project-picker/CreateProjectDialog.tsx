@@ -72,9 +72,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection }: CreatePr
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
-            <DialogDescription>
-              Create a new project folder.
-            </DialogDescription>
+            <DialogDescription>Create a new project folder.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">

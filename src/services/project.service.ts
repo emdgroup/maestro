@@ -201,9 +201,7 @@ export function useCloneProject() {
       toast.success("Project cloned successfully");
     },
     onError: (error) => {
-      toast.error(
-        `Clone failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toast.error(`Clone failed: ${error instanceof Error ? error.message : String(error)}`);
     },
   });
 }

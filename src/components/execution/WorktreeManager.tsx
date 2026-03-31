@@ -27,7 +27,11 @@ import {
 } from "@/ui/dialog";
 import { Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "@/store/navigationStore";
-import { useWorktreeDiffQuery, useDeleteWorktreeMutation, useCreateWorktreeMutation } from "@/services/worktree.service";
+import {
+  useWorktreeDiffQuery,
+  useDeleteWorktreeMutation,
+  useCreateWorktreeMutation,
+} from "@/services/worktree.service";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import type { WorktreeWithStatus } from "@/types/bindings";
@@ -90,22 +94,21 @@ export function WorktreeManager({
         if (statusFilter === "All") return true;
         if (statusFilter === "Active") return wt.agent_status === "running";
         if (statusFilter === "Modified") return wt.git_status !== "";
-        if (statusFilter === "Idle")
-          return wt.agent_status !== "running" && wt.git_status === "";
+        if (statusFilter === "Idle") return wt.agent_status !== "running" && wt.git_status === "";
         return true;
       })
       .filter(
-        (wt) =>
-          search.trim() === "" ||
-          wt.branch_name.toLowerCase().includes(search.toLowerCase()),
+        (wt) => search.trim() === "" || wt.branch_name.toLowerCase().includes(search.toLowerCase()),
       );
   }, [worktrees, statusFilter, search]);
 
   const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
-  const { data: diffString, isLoading: diffLoading, error: diffError } = useWorktreeDiffQuery(
-    selectedWorktree?.id ?? null,
-  );
+  const {
+    data: diffString,
+    isLoading: diffLoading,
+    error: diffError,
+  } = useWorktreeDiffQuery(selectedWorktree?.id ?? null);
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
@@ -123,7 +126,9 @@ export function WorktreeManager({
             size="sm"
             className="h-8 text-xs w-full"
             onClick={() => {
-              void queryClient.invalidateQueries({ queryKey: [...taskQueryKeys.all, "branches", projectId] });
+              void queryClient.invalidateQueries({
+                queryKey: [...taskQueryKeys.all, "branches", projectId],
+              });
               setOriginBranch(currentBranch);
               setNewBranchName("");
               setCreateError(null);
@@ -138,9 +143,7 @@ export function WorktreeManager({
         {/* Worktree list */}
         <div className="flex-1 overflow-y-auto">
           {worktrees.length === 0 && (
-            <div className="text-xs text-muted-foreground py-8 text-center">
-              No worktrees found
-            </div>
+            <div className="text-xs text-muted-foreground py-8 text-center">No worktrees found</div>
           )}
           {worktrees.length > 0 && filteredWorktrees.length === 0 && (
             <div className="text-xs text-muted-foreground py-8 text-center">
@@ -168,9 +171,7 @@ export function WorktreeManager({
                       wt.git_status === "" ? "bg-success" : "bg-warning",
                     )}
                   />
-                  <span className="text-sm font-medium truncate font-mono">
-                    {wt.branch_name}
-                  </span>
+                  <span className="text-sm font-medium truncate font-mono">{wt.branch_name}</span>
                   {wt.is_zombie && (
                     <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium">
                       Zombie
@@ -226,7 +227,9 @@ export function WorktreeManager({
             <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold font-mono">{selectedWorktree.branch_name}</h3>
+                  <h3 className="text-sm font-semibold font-mono">
+                    {selectedWorktree.branch_name}
+                  </h3>
                   <div className="flex items-center gap-2 mt-1">
                     {selectedWorktree.task_name && selectedWorktree.task_id ? (
                       <button
@@ -245,7 +248,9 @@ export function WorktreeManager({
                     )}
                     {selectedWorktree.created_at && (
                       <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(selectedWorktree.created_at), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(selectedWorktree.created_at), {
+                          addSuffix: true,
+                        })}
                       </span>
                     )}
                   </div>
@@ -265,8 +270,10 @@ export function WorktreeManager({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will remove the worktree directory and its database record.
-                        Branch: <span className="font-mono font-medium">{selectedWorktree.branch_name}</span>
+                        This will remove the worktree directory and its database record. Branch:{" "}
+                        <span className="font-mono font-medium">
+                          {selectedWorktree.branch_name}
+                        </span>
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -338,7 +345,9 @@ export function WorktreeManager({
                 </SelectTrigger>
                 <SelectContent>
                   {branches.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -355,9 +364,7 @@ export function WorktreeManager({
                 Leave blank to check out the origin branch directly.
               </p>
             </div>
-            {createError && (
-              <p className="text-sm text-destructive">{createError}</p>
-            )}
+            {createError && <p className="text-sm text-destructive">{createError}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

@@ -11,8 +11,16 @@ interface DiffViewerProps {
   error?: string;
 }
 
-const DiffPlaceholder = ({ message, variant = "muted" }: { message: string; variant?: "muted" | "error" }) => (
-  <div className={`flex items-center justify-center h-full text-sm ${variant === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+const DiffPlaceholder = ({
+  message,
+  variant = "muted",
+}: {
+  message: string;
+  variant?: "muted" | "error";
+}) => (
+  <div
+    className={`flex items-center justify-center h-full text-sm ${variant === "error" ? "text-destructive" : "text-muted-foreground"}`}
+  >
     {message}
   </div>
 );
@@ -40,7 +48,13 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
     loadHighlighter();
   }, []);
 
-  if (highlighterError) return <DiffPlaceholder message={`Error loading syntax highlighter: ${highlighterError}`} variant="error" />;
+  if (highlighterError)
+    return (
+      <DiffPlaceholder
+        message={`Error loading syntax highlighter: ${highlighterError}`}
+        variant="error"
+      />
+    );
   if (loading) return <DiffPlaceholder message="Loading diff..." />;
   if (error) return <DiffPlaceholder message={`Error loading diff: ${error}`} variant="error" />;
   if (!diffFile) return <DiffPlaceholder message="No changes to display" />;

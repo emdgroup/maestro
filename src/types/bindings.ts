@@ -780,6 +780,10 @@ async rejectReview(taskId: number, action: string, instruction: string | null) :
 },
 /**
  * Get project-level configuration (model default, MCP allowlist, skills default)
+ * 
+ * NOTE: `_project_id` is accepted for API compatibility but currently ignored.
+ * Settings are stored globally in the `settings` table, not per-project.
+ * Per-project settings via .maestro/settings.json is a future enhancement.
  */
 async getProjectSettings(projectId: number) : Promise<Result<ProjectConfigResponse, string>> {
     try {
@@ -791,6 +795,10 @@ async getProjectSettings(projectId: number) : Promise<Result<ProjectConfigRespon
 },
 /**
  * Update project-level configuration
+ * 
+ * NOTE: `_project_id` is accepted for API compatibility but currently ignored.
+ * Settings are stored globally in the `settings` table, not per-project.
+ * Per-project settings via .maestro/settings.json is a future enhancement.
  */
 async updateProjectSettings(projectId: number, settings: ProjectConfigRequest) : Promise<Result<null, string>> {
     try {

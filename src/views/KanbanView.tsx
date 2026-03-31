@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutList, Kanban, Archive } from "lucide-react";
+import { LayoutList, Kanban, Archive, SearchIcon } from "lucide-react";
 import { BacklogView } from "@/components/views/BacklogView";
 import { BoardView } from "@/components/views/BoardView";
 import { ArchiveView } from "@/components/views/ArchiveView";
@@ -9,6 +9,7 @@ import { Input } from "@/ui/input";
 import type { TaskPriority } from "@/types/bindings";
 import { useActiveSubView, useNavigationActions } from "@/store/navigationStore";
 import type { SubView } from "@/store/navigationStore";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
 
 type ArchiveFilter = "all" | "Done" | "Cancelled";
 type BacklogPriorityFilter = "All" | TaskPriority;
@@ -19,7 +20,13 @@ const SUB_VIEWS: Array<{ id: SubView; label: string; icon: React.ElementType }> 
   { id: "archive", label: "Archive", icon: Archive },
 ];
 
-const BACKLOG_PRIORITY_FILTERS: BacklogPriorityFilter[] = ["All", "Urgent", "High", "Medium", "Low"];
+const BACKLOG_PRIORITY_FILTERS: BacklogPriorityFilter[] = [
+  "All",
+  "Urgent",
+  "High",
+  "Medium",
+  "Low",
+];
 
 /**
  * KanbanView - Page-level orchestrator for the Kanban board screen.
@@ -41,13 +48,18 @@ export const KanbanView: React.FC = () => {
         <div className="flex items-center gap-2">
           {activeSubView === "backlog" && (
             <>
-              <Input
-                type="text"
-                placeholder="Search tasks..."
-                value={backlogSearch}
-                onChange={(e) => setBacklogSearch(e.target.value)}
-                className="h-8 w-48 text-sm"
-              />
+              <InputGroup>
+                <InputGroupInput
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={backlogSearch}
+                  onChange={(e) => setBacklogSearch(e.target.value)}
+                  className="h-8 w-48 text-sm"
+                />
+                <InputGroupAddon align="inline-start">
+                  <SearchIcon className="text-muted-foreground" />
+                </InputGroupAddon>
+              </InputGroup>
               <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
                 {BACKLOG_PRIORITY_FILTERS.map((f) => (
                   <ToggleGroupItem
@@ -65,14 +77,14 @@ export const KanbanView: React.FC = () => {
           )}
           {activeSubView === "archive" && (
             <>
-              <input
+              <Input
                 type="text"
                 placeholder="Search tasks..."
                 value={archiveSearch}
                 onChange={(e) => setArchiveSearch(e.target.value)}
-                className="h-8 w-48 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                className="h-8 w-48 text-sm"
               />
-              <ToggleGroup variant="outline" size="sm" defaultValue={["All"]} >
+              <ToggleGroup variant="outline" size="sm" defaultValue={["All"]}>
                 {(["All", "Done", "Cancelled"] as ArchiveFilter[]).map((f) => (
                   <ToggleGroupItem
                     key={f}
@@ -91,7 +103,7 @@ export const KanbanView: React.FC = () => {
 
         {/* Right slot — sub-view switcher */}
         <TooltipProvider delay={300}>
-          <ToggleGroup variant="outline" size="sm" defaultValue={["board"]}>
+          <ToggleGroup variant="outline" size="sm" value={[activeSubView]}>
             {SUB_VIEWS.map((view) => (
               <Tooltip key={view.id}>
                 <TooltipTrigger
