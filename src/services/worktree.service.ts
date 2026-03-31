@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib";
 import { toast } from "sonner";
+import type { DiffTarget } from "@/types/bindings";
 
 export const worktreeQueryKeys = {
   all: ["worktrees"] as const,
   list: (projectId: number) => [...worktreeQueryKeys.all, "list", projectId] as const,
-  diff: (worktreeId: number) => [...worktreeQueryKeys.all, "diff", worktreeId] as const,
+  diff: (worktreeId: number, diffTarget: DiffTarget) =>
+    [...worktreeQueryKeys.all, "diff", worktreeId, diffTarget] as const,
 };
 
 /**
@@ -24,11 +26,12 @@ export function useWorktreesQuery(projectId: number | undefined, repoPath: strin
 /**
  * Query hook for fetching worktree diff (unified diff string).
  * Only fetches when a worktree is selected (worktreeId is non-null).
+ * diffTarget controls whether we diff HEAD (uncommitted) or a branch (full branch diff).
  */
-export function useWorktreeDiffQuery(worktreeId: number | null) {
+export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: DiffTarget) {
   return useQuery({
-    queryKey: worktreeQueryKeys.diff(worktreeId ?? 0),
-    queryFn: () => api.getWorktreeDiff(worktreeId!),
+    queryKey: worktreeQueryKeys.diff(worktreeId ?? 0, diffTarget),
+    queryFn: () => api.getWorktreeDiff(worktreeId!, diffTarget),
     enabled: worktreeId != null,
   });
 }
