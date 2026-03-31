@@ -88,6 +88,11 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full details.
 | 27 - Worktrees View | v1.3 | 3/3 | Complete | 2026-03-30 |
 | 28 - Zombie Cleanup on Project Open | v1.3 | 1/1 | Complete | 2026-03-30 |
 | 29 - v1.3 Polish & Bug Fixes | v1.3 | Complete    | 2026-03-30 | 2026-03-30 |
+| 30 - Post-testing UI & worktree bug fixes | v1.3 | 3/3 | Complete | 2026-03-30 |
+| 31 - Fix remote SSH worktree bugs | v1.3 | 2/2 | Complete | 2026-03-30 |
+| 32 - Backend code quality fixes | v1.3 | 5/5 | Complete | 2026-03-30 |
+| 33 - Backend refactoring for maintainability | v1.3 | 3/3 | Complete | 2026-03-30 |
+| 34 - Remove Node.js sidecar, squash merge in Rust | v1.3 | 2/2 | Complete | 2026-03-31 |
 
 ### Phase 29: v1.3 Agents & Worktrees view polish and bug fixes
 
@@ -159,6 +164,13 @@ Plans:
 Plans:
 - [x] 34-01-PLAN.md — Implement squash_merge_to_main in Rust and replace sidecar callsite
 - [x] 34-02-PLAN.md — Delete dead sidecar code, remove sidecar/ directory, clean up references
+
+### Phase 35: Fix worktree diff and status for remote projects — remove git2, add DiffTarget
+
+**Goal:** Remove git2 from get_worktree_diff and replace with a unified run_git_in_dir subprocess dispatcher; fix list_worktrees_with_status to run git status and diff --shortstat for remote worktrees via SSH; add DiffTarget enum so users can diff against HEAD (uncommitted changes) or a base branch (all branch changes); add diff target selector UI in WorktreesView
+**Requirements**: [WT-DIFF-01, WT-DIFF-02, WT-DIFF-03, WT-DIFF-04]
+**Depends on:** Phase 34
+**Plans:** 0/0 plans complete
 
 ---
 

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T13:42:31.098Z"
+last_updated: "2026-03-31T14:30:00.000Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 34 — remove-node-sidecar-implement-squash-merge-in-rust
+**Current focus:** Phase 35 — fix-worktree-diff-and-status-for-remote-projects-remove-git2-add-difftarget
 
 ## Current Position
 
-Phase: 34 (remove-node-sidecar-implement-squash-merge-in-rust) — EXECUTING
-Plan: 2 of 2
+Phase: 34 (remove-node-sidecar-implement-squash-merge-in-rust) — COMPLETE
+Next: Phase 35 (fix-worktree-diff-and-status-for-remote-projects)
 
 ## Performance Metrics
 
