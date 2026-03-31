@@ -29,3 +29,6 @@ dist-ssr
 
 # Local brainstorming images
 brainstorm-img/
+
+# Maestro runtime data (worktrees managed by the app)
+.maestro/worktrees/
