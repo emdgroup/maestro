@@ -534,17 +534,22 @@ impl RemoteSshSession {
         Ok(stdout)
     }
 
-    /// Reconnect if needed with exponential backoff
+    /// Reconnect if needed with exponential backoff.
+    /// Holds state lock across check+transition to prevent concurrent reconnection.
     async fn reconnect_if_needed(&self) -> Result<(), SshError> {
-        let state = *self.state.lock().await;
+        // Hold state lock across check+transition so a concurrent caller sees Connecting and waits
+        let mut state = self.state.lock().await;
         let password = self.session_password.lock().await.as_ref().map(|p| p.to_string());
 
-        match state {
+        match *state {
             SshConnectionState::Connected => Ok(()),
             SshConnectionState::Initial | SshConnectionState::Disconnected => {
+                *state = SshConnectionState::Connecting;
+                drop(state); // Release before async connect
                 self.connect(password).await
             }
             SshConnectionState::Connecting => {
+                drop(state); // Release lock before waiting
                 let mut attempts = 0;
                 while *self.state.lock().await == SshConnectionState::Connecting && attempts < 50 {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -564,11 +569,13 @@ impl RemoteSshSession {
                     ));
                 }
 
+                *state = SshConnectionState::Connecting;
+                drop(state); // Release before async work
+
                 let delay_ms = 100u64 * 2u64.pow(attempt as u32);
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
                 self.reconnect_attempts.fetch_add(1, Ordering::SeqCst);
-                *self.state.lock().await = SshConnectionState::Connecting;
 
                 let result = self.connect(password).await;
                 if result.is_err() && attempt < 4 {
