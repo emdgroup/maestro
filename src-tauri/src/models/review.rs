@@ -37,3 +37,21 @@ pub struct SaveReviewRequest {
     pub general_feedback: Option<String>,
     pub per_file_comments: Option<Vec<(String, String)>>, // (file_path, comment)
 }
+
+/// Typed response for save_task_review and request_changes IPC commands
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ReviewResult {
+    pub success: bool,
+    pub review_id: i32,
+    pub task_status: Option<String>,
+}
+
+/// Typed response for approve_task_and_merge IPC command
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct MergeResult {
+    pub success: bool,
+    pub task_status: String,
+    pub conflicts: Vec<String>,
+}

@@ -17,7 +17,7 @@ pub use worktree::{Worktree, WorktreeWithStatus, ExecutionWithTask, WORKTREE_DIR
 pub use execution_log::{ExecutionLog, ExecutionStatus, ErrorEvent};
 pub use settings::AppSettings;
 pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraFields};
-pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest};
+pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};
 pub use merge_outcome::MergeOutcome;
 pub use project_config::ProjectConfig;
 pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};

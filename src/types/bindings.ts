@@ -695,7 +695,7 @@ async appendTerminalOutput(taskId: number, output: string) : Promise<Result<null
 /**
  * Get diff for review: generates unified diff between task branch and main
  * 
- * For local projects, invokes Node.js sidecar to generate diff.
+ * For local projects, uses git dispatcher directly.
  * For remote projects, uses git dispatcher over SSH.
  * 
  * Returns the unified diff as a string with 6 context lines.
@@ -715,9 +715,9 @@ async getDiffForReview(taskId: number) : Promise<Result<string, string>> {
  * and optional general feedback. Per-file comments are stored separately
  * linked to the review record.
  * 
- * Returns JSON object with success flag and review_id.
+ * Returns a typed ReviewResult with success flag and review_id.
  */
-async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<JsonValue, string>> {
+async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_task_review", { taskId, decision, generalFeedback, perFileComments }) };
 } catch (e) {
@@ -731,9 +731,9 @@ async saveTaskReview(taskId: number, decision: string, generalFeedback: string |
  * Creates a RequestChanges review with general feedback and per-file comments,
  * then transitions the task status back to InProgress for the agent to rework.
  * 
- * Returns JSON object with success flag, review_id, and updated task_status.
+ * Returns a typed ReviewResult with success flag, review_id, and updated task_status.
  */
-async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<JsonValue, string>> {
+async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("request_changes", { taskId, generalFeedback, perFileComments }) };
 } catch (e) {
@@ -750,9 +750,9 @@ async requestChanges(taskId: number, generalFeedback: string | null, perFileComm
  * 3. On success: updates task to "Done", cleans up worktree, returns to pool
  * 4. On conflict: rejects task back to "InProgress", saves conflict feedback
  * 
- * Returns the final task status directly: Done on success, InProgress on conflict.
+ * Returns a typed MergeResult with success flag, task_status, and conflicts.
  */
-async approveTaskAndMerge(taskId: number, mergeStrategy: string) : Promise<Result<JsonValue, string>> {
+async approveTaskAndMerge(taskId: number, mergeStrategy: string) : Promise<Result<MergeResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy }) };
 } catch (e) {
@@ -1013,9 +1013,17 @@ export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "ca
  */
 export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+/**
+ * Typed response for approve_task_and_merge IPC command
+ */
+export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
 export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
+/**
+ * Typed response for save_task_review and request_changes IPC commands
+ */
+export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
 /**
  * SSH authentication method configuration
  */
