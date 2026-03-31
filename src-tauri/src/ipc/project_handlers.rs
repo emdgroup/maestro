@@ -7,6 +7,51 @@ use crate::models::Project;
 use crate::db::{AppState, project_storage};
 use crate::git::remote::shell_quote;
 
+/// Register a project in the database (check-or-insert) and initialize .maestro folder.
+/// Returns the full Project row.
+///
+/// Uses `connection_id IS ?` for nullable column comparison (SQLite NULL semantics).
+fn register_project_in_db(
+    app_state: &Arc<AppState>,
+    path: &str,
+    name: &str,
+    connection_id: Option<i32>,
+) -> Result<Project, String> {
+    let project_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let existing: Option<i32> = conn.query_row(
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
+            rusqlite::params![path, connection_id],
+            |row| row.get(0),
+        ).ok();
+        match existing {
+            Some(id) => id,
+            None => {
+                let now = chrono::Utc::now().to_rfc3339();
+                conn.execute(
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![name, path, now, now, connection_id, now],
+                ).map_err(|e| format!("Failed to insert project: {}", e))?;
+                conn.last_insert_rowid() as i32
+            }
+        }
+    };
+
+    // Init .maestro folder (local only — remote projects have no local filesystem path)
+    if connection_id.is_none() {
+        crate::db::project_storage::create_project_maestro_folder(path)
+            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    }
+
+    // Read back full project row
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+        rusqlite::params![project_id],
+        Project::from_row,
+    ).map_err(|e| e.to_string())
+}
+
 /// Fetch projects for a connection from an open DB connection.
 /// Isolated into a helper so all borrow-checker temporaries are fully dropped
 /// before the caller proceeds to async SSH I/O.
@@ -293,45 +338,14 @@ pub async fn clone_project(
         }
     }
 
-    // Step 2: Register in DB
-    let db = app_state.inner().clone();
-    let project_id = {
-        let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
-            rusqlite::params![target_path, connection_id],
-            |row| row.get(0),
-        ).ok();
-        match existing {
-            Some(id) => id,
-            None => {
-                let now = chrono::Utc::now().to_rfc3339();
-                let name = std::path::Path::new(&target_path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Untitled")
-                    .to_string();
-                conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![name, target_path, now, now, connection_id, now],
-                ).map_err(|e| format!("Failed to insert project: {}", e))?;
-                conn.last_insert_rowid() as i32
-            }
-        }
-    };
+    // Step 2: Register in DB and init .maestro folder
+    let name = std::path::Path::new(&target_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
 
-    // Step 3: Init .maestro folder (local only — no local fs path for remote projects)
-    if connection_id.is_none() {
-        crate::db::project_storage::create_project_maestro_folder(&target_path)
-            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
-    }
-
-    let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-        rusqlite::params![project_id],
-        Project::from_row,
-    ).map_err(|e| e.to_string())
+    register_project_in_db(app_state.inner(), &target_path, &name, connection_id)
 }
 
 /// Create a new project directory, git init it, and register as a project
@@ -392,40 +406,8 @@ pub async fn create_new_project(
         }
     }
 
-    // Register in DB
-    let db = app_state.inner().clone();
-    let project_id = {
-        let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
-            rusqlite::params![full_path_str, connection_id],
-            |row| row.get(0),
-        ).ok();
-        match existing {
-            Some(id) => id,
-            None => {
-                let now = chrono::Utc::now().to_rfc3339();
-                conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![folder_name, full_path_str, now, now, connection_id, now],
-                ).map_err(|e| format!("Failed to insert project: {}", e))?;
-                conn.last_insert_rowid() as i32
-            }
-        }
-    };
-
-    // Init .maestro folder (local only)
-    if connection_id.is_none() {
-        crate::db::project_storage::create_project_maestro_folder(&full_path_str)
-            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
-    }
-
-    let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-        rusqlite::params![project_id],
-        Project::from_row,
-    ).map_err(|e| e.to_string())
+    // Register in DB and init .maestro folder
+    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_id)
 }
 
 /// Create a new project
@@ -437,10 +419,12 @@ pub fn create_project(
     connection_id: Option<i32>
 ) -> Result<Project, String> {
     log::info!("create_project() called via IPC with path {} and connection_id {:?}", path, connection_id);
+    // NOTE: This older handler has similar logic to register_project_in_db but also
+    // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id = ?",
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
             params![path, connection_id],
             |row| row.get(0),
         ).ok();
@@ -473,6 +457,10 @@ pub fn create_project(
 }
 
 /// Get project-level configuration (model default, MCP allowlist, skills default)
+///
+/// NOTE: `_project_id` is accepted for API compatibility but currently ignored.
+/// Settings are stored globally in the `settings` table, not per-project.
+/// Per-project settings via .maestro/settings.json is a future enhancement.
 #[tauri::command]
 #[specta::specta]
 pub fn get_project_settings(
@@ -526,6 +514,10 @@ pub fn get_project_settings(
 }
 
 /// Update project-level configuration
+///
+/// NOTE: `_project_id` is accepted for API compatibility but currently ignored.
+/// Settings are stored globally in the `settings` table, not per-project.
+/// Per-project settings via .maestro/settings.json is a future enhancement.
 #[tauri::command]
 #[specta::specta]
 pub fn update_project_settings(
