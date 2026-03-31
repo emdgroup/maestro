@@ -56,6 +56,60 @@ pub fn save_settings(
     crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
 }
 
+/// Upsert imported tasks from an external source (GitHub, Jira).
+///
+/// Checks if each item already exists by external_id + project_id and either
+/// updates the title/description or inserts a new Backlog task.
+///
+/// # Arguments
+/// * `tx` - Active rusqlite transaction to use for all writes
+/// * `project_id` - The project to import into
+/// * `import_source` - Source label stored on task ("github" or "jira")
+/// * `items` - Tuple of (external_id, title, description) for each item
+/// * `now` - RFC3339 timestamp string used for created_at / updated_at
+///
+/// # Returns
+/// `(imported_count, updated_count)` — number of newly inserted vs updated tasks
+fn upsert_imported_tasks(
+    tx: &rusqlite::Transaction,
+    project_id: i32,
+    import_source: &str,
+    items: &[(String, String, String)],
+    now: &str,
+) -> Result<(i32, i32), String> {
+    let mut imported_count = 0;
+    let mut updated_count = 0;
+
+    for (external_id, title, description) in items {
+        let existing_id: Option<i32> = tx
+            .query_row(
+                "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
+                rusqlite::params![external_id, project_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(task_id) = existing_id {
+            tx.execute(
+                "UPDATE tasks SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![title, description, now, task_id],
+            )
+            .map_err(|e| format!("Failed to update task: {}", e))?;
+            updated_count += 1;
+        } else {
+            tx.execute(
+                "INSERT INTO tasks (project_id, name, description, status, external_id, is_imported, import_source, skills, created_at, updated_at)
+                 VALUES (?, ?, ?, 'Backlog', ?, 1, ?, '[]', ?, ?)",
+                rusqlite::params![project_id, title, description, external_id, import_source, now, now],
+            )
+            .map_err(|e| format!("Failed to insert task: {}", e))?;
+            imported_count += 1;
+        }
+    }
+
+    Ok((imported_count, updated_count))
+}
+
 /// Sync issues from GitHub repository
 ///
 /// Fetches open issues from a GitHub repository using the GitHub REST API and
@@ -115,64 +169,20 @@ pub async fn sync_github_issues(
         .await
         .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
 
-    let mut imported_count = 0;
-    let mut updated_count = 0;
+    // Build items for upsert
+    let items: Vec<(String, String, String)> = issues
+        .into_iter()
+        .map(|issue| (issue.number.to_string(), issue.title, issue.body.unwrap_or_default()))
+        .collect();
 
-    // Get database connection
+    // Get database connection and run upsert in a transaction
     let mut conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Process each issue in a transaction
     let tx = conn
         .transaction()
         .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     let now = Utc::now().to_rfc3339();
-    let external_id_str = "github";
-
-    for issue in issues {
-        let external_id = issue.number.to_string();
-        let description = issue.body.unwrap_or_default();
-
-        // Check if task already exists
-        let existing_id: Option<i32> = tx
-            .query_row(
-                "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
-                rusqlite::params![&external_id, project_id],
-                |row| row.get(0),
-            )
-            .ok();
-
-        if let Some(task_id) = existing_id {
-            // Update existing task
-            tx.execute(
-                "UPDATE tasks SET name = ?, description = ?, updated_at = ? WHERE id = ?",
-                rusqlite::params![&issue.title, &description, &now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task: {}", e))?;
-            updated_count += 1;
-        } else {
-            // Insert new task
-            let skills_json = "[]";
-            tx.execute(
-                "INSERT INTO tasks (project_id, name, description, status, external_id, is_imported, import_source, skills, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![
-                    project_id,
-                    &issue.title,
-                    &description,
-                    "Backlog",
-                    &external_id,
-                    true,
-                    external_id_str,
-                    skills_json,
-                    &now,
-                    &now
-                ],
-            )
-            .map_err(|e| format!("Failed to insert task: {}", e))?;
-            imported_count += 1;
-        }
-    }
+    let (imported_count, updated_count) = upsert_imported_tasks(&tx, project_id, "github", &items, &now)?;
 
     tx.commit()
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
@@ -256,64 +266,20 @@ pub async fn sync_jira_issues(
         .await
         .map_err(|e| format!("Failed to parse Jira response: {}", e))?;
 
-    let mut imported_count = 0;
-    let mut updated_count = 0;
+    // Build items for upsert
+    let items: Vec<(String, String, String)> = search_response.issues
+        .into_iter()
+        .map(|issue| (issue.key, issue.fields.summary, issue.fields.description.unwrap_or_default()))
+        .collect();
 
-    // Get database connection
+    // Get database connection and run upsert in a transaction
     let mut conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Process each issue in a transaction
     let tx = conn
         .transaction()
         .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     let now = Utc::now().to_rfc3339();
-    let external_id_str = "jira";
-
-    for issue in search_response.issues {
-        let external_id = &issue.key;
-        let description = issue.fields.description.unwrap_or_default();
-
-        // Check if task already exists
-        let existing_id: Option<i32> = tx
-            .query_row(
-                "SELECT id FROM tasks WHERE external_id = ? AND project_id = ?",
-                rusqlite::params![external_id, project_id],
-                |row| row.get(0),
-            )
-            .ok();
-
-        if let Some(task_id) = existing_id {
-            // Update existing task
-            tx.execute(
-                "UPDATE tasks SET name = ?, description = ?, updated_at = ? WHERE id = ?",
-                rusqlite::params![&issue.fields.summary, &description, &now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task: {}", e))?;
-            updated_count += 1;
-        } else {
-            // Insert new task
-            let skills_json = "[]";
-            tx.execute(
-                "INSERT INTO tasks (project_id, name, description, status, external_id, is_imported, import_source, skills, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![
-                    project_id,
-                    &issue.fields.summary,
-                    &description,
-                    "Backlog",
-                    external_id,
-                    true,
-                    external_id_str,
-                    skills_json,
-                    &now,
-                    &now
-                ],
-            )
-            .map_err(|e| format!("Failed to insert task: {}", e))?;
-            imported_count += 1;
-        }
-    }
+    let (imported_count, updated_count) = upsert_imported_tasks(&tx, project_id, "jira", &items, &now)?;
 
     tx.commit()
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;

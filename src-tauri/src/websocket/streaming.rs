@@ -25,22 +25,25 @@ pub async fn attach_remote_stream_listener(
     let pid = handle.remote_pid;
     tokio::task::spawn(async move {
         crate::process::remote::poll_remote_log(&ssh, pid, broadcast_sender).await;
-        println!("[streaming] Remote stream listener stopped");
+        log::debug!("[streaming] Remote stream listener stopped");
     });
     Ok(())
 }
 
-/// Stop streaming from remote PTY (close PTY channel gracefully)
+/// Stop streaming from remote PTY by killing the remote process.
+///
+/// Kills the remote process, which causes the background polling loop in
+/// attach_remote_stream_listener to detect EOF and stop naturally.
 ///
 /// # Arguments
 /// * `handle` - Remote process handle with SSH session and channel info
 ///
 /// # Returns
-/// Result indicating successful channel closure
+/// Result indicating successful process termination
 pub async fn stop_remote_stream(
-    _handle: &RemoteProcessHandle,
+    handle: &RemoteProcessHandle,
 ) -> Result<(), String> {
-    // Close SSH PTY channel gracefully
-    // Future implementation: actually close the channel
-    Ok(())
+    // Kill the remote process — the poll loop in attach_remote_stream_listener
+    // will detect the process exit and stop naturally.
+    crate::process::remote::kill_remote_process(handle).await
 }

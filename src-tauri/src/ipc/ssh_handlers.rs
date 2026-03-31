@@ -18,7 +18,7 @@ pub fn get_ssh_connections(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT * FROM ssh_connections ORDER BY last_used_at DESC")
+        .prepare("SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections ORDER BY last_used_at DESC")
         .map_err(|e| e.to_string())?;
 
     let connections = stmt
@@ -41,7 +41,7 @@ pub fn get_ssh_connection(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let connection = conn.query_row(
-        "SELECT * FROM ssh_connections WHERE id = ?",
+        "SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections WHERE id = ?",
         [&connection_id],
         SshConnection::from_row
     ).map_err(|e| e.to_string())?;

@@ -16,8 +16,8 @@ fn fetch_projects_from_db(
 ) -> Result<Vec<Project>, String> {
 
     let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
-        Some(id) => ("SELECT * FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
-        None => ("SELECT * FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
+        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
+        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
     };
     let mut stmt = conn.prepare(query)
         .map_err(|e| e.to_string())?;
@@ -38,7 +38,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT * FROM projects")
+        .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
@@ -148,7 +148,7 @@ pub fn get_project(
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
-        "SELECT * FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
         [&project_id],
         Project::from_row
     );
@@ -328,7 +328,7 @@ pub async fn clone_project(
 
     let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
-        "SELECT * FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
         rusqlite::params![project_id],
         Project::from_row,
     ).map_err(|e| e.to_string())
@@ -422,7 +422,7 @@ pub async fn create_new_project(
 
     let conn = db.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
-        "SELECT * FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
         rusqlite::params![project_id],
         Project::from_row,
     ).map_err(|e| e.to_string())
