@@ -680,15 +680,7 @@ pub async fn spawn_interactive_execution(
     let _ = label;
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
-    let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await?;
+    let (project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // For local projects only, canonicalize to resolve symlinks/relative paths

@@ -1,13 +1,8 @@
 use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
-use crate::models::{Task, TaskRelationship, TaskInstruction};
+use crate::models::{Task, TaskRelationship, TaskInstruction, TASK_SELECT};
 use crate::db::AppState;
-
-const TASK_SELECT: &str =
-    "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
-     origin_branch, archived_at, external_id, is_imported, import_source, skills, \
-     model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks";
 
 /// Get list of all tasks for a project
 #[tauri::command]
@@ -385,8 +380,12 @@ pub async fn list_project_branches(
     let git_conn = crate::db::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
 
-    let branches = crate::git::list_branches(&git_conn).await.unwrap_or_default();
-    let current_branch = crate::git::get_current_branch(&git_conn).await.unwrap_or_else(|_| "main".to_string());
+    let (branches, current_branch) = tokio::join!(
+        crate::git::list_branches(&git_conn),
+        crate::git::get_current_branch(&git_conn),
+    );
+    let branches = branches.unwrap_or_default();
+    let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
 
     Ok((branches, current_branch))
 }

@@ -33,7 +33,7 @@ pub async fn list_worktrees_with_status(
     let is_remote = project.is_remote();
 
     // Step 1: Get on-disk worktrees
-    let disk_worktrees = crate::git::list_worktrees(&git_conn, &repo_path).await?;
+    let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
 
     // Step 2: Filter out main worktree (the repo root itself)
     let disk_worktrees: Vec<_> = disk_worktrees
@@ -334,15 +334,7 @@ pub async fn create_worktree(
     };
 
     // Resolve project and git connection (local vs remote SSH)
-    let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await?;
+    let (project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // Step 2: Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
@@ -388,27 +380,36 @@ pub async fn create_worktree_for_task(
     task_id: i32,
     repo_path: &str,
 ) -> Result<(i32, String), String> {
-    // Canonicalize repo_path as a safety net — resolves symlinks, trailing slashes, relative paths
-    let repo_path_canon = std::path::Path::new(repo_path)
-        .canonicalize()
-        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?;
-    let repo_path = repo_path_canon.to_string_lossy().to_string();
+    // Resolve project and git connection (local vs remote SSH)
+    let (project, git_conn) = crate::db::get_project_with_git_conn(app_state, project_id).await?;
+    let is_remote = project.is_remote();
+
+    // For local projects only, canonicalize to resolve symlinks/relative paths
+    let repo_path = if is_remote {
+        repo_path.to_string()
+    } else {
+        std::path::Path::new(repo_path)
+            .canonicalize()
+            .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
+            .to_string_lossy()
+            .to_string()
+    };
     let repo_path = repo_path.as_str();
 
     let relative_path = crate::models::worktree_path_for_task(task_id);
     let abs_path = format!("{}/{}", repo_path, relative_path);
 
-    // Ensure parent dir exists
-    tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
-        .await
-        .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+    // Ensure parent dir exists (local only — SSH creates dirs automatically via git worktree add)
+    if !is_remote {
+        tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+            .await
+            .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+    }
 
     // Create branch name for this task
     let branch_name = format!("task-{}", task_id);
 
-    // Create git worktree (local only for now) — create new branch from HEAD
-    // Use "HEAD" as origin so git creates task-N from the current HEAD commit
-    let git_conn = crate::models::GitConnection::Local { path: repo_path.to_string() };
+    // Create git worktree via SSH-aware dispatcher — create new branch from HEAD
     crate::git::create_worktree(&git_conn, "HEAD", &relative_path, Some(&branch_name)).await?;
 
     // Insert DB row
@@ -451,15 +452,7 @@ pub async fn delete_worktree(
     };
 
     // Resolve project and git connection (local vs remote SSH)
-    let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-            [wt_project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", wt_project_id, e))?
-    };
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await?;
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
 
     // Step 2: Call git worktree remove via dispatcher (best effort — don't fail if already gone)
     let _ = crate::git::delete_worktree(&git_conn, &wt_path).await;
@@ -534,37 +527,36 @@ pub async fn cleanup_zombie_worktrees(
     }
 
     // Resolve project and git connection (local vs remote SSH)
-    let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await?;
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
 
     // Get on-disk worktree paths to confirm existence before deleting
-    let disk_worktrees = crate::git::list_worktrees(&git_conn, &repo_path).await?;
+    let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
     let disk_paths: HashSet<String> = disk_worktrees.iter().map(|wt| wt.path.clone()).collect();
 
-    let mut deleted: i32 = 0;
-
+    let mut to_delete: Vec<(i32, &str)> = Vec::new();
     for (id, relative_path) in &candidates {
         let abs_path = format!("{}/{}", repo_path, relative_path);
         if disk_paths.contains(&abs_path) {
-            // Remove the git worktree via dispatcher (best-effort — don't fail the whole cleanup)
-            let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
-
-            // Delete the DB row
-            {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
-            }
-
-            deleted += 1;
+            to_delete.push((*id, relative_path.as_str()));
         }
     }
+
+    // Remove git worktrees (best-effort — don't fail the whole cleanup)
+    for (_, relative_path) in &to_delete {
+        let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
+    }
+
+    // Batch-delete DB rows under a single lock
+    let deleted = if !to_delete.is_empty() {
+        let ids: Vec<i32> = to_delete.iter().map(|(id, _)| *id).collect();
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let sql = format!("DELETE FROM worktrees WHERE id IN ({})", placeholders);
+        let params = rusqlite::params_from_iter(ids.iter());
+        conn.execute(&sql, params).unwrap_or(0) as i32
+    } else {
+        0
+    };
 
     println!(
         "cleanup_zombie_worktrees: deleted {} zombie worktrees for project {}",
@@ -579,11 +571,25 @@ pub async fn delete_worktree_for_task(
     app_state: &Arc<AppState>,
     worktree_id: i32,
     worktree_path: &str,
-    repo_path: &str,
 ) -> Result<(), String> {
-    // Best effort git worktree remove
-    let git_conn = crate::models::GitConnection::Local { path: repo_path.to_string() };
-    let _ = crate::git::delete_worktree(&git_conn, worktree_path).await;
+    // Fetch the owning project in one query via JOIN; if either row is gone, skip git cleanup.
+    let project: Option<crate::models::Project> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id \
+             FROM projects p JOIN worktrees w ON p.id = w.project_id WHERE w.id = ?",
+            rusqlite::params![worktree_id],
+            crate::models::Project::from_row,
+        ).ok()
+    };
+
+    if let Some(project) = project {
+        // Best-effort: if SSH session is gone, fall back to local path for cleanup
+        let git_conn = crate::db::get_git_connection(&project, app_state).await
+            .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
+        let _ = crate::git::delete_worktree(&git_conn, worktree_path).await;
+    }
+    // If project/worktree rows are already gone, skip git cleanup — nothing to remove.
 
     // Delete DB row
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;

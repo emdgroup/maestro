@@ -2,14 +2,9 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
 
-use crate::models::{Project, MergeOutcome, Task};
+use crate::models::{Project, MergeOutcome, Task, TASK_SELECT};
 use crate::db::{AppState, get_git_connection};
 use crate::git;
-
-const TASK_SELECT: &str =
-    "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
-     origin_branch, archived_at, external_id, is_imported, import_source, skills, \
-     model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks";
 
 /// Get diff for review: generates unified diff between task branch and main
 ///

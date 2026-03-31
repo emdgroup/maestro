@@ -113,6 +113,26 @@ pub async fn get_git_connection(
     }
 }
 
+/// Fetch a project by ID and resolve its GitConnection (local or remote SSH).
+///
+/// This is the standard pattern used by worktree, execution, and task handlers
+/// that need both the Project row and a GitConnection for git operations.
+pub async fn get_project_with_git_conn(
+    app_state: &AppState,
+    project_id: i32,
+) -> Result<(Project, GitConnection), String> {
+    let project = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            Project::from_row,
+        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
+    };
+    let git_conn = get_git_connection(&project, app_state).await?;
+    Ok((project, git_conn))
+}
+
 /// Check if a host key is known for a project, store if new
 pub fn check_and_store_host_key(
     conn: &Connection,
