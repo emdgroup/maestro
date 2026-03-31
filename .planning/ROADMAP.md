@@ -142,11 +142,11 @@ Plans:
 **Goal:** Second-pass maintainability sweep: extract DRY helpers for review/project/SSH handlers, replace serde_json::Value with typed IPC return structs, replace Node.js sidecar worktree deletion with Rust git dispatcher, fix nullable column bug, remove dead code, replace println! with log::, consolidate double DB queries into JOINs, delete empty error.rs stub
 **Requirements**: [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17]
 **Depends on:** Phase 32
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 33-01-PLAN.md — Review handlers: DRY insert helper, typed return structs, sidecar replacement, JOIN queries
-- [ ] 33-02-PLAN.md — Project/SSH/task handlers: register_project_in_db helper, finalize_ssh_connection helper, IS ? bug fix
+- [x] 33-02-PLAN.md — Project/SSH/task handlers: register_project_in_db helper, finalize_ssh_connection helper, IS ? bug fix
 - [ ] 33-03-PLAN.md — Misc cleanup: dead code removal, println->log, JOIN query consolidation, error.rs removal
 
 ---
