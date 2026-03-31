@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T09:40:17.590Z"
+last_updated: "2026-03-31T09:56:33.474Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -124,6 +124,7 @@ Plan: 3 of 3
 | Phase 32 P05 | 0.025 | 2 tasks | 15 files |
 | Phase 33 P01 | 0.07 | 2 tasks | 4 files |
 | Phase 33 P02 | 0.05 | 2 tasks | 3 files |
+| Phase 33 P03 | 0.167 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -225,6 +226,9 @@ Phase 18 Architecture Decisions:
 - [Phase 33]: Branch deletion stays as inline tokio::process::Command (non-fatal) since git dispatcher has no delete_branch
 - [Phase 33]: register_project_in_db uses IS ? for nullable column comparison to fix SQLite NULL semantics bug
 - [Phase 33]: finalize_ssh_connection early-return path keeps inline DB update; only fresh-auth path uses the helper
+- [Phase 33]: get_worktree_diff uses JOIN projects p ON p.id = w.project_id — one DB round-trip instead of two sequential lock acquisitions
+- [Phase 33]: error.rs deleted (comment-only stub); mod error removed from lib.rs — empty modules add noise with no benefit
+- [Phase 33]: All Rust diagnostic output uses log::info!/warn!/debug! — zero println!/eprintln! remain in the backend
 
 ### Pending Todos
 
