@@ -35,20 +35,19 @@ export function useExecutionsWithTaskInfoQuery(projectId: number | undefined) {
 
 /**
  * Mutation hook for spawning agent execution
- * Fire-and-forget side effect operation
+ * @deprecated Use useSpawnInteractiveExecutionMutation instead.
+ * The sidecar-based spawn_agent_execution IPC has been removed.
  */
 export function useSpawnExecutionMutation() {
   return useMutation({
-    mutationFn: async ({
-      projectId,
-      taskId,
-      repoPath,
-    }: {
+    mutationFn: async (_args: {
       projectId: number;
       taskId: number;
       repoPath: string;
     }) => {
-      return await api.spawnAgentExecution(projectId, taskId, repoPath);
+      throw new Error(
+        "spawn_agent_execution has been removed. Use spawnInteractiveExecution instead."
+      );
     },
     onError: (error) => {
       toast.error(`Failed to spawn execution: ${error}`);

@@ -412,7 +412,7 @@ pub async fn squash_merge_to_main(
         return Err("Nothing to merge: no changes between branch and main".to_string());
     }
 
-    // Step 5: commit with sidecar-compatible message format
+    // Step 5: commit with standardized squash merge message format
     let commit_msg = format!(
         "Merge task #{}: {}\n\nAll agent commits squashed into single commit.",
         task_id, task_name

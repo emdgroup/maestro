@@ -448,17 +448,6 @@ async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Spawn agent execution for a task
- */
-async spawnAgentExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_agent_execution", { projectId, taskId, repoPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Spawn an interactive (task-free) PTY session on a specific branch.
  * 
  * This creates an execution log with NULL task_id, finds or creates a worktree for the
@@ -496,7 +485,7 @@ async spawnInteractiveExecution(projectId: number, branchName: string, repoPath:
  * * `project_path` - Repository path (reserved for future use)
  * 
  * # Returns
- * Vec of task_ids that should be executed. Frontend calls spawn_agent_execution for each.
+ * Vec of task_ids that should be executed. Frontend calls spawn_interactive_execution for each.
  * Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
  */
 async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
@@ -520,6 +509,9 @@ async getExecutionLogs(taskId: number) : Promise<Result<ExecutionLog[], string>>
 },
 /**
  * Retry a paused execution
+ * 
+ * Resets the execution log status to 'running' so the task can be resumed.
+ * The frontend should use spawn_interactive_execution to create a new PTY session.
  */
 async retryExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
@@ -654,7 +646,10 @@ async pauseAgentExecution(taskId: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Resume a paused agent execution by creating a new execution and spawning the agent again
+ * Resume a paused agent execution
+ * 
+ * Resets the execution log status to 'running' so the task can be resumed.
+ * The frontend should use spawn_interactive_execution to create a new PTY session.
  */
 async resumeAgentExecution(taskId: number, projectId: number, repoPath: string) : Promise<Result<number, string>> {
     try {
@@ -746,7 +741,7 @@ async requestChanges(taskId: number, generalFeedback: string | null, perFileComm
  * 
  * Orchestrates the complete merge workflow synchronously:
  * 1. Queries task details and worktree info
- * 2. Calls Node.js sidecar to perform squash merge (awaits completion)
+ * 2. Calls native Rust squash merge via git subprocess (awaits completion)
  * 3. On success: updates task to "Done", cleans up worktree, returns to pool
  * 4. On conflict: rejects task back to "InProgress", saves conflict feedback
  * 

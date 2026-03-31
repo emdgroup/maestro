@@ -54,24 +54,12 @@ export const useBoardStore = create<BoardState>()(
       return get().tasks.filter((task) => task.status === status);
     },
 
-    executeTask: async (projectId: number, taskId: number, repoPath: string) => {
-      try {
-        // Call executionService to spawn agent
-        const executionLogId = await api.spawnAgentExecution(projectId, taskId, repoPath);
-
-        // Update task status to InProgress using immer middleware
-        set((state) => {
-          const task = state.tasks.find((t) => t.id === taskId);
-          if (task) {
-            task.status = "InProgress";
-          }
-        });
-
-        return executionLogId;
-      } catch (error) {
-        console.error("Execute task failed:", error);
-        throw error;
-      }
+    executeTask: async (_projectId: number, _taskId: number, _repoPath: string) => {
+      // spawn_agent_execution (sidecar-based) has been removed.
+      // Use spawn_interactive_execution via the Agents view instead.
+      throw new Error(
+        "spawn_agent_execution has been removed. Use spawnInteractiveExecution instead."
+      );
     },
 
     pauseExecution: async (taskId: number) => {

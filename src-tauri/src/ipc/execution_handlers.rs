@@ -18,7 +18,7 @@ use crate::db::AppState;
 /// * `project_path` - Repository path (reserved for future use)
 ///
 /// # Returns
-/// Vec of task_ids that should be executed. Frontend calls spawn_agent_execution for each.
+/// Vec of task_ids that should be executed. Frontend calls spawn_interactive_execution for each.
 /// Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
 #[tauri::command]
 #[specta::specta]
