@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T10:10:18.412Z"
+last_updated: "2026-03-31T13:12:44.547Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 33 — tauri-backend-code-review-and-refactoring-for-maintainability-dry-solid-kiss
+**Current focus:** Phase 34 — remove-node-sidecar-implement-squash-merge-in-rust
 
 ## Current Position
 
-Phase: 33 (tauri-backend-code-review-and-refactoring-for-maintainability-dry-solid-kiss) — EXECUTING
-Plan: 3 of 3
+Phase: 34 (remove-node-sidecar-implement-squash-merge-in-rust) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -125,6 +125,7 @@ Plan: 3 of 3
 | Phase 33 P01 | 0.07 | 2 tasks | 4 files |
 | Phase 33 P02 | 0.05 | 2 tasks | 3 files |
 | Phase 33 P03 | 0.167 | 2 tasks | 6 files |
+| Phase 34-remove-node-sidecar-implement-squash-merge-in-rust P01 | 0.033 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -229,10 +230,13 @@ Phase 18 Architecture Decisions:
 - [Phase 33]: get_worktree_diff uses JOIN projects p ON p.id = w.project_id — one DB round-trip instead of two sequential lock acquisitions
 - [Phase 33]: error.rs deleted (comment-only stub); mod error removed from lib.rs — empty modules add noise with no benefit
 - [Phase 33]: All Rust diagnostic output uses log::info!/warn!/debug! — zero println!/eprintln! remain in the backend
+- [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: squash_merge_to_main is pub but not dispatched through GitConnection — worktrees are always local even for remote projects, so squash merge always runs on local repo path
+- [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: Do not check output.status.success() after git merge --squash --no-commit — non-zero exit is expected on conflicts, handled by subsequent git status --porcelain
+- [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: MergeOutcome removed from review_handlers.rs — no longer needed after eliminating sidecar JSON parsing; type remains in models/merge_outcome.rs for deletion in Plan 02
 
 ### Pending Todos
 
-None currently.
+1. **Fix get_worktree_diff and list_worktrees for remote projects** — `get_worktree_diff` uses git2 locally (broken for SSH projects); per-worktree status/diff-stat in `list_worktrees` is silently skipped for remote. Both need SSH dispatch. Files: `worktree_handlers.rs:103-137,225`, `git/remote.rs`
 
 ### Quick Tasks Completed
 
@@ -295,6 +299,7 @@ None currently.
 - Phase 30 added: v1.3 post-testing UI and worktree bug fixes
 - Phase 32 added: Backend code quality: fix all findings from code review
 - Phase 33 added: tauri backend code review and refactoring for maintainability DRY SOLID KISS
+- Phase 34 added: Remove Node.js sidecar — implement squash merge in Rust (local + SSH)
 
 ## Session Continuity
 
