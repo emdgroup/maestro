@@ -170,7 +170,11 @@ Plans:
 **Goal:** Remove git2 from get_worktree_diff and replace with a unified run_git_in_dir subprocess dispatcher; fix list_worktrees_with_status to run git status and diff --shortstat for remote worktrees via SSH; add DiffTarget enum so users can diff against HEAD (uncommitted changes) or a base branch (all branch changes); add diff target selector UI in WorktreesView
 **Requirements**: [WT-DIFF-01, WT-DIFF-02, WT-DIFF-03, WT-DIFF-04]
 **Depends on:** Phase 34
-**Plans:** 0/0 plans complete
+**Plans:** 2 plans
+
+Plans:
+- [ ] 35-01-PLAN.md — Rust backend: run_git_in_dir dispatcher, DiffTarget enum, rewrite get_worktree_diff, fix remote list_worktrees status, remove git2
+- [ ] 35-02-PLAN.md — Frontend: diff target toggle UI in WorktreeManager, wire to updated IPC
 
 ---
 
