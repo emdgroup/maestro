@@ -149,6 +149,17 @@ Plans:
 - [x] 33-02-PLAN.md — Project/SSH/task handlers: register_project_in_db helper, finalize_ssh_connection helper, IS ? bug fix
 - [x] 33-03-PLAN.md — Misc cleanup: dead code removal, println->log, JOIN query consolidation, error.rs removal
 
+### Phase 34: Remove Node.js sidecar — implement squash merge in Rust
+
+**Goal:** Replace the Node.js sidecar with native Rust: implement squash_merge_to_main via git subprocess, replace the sidecar callsite in approve_task_and_merge, delete all dead sidecar code (run_agent_background_task, spawn_agent_cli, spawn_agent_execution IPC, MergeOutcome model), and remove the sidecar/ directory entirely
+**Requirements**: [SM-01, SM-02, SM-03, SM-04, SM-05]
+**Depends on:** Phase 33
+**Plans:** 2 plans
+
+Plans:
+- [ ] 34-01-PLAN.md — Implement squash_merge_to_main in Rust and replace sidecar callsite
+- [ ] 34-02-PLAN.md — Delete dead sidecar code, remove sidecar/ directory, clean up references
+
 ---
 
 *Roadmap created: 2026-02-09*
