@@ -2,6 +2,7 @@
 pub mod remote;
 
 use crate::models::GitConnection;
+use crate::models::MergeResult;
 use tokio::process::Command as TokioCommand;
 
 /// Parsed worktree entry from `git worktree list --porcelain`
@@ -159,16 +160,6 @@ pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>
     Ok(parse_worktree_list(&stdout))
 }
 
-/// Parse a single line from `git branch -a` output into a bare branch name.
-/// Strips leading markers (`*` current branch, `+` worktree-checked-out branch),
-/// whitespace, and the `remotes/origin/` prefix for remote-tracking refs.
-pub fn parse_branch_line(line: &str) -> String {
-    let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '*' || c == '+').trim();
-    trimmed
-        .strip_prefix("remotes/origin/")
-        .unwrap_or(trimmed)
-        .to_string()
-}
 
 pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
     output.split("\n\n")
@@ -301,7 +292,7 @@ async fn list_branches_local(
     path: &str,
 ) -> Result<Vec<String>, String> {
     let output = TokioCommand::new("git")
-        .args(["branch", "-a"])
+        .args(["branch", "-a", "--format=%(refname:short)"])
         .current_dir(path)
         .output()
         .await
@@ -315,8 +306,11 @@ async fn list_branches_local(
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut branches: Vec<String> = stdout
         .lines()
-        .map(parse_branch_line)
-        .filter(|b| !b.is_empty() && !b.contains("HEAD ->") && !b.contains("HEAD"))
+        .map(|line| {
+            // %(refname:short) gives "origin/main" for remote-tracking refs; strip the prefix.
+            line.strip_prefix("origin/").unwrap_or(line).to_string()
+        })
+        .filter(|b| !b.is_empty() && b != "HEAD")
         .collect();
 
     // Deduplicate (local + remote-tracking may share names)
@@ -328,21 +322,139 @@ async fn list_branches_local(
 async fn get_current_branch_local(
     path: &str,
 ) -> Result<String, String> {
+    // symbolic-ref reads .git/HEAD directly — works for both normal and unborn branches.
+    // rev-parse fails on unborn branches (no commits yet), so we avoid it here.
     let output = TokioCommand::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .args(["symbolic-ref", "--short", "HEAD"])
         .current_dir(path)
         .output()
         .await
-        .map_err(|e| format!("Failed to run git rev-parse: {}", e))?;
+        .map_err(|e| format!("Failed to run git symbolic-ref: {}", e))?;
 
     if !output.status.success() {
+        // Detached HEAD — fall back to rev-parse for the commit hash short-ref
         return Ok("main".to_string());
     }
 
     let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if branch.is_empty() || branch == "HEAD" {
+    if branch.is_empty() {
         Ok("main".to_string())
     } else {
         Ok(branch)
     }
+}
+
+/// Squash merge a task branch into main using native Rust subprocess calls.
+///
+/// This function operates on the local repo path (worktrees are always local even
+/// for remote projects). It is NOT dispatched through GitConnection because squash
+/// merge targets the local main branch, not a remote path.
+///
+/// Steps:
+/// 1. Checkout main
+/// 2. git merge <branch> --squash --no-commit
+/// 3. git status --porcelain to detect conflicts
+/// 4a. If conflicts: abort merge, return conflict list
+/// 4b. If nothing staged: return error (branches identical)
+/// 5. Commit with standardised message
+pub async fn squash_merge_to_main(
+    repo_path: &str,
+    task_id: i32,
+    branch_name: &str,
+    task_name: &str,
+) -> Result<MergeResult, String> {
+    // Step 1: checkout main
+    let output = TokioCommand::new("git")
+        .args(["checkout", "main"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git checkout: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git checkout main failed: {}", stderr));
+    }
+
+    // Step 2: squash merge (non-zero exit expected on conflicts — do not check status here)
+    let _output = TokioCommand::new("git")
+        .args(["merge", branch_name, "--squash", "--no-commit"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git merge: {}", e))?;
+
+    // Step 3: check for conflicts via git status --porcelain
+    let status_output = TokioCommand::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
+    let status_stdout = String::from_utf8_lossy(&status_output.stdout);
+    let conflicts = parse_conflict_files(&status_stdout);
+
+    // Step 4a: conflicts detected — abort and return
+    if !conflicts.is_empty() {
+        let _ = TokioCommand::new("git")
+            .args(["merge", "--abort"])
+            .current_dir(repo_path)
+            .output()
+            .await;
+        return Ok(MergeResult {
+            success: false,
+            task_status: "InProgress".to_string(),
+            conflicts,
+        });
+    }
+
+    // Step 4b: nothing staged — branches may already be identical
+    if status_stdout.trim().is_empty() {
+        return Err("Nothing to merge: no changes between branch and main".to_string());
+    }
+
+    // Step 5: commit with sidecar-compatible message format
+    let commit_msg = format!(
+        "Merge task #{}: {}\n\nAll agent commits squashed into single commit.",
+        task_id, task_name
+    );
+    let output = TokioCommand::new("git")
+        .args(["commit", "-m", &commit_msg])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git commit: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git commit failed: {}", stderr));
+    }
+
+    // Step 6: return success
+    Ok(MergeResult {
+        success: true,
+        task_status: "Done".to_string(),
+        conflicts: vec![],
+    })
+}
+
+/// Parse `git status --porcelain` output for merge conflict markers.
+///
+/// Conflict XY codes: any line where X or Y is 'U' (unmerged), plus 'AA' (both added)
+/// and 'DD' (both deleted). Returns a list of conflicting file paths.
+fn parse_conflict_files(porcelain_status: &str) -> Vec<String> {
+    porcelain_status
+        .lines()
+        .filter_map(|line| {
+            if line.len() < 4 {
+                return None;
+            }
+            let xy = &line[..2];
+            // Conflict XY codes: any line where X or Y is 'U', plus AA and DD
+            let is_conflict = xy.contains('U') || xy == "AA" || xy == "DD";
+            if is_conflict {
+                Some(line[3..].to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
