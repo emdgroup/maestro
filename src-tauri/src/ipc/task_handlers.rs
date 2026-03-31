@@ -357,6 +357,9 @@ pub async fn list_project_branches(
         .map_err(|e| e.to_string())?
     };
 
+    // Uses get_git_connection directly (not get_project_with_git_conn) because
+    // branch listing should fall back to local path when SSH is disconnected,
+    // rather than failing entirely.
     let git_conn = crate::db::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
 

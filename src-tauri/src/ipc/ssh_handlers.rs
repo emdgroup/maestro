@@ -8,6 +8,39 @@ use super::project_handlers::remove_projects_by_connection_id;
 use crate::ssh::{RemoteSshSession, PasswordManager};
 use crate::ssh::session::{SshAuthMethod, SshConnection};
 
+/// Store SSH session in AppState and update DB timestamps (+ optionally auth_method).
+/// Shared by all connect_ssh_* handlers.
+async fn finalize_ssh_connection(
+    app_state: &Arc<AppState>,
+    connection_id: i32,
+    session: RemoteSshSession,
+    auth_method_update: Option<&SshAuthMethod>,
+) -> Result<(), String> {
+    app_state.set_ssh_session(connection_id, session).await;
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    match auth_method_update {
+        Some(method) => {
+            // SshAuthMethod implements ToSql (ssh/session.rs ~line 91),
+            // so &connection.auth_method is a valid rusqlite binding.
+            conn.execute(
+                "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![method, &now, &now, connection_id],
+            ).map_err(|e| e.to_string())?;
+        }
+        None => {
+            conn.execute(
+                "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
+                rusqlite::params![&now, &now, connection_id],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Get all saved SSH connections
 #[tauri::command]
 #[specta::specta]
@@ -160,19 +193,7 @@ pub async fn connect_ssh_without_credentials(
     let session = RemoteSshSession::new(connection);
     session.connect(None).await.map_err(|e| format!("SSH connection failed: {}", e))?;
 
-    // Store session in AppState
-    app_state.set_ssh_session(connection_id, session).await;
-
-    // Update last_used_at
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&now, &now, connection_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
     log::info!("SSH connection established for connection_id: {}", connection_id);
     Ok(connection_id)
@@ -209,22 +230,7 @@ pub async fn connect_ssh_with_password(
     let session = RemoteSshSession::new(connection.clone());
     session.connect(Some(password)).await.map_err(|e| format!("SSH connection failed: {}", e))?;
 
-    // Store session in AppState
-    app_state.set_ssh_session(connection_id, session).await;
-
-    // Update database based on password persistence
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-
-        conn.execute(
-            "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&connection.auth_method, &now, &now, connection_id],
-        )
-        .map_err(|e| e.to_string())?;
-
-        log::info!("Updated database auth_method to Password");
-    }
+    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
     log::info!("SSH connection established with password for connection_id: {}", connection_id);
     Ok(connection_id)
@@ -248,17 +254,7 @@ pub async fn connect_ssh_with_agent(
     session.connect(None).await
         .map_err(|e| format!("SSH agent authentication failed: {}", e))?;
 
-    app_state.set_ssh_session(connection_id, session).await;
-
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&connection.auth_method, &now, &now, connection_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
     log::info!("SSH connection established via agent for connection_id: {}", connection_id);
     Ok(connection_id)
@@ -301,17 +297,7 @@ pub async fn connect_ssh_with_key(
         }
     }
 
-    app_state.set_ssh_session(connection_id, session).await;
-
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&connection.auth_method, &now, &now, connection_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
     log::info!("SSH connection established with key file for connection_id: {}", connection_id);
     Ok(connection_id)
