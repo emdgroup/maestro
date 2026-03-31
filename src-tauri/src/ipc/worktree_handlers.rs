@@ -228,32 +228,24 @@ pub async fn get_worktree_diff(
 ) -> Result<String, String> {
     log::info!("get_worktree_diff(worktree={}) called", worktree_id);
 
-    // Step 1: Query DB for worktree path and branch_name
-    let (wt_path, branch_name, project_id): (String, String, i32) = {
+    // Step 1: Query DB for worktree path, branch_name, and project repo_path via JOIN
+    let (wt_path, branch_name, repo_path): (String, String, String) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, branch_name, project_id FROM worktrees WHERE id = ?",
+            "SELECT w.path, w.branch_name, p.path
+             FROM worktrees w
+             JOIN projects p ON p.id = w.project_id
+             WHERE w.id = ?",
             rusqlite::params![worktree_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
     };
 
-    // Step 2: Get project repo_path
-    let repo_path: String = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            rusqlite::params![project_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
-
-    // Step 3: Construct absolute worktree path
+    // Step 2: Construct absolute worktree path
     let worktree_abs = format!("{}/{}", repo_path, wt_path);
 
-    // Step 4: Compute diff using git2 inside spawn_blocking
+    // Step 3: Compute diff using git2 inside spawn_blocking
     let worktree_abs_clone = worktree_abs.clone();
     let branch_clone = branch_name.clone();
 
