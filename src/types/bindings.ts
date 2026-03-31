@@ -392,9 +392,9 @@ async listWorktreesWithStatus(projectId: number, repoPath: string) : Promise<Res
     else return { status: "error", error: e  as any };
 }
 },
-async getWorktreeDiff(worktreeId: number) : Promise<Result<string, string>> {
+async getWorktreeDiff(worktreeId: number, diffTarget: DiffTarget) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { worktreeId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { worktreeId, diffTarget }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1008,6 +1008,13 @@ export type AppSettings = { theme_preference: string | null; auto_mode?: boolean
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
+/**
+ * Controls what get_worktree_diff compares against.
+ * 
+ * - Head: `git diff HEAD` (uncommitted changes vs last commit)
+ * - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
+ */
+export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string }
 export type ErrorEvent = { error_type: string; message: string; suggestions: string[]; detected_at: string }
 export type ExecutionLog = { id: number; task_id: number; output: string; terminal_output: string | null; status: ExecutionStatus; started_at: string; completed_at: string | null; error_event: ErrorEvent | null }
 export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled"
