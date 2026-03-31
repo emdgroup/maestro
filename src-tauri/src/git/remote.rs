@@ -1,6 +1,12 @@
 use crate::ssh::{RemoteSshSession, SshError};
 use std::sync::Arc;
 
+/// Shell-safe quoting for paths used in SSH commands.
+/// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Create a worktree on the remote machine via SSH
 ///
 /// Executes (new_branch = Some): cd '{remote_path}' && git worktree add '{worktree_name}' -b '{new_branch}' '{branch}'
@@ -14,12 +20,12 @@ pub async fn create_remote_worktree(
 ) -> Result<(), SshError> {
     let cmd = match new_branch {
         Some(nb) => format!(
-            "cd '{}' && git worktree add '{}' -b '{}' '{}'",
-            remote_path, worktree_name, nb, branch
+            "cd {} && git worktree add {} -b {} {}",
+            shell_quote(remote_path), shell_quote(worktree_name), shell_quote(nb), shell_quote(branch)
         ),
         None => format!(
-            "cd '{}' && git worktree add '{}' '{}'",
-            remote_path, worktree_name, branch
+            "cd {} && git worktree add {} {}",
+            shell_quote(remote_path), shell_quote(worktree_name), shell_quote(branch)
         ),
     };
     ssh.execute_command(&cmd).await?;
@@ -39,13 +45,13 @@ pub async fn delete_remote_worktree(
 ) -> Result<(), SshError> {
     // Execute commands in sequence
     // Don't fail if branch delete or prune fails - the main goal is removing the worktree
-    let remove_cmd = format!("cd '{}' && git worktree remove '{}' --force", remote_path, worktree_name);
+    let remove_cmd = format!("cd {} && git worktree remove {} --force", shell_quote(remote_path), shell_quote(worktree_name));
     let _ = ssh.execute_command(&remove_cmd).await;
 
-    let branch_delete_cmd = format!("git -C '{}' branch -D '{}'", remote_path, worktree_name);
+    let branch_delete_cmd = format!("git -C {} branch -D {}", shell_quote(remote_path), shell_quote(worktree_name));
     let _ = ssh.execute_command(&branch_delete_cmd).await;
 
-    let prune_cmd = format!("git -C '{}' remote prune origin", remote_path);
+    let prune_cmd = format!("git -C {} remote prune origin", shell_quote(remote_path));
     let _ = ssh.execute_command(&prune_cmd).await;
 
     Ok(())
@@ -61,20 +67,20 @@ pub async fn get_remote_diff(
     base_branch: &str,
 ) -> Result<String, SshError> {
     let cmd = format!(
-        "cd '{}' && git diff --unified=6 {}...{}",
-        remote_path, base_branch, branch
+        "cd {} && git diff --unified=6 {}...{}",
+        shell_quote(remote_path), base_branch, branch
     );
     ssh.execute_command(&cmd).await
 }
 
 /// Get git status from the remote machine via SSH
 ///
-/// Executes: cd '{remote_path}' && git status --short
+/// Executes: cd '{remote_path}' && git status --porcelain
 pub async fn get_remote_status(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<String, SshError> {
-    let cmd = format!("cd '{}' && git status --short", remote_path);
+    let cmd = format!("cd {} && git status --porcelain", shell_quote(remote_path));
     ssh.execute_command(&cmd).await
 }
 
@@ -86,17 +92,11 @@ pub async fn list_remote_branches(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<Vec<String>, SshError> {
-    let cmd = format!("cd '{}' && git branch -a", remote_path);
+    let cmd = format!("cd {} && git branch -a", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
     let mut branches: Vec<String> = output
         .lines()
-        .map(|line| {
-            let trimmed = line.trim_start_matches(|c: char| c == ' ' || c == '*').trim();
-            trimmed
-                .strip_prefix("remotes/origin/")
-                .unwrap_or(trimmed)
-                .to_string()
-        })
+        .map(crate::git::parse_branch_line)
         .filter(|b| !b.is_empty() && !b.contains("HEAD ->") && !b.contains("HEAD"))
         .collect();
     branches.sort();
@@ -111,7 +111,7 @@ pub async fn get_remote_current_branch(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<String, SshError> {
-    let cmd = format!("cd '{}' && git rev-parse --abbrev-ref HEAD", remote_path);
+    let cmd = format!("cd {} && git rev-parse --abbrev-ref HEAD", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
     let branch = output.trim().to_string();
     if branch.is_empty() || branch == "HEAD" {
@@ -129,7 +129,7 @@ pub async fn list_remote_worktrees(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<Vec<crate::git::ParsedWorktree>, SshError> {
-    let cmd = format!("cd '{}' && git worktree list --porcelain", remote_path);
+    let cmd = format!("cd {} && git worktree list --porcelain", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
     Ok(crate::git::parse_worktree_list(&output))
 }

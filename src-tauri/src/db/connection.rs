@@ -2,6 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use zeroize::Zeroizing;
 
 use crate::db::schema::{initialize_schema};
 use crate::error::AppError;
@@ -48,7 +49,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
     pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
-    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, String>>>
+    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>
 }
 
 impl AppState {
@@ -78,13 +79,13 @@ impl AppState {
     }
 
     /// Get an SSH session password for a connection if it exists
-    pub async fn get_ssh_password(&self, connection_id: i32) -> Option<String> {
+    pub async fn get_ssh_password(&self, connection_id: i32) -> Option<Zeroizing<String>> {
         self.ssh_passwords.lock().await.get(&connection_id).cloned()
     }
 
     /// Store an SSH session password for a connection
     pub async fn set_ssh_password(&self, connection_id: i32, password: String) {
-        self.ssh_passwords.lock().await.insert(connection_id, password);
+        self.ssh_passwords.lock().await.insert(connection_id, Zeroizing::new(password));
     }
 }
 

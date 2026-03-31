@@ -5,6 +5,7 @@ use chrono::Utc;
 use rusqlite::{params, ToSql};
 use crate::models::Project;
 use crate::db::{AppState, project_storage};
+use crate::git::remote::shell_quote;
 
 /// Fetch projects for a connection from an open DB connection.
 /// Isolated into a helper so all borrow-checker temporaries are fully dropped
@@ -114,9 +115,7 @@ async fn collect_stale_project_ids(
 
             let mut stale = Vec::new();
             for project in projects {
-                // Escape any double-quotes in the path to prevent shell injection
-                let safe_path = project.path.replace('"', "\\\"");
-                let cmd = format!("test -d \"{}\" && echo ok || echo missing", safe_path);
+                let cmd = format!("test -d {} && echo ok || echo missing", shell_quote(&project.path));
                 match session.execute_command(&cmd).await {
                     Ok(output) => {
                         if output.trim() != "ok" {
@@ -217,17 +216,16 @@ pub async fn git_init_project(
                 .get_ssh_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            let safe_path = path.replace('"', "\\\"");
             // No-op if already a git repo
             let check = session
-                .execute_command(&format!("test -d \"{}/.git\" && echo yes || echo no", safe_path))
+                .execute_command(&format!("test -d {}/.git && echo yes || echo no", shell_quote(&path)))
                 .await
                 .map_err(|e| format!("SSH check failed: {}", e))?;
             if check.trim() == "yes" {
                 return Ok(());
             }
             let output = session
-                .execute_command(&format!("git init \"{}\"", safe_path))
+                .execute_command(&format!("git init {}", shell_quote(&path)))
                 .await
                 .map_err(|e| format!("SSH git init failed: {}", e))?;
             if output.contains("Initialized") || output.contains("Reinitialized") {
@@ -273,10 +271,8 @@ pub async fn clone_project(
                 .get_ssh_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            let safe_url = url.replace('"', "\\\"");
-            let safe_path = target_path.replace('"', "\\\"");
             let output = session
-                .execute_command(&format!("git clone \"{}\" \"{}\"", safe_url, safe_path))
+                .execute_command(&format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)))
                 .await
                 .map_err(|e| format!("SSH git clone failed: {}", e))?;
             if output.contains("error:") || output.contains("fatal:") {
@@ -356,10 +352,9 @@ pub async fn create_new_project(
                 .get_ssh_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            let safe_path = full_path_str.replace('"', "\\\"");
             // Step 1: Check existence
             let exists = session
-                .execute_command(&format!("test -d \"{}\" && echo yes || echo no", safe_path))
+                .execute_command(&format!("test -d {} && echo yes || echo no", shell_quote(&full_path_str)))
                 .await
                 .map_err(|e| format!("SSH check failed: {}", e))?;
             if exists.trim() == "yes" {
@@ -367,7 +362,7 @@ pub async fn create_new_project(
             }
             // Step 2: Create dir + git init
             let output = session
-                .execute_command(&format!("mkdir -p \"{}\" && git init \"{}\"", safe_path, safe_path))
+                .execute_command(&format!("mkdir -p {} && git init {}", shell_quote(&full_path_str), shell_quote(&full_path_str)))
                 .await
                 .map_err(|e| format!("SSH create failed: {}", e))?;
             if output.contains("error:") || output.contains("fatal:") {

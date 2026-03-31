@@ -24,8 +24,15 @@ impl client::Handler for SshClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
+        // TODO: Full TOFU implementation requires passing AppState to the handler.
+        // The russh Handler trait doesn't support injecting application state easily.
+        // For now, log the key fingerprint so users can see it in debug logs.
+        // The check_and_store_host_key() function in db/connection.rs is ready
+        // to be wired once we restructure the handler to receive AppState.
+        let fingerprint = format!("{:?}", server_public_key);
+        eprintln!("[SSH] Server key fingerprint: {}", fingerprint);
         Ok(true)
     }
 }
@@ -77,7 +84,7 @@ pub struct RemoteSshSession {
     ssh_connection: SshConnection,
     state: Arc<Mutex<SshConnectionState>>,
     reconnect_attempts: Arc<AtomicUsize>,
-    session_password: Arc<Mutex<Option<String>>>,
+    session_password: Arc<Mutex<Option<Zeroizing<String>>>>,
     key_passphrase: Arc<Mutex<Option<String>>>,
 }
 
@@ -264,7 +271,7 @@ impl RemoteSshSession {
                             "No password found for {connection_string}"
                         ))
                     })?;
-                    *self.session_password.lock().await = Some(mem_password.clone());
+                    *self.session_password.lock().await = Some(Zeroizing::new(mem_password.clone()));
                     Zeroizing::new(mem_password)
                 };
 
@@ -530,7 +537,7 @@ impl RemoteSshSession {
     /// Reconnect if needed with exponential backoff
     async fn reconnect_if_needed(&self) -> Result<(), SshError> {
         let state = *self.state.lock().await;
-        let password = self.session_password.lock().await.as_ref().cloned();
+        let password = self.session_password.lock().await.as_ref().map(|p| p.to_string());
 
         match state {
             SshConnectionState::Connected => Ok(()),
