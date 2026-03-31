@@ -270,7 +270,7 @@ pub async fn git_init_project(
                 return Ok(());
             }
             let output = session
-                .execute_command(&format!("git init {}", shell_quote(&path)))
+                .execute_command(&format!("git init -b main {}", shell_quote(&path)))
                 .await
                 .map_err(|e| format!("SSH git init failed: {}", e))?;
             if output.contains("Initialized") || output.contains("Reinitialized") {
@@ -285,7 +285,7 @@ pub async fn git_init_project(
                 return Ok(()); // Already a git repo, nothing to do
             }
             let output = tokio::process::Command::new("git")
-                .args(["init", &path])
+                .args(["init", "-b", "main", &path])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .output()
@@ -376,7 +376,7 @@ pub async fn create_new_project(
             }
             // Step 2: Create dir + git init
             let output = session
-                .execute_command(&format!("mkdir -p {} && git init {}", shell_quote(&full_path_str), shell_quote(&full_path_str)))
+                .execute_command(&format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str)))
                 .await
                 .map_err(|e| format!("SSH create failed: {}", e))?;
             if output.contains("error:") || output.contains("fatal:") {
@@ -394,7 +394,7 @@ pub async fn create_new_project(
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
             // Step 3: git init
             let output = tokio::process::Command::new("git")
-                .args(["init", &full_path_str])
+                .args(["init", "-b", "main", &full_path_str])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .output()

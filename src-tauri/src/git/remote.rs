@@ -92,12 +92,12 @@ pub async fn list_remote_branches(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<Vec<String>, SshError> {
-    let cmd = format!("cd {} && git branch -a", shell_quote(remote_path));
+    let cmd = format!("cd {} && git branch -a --format='%(refname:short)'", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
     let mut branches: Vec<String> = output
         .lines()
-        .map(crate::git::parse_branch_line)
-        .filter(|b| !b.is_empty() && !b.contains("HEAD ->") && !b.contains("HEAD"))
+        .map(|line: &str| line.strip_prefix("origin/").unwrap_or(line).to_string())
+        .filter(|b| !b.is_empty() && b != "HEAD")
         .collect();
     branches.sort();
     branches.dedup();
@@ -106,15 +106,16 @@ pub async fn list_remote_branches(
 
 /// Get the currently checked-out branch on the remote machine via SSH
 ///
-/// Executes: cd '{remote_path}' && git rev-parse --abbrev-ref HEAD
+/// Executes: cd '{remote_path}' && git symbolic-ref --short HEAD
+/// Uses symbolic-ref so unborn branches (no commits yet) are read correctly.
 pub async fn get_remote_current_branch(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
 ) -> Result<String, SshError> {
-    let cmd = format!("cd {} && git rev-parse --abbrev-ref HEAD", shell_quote(remote_path));
+    let cmd = format!("cd {} && git symbolic-ref --short HEAD", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
     let branch = output.trim().to_string();
-    if branch.is_empty() || branch == "HEAD" {
+    if branch.is_empty() {
         Ok("main".to_string())
     } else {
         Ok(branch)
