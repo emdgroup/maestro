@@ -74,7 +74,6 @@ async fn run_agent_background_task(
     worktree_id: i32,
     task_id: i32,
     worktree_path: String,
-    repo_path: String,
 ) {
     let result = crate::process::spawn_agent_cli(
         &worktree_path,
@@ -116,7 +115,7 @@ async fn run_agent_background_task(
         }
     }
 
-    if let Err(e) = super::delete_worktree_for_task(&app_state, worktree_id, &worktree_path, &repo_path).await {
+    if let Err(e) = super::delete_worktree_for_task(&app_state, worktree_id, &worktree_path).await {
         eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
     }
 }
@@ -131,7 +130,9 @@ pub async fn spawn_agent_execution(
     repo_path: String,
 ) -> Result<i32, String> {
     println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
-    let repo_path = canonicalize_repo_path(&repo_path)?;
+    // Note: canonicalization is handled inside create_worktree_for_task (local-only).
+    // Do NOT canonicalize here — for remote projects, repo_path is a Linux path that
+    // cannot be canonicalized on the Windows Tauri host.
 
     let app_state_arc: Arc<AppState> = (*app_state).clone();
     let (worktree_id, worktree_path) = super::create_worktree_for_task(
@@ -161,7 +162,7 @@ pub async fn spawn_agent_execution(
     }
 
     tokio::spawn(run_agent_background_task(
-        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path, repo_path.clone(),
+        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path,
     ));
 
     Ok(log_id)
@@ -375,20 +376,19 @@ pub async fn attach_terminal(
 
     // If requested, send terminal history first
     if include_history.unwrap_or(false) {
-        println!("[attach] Fetching terminal history for task {}", task_id);
-        // Try to get execution logs to prepend history
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let history = conn.query_row(
-            "SELECT terminal_output FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
-            rusqlite::params![task_id],
-            |row| row.get::<_, Option<String>>(0)
-        ).ok().flatten();
+        // Drop conn before calling output_channel.send() — never hold std::sync::Mutex across IPC I/O
+        let history: Option<String> = {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            conn.query_row(
+                "SELECT terminal_output FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+                rusqlite::params![task_id],
+                |row| row.get::<_, Option<String>>(0)
+            ).ok().flatten()
+        };
 
         if let Some(history_text) = history {
             if !history_text.is_empty() {
-                println!("[attach] Sending {} chars of history to frontend", history_text.len());
                 if output_channel.send(history_text).is_err() {
-                    println!("[attach] Channel closed while sending history");
                     return Err("Channel closed before history could be sent".to_string());
                 }
             }
@@ -403,37 +403,28 @@ pub async fn attach_terminal(
         // Spawn PTY reader task
         let session_reader = session.clone();
         let reader_task = tokio::spawn(async move {
-            loop {
-                // Try to get a reader from the PTY master
-                let session_lock = session_reader.lock().await;
-                let mut reader = match session_lock.master.lock().await.try_clone_reader() {
-                    Ok(r) => r,
-                    Err(_) => {
-                        println!("[PTY reader] Failed to clone reader, stopping");
-                        break;
-                    }
-                };
-                drop(session_lock);
+            // Clone the reader once — try_clone_reader() creates an OS fd clone, do it outside the loop
+            let session_lock = session_reader.lock().await;
+            let mut reader = match session_lock.master.lock().await.try_clone_reader() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[PTY reader] Failed to clone reader: {}", e);
+                    return;
+                }
+            };
+            drop(session_lock);
 
-                // Read from PTY in 4096-byte chunks
-                let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 4096];
+            loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => {
-                        println!("[PTY reader] EOF reached, stopping");
-                        break;
-                    }
+                    Ok(0) => break,
                     Ok(n) => {
-                        // Decode UTF-8, using lossy conversion to handle mid-sequence bytes
                         let output = String::from_utf8_lossy(&buf[..n]).to_string();
                         if tx.send(output).await.is_err() {
-                            println!("[PTY reader] Channel closed by receiver, stopping");
                             break;
                         }
                     }
-                    Err(e) => {
-                        println!("[PTY reader] Read error: {}, stopping", e);
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -655,40 +646,8 @@ pub async fn resume_agent_execution(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    let repo_path = canonicalize_repo_path(&repo_path)?;
-
-    let app_state_arc: Arc<AppState> = (*app_state).clone();
-    let (worktree_id, worktree_path) = super::create_worktree_for_task(
-        &app_state_arc,
-        project_id,
-        task_id,
-        &repo_path,
-    ).await?;
-
-    let now = Utc::now().to_rfc3339();
-    let log_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (?, 'running', ?)",
-            rusqlite::params![task_id, &now],
-        )
-        .map_err(|e| format!("Failed to create execution log: {}", e))?;
-        conn.last_insert_rowid() as i32
-    };
-
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let _ = conn.execute(
-            "UPDATE tasks SET status = 'InProgress' WHERE id = ?",
-            rusqlite::params![task_id],
-        );
-    }
-
-    tokio::spawn(run_agent_background_task(
-        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path, repo_path.clone(),
-    ));
-
-    Ok(log_id)
+    println!("resume_agent_execution(task={}, project={}) — delegating to spawn", task_id, project_id);
+    spawn_agent_execution(app_state, project_id, task_id, repo_path).await
 }
 
 /// Spawn an interactive (task-free) PTY session on a specific branch.
@@ -739,21 +698,21 @@ pub async fn spawn_interactive_execution(
         canonicalize_repo_path(&repo_path)?
     };
 
-    // Step 1: Check if a worktree already exists for this branch in DB
-    let existing_worktree: Option<(i32, String)> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, path FROM worktrees WHERE project_id = ? AND branch_name = ?",
-            rusqlite::params![project_id, &branch_name],
-            |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)),
-        ).ok()
-    };
+    // Use git worktree list rather than DB state: git is the source of truth, the DB may
+    // be stale, and get_current_branch only returns the main-worktree HEAD (missing branches
+    // in other worktrees).
+    let git_worktrees = crate::git::list_worktrees(&git_conn).await?;
+    let existing_checkout = git_worktrees.into_iter().find(|wt| {
+        wt.branch.as_deref() == Some(branch_name.as_str())
+    });
 
-    let worktree_abs_path: String = if let Some((_wt_id, relative_path)) = existing_worktree {
-        // Worktree exists — use its path
-        format!("{}/{}", repo_path, relative_path)
+    let worktree_abs_path: String = if let Some(wt) = existing_checkout {
+        println!(
+            "spawn_interactive_execution: branch '{}' already checked out at '{}', reusing",
+            branch_name, wt.path
+        );
+        wt.path
     } else {
-        // No worktree for this branch — create one (checkout existing branch)
         use crate::models::WORKTREE_DIR;
         let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
 
