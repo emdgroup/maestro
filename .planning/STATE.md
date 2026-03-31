@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T18:24:00.508Z"
+last_updated: "2026-03-31T18:28:43.386Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -128,6 +128,7 @@ Plan: 2 of 2
 | Phase 34-remove-node-sidecar-implement-squash-merge-in-rust P01 | 0.033 | 2 tasks | 2 files |
 | Phase 34 P02 | 0.45 | 2 tasks | 9 files |
 | Phase 35 P01 | 0.3 | 2 tasks | 9 files |
+| Phase 35 P02 | 0.033 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -240,6 +241,8 @@ Phase 18 Architecture Decisions:
 - [Phase 35]: run_git_in_dir dispatcher handles local TokioCommand and remote SSH execute_command — follows existing GitConnection pattern
 - [Phase 35]: DiffTarget enum: Head=git diff HEAD (uncommitted), Branch(name)=git diff --unified=6 origin/{name}..HEAD (full branch diff)
 - [Phase 35]: list_worktrees_with_status runs status+diff_stat for both local and remote worktrees (removed is_remote gate)
+- [Phase 35]: Use onPressedChange (base-ui Toggle API) instead of onClick for ToggleGroupItem pressed state control
+- [Phase 35]: diffBranch pre-populated from selectedWorktree.branch_name via useEffect; Branch mode always attempts diff even with clean working tree
 
 ### Pending Todos
 
