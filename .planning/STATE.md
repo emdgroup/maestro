@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T13:12:44.547Z"
+last_updated: "2026-03-31T13:42:31.098Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -126,6 +126,7 @@ Plan: 2 of 2
 | Phase 33 P02 | 0.05 | 2 tasks | 3 files |
 | Phase 33 P03 | 0.167 | 2 tasks | 6 files |
 | Phase 34-remove-node-sidecar-implement-squash-merge-in-rust P01 | 0.033 | 2 tasks | 2 files |
+| Phase 34 P02 | 0.45 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -233,6 +234,8 @@ Phase 18 Architecture Decisions:
 - [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: squash_merge_to_main is pub but not dispatched through GitConnection — worktrees are always local even for remote projects, so squash merge always runs on local repo path
 - [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: Do not check output.status.success() after git merge --squash --no-commit — non-zero exit is expected on conflicts, handled by subsequent git status --porcelain
 - [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: MergeOutcome removed from review_handlers.rs — no longer needed after eliminating sidecar JSON parsing; type remains in models/merge_outcome.rs for deletion in Plan 02
+- [Phase 34]: retry_execution and resume_agent_execution updated to reset execution log status rather than calling the deleted spawn_agent_execution IPC
+- [Phase 34]: useSpawnExecutionMutation deprecated with informative throw; boardStore.executeTask throws informative error — preserves API surface for caller discovery
 
 ### Pending Todos
 

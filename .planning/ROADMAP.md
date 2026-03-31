@@ -154,11 +154,11 @@ Plans:
 **Goal:** Replace the Node.js sidecar with native Rust: implement squash_merge_to_main via git subprocess, replace the sidecar callsite in approve_task_and_merge, delete all dead sidecar code (run_agent_background_task, spawn_agent_cli, spawn_agent_execution IPC, MergeOutcome model), and remove the sidecar/ directory entirely
 **Requirements**: [SM-01, SM-02, SM-03, SM-04, SM-05]
 **Depends on:** Phase 33
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 34-01-PLAN.md — Implement squash_merge_to_main in Rust and replace sidecar callsite
-- [ ] 34-02-PLAN.md — Delete dead sidecar code, remove sidecar/ directory, clean up references
+- [x] 34-02-PLAN.md — Delete dead sidecar code, remove sidecar/ directory, clean up references
 
 ---
 
