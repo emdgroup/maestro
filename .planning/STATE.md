@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T08:45:16.868Z"
+last_updated: "2026-03-31T09:28:45.169Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 32 — backend-code-quality-fixes
+**Current focus:** Phase 33 — tauri-backend-code-review-and-refactoring-for-maintainability-dry-solid-kiss
 
 ## Current Position
 
-Phase: 32 (backend-code-quality-fixes) — EXECUTING
-Plan: 5 of 5
+Phase: 33 (tauri-backend-code-review-and-refactoring-for-maintainability-dry-solid-kiss) — EXECUTING
+Plan: 1 of 3
 
 ## Performance Metrics
 
@@ -229,6 +229,7 @@ None currently.
 |---|-------------|------|--------|-----------|
 | 260330-khs | move spawn agent button to top of list and rename to New Session | 2026-03-30 | b9ec20f | [260330-khs-move-spawn-agent-button-to-top-of-list-a](./quick/260330-khs-move-spawn-agent-button-to-top-of-list-a/) |
 | 260330-tb8 | fix Worktrees and Agents view bugs (cleanup modal, stale branches, delete/reconnect, interactive PTY) | 2026-03-30 | 91c459b | [260330-tb8-fix-worktrees-and-agents-view-bugs](./quick/260330-tb8-fix-worktrees-and-agents-view-bugs/) |
+| 260331-d7x | search in backend code usage of git commands and list them | 2026-03-31 | — | [260331-d7x-search-in-backend-code-usage-of-git-comm](./quick/260331-d7x-search-in-backend-code-usage-of-git-comm/) |
 
 ### Blockers/Concerns
 
@@ -282,6 +283,7 @@ None currently.
 - Phase 31 added: Fix remote SSH worktree bugs: git ops, origin branch detection, and worktree path filtering
 - Phase 30 added: v1.3 post-testing UI and worktree bug fixes
 - Phase 32 added: Backend code quality: fix all findings from code review
+- Phase 33 added: tauri backend code review and refactoring for maintainability DRY SOLID KISS
 
 ## Session Continuity
 
