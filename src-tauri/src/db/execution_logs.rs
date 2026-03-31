@@ -199,7 +199,7 @@ pub fn get_current_execution_log(
 
     let result = conn.query_row(
         "SELECT id, task_id, output, terminal_output, status, started_at, completed_at, error_event
-         FROM execution_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+         FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
         [task_id],
         |row| {
             let status_str: String = row.get(4)?;

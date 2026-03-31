@@ -85,7 +85,7 @@ pub fn save_ssh_connection(
         return Err("Invalid host".to_string());
     }
 
-    println!("Host {}, user {}, prot {}", host, username, port);
+    println!("Saving SSH connection: host={}, user={}, port={}", host, username, port);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
@@ -110,7 +110,6 @@ pub fn save_ssh_connection(
         return Ok(id);
     }
 
-    println!("debug 1");
     // Insert new connection
     conn.execute(
         "INSERT INTO ssh_connections (connection_string, username, host, port, auth_method, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -394,7 +393,7 @@ pub fn forget_saved_password(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    println!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
+    println!("forget_saved_password(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Get connection details before deleting (for keyring cleanup)
@@ -409,7 +408,7 @@ pub fn forget_saved_password(
     // Optionally delete password from keyring (ignore errors)
     let _ = PasswordManager::delete_password(&host, &username);
 
-    println!("Deleted SSH connection: {}", connection_id);
+    println!("Forgot saved password for connection: {}", connection_id);
     Ok(())
 }
 
