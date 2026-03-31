@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T08:09:57.260Z"
+last_updated: "2026-03-31T08:13:52.909Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 32 (backend-code-quality-fixes) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 ## Performance Metrics
 
@@ -118,6 +118,7 @@ Plan: 2 of 5
 | Phase 31 P01 | 0.032 | 2 tasks | 3 files |
 | Phase 31 P02 | 0.074 | 2 tasks | 1 files |
 | Phase 32 P01 | 0.03 | 2 tasks | 4 files |
+| Phase 32 P02 | 0.033 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,8 @@ Phase 18 Architecture Decisions:
 - [Phase 31]: Gate create_dir_all on !is_remote in create_worktree IPC — SSH projects create parent dirs automatically via git worktree add
 - [Phase 32]: Use task_id FK join for worktree lookup in review handlers (V5 schema, no status column)
 - [Phase 32]: Replace .expect() with map_err+? in all three project insertion sites
+- [Phase 32]: poll_remote_log extracted as shared function eliminating 80 lines of duplicated SSH log-polling code between stream_remote_output and attach_remote_stream_listener
+- [Phase 32]: resume_agent_execution delegates to spawn_agent_execution with swapped parameter order (resume: task_id second, spawn: project_id second)
 
 ### Pending Todos
 
