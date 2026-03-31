@@ -128,10 +128,10 @@ Plans:
 **Goal:** Fix all code quality findings from backend code review — broken queries, panics, dead code, DRY violations, security hardening, and cleanup
 **Requirements**: [H1, H2, H3, H4, M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10]
 **Depends on:** Phase 31
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
-- [ ] 32-01-PLAN.md — Fix broken review queries (V5 schema), project handler panics, ORDER BY column, log messages
+- [x] 32-01-PLAN.md — Fix broken review queries (V5 schema), project handler panics, ORDER BY column, log messages
 - [ ] 32-02-PLAN.md — Remove dead spawner, deduplicate remote polling, fix WorktreeSnapshot, delegate resume to spawn
 - [ ] 32-03-PLAN.md — Extract DRY helpers, centralize TASK_SELECT, atomize update_task, add error logging
 - [ ] 32-04-PLAN.md — Shell injection fix, host key verification, password zeroing, reconnection race, PTY resources

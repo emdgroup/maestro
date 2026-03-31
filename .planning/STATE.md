@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-30T16:05:23.233Z"
+last_updated: "2026-03-31T08:09:57.260Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 31 — fix-remote-ssh-worktree-bugs-git-ops-origin-branch-detection-and-worktree-path-filtering
+**Current focus:** Phase 32 — backend-code-quality-fixes
 
 ## Current Position
 
-Phase: 31 (fix-remote-ssh-worktree-bugs-git-ops-origin-branch-detection-and-worktree-path-filtering) — EXECUTING
-Plan: 2 of 2
+Phase: 32 (backend-code-quality-fixes) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -117,6 +117,7 @@ Plan: 2 of 2
 | Phase 30 P03 | 0.061 | 2 tasks | 4 files |
 | Phase 31 P01 | 0.032 | 2 tasks | 3 files |
 | Phase 31 P02 | 0.074 | 2 tasks | 1 files |
+| Phase 32 P01 | 0.03 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,8 @@ Phase 18 Architecture Decisions:
 - [Phase 31]: parse_worktree_list made pub to allow reuse in remote::list_remote_worktrees without code duplication
 - [Phase 31]: Use ? instead of unwrap_or_else for SSH connection in create/delete IPC — fail explicitly to avoid silently operating on wrong path for remote projects
 - [Phase 31]: Gate create_dir_all on !is_remote in create_worktree IPC — SSH projects create parent dirs automatically via git worktree add
+- [Phase 32]: Use task_id FK join for worktree lookup in review handlers (V5 schema, no status column)
+- [Phase 32]: Replace .expect() with map_err+? in all three project insertion sites
 
 ### Pending Todos
 
@@ -261,6 +264,7 @@ None currently.
 - Phase 29 added: v1.3 Agents & Worktrees view polish and bug fixes
 - Phase 31 added: Fix remote SSH worktree bugs: git ops, origin branch detection, and worktree path filtering
 - Phase 30 added: v1.3 post-testing UI and worktree bug fixes
+- Phase 32 added: Backend code quality: fix all findings from code review
 
 ## Session Continuity
 
