@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib";
@@ -34,7 +34,8 @@ import {
 } from "@/services/worktree.service";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
 import { DiffViewer } from "@/components/execution/DiffViewer";
-import type { WorktreeWithStatus } from "@/types/bindings";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { WorktreeWithStatus, DiffTarget } from "@/types/bindings";
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -78,6 +79,8 @@ export function WorktreeManager({
   const [originBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
+  const [diffMode, setDiffMode] = useState<"uncommitted" | "branch">("uncommitted");
+  const [diffBranch, setDiffBranch] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -104,11 +107,20 @@ export function WorktreeManager({
 
   const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
+  useEffect(() => {
+    if (selectedWorktree?.branch_name) {
+      setDiffBranch(selectedWorktree.branch_name);
+    }
+  }, [selectedWorktree?.branch_name]);
+
+  const diffTarget: DiffTarget =
+    diffMode === "uncommitted" ? { type: "Head" } : { type: "Branch", branch: diffBranch };
+
   const {
     data: diffString,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(selectedWorktree?.id ?? null);
+  } = useWorktreeDiffQuery(selectedWorktree?.id ?? null, diffTarget);
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
@@ -297,11 +309,39 @@ export function WorktreeManager({
               </div>
             </div>
 
+            {/* Diff target selector */}
+            <div className="px-4 py-2 border-b border-border flex items-center gap-3 shrink-0">
+              <ToggleGroup variant="outline" size="sm">
+                <ToggleGroupItem
+                  pressed={diffMode === "uncommitted"}
+                  onPressedChange={() => setDiffMode("uncommitted")}
+                  className="text-xs px-3"
+                >
+                  Uncommitted
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  pressed={diffMode === "branch"}
+                  onPressedChange={() => setDiffMode("branch")}
+                  className="text-xs px-3"
+                >
+                  Branch diff
+                </ToggleGroupItem>
+              </ToggleGroup>
+              {diffMode === "branch" && (
+                <Input
+                  value={diffBranch}
+                  onChange={(e) => setDiffBranch(e.target.value)}
+                  placeholder="base branch (e.g. main)"
+                  className="h-7 w-48 text-xs"
+                />
+              )}
+            </div>
+
             {/* Diff body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {diffLoading ? (
                 <DiffViewer diffFile={null} loading={true} />
-              ) : selectedWorktree.git_status === "" ? (
+              ) : diffMode === "uncommitted" && selectedWorktree.git_status === "" ? (
                 <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                   No uncommitted changes
                 </div>
