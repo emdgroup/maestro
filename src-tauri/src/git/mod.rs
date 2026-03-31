@@ -142,6 +142,37 @@ pub async fn list_worktrees(
     }
 }
 
+/// Generic dispatcher: run arbitrary git command in a directory (local or remote).
+///
+/// For local: `tokio::process::Command::new("git").args(args).current_dir(abs_path)`
+/// For remote: `cd '{abs_path}' && git {args joined}` via SSH
+///
+/// Returns stdout as String. Does NOT check exit status — caller decides if empty/error output matters.
+pub async fn run_git_in_dir(
+    conn: &GitConnection,
+    abs_path: &str,
+    args: &[&str],
+) -> Result<String, String> {
+    match conn {
+        GitConnection::Local { .. } => {
+            let output = TokioCommand::new("git")
+                .args(args)
+                .current_dir(abs_path)
+                .output()
+                .await
+                .map_err(|e| format!("git failed: {}", e))?;
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+        GitConnection::Remote { ssh, .. } => {
+            let git_args = args.join(" ");
+            let cmd = format!("cd {} && git {}", remote::shell_quote(abs_path), git_args);
+            ssh.execute_command(&cmd)
+                .await
+                .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+    }
+}
+
 /// List all worktrees via `git worktree list --porcelain`
 pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>, String> {
     let output = TokioCommand::new("git")

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::{Duration, Utc};
 
-use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR};
+use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget};
 use crate::db::AppState;
 
 // ============================================================================
@@ -30,7 +30,6 @@ pub async fn list_worktrees_with_status(
     };
     let git_conn = crate::db::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: repo_path.clone() });
-    let is_remote = project.is_remote();
 
     // Step 1: Get on-disk worktrees
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
@@ -100,31 +99,23 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree (local only)
-    // For remote/SSH projects, skip per-worktree status — worktrees appear without status details
+    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree (local AND remote)
     let mut git_info: HashMap<String, (String, Option<String>)> = HashMap::new();
-    if !is_remote {
+    {
         let handles: Vec<_> = disk_worktrees
             .iter()
             .map(|wt| {
-                let path = wt.path.clone();
+                let wt_path = wt.path.clone();
+                let conn = git_conn.clone();
                 tokio::spawn(async move {
-                    let status = crate::git::get_worktree_status_local(&path)
+                    let status = crate::git::run_git_in_dir(&conn, &wt_path, &["status", "--porcelain"])
                         .await
                         .unwrap_or_default();
-                    let diff_stat_output = tokio::process::Command::new("git")
-                        .args(["diff", "--shortstat"])
-                        .current_dir(&path)
-                        .output()
-                        .await;
-                    let diff_stat = match diff_stat_output {
-                        Ok(out) => {
-                            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                            if s.is_empty() { None } else { Some(s) }
-                        }
-                        Err(_) => None,
-                    };
-                    (path, status, diff_stat)
+                    let diff_stat_raw = crate::git::run_git_in_dir(&conn, &wt_path, &["diff", "--shortstat"])
+                        .await
+                        .unwrap_or_default();
+                    let diff_stat = if diff_stat_raw.trim().is_empty() { None } else { Some(diff_stat_raw.trim().to_string()) };
+                    (wt_path, status, diff_stat)
                 })
             })
             .collect();
@@ -135,7 +126,6 @@ pub async fn list_worktrees_with_status(
             }
         }
     }
-    // For remote projects, git_info stays empty — worktrees show without per-worktree status details
 
     // Step 6: Build WorktreeWithStatus vec
     // Track which DB paths were matched by an on-disk worktree
@@ -225,83 +215,47 @@ pub async fn list_worktrees_with_status(
 pub async fn get_worktree_diff(
     app_state: State<'_, Arc<AppState>>,
     worktree_id: i32,
+    diff_target: DiffTarget,
 ) -> Result<String, String> {
     log::info!("get_worktree_diff(worktree={}) called", worktree_id);
 
-    // Step 1: Query DB for worktree path, branch_name, and project repo_path via JOIN
-    let (wt_path, branch_name, repo_path): (String, String, String) = {
+    // Step 1: Query DB for worktree path, branch_name, project repo_path, and project_id via JOIN
+    let (wt_path, _branch_name, repo_path, wt_project_id): (String, String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT w.path, w.branch_name, p.path
+            "SELECT w.path, w.branch_name, p.path, w.project_id
              FROM worktrees w
              JOIN projects p ON p.id = w.project_id
              WHERE w.id = ?",
             rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
     };
 
-    // Step 2: Construct absolute worktree path
+    // Step 2: Resolve GitConnection
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+
+    // Step 3: Construct absolute worktree path
     let worktree_abs = format!("{}/{}", repo_path, wt_path);
 
-    // Step 3: Compute diff using git2 inside spawn_blocking
-    let worktree_abs_clone = worktree_abs.clone();
-    let branch_clone = branch_name.clone();
-
-    let diff_result = tokio::task::spawn_blocking(move || {
-        let repo = git2::Repository::open(&worktree_abs_clone)
-            .map_err(|e| format!("Failed to open repo at {}: {}", worktree_abs_clone, e))?;
-
-        // Get HEAD tree
-        let head = repo
-            .head()
-            .map_err(|e| format!("Failed to get HEAD: {}", e))?;
-        let head_tree = head
-            .peel_to_tree()
-            .map_err(|e| format!("Failed to peel HEAD to tree: {}", e))?;
-
-        // Try origin/{branch} first
-        let origin_ref = format!("refs/remotes/origin/{}", branch_clone);
-        let diff = match repo.revparse_single(&origin_ref) {
-            Ok(origin_obj) => {
-                let origin_tree = origin_obj
-                    .peel_to_tree()
-                    .map_err(|e| format!("Failed to peel origin to tree: {}", e))?;
-                // Diff origin_tree -> HEAD tree (shows what changed in the worktree vs upstream)
-                repo.diff_tree_to_tree(Some(&origin_tree), Some(&head_tree), None)
-                    .map_err(|e| format!("Failed to compute diff: {}", e))?
-            }
-            Err(_) => {
-                // Fallback: diff working dir against HEAD (uncommitted changes)
-                repo.diff_tree_to_workdir_with_index(Some(&head_tree), None)
-                    .map_err(|e| format!("Failed to compute workdir diff: {}", e))?
-            }
-        };
-
-        // Convert to unified diff string
-        let mut diff_string = String::new();
-        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-            let origin = line.origin();
-            if origin == '+' || origin == '-' || origin == ' ' {
-                diff_string.push(origin);
-            }
-            diff_string.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
-            true
-        })
-        .map_err(|e| format!("Failed to format diff: {}", e))?;
-
-        Ok::<String, String>(diff_string)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking failed: {}", e))??;
+    // Step 4: Build git args based on DiffTarget and dispatch
+    let diff_output = match &diff_target {
+        DiffTarget::Head => {
+            crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["diff", "HEAD"]).await?
+        }
+        DiffTarget::Branch(branch) => {
+            let range = format!("origin/{}..HEAD", branch);
+            crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["diff", "--unified=6", &range]).await?
+        }
+    };
 
     log::info!(
         "get_worktree_diff: returning {} bytes for worktree {}",
-        diff_result.len(),
+        diff_output.len(),
         worktree_id
     );
-    Ok(diff_result)
+    Ok(diff_output)
 }
 
 // ============================================================================

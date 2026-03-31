@@ -8,6 +8,7 @@ pub mod review;
 pub mod connection;
 pub mod project_config;
 pub mod project_state;
+pub mod diff;
 
 pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
@@ -19,3 +20,4 @@ pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraField
 pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};
 pub use project_config::ProjectConfig;
 pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};
+pub use diff::DiffTarget;
