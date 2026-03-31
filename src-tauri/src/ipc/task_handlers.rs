@@ -85,82 +85,62 @@ pub fn update_task(
     skills: Option<Vec<String>>,
 ) -> Result<Task, String> {
     println!("update_task({}) called via IPC", task_id);
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
-    if let Some(ref new_status) = status {
-        conn.execute(
-            "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_status, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    // Build SET clause dynamically from non-None fields, wrapped in a transaction
+    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
 
-    if let Some(ref new_description) = description {
-        conn.execute(
-            "UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_description, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    let mut set_parts: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(ref new_name) = name {
-        conn.execute(
-            "UPDATE tasks SET name = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_name, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+    if let Some(ref v) = status {
+        set_parts.push("status = ?".to_string());
+        params.push(Box::new(v.clone()));
     }
-
-    if let Some(ref new_priority) = priority {
-        conn.execute(
-            "UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_priority, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+    if let Some(ref v) = description {
+        set_parts.push("description = ?".to_string());
+        params.push(Box::new(v.clone()));
     }
-
-    if let Some(ref new_ac) = acceptance_criteria {
-        conn.execute(
-            "UPDATE tasks SET acceptance_criteria = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_ac, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+    if let Some(ref v) = name {
+        set_parts.push("name = ?".to_string());
+        params.push(Box::new(v.clone()));
     }
-
-    if let Some(ref new_branch) = origin_branch {
-        conn.execute(
-            "UPDATE tasks SET origin_branch = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&new_branch, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+    if let Some(ref v) = priority {
+        set_parts.push("priority = ?".to_string());
+        params.push(Box::new(v.clone()));
     }
-
+    if let Some(ref v) = acceptance_criteria {
+        set_parts.push("acceptance_criteria = ?".to_string());
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(ref v) = origin_branch {
+        set_parts.push("origin_branch = ?".to_string());
+        params.push(Box::new(v.clone()));
+    }
     if let Some(ref new_skills) = skills {
         let skills_json = serde_json::to_string(new_skills)
             .map_err(|e| format!("JSON serialization failed: {}", e))?;
-        conn.execute(
-            "UPDATE tasks SET skills = ?, updated_at = ? WHERE id = ?",
-            rusqlite::params![&skills_json, &now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+        set_parts.push("skills = ?".to_string());
+        params.push(Box::new(skills_json));
     }
 
-    if status.is_none()
-        && description.is_none()
-        && name.is_none()
-        && priority.is_none()
-        && acceptance_criteria.is_none()
-        && origin_branch.is_none()
-        && skills.is_none()
-    {
-        conn.execute(
-            "UPDATE tasks SET updated_at = ? WHERE id = ?",
-            rusqlite::params![&now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    // Always update updated_at
+    set_parts.push("updated_at = ?".to_string());
+    params.push(Box::new(now));
 
+    // Add task_id as final param for WHERE clause
+    params.push(Box::new(task_id));
+
+    let sql = format!("UPDATE tasks SET {} WHERE id = ?", set_parts.join(", "));
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    tx.execute(&sql, param_refs.as_slice())
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+
+    // Re-lock to read back (conn was moved into tx, acquire a fresh lock)
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let query = format!("{} WHERE id = ?", TASK_SELECT);
     conn.query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())

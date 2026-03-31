@@ -239,7 +239,13 @@ pub async fn drain_ready_queue(
         rusqlite::params![project_id, slots_available],
         |row| row.get(0),
     ).map_err(|e| format!("Failed to query ready tasks: {}", e))?
-    .filter_map(|r| r.ok())
+    .filter_map(|r| match r {
+        Ok(id) => Some(id),
+        Err(e) => {
+            eprintln!("[drain_ready_queue] Skipping corrupted task row: {}", e);
+            None
+        }
+    })
     .collect();
 
     println!("drain_ready_queue: found {} task(s) to start", task_ids.len());

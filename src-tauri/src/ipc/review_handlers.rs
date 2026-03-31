@@ -355,6 +355,9 @@ pub(crate) async fn finalize_successful_merge(
     repo_path: &str,
     branch_name: &str,
 ) -> Result<(), String> {
+    // Note: DB writes are intentionally split across lock acquisitions because async
+    // git cleanup happens between task update and worktree deletion. If the process
+    // crashes between these steps, cleanup_zombie_worktrees handles recovery.
     println!(
         "[finalize] Finalizing merge for task {}: updating task to Done",
         task_id

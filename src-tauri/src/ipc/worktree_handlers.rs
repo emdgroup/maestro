@@ -80,7 +80,13 @@ pub async fn list_worktrees_with_status(
                 })
             })
             .map_err(|e| format!("Failed to query worktrees: {}", e))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    eprintln!("[list_worktrees] Skipping corrupted DB row: {}", e);
+                    None
+                }
+            })
             .collect();
         rows
     };
@@ -504,7 +510,13 @@ pub async fn cleanup_zombie_worktrees(
                 Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
             })
             .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    eprintln!("[cleanup_zombie_worktrees] Skipping corrupted DB row: {}", e);
+                    None
+                }
+            })
             .collect();
             Ok(rows)
         })();
