@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T08:27:39.783Z"
+last_updated: "2026-03-31T08:40:08.920Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -121,6 +121,7 @@ Plan: 5 of 5
 | Phase 32 P02 | 0.033 | 2 tasks | 5 files |
 | Phase 32 P03 | 0.1 | 2 tasks | 9 files |
 | Phase 32 P04 | 0.04 | 2 tasks | 5 files |
+| Phase 32 P05 | 0.025 | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,10 @@ Phase 18 Architecture Decisions:
 - [Phase 32]: Zeroizing<String> wraps SSH passwords in AppState and RemoteSshSession; caller API unchanged (pass plain String, wrap internally)
 - [Phase 32]: Reconnection race fixed: hold state lock while setting Connecting, drop before async connect(); concurrent callers wait on Connecting state
 - [Phase 32]: PTY take_writer() called once in spawn; write_input uses stored writer field — no OS fd clone per keystroke
+- [Phase 32]: AppError removed: all IPC handlers return Result<T, String>; error.rs kept as empty comment-only module
+- [Phase 32]: ProjectConfigRequest kept as separate struct (not aliased) — type aliases cannot carry #[derive(TS)] / #[specta(export)]
+- [Phase 32]: upsert_imported_tasks extracted as private fn: both GitHub/Jira sync functions share identical DB upsert logic
+- [Phase 32]: stop_remote_stream now calls kill_remote_process (was a no-op Ok(()) previously)
 
 ### Pending Todos
 
