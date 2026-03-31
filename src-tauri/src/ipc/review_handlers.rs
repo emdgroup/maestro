@@ -2,13 +2,44 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
 
-use crate::models::{Project, MergeOutcome, Task, TASK_SELECT};
-use crate::db::{AppState, get_git_connection};
+use crate::models::{Project, MergeOutcome, Task, TASK_SELECT, ReviewResult, MergeResult};
+use crate::db::{AppState, get_git_connection, get_project_with_git_conn};
 use crate::git;
+
+/// Insert (or replace) a review record with optional per-file comments.
+/// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
+/// old review_comments are CASCADE-deleted when the review row is replaced.
+/// Returns the review_id of the newly inserted record.
+fn insert_review_with_comments(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    decision: &str,
+    general_feedback: Option<&str>,
+    per_file_comments: Option<&[(String, String)]>,
+    now: &str,
+) -> Result<i32, String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at) VALUES (?, ?, ?, ?, ?)",
+        rusqlite::params![task_id, decision, general_feedback, now, now],
+    ).map_err(|e| format!("Insert review failed: {}", e))?;
+
+    let review_id = conn.last_insert_rowid() as i32;
+
+    if let Some(comments) = per_file_comments {
+        for (file_path, comment) in comments {
+            conn.execute(
+                "INSERT INTO review_comments (review_id, file_path, comment, created_at) VALUES (?, ?, ?, ?)",
+                rusqlite::params![review_id, file_path, comment, now],
+            ).map_err(|e| format!("Insert comment failed: {}", e))?;
+        }
+    }
+
+    Ok(review_id)
+}
 
 /// Get diff for review: generates unified diff between task branch and main
 ///
-/// For local projects, invokes Node.js sidecar to generate diff.
+/// For local projects, uses git dispatcher directly.
 /// For remote projects, uses git dispatcher over SSH.
 ///
 /// Returns the unified diff as a string with 6 context lines.
@@ -20,47 +51,31 @@ pub async fn get_diff_for_review(
 ) -> Result<String, String> {
     log::info!("get_diff_for_review({}) called", task_id);
 
-    // 1. Query task to get project_id and task details
-    let (_project_id, project, worktree_path, branch_name) = {
+    // 1. Single JOIN query to get all needed data
+    let (project, worktree_path, branch_name) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-        let proj_id: i32 = conn
+        let (proj_id, proj_name, proj_path, proj_created, proj_updated, proj_last_opened, proj_conn_id, wt_path, branch): (i32, String, String, String, String, Option<String>, Option<i32>, String, String) = conn
             .query_row(
-                "SELECT project_id FROM tasks WHERE id = ?",
+                "SELECT t.project_id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id, w.path, w.branch_name
+                 FROM tasks t
+                 JOIN projects p ON p.id = t.project_id
+                 JOIN worktrees w ON w.task_id = t.id
+                 WHERE t.id = ?",
                 rusqlite::params![task_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?)),
             )
-            .map_err(|e| format!("Task not found: {}", e))?;
-
-        // Get project details (local path, connection_id)
-        let (path, connection_id): (String, Option<i32>) = conn
-            .query_row(
-                "SELECT path, connection_id FROM projects WHERE id = ?",
-                rusqlite::params![proj_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(|e| format!("Project not found: {}", e))?;
+            .map_err(|e| format!("Task/project/worktree not found: {}", e))?;
 
         let project = Project {
             id: proj_id,
-            name: String::new(), // Not needed for this operation
-            path,
-            created_at: String::new(), // Not needed
-            updated_at: String::new(), // Not needed
-            last_opened: None,
-            connection_id,
+            name: proj_name,
+            path: proj_path,
+            created_at: proj_created,
+            updated_at: proj_updated,
+            last_opened: proj_last_opened,
+            connection_id: proj_conn_id,
         };
-
-        // Find worktree for this task
-        let (wt_path, branch): (String, String) = conn
-            .query_row(
-                "SELECT w.path, w.branch_name FROM worktrees w WHERE w.task_id = ?",
-                rusqlite::params![task_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(|e| format!("Worktree not found for task: {}", e))?;
-
-        (proj_id, project, wt_path, branch)
+        (project, wt_path, branch)
     };
 
     // 2. Handle diff generation based on project type
@@ -72,45 +87,26 @@ pub async fn get_diff_for_review(
             .await
             .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-        // For remote, we execute git diff on the remote machine
-        // The worktree_path is relative to the remote project root
         let diff = git::git_diff(&git_conn, &branch_name, "main")
             .await
             .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
 
-        log::info!("✓ Generated diff for task {} from remote: {} bytes", task_id, diff.len());
+        log::info!("get_diff_for_review: task {} from remote: {} bytes", task_id, diff.len());
         Ok(diff)
     } else {
-        // Local project: use Node.js sidecar (Phase 3-01 integration)
-        log::info!("  Generating diff for local project via sidecar");
+        // Local project: use git dispatcher directly
+        log::info!("  Generating diff for local project via git dispatcher");
 
         let full_worktree_path = format!("{}/{}", project.path, worktree_path);
 
         log::info!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
 
-        // Call Node.js sidecar to generate diff
-        let output = tokio::process::Command::new("node")
-            .args(&[
-                "sidecar/dist/index.js",
-                "--get-diff",
-                &full_worktree_path,
-                &branch_name,
-                "main", // Compare against main branch
-                "6",    // 6 context lines
-            ])
-            .output()
+        let git_conn = crate::models::GitConnection::Local { path: project.path.clone() };
+        let diff = git::git_diff(&git_conn, &branch_name, "main")
             .await
-            .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+            .map_err(|e| format!("Failed to get diff: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Sidecar failed: {}", stderr));
-        }
-
-        let diff = String::from_utf8(output.stdout)
-            .map_err(|e| format!("Failed to decode sidecar output: {}", e))?;
-
-        log::info!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
+        log::info!("get_diff_for_review: task {}: {} bytes", task_id, diff.len());
         Ok(diff)
     }
 }
@@ -121,7 +117,7 @@ pub async fn get_diff_for_review(
 /// and optional general feedback. Per-file comments are stored separately
 /// linked to the review record.
 ///
-/// Returns JSON object with success flag and review_id.
+/// Returns a typed ReviewResult with success flag and review_id.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_task_review(
@@ -130,43 +126,18 @@ pub async fn save_task_review(
     decision: String,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<ReviewResult, String> {
     log::info!("save_task_review({}, decision={}) called", task_id, decision);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
+    let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
+    let review_id = insert_review_with_comments(
+        &conn, task_id, &decision, general_feedback.as_deref(), comments_ref, &now,
+    )?;
+    log::info!("Saved review for task {}: review_id={}", task_id, review_id);
 
-    // Insert into task_reviews
-    conn.execute(
-        "INSERT INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at)
-         VALUES (?, ?, ?, ?, ?)",
-        rusqlite::params![task_id, &decision, &general_feedback, &now, &now],
-    )
-    .map_err(|e| format!("Insert review failed: {}", e))?;
-
-    // Get review_id
-    let review_id: i32 = conn
-        .query_row(
-            "SELECT id FROM task_reviews WHERE task_id = ?",
-            [task_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    // Insert per-file comments if provided
-    if let Some(comments) = per_file_comments {
-        for (file_path, comment) in comments {
-            conn.execute(
-                "INSERT INTO review_comments (review_id, file_path, comment, created_at)
-                 VALUES (?, ?, ?, ?)",
-                rusqlite::params![review_id, file_path, comment, &now],
-            )
-            .map_err(|e| format!("Insert comment failed: {}", e))?;
-        }
-    }
-
-    log::info!("✓ Saved review for task {}: review_id={}", task_id, review_id);
-    Ok(serde_json::json!({ "success": true, "review_id": review_id }))
+    Ok(ReviewResult { success: true, review_id, task_status: None })
 }
 
 /// Request changes on a task: saves feedback and moves task back to InProgress
@@ -174,7 +145,7 @@ pub async fn save_task_review(
 /// Creates a RequestChanges review with general feedback and per-file comments,
 /// then transitions the task status back to InProgress for the agent to rework.
 ///
-/// Returns JSON object with success flag, review_id, and updated task_status.
+/// Returns a typed ReviewResult with success flag, review_id, and updated task_status.
 #[tauri::command]
 #[specta::specta]
 pub async fn request_changes(
@@ -182,56 +153,22 @@ pub async fn request_changes(
     task_id: i32,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<ReviewResult, String> {
     log::info!("request_changes({}) called", task_id);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
-
-    // Save feedback with RequestChanges decision
-    conn.execute(
-        "INSERT INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at)
-         VALUES (?, 'RequestChanges', ?, ?, ?)",
-        rusqlite::params![task_id, general_feedback, &now, &now],
-    )
-    .map_err(|e| format!("Insert review failed: {}", e))?;
-
-    // Get review_id and save per-file comments
-    let review_id: i32 = conn
-        .query_row(
-            "SELECT id FROM task_reviews WHERE task_id = ?",
-            [task_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    if let Some(comments) = per_file_comments {
-        for (file_path, comment) in comments {
-            conn.execute(
-                "INSERT INTO review_comments (review_id, file_path, comment, created_at)
-                 VALUES (?, ?, ?, ?)",
-                rusqlite::params![review_id, file_path, comment, &now],
-            )
-            .map_err(|e| format!("Insert comment failed: {}", e))?;
-        }
-    }
-
-    // Update task status to InProgress
+    let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
+    let review_id = insert_review_with_comments(
+        &conn, task_id, "RequestChanges", general_feedback.as_deref(), comments_ref, &now,
+    )?;
     conn.execute(
         "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
         rusqlite::params![&now, task_id],
-    )
-    .map_err(|e| format!("Update task status failed: {}", e))?;
+    ).map_err(|e| format!("Update task status failed: {}", e))?;
+    log::info!("Requested changes for task {}: review_id={}, status=InProgress", task_id, review_id);
 
-    log::info!(
-        "✓ Requested changes for task {}: review_id={}, status=InProgress",
-        task_id, review_id
-    );
-    Ok(serde_json::json!({
-        "success": true,
-        "review_id": review_id,
-        "task_status": "InProgress"
-    }))
+    Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
 }
 
 // ============================================================================
@@ -246,43 +183,29 @@ pub async fn request_changes(
 /// 3. On success: updates task to "Done", cleans up worktree, returns to pool
 /// 4. On conflict: rejects task back to "InProgress", saves conflict feedback
 ///
-/// Returns the final task status directly: Done on success, InProgress on conflict.
+/// Returns a typed MergeResult with success flag, task_status, and conflicts.
 #[tauri::command]
 #[specta::specta]
 pub async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     merge_strategy: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<MergeResult, String> {
     log::info!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
 
-    // 1. Query task details and worktree info
+    // 1. Single JOIN query to get task, worktree, and project data
     let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-        let (t_name, w_branch, w_path, w_id, p_id): (String, String, String, i32, i32) = conn
-            .query_row(
-                "SELECT t.name, w.branch_name, w.path, w.id, t.project_id
-                 FROM tasks t
-                 JOIN worktrees w ON w.id = (
-                   SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1
-                 )
-                 WHERE t.id = ?",
-                [task_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            )
-            .map_err(|e| format!("Task or worktree not found: {}", e))?;
-
-        // Get project repo path
-        let p_path: String = conn
-            .query_row(
-                "SELECT path FROM projects WHERE id = ?",
-                [p_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("Project not found: {}", e))?;
-
-        (t_name, w_branch, w_path, w_id, p_id, p_path)
+        conn.query_row(
+            "SELECT t.name, w.branch_name, w.path, w.id, t.project_id, p.path
+             FROM tasks t
+             JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
+             JOIN projects p ON p.id = t.project_id
+             WHERE t.id = ?",
+            [task_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i32>(3)?, row.get::<_, i32>(4)?, row.get::<_, String>(5)?)),
+        )
+        .map_err(|e| format!("Task, worktree, or project not found: {}", e))?
     };
 
     // 2. Build full worktree path
@@ -324,17 +247,16 @@ pub async fn approve_task_and_merge(
             task_id,
             worktree_id,
             &full_worktree_path,
-            &repo_path,
             &branch_name,
         )
         .await?;
         log::info!("[merge] Merge finalized for task {}", task_id);
-        Ok(serde_json::json!({ "success": true, "task_status": "Done" }))
+        Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
     } else if !merge_outcome.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
         log::info!("[merge] Merge conflict for task {}", task_id);
         reject_merge_on_conflict(app_state.inner(), task_id, &merge_outcome.conflicts).await?;
-        Ok(serde_json::json!({ "success": false, "task_status": "InProgress", "conflicts": merge_outcome.conflicts }))
+        Ok(MergeResult { success: false, task_status: "InProgress".to_string(), conflicts: merge_outcome.conflicts })
     } else {
         // 4c. Merge reported failure without conflicts - return error
         Err(merge_outcome.message.unwrap_or_else(|| "Merge failed with unknown error".to_string()))
@@ -345,14 +267,13 @@ pub async fn approve_task_and_merge(
 ///
 /// Helper function (private crate-level) called after successful merge to perform cleanup:
 /// 1. Updates task status to Done
-/// 2. Deletes worktree from disk via sidecar
+/// 2. Deletes worktree from disk via Rust git dispatcher
 /// 3. Removes worktree from database on successful cleanup
 pub(crate) async fn finalize_successful_merge(
     app_state: &Arc<AppState>,
     task_id: i32,
     worktree_id: i32,
     worktree_path: &str,
-    repo_path: &str,
     branch_name: &str,
 ) -> Result<(), String> {
     // Note: DB writes are intentionally split across lock acquisitions because async
@@ -374,50 +295,64 @@ pub(crate) async fn finalize_successful_merge(
         )
         .map_err(|e| format!("Update task failed: {}", e))?;
 
-        log::info!("[finalize] ✓ Task {} moved to Done", task_id);
+        log::info!("[finalize] Task {} moved to Done", task_id);
     }
 
-    // 2. Delete worktree from disk via sidecar (and DB on success)
-    let sidecar_result = tokio::process::Command::new("node")
-        .args(&[
-            "sidecar/dist/index.js",
-            "--delete-worktree",
-            repo_path,
-            worktree_path,
-            branch_name,
-        ])
-        .output()
-        .await;
+    // 2. Delete worktree from disk via git dispatcher (and DB on success)
+    // Resolve git connection for this project
+    let project_id = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT project_id FROM worktrees WHERE id = ?",
+            rusqlite::params![worktree_id],
+            |row| row.get::<_, i32>(0),
+        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+    let (_project, git_conn) = get_project_with_git_conn(app_state, project_id).await
+        .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-    match sidecar_result {
-        Ok(output) => {
-            if output.status.success() {
-                // Delete from database on successful cleanup
-                {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.execute(
-                        "DELETE FROM worktrees WHERE id = ?",
-                        rusqlite::params![worktree_id],
-                    )
-                    .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
+    match crate::git::delete_worktree(&git_conn, worktree_path).await {
+        Ok(()) => {
+            // Delete branch — no delete_branch in git dispatcher, use inline Command (non-fatal)
+            let repo_dir = match &git_conn {
+                crate::models::GitConnection::Local { path } => path.clone(),
+                crate::models::GitConnection::Remote { remote_path, .. } => remote_path.clone(),
+            };
+            let branch_result = tokio::process::Command::new("git")
+                .args(["branch", "-D", branch_name])
+                .current_dir(&repo_dir)
+                .output()
+                .await;
+            match branch_result {
+                Ok(output) if !output.status.success() => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    log::warn!("[finalize] Failed to delete branch {} (non-fatal): {}", branch_name, stderr);
                 }
-                log::info!("[finalize] ✓ Worktree {} deleted from disk and DB", worktree_id);
-            } else {
-                // Cleanup failed - log error but don't fail the entire merge
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                log::warn!("[finalize] ⚠ Cleanup failed (will retry): {}", stderr);
-                // Worktree stays in Dirty state for recovery via recover_dirty_worktrees on app restart
+                Err(e) => {
+                    log::warn!("[finalize] Failed to run git branch -D {} (non-fatal): {}", branch_name, e);
+                }
+                _ => {
+                    log::info!("[finalize] Branch {} deleted", branch_name);
+                }
             }
+            // Delete from database on successful cleanup
+            {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.execute(
+                    "DELETE FROM worktrees WHERE id = ?",
+                    rusqlite::params![worktree_id],
+                )
+                .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
+            }
+            log::info!("[finalize] Worktree {} deleted from disk and DB", worktree_id);
         }
         Err(e) => {
-            // Sidecar spawn error - log but don't fail
-            log::warn!("[finalize] ⚠ Failed to invoke sidecar: {} (will retry)", e);
-            // Worktree stays in Dirty state for recovery
+            log::warn!("[finalize] Cleanup failed (will retry): {}", e);
         }
     }
 
-    // 4. Final status log
-    log::info!("[finalize] ✓ Merge finalization complete for task {}", task_id);
+    // 3. Final status log
+    log::info!("[finalize] Merge finalization complete for task {}", task_id);
 
     Ok(())
 }
@@ -529,7 +464,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Update task failed: {}", e))?;
 
-    log::info!("[reject] ✓ Task {} moved to InProgress", task_id);
+    log::info!("[reject] Task {} moved to InProgress", task_id);
 
     // Save conflict feedback as review comment for visibility
     conn.execute(
@@ -539,7 +474,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Save feedback failed: {}", e))?;
 
-    log::info!("[reject] ✓ Conflict feedback saved for task {}", task_id);
+    log::info!("[reject] Conflict feedback saved for task {}", task_id);
 
     Ok(())
 }
