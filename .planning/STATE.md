@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T08:20:33.681Z"
+last_updated: "2026-03-31T08:27:39.783Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 32 (backend-code-quality-fixes) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 
 ## Performance Metrics
 
@@ -120,6 +120,7 @@ Plan: 4 of 5
 | Phase 32 P01 | 0.03 | 2 tasks | 4 files |
 | Phase 32 P02 | 0.033 | 2 tasks | 5 files |
 | Phase 32 P03 | 0.1 | 2 tasks | 9 files |
+| Phase 32 P04 | 0.04 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,10 @@ Phase 18 Architecture Decisions:
 - [Phase 32]: get_project_with_git_conn uses ? for both DB lookup and SSH session resolution — call sites needing fallback keep two-step approach
 - [Phase 32]: update_task uses Vec<Box<dyn ToSql>> for dynamic params; conn must be mut for transaction(); re-lock after commit to read back
 - [Phase 32]: finalize_successful_merge DB writes stay intentionally split across lock acquisitions (async git cleanup between steps)
+- [Phase 32]: shell_quote pub so project_handlers.rs can import from crate::git::remote; standardizes SSH path escaping
+- [Phase 32]: Zeroizing<String> wraps SSH passwords in AppState and RemoteSshSession; caller API unchanged (pass plain String, wrap internally)
+- [Phase 32]: Reconnection race fixed: hold state lock while setting Connecting, drop before async connect(); concurrent callers wait on Connecting state
+- [Phase 32]: PTY take_writer() called once in spawn; write_input uses stored writer field — no OS fd clone per keystroke
 
 ### Pending Todos
 
