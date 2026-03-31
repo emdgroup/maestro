@@ -18,7 +18,7 @@ pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    println!("get_diff_for_review({}) called", task_id);
+    log::info!("get_diff_for_review({}) called", task_id);
 
     // 1. Query task to get project_id and task details
     let (_project_id, project, worktree_path, branch_name) = {
@@ -66,7 +66,7 @@ pub async fn get_diff_for_review(
     // 2. Handle diff generation based on project type
     if project.is_remote() {
         // Remote project: use git dispatcher which executes over SSH
-        println!("  Generating diff for remote project via SSH");
+        log::info!("  Generating diff for remote project via SSH");
 
         let git_conn = get_git_connection(&project, &app_state)
             .await
@@ -78,15 +78,15 @@ pub async fn get_diff_for_review(
             .await
             .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
 
-        println!("✓ Generated diff for task {} from remote: {} bytes", task_id, diff.len());
+        log::info!("✓ Generated diff for task {} from remote: {} bytes", task_id, diff.len());
         Ok(diff)
     } else {
         // Local project: use Node.js sidecar (Phase 3-01 integration)
-        println!("  Generating diff for local project via sidecar");
+        log::info!("  Generating diff for local project via sidecar");
 
         let full_worktree_path = format!("{}/{}", project.path, worktree_path);
 
-        println!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+        log::info!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
 
         // Call Node.js sidecar to generate diff
         let output = tokio::process::Command::new("node")
@@ -110,7 +110,7 @@ pub async fn get_diff_for_review(
         let diff = String::from_utf8(output.stdout)
             .map_err(|e| format!("Failed to decode sidecar output: {}", e))?;
 
-        println!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
+        log::info!("✓ Generated diff for task {}: {} bytes", task_id, diff.len());
         Ok(diff)
     }
 }
@@ -131,7 +131,7 @@ pub async fn save_task_review(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<serde_json::Value, String> {
-    println!("save_task_review({}, decision={}) called", task_id, decision);
+    log::info!("save_task_review({}, decision={}) called", task_id, decision);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -165,7 +165,7 @@ pub async fn save_task_review(
         }
     }
 
-    println!("✓ Saved review for task {}: review_id={}", task_id, review_id);
+    log::info!("✓ Saved review for task {}: review_id={}", task_id, review_id);
     Ok(serde_json::json!({ "success": true, "review_id": review_id }))
 }
 
@@ -183,7 +183,7 @@ pub async fn request_changes(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<serde_json::Value, String> {
-    println!("request_changes({}) called", task_id);
+    log::info!("request_changes({}) called", task_id);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -223,7 +223,7 @@ pub async fn request_changes(
     )
     .map_err(|e| format!("Update task status failed: {}", e))?;
 
-    println!(
+    log::info!(
         "✓ Requested changes for task {}: review_id={}, status=InProgress",
         task_id, review_id
     );
@@ -254,7 +254,7 @@ pub async fn approve_task_and_merge(
     task_id: i32,
     merge_strategy: String,
 ) -> Result<serde_json::Value, String> {
-    println!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
+    log::info!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
 
     // 1. Query task details and worktree info
     let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
@@ -288,7 +288,7 @@ pub async fn approve_task_and_merge(
     // 2. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-    println!(
+    log::info!(
         "[merge] Starting synchronous merge for task {} (branch: {})",
         task_id, branch_name
     );
@@ -318,7 +318,7 @@ pub async fn approve_task_and_merge(
 
     if merge_outcome.success {
         // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
-        println!("[merge] Merge succeeded for task {}", task_id);
+        log::info!("[merge] Merge succeeded for task {}", task_id);
         finalize_successful_merge(
             app_state.inner(),
             task_id,
@@ -328,11 +328,11 @@ pub async fn approve_task_and_merge(
             &branch_name,
         )
         .await?;
-        println!("[merge] Merge finalized for task {}", task_id);
+        log::info!("[merge] Merge finalized for task {}", task_id);
         Ok(serde_json::json!({ "success": true, "task_status": "Done" }))
     } else if !merge_outcome.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
-        println!("[merge] Merge conflict for task {}", task_id);
+        log::info!("[merge] Merge conflict for task {}", task_id);
         reject_merge_on_conflict(app_state.inner(), task_id, &merge_outcome.conflicts).await?;
         Ok(serde_json::json!({ "success": false, "task_status": "InProgress", "conflicts": merge_outcome.conflicts }))
     } else {
@@ -358,7 +358,7 @@ pub(crate) async fn finalize_successful_merge(
     // Note: DB writes are intentionally split across lock acquisitions because async
     // git cleanup happens between task update and worktree deletion. If the process
     // crashes between these steps, cleanup_zombie_worktrees handles recovery.
-    println!(
+    log::info!(
         "[finalize] Finalizing merge for task {}: updating task to Done",
         task_id
     );
@@ -374,7 +374,7 @@ pub(crate) async fn finalize_successful_merge(
         )
         .map_err(|e| format!("Update task failed: {}", e))?;
 
-        println!("[finalize] ✓ Task {} moved to Done", task_id);
+        log::info!("[finalize] ✓ Task {} moved to Done", task_id);
     }
 
     // 2. Delete worktree from disk via sidecar (and DB on success)
@@ -401,23 +401,23 @@ pub(crate) async fn finalize_successful_merge(
                     )
                     .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
                 }
-                println!("[finalize] ✓ Worktree {} deleted from disk and DB", worktree_id);
+                log::info!("[finalize] ✓ Worktree {} deleted from disk and DB", worktree_id);
             } else {
                 // Cleanup failed - log error but don't fail the entire merge
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                eprintln!("[finalize] ⚠ Cleanup failed (will retry): {}", stderr);
+                log::warn!("[finalize] ⚠ Cleanup failed (will retry): {}", stderr);
                 // Worktree stays in Dirty state for recovery via recover_dirty_worktrees on app restart
             }
         }
         Err(e) => {
             // Sidecar spawn error - log but don't fail
-            eprintln!("[finalize] ⚠ Failed to invoke sidecar: {} (will retry)", e);
+            log::warn!("[finalize] ⚠ Failed to invoke sidecar: {} (will retry)", e);
             // Worktree stays in Dirty state for recovery
         }
     }
 
     // 4. Final status log
-    println!("[finalize] ✓ Merge finalization complete for task {}", task_id);
+    log::info!("[finalize] ✓ Merge finalization complete for task {}", task_id);
 
     Ok(())
 }
@@ -438,7 +438,7 @@ pub async fn reject_review(
     action: String,
     instruction: Option<String>,
 ) -> Result<Task, String> {
-    println!("reject_review({}, action={}) called", task_id, action);
+    log::info!("reject_review({}, action={}) called", task_id, action);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -452,7 +452,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
 
-            println!("[reject_review] Task {} moved to Backlog", task_id);
+            log::info!("[reject_review] Task {} moved to Backlog", task_id);
             // TODO: delete worktree for this task
         }
         "ResumeWithInstructions" => {
@@ -474,7 +474,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
 
-            println!("[reject_review] Task {} resumed with instructions", task_id);
+            log::info!("[reject_review] Task {} resumed with instructions", task_id);
         }
         "CancelTask" => {
             // Move task to Cancelled; worktree cleanup is a TODO for full implementation
@@ -484,7 +484,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
 
-            println!("[reject_review] Task {} cancelled", task_id);
+            log::info!("[reject_review] Task {} cancelled", task_id);
             // TODO: delete worktree for this task
         }
         _ => {
@@ -513,7 +513,7 @@ pub(crate) async fn reject_merge_on_conflict(
     task_id: i32,
     conflicts: &[String],
 ) -> Result<(), String> {
-    println!(
+    log::info!(
         "[reject] Rejecting merge for task {} due to conflicts",
         task_id
     );
@@ -529,7 +529,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Update task failed: {}", e))?;
 
-    println!("[reject] ✓ Task {} moved to InProgress", task_id);
+    log::info!("[reject] ✓ Task {} moved to InProgress", task_id);
 
     // Save conflict feedback as review comment for visibility
     conn.execute(
@@ -539,7 +539,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Save feedback failed: {}", e))?;
 
-    println!("[reject] ✓ Conflict feedback saved for task {}", task_id);
+    log::info!("[reject] ✓ Conflict feedback saved for task {}", task_id);
 
     Ok(())
 }

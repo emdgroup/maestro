@@ -11,7 +11,7 @@ pub fn get_tasks(
     app_state: State<Arc<AppState>>,
     project_id: i32,
 ) -> Result<Vec<Task>, String> {
-    println!("get_tasks({}) called via IPC", project_id);
+    log::debug!("get_tasks({}) called via IPC", project_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let query = format!("{} WHERE project_id = ? ORDER BY created_at DESC", TASK_SELECT);
@@ -37,7 +37,7 @@ pub fn create_task(
     acceptance_criteria: String,
     skills: Vec<String>,
 ) -> Result<Task, String> {
-    println!("create_task() called via IPC with name: {}", name);
+    log::debug!("create_task() called via IPC with name: {}", name);
 
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() || trimmed_name.len() < 3 || trimmed_name.len() > 255 {
@@ -84,7 +84,7 @@ pub fn update_task(
     origin_branch: Option<String>,
     skills: Option<Vec<String>>,
 ) -> Result<Task, String> {
-    println!("update_task({}) called via IPC", task_id);
+    log::debug!("update_task({}) called via IPC", task_id);
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
@@ -154,7 +154,7 @@ pub fn update_task_settings(
     task_id: i32,
     settings: crate::models::TaskConfigRequest,
 ) -> Result<(), String> {
-    println!("update_task_settings({}) called via IPC", task_id);
+    log::debug!("update_task_settings({}) called via IPC", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
@@ -178,7 +178,7 @@ pub fn update_task_settings(
     )
     .map_err(|e| format!("Failed to update task settings: {}", e))?;
 
-    println!("✓ Task {} settings updated", task_id);
+    log::debug!("Task {} settings updated", task_id);
     Ok(())
 }
 
@@ -189,7 +189,7 @@ pub fn archive_task(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Task, String> {
-    println!("archive_task({}) called via IPC", task_id);
+    log::debug!("archive_task({}) called via IPC", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
@@ -208,7 +208,7 @@ pub fn archive_task(
 #[tauri::command]
 #[specta::specta]
 pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    println!("delete_task({}) called via IPC", task_id);
+    log::debug!("delete_task({}) called via IPC", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])
         .map_err(|e| e.to_string())?;
@@ -344,7 +344,7 @@ pub async fn list_project_branches(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<(Vec<String>, String), String> {
-    println!("list_project_branches({}) called via IPC", project_id);
+    log::debug!("list_project_branches({}) called via IPC", project_id);
 
     // Look up the project to get its path
     let project = {

@@ -76,29 +76,37 @@ pub enum TaskPriority {
 }
 
 impl FromStr for TaskPriority {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Urgent" => Ok(TaskPriority::Urgent),
             "High" => Ok(TaskPriority::High),
+            "Medium" => Ok(TaskPriority::Medium),
             "Low" => Ok(TaskPriority::Low),
-            _ => Ok(TaskPriority::Medium),
+            _ => {
+                log::warn!("Unknown TaskPriority '{}', defaulting to Medium", s);
+                Ok(TaskPriority::Medium)
+            }
         }
     }
 }
 
 impl FromStr for TaskStatus {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "Backlog" => Ok(TaskStatus::Backlog),
             "Ready" => Ok(TaskStatus::Ready),
             "InProgress" => Ok(TaskStatus::InProgress),
             "Review" => Ok(TaskStatus::Review),
             "Done" => Ok(TaskStatus::Done),
             "Cancelled" => Ok(TaskStatus::Cancelled),
-            _ => Ok(TaskStatus::Backlog),
+            _ => {
+                log::warn!("Unknown TaskStatus '{}', defaulting to Backlog", s);
+                Ok(TaskStatus::Backlog)
+            }
         }
     }
 }
@@ -164,6 +172,9 @@ pub struct ProjectConfigResponse {
     pub skills_default: Vec<String>,
 }
 
+// TODO: ProjectConfigRequest and ProjectConfigResponse have identical fields.
+// Cannot deduplicate to a type alias because both need #[derive(TS)] / #[specta(export)]
+// for TypeScript binding generation. Consider consolidating if specta adds alias support.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ProjectConfigRequest {

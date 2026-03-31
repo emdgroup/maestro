@@ -17,7 +17,7 @@ pub async fn list_worktrees_with_status(
     project_id: i32,
     repo_path: String,
 ) -> Result<Vec<WorktreeWithStatus>, String> {
-    println!("list_worktrees_with_status(project={}) called", project_id);
+    log::info!("list_worktrees_with_status(project={}) called", project_id);
 
     // Resolve project and git connection (local vs remote SSH)
     let project = {
@@ -83,7 +83,7 @@ pub async fn list_worktrees_with_status(
             .filter_map(|r| match r {
                 Ok(row) => Some(row),
                 Err(e) => {
-                    eprintln!("[list_worktrees] Skipping corrupted DB row: {}", e);
+                    log::warn!("[list_worktrees] Skipping corrupted DB row: {}", e);
                     None
                 }
             })
@@ -193,7 +193,7 @@ pub async fn list_worktrees_with_status(
         for id in &unmatched_db_ids {
             let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]);
         }
-        println!(
+        log::info!(
             "list_worktrees_with_status: auto-deleted {} stale DB rows",
             unmatched_db_ids.len()
         );
@@ -209,7 +209,7 @@ pub async fn list_worktrees_with_status(
         }
     });
 
-    println!(
+    log::info!(
         "list_worktrees_with_status: returning {} worktrees",
         result.len()
     );
@@ -226,7 +226,7 @@ pub async fn get_worktree_diff(
     app_state: State<'_, Arc<AppState>>,
     worktree_id: i32,
 ) -> Result<String, String> {
-    println!("get_worktree_diff(worktree={}) called", worktree_id);
+    log::info!("get_worktree_diff(worktree={}) called", worktree_id);
 
     // Step 1: Query DB for worktree path and branch_name
     let (wt_path, branch_name, project_id): (String, String, i32) = {
@@ -304,7 +304,7 @@ pub async fn get_worktree_diff(
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
 
-    println!(
+    log::info!(
         "get_worktree_diff: returning {} bytes for worktree {}",
         diff_result.len(),
         worktree_id
@@ -326,7 +326,7 @@ pub async fn create_worktree(
     new_branch_name: Option<String>,
     repo_path: String,
 ) -> Result<Worktree, String> {
-    println!(
+    log::info!(
         "create_worktree(project={}, task={:?}, origin={}, new={:?}) called",
         project_id, task_id, origin_branch, new_branch_name
     );
@@ -366,7 +366,7 @@ pub async fn create_worktree(
         conn.last_insert_rowid() as i32
     };
 
-    println!("create_worktree: created worktree {} at {}", worktree_id, relative_path);
+    log::info!("create_worktree: created worktree {} at {}", worktree_id, relative_path);
     Ok(Worktree {
         id: worktree_id,
         project_id,
@@ -444,7 +444,7 @@ pub async fn delete_worktree(
     worktree_id: i32,
     _repo_path: String,
 ) -> Result<(), String> {
-    println!("delete_worktree(worktree={}) called", worktree_id);
+    log::info!("delete_worktree(worktree={}) called", worktree_id);
 
     // Step 1: Query DB for worktree path and project_id
     let (wt_path, wt_project_id): (String, i32) = {
@@ -471,7 +471,7 @@ pub async fn delete_worktree(
     )
     .map_err(|e| format!("Failed to delete worktree: {}", e))?;
 
-    println!("delete_worktree: deleted worktree {}", worktree_id);
+    log::info!("delete_worktree: deleted worktree {}", worktree_id);
     Ok(())
 }
 
@@ -486,7 +486,7 @@ pub async fn cleanup_zombie_worktrees(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("cleanup_zombie_worktrees(project={}) called", project_id);
+    log::info!("cleanup_zombie_worktrees(project={}) called", project_id);
 
     let threshold = Utc::now() - Duration::minutes(10);
 
@@ -513,7 +513,7 @@ pub async fn cleanup_zombie_worktrees(
             .filter_map(|r| match r {
                 Ok(row) => Some(row),
                 Err(e) => {
-                    eprintln!("[cleanup_zombie_worktrees] Skipping corrupted DB row: {}", e);
+                    log::warn!("[cleanup_zombie_worktrees] Skipping corrupted DB row: {}", e);
                     None
                 }
             })
@@ -570,7 +570,7 @@ pub async fn cleanup_zombie_worktrees(
         0
     };
 
-    println!(
+    log::info!(
         "cleanup_zombie_worktrees: deleted {} zombie worktrees for project {}",
         deleted, project_id
     );

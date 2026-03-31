@@ -99,7 +99,7 @@ async fn run_agent_background_task(
             }
         }
         Err(e) => {
-            eprintln!("Agent execution error for log {}: {}", log_id, e);
+            log::warn!("Agent execution error for log {}: {}", log_id, e);
             if let Ok(conn) = app_state.db.lock() {
                 let _ = conn.execute(
                     "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
@@ -116,7 +116,7 @@ async fn run_agent_background_task(
     }
 
     if let Err(e) = super::delete_worktree_for_task(&app_state, worktree_id, &worktree_path).await {
-        eprintln!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
+        log::warn!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
     }
 }
 
@@ -129,7 +129,7 @@ pub async fn spawn_agent_execution(
     task_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
+    log::info!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
     // Note: canonicalization is handled inside create_worktree_for_task (local-only).
     // Do NOT canonicalize here — for remote projects, repo_path is a Linux path that
     // cannot be canonicalized on the Windows Tauri host.
@@ -190,7 +190,7 @@ pub async fn drain_ready_queue(
     project_id: i32,
     project_path: String,
 ) -> Result<Vec<i32>, String> {
-    println!("drain_ready_queue(project={}) called", project_id);
+    log::info!("drain_ready_queue(project={}) called", project_id);
     let _ = project_path; // reserved for future use
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -200,7 +200,7 @@ pub async fn drain_ready_queue(
         .map_err(|e| format!("Failed to load settings: {}", e))?;
 
     if !settings.auto_mode {
-        println!("drain_ready_queue: auto_mode is disabled, returning empty");
+        log::info!("drain_ready_queue: auto_mode is disabled, returning empty");
         return Ok(vec![]);
     }
 
@@ -215,7 +215,7 @@ pub async fn drain_ready_queue(
 
     let slots_available = settings.max_concurrent_agents - running_count;
     if slots_available <= 0 {
-        println!("drain_ready_queue: no slots available ({} running, max {})",
+        log::info!("drain_ready_queue: no slots available ({} running, max {})",
             running_count, settings.max_concurrent_agents);
         return Ok(vec![]);
     }
@@ -242,13 +242,13 @@ pub async fn drain_ready_queue(
     .filter_map(|r| match r {
         Ok(id) => Some(id),
         Err(e) => {
-            eprintln!("[drain_ready_queue] Skipping corrupted task row: {}", e);
+            log::warn!("[drain_ready_queue] Skipping corrupted task row: {}", e);
             None
         }
     })
     .collect();
 
-    println!("drain_ready_queue: found {} task(s) to start", task_ids.len());
+    log::info!("drain_ready_queue: found {} task(s) to start", task_ids.len());
     Ok(task_ids)
 }
 
@@ -259,7 +259,7 @@ pub fn get_execution_logs(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<ExecutionLog>, String> {
-    println!("get_execution_logs({}) called", task_id);
+    log::info!("get_execution_logs({}) called", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
@@ -311,7 +311,7 @@ pub async fn retry_execution(
     task_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("retry_execution(project={}, task={}) called", project_id, task_id);
+    log::info!("retry_execution(project={}, task={}) called", project_id, task_id);
 
     // Simply spawn a new execution for the same task
     spawn_agent_execution(app_state, project_id, task_id, repo_path).await
@@ -324,7 +324,7 @@ pub fn cancel_execution(
     app_state: State<Arc<AppState>>,
     log_id: i32,
 ) -> Result<(), String> {
-    println!("cancel_execution({}) called", log_id);
+    log::info!("cancel_execution({}) called", log_id);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -335,7 +335,7 @@ pub fn cancel_execution(
     )
     .map_err(|e| format!("Failed to cancel execution: {}", e))?;
 
-    println!("✓ Cancelled execution log {}", log_id);
+    log::info!("✓ Cancelled execution log {}", log_id);
     Ok(())
 }
 
@@ -368,7 +368,7 @@ pub async fn attach_terminal(
     output_channel: tauri::ipc::Channel<String>,
     include_history: Option<bool>,
 ) -> Result<(), String> {
-    println!("attach_terminal({}) called (include_history: {})", task_id, include_history.unwrap_or(false));
+    log::info!("attach_terminal({}) called (include_history: {})", task_id, include_history.unwrap_or(false));
 
     // Get PTY session from AppState
     let sessions = app_state.pty_sessions.lock().await;
@@ -378,7 +378,7 @@ pub async fn attach_terminal(
         .clone();
     drop(sessions); // Release lock
 
-    println!("[attach] Starting output streaming for task {}", task_id);
+    log::info!("[attach] Starting output streaming for task {}", task_id);
 
     // If requested, send terminal history first
     if include_history.unwrap_or(false) {
@@ -414,7 +414,7 @@ pub async fn attach_terminal(
             let mut reader = match session_lock.master.lock().await.try_clone_reader() {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("[PTY reader] Failed to clone reader: {}", e);
+                    log::warn!("[PTY reader] Failed to clone reader: {}", e);
                     return;
                 }
             };
@@ -439,7 +439,7 @@ pub async fn attach_terminal(
         let sender_task = tokio::spawn(async move {
             while let Some(output) = rx.recv().await {
                 if output_channel.send(output).is_err() {
-                    println!("[frontend sender] Channel closed, stopping");
+                    log::info!("[frontend sender] Channel closed, stopping");
                     break;
                 }
             }
@@ -448,17 +448,17 @@ pub async fn attach_terminal(
         // Wait for either task to complete
         tokio::select! {
             _ = reader_task => {
-                println!("[attach] Reader task completed");
+                log::info!("[attach] Reader task completed");
             }
             _ = sender_task => {
-                println!("[attach] Sender task completed");
+                log::info!("[attach] Sender task completed");
             }
         }
 
-        println!("[attach] Output streaming ended for task {}", task_id);
+        log::info!("[attach] Output streaming ended for task {}", task_id);
     });
 
-    println!("[attach] ✓ Streaming started for task {}", task_id);
+    log::info!("[attach] ✓ Streaming started for task {}", task_id);
     Ok(())
 }
 
@@ -494,11 +494,11 @@ pub async fn send_terminal_input(
 ) -> Result<(), String> {
     // Log control sequences for debugging
     if input == "\x03" {
-        println!("send_terminal_input({}) - Ctrl+C (SIGINT)", task_id);
+        log::info!("send_terminal_input({}) - Ctrl+C (SIGINT)", task_id);
     } else if input == "\x1a" {
-        println!("send_terminal_input({}) - Ctrl+Z (SIGTSTP)", task_id);
+        log::info!("send_terminal_input({}) - Ctrl+Z (SIGTSTP)", task_id);
     } else {
-        println!("send_terminal_input({}) - {} bytes of text", task_id, input.len());
+        log::info!("send_terminal_input({}) - {} bytes of text", task_id, input.len());
     }
 
     let sessions = app_state.pty_sessions.lock().await;
@@ -534,7 +534,7 @@ pub async fn resize_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    println!("resize_terminal({}) called with {}x{}", task_id, cols, rows);
+    log::info!("resize_terminal({}) called with {}x{}", task_id, cols, rows);
 
     let sessions = app_state.pty_sessions.lock().await;
     let session = sessions
@@ -589,11 +589,11 @@ pub async fn append_terminal_output(
     match result {
         Ok(0) => {
             // No rows updated (no active execution log found)
-            println!("[append_terminal] No active execution log found for task {}", task_id);
+            log::info!("[append_terminal] No active execution log found for task {}", task_id);
             Ok(())
         }
         Ok(_) => {
-            println!("[append_terminal] ✓ Appended {} bytes to execution log for task {}", output.len(), task_id);
+            log::info!("[append_terminal] ✓ Appended {} bytes to execution log for task {}", output.len(), task_id);
             Ok(())
         }
         Err(e) => Err(format!("Failed to append terminal output: {}", e)),
@@ -611,8 +611,8 @@ pub async fn detach_terminal(
     _app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    println!("detach_terminal({}) called", task_id);
-    println!("[detach] ✓ Detached from terminal for task {}", task_id);
+    log::info!("detach_terminal({}) called", task_id);
+    log::info!("[detach] ✓ Detached from terminal for task {}", task_id);
 
     // Note: The actual cleanup happens when the channel is dropped on the frontend.
     // The streaming tasks in attach_terminal will exit when they detect the channel is closed.
@@ -627,7 +627,7 @@ pub async fn pause_agent_execution(
     state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    println!("pause_agent_execution(task={}) called", task_id);
+    log::info!("pause_agent_execution(task={}) called", task_id);
 
     let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
     let exec_log = crate::db::get_current_execution_log(&conn, task_id)
@@ -635,7 +635,7 @@ pub async fn pause_agent_execution(
     crate::db::pause_execution_log(&conn, exec_log.id)
         .map_err(|e| format!("Failed to pause execution: {}", e))?;
 
-    println!("[pause] ✓ Updated execution log status to paused");
+    log::info!("[pause] ✓ Updated execution log status to paused");
 
     // TODO: Send SIGSTOP to running process (implementation depends on process handle management)
     // For now, we just update the database status. Full process pause requires process handle tracking.
@@ -652,7 +652,7 @@ pub async fn resume_agent_execution(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    println!("resume_agent_execution(task={}, project={}) — delegating to spawn", task_id, project_id);
+    log::info!("resume_agent_execution(task={}, project={}) — delegating to spawn", task_id, project_id);
     spawn_agent_execution(app_state, project_id, task_id, repo_path).await
 }
 
@@ -679,7 +679,7 @@ pub async fn spawn_interactive_execution(
     repo_path: String,
     label: Option<String>,
 ) -> Result<i32, String> {
-    println!(
+    log::info!(
         "spawn_interactive_execution(project={}, branch={}, label={:?}) called",
         project_id, branch_name, label
     );
@@ -705,7 +705,7 @@ pub async fn spawn_interactive_execution(
     });
 
     let worktree_abs_path: String = if let Some(wt) = existing_checkout {
-        println!(
+        log::info!(
             "spawn_interactive_execution: branch '{}' already checked out at '{}', reusing",
             branch_name, wt.path
         );
@@ -750,7 +750,7 @@ pub async fn spawn_interactive_execution(
         conn.last_insert_rowid() as i32
     };
 
-    println!("spawn_interactive_execution: created execution log {}", log_id);
+    log::info!("spawn_interactive_execution: created execution log {}", log_id);
 
     // Step 3: Spawn interactive PTY session keyed by log_id
     let pty_session = crate::process::spawn_agent_cli_pty(
@@ -769,7 +769,7 @@ pub async fn spawn_interactive_execution(
     );
     drop(sessions);
 
-    println!("spawn_interactive_execution: PTY session {} started at {}", log_id, worktree_abs_path);
+    log::info!("spawn_interactive_execution: PTY session {} started at {}", log_id, worktree_abs_path);
     Ok(log_id)
 }
 
@@ -793,7 +793,7 @@ pub async fn delete_execution_log(
     )
     .map_err(|e| format!("Failed to delete execution log: {}", e))?;
 
-    println!("delete_execution_log: deleted execution {}", execution_id);
+    log::info!("delete_execution_log: deleted execution {}", execution_id);
     Ok(())
 }
 

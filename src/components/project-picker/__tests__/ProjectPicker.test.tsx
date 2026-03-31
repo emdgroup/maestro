@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProjectPicker } from "./ProjectPicker";
-import { ConnectionContext } from "@/contexts/ConnectionContext";
+import { ProjectPicker } from "../ProjectPicker.tsx";
+import { ConnectionContext } from "@/contexts/ConnectionContext.tsx";
 
 // Mock child components
 vi.mock("./ConnectionList", () => ({

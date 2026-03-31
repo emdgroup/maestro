@@ -34,7 +34,7 @@ fn fetch_projects_from_db(
 #[tauri::command]
 #[specta::specta]
 pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
-    println!("get_projects() called via IPC");
+    log::info!("get_projects() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
@@ -54,7 +54,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 #[tauri::command]
 #[specta::specta]
 pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
-    println!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
+    log::info!("get_connection_projects({}) called via IPC", connection_id.unwrap_or(0));
 
     // ── Step 1: fetch projects (db lock acquired and released in this block) ─
     let projects: Vec<Project> = {
@@ -68,7 +68,7 @@ pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connec
 
     // ── Step 3: delete stale projects and return filtered list ───────────────
     if !stale_ids.is_empty() {
-        println!(
+        log::info!(
             "get_connection_projects: removing {} stale project(s): {:?}",
             stale_ids.len(),
             stale_ids
@@ -105,7 +105,7 @@ async fn collect_stale_project_ids(
             let session = match app_state.get_ssh_session(conn_id).await {
                 Some(s) => s,
                 None => {
-                    println!(
+                    log::info!(
                         "collect_stale_project_ids: no SSH session for connection {}, skipping validation",
                         conn_id
                     );
@@ -124,7 +124,7 @@ async fn collect_stale_project_ids(
                     }
                     Err(e) => {
                         // On command error, err on the side of caution: keep the project
-                        println!(
+                        log::info!(
                             "collect_stale_project_ids: failed to check path '{}': {}",
                             project.path, e
                         );
@@ -143,7 +143,7 @@ pub fn get_project(
     app_state: State<Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    println!("get_project({}) called via IPC", project_id);
+    log::info!("get_project({}) called via IPC", project_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Try to find existing project
@@ -174,14 +174,14 @@ pub fn remove_project(
     app_state: State<Arc<AppState>>,
     project_id: i32,
 ) -> Result<(), String> {
-    println!("remove_project({}) called via IPC", project_id);
+    log::info!("remove_project({}) called via IPC", project_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
     conn.execute("DELETE FROM projects WHERE id = ?",[project_id])
         .map_err(|e| e.to_string())?;
 
-    println!("Deleted project: {}", project_id);
+    log::info!("Deleted project: {}", project_id);
     Ok(())
 }
 
@@ -191,14 +191,14 @@ pub fn remove_projects_by_connection_id(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    println!("remove_projects_by_connection_id({}) called via IPC", connection_id);
+    log::info!("remove_projects_by_connection_id({}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
     conn.execute("DELETE FROM projects WHERE connection_id = ?",[connection_id])
         .map_err(|e| e.to_string())?;
 
-    println!("Deleted projects matching connection: {}", connection_id);
+    log::info!("Deleted projects matching connection: {}", connection_id);
     Ok(())
 }
 
@@ -436,7 +436,7 @@ pub fn create_project(
     path: String,
     connection_id: Option<i32>
 ) -> Result<Project, String> {
-    println!("create_project() called via IPC with path {} and connection_id {:?}", path, connection_id);
+    log::info!("create_project() called via IPC with path {} and connection_id {:?}", path, connection_id);
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
@@ -479,7 +479,7 @@ pub fn get_project_settings(
     app_state: State<Arc<AppState>>,
     _project_id: i32,
 ) -> Result<crate::models::ProjectConfigResponse, String> {
-    println!("get_project_settings() called via IPC");
+    log::info!("get_project_settings() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Query settings table for configuration keys
@@ -533,7 +533,7 @@ pub fn update_project_settings(
     _project_id: i32,
     settings: crate::models::ProjectConfigRequest,
 ) -> Result<(), String> {
-    println!("update_project_settings() called via IPC");
+    log::info!("update_project_settings() called via IPC");
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Serialize arrays to JSON
@@ -572,7 +572,7 @@ pub fn update_project_settings(
     tx.commit()
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
-    println!("✓ Project settings updated");
+    log::info!("✓ Project settings updated");
     Ok(())
 }
 

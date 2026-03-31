@@ -1,17 +1,16 @@
 use rusqlite::Connection;
 
 use crate::models::AppSettings;
-use crate::error::AppError;
 
 /// Load application settings from the database
 ///
 /// Queries the settings table and reconstructs AppSettings struct.
 /// Returns default AppSettings if table is empty.
-pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
+pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
     // Query all settings from the table
     let mut stmt = conn
         .prepare("SELECT key, value FROM settings ORDER BY key")
-        .map_err(|e| AppError::DatabaseError(format!("Failed to prepare query: {}", e)))?;
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let mut settings_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
@@ -21,11 +20,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
             let value: String = row.get(1)?;
             Ok((key, value))
         })
-        .map_err(|e| AppError::DatabaseError(format!("Failed to query settings: {}", e)))?;
+        .map_err(|e| format!("Failed to query settings: {}", e))?;
 
     for result in settings_iter {
         let (key, value) = result
-            .map_err(|e| AppError::DatabaseError(format!("Failed to read setting: {}", e)))?;
+            .map_err(|e| format!("Failed to read setting: {}", e))?;
         settings_map.insert(key, value);
     }
 
@@ -63,7 +62,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, AppError> {
 ///
 /// Serializes AppSettings to key-value pairs and performs INSERT OR REPLACE
 /// into the settings table.
-pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<(), AppError> {
+pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<(), String> {
 
     // Build key-value pairs for simple string fields
     let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
@@ -78,18 +77,18 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     // Use a transaction for atomic writes
     let tx = conn
         .transaction()
-        .map_err(|e| AppError::DatabaseError(format!("Failed to start transaction: {}", e)))?;
+        .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     for (key, value) in &pairs {
         tx.execute(
             "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
             rusqlite::params![key, value, &settings.updated_at],
         )
-        .map_err(|e| AppError::DatabaseError(format!("Failed to insert setting '{}': {}", key, e)))?;
+        .map_err(|e| format!("Failed to insert setting '{}': {}", key, e))?;
     }
 
     tx.commit()
-        .map_err(|e| AppError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
+        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     Ok(())
 }

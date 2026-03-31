@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use zeroize::Zeroizing;
 
 use crate::db::schema::{initialize_schema};
-use crate::error::AppError;
 use crate::process::PtySession;
 use crate::ssh::RemoteSshSession;
 use crate::models::{Project, GitConnection};
@@ -22,24 +21,24 @@ use crate::models::{Project, GitConnection};
 /// - Linux: ~/.local/share/maestro/maestro.db
 /// - macOS: ~/Library/Application Support/maestro/maestro.db
 /// - Windows: %APPDATA%/maestro/maestro.db
-pub fn init_db(db_path: PathBuf) -> Result<Connection, AppError> {
+pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     // Create directory if it doesn't exist
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| AppError::IoError(format!("Failed to create app data directory: {}", e)))?;
+            .map_err(|e| format!("Failed to create app data directory: {}", e))?;
     }
 
     // Open or create database
     let conn = Connection::open(&db_path)
-        .map_err(|e| AppError::DatabaseError(format!("Failed to open database: {}", e)))?;
+        .map_err(|e| format!("Failed to open database: {}", e))?;
 
     // Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON;", [])
-        .map_err(|e| AppError::DatabaseError(format!("Failed to enable foreign keys: {}", e)))?;
+        .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
 
     // Initialize schema
     initialize_schema(&conn)
-        .map_err(|e| AppError::DatabaseError(format!("Failed to initialize schema: {}", e)))?;
+        .map_err(|e| format!("Failed to initialize schema: {}", e))?;
 
     Ok(conn)
 }
