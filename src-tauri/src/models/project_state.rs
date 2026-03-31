@@ -40,12 +40,10 @@ pub struct WorktreeSnapshot {
     pub id: i32,
     pub branch_name: String,
     pub path: String,
-    /// Worktree status as string (e.g., "Available", "Leased", "InUse", "Dirty")
-    pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub leased_at: Option<String>,
+    pub task_id: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub returned_at: Option<String>,
+    pub git_status: Option<String>,
     pub created_at: String,
 }
 

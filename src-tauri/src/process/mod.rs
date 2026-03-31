@@ -31,18 +31,7 @@ pub async fn spawn_agent_execution(
 ) -> Result<(ProcessOutput, Option<RemoteProcessHandle>), String> {
     match git_conn {
         GitConnection::Local { path: _ } => {
-            // Local execution: use existing PTY spawner
-            // Note: spawn_agent_cli_pty is async, so we need to adapt it
-            // For now, return a placeholder ProcessOutput
-            let output = ProcessOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
-                success: true,
-                remote_pid: None,
-                is_remote: false,
-            };
-            Ok((output, None))
+            todo!("Local agent spawning via process/mod is not yet implemented — use ipc::execution_handlers::spawn_agent_execution for local execution")
         }
         GitConnection::Remote { ssh, remote_path } => {
             // Remote execution: use SSH PTY spawner
