@@ -306,19 +306,22 @@ pub async fn clone_project(
             rusqlite::params![target_path, connection_id],
             |row| row.get(0),
         ).ok();
-        existing.unwrap_or_else(|| {
-            let now = chrono::Utc::now().to_rfc3339();
-            let name = std::path::Path::new(&target_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Untitled")
-                .to_string();
-            conn.execute(
-                "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![name, target_path, now, now, connection_id, now],
-            ).expect("Failed to insert project");
-            conn.last_insert_rowid() as i32
-        })
+        match existing {
+            Some(id) => id,
+            None => {
+                let now = chrono::Utc::now().to_rfc3339();
+                let name = std::path::Path::new(&target_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string();
+                conn.execute(
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![name, target_path, now, now, connection_id, now],
+                ).map_err(|e| format!("Failed to insert project: {}", e))?;
+                conn.last_insert_rowid() as i32
+            }
+        }
     };
 
     // Step 3: Init .maestro folder (local only — no local fs path for remote projects)
@@ -403,14 +406,17 @@ pub async fn create_new_project(
             rusqlite::params![full_path_str, connection_id],
             |row| row.get(0),
         ).ok();
-        existing.unwrap_or_else(|| {
-            let now = chrono::Utc::now().to_rfc3339();
-            conn.execute(
-                "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![folder_name, full_path_str, now, now, connection_id, now],
-            ).expect("Failed to insert project");
-            conn.last_insert_rowid() as i32
-        })
+        match existing {
+            Some(id) => id,
+            None => {
+                let now = chrono::Utc::now().to_rfc3339();
+                conn.execute(
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![folder_name, full_path_str, now, now, connection_id, now],
+                ).map_err(|e| format!("Failed to insert project: {}", e))?;
+                conn.last_insert_rowid() as i32
+            }
+        }
     };
 
     // Init .maestro folder (local only)
@@ -443,20 +449,23 @@ pub fn create_project(
             params![path, connection_id],
             |row| row.get(0),
         ).ok();
-        existing.unwrap_or_else(|| {
-            // Create new remote project in database
-            let now = Utc::now().to_rfc3339();
-            let name = Path::new(&path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Untitled")
-                .to_string();
-            conn.execute(
-                "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                params![name, path, now, now, connection_id, now],
-            ).expect(&format!("Failed to insert project {}", name));
-            conn.last_insert_rowid() as i32
-        })
+        match existing {
+            Some(id) => id,
+            None => {
+                // Create new remote project in database
+                let now = Utc::now().to_rfc3339();
+                let name = Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string();
+                conn.execute(
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
+                    params![name, path, now, now, connection_id, now],
+                ).map_err(|e| format!("Failed to insert project '{}': {}", name, e))?;
+                conn.last_insert_rowid() as i32
+            }
+        }
     };
 
     // Initialize .maestro folder structure for project-local storage
