@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T14:30:00.000Z"
+last_updated: "2026-03-31T18:24:00.508Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 35 — fix-worktree-diff-and-status-for-remote-projects-remove-git2-add-difftarget
+**Current focus:** Phase 35 — fix-worktree-diff-status-remote-git2-difftarget
 
 ## Current Position
 
-Phase: 34 (remove-node-sidecar-implement-squash-merge-in-rust) — COMPLETE
-Next: Phase 35 (fix-worktree-diff-and-status-for-remote-projects)
+Phase: 35 (fix-worktree-diff-status-remote-git2-difftarget) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -127,6 +127,7 @@ Next: Phase 35 (fix-worktree-diff-and-status-for-remote-projects)
 | Phase 33 P03 | 0.167 | 2 tasks | 6 files |
 | Phase 34-remove-node-sidecar-implement-squash-merge-in-rust P01 | 0.033 | 2 tasks | 2 files |
 | Phase 34 P02 | 0.45 | 2 tasks | 9 files |
+| Phase 35 P01 | 0.3 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -236,6 +237,9 @@ Phase 18 Architecture Decisions:
 - [Phase 34-remove-node-sidecar-implement-squash-merge-in-rust]: MergeOutcome removed from review_handlers.rs — no longer needed after eliminating sidecar JSON parsing; type remains in models/merge_outcome.rs for deletion in Plan 02
 - [Phase 34]: retry_execution and resume_agent_execution updated to reset execution log status rather than calling the deleted spawn_agent_execution IPC
 - [Phase 34]: useSpawnExecutionMutation deprecated with informative throw; boardStore.executeTask throws informative error — preserves API surface for caller discovery
+- [Phase 35]: run_git_in_dir dispatcher handles local TokioCommand and remote SSH execute_command — follows existing GitConnection pattern
+- [Phase 35]: DiffTarget enum: Head=git diff HEAD (uncommitted), Branch(name)=git diff --unified=6 origin/{name}..HEAD (full branch diff)
+- [Phase 35]: list_worktrees_with_status runs status+diff_stat for both local and remote worktrees (removed is_remote gate)
 
 ### Pending Todos
 
