@@ -1,72 +1,9 @@
 use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
-use std::io::Read;
 
 use crate::models::{ExecutionLog, ExecutionStatus, ExecutionWithTask};
 use crate::db::AppState;
-
-/// Detect error type and provide suggestions based on stderr and exit code
-///
-/// # Arguments
-/// * `stderr` - The stderr output from the process
-/// * `exit_code` - The process exit code
-///
-/// # Returns
-/// A tuple of (error_type_string, vec_of_suggestions)
-pub fn detect_error_type_and_suggestions(stderr: &str, exit_code: i32) -> (String, Vec<String>) {
-    let stderr_lower = stderr.to_lowercase();
-
-    // Pattern matching for error types
-    if stderr_lower.contains("error ts") ||
-       stderr_lower.contains("syntaxerror") ||
-       stderr_lower.contains("referenceerror") {
-        return ("CompilationError".to_string(), vec![
-            "Run: npm install".to_string(),
-            "Check syntax in source files".to_string(),
-        ]);
-    }
-
-    if stderr_lower.contains("not found") ||
-       stderr_lower.contains("cannot find module") ||
-       stderr_lower.contains("npm err") ||
-       stderr_lower.contains("package.json") {
-        return ("MissingDependency".to_string(), vec![
-            "Run: npm install".to_string(),
-            "Check package.json dependencies".to_string(),
-        ]);
-    }
-
-    if stderr_lower.contains("error:") ||
-       stderr_lower.contains("exception") ||
-       stderr_lower.contains("panic") ||
-       stderr_lower.contains("segmentation fault") {
-        return ("RuntimeError".to_string(), vec![
-            "Check task acceptance criteria".to_string(),
-            "Review error in terminal history".to_string(),
-        ]);
-    }
-
-    if exit_code < 0 || stderr_lower.contains("signal") {
-        return ("ProcessCrash".to_string(), vec![
-            "Check system resources".to_string(),
-            "Review agent logs".to_string(),
-        ]);
-    }
-
-    // Default to Unknown
-    ("Unknown".to_string(), vec![
-        "Review full terminal output".to_string(),
-        "Check error details".to_string(),
-    ])
-}
-
-fn canonicalize_repo_path(repo_path: &str) -> Result<String, String> {
-    std::path::Path::new(repo_path)
-        .canonicalize()
-        .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))
-        .map(|p| p.to_string_lossy().to_string())
-}
 
 async fn run_agent_background_task(
     app_state: Arc<AppState>,
@@ -693,7 +630,11 @@ pub async fn spawn_interactive_execution(
     let repo_path = if is_remote {
         repo_path
     } else {
-        canonicalize_repo_path(&repo_path)?
+        std::path::Path::new(&repo_path)
+            .canonicalize()
+            .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
+            .to_string_lossy()
+            .to_string()
     };
 
     // Use git worktree list rather than DB state: git is the source of truth, the DB may
