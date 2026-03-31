@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T18:28:43.386Z"
+last_updated: "2026-03-31T18:42:39.846Z"
 progress:
   total_phases: 1
   completed_phases: 1
