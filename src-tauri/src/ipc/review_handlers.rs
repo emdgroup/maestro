@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
 
-use crate::models::{Project, MergeOutcome, Task, TASK_SELECT, ReviewResult, MergeResult};
+use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult};
 use crate::db::{AppState, get_git_connection, get_project_with_git_conn};
 use crate::git;
 
@@ -179,7 +179,7 @@ pub async fn request_changes(
 ///
 /// Orchestrates the complete merge workflow synchronously:
 /// 1. Queries task details and worktree info
-/// 2. Calls Node.js sidecar to perform squash merge (awaits completion)
+/// 2. Calls native Rust squash merge via git subprocess (awaits completion)
 /// 3. On success: updates task to "Done", cleans up worktree, returns to pool
 /// 4. On conflict: rejects task back to "InProgress", saves conflict feedback
 ///
@@ -216,30 +216,15 @@ pub async fn approve_task_and_merge(
         task_id, branch_name
     );
 
-    // 3. Call Node.js sidecar to perform squash merge (await synchronously)
-    let sidecar_result = tokio::process::Command::new("node")
-        .args(&[
-            "sidecar/dist/index.js",
-            "--merge",
-            &full_worktree_path,
-            &task_id.to_string(),
-            &branch_name,
-            &task_name,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn merge sidecar: {}", e))?;
+    // 3. Perform squash merge via native Rust git subprocess
+    let merge_result = git::squash_merge_to_main(
+        &repo_path,
+        task_id,
+        &branch_name,
+        &task_name,
+    ).await?;
 
-    if !sidecar_result.status.success() {
-        let stderr = String::from_utf8_lossy(&sidecar_result.stderr);
-        return Err(format!("Merge sidecar failed: {}", stderr));
-    }
-
-    let stdout = String::from_utf8_lossy(&sidecar_result.stdout);
-    let merge_outcome = serde_json::from_str::<MergeOutcome>(&stdout)
-        .map_err(|e| format!("Failed to parse merge outcome: {} (stdout: {})", e, stdout))?;
-
-    if merge_outcome.success {
+    if merge_result.success {
         // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
         log::info!("[merge] Merge succeeded for task {}", task_id);
         finalize_successful_merge(
@@ -252,14 +237,14 @@ pub async fn approve_task_and_merge(
         .await?;
         log::info!("[merge] Merge finalized for task {}", task_id);
         Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
-    } else if !merge_outcome.conflicts.is_empty() {
+    } else if !merge_result.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
         log::info!("[merge] Merge conflict for task {}", task_id);
-        reject_merge_on_conflict(app_state.inner(), task_id, &merge_outcome.conflicts).await?;
-        Ok(MergeResult { success: false, task_status: "InProgress".to_string(), conflicts: merge_outcome.conflicts })
+        reject_merge_on_conflict(app_state.inner(), task_id, &merge_result.conflicts).await?;
+        Ok(merge_result)
     } else {
         // 4c. Merge reported failure without conflicts - return error
-        Err(merge_outcome.message.unwrap_or_else(|| "Merge failed with unknown error".to_string()))
+        Err("Merge failed with unknown error".to_string())
     }
 }
 
