@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T09:28:45.169Z"
+last_updated: "2026-03-31T09:34:45.978Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 33 (tauri-backend-code-review-and-refactoring-for-maintainability-dry-solid-kiss) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -122,6 +122,7 @@ Plan: 1 of 3
 | Phase 32 P03 | 0.1 | 2 tasks | 9 files |
 | Phase 32 P04 | 0.04 | 2 tasks | 5 files |
 | Phase 32 P05 | 0.025 | 2 tasks | 15 files |
+| Phase 33 P01 | 0.07 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,9 @@ Phase 18 Architecture Decisions:
 - [Phase 32]: ProjectConfigRequest kept as separate struct (not aliased) — type aliases cannot carry #[derive(TS)] / #[specta(export)]
 - [Phase 32]: upsert_imported_tasks extracted as private fn: both GitHub/Jira sync functions share identical DB upsert logic
 - [Phase 32]: stop_remote_stream now calls kill_remote_process (was a no-op Ok(()) previously)
+- [Phase 33]: INSERT OR REPLACE handles UNIQUE(task_id) constraint on task_reviews — CASCADE-deletes old review_comments automatically
+- [Phase 33]: finalize_successful_merge resolves git_conn internally (no repo_path param) — cleaner separation of concerns
+- [Phase 33]: Branch deletion stays as inline tokio::process::Command (non-fatal) since git dispatcher has no delete_branch
 
 ### Pending Todos
 
