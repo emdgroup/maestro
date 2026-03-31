@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T08:13:52.909Z"
+last_updated: "2026-03-31T08:20:33.681Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 32 (backend-code-quality-fixes) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 
 ## Performance Metrics
 
@@ -119,6 +119,7 @@ Plan: 3 of 5
 | Phase 31 P02 | 0.074 | 2 tasks | 1 files |
 | Phase 32 P01 | 0.03 | 2 tasks | 4 files |
 | Phase 32 P02 | 0.033 | 2 tasks | 5 files |
+| Phase 32 P03 | 0.1 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -204,6 +205,9 @@ Phase 18 Architecture Decisions:
 - [Phase 32]: Replace .expect() with map_err+? in all three project insertion sites
 - [Phase 32]: poll_remote_log extracted as shared function eliminating 80 lines of duplicated SSH log-polling code between stream_remote_output and attach_remote_stream_listener
 - [Phase 32]: resume_agent_execution delegates to spawn_agent_execution with swapped parameter order (resume: task_id second, spawn: project_id second)
+- [Phase 32]: get_project_with_git_conn uses ? for both DB lookup and SSH session resolution — call sites needing fallback keep two-step approach
+- [Phase 32]: update_task uses Vec<Box<dyn ToSql>> for dynamic params; conn must be mut for transaction(); re-lock after commit to read back
+- [Phase 32]: finalize_successful_merge DB writes stay intentionally split across lock acquisitions (async git cleanup between steps)
 
 ### Pending Todos
 
