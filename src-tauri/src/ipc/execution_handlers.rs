@@ -5,106 +5,6 @@ use chrono::Utc;
 use crate::models::{ExecutionLog, ExecutionStatus, ExecutionWithTask};
 use crate::db::AppState;
 
-async fn run_agent_background_task(
-    app_state: Arc<AppState>,
-    log_id: i32,
-    worktree_id: i32,
-    task_id: i32,
-    worktree_path: String,
-) {
-    let result = crate::process::spawn_agent_cli(
-        &worktree_path,
-        "sidecar/dist/index.js",
-        task_id,
-    ).await;
-
-    let now = Utc::now().to_rfc3339();
-
-    match result {
-        Ok(output) => {
-            let final_status = if output.exit_code == 0 { "complete" } else { "failed" };
-            if let Ok(conn) = app_state.db.lock() {
-                let _ = conn.execute(
-                    "UPDATE execution_logs SET status = ?, completed_at = ?, output = ? WHERE id = ?",
-                    rusqlite::params![final_status, &now, &output.stdout, log_id],
-                );
-                let task_status = if output.exit_code == 0 { "Review" } else { "Ready" };
-                let _ = conn.execute(
-                    "UPDATE tasks SET status = ? WHERE id = ?",
-                    rusqlite::params![task_status, task_id],
-                );
-            }
-        }
-        Err(e) => {
-            log::warn!("Agent execution error for log {}: {}", log_id, e);
-            if let Ok(conn) = app_state.db.lock() {
-                let _ = conn.execute(
-                    "UPDATE execution_logs SET status = 'failed', completed_at = ? WHERE id = ?",
-                    rusqlite::params![&now, log_id],
-                );
-                let _ = conn.execute(
-                    "UPDATE tasks SET status = 'Ready' WHERE id = ?",
-                    rusqlite::params![task_id],
-                );
-                let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id]);
-            }
-            return;
-        }
-    }
-
-    if let Err(e) = super::delete_worktree_for_task(&app_state, worktree_id, &worktree_path).await {
-        log::warn!("[finalize] Failed to delete worktree {}: {}", worktree_id, e);
-    }
-}
-
-/// Spawn agent execution for a task
-#[tauri::command]
-#[specta::specta]
-pub async fn spawn_agent_execution(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    repo_path: String,
-) -> Result<i32, String> {
-    log::info!("spawn_agent_execution(project={}, task={}) called", project_id, task_id);
-    // Note: canonicalization is handled inside create_worktree_for_task (local-only).
-    // Do NOT canonicalize here — for remote projects, repo_path is a Linux path that
-    // cannot be canonicalized on the Windows Tauri host.
-
-    let app_state_arc: Arc<AppState> = (*app_state).clone();
-    let (worktree_id, worktree_path) = super::create_worktree_for_task(
-        &app_state_arc,
-        project_id,
-        task_id,
-        &repo_path,
-    ).await?;
-
-    let now = Utc::now().to_rfc3339();
-    let log_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (?, 'running', ?)",
-            rusqlite::params![task_id, &now],
-        )
-        .map_err(|e| format!("Failed to create execution log: {}", e))?;
-        conn.last_insert_rowid() as i32
-    };
-
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let _ = conn.execute(
-            "UPDATE tasks SET status = 'InProgress' WHERE id = ?",
-            rusqlite::params![task_id],
-        );
-    }
-
-    tokio::spawn(run_agent_background_task(
-        app_state_arc.clone(), log_id, worktree_id, task_id, worktree_path,
-    ));
-
-    Ok(log_id)
-}
-
 /// Drain the Ready queue for auto-mode execution
 ///
 /// Checks if auto_mode is enabled in settings. If so, counts currently running
@@ -240,6 +140,9 @@ pub fn get_execution_logs(
 }
 
 /// Retry a paused execution
+///
+/// Resets the execution log status to 'running' so the task can be resumed.
+/// The frontend should use spawn_interactive_execution to create a new PTY session.
 #[tauri::command]
 #[specta::specta]
 pub async fn retry_execution(
@@ -249,9 +152,23 @@ pub async fn retry_execution(
     repo_path: String,
 ) -> Result<i32, String> {
     log::info!("retry_execution(project={}, task={}) called", project_id, task_id);
+    let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
 
-    // Simply spawn a new execution for the same task
-    spawn_agent_execution(app_state, project_id, task_id, repo_path).await
+    // Reset the most recent execution log for this task back to running
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let log_id: i32 = conn.query_row(
+        "SELECT id FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+        rusqlite::params![task_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("No execution log found for task {}: {}", task_id, e))?;
+
+    conn.execute(
+        "UPDATE execution_logs SET status = 'running', completed_at = NULL WHERE id = ?",
+        rusqlite::params![log_id],
+    ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
+
+    log::info!("retry_execution: reset execution log {} to running", log_id);
+    Ok(log_id)
 }
 
 /// Cancel a paused execution
@@ -580,7 +497,10 @@ pub async fn pause_agent_execution(
     Ok(())
 }
 
-/// Resume a paused agent execution by creating a new execution and spawning the agent again
+/// Resume a paused agent execution
+///
+/// Resets the execution log status to 'running' so the task can be resumed.
+/// The frontend should use spawn_interactive_execution to create a new PTY session.
 #[tauri::command]
 #[specta::specta]
 pub async fn resume_agent_execution(
@@ -589,8 +509,24 @@ pub async fn resume_agent_execution(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    log::info!("resume_agent_execution(task={}, project={}) — delegating to spawn", task_id, project_id);
-    spawn_agent_execution(app_state, project_id, task_id, repo_path).await
+    log::info!("resume_agent_execution(task={}, project={}) called", task_id, project_id);
+    let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
+
+    // Reset the most recent execution log for this task back to running
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let log_id: i32 = conn.query_row(
+        "SELECT id FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+        rusqlite::params![task_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("No execution log found for task {}: {}", task_id, e))?;
+
+    conn.execute(
+        "UPDATE execution_logs SET status = 'running', completed_at = NULL WHERE id = ?",
+        rusqlite::params![log_id],
+    ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
+
+    log::info!("resume_agent_execution: reset execution log {} to running", log_id);
+    Ok(log_id)
 }
 
 /// Spawn an interactive (task-free) PTY session on a specific branch.

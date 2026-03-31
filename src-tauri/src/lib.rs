@@ -8,7 +8,7 @@ pub mod websocket;
 
 pub use db::{init_db, AppState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ExecutionWithTask, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
-pub use process::{spawn_agent_cli, ProcessOutput, spawn_agent_cli_pty, PtySession};
+pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 // IPC command functions are accessed via crate::ipc:: prefix in create_builder()
 // No glob re-export needed; ssh_handlers uses super::project_handlers for internal imports
 
@@ -48,7 +48,6 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::cleanup_zombie_worktrees,
             crate::ipc::list_executions_with_task_info,
             crate::ipc::delete_execution_log,
-            crate::ipc::spawn_agent_execution,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,
             crate::ipc::get_execution_logs,
