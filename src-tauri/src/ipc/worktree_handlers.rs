@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::{Duration, Utc};
 
-use crate::models::{Worktree, WorktreeWithStatus, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget};
+use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget};
 use crate::db::AppState;
 
 // ============================================================================
@@ -48,6 +48,7 @@ pub async fn list_worktrees_with_status(
         branch_name: String,
         path: String,
         created_at: String,
+        base_branch: Option<String>,
         task_name: Option<String>,
         agent_status: Option<String>,
     }
@@ -55,7 +56,7 @@ pub async fn list_worktrees_with_status(
     let db_rows: Vec<DbWorktreeRow> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at,
+            "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at, w.base_branch,
                     t.name AS task_name,
                     el.status AS agent_status
              FROM worktrees w
@@ -74,8 +75,9 @@ pub async fn list_worktrees_with_status(
                     branch_name: row.get(3)?,
                     path: row.get(4)?,
                     created_at: row.get(5)?,
-                    task_name: row.get(6)?,
-                    agent_status: row.get(7)?,
+                    base_branch: row.get(6)?,
+                    task_name: row.get(7)?,
+                    agent_status: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Failed to query worktrees: {}", e))?
@@ -99,8 +101,8 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    // Step 5: Run parallel git status + diff --shortstat per on-disk worktree (local AND remote)
-    let mut git_info: HashMap<String, (String, Option<String>)> = HashMap::new();
+    // Step 5: Run parallel git status + diff --shortstat + rev-list per on-disk worktree (local AND remote)
+    let mut git_info: HashMap<String, (String, Option<String>, Option<AheadBehind>)> = HashMap::new();
     {
         let handles: Vec<_> = disk_worktrees
             .iter()
@@ -115,14 +117,24 @@ pub async fn list_worktrees_with_status(
                         .await
                         .unwrap_or_default();
                     let diff_stat = if diff_stat_raw.trim().is_empty() { None } else { Some(diff_stat_raw.trim().to_string()) };
-                    (wt_path, status, diff_stat)
+                    let ahead_behind_raw = crate::git::run_git_in_dir(
+                        &conn, &wt_path, &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
+                    ).await.unwrap_or_default();
+                    let ahead_behind: Option<AheadBehind> = ahead_behind_raw
+                        .trim()
+                        .split_once('\t')
+                        .and_then(|(a, b)| {
+                            a.parse::<u32>().ok().zip(b.parse::<u32>().ok())
+                        })
+                        .map(|(ahead, behind)| AheadBehind { ahead, behind });
+                    (wt_path, status, diff_stat, ahead_behind)
                 })
             })
             .collect();
 
         for handle in handles {
-            if let Ok((path, status, diff_stat)) = handle.await {
-                git_info.insert(path, (status, diff_stat));
+            if let Ok((path, status, diff_stat, ahead_behind)) = handle.await {
+                git_info.insert(path, (status, diff_stat, ahead_behind));
             }
         }
     }
@@ -133,7 +145,7 @@ pub async fn list_worktrees_with_status(
     let mut result: Vec<WorktreeWithStatus> = Vec::new();
 
     for wt in &disk_worktrees {
-        let (git_status, diff_stat) = git_info.get(&wt.path).cloned().unwrap_or_default();
+        let (git_status, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
             let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
@@ -150,6 +162,8 @@ pub async fn list_worktrees_with_status(
                 is_zombie,
                 is_orphan: false,
                 diff_stat,
+                base_branch: db_row.base_branch.clone(),
+                ahead_behind,
             });
         } else {
             // On-disk but not in DB — orphan entry
@@ -167,6 +181,8 @@ pub async fn list_worktrees_with_status(
                 is_zombie: false,
                 is_orphan: true,
                 diff_stat,
+                base_branch: None,
+                ahead_behind,
             });
         }
     }
@@ -305,8 +321,8 @@ pub async fn create_worktree(
     let worktree_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, ?, ?, ?, ?)",
-            rusqlite::params![project_id, task_id, &branch_name, &relative_path, &now],
+            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![project_id, task_id, &branch_name, &origin_branch, &relative_path, &now],
         )
         .map_err(|e| format!("Failed to insert worktree: {}", e))?;
         conn.last_insert_rowid() as i32
@@ -318,6 +334,7 @@ pub async fn create_worktree(
         project_id,
         task_id,
         branch_name,
+        base_branch: Some(origin_branch),
         path: relative_path,
         git_status: None,
         created_at: now,
@@ -369,8 +386,8 @@ pub async fn create_worktree_for_task(
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, ?, ?, ?, ?)",
-            rusqlite::params![project_id, task_id, &branch_name, &relative_path, &now],
+            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![project_id, task_id, &branch_name, rusqlite::types::Null, &relative_path, &now],
         )
         .map_err(|e| format!("Failed to insert worktree: {}", e))?;
         conn.last_insert_rowid() as i32
@@ -494,9 +511,25 @@ pub async fn cleanup_zombie_worktrees(
     let mut to_delete: Vec<(i32, &str)> = Vec::new();
     for (id, relative_path) in &candidates {
         let abs_path = format!("{}/{}", repo_path, relative_path);
-        if disk_paths.contains(&abs_path) {
-            to_delete.push((*id, relative_path.as_str()));
+        if !disk_paths.contains(&abs_path) {
+            continue;
         }
+
+        // Never delete a worktree with uncommitted changes — it may be manually created
+        // with live work in progress. `git status --porcelain` returns non-empty output
+        // when there are untracked, modified, or staged files.
+        let status = crate::git::run_git_in_dir(&git_conn, &abs_path, &["status", "--porcelain"])
+            .await
+            .unwrap_or_default();
+        if !status.trim().is_empty() {
+            eprintln!(
+                "[cleanup_zombie_worktrees] Skipping worktree {} — has uncommitted changes",
+                relative_path
+            );
+            continue;
+        }
+
+        to_delete.push((*id, relative_path.as_str()));
     }
 
     // Remove git worktrees (best-effort — don't fail the whole cleanup)

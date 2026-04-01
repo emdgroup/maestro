@@ -1003,6 +1003,10 @@ async renameSshConnection(connectionId: number, displayName: string) : Promise<R
 
 /** user-defined types **/
 
+/**
+ * Ahead/behind commit counts relative to the upstream tracking branch
+ */
+export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; updated_at: string }
 /**
  * Represents the status of a remote SSH connection for a project
@@ -1063,13 +1067,13 @@ export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
 /**
- * Worktree record from database (schema v3)
+ * Worktree record from database (schema v6)
  */
-export type Worktree = { id: number; project_id: number; task_id: number | null; branch_name: string; path: string; git_status: string | null; created_at: string }
+export type Worktree = { id: number; project_id: number; task_id: number | null; branch_name: string; base_branch: string | null; path: string; git_status: string | null; created_at: string }
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
-export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null }
+export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null }
 
 /** tauri-specta globals **/
 
