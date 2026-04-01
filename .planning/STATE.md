@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T12:19:57.106Z"
+last_updated: "2026-04-01T12:46:06.867Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -131,6 +131,7 @@ Plan: 2 of 2
 | Phase 35 P02 | 0.033 | 2 tasks | 2 files |
 | Phase 36 P01 | 0.207 | 1 tasks | 3 files |
 | Phase 36 P02 | 0.033 | 1 tasks | 2 files |
+| Phase 36 P02 | 0.370 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -249,6 +250,9 @@ Phase 18 Architecture Decisions:
 - [Phase 36]: computeFileStats self-guards against +++ / --- lines — does not assume they are pre-stripped by the caller
 - [Phase 36]: Always use DiffTarget::Head in WorktreeManager — diff target toggle removed; branch diff added unnecessary UI complexity without sufficient value
 - [Phase 36]: Module-level DIFF_TARGET_HEAD constant outside component avoids query key object recreation on every render (stable reference)
+- [Phase 36]: Split selection reset into two effects: worktreeId clears immediately; diffFiles auto-selects first only when nothing selected — prevents background refetch from bouncing user off chosen file
+- [Phase 36]: useWorktreeDiffQuery gets refetchInterval:5000 to match worktree list polling so diff body stays live
+- [Phase 36]: File list items use single flex row with inline stats (no second row for +/- stats)
 
 ### Pending Todos
 
