@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T12:54:26.606Z"
+last_updated: "2026-04-01T20:35:53.698Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 36 — redesign-the-diff-pane-in-the-worktrees-view
+**Current focus:** Phase 37 — redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel
 
 ## Current Position
 
-Phase: 36 (redesign-the-diff-pane-in-the-worktrees-view) — EXECUTING
-Plan: 2 of 2
+Phase: 37 (redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -132,6 +132,7 @@ Plan: 2 of 2
 | Phase 36 P01 | 0.207 | 1 tasks | 3 files |
 | Phase 36 P02 | 0.033 | 1 tasks | 2 files |
 | Phase 36 P02 | 0.370 | 2 tasks | 3 files |
+| Phase 37 P01 | 0.083 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -253,6 +254,7 @@ Phase 18 Architecture Decisions:
 - [Phase 36]: Split selection reset into two effects: worktreeId clears immediately; diffFiles auto-selects first only when nothing selected — prevents background refetch from bouncing user off chosen file
 - [Phase 36]: useWorktreeDiffQuery gets refetchInterval:5000 to match worktree list polling so diff body stays live
 - [Phase 36]: File list items use single flex row with inline stats (no second row for +/- stats)
+- [Phase 37]: Schema V6: base_branch TEXT nullable column added via drop-and-recreate migration; AheadBehind uses named struct for specta TS compatibility; create_worktree_for_task stores NULL; rev-list failure yields None silently
 
 ### Pending Todos
 
@@ -323,6 +325,7 @@ Phase 18 Architecture Decisions:
 - Phase 33 added: tauri backend code review and refactoring for maintainability DRY SOLID KISS
 - Phase 34 added: Remove Node.js sidecar — implement squash merge in Rust (local + SSH)
 - Phase 36 added: Redesign the diff pane in the worktrees view (uncommitted-only default, unified/split toggle, file selector)
+- Phase 37 added: Redesign the worktrees view with card grid and slide-in diff panel
 
 ## Session Continuity
 
