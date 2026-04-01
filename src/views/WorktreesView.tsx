@@ -34,6 +34,7 @@ import {
 } from "@/services/worktree.service";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
 import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
+import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
@@ -122,6 +123,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   };
 
   const pendingDeleteWorktree = worktrees.find((w) => w.id === pendingDeleteId) ?? null;
+  const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
   return (
     <div className="flex flex-col h-full">
@@ -204,9 +206,12 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
             />
           </div>
 
-          {/* Screen 2 — Diff panel placeholder (Plan 03 will fill this) */}
-          <div className="w-1/2 h-full flex flex-col min-w-0 items-center justify-center text-sm text-muted-foreground">
-            Diff panel (loading...)
+          {/* Screen 2 — Diff panel */}
+          <div className="w-1/2 h-full flex flex-col min-w-0">
+            <WorktreeDiffPanel
+              worktree={selectedWorktree}
+              onClose={() => setSelectedWorktreeId(null)}
+            />
           </div>
         </div>
       </div>
