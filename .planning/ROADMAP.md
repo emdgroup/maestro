@@ -93,6 +93,9 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full details.
 | 32 - Backend code quality fixes | v1.3 | 5/5 | Complete | 2026-03-30 |
 | 33 - Backend refactoring for maintainability | v1.3 | 3/3 | Complete | 2026-03-30 |
 | 34 - Remove Node.js sidecar, squash merge in Rust | v1.3 | 2/2 | Complete | 2026-03-31 |
+| 35 - Fix worktree diff status remote git2 DiffTarget | v1.3 | 3/3 | Complete | 2026-03-31 |
+| 36 - Redesign diff pane in worktrees view | v1.3 | 2/2 | Complete | 2026-03-31 |
+| 37 - Redesign worktrees view with card grid and slide-in diff panel | v1.3 | 3/3 | Complete | 2026-04-01 |
 
 ### Phase 29: v1.3 Agents & Worktrees view polish and bug fixes
 

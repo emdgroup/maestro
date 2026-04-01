@@ -18,11 +18,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 37 — redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel
+**Current focus:** Phase 37 — redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel (COMPLETE)
 
 ## Current Position
 
-Phase: 37 (redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel) — EXECUTING
+Phase: 37 (redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel) — COMPLETE
 Plan: 3 of 3
 
 ## Performance Metrics
