@@ -181,10 +181,10 @@ Plans:
 **Goal:** Redesign the diff pane in WorktreeManager: replace all-files-at-once rendering with a file list navigation panel + single-file diff body, add per-file header bar with path/status/stats, remove diff target toggle (always show uncommitted changes), extend parseDiffString with M/A/D status detection
 **Requirements**: [DIFF-UTILS-01, DIFF-UTILS-02, DIFF-UI-01, DIFF-UI-02, DIFF-UI-03]
 **Depends on:** Phase 35
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 36-01-PLAN.md — Extend diff-utils: parseDiffString status detection (A/M/D) + computeFileStats helper + tests
+- [x] 36-01-PLAN.md — Extend diff-utils: parseDiffString status detection (A/M/D) + computeFileStats helper + tests
 - [ ] 36-02-PLAN.md — Refactor WorktreeManager: file list panel, per-file header, single-file rendering, remove diff toggle
 
 ---

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-03-31T18:42:39.846Z"
+last_updated: "2026-04-01T12:15:54.789Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,11 +18,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 35 — fix-worktree-diff-status-remote-git2-difftarget
+**Current focus:** Phase 36 — redesign-the-diff-pane-in-the-worktrees-view
 
 ## Current Position
 
-Phase: 35 (fix-worktree-diff-status-remote-git2-difftarget) — EXECUTING
+Phase: 36 (redesign-the-diff-pane-in-the-worktrees-view) — EXECUTING
 Plan: 2 of 2
 
 ## Performance Metrics
@@ -129,6 +129,7 @@ Plan: 2 of 2
 | Phase 34 P02 | 0.45 | 2 tasks | 9 files |
 | Phase 35 P01 | 0.3 | 2 tasks | 9 files |
 | Phase 35 P02 | 0.033 | 2 tasks | 2 files |
+| Phase 36 P01 | 0.207 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -243,6 +244,8 @@ Phase 18 Architecture Decisions:
 - [Phase 35]: list_worktrees_with_status runs status+diff_stat for both local and remote worktrees (removed is_remote gate)
 - [Phase 35]: Use onPressedChange (base-ui Toggle API) instead of onClick for ToggleGroupItem pressed state control
 - [Phase 35]: diffBranch pre-populated from selectedWorktree.branch_name via useEffect; Branch mode always attempts diff even with clean working tree
+- [Phase 36]: status field is optional on DiffFileWithName — parseDiffString always sets it, but type flexibility preserved for manual construction
+- [Phase 36]: computeFileStats self-guards against +++ / --- lines — does not assume they are pre-stripped by the caller
 
 ### Pending Todos
 
@@ -311,6 +314,7 @@ Phase 18 Architecture Decisions:
 - Phase 32 added: Backend code quality: fix all findings from code review
 - Phase 33 added: tauri backend code review and refactoring for maintainability DRY SOLID KISS
 - Phase 34 added: Remove Node.js sidecar — implement squash merge in Rust (local + SSH)
+- Phase 36 added: Redesign the diff pane in the worktrees view (uncommitted-only default, unified/split toggle, file selector)
 
 ## Session Continuity
 
