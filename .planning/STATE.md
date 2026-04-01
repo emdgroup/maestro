@@ -266,6 +266,7 @@ Phase 18 Architecture Decisions:
 | 260330-tb8 | fix Worktrees and Agents view bugs (cleanup modal, stale branches, delete/reconnect, interactive PTY) | 2026-03-30 | 91c459b | [260330-tb8-fix-worktrees-and-agents-view-bugs](./quick/260330-tb8-fix-worktrees-and-agents-view-bugs/) |
 | 260331-d7x | search in backend code usage of git commands and list them | 2026-03-31 | — | [260331-d7x-search-in-backend-code-usage-of-git-comm](./quick/260331-d7x-search-in-backend-code-usage-of-git-comm/) |
 | 260401-csx | Revert Rust logging from log crate back to console prints | 2026-04-01 | 2b4776d | [260401-csx-revert-rust-logging-from-log-crate-back-](./quick/260401-csx-revert-rust-logging-from-log-crate-back-/) |
+| 260401-is7 | Add unified/split view toggle in git diff pane | 2026-04-01 | aad4dfd | [260401-is7-add-unified-and-split-view-toggle-in-git](./quick/260401-is7-add-unified-and-split-view-toggle-in-git/) |
 
 ### Blockers/Concerns
 
