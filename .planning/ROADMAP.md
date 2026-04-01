@@ -176,6 +176,17 @@ Plans:
 - [x] 35-01-PLAN.md — Rust backend: run_git_in_dir dispatcher, DiffTarget enum, rewrite get_worktree_diff, fix remote list_worktrees status, remove git2
 - [x] 35-02-PLAN.md — Frontend: diff target toggle UI in WorktreeManager, wire to updated IPC
 
+### Phase 36: redesign the diff pane in the worktrees view
+
+**Goal:** Redesign the diff pane in WorktreeManager: replace all-files-at-once rendering with a file list navigation panel + single-file diff body, add per-file header bar with path/status/stats, remove diff target toggle (always show uncommitted changes), extend parseDiffString with M/A/D status detection
+**Requirements**: [DIFF-UTILS-01, DIFF-UTILS-02, DIFF-UI-01, DIFF-UI-02, DIFF-UI-03]
+**Depends on:** Phase 35
+**Plans:** 2 plans
+
+Plans:
+- [ ] 36-01-PLAN.md — Extend diff-utils: parseDiffString status detection (A/M/D) + computeFileStats helper + tests
+- [ ] 36-02-PLAN.md — Refactor WorktreeManager: file list panel, per-file header, single-file rendering, remove diff toggle
+
 ---
 
 *Roadmap created: 2026-02-09*
