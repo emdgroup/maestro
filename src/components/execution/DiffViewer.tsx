@@ -9,6 +9,7 @@ interface DiffViewerProps {
   diffFile: DiffFile | null;
   loading: boolean;
   error?: string;
+  diffViewMode?: DiffModeEnum;
 }
 
 const DiffPlaceholder = ({
@@ -25,7 +26,7 @@ const DiffPlaceholder = ({
   </div>
 );
 
-export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error }) => {
+export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error, diffViewMode }) => {
   const [highlighter, setHighlighter] = useState<any>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
   const { theme, systemTheme } = useTheme();
@@ -64,7 +65,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
     <div className="min-h-0">
       <DiffView
         data={diffFile}
-        diffViewMode={DiffModeEnum.Unified}
+        diffViewMode={diffViewMode ?? DiffModeEnum.Unified}
         diffViewTheme={diffTheme}
         diffViewHighlight
         registerHighlighter={highlighter}

@@ -25,7 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Plus, Trash2 } from "lucide-react";
+import { AlignJustify, Columns2, Plus, Trash2 } from "lucide-react";
+import { DiffModeEnum } from "@git-diff-view/react";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { useNavigate } from "@/store/navigationStore";
 import {
   useWorktreeDiffQuery,
@@ -77,6 +79,7 @@ export function WorktreeManager({
 }: WorktreeManagerProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [originBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -393,6 +396,34 @@ export function WorktreeManager({
                         {stats.deletions > 0 && (
                           <span className="text-destructive shrink-0">-{stats.deletions}</span>
                         )}
+                        <ToggleGroup
+                          value={[diffViewMode === DiffModeEnum.SplitGitHub ? "split" : "unified"]}
+                          onValueChange={(values) => {
+                            if (values.includes("split")) {
+                              setDiffViewMode(DiffModeEnum.SplitGitHub);
+                            } else {
+                              setDiffViewMode(DiffModeEnum.Unified);
+                            }
+                          }}
+                          className="ml-1 shrink-0"
+                        >
+                          <ToggleGroupItem
+                            value="unified"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 w-6 p-0"
+                          >
+                            <AlignJustify className="h-3.5 w-3.5" />
+                          </ToggleGroupItem>
+                          <ToggleGroupItem
+                            value="split"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 w-6 p-0"
+                          >
+                            <Columns2 className="h-3.5 w-3.5" />
+                          </ToggleGroupItem>
+                        </ToggleGroup>
                       </div>
                     );
                   })()}
@@ -400,18 +431,19 @@ export function WorktreeManager({
                 {/* Diff content */}
                 <div className="flex-1 min-h-0 overflow-y-auto">
                   {diffLoading ? (
-                    <DiffViewer diffFile={null} loading={true} />
+                    <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />
                   ) : selectedWorktree.git_status === "" && diffFiles.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                       No uncommitted changes
                     </div>
                   ) : selectedFile ? (
-                    <DiffViewer diffFile={selectedFile} loading={false} />
+                    <DiffViewer diffFile={selectedFile} loading={false} diffViewMode={diffViewMode} />
                   ) : (
                     <DiffViewer
                       diffFile={null}
                       loading={false}
                       error={diffError ? String(diffError) : undefined}
+                      diffViewMode={diffViewMode}
                     />
                   )}
                 </div>
