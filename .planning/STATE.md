@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T20:41:14.941Z"
+last_updated: "2026-04-01T20:45:29.040Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -134,6 +134,7 @@ Plan: 3 of 3
 | Phase 36 P02 | 0.370 | 2 tasks | 3 files |
 | Phase 37 P01 | 0.083 | 2 tasks | 5 files |
 | Phase 37 P02 | 0.050 | 2 tasks | 4 files |
+| Phase 37 P03 | 0.042 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -260,6 +261,8 @@ Phase 18 Architecture Decisions:
 - [Phase 37]: parseDiffStat copied into WorktreeCard.tsx for self-contained card; STATUS_FILTERS/StatusFilter defined locally in WorktreesView
 - [Phase 37]: Delete dialog uses pendingDeleteId separate from selectedWorktreeId to avoid coupling card selection and delete trigger
 - [Phase 37]: Slide container pattern: outer overflow-hidden, inner w-[200%] flex row, each screen w-1/2, -translate-x-1/2 on selection
+- [Phase 37]: WorktreeDiffPanel renders null when worktree===null (mounted for CSS slide animation, invisible until worktree selected)
+- [Phase 37]: Unified/split toggle moved to action bar in WorktreeDiffPanel — single consistent control position, per-file header shows filename+status+stats only
 
 ### Pending Todos
 
