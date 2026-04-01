@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib";
-import { parseDiffString } from "@/lib";
+import { parseDiffString, computeFileStats } from "@/lib";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
@@ -34,8 +34,9 @@ import {
 } from "@/services/worktree.service";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
 import { DiffViewer } from "@/components/execution/DiffViewer";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { WorktreeWithStatus, DiffTarget } from "@/types/bindings";
+
+const DIFF_TARGET_HEAD: DiffTarget = { type: "Head" };
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -79,8 +80,7 @@ export function WorktreeManager({
   const [originBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
-  const [diffMode, setDiffMode] = useState<"uncommitted" | "branch">("uncommitted");
-  const [diffBranch, setDiffBranch] = useState("");
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -107,25 +107,22 @@ export function WorktreeManager({
 
   const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
-  useEffect(() => {
-    if (selectedWorktree?.branch_name) {
-      setDiffBranch(selectedWorktree.branch_name);
-    }
-  }, [selectedWorktree?.branch_name]);
-
-  const diffTarget: DiffTarget =
-    diffMode === "uncommitted" ? { type: "Head" } : { type: "Branch", branch: diffBranch };
-
   const {
     data: diffString,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(selectedWorktree?.id ?? null, diffTarget);
+  } = useWorktreeDiffQuery(selectedWorktree?.id ?? null, DIFF_TARGET_HEAD);
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
     return parseDiffString(diffString);
   }, [diffString]);
+
+  useEffect(() => {
+    setSelectedFileIndex(diffFiles.length > 0 ? 0 : null);
+  }, [diffFiles]);
+
+  const selectedFile = selectedFileIndex !== null ? (diffFiles[selectedFileIndex] ?? null) : null;
 
   return (
     <div className="flex h-full">
@@ -309,55 +306,106 @@ export function WorktreeManager({
               </div>
             </div>
 
-            {/* Diff target selector */}
-            <div className="px-4 py-2 border-b border-border flex items-center gap-3 shrink-0">
-              <ToggleGroup variant="outline" size="sm">
-                <ToggleGroupItem
-                  pressed={diffMode === "uncommitted"}
-                  onPressedChange={() => setDiffMode("uncommitted")}
-                  className="text-xs px-3"
-                >
-                  Uncommitted
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  pressed={diffMode === "branch"}
-                  onPressedChange={() => setDiffMode("branch")}
-                  className="text-xs px-3"
-                >
-                  Branch diff
-                </ToggleGroupItem>
-              </ToggleGroup>
-              {diffMode === "branch" && (
-                <Input
-                  value={diffBranch}
-                  onChange={(e) => setDiffBranch(e.target.value)}
-                  placeholder="base branch (e.g. main)"
-                  className="h-7 w-48 text-xs"
-                />
-              )}
-            </div>
+            {/* File list + Diff body two-column split */}
+            <div className="flex flex-1 min-h-0">
+              {/* File list panel */}
+              <div className="w-[200px] shrink-0 flex flex-col border-r border-border overflow-y-auto">
+                {diffLoading ? (
+                  <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
+                ) : diffFiles.length === 0 ? (
+                  <div className="text-xs text-muted-foreground py-8 text-center" />
+                ) : (
+                  diffFiles.map((file, i) => {
+                    const stats = computeFileStats(file.hunks);
+                    const basename = file.fileName.split("/").pop() ?? file.fileName;
+                    const status = file.status ?? "M";
+                    const statusColor =
+                      status === "A"
+                        ? "text-success"
+                        : status === "D"
+                          ? "text-destructive"
+                          : "text-muted-foreground";
+                    return (
+                      <div
+                        key={file.fileName}
+                        onClick={() => setSelectedFileIndex(i)}
+                        className={cn(
+                          "px-2 py-2 cursor-pointer border-l-2 transition-colors",
+                          i === selectedFileIndex
+                            ? "border-ring bg-muted/20"
+                            : "border-transparent hover:bg-muted/10",
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-xs font-medium shrink-0", statusColor)}>
+                            {status}
+                          </span>
+                          <span className="text-xs font-mono truncate">{basename}</span>
+                        </div>
+                        {(stats.insertions > 0 || stats.deletions > 0) && (
+                          <div className="text-xs mt-1 pl-3">
+                            {stats.insertions > 0 && (
+                              <span className="text-success">+{stats.insertions}</span>
+                            )}
+                            {stats.deletions > 0 && (
+                              <span className="text-destructive ml-1">-{stats.deletions}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-            {/* Diff body */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {diffLoading ? (
-                <DiffViewer diffFile={null} loading={true} />
-              ) : diffMode === "uncommitted" && selectedWorktree.git_status === "" ? (
-                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                  No uncommitted changes
+              {/* Diff body column */}
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Per-file header bar */}
+                {selectedFile &&
+                  (() => {
+                    const stats = computeFileStats(selectedFile.hunks);
+                    const status = selectedFile.status ?? "M";
+                    const statusColor =
+                      status === "A"
+                        ? "text-success"
+                        : status === "D"
+                          ? "text-destructive"
+                          : "text-muted-foreground";
+                    return (
+                      <div className="px-3 py-2 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                        <span className="font-mono text-foreground truncate flex-1">
+                          {selectedFile.fileName}
+                        </span>
+                        <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+                        {stats.insertions > 0 && (
+                          <span className="text-success shrink-0">+{stats.insertions}</span>
+                        )}
+                        {stats.deletions > 0 && (
+                          <span className="text-destructive shrink-0">-{stats.deletions}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                {/* Diff content */}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {diffLoading ? (
+                    <DiffViewer diffFile={null} loading={true} />
+                  ) : selectedWorktree.git_status === "" && diffFiles.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                      No uncommitted changes
+                    </div>
+                  ) : selectedFile ? (
+                    <DiffViewer diffFile={selectedFile} loading={false} />
+                  ) : (
+                    <DiffViewer
+                      diffFile={null}
+                      loading={false}
+                      error={diffError ? String(diffError) : undefined}
+                    />
+                  )}
                 </div>
-              ) : diffFiles.length > 0 ? (
-                <div className="p-4 space-y-4">
-                  {diffFiles.map((file, i) => (
-                    <DiffViewer key={i} diffFile={file} loading={false} />
-                  ))}
-                </div>
-              ) : (
-                <DiffViewer
-                  diffFile={null}
-                  loading={false}
-                  error={diffError ? String(diffError) : undefined}
-                />
-              )}
+              </div>
             </div>
           </>
         ) : (

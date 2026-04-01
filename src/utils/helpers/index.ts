@@ -3,5 +3,5 @@
 export { cn } from "./ui-utils";
 export { api } from "./tauri-utils";
 export { createErrorToastHandler } from "./error-utils";
-export { parseDiffString } from "./diff-utils";
+export { parseDiffString, computeFileStats } from "./diff-utils";
 export { getFolderName } from "./path-utils";
