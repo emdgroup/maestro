@@ -43,7 +43,14 @@ function detectLanguage(fileName: string): DiffHighlighterLang {
 }
 
 /**
- * Parse unified diff string into DiffFile array
+ * Parse unified diff string into DiffFile array.
+ *
+ * The @git-diff-view/react library's `data.hunks` field is `string[]` where
+ * each element is passed to an internal diff parser that requires a full
+ * per-file diff header (`--- a/file\n+++ b/file\n`) followed by hunk blocks.
+ * Therefore each element must be the complete diff text for one file, with
+ * the `---`/`+++` header and all `@@` hunk blocks joined as a single string.
+ *
  * Format:
  *   diff --git a/path/file b/path/file
  *   index ...
@@ -59,35 +66,41 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   const lines = diffString.split("\n");
 
   let currentFile: string | null = null;
-  let currentHunks: string[] = [];
+  // Accumulates the raw hunk lines (from --- header through last content line)
+  // for the current file. Will be joined into a single string.
+  let currentHunkLines: string[] = [];
   let inHunk = false;
   let currentStatus: "A" | "M" | "D" = "M";
+
+  const flushFile = () => {
+    if (!currentFile || currentHunkLines.length === 0) return;
+    const lang = detectLanguage(currentFile);
+    files.push({
+      fileName: currentFile,
+      newFile: {
+        fileName: currentFile,
+        fileLang: lang,
+        content: "",
+      },
+      // The library parses each element of hunks[] as a full diff string.
+      // A single joined string per file (containing --- / +++ / @@ blocks) is correct.
+      hunks: [currentHunkLines.join("\n")],
+      status: currentStatus,
+    });
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     // Start of new file diff
     if (line.startsWith("diff --git")) {
-      // Save previous file if exists
-      if (currentFile && currentHunks.length > 0) {
-        const lang = detectLanguage(currentFile);
-        files.push({
-          fileName: currentFile,
-          newFile: {
-            fileName: currentFile,
-            fileLang: lang,
-            content: "", // Content will be reconstructed from hunks
-          },
-          hunks: currentHunks,
-          status: currentStatus,
-        });
-      }
+      flushFile();
 
       // Parse new file name from "diff --git a/path b/path"
       const match = line.match(/diff --git a\/(.*) b\/(.*)/);
       if (match) {
         currentFile = match[2];
-        currentHunks = [];
+        currentHunkLines = [];
         inHunk = false;
         currentStatus = "M";
       }
@@ -98,50 +111,46 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     } else if (!inHunk && line.includes("deleted file mode")) {
       currentStatus = "D";
     }
+    // Capture the --- / +++ header lines that the library parser requires
+    else if (!inHunk && (line.startsWith("--- ") || line.startsWith("+++ "))) {
+      currentHunkLines.push(line);
+    }
     // Hunk header line
     else if (line.startsWith("@@")) {
       inHunk = true;
-      currentHunks.push(line);
+      currentHunkLines.push(line);
     }
     // Content lines within hunk
     else if (inHunk && (line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))) {
-      currentHunks.push(line);
+      currentHunkLines.push(line);
     }
-    // End of hunk (blank line or new section)
+    // Blank line ends the current hunk block but we stay in hunk-accumulation mode
+    // (a file can have multiple hunk blocks separated by blank lines)
     else if (inHunk && line === "") {
       inHunk = false;
     }
   }
 
   // Save last file
-  if (currentFile && currentHunks.length > 0) {
-    const lang = detectLanguage(currentFile);
-    files.push({
-      fileName: currentFile,
-      newFile: {
-        fileName: currentFile,
-        fileLang: lang,
-        content: "",
-      },
-      hunks: currentHunks,
-      status: currentStatus,
-    });
-  }
+  flushFile();
 
   return files;
 }
 
 /**
- * Compute per-file insertion/deletion statistics from hunk lines.
+ * Compute per-file insertion/deletion statistics from the hunks array.
+ * Each element of hunks[] is a full multi-line diff string (--- / +++ / @@ blocks).
  * Lines starting with "+" (but not "+++") count as insertions.
  * Lines starting with "-" (but not "---") count as deletions.
  */
 export function computeFileStats(hunks: string[]): { insertions: number; deletions: number } {
   let insertions = 0;
   let deletions = 0;
-  for (const line of hunks) {
-    if (line.startsWith("+") && !line.startsWith("+++")) insertions++;
-    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+  for (const hunkStr of hunks) {
+    for (const line of hunkStr.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) insertions++;
+      else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+    }
   }
   return { insertions, deletions };
 }

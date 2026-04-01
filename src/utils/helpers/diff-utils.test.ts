@@ -54,9 +54,9 @@ describe("parseDiffString", () => {
     expect(result).toHaveLength(1);
     expect(result[0].fileName).toBe("src/foo.ts");
     expect(result[0].newFile?.fileName).toBe("src/foo.ts");
-    expect(result[0].hunks).toContain("@@ -1,3 +1,4 @@");
-    expect(result[0].hunks).toContain("-removed line");
-    expect(result[0].hunks).toContain("+added line");
+    expect(result[0].hunks[0]).toContain("@@ -1,3 +1,4 @@");
+    expect(result[0].hunks[0]).toContain("-removed line");
+    expect(result[0].hunks[0]).toContain("+added line");
   });
 
   it("parses multiple file diffs", () => {
@@ -117,10 +117,10 @@ describe("parseDiffString", () => {
     ].join("\n");
 
     const result = parseDiffString(diff);
-    expect(result[0]?.hunks).toContain("@@ -10,4 +10,5 @@ function foo() {");
-    expect(result[0]?.hunks).toContain(" context line");
-    expect(result[0]?.hunks).toContain("-old impl");
-    expect(result[0]?.hunks).toContain("+new impl");
+    expect(result[0]?.hunks[0]).toContain("@@ -10,4 +10,5 @@ function foo() {");
+    expect(result[0]?.hunks[0]).toContain(" context line");
+    expect(result[0]?.hunks[0]).toContain("-old impl");
+    expect(result[0]?.hunks[0]).toContain("+new impl");
   });
 
   it("handles blank line ending a hunk", () => {
