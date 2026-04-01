@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { DiffView, DiffModeEnum } from "@git-diff-view/react";
-import { getDiffViewHighlighter } from "@git-diff-view/shiki";
+import { getDiffHighlighter } from "@/utils/helpers/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -35,22 +35,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ diffFile, loading, error
   useEffect(() => {
     const loadHighlighter = async () => {
       try {
-        const hl = await getDiffViewHighlighter([
-          // Core web/app languages
-          "typescript", "tsx", "javascript", "jsx",
-          "html", "css", "scss", "json", "yaml", "xml",
-          // Systems / compiled
-          "rust", "go", "c", "cpp", "java", "csharp",
-          "kotlin", "swift", "scala", "dart", "zig",
-          // Scripting
-          "python", "ruby", "php", "lua", "bash", "powershell",
-          // Markup / data
-          "markdown", "sql", "graphql", "toml",
-          // Frontend frameworks
-          "vue", "svelte",
-          // DevOps / build
-          "dockerfile", "terraform", "makefile", "groovy",
-        ]);
+        const hl = await getDiffHighlighter();
         setHighlighter(hl);
       } catch (err) {
         console.error("Failed to load highlighter:", err);
