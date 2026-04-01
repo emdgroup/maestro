@@ -187,6 +187,18 @@ Plans:
 - [x] 36-01-PLAN.md — Extend diff-utils: parseDiffString status detection (A/M/D) + computeFileStats helper + tests
 - [x] 36-02-PLAN.md — Refactor WorktreeManager: file list panel, per-file header, single-file rendering, remove diff toggle
 
+### Phase 37: Redesign the worktrees view with card grid and slide-in diff panel
+
+**Goal:** Replace the side-by-side list+diff layout with a full-page card grid grouped by origin branch under collapsible sections; each card has a delete action; action bar toggles expand/collapse all groups; clicking a card slides the entire screen left to reveal a dedicated git diff panel with a back button
+**Requirements**: [WT37-SCHEMA, WT37-MODEL, WT37-AHEAD-BEHIND, WT37-BASE-BRANCH-PERSIST, WT37-CARD-CONTENT, WT37-CARD-GRID, WT37-GROUPING, WT37-ACTION-BAR, WT37-EMPTY-STATES, WT37-DELETE-ACTION, WT37-SLIDE-PANEL, WT37-DIFF-PANEL-ACTIONBAR, WT37-DEEP-LINK, WT37-CLEANUP]
+**Depends on:** Phase 36
+**Plans:** 3 plans
+
+Plans:
+- [ ] 37-01-PLAN.md — Backend: schema V6 migration (base_branch column), model extension (AheadBehind), IPC updates (persist base_branch, compute ahead/behind), regenerate TypeScript bindings
+- [ ] 37-02-PLAN.md — Frontend card grid: WorktreeCard, WorktreeCardGroup, WorktreeCardGrid components, rewrite WorktreesView with grouping + action bar + slide container
+- [ ] 37-03-PLAN.md — Frontend diff panel: WorktreeDiffPanel component, wire into slide container, deep-link adaptation, delete WorktreeManager
+
 ---
 
 *Roadmap created: 2026-02-09*
