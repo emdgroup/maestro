@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T20:35:53.698Z"
+last_updated: "2026-04-01T20:41:14.941Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 37 (redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -133,6 +133,7 @@ Plan: 2 of 3
 | Phase 36 P02 | 0.033 | 1 tasks | 2 files |
 | Phase 36 P02 | 0.370 | 2 tasks | 3 files |
 | Phase 37 P01 | 0.083 | 2 tasks | 5 files |
+| Phase 37 P02 | 0.050 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -255,6 +256,10 @@ Phase 18 Architecture Decisions:
 - [Phase 36]: useWorktreeDiffQuery gets refetchInterval:5000 to match worktree list polling so diff body stays live
 - [Phase 36]: File list items use single flex row with inline stats (no second row for +/- stats)
 - [Phase 37]: Schema V6: base_branch TEXT nullable column added via drop-and-recreate migration; AheadBehind uses named struct for specta TS compatibility; create_worktree_for_task stores NULL; rev-list failure yields None silently
+- [Phase 37]: WorktreeCard accesses ahead_behind.ahead and .behind as named struct fields not tuple index
+- [Phase 37]: parseDiffStat copied into WorktreeCard.tsx for self-contained card; STATUS_FILTERS/StatusFilter defined locally in WorktreesView
+- [Phase 37]: Delete dialog uses pendingDeleteId separate from selectedWorktreeId to avoid coupling card selection and delete trigger
+- [Phase 37]: Slide container pattern: outer overflow-hidden, inner w-[200%] flex row, each screen w-1/2, -translate-x-1/2 on selection
 
 ### Pending Todos
 

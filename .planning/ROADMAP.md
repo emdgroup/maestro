@@ -192,11 +192,11 @@ Plans:
 **Goal:** Replace the side-by-side list+diff layout with a full-page card grid grouped by origin branch under collapsible sections; each card has a delete action; action bar toggles expand/collapse all groups; clicking a card slides the entire screen left to reveal a dedicated git diff panel with a back button
 **Requirements**: [WT37-SCHEMA, WT37-MODEL, WT37-AHEAD-BEHIND, WT37-BASE-BRANCH-PERSIST, WT37-CARD-CONTENT, WT37-CARD-GRID, WT37-GROUPING, WT37-ACTION-BAR, WT37-EMPTY-STATES, WT37-DELETE-ACTION, WT37-SLIDE-PANEL, WT37-DIFF-PANEL-ACTIONBAR, WT37-DEEP-LINK, WT37-CLEANUP]
 **Depends on:** Phase 36
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 37-01-PLAN.md — Backend: schema V6 migration (base_branch column), model extension (AheadBehind), IPC updates (persist base_branch, compute ahead/behind), regenerate TypeScript bindings
-- [ ] 37-02-PLAN.md — Frontend card grid: WorktreeCard, WorktreeCardGroup, WorktreeCardGrid components, rewrite WorktreesView with grouping + action bar + slide container
+- [x] 37-02-PLAN.md — Frontend card grid: WorktreeCard, WorktreeCardGroup, WorktreeCardGrid components, rewrite WorktreesView with grouping + action bar + slide container
 - [ ] 37-03-PLAN.md — Frontend diff panel: WorktreeDiffPanel component, wire into slide container, deep-link adaptation, delete WorktreeManager
 
 ---
