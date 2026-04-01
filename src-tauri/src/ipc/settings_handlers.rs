@@ -24,7 +24,7 @@ use crate::db::AppState;
 #[tauri::command]
 #[specta::specta]
 pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
-    log::info!("get_settings() called via IPC");
+    eprintln!("get_settings() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::load_settings(&conn).map_err(|e| e.to_string())
 }
@@ -51,7 +51,7 @@ pub fn save_settings(
     app_state: State<Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    log::info!("save_settings() called via IPC");
+    eprintln!("save_settings() called via IPC");
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
 }
@@ -148,7 +148,7 @@ pub async fn sync_github_issues(
     repo: String,
     token: String,
 ) -> Result<SyncResult, String> {
-    log::info!("sync_github_issues() called: owner={}, repo={}, project_id={}", owner, repo, project_id);
+    eprintln!("sync_github_issues() called: owner={}, repo={}, project_id={}", owner, repo, project_id);
 
     // Construct GitHub API URL
     let url = format!("https://api.github.com/repos/{}/{}/issues?state=open&per_page=100", owner, repo);
@@ -235,7 +235,7 @@ pub async fn sync_jira_issues(
     api_token: String,
     jql: String,
 ) -> Result<SyncResult, String> {
-    log::info!("sync_jira_issues() called: host={}, project_id={}", host, project_id);
+    eprintln!("sync_jira_issues() called: host={}, project_id={}", host, project_id);
 
     // Construct Jira API URL with query parameters
     let encoded_jql = urlencoding::encode(&jql);
@@ -325,7 +325,7 @@ pub fn save_import_config(
     provider: String,
     config: serde_json::Value,
 ) -> Result<(), String> {
-    log::info!("save_import_config() called: provider={}, project_id={}", provider, project_id);
+    eprintln!("save_import_config() called: provider={}, project_id={}", provider, project_id);
 
     // Validate provider
     if provider != "github" && provider != "jira" {

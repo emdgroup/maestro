@@ -25,7 +25,7 @@ pub async fn attach_remote_stream_listener(
     let pid = handle.remote_pid;
     tokio::task::spawn(async move {
         crate::process::remote::poll_remote_log(&ssh, pid, broadcast_sender).await;
-        log::debug!("[streaming] Remote stream listener stopped");
+        eprintln!("[streaming] Remote stream listener stopped");
     });
     Ok(())
 }

@@ -19,12 +19,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = Arc::new(AppState::new(conn));
     app.manage(app_state);
 
-    log::info!("Tauri app initialized successfully");
+    eprintln!("Tauri app initialized successfully");
     Ok(())
 }
 
 fn main() {
-    env_logger::init();
 
     // Generate TypeScript bindings in debug builds
     let builder = maestro::create_builder();

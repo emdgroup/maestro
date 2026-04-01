@@ -64,7 +64,7 @@ pub async fn spawn_remote_agent_execution(
         return Err("Failed to obtain remote process PID".to_string());
     }
 
-    log::info!(
+    eprintln!(
         "[Remote] Spawned Claude Code on {} with PID {} in worktree {}",
         remote_path, remote_pid, worktree.branch_name
     );
@@ -92,7 +92,7 @@ pub async fn poll_remote_log(
         let output = match ssh_session.execute_command(&cat_cmd).await {
             Ok(out) => out,
             Err(e) => {
-                log::warn!("[poll_remote_log] Failed to check log file size: {}", e);
+                eprintln!("[poll_remote_log] Failed to check log file size: {}", e);
                 break;
             }
         };
@@ -109,7 +109,7 @@ pub async fn poll_remote_log(
                     }
                 }
                 Err(e) => {
-                    log::warn!("[poll_remote_log] Failed to read log file: {}", e);
+                    eprintln!("[poll_remote_log] Failed to read log file: {}", e);
                     break;
                 }
             }
@@ -147,7 +147,7 @@ pub async fn stream_remote_output(
     let pid = handle.remote_pid;
     tokio::spawn(async move {
         poll_remote_log(&ssh, pid, output_sender).await;
-        log::info!("[stream_remote_output] Background task stopped");
+        eprintln!("[stream_remote_output] Background task stopped");
     });
     Ok(())
 }
@@ -164,7 +164,7 @@ pub async fn kill_remote_process(handle: &RemoteProcessHandle) -> Result<(), Str
         .await
         .map_err(|e| format!("Failed to kill remote process: {}", e))?;
 
-    log::info!("[Remote] Killed process {} on remote host", handle.remote_pid);
+    eprintln!("[Remote] Killed process {} on remote host", handle.remote_pid);
     Ok(())
 }
 

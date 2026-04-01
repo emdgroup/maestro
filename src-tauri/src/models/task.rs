@@ -85,7 +85,7 @@ impl FromStr for TaskPriority {
             "Medium" => Ok(TaskPriority::Medium),
             "Low" => Ok(TaskPriority::Low),
             _ => {
-                log::warn!("Unknown TaskPriority '{}', defaulting to Medium", s);
+                eprintln!("Unknown TaskPriority '{}', defaulting to Medium", s);
                 Ok(TaskPriority::Medium)
             }
         }
@@ -104,7 +104,7 @@ impl FromStr for TaskStatus {
             "Done" => Ok(TaskStatus::Done),
             "Cancelled" => Ok(TaskStatus::Cancelled),
             _ => {
-                log::warn!("Unknown TaskStatus '{}', defaulting to Backlog", s);
+                eprintln!("Unknown TaskStatus '{}', defaulting to Backlog", s);
                 Ok(TaskStatus::Backlog)
             }
         }

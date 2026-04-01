@@ -49,7 +49,7 @@ pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    log::info!("get_diff_for_review({}) called", task_id);
+    eprintln!("get_diff_for_review({}) called", task_id);
 
     // 1. Single JOIN query to get all needed data
     let (project, worktree_path, branch_name) = {
@@ -81,7 +81,7 @@ pub async fn get_diff_for_review(
     // 2. Handle diff generation based on project type
     if project.is_remote() {
         // Remote project: use git dispatcher which executes over SSH
-        log::info!("  Generating diff for remote project via SSH");
+        eprintln!("  Generating diff for remote project via SSH");
 
         let git_conn = get_git_connection(&project, &app_state)
             .await
@@ -91,22 +91,22 @@ pub async fn get_diff_for_review(
             .await
             .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
 
-        log::info!("get_diff_for_review: task {} from remote: {} bytes", task_id, diff.len());
+        eprintln!("get_diff_for_review: task {} from remote: {} bytes", task_id, diff.len());
         Ok(diff)
     } else {
         // Local project: use git dispatcher directly
-        log::info!("  Generating diff for local project via git dispatcher");
+        eprintln!("  Generating diff for local project via git dispatcher");
 
         let full_worktree_path = format!("{}/{}", project.path, worktree_path);
 
-        log::info!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+        eprintln!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
 
         let git_conn = crate::models::GitConnection::Local { path: project.path.clone() };
         let diff = git::git_diff(&git_conn, &branch_name, "main")
             .await
             .map_err(|e| format!("Failed to get diff: {}", e))?;
 
-        log::info!("get_diff_for_review: task {}: {} bytes", task_id, diff.len());
+        eprintln!("get_diff_for_review: task {}: {} bytes", task_id, diff.len());
         Ok(diff)
     }
 }
@@ -127,7 +127,7 @@ pub async fn save_task_review(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    log::info!("save_task_review({}, decision={}) called", task_id, decision);
+    eprintln!("save_task_review({}, decision={}) called", task_id, decision);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -135,7 +135,7 @@ pub async fn save_task_review(
     let review_id = insert_review_with_comments(
         &conn, task_id, &decision, general_feedback.as_deref(), comments_ref, &now,
     )?;
-    log::info!("Saved review for task {}: review_id={}", task_id, review_id);
+    eprintln!("Saved review for task {}: review_id={}", task_id, review_id);
 
     Ok(ReviewResult { success: true, review_id, task_status: None })
 }
@@ -154,7 +154,7 @@ pub async fn request_changes(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    log::info!("request_changes({}) called", task_id);
+    eprintln!("request_changes({}) called", task_id);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -166,7 +166,7 @@ pub async fn request_changes(
         "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
         rusqlite::params![&now, task_id],
     ).map_err(|e| format!("Update task status failed: {}", e))?;
-    log::info!("Requested changes for task {}: review_id={}, status=InProgress", task_id, review_id);
+    eprintln!("Requested changes for task {}: review_id={}, status=InProgress", task_id, review_id);
 
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
 }
@@ -191,7 +191,7 @@ pub async fn approve_task_and_merge(
     task_id: i32,
     merge_strategy: String,
 ) -> Result<MergeResult, String> {
-    log::info!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
+    eprintln!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
 
     // 1. Single JOIN query to get task, worktree, and project data
     let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
@@ -211,7 +211,7 @@ pub async fn approve_task_and_merge(
     // 2. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-    log::info!(
+    eprintln!(
         "[merge] Starting synchronous merge for task {} (branch: {})",
         task_id, branch_name
     );
@@ -226,7 +226,7 @@ pub async fn approve_task_and_merge(
 
     if merge_result.success {
         // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
-        log::info!("[merge] Merge succeeded for task {}", task_id);
+        eprintln!("[merge] Merge succeeded for task {}", task_id);
         finalize_successful_merge(
             app_state.inner(),
             task_id,
@@ -235,11 +235,11 @@ pub async fn approve_task_and_merge(
             &branch_name,
         )
         .await?;
-        log::info!("[merge] Merge finalized for task {}", task_id);
+        eprintln!("[merge] Merge finalized for task {}", task_id);
         Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
     } else if !merge_result.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
-        log::info!("[merge] Merge conflict for task {}", task_id);
+        eprintln!("[merge] Merge conflict for task {}", task_id);
         reject_merge_on_conflict(app_state.inner(), task_id, &merge_result.conflicts).await?;
         Ok(merge_result)
     } else {
@@ -264,7 +264,7 @@ pub(crate) async fn finalize_successful_merge(
     // Note: DB writes are intentionally split across lock acquisitions because async
     // git cleanup happens between task update and worktree deletion. If the process
     // crashes between these steps, cleanup_zombie_worktrees handles recovery.
-    log::info!(
+    eprintln!(
         "[finalize] Finalizing merge for task {}: updating task to Done",
         task_id
     );
@@ -280,7 +280,7 @@ pub(crate) async fn finalize_successful_merge(
         )
         .map_err(|e| format!("Update task failed: {}", e))?;
 
-        log::info!("[finalize] Task {} moved to Done", task_id);
+        eprintln!("[finalize] Task {} moved to Done", task_id);
     }
 
     // 2. Delete worktree from disk via git dispatcher (and DB on success)
@@ -311,13 +311,13 @@ pub(crate) async fn finalize_successful_merge(
             match branch_result {
                 Ok(output) if !output.status.success() => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    log::warn!("[finalize] Failed to delete branch {} (non-fatal): {}", branch_name, stderr);
+                    eprintln!("[finalize] Failed to delete branch {} (non-fatal): {}", branch_name, stderr);
                 }
                 Err(e) => {
-                    log::warn!("[finalize] Failed to run git branch -D {} (non-fatal): {}", branch_name, e);
+                    eprintln!("[finalize] Failed to run git branch -D {} (non-fatal): {}", branch_name, e);
                 }
                 _ => {
-                    log::info!("[finalize] Branch {} deleted", branch_name);
+                    eprintln!("[finalize] Branch {} deleted", branch_name);
                 }
             }
             // Delete from database on successful cleanup
@@ -329,15 +329,15 @@ pub(crate) async fn finalize_successful_merge(
                 )
                 .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
             }
-            log::info!("[finalize] Worktree {} deleted from disk and DB", worktree_id);
+            eprintln!("[finalize] Worktree {} deleted from disk and DB", worktree_id);
         }
         Err(e) => {
-            log::warn!("[finalize] Cleanup failed (will retry): {}", e);
+            eprintln!("[finalize] Cleanup failed (will retry): {}", e);
         }
     }
 
     // 3. Final status log
-    log::info!("[finalize] Merge finalization complete for task {}", task_id);
+    eprintln!("[finalize] Merge finalization complete for task {}", task_id);
 
     Ok(())
 }
@@ -358,7 +358,7 @@ pub async fn reject_review(
     action: String,
     instruction: Option<String>,
 ) -> Result<Task, String> {
-    log::info!("reject_review({}, action={}) called", task_id, action);
+    eprintln!("reject_review({}, action={}) called", task_id, action);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -372,7 +372,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
 
-            log::info!("[reject_review] Task {} moved to Backlog", task_id);
+            eprintln!("[reject_review] Task {} moved to Backlog", task_id);
             // TODO: delete worktree for this task
         }
         "ResumeWithInstructions" => {
@@ -394,7 +394,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
 
-            log::info!("[reject_review] Task {} resumed with instructions", task_id);
+            eprintln!("[reject_review] Task {} resumed with instructions", task_id);
         }
         "CancelTask" => {
             // Move task to Cancelled; worktree cleanup is a TODO for full implementation
@@ -404,7 +404,7 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
 
-            log::info!("[reject_review] Task {} cancelled", task_id);
+            eprintln!("[reject_review] Task {} cancelled", task_id);
             // TODO: delete worktree for this task
         }
         _ => {
@@ -433,7 +433,7 @@ pub(crate) async fn reject_merge_on_conflict(
     task_id: i32,
     conflicts: &[String],
 ) -> Result<(), String> {
-    log::info!(
+    eprintln!(
         "[reject] Rejecting merge for task {} due to conflicts",
         task_id
     );
@@ -449,7 +449,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Update task failed: {}", e))?;
 
-    log::info!("[reject] Task {} moved to InProgress", task_id);
+    eprintln!("[reject] Task {} moved to InProgress", task_id);
 
     // Save conflict feedback as review comment for visibility
     conn.execute(
@@ -459,7 +459,7 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Save feedback failed: {}", e))?;
 
-    log::info!("[reject] Conflict feedback saved for task {}", task_id);
+    eprintln!("[reject] Conflict feedback saved for task {}", task_id);
 
     Ok(())
 }
