@@ -76,12 +76,9 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   return (
     <div className="flex flex-col h-full">
       {/* Action bar */}
-      <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
-        {/* Left side: worktree name + file search + flat/tree toggle */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-sm font-semibold truncate shrink-0 max-w-[200px]">
-            {worktree.branch_name}
-          </span>
+      <div className="relative h-12 border-b border-border bg-muted/30 flex items-center px-4 shrink-0">
+        {/* Left side: file search + flat/tree toggle */}
+        <div className="flex items-center gap-2 z-10">
           <Input
             placeholder="Filter files..."
             value={fileSearch}
@@ -104,8 +101,15 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
           </ToggleGroup>
         </div>
 
+        {/* Center: branch name — absolutely positioned to span the full bar */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="font-mono text-sm font-semibold truncate max-w-[300px]">
+            {worktree.branch_name}
+          </span>
+        </div>
+
         {/* Right side: unified/split toggle + close button */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="ml-auto flex items-center gap-2 z-10">
           <ToggleGroup
             value={[
               forceUnified || effectiveDiffViewMode !== DiffModeEnum.SplitGitHub
