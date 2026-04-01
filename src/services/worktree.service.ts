@@ -33,6 +33,7 @@ export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: Diff
     queryKey: worktreeQueryKeys.diff(worktreeId ?? 0, diffTarget),
     queryFn: () => api.getWorktreeDiff(worktreeId!, diffTarget),
     enabled: worktreeId != null,
+    refetchInterval: 5000,
   });
 }
 

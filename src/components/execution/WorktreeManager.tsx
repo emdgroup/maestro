@@ -118,8 +118,20 @@ export function WorktreeManager({
     return parseDiffString(diffString);
   }, [diffString]);
 
+  // When the selected worktree changes, clear the file selection immediately
+  // so we don't briefly show the previous worktree's file header.
   useEffect(() => {
-    setSelectedFileIndex(diffFiles.length > 0 ? 0 : null);
+    setSelectedFileIndex(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorktreeId]);
+
+  // Auto-select the first file once diff data loads for the current worktree.
+  // Only fires when selectedFileIndex is null (i.e. we haven't picked one yet),
+  // so a background refetch does not bounce the user back to file 0 mid-navigation.
+  useEffect(() => {
+    if (diffFiles.length > 0) {
+      setSelectedFileIndex((prev) => (prev === null ? 0 : prev));
+    }
   }, [diffFiles]);
 
   const selectedFile = selectedFileIndex !== null ? (diffFiles[selectedFileIndex] ?? null) : null;
@@ -336,22 +348,20 @@ export function WorktreeManager({
                             : "border-transparent hover:bg-muted/10",
                         )}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span className={cn("text-xs font-medium shrink-0", statusColor)}>
                             {status}
                           </span>
-                          <span className="text-xs font-mono truncate">{basename}</span>
+                          <span className="text-xs font-mono truncate flex-1 min-w-0">
+                            {basename}
+                          </span>
+                          {stats.insertions > 0 && (
+                            <span className="text-xs text-success shrink-0">+{stats.insertions}</span>
+                          )}
+                          {stats.deletions > 0 && (
+                            <span className="text-xs text-destructive shrink-0">-{stats.deletions}</span>
+                          )}
                         </div>
-                        {(stats.insertions > 0 || stats.deletions > 0) && (
-                          <div className="text-xs mt-1 pl-3">
-                            {stats.insertions > 0 && (
-                              <span className="text-success">+{stats.insertions}</span>
-                            )}
-                            {stats.deletions > 0 && (
-                              <span className="text-destructive ml-1">-{stats.deletions}</span>
-                            )}
-                          </div>
-                        )}
                       </div>
                     );
                   })
