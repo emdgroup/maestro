@@ -33,8 +33,6 @@ specta = { version = "2.0.0-rc.20", features = ["serde_json"] }
 specta-typescript = "0.0.9"
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 urlencoding = "2.1"
-log = "0.4"
-env_logger = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["UI_ViewManagement", "UI", "Foundation"] }
