@@ -31,8 +31,6 @@ impl client::Handler for SshClientHandler {
         // For now, log the key fingerprint so users can see it in debug logs.
         // The check_and_store_host_key() function in db/connection.rs is ready
         // to be wired once we restructure the handler to receive AppState.
-        let fingerprint = format!("{:?}", server_public_key);
-        eprintln!("[SSH] Server key fingerprint: {}", fingerprint);
         Ok(true)
     }
 }
