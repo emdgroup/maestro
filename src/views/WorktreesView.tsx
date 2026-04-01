@@ -127,60 +127,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
   return (
     <div className="flex flex-col h-full">
-      {/* Action bar */}
-      <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
-        <div className="flex items-center gap-2">
-          <InputGroup>
-            <InputGroupInput
-              type="text"
-              placeholder="Search branches..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-48 text-sm"
-            />
-            <InputGroupAddon align="inline-start">
-              <SearchIcon className="text-muted-foreground" />
-            </InputGroupAddon>
-          </InputGroup>
-          <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className="text-xs px-3"
-              >
-                {f}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
-            <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
-            <span className="text-xs">Collapse all</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => {
-              void queryClient.invalidateQueries({
-                queryKey: [...taskQueryKeys.all, "branches", projectId],
-              });
-              setOriginBranch(currentBranch);
-              setNewBranchName("");
-              setCreateError(null);
-              setShowCreateDialog(true);
-            }}
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" />
-            New Worktree
-          </Button>
-        </div>
-      </div>
-
       {/* Slide container */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div
@@ -191,6 +137,60 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
         >
           {/* Screen 1 — Card grid */}
           <div className="w-1/2 h-full flex flex-col min-w-0">
+            {/* Action bar */}
+            <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <InputGroup>
+                  <InputGroupInput
+                    type="text"
+                    placeholder="Search branches..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-8 w-48 text-sm"
+                  />
+                  <InputGroupAddon align="inline-start">
+                    <SearchIcon className="text-muted-foreground" />
+                  </InputGroupAddon>
+                </InputGroup>
+                <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
+                  {STATUS_FILTERS.map((f) => (
+                    <ToggleGroupItem
+                      key={f}
+                      value={f}
+                      pressed={statusFilter === f}
+                      onClick={() => setStatusFilter(f)}
+                      className="text-xs px-3"
+                    >
+                      {f}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
+                  <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
+                  <span className="text-xs">Collapse all</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    void queryClient.invalidateQueries({
+                      queryKey: [...taskQueryKeys.all, "branches", projectId],
+                    });
+                    setOriginBranch(currentBranch);
+                    setNewBranchName("");
+                    setCreateError(null);
+                    setShowCreateDialog(true);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  New Worktree
+                </Button>
+              </div>
+            </div>
+
             <WorktreeCardGrid
               groups={groupedWorktrees}
               collapsedGroups={collapsedGroups}

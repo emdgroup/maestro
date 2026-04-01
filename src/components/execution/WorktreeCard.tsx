@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
+import { cn } from "@/lib";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 function parseDiffStat(
@@ -29,8 +30,17 @@ export function WorktreeCard({ worktree, onSelect, onDelete }: WorktreeCardProps
 
   return (
     <div
-      className="relative group rounded-lg border bg-card p-4 cursor-pointer hover:bg-muted/10 transition-colors w-56 shrink-0"
-      onClick={() => worktree.id != null && onSelect(worktree.id)}
+      className={cn(
+        "relative group rounded-lg border bg-card p-4 transition-colors w-56 shrink-0",
+        worktree.git_status !== "" || worktree.diff_stat !== null
+          ? "cursor-pointer hover:bg-muted/10"
+          : "cursor-default",
+      )}
+      onClick={() => {
+        if (worktree.id == null) return;
+        if (worktree.git_status === "" && worktree.diff_stat === null) return;
+        onSelect(worktree.id);
+      }}
     >
       {/* Delete button — appears on hover */}
       <button
