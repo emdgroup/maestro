@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDiffString, extractFileNames } from "./diff-utils";
+import { parseDiffString, extractFileNames, computeFileStats } from "./diff-utils";
 
 describe("extractFileNames", () => {
   it("returns empty array for empty string", () => {
@@ -138,5 +138,104 @@ describe("parseDiffString", () => {
     expect(result).toHaveLength(2);
     // blank line should not bleed into second file
     expect(result[1].fileName).toBe("src/b.ts");
+  });
+});
+
+describe("parseDiffString status detection", () => {
+  it("returns status 'A' for new file mode", () => {
+    const diff = [
+      "diff --git a/new.ts b/new.ts",
+      "new file mode 100644",
+      "index 0000000..abc1234",
+      "--- /dev/null",
+      "+++ b/new.ts",
+      "@@ -0,0 +1,2 @@",
+      "+line one",
+      "+line two",
+    ].join("\n");
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe("A");
+  });
+
+  it("returns status 'D' for deleted file mode", () => {
+    const diff = [
+      "diff --git a/old.ts b/old.ts",
+      "deleted file mode 100644",
+      "index abc1234..0000000",
+      "--- a/old.ts",
+      "+++ /dev/null",
+      "@@ -1,2 +0,0 @@",
+      "-line one",
+      "-line two",
+    ].join("\n");
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe("D");
+  });
+
+  it("returns status 'M' for regular modification", () => {
+    const diff = [
+      "diff --git a/mod.ts b/mod.ts",
+      "index abc..def 100644",
+      "--- a/mod.ts",
+      "+++ b/mod.ts",
+      "@@ -1,3 +1,3 @@",
+      " context",
+      "-old line",
+      "+new line",
+    ].join("\n");
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe("M");
+  });
+
+  it("defaults to 'M' when no mode line present", () => {
+    const diff = [
+      "diff --git a/file.ts b/file.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+    const result = parseDiffString(diff);
+    expect(result[0].status).toBe("M");
+  });
+});
+
+describe("computeFileStats", () => {
+  it("returns zeros for empty hunks", () => {
+    expect(computeFileStats([])).toEqual({ insertions: 0, deletions: 0 });
+  });
+
+  it("counts insertions and deletions", () => {
+    const hunks = [
+      "@@ -1,3 +1,4 @@",
+      " context line",
+      "-removed line",
+      "+added line",
+      "+extra line",
+    ];
+    expect(computeFileStats(hunks)).toEqual({ insertions: 2, deletions: 1 });
+  });
+
+  it("ignores +++ and --- header lines if present", () => {
+    const hunks = [
+      "--- a/file.ts",
+      "+++ b/file.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ];
+    expect(computeFileStats(hunks)).toEqual({ insertions: 1, deletions: 1 });
+  });
+
+  it("counts only additions", () => {
+    const hunks = ["@@ -0,0 +1,3 @@", "+line1", "+line2", "+line3"];
+    expect(computeFileStats(hunks)).toEqual({ insertions: 3, deletions: 0 });
+  });
+
+  it("counts only deletions", () => {
+    const hunks = ["@@ -1,2 +0,0 @@", "-line1", "-line2"];
+    expect(computeFileStats(hunks)).toEqual({ insertions: 0, deletions: 2 });
   });
 });

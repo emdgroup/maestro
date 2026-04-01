@@ -61,6 +61,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   let currentFile: string | null = null;
   let currentHunks: string[] = [];
   let inHunk = false;
+  let currentStatus: "A" | "M" | "D" = "M";
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -78,6 +79,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
             content: "", // Content will be reconstructed from hunks
           },
           hunks: currentHunks,
+          status: currentStatus,
         });
       }
 
@@ -87,7 +89,14 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
         currentFile = match[2];
         currentHunks = [];
         inHunk = false;
+        currentStatus = "M";
       }
+    }
+    // Detect new/deleted file mode before the first hunk
+    else if (!inHunk && line.includes("new file mode")) {
+      currentStatus = "A";
+    } else if (!inHunk && line.includes("deleted file mode")) {
+      currentStatus = "D";
     }
     // Hunk header line
     else if (line.startsWith("@@")) {
@@ -115,10 +124,26 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
         content: "",
       },
       hunks: currentHunks,
+      status: currentStatus,
     });
   }
 
   return files;
+}
+
+/**
+ * Compute per-file insertion/deletion statistics from hunk lines.
+ * Lines starting with "+" (but not "+++") count as insertions.
+ * Lines starting with "-" (but not "---") count as deletions.
+ */
+export function computeFileStats(hunks: string[]): { insertions: number; deletions: number } {
+  let insertions = 0;
+  let deletions = 0;
+  for (const line of hunks) {
+    if (line.startsWith("+") && !line.startsWith("+++")) insertions++;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+  }
+  return { insertions, deletions };
 }
 
 /**

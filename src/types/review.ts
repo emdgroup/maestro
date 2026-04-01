@@ -46,6 +46,7 @@ export interface DiffFile {
 // Helper type for accessing file name from DiffFile
 export interface DiffFileWithName extends DiffFile {
   fileName: string;
+  status?: "A" | "M" | "D";
 }
 
 // For internal diff parsing, before converting to DiffFile format
