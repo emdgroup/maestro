@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T12:15:54.789Z"
+last_updated: "2026-04-01T12:19:57.106Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -130,6 +130,7 @@ Plan: 2 of 2
 | Phase 35 P01 | 0.3 | 2 tasks | 9 files |
 | Phase 35 P02 | 0.033 | 2 tasks | 2 files |
 | Phase 36 P01 | 0.207 | 1 tasks | 3 files |
+| Phase 36 P02 | 0.033 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -246,6 +247,8 @@ Phase 18 Architecture Decisions:
 - [Phase 35]: diffBranch pre-populated from selectedWorktree.branch_name via useEffect; Branch mode always attempts diff even with clean working tree
 - [Phase 36]: status field is optional on DiffFileWithName — parseDiffString always sets it, but type flexibility preserved for manual construction
 - [Phase 36]: computeFileStats self-guards against +++ / --- lines — does not assume they are pre-stripped by the caller
+- [Phase 36]: Always use DiffTarget::Head in WorktreeManager — diff target toggle removed; branch diff added unnecessary UI complexity without sufficient value
+- [Phase 36]: Module-level DIFF_TARGET_HEAD constant outside component avoids query key object recreation on every render (stable reference)
 
 ### Pending Todos
 
