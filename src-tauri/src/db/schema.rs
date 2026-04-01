@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
-pub const SCHEMA_V5: &str = r#"
+pub const SCHEMA_V6: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS worktrees (
     project_id INTEGER NOT NULL,
     task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
     branch_name TEXT NOT NULL,
+    base_branch TEXT,
     path TEXT NOT NULL,
     git_status TEXT,
     created_at TEXT NOT NULL,
@@ -179,7 +180,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V5)?;
+        conn.execute_batch(SCHEMA_V6)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -232,9 +233,9 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
-        // Verify worktrees table has new v4 columns
+        // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
             .prepare("PRAGMA table_info(worktrees)")
             .unwrap()
@@ -245,6 +246,7 @@ mod tests {
 
         assert!(worktree_columns.contains(&"task_id".to_string()), "task_id column should exist");
         assert!(worktree_columns.contains(&"git_status".to_string()), "git_status column should exist");
+        assert!(worktree_columns.contains(&"base_branch".to_string()), "base_branch column should exist");
         assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
         assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
         assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");

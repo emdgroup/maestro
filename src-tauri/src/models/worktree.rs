@@ -10,7 +10,15 @@ pub fn worktree_path_for_task(task_id: i32) -> String {
     format!("{}{}", WORKTREE_PATH_PREFIX, task_id)
 }
 
-/// Worktree record from database (schema v3)
+/// Ahead/behind commit counts relative to the upstream tracking branch
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AheadBehind {
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+/// Worktree record from database (schema v6)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct Worktree {
@@ -18,6 +26,7 @@ pub struct Worktree {
     pub project_id: i32,
     pub task_id: Option<i32>,       // nullable — None for manually created worktrees
     pub branch_name: String,
+    pub base_branch: Option<String>, // origin branch this worktree was created from
     pub path: String,
     pub git_status: Option<String>, // raw git status --porcelain output
     pub created_at: String,
@@ -39,6 +48,8 @@ pub struct WorktreeWithStatus {
     pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention
     pub is_orphan: bool,                 // on-disk but not in DB
     pub diff_stat: Option<String>,       // raw output of `git diff --shortstat`; None if clean
+    pub base_branch: Option<String>,     // origin branch persisted at worktree creation time
+    pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
 }
 
 /// View model for the Agents view — execution log enriched with task and worktree info
