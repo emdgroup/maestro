@@ -277,6 +277,7 @@ Phase 18 Architecture Decisions:
 | 260331-d7x | search in backend code usage of git commands and list them | 2026-03-31 | — | [260331-d7x-search-in-backend-code-usage-of-git-comm](./quick/260331-d7x-search-in-backend-code-usage-of-git-comm/) |
 | 260401-csx | Revert Rust logging from log crate back to console prints | 2026-04-01 | 2b4776d | [260401-csx-revert-rust-logging-from-log-crate-back-](./quick/260401-csx-revert-rust-logging-from-log-crate-back-/) |
 | 260401-is7 | Add unified/split view toggle in git diff pane | 2026-04-01 | aad4dfd | [260401-is7-add-unified-and-split-view-toggle-in-git](./quick/260401-is7-add-unified-and-split-view-toggle-in-git/) |
+| 260401-tau | Fix 3 post-phase-37 UI issues: gate diff pane on dirty status, slide action bar, center branch name | 2026-04-01 | 7eb166b | [260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-](./quick/260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-/) |
 
 ### Blockers/Concerns
 
