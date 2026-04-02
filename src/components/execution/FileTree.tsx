@@ -1,4 +1,7 @@
 import React, { useState, useMemo } from "react";
+import { ChevronDown, ChevronRight, Check, Minus } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
+import { cn } from "@/lib";
 import { DiffFileWithName } from "@/types/review";
 
 interface FileTreeNode {
@@ -6,7 +9,7 @@ interface FileTreeNode {
   path: string;
   isDir: boolean;
   children?: FileTreeNode[];
-  fileStatus?: "added" | "modified" | "deleted";
+  fileStatus?: "A" | "M" | "D";
   fileName?: string;
 }
 
@@ -14,115 +17,85 @@ interface FileTreeProps {
   files: DiffFileWithName[];
   selectedFile: string | null;
   onSelectFile: (fileName: string) => void;
+  checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
+  onToggleFile?: (fileName: string) => void;
 }
 
 /**
  * Build a hierarchical file tree from flat file list
  */
 function buildFileTree(files: DiffFileWithName[]): FileTreeNode[] {
-  const root: Record<string, FileTreeNode> = {};
+  // Use a nested map structure: path → node, children tracked by reference
+  const rootChildren: FileTreeNode[] = [];
+  const nodeByPath: Record<string, FileTreeNode> = {};
 
   for (const file of files) {
     const parts = file.fileName.split("/");
-    let current = root;
 
     for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
       const path = parts.slice(0, i + 1).join("/");
+      if (nodeByPath[path]) continue;
 
-      if (!current[part]) {
-        current[part] = {
-          name: part,
-          path,
-          isDir: !isLast,
-          children: isLast ? undefined : [],
-          fileName: isLast ? file.fileName : undefined,
-        };
-      }
+      const isLast = i === parts.length - 1;
+      const node: FileTreeNode = {
+        name: parts[i],
+        path,
+        isDir: !isLast,
+        children: isLast ? undefined : [],
+        fileName: isLast ? file.fileName : undefined,
+        fileStatus: isLast ? (file.status ?? "M") : undefined,
+      };
+      nodeByPath[path] = node;
 
-      if (!isLast) {
-        if (!current[part].children) {
-          current[part].children = [];
-        }
-        current = current[part].children!.reduce(
-          (acc, node) => {
-            acc[node.name] = node;
-            return acc;
-          },
-          {} as Record<string, FileTreeNode>,
-        );
+      if (i === 0) {
+        rootChildren.push(node);
       } else {
-        // This is a file node, infer status from hunks
-        current[part].fileName = file.fileName;
-        // Simple heuristic: check first hunk line for add/remove
-        if (file.hunks && file.hunks.length > 0) {
-          const firstHunk = file.hunks.find((h) => h.startsWith("@@"));
-          if (firstHunk) {
-            // For simplicity, mark as modified (full conflict detection deferred)
-            current[part].fileStatus = "modified";
-          }
-        }
+        const parentPath = parts.slice(0, i).join("/");
+        nodeByPath[parentPath].children!.push(node);
       }
     }
   }
 
-  // Convert to array and sort
-  const sortedTree = Object.values(root).sort((a, b) => {
-    // Directories first
-    if (a.isDir !== b.isDir) {
-      return a.isDir ? -1 : 1;
+  function sortNode(nodes: FileTreeNode[]): FileTreeNode[] {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      if (node.children) sortNode(node.children);
     }
-    return a.name.localeCompare(b.name);
-  });
-
-  // Recursively sort children
-  function sortChildren(node: FileTreeNode) {
-    if (node.children) {
-      node.children.sort((a, b) => {
-        if (a.isDir !== b.isDir) {
-          return a.isDir ? -1 : 1;
-        }
-        return a.name.localeCompare(b.name);
-      });
-      node.children.forEach(sortChildren);
-    }
+    return nodes;
   }
 
-  sortedTree.forEach(sortChildren);
-  return sortedTree;
+  return sortNode(rootChildren);
 }
 
-/**
- * Get file extension for icon/styling
- */
-function getFileType(fileName: string): string {
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
-  return ext || "file";
-}
-
-/**
- * Collapsible directory component
- */
 const DirectoryNode: React.FC<{
   node: FileTreeNode;
   selectedFile: string | null;
   onSelectFile: (fileName: string) => void;
   level: number;
-}> = ({ node, selectedFile, onSelectFile, level }) => {
+  checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
+  onToggleFile?: (fileName: string) => void;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className="file-tree-node">
-      <div className="file-tree-node-content" style={{ paddingLeft: `${level * 12}px` }}>
-        <button className="file-tree-toggle" onClick={() => setIsExpanded(!isExpanded)}>
-          {isExpanded ? "▼" : "▶"}
-        </button>
-        <span className="file-tree-icon">📁</span>
-        <span className="file-tree-name">{node.name}</span>
-      </div>
+    <div>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-1 w-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors"
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
+      >
+        {isExpanded ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <span className="font-mono truncate">{node.name}</span>
+      </button>
       {isExpanded && node.children && (
-        <div className="file-tree-children">
+        <div>
           {node.children.map((child) => (
             <FileNode
               key={child.path}
@@ -130,6 +103,8 @@ const DirectoryNode: React.FC<{
               selectedFile={selectedFile}
               onSelectFile={onSelectFile}
               level={level + 1}
+              checkedFiles={checkedFiles}
+              onToggleFile={onToggleFile}
             />
           ))}
         </div>
@@ -138,15 +113,14 @@ const DirectoryNode: React.FC<{
   );
 };
 
-/**
- * File or directory node component
- */
 const FileNode: React.FC<{
   node: FileTreeNode;
   selectedFile: string | null;
   onSelectFile: (fileName: string) => void;
   level: number;
-}> = ({ node, selectedFile, onSelectFile, level }) => {
+  checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
+  onToggleFile?: (fileName: string) => void;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile }) => {
   if (node.isDir) {
     return (
       <DirectoryNode
@@ -154,80 +128,83 @@ const FileNode: React.FC<{
         selectedFile={selectedFile}
         onSelectFile={onSelectFile}
         level={level}
+        checkedFiles={checkedFiles}
+        onToggleFile={onToggleFile}
       />
     );
   }
 
   const isSelected = node.fileName === selectedFile;
-  const fileType = getFileType(node.fileName || "");
+  const status = node.fileStatus ?? "M";
+  const statusColor =
+    status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
+  const checkState = node.fileName ? (checkedFiles?.get(node.fileName) ?? "unchecked") : "unchecked";
 
   return (
-    <div className="file-tree-node">
-      <button
-        className={`file-tree-file-button ${isSelected ? "selected" : ""}`}
-        style={{ paddingLeft: `${level * 12 + 24}px` }}
-        onClick={() => {
-          if (node.fileName) {
-            onSelectFile(node.fileName);
-          }
-        }}
-      >
-        <span className="file-tree-icon">
-          {fileType === "ts" || fileType === "tsx"
-            ? "Λ"
-            : fileType === "js" || fileType === "jsx"
-              ? "◎"
-              : fileType === "rs"
-                ? "🦀"
-                : fileType === "py"
-                  ? "🐍"
-                  : fileType === "json"
-                    ? "{ }"
-                    : fileType === "css"
-                      ? "🎨"
-                      : "📄"}
+    <div
+      onClick={() => node.fileName && onSelectFile(node.fileName)}
+      className={cn(
+        "flex items-center gap-1.5 px-2 py-1.5 cursor-pointer border-l-2 transition-colors text-xs",
+        isSelected ? "border-ring bg-muted/20" : "border-transparent hover:bg-muted/10",
+      )}
+      style={{ paddingLeft: `${level * 12 + 8}px` }}
+    >
+      {checkedFiles && onToggleFile && node.fileName && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFile(node.fileName!);
+          }}
+          className="shrink-0"
+        >
+          <CheckboxPrimitive.Root
+            checked={checkState === "checked"}
+            indeterminate={checkState === "indeterminate"}
+            className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+            tabIndex={-1}
+          >
+            <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+              {checkState === "indeterminate" ? (
+                <Minus className="size-3.5" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+            </CheckboxPrimitive.Indicator>
+          </CheckboxPrimitive.Root>
         </span>
-        <span className="file-tree-name">{node.name}</span>
-        {node.fileStatus && (
-          <span className={`file-tree-status file-tree-status-${node.fileStatus}`}>
-            {node.fileStatus === "added" && "●"}
-            {node.fileStatus === "modified" && "●"}
-            {node.fileStatus === "deleted" && "✕"}
-          </span>
-        )}
-      </button>
+      )}
+      <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+      <span className="font-mono truncate">{node.name}</span>
     </div>
   );
 };
 
-/**
- * FileTree component for collapsible file navigation
- */
-export const FileTree: React.FC<FileTreeProps> = ({ files, selectedFile, onSelectFile }) => {
+export const FileTree: React.FC<FileTreeProps> = ({
+  files,
+  selectedFile,
+  onSelectFile,
+  checkedFiles,
+  onToggleFile,
+}) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
   if (files.length === 0) {
-    return (
-      <div className="file-tree-container">
-        <div className="file-tree-empty">No files to display</div>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="file-tree-container">
-      <div className="file-tree-header">Files Changed ({files.length})</div>
-      <div className="file-tree-list">
-        {tree.map((node) => (
-          <FileNode
-            key={node.path}
-            node={node}
-            selectedFile={selectedFile}
-            onSelectFile={onSelectFile}
-            level={0}
-          />
-        ))}
-      </div>
+    <div className="py-1">
+      {tree.map((node) => (
+        <FileNode
+          key={node.path}
+          node={node}
+          selectedFile={selectedFile}
+          onSelectFile={onSelectFile}
+          level={0}
+          checkedFiles={checkedFiles}
+          onToggleFile={onToggleFile}
+        />
+      ))}
     </div>
   );
 };

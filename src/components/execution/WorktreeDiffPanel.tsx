@@ -1,13 +1,19 @@
 import { useState, useMemo, useEffect } from "react";
-import { X, AlignJustify, Columns2, List, FolderTree } from "lucide-react";
+import { X, AlignJustify, Columns2, List, FolderTree, Check, Minus } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { cn, parseDiffString, computeFileStats } from "@/lib";
+import { cn, parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Textarea } from "@/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import { FileTree } from "@/components/execution/FileTree";
-import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import {
+  useWorktreeDiffQuery,
+  useStageWorktreeFilesMutation,
+  useCommitWorktreeMutation,
+} from "@/services/worktree.service";
 import type { WorktreeWithStatus, DiffTarget } from "@/types/bindings";
 
 const DIFF_TARGET_HEAD: DiffTarget = { type: "Head" };
@@ -22,6 +28,9 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [fileSearch, setFileSearch] = useState("");
+  const [stagedFiles, setStagedFiles] = useState<Set<string>>(new Set());
+  const [stagedHunks, setStagedHunks] = useState<Map<string, Set<number>>>(new Map());
+  const [commitMessage, setCommitMessage] = useState("");
 
   const worktreeId = worktree?.id ?? null;
 
@@ -30,6 +39,9 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     isLoading: diffLoading,
     error: diffError,
   } = useWorktreeDiffQuery(worktreeId, DIFF_TARGET_HEAD);
+
+  const stageMutation = useStageWorktreeFilesMutation();
+  const commitMutation = useCommitWorktreeMutation();
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
@@ -42,16 +54,102 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     return diffFiles.filter((f) => f.fileName.toLowerCase().includes(q));
   }, [diffFiles, fileSearch]);
 
+  const hasAnyStaged =
+    stagedFiles.size > 0 || [...stagedHunks.values()].some((s) => s.size > 0);
+
+  function getFileCheckState(fileName: string): "checked" | "unchecked" | "indeterminate" {
+    if (stagedFiles.has(fileName)) return "checked";
+    const hunkSet = stagedHunks.get(fileName);
+    if (!hunkSet || hunkSet.size === 0) return "unchecked";
+    const file = diffFiles.find((f) => f.fileName === fileName);
+    if (!file) return "unchecked";
+    const totalHunks = countHunks(file.hunks[0] ?? "");
+    if (totalHunks > 0 && hunkSet.size >= totalHunks) return "checked";
+    return "indeterminate";
+  }
+
+  function handleFileToggle(fileName: string) {
+    const state = getFileCheckState(fileName);
+    if (state === "checked") {
+      // Uncheck: remove from stagedFiles AND stagedHunks
+      setStagedFiles((prev) => {
+        const n = new Set(prev);
+        n.delete(fileName);
+        return n;
+      });
+      setStagedHunks((prev) => {
+        const n = new Map(prev);
+        n.delete(fileName);
+        return n;
+      });
+    } else {
+      // Check: add to stagedFiles (full file), clear hunk-level selection
+      setStagedFiles((prev) => new Set(prev).add(fileName));
+      setStagedHunks((prev) => {
+        const n = new Map(prev);
+        n.delete(fileName);
+        return n;
+      });
+    }
+  }
+
+  async function handleCommit() {
+    if (!worktreeId || !commitMessage.trim()) return;
+
+    // Stage files first
+    const filesToStage = [...stagedFiles];
+    // Build patch for hunk-level staged items
+    const patchParts: string[] = [];
+    for (const [fileName, hunkIndices] of stagedHunks) {
+      if (stagedFiles.has(fileName)) continue; // whole file already staged
+      const file = diffFiles.find((f) => f.fileName === fileName);
+      if (!file) continue;
+      for (const idx of hunkIndices) {
+        const patch = extractHunkPatch(file.hunks[0] ?? "", idx);
+        if (patch) patchParts.push(patch);
+      }
+    }
+    const combinedPatch = patchParts.length > 0 ? patchParts.join("") : null;
+
+    try {
+      await stageMutation.mutateAsync({
+        worktreeId,
+        filePaths: filesToStage,
+        patch: combinedPatch,
+      });
+      await commitMutation.mutateAsync({
+        worktreeId,
+        message: commitMessage.trim(),
+      });
+
+      // Clear state after successful commit
+      setStagedFiles(new Set());
+      setStagedHunks(new Map());
+      setCommitMessage("");
+
+      // Check if all files were staged (no remaining changes)
+      const allFilesStaged = filesToStage.length === diffFiles.length && !combinedPatch;
+      if (allFilesStaged) {
+        onClose(); // close diff panel — no remaining changes
+      }
+    } catch {
+      // errors handled by mutation onError toasts
+    }
+  }
+
   const handleTreeFileSelect = (fileName: string) => {
     const idx = diffFiles.findIndex((f) => f.fileName === fileName);
     setSelectedFileIndex(idx >= 0 ? idx : null);
   };
 
-  // When the selected worktree changes, clear the file selection and search immediately
+  // When the selected worktree changes, clear the file selection, search, and staging state
   // so we don't briefly show the previous worktree's file header.
   useEffect(() => {
     setSelectedFileIndex(null);
     setFileSearch("");
+    setStagedFiles(new Set());
+    setStagedHunks(new Map());
+    setCommitMessage("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktreeId]);
 
@@ -158,6 +256,10 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                 files={filteredDiffFiles}
                 selectedFile={selectedFile?.fileName ?? null}
                 onSelectFile={handleTreeFileSelect}
+                checkedFiles={
+                  new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
+                }
+                onToggleFile={handleFileToggle}
               />
             ) : (
               filteredDiffFiles.map((file) => {
@@ -170,6 +272,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                     : status === "D"
                       ? "text-destructive"
                       : "text-muted-foreground";
+                const checkState = getFileCheckState(file.fileName);
                 return (
                   <div
                     key={file.fileName}
@@ -182,6 +285,28 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                     )}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFileToggle(file.fileName);
+                        }}
+                        className="shrink-0"
+                      >
+                        <CheckboxPrimitive.Root
+                          checked={checkState === "checked"}
+                          indeterminate={checkState === "indeterminate"}
+                          className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+                          tabIndex={-1}
+                        >
+                          <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                            {checkState === "indeterminate" ? (
+                              <Minus className="size-3.5" />
+                            ) : (
+                              <Check className="size-3.5" />
+                            )}
+                          </CheckboxPrimitive.Indicator>
+                        </CheckboxPrimitive.Root>
+                      </span>
                       <span className={cn("text-xs font-medium shrink-0", statusColor)}>
                         {status}
                       </span>
@@ -192,6 +317,29 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
               })
             )}
           </div>
+
+          {/* Commit area — visible only when files staged */}
+          {hasAnyStaged && (
+            <div className="border-t border-border p-2 shrink-0 flex flex-col gap-2">
+              <Textarea
+                placeholder="Commit message..."
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                className="text-xs min-h-[60px] resize-none"
+                rows={3}
+              />
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={
+                  !commitMessage.trim() || commitMutation.isPending || stageMutation.isPending
+                }
+                onClick={handleCommit}
+              >
+                {commitMutation.isPending || stageMutation.isPending ? "Committing..." : "Commit"}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Right diff body */}
