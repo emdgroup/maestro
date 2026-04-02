@@ -406,16 +406,17 @@ pub async fn delete_worktree(
     app_state: State<'_, Arc<AppState>>,
     worktree_id: i32,
     _repo_path: String,
+    delete_branch: bool,
 ) -> Result<(), String> {
-    eprintln!("delete_worktree(worktree={}) called", worktree_id);
+    eprintln!("delete_worktree(worktree={}, delete_branch={}) called", worktree_id, delete_branch);
 
-    // Step 1: Query DB for worktree path and project_id
-    let (wt_path, wt_project_id): (String, i32) = {
+    // Step 1: Query DB for worktree path, project_id, and branch_name
+    let (wt_path, wt_project_id, wt_branch_name): (String, i32, String) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, project_id FROM worktrees WHERE id = ?",
+            "SELECT path, project_id, branch_name FROM worktrees WHERE id = ?",
             rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
     };
@@ -425,6 +426,40 @@ pub async fn delete_worktree(
 
     // Step 2: Call git worktree remove via dispatcher (best effort — don't fail if already gone)
     let _ = crate::git::delete_worktree(&git_conn, &wt_path).await;
+
+    // Step 2b: Optionally delete the branch (best-effort, non-fatal)
+    if delete_branch {
+        match &git_conn {
+            crate::models::GitConnection::Local { path } => {
+                let output = tokio::process::Command::new("git")
+                    .args(["branch", "-d", &wt_branch_name])
+                    .current_dir(path)
+                    .output()
+                    .await;
+                match output {
+                    Ok(o) if !o.status.success() => {
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        eprintln!("delete_worktree: branch delete failed (non-fatal): {}", stderr);
+                    }
+                    Err(e) => {
+                        eprintln!("delete_worktree: branch delete error (non-fatal): {}", e);
+                    }
+                    _ => {
+                        eprintln!("delete_worktree: branch {} deleted", wt_branch_name);
+                    }
+                }
+            }
+            crate::models::GitConnection::Remote { ssh, remote_path } => {
+                let cmd = format!(
+                    "git -C {} branch -d {}",
+                    crate::git::remote::shell_quote(remote_path),
+                    crate::git::remote::shell_quote(&wt_branch_name)
+                );
+                let _ = ssh.execute_command(&cmd).await;
+                eprintln!("delete_worktree: remote branch delete attempted for {}", wt_branch_name);
+            }
+        }
+    }
 
     // Step 3: Delete DB row
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;

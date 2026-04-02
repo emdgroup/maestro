@@ -408,9 +408,9 @@ async createWorktree(projectId: number, taskId: number | null, originBranch: str
     else return { status: "error", error: e  as any };
 }
 },
-async deleteWorktree(worktreeId: number, repoPath: string) : Promise<Result<null, string>> {
+async deleteWorktree(worktreeId: number, repoPath: string, deleteBranch: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { worktreeId, repoPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { worktreeId, repoPath, deleteBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
