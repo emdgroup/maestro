@@ -202,6 +202,18 @@ Plans:
 - [x] 37-02-PLAN.md — Frontend card grid: WorktreeCard, WorktreeCardGroup, WorktreeCardGrid components, rewrite WorktreesView with grouping + action bar + slide container
 - [x] 37-03-PLAN.md — Frontend diff panel: WorktreeDiffPanel component, wire into slide container, deep-link adaptation, delete WorktreeManager
 
+### Phase 38: Add git commit features to the diff view — file selection, revert/shelve/commit actions, block-level staging
+
+**Goal:** Add git commit workflow to WorktreeDiffPanel: file-level checkboxes (3-state), hunk-level checkboxes, commit area (message + button), revert with confirmation dialog, shelve with name popover, and 4 new Rust IPC commands (stage, commit, discard, shelve)
+**Requirements**: [GC-01, GC-02, GC-03, GC-04, GC-05, GC-06, GC-07, GC-08]
+**Depends on:** Phase 37
+**Plans:** 3 plans
+
+Plans:
+- [ ] 38-01-PLAN.md — Diff-utils hunk extraction functions (TDD) + 4 Rust IPC commands + bindings
+- [ ] 38-02-PLAN.md — TanStack mutation hooks + file-level checkboxes + commit area in WorktreeDiffPanel
+- [ ] 38-03-PLAN.md — Hunk checkboxes in DiffViewer + Revert/Shelve action bar buttons
+
 ---
 
 *Roadmap created: 2026-02-09*
