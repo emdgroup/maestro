@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-02T10:59:08.568Z"
+last_updated: "2026-04-02T11:05:42.124Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -137,6 +137,7 @@ Plan: 3 of 3
 | Phase 37 P03 | 0.042 | 2 tasks | 3 files |
 | Phase 38 P01 | 0.078 | 2 tasks | 6 files |
 | Phase 38 P02 | 0.133 | 2 tasks | 3 files |
+| Phase 38 P03 | 0.067 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -269,6 +270,8 @@ Phase 18 Architecture Decisions:
 - [Phase 38]: discard_worktree_changes: git reset HEAD then git checkout -- two-step required for staged files
 - [Phase 38]: CheckboxPrimitive.Root used directly (not Checkbox wrapper) to access indeterminate prop for tri-state file checkboxes
 - [Phase 38]: FileTree checkedFiles/onToggleFile props optional; checkboxes only render when both provided — backward compatible
+- [Phase 38]: Use hunk summary strip (fallback) above DiffView — @git-diff-view/react has no dedicated hunk header render slot
+- [Phase 38]: AlertDialogTrigger/PopoverTrigger use render= prop (base-ui pattern); hunk selection props skipped when whole file staged
 
 ### Pending Todos
 
