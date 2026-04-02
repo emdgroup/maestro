@@ -34,6 +34,7 @@ export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: Diff
     queryFn: () => api.getWorktreeDiff(worktreeId!, diffTarget),
     enabled: worktreeId != null,
     refetchInterval: 5000,
+    staleTime: 2000,
   });
 }
 
@@ -44,8 +45,16 @@ export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: Diff
 export function useDeleteWorktreeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ worktreeId, repoPath }: { worktreeId: number; repoPath: string }) => {
-      return await api.deleteWorktree(worktreeId, repoPath);
+    mutationFn: async ({
+      worktreeId,
+      repoPath,
+      deleteBranch,
+    }: {
+      worktreeId: number;
+      repoPath: string;
+      deleteBranch: boolean;
+    }) => {
+      return await api.deleteWorktree(worktreeId, repoPath, deleteBranch);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });

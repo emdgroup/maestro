@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Checkbox } from "@/ui/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
 import { usePendingWorktreeId, useNavigationActions } from "@/store/navigationStore";
 import {
@@ -65,6 +66,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [deleteBranch, setDeleteBranch] = useState(true);
 
   // Create dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -133,6 +135,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
   const pendingDeleteWorktree = worktrees.find((w) => w.id === pendingDeleteId) ?? null;
   const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
+
+  // A branch is local-only when ahead_behind is null (no upstream tracking branch)
+  const isBranchLocalOnly = pendingDeleteWorktree?.ahead_behind == null;
 
   return (
     <div className="flex flex-col h-full">
@@ -226,6 +231,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               onSelectWorktree={setSelectedWorktreeId}
               onDeleteWorktree={(id) => {
                 setPendingDeleteId(id);
+                setDeleteBranch(true);
                 setShowDeleteDialog(true);
               }}
               emptyMessage={
@@ -260,6 +266,18 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                   </span>
                 </>
               )}
+              {pendingDeleteWorktree && isBranchLocalOnly && (
+                <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                  <Checkbox
+                    checked={deleteBranch}
+                    onCheckedChange={(checked) => setDeleteBranch(checked === true)}
+                  />
+                  <span className="text-sm text-foreground select-none">
+                    Also delete branch{" "}
+                    <span className="font-mono">{pendingDeleteWorktree.branch_name}</span>
+                  </span>
+                </label>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -275,7 +293,11 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                 setShowDeleteDialog(false);
                 if (pendingDeleteId != null) {
                   deleteMutation.mutate(
-                    { worktreeId: pendingDeleteId, repoPath: repoPath ?? "" },
+                    {
+                      worktreeId: pendingDeleteId,
+                      repoPath: repoPath ?? "",
+                      deleteBranch: isBranchLocalOnly && deleteBranch,
+                    },
                     {
                       onSuccess: () => {
                         setSelectedWorktreeId(null);
