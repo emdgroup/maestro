@@ -207,11 +207,11 @@ Plans:
 **Goal:** Add git commit workflow to WorktreeDiffPanel: file-level checkboxes (3-state), hunk-level checkboxes, commit area (message + button), revert with confirmation dialog, shelve with name popover, and 4 new Rust IPC commands (stage, commit, discard, shelve)
 **Requirements**: [GC-01, GC-02, GC-03, GC-04, GC-05, GC-06, GC-07, GC-08]
 **Depends on:** Phase 37
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 38-01-PLAN.md — Diff-utils hunk extraction functions (TDD) + 4 Rust IPC commands + bindings
-- [ ] 38-02-PLAN.md — TanStack mutation hooks + file-level checkboxes + commit area in WorktreeDiffPanel
+- [x] 38-02-PLAN.md — TanStack mutation hooks + file-level checkboxes + commit area in WorktreeDiffPanel
 - [ ] 38-03-PLAN.md — Hunk checkboxes in DiffViewer + Revert/Shelve action bar buttons
 
 ---

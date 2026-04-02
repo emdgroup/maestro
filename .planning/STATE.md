@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-02T10:52:57.245Z"
+last_updated: "2026-04-02T10:59:08.568Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 38 (git-commit-features-diff-view) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -136,6 +136,7 @@ Plan: 2 of 3
 | Phase 37 P02 | 0.050 | 2 tasks | 4 files |
 | Phase 37 P03 | 0.042 | 2 tasks | 3 files |
 | Phase 38 P01 | 0.078 | 2 tasks | 6 files |
+| Phase 38 P02 | 0.133 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -266,6 +267,8 @@ Phase 18 Architecture Decisions:
 - [Phase 37]: Unified/split toggle moved to action bar in WorktreeDiffPanel — single consistent control position, per-file header shows filename+status+stats only
 - [Phase 38]: Write patch to temp file before git apply --cached — run_git_in_dir has no stdin support
 - [Phase 38]: discard_worktree_changes: git reset HEAD then git checkout -- two-step required for staged files
+- [Phase 38]: CheckboxPrimitive.Root used directly (not Checkbox wrapper) to access indeterminate prop for tri-state file checkboxes
+- [Phase 38]: FileTree checkedFiles/onToggleFile props optional; checkboxes only render when both provided — backward compatible
 
 ### Pending Todos
 
