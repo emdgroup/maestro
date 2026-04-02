@@ -91,6 +91,114 @@ export function useCleanupZombieWorktreesMutation() {
 }
 
 /**
+ * Mutation hook for staging files in a worktree.
+ * Stages specific files (git add) and/or applies a patch (git apply --cached).
+ * No automatic query invalidation — the 5s polling interval handles refresh.
+ */
+export function useStageWorktreeFilesMutation() {
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      filePaths,
+      patch,
+    }: {
+      worktreeId: number;
+      filePaths: string[];
+      patch: string | null;
+    }) => {
+      return await api.stageWorktreeFiles(worktreeId, filePaths, patch);
+    },
+    onError: (error) => {
+      toast.error(`Failed to stage files: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for committing staged changes in a worktree.
+ * Invalidates both worktree list and diff queries on success.
+ */
+export function useCommitWorktreeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      message,
+    }: {
+      worktreeId: number;
+      message: string;
+    }) => {
+      return await api.commitWorktree(worktreeId, message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      toast.success("Changes committed");
+    },
+    onError: (error) => {
+      toast.error(`Commit failed: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for discarding (reverting) changes in a worktree.
+ * Handles both whole-file discard (git reset + checkout) and hunk-level (git apply --reverse).
+ * Invalidates all worktree queries on success.
+ */
+export function useDiscardWorktreeChangesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      filePaths,
+      patch,
+    }: {
+      worktreeId: number;
+      filePaths: string[];
+      patch: string | null;
+    }) => {
+      return await api.discardWorktreeChanges(worktreeId, filePaths, patch);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      toast.success("Changes discarded");
+    },
+    onError: (error) => {
+      toast.error(`Failed to discard changes: ${error}`);
+    },
+  });
+}
+
+/**
+ * Mutation hook for shelving (stashing) changes in a worktree.
+ * Runs git stash push with optional file paths and a named message.
+ * Invalidates all worktree queries on success.
+ */
+export function useShelveWorktreeChangesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      worktreeId,
+      stashName,
+      filePaths,
+    }: {
+      worktreeId: number;
+      stashName: string;
+      filePaths: string[];
+    }) => {
+      return await api.shelveWorktreeChanges(worktreeId, stashName, filePaths);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      toast.success("Changes shelved");
+    },
+    onError: (error) => {
+      toast.error(`Failed to shelve changes: ${error}`);
+    },
+  });
+}
+
+/**
  * Mutation hook for creating a new worktree.
  * Accepts originBranch (base branch) and optional newBranchName (creates new branch from origin).
  * When newBranchName is null, the existing originBranch is checked out directly.
