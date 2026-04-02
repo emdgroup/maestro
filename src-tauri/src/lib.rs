@@ -83,7 +83,11 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_system_accent_color,
             crate::ipc::delete_ssh_connection,
             crate::ipc::forget_saved_password,
-            crate::ipc::rename_ssh_connection
+            crate::ipc::rename_ssh_connection,
+            crate::ipc::stage_worktree_files,
+            crate::ipc::commit_worktree,
+            crate::ipc::discard_worktree_changes,
+            crate::ipc::shelve_worktree_changes
         ])
 }
 

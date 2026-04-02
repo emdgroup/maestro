@@ -591,6 +591,190 @@ pub async fn cleanup_zombie_worktrees(
     Ok(deleted)
 }
 
+// ============================================================================
+// stage_worktree_files — REQ: GC-06
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stage_worktree_files(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+    file_paths: Vec<String>,
+    patch: Option<String>,
+) -> Result<(), String> {
+    eprintln!("stage_worktree_files(worktree={}) called", worktree_id);
+
+    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT w.path, p.path, w.project_id
+             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
+            rusqlite::params![worktree_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+
+    if !file_paths.is_empty() {
+        let mut args = vec!["add", "--"];
+        let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+        args.extend(refs);
+        crate::git::run_git_in_dir(&git_conn, &worktree_abs, &args).await?;
+    }
+
+    if let Some(patch_content) = patch {
+        let tmp_dir = std::env::temp_dir();
+        let tmp_path = tmp_dir.join(format!(
+            "maestro-patch-{}.diff",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        ));
+        std::fs::write(&tmp_path, patch_content.as_bytes())
+            .map_err(|e| format!("Failed to write patch file: {}", e))?;
+        let tmp_str = tmp_path.to_string_lossy().to_string();
+        let result = crate::git::run_git_in_dir(
+            &git_conn,
+            &worktree_abs,
+            &["apply", "--cached", &tmp_str],
+        )
+        .await;
+        let _ = std::fs::remove_file(&tmp_path);
+        result?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// commit_worktree — REQ: GC-08
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn commit_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+    message: String,
+) -> Result<(), String> {
+    eprintln!("commit_worktree(worktree={}) called", worktree_id);
+
+    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT w.path, p.path, w.project_id
+             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
+            rusqlite::params![worktree_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+
+    let output = crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["commit", "-m", &message]).await?;
+    eprintln!("commit_worktree: {}", output);
+    Ok(())
+}
+
+// ============================================================================
+// discard_worktree_changes — REQ: GC-06
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn discard_worktree_changes(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+    file_paths: Vec<String>,
+    patch: Option<String>,
+) -> Result<(), String> {
+    eprintln!("discard_worktree_changes(worktree={}) called", worktree_id);
+
+    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT w.path, p.path, w.project_id
+             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
+            rusqlite::params![worktree_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+
+    if !file_paths.is_empty() {
+        let mut reset_args = vec!["reset", "HEAD", "--"];
+        let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+        reset_args.extend(refs.clone());
+        crate::git::run_git_in_dir(&git_conn, &worktree_abs, &reset_args).await?;
+
+        let mut checkout_args = vec!["checkout", "--"];
+        checkout_args.extend(refs);
+        crate::git::run_git_in_dir(&git_conn, &worktree_abs, &checkout_args).await?;
+    }
+
+    if let Some(patch_content) = patch {
+        let tmp_dir = std::env::temp_dir();
+        let tmp_path = tmp_dir.join(format!(
+            "maestro-revert-{}.diff",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        ));
+        std::fs::write(&tmp_path, patch_content.as_bytes())
+            .map_err(|e| format!("Failed to write patch file: {}", e))?;
+        let tmp_str = tmp_path.to_string_lossy().to_string();
+        let result = crate::git::run_git_in_dir(
+            &git_conn,
+            &worktree_abs,
+            &["apply", "--reverse", &tmp_str],
+        )
+        .await;
+        let _ = std::fs::remove_file(&tmp_path);
+        result?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// shelve_worktree_changes — REQ: GC-06
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn shelve_worktree_changes(
+    app_state: State<'_, Arc<AppState>>,
+    worktree_id: i32,
+    stash_name: String,
+    file_paths: Vec<String>,
+) -> Result<(), String> {
+    eprintln!("shelve_worktree_changes(worktree={}) called", worktree_id);
+
+    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT w.path, p.path, w.project_id
+             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
+            rusqlite::params![worktree_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+    };
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+
+    let mut args = vec!["stash", "push", "-m", &stash_name];
+    if !file_paths.is_empty() {
+        args.push("--");
+        let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+        args.extend(refs);
+    }
+    crate::git::run_git_in_dir(&git_conn, &worktree_abs, &args).await?;
+    Ok(())
+}
+
 /// Internal helper for worktree deletion during finalization.
 /// Called from execution_handlers.rs — NOT an IPC command.
 pub async fn delete_worktree_for_task(
