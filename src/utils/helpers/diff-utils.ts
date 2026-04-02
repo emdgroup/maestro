@@ -124,10 +124,11 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     else if (inHunk && (line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))) {
       currentHunkLines.push(line);
     }
-    // Blank line ends the current hunk block but we stay in hunk-accumulation mode
-    // (a file can have multiple hunk blocks separated by blank lines)
+    // A blank line inside a hunk is preserved as hunk content.
+    // An empty context line in the original source should be kept; the next
+    // `diff --git` or `@@` header will correctly transition parser state.
     else if (inHunk && line === "") {
-      inHunk = false;
+      currentHunkLines.push(line);
     }
   }
 
@@ -153,6 +154,44 @@ export function computeFileStats(hunks: string[]): { insertions: number; deletio
     }
   }
   return { insertions, deletions };
+}
+
+/**
+ * Extract a single hunk as a valid unified diff patch string.
+ * Takes the hunks[0] content from parseDiffString output and returns
+ * a minimal patch for hunkIndex: "--- a/file\n+++ b/file\n@@ ... @@\nlines\n"
+ */
+export function extractHunkPatch(fileHunkContent: string, hunkIndex: number): string {
+  if (!fileHunkContent) return "";
+  const lines = fileHunkContent.split("\n");
+  const headerLines: string[] = [];
+  const hunkBlocks: string[][] = [];
+  let currentBlock: string[] | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith("--- ") || line.startsWith("+++ ")) {
+      headerLines.push(line);
+    } else if (line.startsWith("@@")) {
+      if (currentBlock) hunkBlocks.push(currentBlock);
+      currentBlock = [line];
+    } else if (currentBlock !== null) {
+      currentBlock.push(line);
+    }
+  }
+  if (currentBlock) hunkBlocks.push(currentBlock);
+
+  const targetBlock = hunkBlocks[hunkIndex];
+  if (!targetBlock) return "";
+  return [...headerLines, ...targetBlock].join("\n") + "\n";
+}
+
+/**
+ * Count the number of @@ hunk headers in a file diff string.
+ * Used to determine indeterminate checkbox state.
+ */
+export function countHunks(hunkContent: string): number {
+  if (!hunkContent) return 0;
+  return (hunkContent.match(/^@@/gm) ?? []).length;
 }
 
 /**

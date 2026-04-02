@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDiffString, extractFileNames, computeFileStats } from "./diff-utils";
+import { parseDiffString, extractFileNames, computeFileStats, extractHunkPatch, countHunks } from "./diff-utils";
 
 describe("extractFileNames", () => {
   it("returns empty array for empty string", () => {
@@ -123,7 +123,7 @@ describe("parseDiffString", () => {
     expect(result[0]?.hunks[0]).toContain("+new impl");
   });
 
-  it("handles blank line ending a hunk", () => {
+  it("handles blank line between two file diffs", () => {
     const diff = [
       "diff --git a/src/a.ts b/src/a.ts",
       "@@ -1 +1 @@",
@@ -138,6 +138,23 @@ describe("parseDiffString", () => {
     expect(result).toHaveLength(2);
     // blank line should not bleed into second file
     expect(result[1].fileName).toBe("src/b.ts");
+  });
+
+  it("preserves blank context lines within a hunk", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "@@ -1,4 +1,4 @@",
+      " line one",
+      "",
+      " line three",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    // blank line inside the hunk must be preserved in the output
+    expect(result[0].hunks[0]).toContain("\n\n");
   });
 });
 
@@ -237,5 +254,48 @@ describe("computeFileStats", () => {
   it("counts only deletions", () => {
     const hunks = ["@@ -1,2 +0,0 @@", "-line1", "-line2"];
     expect(computeFileStats(hunks)).toEqual({ insertions: 0, deletions: 2 });
+  });
+});
+
+describe("extractHunkPatch", () => {
+  const twoHunkInput =
+    "--- a/f.ts\n+++ b/f.ts\n@@ -1,3 +1,4 @@\n ctx\n-old\n+new\n@@ -10,2 +11,3 @@\n ctx2\n+add";
+
+  it("extracts first hunk (index 0)", () => {
+    expect(extractHunkPatch(twoHunkInput, 0)).toBe(
+      "--- a/f.ts\n+++ b/f.ts\n@@ -1,3 +1,4 @@\n ctx\n-old\n+new\n",
+    );
+  });
+
+  it("extracts second hunk (index 1)", () => {
+    expect(extractHunkPatch(twoHunkInput, 1)).toBe(
+      "--- a/f.ts\n+++ b/f.ts\n@@ -10,2 +11,3 @@\n ctx2\n+add\n",
+    );
+  });
+
+  it("returns empty string for out-of-range index", () => {
+    expect(extractHunkPatch(twoHunkInput, 99)).toBe("");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(extractHunkPatch("", 0)).toBe("");
+  });
+});
+
+describe("countHunks", () => {
+  it("counts two hunk headers", () => {
+    expect(countHunks("@@ -1 +1 @@\n+a\n@@ -5 +5 @@\n+b")).toBe(2);
+  });
+
+  it("returns 0 for string with no hunks", () => {
+    expect(countHunks("no hunks here")).toBe(0);
+  });
+
+  it("returns 0 for empty string", () => {
+    expect(countHunks("")).toBe(0);
+  });
+
+  it("returns 1 for single hunk", () => {
+    expect(countHunks("@@ -1 +1 @@\n+single")).toBe(1);
   });
 });
