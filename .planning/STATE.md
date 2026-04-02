@@ -279,6 +279,7 @@ Phase 18 Architecture Decisions:
 | 260401-is7 | Add unified/split view toggle in git diff pane | 2026-04-01 | aad4dfd | [260401-is7-add-unified-and-split-view-toggle-in-git](./quick/260401-is7-add-unified-and-split-view-toggle-in-git/) |
 | 260401-tau | Fix 3 post-phase-37 UI issues: gate diff pane on dirty status, slide action bar, center branch name | 2026-04-01 | 7eb166b | [260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-](./quick/260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-/) |
 | 260402-ctz | Add group/grid toggle to worktrees view action bar | 2026-04-02 | 72c638b | [260402-ctz-in-the-worktrees-view-add-a-group-toggle](./quick/260402-ctz-in-the-worktrees-view-add-a-group-toggle/) |
+| 260402-d3x | add branch deletion checkbox to worktree removal modal | 2026-04-02 | db61a9b | [260402-d3x-add-branch-deletion-checkbox-to-worktree](./quick/260402-d3x-add-branch-deletion-checkbox-to-worktree/) |
 
 ### Blockers/Concerns
 
