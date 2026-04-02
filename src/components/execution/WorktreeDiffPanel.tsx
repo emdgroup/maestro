@@ -93,6 +93,25 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     }
   }
 
+  function handleHunkToggle(fileName: string, hunkIndex: number) {
+    setStagedHunks((prev) => {
+      const n = new Map(prev);
+      const existing = n.get(fileName) ?? new Set<number>();
+      const updated = new Set(existing);
+      if (updated.has(hunkIndex)) {
+        updated.delete(hunkIndex);
+      } else {
+        updated.add(hunkIndex);
+      }
+      if (updated.size === 0) {
+        n.delete(fileName);
+      } else {
+        n.set(fileName, updated);
+      }
+      return n;
+    });
+  }
+
   async function handleCommit() {
     if (!worktreeId || !commitMessage.trim()) return;
 
@@ -384,6 +403,16 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                 diffFile={selectedFile}
                 loading={false}
                 diffViewMode={effectiveDiffViewMode}
+                hunkSelection={
+                  stagedFiles.has(selectedFile.fileName)
+                    ? undefined
+                    : stagedHunks.get(selectedFile.fileName)
+                }
+                onHunkToggle={
+                  stagedFiles.has(selectedFile.fileName)
+                    ? undefined
+                    : (idx) => handleHunkToggle(selectedFile.fileName, idx)
+                }
               />
             ) : (
               <DiffViewer
