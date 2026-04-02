@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronsUpDown, Plus, SearchIcon } from "lucide-react";
+import { ChevronsUpDown, Group, LayoutGrid, Plus, SearchIcon } from "lucide-react";
 import { cn } from "@/lib";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -60,6 +60,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"grouped" | "grid">("grouped");
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -111,6 +112,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
       groupMap.get(key)!.push(wt);
     }
     return Array.from(groupMap.entries()).map(([groupKey, items]) => ({ groupKey, items }));
+  }, [filteredWorktrees]);
+
+  const flatWorktrees = useMemo(() => {
+    return [...filteredWorktrees].sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA;
+    });
   }, [filteredWorktrees]);
 
   const toggleGroup = (group: string) =>
@@ -167,9 +176,26 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                 </ToggleGroup>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
-                  <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
-                  <span className="text-xs">Collapse all</span>
+                {viewMode === "grouped" && (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
+                    <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
+                    <span className="text-xs">Collapse all</span>
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setViewMode((prev) => (prev === "grouped" ? "grid" : "grouped"))}
+                >
+                  {viewMode === "grouped" ? (
+                    <LayoutGrid className="w-3.5 h-3.5 mr-1" />
+                  ) : (
+                    <Group className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  <span className="text-xs">
+                    {viewMode === "grouped" ? "Grid view" : "Grouped view"}
+                  </span>
                 </Button>
                 <Button
                   variant="outline"
@@ -192,6 +218,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
             </div>
 
             <WorktreeCardGrid
+              viewMode={viewMode}
+              flatWorktrees={flatWorktrees}
               groups={groupedWorktrees}
               collapsedGroups={collapsedGroups}
               onToggleGroup={toggleGroup}
