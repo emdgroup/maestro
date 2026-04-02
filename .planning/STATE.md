@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-01T20:45:29.040Z"
+last_updated: "2026-04-02T10:52:57.245Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 37 — redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel (COMPLETE)
+**Current focus:** Phase 38 — git-commit-features-diff-view
 
 ## Current Position
 
-Phase: 37 (redesign-the-worktrees-view-with-card-grid-and-slide-in-diff-panel) — COMPLETE
-Plan: 3 of 3
+Phase: 38 (git-commit-features-diff-view) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -135,6 +135,7 @@ Plan: 3 of 3
 | Phase 37 P01 | 0.083 | 2 tasks | 5 files |
 | Phase 37 P02 | 0.050 | 2 tasks | 4 files |
 | Phase 37 P03 | 0.042 | 2 tasks | 3 files |
+| Phase 38 P01 | 0.078 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -263,6 +264,8 @@ Phase 18 Architecture Decisions:
 - [Phase 37]: Slide container pattern: outer overflow-hidden, inner w-[200%] flex row, each screen w-1/2, -translate-x-1/2 on selection
 - [Phase 37]: WorktreeDiffPanel renders null when worktree===null (mounted for CSS slide animation, invisible until worktree selected)
 - [Phase 37]: Unified/split toggle moved to action bar in WorktreeDiffPanel — single consistent control position, per-file header shows filename+status+stats only
+- [Phase 38]: Write patch to temp file before git apply --cached — run_git_in_dir has no stdin support
+- [Phase 38]: discard_worktree_changes: git reset HEAD then git checkout -- two-step required for staged files
 
 ### Pending Todos
 
@@ -337,6 +340,7 @@ Phase 18 Architecture Decisions:
 - Phase 34 added: Remove Node.js sidecar — implement squash merge in Rust (local + SSH)
 - Phase 36 added: Redesign the diff pane in the worktrees view (uncommitted-only default, unified/split toggle, file selector)
 - Phase 37 added: Redesign the worktrees view with card grid and slide-in diff panel
+- Phase 38 added: Add git commit features to the diff view — file selection with tri-state checkboxes, revert/shelve/commit actions, block-level staging from diff pane
 
 ## Session Continuity
 
