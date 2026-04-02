@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { X, AlignJustify, Columns2, List, FolderTree, Check, Minus } from "lucide-react";
+import { X, AlignJustify, Columns2, List, FolderTree, Check, Minus, RotateCcw, Archive } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { cn, parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib";
@@ -7,12 +7,26 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/ui/alert-dialog";
+import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import { FileTree } from "@/components/execution/FileTree";
 import {
   useWorktreeDiffQuery,
   useStageWorktreeFilesMutation,
   useCommitWorktreeMutation,
+  useDiscardWorktreeChangesMutation,
+  useShelveWorktreeChangesMutation,
 } from "@/services/worktree.service";
 import type { WorktreeWithStatus, DiffTarget } from "@/types/bindings";
 
@@ -42,6 +56,14 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
 
   const stageMutation = useStageWorktreeFilesMutation();
   const commitMutation = useCommitWorktreeMutation();
+  const discardMutation = useDiscardWorktreeChangesMutation();
+  const shelveMutation = useShelveWorktreeChangesMutation();
+  const [shelvePopoverOpen, setShelvePopoverOpen] = useState(false);
+
+  const defaultShelveName = worktree
+    ? `wip-${worktree.branch_name.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-")}-${new Date().toISOString().split("T")[0]}`
+    : "";
+  const [shelveName, setShelveName] = useState(defaultShelveName);
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
@@ -112,6 +134,58 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     });
   }
 
+  async function handleRevert() {
+    if (!worktreeId) return;
+
+    const filePathsToRevert = [...stagedFiles];
+
+    const patchParts: string[] = [];
+    for (const [fileName, hunkIndices] of stagedHunks) {
+      if (stagedFiles.has(fileName)) continue;
+      const file = diffFiles.find((f) => f.fileName === fileName);
+      if (!file) continue;
+      for (const idx of hunkIndices) {
+        const patch = extractHunkPatch(file.hunks[0] ?? "", idx);
+        if (patch) patchParts.push(patch);
+      }
+    }
+    const combinedPatch = patchParts.length > 0 ? patchParts.join("") : null;
+
+    try {
+      await discardMutation.mutateAsync({
+        worktreeId,
+        filePaths: filePathsToRevert,
+        patch: combinedPatch,
+      });
+      setStagedFiles(new Set());
+      setStagedHunks(new Map());
+    } catch {
+      // error toast handled by mutation
+    }
+  }
+
+  async function handleShelve() {
+    if (!worktreeId || !shelveName.trim()) return;
+
+    const filePaths = [
+      ...stagedFiles,
+      ...[...stagedHunks.keys()].filter((f) => !stagedFiles.has(f)),
+    ];
+
+    try {
+      await shelveMutation.mutateAsync({
+        worktreeId,
+        stashName: shelveName.trim(),
+        filePaths,
+      });
+      setStagedFiles(new Set());
+      setStagedHunks(new Map());
+      setShelvePopoverOpen(false);
+    } catch {
+      // error toast handled by mutation
+    }
+  }
+
   async function handleCommit() {
     if (!worktreeId || !commitMessage.trim()) return;
 
@@ -172,6 +246,15 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktreeId]);
 
+  // Update auto-generated shelve name when worktree changes
+  useEffect(() => {
+    if (worktree) {
+      setShelveName(
+        `wip-${worktree.branch_name.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-")}-${new Date().toISOString().split("T")[0]}`,
+      );
+    }
+  }, [worktree]);
+
   // Auto-select the first file once diff data loads for the current worktree.
   // Only fires when selectedFileIndex is null (i.e. we haven't picked one yet),
   // so a background refetch does not bounce the user back to file 0 mid-navigation.
@@ -216,6 +299,71 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
               <FolderTree className="h-3.5 w-3.5" />
             </ToggleGroupItem>
           </ToggleGroup>
+
+          {/* Revert button with confirmation dialog */}
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!hasAnyStaged || discardMutation.isPending}
+                  className="h-8 w-8 p-0"
+                  title="Revert selected changes"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently discard the selected changes. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRevert}>Discard</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Shelve button with name popover */}
+          <Popover open={shelvePopoverOpen} onOpenChange={(open) => setShelvePopoverOpen(open)}>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!hasAnyStaged || shelveMutation.isPending}
+                  className="h-8 w-8 p-0"
+                  title="Shelve selected changes"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <PopoverContent className="w-64 p-3">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-medium">Stash name</label>
+                <Input
+                  value={shelveName}
+                  onChange={(e) => setShelveName(e.target.value)}
+                  className="h-8 text-xs"
+                  placeholder="wip-branch-name-2026-04-02"
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={!shelveName.trim() || shelveMutation.isPending}
+                  onClick={handleShelve}
+                >
+                  {shelveMutation.isPending ? "Shelving..." : "Confirm"}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Center: branch name — absolutely positioned to span the full bar */}
