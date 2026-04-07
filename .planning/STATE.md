@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-02T11:05:42.124Z"
+last_updated: "2026-04-02T11:10:08.832Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -289,6 +289,7 @@ Phase 18 Architecture Decisions:
 | 260401-tau | Fix 3 post-phase-37 UI issues: gate diff pane on dirty status, slide action bar, center branch name | 2026-04-01 | 7eb166b | [260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-](./quick/260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-/) |
 | 260402-ctz | Add group/grid toggle to worktrees view action bar | 2026-04-02 | 72c638b | [260402-ctz-in-the-worktrees-view-add-a-group-toggle](./quick/260402-ctz-in-the-worktrees-view-add-a-group-toggle/) |
 | 260402-d3x | add branch deletion checkbox to worktree removal modal | 2026-04-02 | db61a9b | [260402-d3x-add-branch-deletion-checkbox-to-worktree](./quick/260402-d3x-add-branch-deletion-checkbox-to-worktree/) |
+| 260407-eu5 | Fix Phase 38 UI issues: folder tri-state checkboxes, chunk header inline checkbox, diff panel full height | 2026-04-07 | 3427db9 | [260407-eu5-fix-phase-38-ui-issues-folder-tri-state-](./quick/260407-eu5-fix-phase-38-ui-issues-folder-tri-state-/) |
 
 ### Blockers/Concerns
 
