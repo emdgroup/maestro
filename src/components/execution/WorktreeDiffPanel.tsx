@@ -569,7 +569,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
             })()}
 
           {/* Diff content */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             {diffLoading ? (
               <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
             ) : worktree.git_status === "" && diffFiles.length === 0 ? (

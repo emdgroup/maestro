@@ -92,16 +92,16 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   const hunkHeaders = onHunkToggle ? parseHunkHeaders(diffFile.hunks[0] ?? "") : [];
 
   return (
-    <div className="min-h-0">
-      {/* Hunk summary strip — shown above DiffView when hunk-level selection is active */}
+    <div className="min-h-0 flex flex-col h-full">
+      {/* Hunk summary strip — styled to blend with native @@ diff header lines */}
       {onHunkToggle && hunkHeaders.length > 0 && (
-        <div className="border-b border-border bg-muted/10 divide-y divide-border/50">
+        <div className="divide-y divide-border/30 shrink-0">
           {hunkHeaders.map((header, idx) => {
             const isChecked = hunkSelection?.has(idx) ?? false;
             return (
               <div
                 key={idx}
-                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted/20 transition-colors"
+                className="flex items-center gap-1.5 px-2 py-1 cursor-pointer bg-blue-500/8 dark:bg-blue-400/10 hover:bg-blue-500/15 dark:hover:bg-blue-400/18 transition-colors"
                 onClick={() => onHunkToggle(idx)}
               >
                 <CheckboxPrimitive.Root
@@ -113,19 +113,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                     <Check className="size-3" />
                   </CheckboxPrimitive.Indicator>
                 </CheckboxPrimitive.Root>
-                <span className="font-mono text-xs text-muted-foreground truncate">{header}</span>
+                <span className="font-mono text-xs text-blue-700 dark:text-blue-300 truncate">{header}</span>
               </div>
             );
           })}
         </div>
       )}
-      <DiffView
-        data={diffFile}
-        diffViewMode={diffViewMode ?? DiffModeEnum.Unified}
-        diffViewTheme={diffTheme}
-        diffViewHighlight
-        registerHighlighter={highlighter as any}
-      />
+      <div className="flex-1 min-h-0">
+        <DiffView
+          data={diffFile}
+          diffViewMode={diffViewMode ?? DiffModeEnum.Unified}
+          diffViewTheme={diffTheme}
+          diffViewHighlight
+          registerHighlighter={highlighter as any}
+        />
+      </div>
     </div>
   );
 };
