@@ -115,6 +115,35 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     }
   }
 
+  function handleFolderToggle(fileNames: string[]) {
+    const allChecked = fileNames.every((f) => getFileCheckState(f) === "checked");
+    if (allChecked) {
+      // Uncheck all: remove from stagedFiles and stagedHunks
+      setStagedFiles((prev) => {
+        const n = new Set(prev);
+        fileNames.forEach((f) => n.delete(f));
+        return n;
+      });
+      setStagedHunks((prev) => {
+        const n = new Map(prev);
+        fileNames.forEach((f) => n.delete(f));
+        return n;
+      });
+    } else {
+      // Check all: add to stagedFiles, clear per-file hunk selections
+      setStagedFiles((prev) => {
+        const n = new Set(prev);
+        fileNames.forEach((f) => n.add(f));
+        return n;
+      });
+      setStagedHunks((prev) => {
+        const n = new Map(prev);
+        fileNames.forEach((f) => n.delete(f));
+        return n;
+      });
+    }
+  }
+
   function handleHunkToggle(fileName: string, hunkIndex: number) {
     setStagedHunks((prev) => {
       const n = new Map(prev);
@@ -292,11 +321,11 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
               else setFileListMode("flat");
             }}
           >
-            <ToggleGroupItem value="flat" size="sm" variant="outline" className="h-8 w-8 p-0">
-              <List className="h-3.5 w-3.5" />
+            <ToggleGroupItem value="flat" size="sm" variant="outline" className="size-8 p-0">
+              <List className="size-3.5" />
             </ToggleGroupItem>
-            <ToggleGroupItem value="tree" size="sm" variant="outline" className="h-8 w-8 p-0">
-              <FolderTree className="h-3.5 w-3.5" />
+            <ToggleGroupItem value="tree" size="sm" variant="outline" className="size-8 p-0">
+              <FolderTree className="size-3.5" />
             </ToggleGroupItem>
           </ToggleGroup>
 
@@ -368,8 +397,8 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
 
         {/* Center: branch name — absolutely positioned to span the full bar */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="font-mono text-sm font-semibold truncate max-w-[300px]">
-            {worktree.branch_name}
+          <span className="font-mono text-sm font-semibold truncate max-w-75">
+            {worktree.branch_name} - Uncommitted Changes
           </span>
         </div>
 
@@ -390,21 +419,21 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
               }
             }}
           >
-            <ToggleGroupItem value="unified" size="sm" variant="outline" className="h-8 w-8 p-0">
-              <AlignJustify className="h-3.5 w-3.5" />
+            <ToggleGroupItem value="unified" size="sm" variant="outline" className="size-8 p-0">
+              <AlignJustify className="size-3.5" />
             </ToggleGroupItem>
             <ToggleGroupItem
               value="split"
               size="sm"
               variant="outline"
               disabled={forceUnified}
-              className={cn("h-8 w-8 p-0", forceUnified && "opacity-30 cursor-not-allowed")}
+              className={cn("size-8 p-0", forceUnified && "opacity-30 cursor-not-allowed")}
             >
-              <Columns2 className="h-3.5 w-3.5" />
+              <Columns2 className="size-3.5" />
             </ToggleGroupItem>
           </ToggleGroup>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </div>
       </div>
@@ -412,7 +441,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
       {/* File list + diff body split */}
       <div className="flex flex-1 min-h-0">
         {/* Left file list panel */}
-        <div className="w-[200px] shrink-0 flex flex-col border-r border-border">
+        <div className="w-64 shrink-0 flex flex-col border-r border-border">
           <div className="flex-1 overflow-y-auto">
             {diffLoading ? (
               <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
@@ -427,6 +456,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                   new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
                 }
                 onToggleFile={handleFileToggle}
+                onToggleFolder={handleFolderToggle}
               />
             ) : (
               filteredDiffFiles.map((file) => {
@@ -462,7 +492,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                         <CheckboxPrimitive.Root
                           checked={checkState === "checked"}
                           indeterminate={checkState === "indeterminate"}
-                          className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+                          className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
                           tabIndex={-1}
                         >
                           <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
@@ -492,7 +522,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
                 placeholder="Commit message..."
                 value={commitMessage}
                 onChange={(e) => setCommitMessage(e.target.value)}
-                className="text-xs min-h-[60px] resize-none"
+                className="text-xs min-h-15 resize-none"
                 rows={3}
               />
               <Button

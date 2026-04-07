@@ -19,6 +19,7 @@ interface FileTreeProps {
   onSelectFile: (fileName: string) => void;
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
+  onToggleFolder?: (fileNames: string[]) => void;
 }
 
 /**
@@ -70,6 +71,37 @@ function buildFileTree(files: DiffFileWithName[]): FileTreeNode[] {
   return sortNode(rootChildren);
 }
 
+/**
+ * Collect all leaf file fileName values under a node (recursively).
+ */
+function getDescendantFiles(node: FileTreeNode): string[] {
+  if (!node.isDir) {
+    return node.fileName ? [node.fileName] : [];
+  }
+  const result: string[] = [];
+  for (const child of node.children ?? []) {
+    result.push(...getDescendantFiles(child));
+  }
+  return result;
+}
+
+/**
+ * Compute tri-state check state for a folder node based on its descendants.
+ */
+function getFolderCheckState(
+  node: FileTreeNode,
+  checkedFiles: Map<string, "checked" | "unchecked" | "indeterminate">,
+): "checked" | "unchecked" | "indeterminate" {
+  const descendants = getDescendantFiles(node);
+  if (descendants.length === 0) return "unchecked";
+  const checkedCount = descendants.filter(
+    (f) => checkedFiles.get(f) === "checked",
+  ).length;
+  if (checkedCount === 0) return "unchecked";
+  if (checkedCount === descendants.length) return "checked";
+  return "indeterminate";
+}
+
 const DirectoryNode: React.FC<{
   node: FileTreeNode;
   selectedFile: string | null;
@@ -77,8 +109,12 @@ const DirectoryNode: React.FC<{
   level: number;
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile }) => {
+  onToggleFolder?: (fileNames: string[]) => void;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  const folderCheckState =
+    checkedFiles && onToggleFolder ? getFolderCheckState(node, checkedFiles) : null;
 
   return (
     <div>
@@ -91,6 +127,31 @@ const DirectoryNode: React.FC<{
           <ChevronDown className="h-3 w-3 shrink-0" />
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {/* Folder tri-state checkbox — only when checkedFiles + onToggleFolder provided */}
+        {folderCheckState !== null && checkedFiles && onToggleFolder && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFolder(getDescendantFiles(node));
+            }}
+            className="shrink-0"
+          >
+            <CheckboxPrimitive.Root
+              checked={folderCheckState === "checked"}
+              indeterminate={folderCheckState === "indeterminate"}
+              className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-3.5 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+              tabIndex={-1}
+            >
+              <CheckboxPrimitive.Indicator className="[&>svg]:size-3 grid place-content-center text-current">
+                {folderCheckState === "indeterminate" ? (
+                  <Minus className="size-3" />
+                ) : (
+                  <Check className="size-3" />
+                )}
+              </CheckboxPrimitive.Indicator>
+            </CheckboxPrimitive.Root>
+          </span>
         )}
         <span className="font-mono truncate">{node.name}</span>
       </button>
@@ -105,6 +166,7 @@ const DirectoryNode: React.FC<{
               level={level + 1}
               checkedFiles={checkedFiles}
               onToggleFile={onToggleFile}
+              onToggleFolder={onToggleFolder}
             />
           ))}
         </div>
@@ -120,7 +182,8 @@ const FileNode: React.FC<{
   level: number;
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile }) => {
+  onToggleFolder?: (fileNames: string[]) => void;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder }) => {
   if (node.isDir) {
     return (
       <DirectoryNode
@@ -130,6 +193,7 @@ const FileNode: React.FC<{
         level={level}
         checkedFiles={checkedFiles}
         onToggleFile={onToggleFile}
+        onToggleFolder={onToggleFolder}
       />
     );
   }
@@ -185,6 +249,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onSelectFile,
   checkedFiles,
   onToggleFile,
+  onToggleFolder,
 }) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
@@ -203,6 +268,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
           level={0}
           checkedFiles={checkedFiles}
           onToggleFile={onToggleFile}
+          onToggleFolder={onToggleFolder}
         />
       ))}
     </div>
