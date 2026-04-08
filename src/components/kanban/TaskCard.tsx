@@ -5,6 +5,7 @@ import { useExecutionLogsQuery, useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
+import { useNavigate } from "@/store/navigationStore";
 
 /// Get status dot color based on task status
 function getStatusDotColor(status: string): string {
@@ -65,11 +66,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   // Get context from KanbanProvider
   const { projectPath, onTaskClick } = useKanban();
 
-  const [isExecuting, setIsExecuting] = useState(false);
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
   const updateTask = useUpdateTask();
+  const navigate = useNavigate();
 
   // Load latest execution logs using TanStack Query
   const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
@@ -84,20 +85,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return "0s";
   }, [task.status, executionLog?.started_at]);
 
-  const handleExecute = async () => {
-    setIsExecuting(true);
-    try {
-      const executionLogId = await store.executeTask(task.project_id, task.id, projectPath);
-      console.log("Execution started:", executionLogId);
-      toast.success(`Execution started for "${task.name}"`);
-    } catch (error) {
-      console.error("Execution failed:", error);
-      toast.error(
-        `Failed to start execution: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    } finally {
-      setIsExecuting(false);
-    }
+  const handleExecute = () => {
+    navigate({ view: "agents" });
+    toast.info(`Go to Agents view to start a session for "${task.name}"`);
   };
 
   const getStatusLabel = (status: string) => {
@@ -231,18 +221,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         <div className="mt-2 flex gap-2">
           <button
             onClick={handleExecute}
-            disabled={isExecuting}
-            className={`flex-1 px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
-              isExecuting
-                ? "bg-muted text-muted-foreground cursor-not-allowed"
-                : "bg-accent text-accent-foreground hover:shadow-md"
-            }`}
+            className="flex-1 px-3 py-2 text-sm font-semibold rounded transition-all duration-200 bg-accent text-accent-foreground hover:shadow-md"
           >
-            {isExecuting ? "Executing..." : "Execute"}
+            Open Agents
           </button>
           <button
             onClick={handleBackToBacklog}
-            disabled={isExecuting}
             className="px-3 py-2 text-sm font-semibold rounded transition-all duration-200 bg-muted text-muted-foreground hover:bg-muted/80 hover:shadow-md"
             title="Move back to Backlog"
           >
