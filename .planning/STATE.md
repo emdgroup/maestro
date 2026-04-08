@@ -290,6 +290,7 @@ Phase 18 Architecture Decisions:
 | 260402-ctz | Add group/grid toggle to worktrees view action bar | 2026-04-02 | 72c638b | [260402-ctz-in-the-worktrees-view-add-a-group-toggle](./quick/260402-ctz-in-the-worktrees-view-add-a-group-toggle/) |
 | 260402-d3x | add branch deletion checkbox to worktree removal modal | 2026-04-02 | db61a9b | [260402-d3x-add-branch-deletion-checkbox-to-worktree](./quick/260402-d3x-add-branch-deletion-checkbox-to-worktree/) |
 | 260407-eu5 | Fix Phase 38 UI issues: folder tri-state checkboxes, chunk header inline checkbox, diff panel full height | 2026-04-07 | 3427db9 | [260407-eu5-fix-phase-38-ui-issues-folder-tri-state-](./quick/260407-eu5-fix-phase-38-ui-issues-folder-tri-state-/) |
+| 260408-cee | Style terminal with mono font and app background for better integration | 2026-04-08 | 42e44d5 | [260408-cee-style-terminal-with-mono-font-and-app-ba](./quick/260408-cee-style-terminal-with-mono-font-and-app-ba/) |
 
 ### Blockers/Concerns
 
