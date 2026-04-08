@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
-use crate::ssh::RemoteSshSession;
+use crate::ssh::{RemoteSshSession, SshPtyHandle};
 use crate::models::{Project, GitConnection};
 
 /// Initialize the SQLite database
@@ -47,6 +47,8 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    /// Remote interactive PTY sessions keyed by execution log_id
+    pub ssh_pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
     pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
     pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>
 }
@@ -57,6 +59,7 @@ impl AppState {
         AppState {
             db: Mutex::new(db),
             pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
+            ssh_pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
             ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }

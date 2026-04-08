@@ -9,12 +9,9 @@ impl PasswordManager {
         let service_name = format!("maestro.ssh.{}", host);
         let entry = Entry::new(&service_name, username)
             .map_err(|e| format!("Keyring error: {}", e))?;
-        println!("store entry created");
-        // Store password securely
         entry
             .set_password(&password)
             .map_err(|e| format!("Failed to save password: {}", e))?;
-        println!("password store in entry");
         Ok(())
     }
 

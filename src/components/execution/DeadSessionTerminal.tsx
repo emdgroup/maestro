@@ -10,7 +10,7 @@ function SessionEndedBanner({ execution }: { execution: ExecutionWithTask }) {
   const end = execution.completed_at ? new Date(execution.completed_at) : null;
   const elapsed = formatDistanceStrict(new Date(execution.started_at), end ?? new Date());
 
-  const label = execution.status === "failed" ? "Session failed" : "Session ended";
+  const label = execution.status === "failed" ? "Session ended (interrupted)" : "Session ended";
   const detail = end ? `${end.toLocaleString()} · ${elapsed}` : elapsed;
 
   return (
@@ -38,19 +38,28 @@ export function DeadSessionTerminal({ execution }: DeadSessionTerminalProps) {
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.open(terminalRef.current);
-    fitAddon.fit();
 
+    terminal.open(terminalRef.current);
+
+    console.log(execution);
     // Write DB-stored terminal output (REQ-21)
     if (execution.terminal_output) {
       terminal.write(execution.terminal_output);
     }
+
+    // Defer initial fit to next animation frame so xterm's renderer has
+    // computed cell dimensions before fit() runs — same fix as TerminalComponent.
+    let rafId = requestAnimationFrame(() => {
+      fitAddon.fit();
+      rafId = 0;
+    });
 
     // Auto-resize on container change
     const observer = new ResizeObserver(() => fitAddon.fit());
     observer.observe(terminalRef.current);
 
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       observer.disconnect();
       terminal.dispose();
     };

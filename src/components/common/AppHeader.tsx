@@ -170,34 +170,37 @@ export function AppHeader({
 
       {/* Center section: Tab Navigation */}
       <nav className="flex items-center flex-1 justify-center">
-        <div className="relative grid grid-cols-4 rounded-lg bg-muted p-1">
-          <motion.span
-            className="absolute inset-y-1 left-1 rounded-md bg-background shadow-sm"
-            style={{ width: "calc((100% - 0.5rem) / 4)" }}
-            animate={{ x: `calc(${VIEWS.findIndex((v) => v.id === activeView)} * 100%)` }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
-          />
-          {VIEWS.map((view) => {
-            const Icon = view.icon;
-            const isActive = activeView === view.id;
-            return (
-              <button
-                key={view.id}
-                onClick={() => onViewChange(view.id)}
-                className={`relative z-10 flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
-              >
-                <motion.span
-                  animate={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
-                  transition={{ duration: 0.15 }}
-                  className="flex items-center gap-1.5"
+        <LayoutGroup id="tab-nav">
+          <div className="grid grid-cols-4 rounded-lg bg-muted p-1 gap-1">
+            {VIEWS.map((view) => {
+              const Icon = view.icon;
+              const isActive = activeView === view.id;
+              return (
+                <button
+                  key={view.id}
+                  onClick={() => onViewChange(view.id)}
+                  className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
                 >
-                  <Icon className="size-3.5" />
-                  {view.label}
-                </motion.span>
-              </button>
-            );
-          })}
-        </div>
+                  {isActive && (
+                    <motion.span
+                      layoutId="active-tab-pill"
+                      className="absolute inset-0 rounded-md bg-background shadow-sm"
+                      transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                    />
+                  )}
+                  <motion.span
+                    animate={{ color: isActive ? "var(--accent)" : "var(--muted-foreground)" }}
+                    transition={{ duration: 0.15 }}
+                    className="relative z-10 flex items-center gap-1.5"
+                  >
+                    <Icon className="size-3.5" />
+                    {view.label}
+                  </motion.span>
+                </button>
+              );
+            })}
+          </div>
+        </LayoutGroup>
       </nav>
 
       {/* Right section: Auto/Manual toggle + Status indicator + Theme switcher */}

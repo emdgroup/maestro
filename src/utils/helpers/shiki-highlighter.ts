@@ -110,6 +110,8 @@ async function buildHighlighter() {
   };
 }
 
+export type DiffHighlighterInstance = Awaited<ReturnType<typeof buildHighlighter>>;
+
 export function getDiffHighlighter() {
   if (!_highlighterPromise) {
     _highlighterPromise = buildHighlighter();

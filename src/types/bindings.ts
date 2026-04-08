@@ -219,20 +219,6 @@ async listProjectBranches(projectId: number) : Promise<Result<[string[], string]
 },
 /**
  * Get current application settings from the database
- * 
- * Loads all stored settings including project paths, default model,
- * MCP allowlist defaults, and skills defaults.
- * 
- * # Arguments
- * * `app_state` - The application state containing the database connection
- * 
- * # Returns
- * * `Result<AppSettings, String>` - The current application settings or an error message
- * 
- * # Errors
- * Returns a string error if:
- * - The database lock cannot be acquired
- * - The settings cannot be loaded from the database
  */
 async getSettings() : Promise<Result<AppSettings, string>> {
     try {
@@ -244,21 +230,6 @@ async getSettings() : Promise<Result<AppSettings, string>> {
 },
 /**
  * Save application settings to the database
- * 
- * Persists all application settings including project paths, default model,
- * MCP allowlist defaults, and skills defaults to the settings table.
- * 
- * # Arguments
- * * `app_state` - The application state containing the database connection
- * * `settings` - The application settings to persist
- * 
- * # Returns
- * * `Result<(), String>` - Success or an error message
- * 
- * # Errors
- * Returns a string error if:
- * - The database lock cannot be acquired
- * - The settings cannot be saved to the database
  */
 async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
     try {
@@ -270,34 +241,6 @@ async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
 },
 /**
  * Sync issues from GitHub repository
- * 
- * Fetches open issues from a GitHub repository using the GitHub REST API and
- * imports them as tasks into the specified project. Supports both creating new
- * tasks and updating existing ones if the issue has already been imported.
- * 
- * # Arguments
- * * `state` - The application state containing the database connection
- * * `project_id` - The ID of the project to import issues into
- * * `owner` - The GitHub repository owner
- * * `repo` - The GitHub repository name
- * * `token` - A GitHub personal access token with repo read permissions
- * 
- * # Returns
- * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
- * 
- * # Errors
- * Returns a string error if:
- * - The GitHub API request fails
- * - The response cannot be parsed as JSON
- * - The database lock cannot be acquired
- * - A database transaction fails
- * 
- * # Implementation Details
- * - Fetches only open issues (state=open)
- * - Retrieves up to 100 issues per request
- * - Creates a database transaction to ensure atomicity
- * - Uses the issue number as the external_id
- * - Sets all imported tasks to "Backlog" status initially
  */
 async syncGithubIssues(projectId: number, owner: string, repo: string, token: string) : Promise<Result<SyncResult, string>> {
     try {
@@ -309,36 +252,6 @@ async syncGithubIssues(projectId: number, owner: string, repo: string, token: st
 },
 /**
  * Sync issues from Jira
- * 
- * Fetches issues from a Jira instance using the Jira REST API and imports them
- * as tasks into the specified project. Supports both creating new tasks and
- * updating existing ones if the issue has already been imported.
- * 
- * # Arguments
- * * `state` - The application state containing the database connection
- * * `project_id` - The ID of the project to import issues into
- * * `host` - The Jira instance hostname (e.g., "your-instance.atlassian.net")
- * * `email` - The Jira user email for authentication
- * * `api_token` - A Jira API token for the user
- * * `jql` - A Jira Query Language (JQL) string to filter issues (e.g., "project = PROJ AND status = 'To Do'")
- * 
- * # Returns
- * * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
- * 
- * # Errors
- * Returns a string error if:
- * - The Jira API request fails
- * - The HTTP response indicates an error
- * - The response cannot be parsed as JSON
- * - The database lock cannot be acquired
- * - A database transaction fails
- * 
- * # Implementation Details
- * - Uses HTTP Basic authentication with base64 encoded credentials
- * - Sends JQL query as a request parameter
- * - Creates a database transaction to ensure atomicity
- * - Uses the issue key (e.g., "PROJ-123") as the external_id
- * - Sets all imported tasks to "Backlog" status initially
  */
 async syncJiraIssues(projectId: number, host: string, email: string, apiToken: string, jql: string) : Promise<Result<SyncResult, string>> {
     try {
@@ -350,31 +263,6 @@ async syncJiraIssues(projectId: number, host: string, email: string, apiToken: s
 },
 /**
  * Save import configuration to settings
- * 
- * Persists import provider configuration (GitHub or Jira) to the settings table
- * for later retrieval and reuse in subsequent import operations.
- * 
- * # Arguments
- * * `state` - The application state containing the database connection
- * * `project_id` - The ID of the project (for reference, not stored in config)
- * * `provider` - The import provider name ("github" or "jira")
- * * `config` - The configuration as a JSON value (provider-specific structure)
- * 
- * # Returns
- * * `Result<(), String>` - Success or an error message
- * 
- * # Errors
- * Returns a string error if:
- * - The provider is not "github" or "jira"
- * - The database lock cannot be acquired
- * - The config cannot be serialized to JSON
- * - The database INSERT fails
- * 
- * # Implementation Details
- * - Validates that provider is either "github" or "jira"
- * - Stores config as JSON string in settings table with key format: "import_config_{provider}"
- * - Uses INSERT OR REPLACE to update existing configs
- * - Records the timestamp of the save operation
  */
 async saveImportConfig(projectId: number, provider: string, config: JsonValue) : Promise<Result<null, string>> {
     try {

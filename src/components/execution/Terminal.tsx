@@ -42,7 +42,15 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       });
     });
 
-    fitAddon.fit();
+    // Defer initial fit to next animation frame so xterm's renderer has
+    // computed cell dimensions. Calling fit() synchronously after open()
+    // causes fit() to be a no-op (cell sizes are 0 until first paint),
+    // leaving the terminal at 80×24 until ResizeObserver fires — causing
+    // the visible resize flash on session switch. rAF fires before the
+    // next paint, so the correct size is set before the user sees anything.
+    const rafId = requestAnimationFrame(() => {
+      fitAddon.fit();
+    });
 
     // Set up Tauri channel for streaming output
     const channel = new Channel<string>();
@@ -82,6 +90,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
     // Cleanup on unmount
     return () => {
+      cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
@@ -89,13 +98,12 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
   }, [taskId]);
 
   return (
-    <div
-      ref={terminalRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-      }}
-    />
+    <div className="p-1">
+      <div
+        ref={terminalRef}
+        className="w-full h-full overflow-hidden"
+      />
+    </div>
+
   );
 }
