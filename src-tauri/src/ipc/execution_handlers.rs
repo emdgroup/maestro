@@ -794,6 +794,7 @@ pub async fn spawn_interactive_execution(
     branch_name: String,
     repo_path: String,
     label: Option<String>,
+    worktree_id: Option<i32>,
 ) -> Result<i32, String> {
     let _ = label;
 
@@ -812,42 +813,56 @@ pub async fn spawn_interactive_execution(
             .to_string()
     };
 
-    // Use git worktree list rather than DB state: git is the source of truth, the DB may
-    // be stale, and get_current_branch only returns the main-worktree HEAD (missing branches
-    // in other worktrees).
-    let git_worktrees = crate::git::list_worktrees(&git_conn).await?;
-    let existing_checkout = git_worktrees.into_iter().find(|wt| {
-        wt.branch.as_deref() == Some(branch_name.as_str())
-    });
-
-    let worktree_abs_path: String = if let Some(wt) = existing_checkout {
-        wt.path
-    } else {
-        use crate::models::WORKTREE_DIR;
-        let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
-
-        // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
-        if !is_remote {
-            tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
-                .await
-                .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
-        }
-
-        // Checkout existing branch via SSH-aware git connection (None = checkout, not create)
-        crate::git::create_worktree(&git_conn, &branch_name, &relative_path, None).await?;
-
-        // Insert DB row with task_id = NULL
-        let now = chrono::Utc::now().to_rfc3339();
-        {
+    let worktree_abs_path: String = if let Some(wt_id) = worktree_id {
+        // DB lookup path — skip git worktree list entirely when caller already knows the worktree ID
+        let relative_path: String = {
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            conn.execute(
-                "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, NULL, ?, ?, ?)",
-                rusqlite::params![project_id, &branch_name, &relative_path, &now],
+            conn.query_row(
+                "SELECT path FROM worktrees WHERE id = ?",
+                rusqlite::params![wt_id],
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to insert worktree: {}", e))?;
-        }
-
+            .map_err(|e| format!("Worktree id={} not found: {}", wt_id, e))?
+        };
         format!("{}/{}", repo_path, relative_path)
+    } else {
+        // Use git worktree list rather than DB state: git is the source of truth, the DB may
+        // be stale, and get_current_branch only returns the main-worktree HEAD (missing branches
+        // in other worktrees).
+        let git_worktrees = crate::git::list_worktrees(&git_conn).await?;
+        let existing_checkout = git_worktrees.into_iter().find(|wt| {
+            wt.branch.as_deref() == Some(branch_name.as_str())
+        });
+
+        if let Some(wt) = existing_checkout {
+            wt.path
+        } else {
+            use crate::models::WORKTREE_DIR;
+            let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
+
+            // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
+            if !is_remote {
+                tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
+                    .await
+                    .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
+            }
+
+            // Checkout existing branch via SSH-aware git connection (None = checkout, not create)
+            crate::git::create_worktree(&git_conn, &branch_name, &relative_path, None).await?;
+
+            // Insert DB row with task_id = NULL
+            let now = chrono::Utc::now().to_rfc3339();
+            {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.execute(
+                    "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, NULL, ?, ?, ?)",
+                    rusqlite::params![project_id, &branch_name, &relative_path, &now],
+                )
+                .map_err(|e| format!("Failed to insert worktree: {}", e))?;
+            }
+
+            format!("{}/{}", repo_path, relative_path)
+        }
     };
 
     // Step 2: Create execution log with task_id = NULL, storing branch_name directly
