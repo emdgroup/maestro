@@ -223,13 +223,40 @@ pub async fn attach_terminal(
         let log_id = handle.log_id;
         let app_state_arc = (*app_state).clone();
 
+        // Cancel any existing SSH reader for this session. Without this, each re-attach
+        // spawns a new reader that fights the old one over the single-slot Notify, causing
+        // every other keystroke to be consumed by the stale reader and lost to the UI.
+        {
+            let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+            if let Some(old_flag) = cancel_map.remove(&task_id) {
+                old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        // Wake any reader stuck at notify.notified().await so it can see the cancel flag.
+        notify.notify_one();
+
+        // Register cancel flag for the new reader.
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+            cancel_map.insert(task_id, Arc::clone(&cancel_flag));
+        }
+
         tokio::spawn(async move {
             use std::sync::atomic::Ordering;
             let is_dead = process_ended.load(Ordering::Acquire);
 
             if is_dead {
-                // Dead session: read terminal_output from DB by log_id and send as single write
-                let db_output: Option<String> = {
+                // Dead session: prefer in-memory history (process just ended, handle still
+                // in the sessions map). Fall back to DB only if the buffer is empty, which
+                // happens when the history was flushed at shutdown or by a previous reader.
+                let mem_history = {
+                    let hist = history.lock().await;
+                    if !hist.is_empty() { Some(hist.clone()) } else { None }
+                };
+                let text = if let Some(h) = mem_history {
+                    Some(h)
+                } else {
                     if let Ok(conn) = app_state_arc.db.lock() {
                         conn.query_row(
                             "SELECT terminal_output FROM execution_logs WHERE id = ?",
@@ -240,7 +267,7 @@ pub async fn attach_terminal(
                         None
                     }
                 };
-                if let Some(text) = db_output {
+                if let Some(text) = text {
                     if !text.is_empty() {
                         let _ = output_channel.send(text);
                     }
@@ -292,6 +319,10 @@ pub async fn attach_terminal(
                         }
                     }
                 }
+                // Check cancel flag — set when a new attach replaces this reader.
+                if cancel_flag.load(Ordering::Relaxed) {
+                    return;
+                }
                 // Check process_ended after draining
                 if process_ended.load(Ordering::Acquire) {
                     // Final drain after process ended
@@ -327,6 +358,11 @@ pub async fn attach_terminal(
                     break;
                 }
                 notify.notified().await;
+                // Re-check cancel immediately after waking — we may have been woken
+                // specifically to exit (new attach called notify_one() to wake us).
+                if cancel_flag.load(Ordering::Relaxed) {
+                    return;
+                }
             }
         });
         return Ok(());

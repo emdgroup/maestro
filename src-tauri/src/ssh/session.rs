@@ -35,7 +35,12 @@ pub enum SshWriteOp {
 fn append_to_history(history: &mut String, chunk: &str) -> usize {
     if let Some(pos) = chunk.rfind("\x1b[2J") {
         // Clear-screen: replace buffer entirely — not a front-drain.
+        // Prepend \x1b[H (cursor home) so readers always start at the top-left corner
+        // when replaying. The real `clear` command sends \x1b[H\x1b[2J but we trim
+        // everything before the last \x1b[2J, losing the \x1b[H. Restoring it here
+        // prevents new output from appearing at the old cursor position after a clear.
         history.clear();
+        history.push_str("\x1b[H");
         history.push_str(&chunk[pos..]);
         0
     } else {
@@ -802,14 +807,14 @@ mod tests {
     fn test_append_to_history_clear_screen_mid_chunk() {
         let mut hist = String::from("old content");
         append_to_history(&mut hist, "prefix\x1b[2Jfresh");
-        assert_eq!(hist, "\x1b[2Jfresh");
+        assert_eq!(hist, "\x1b[H\x1b[2Jfresh");
     }
 
     #[test]
     fn test_append_to_history_clear_screen_at_end() {
         let mut hist = String::from("old content");
         append_to_history(&mut hist, "some\x1b[2J");
-        assert_eq!(hist, "\x1b[2J");
+        assert_eq!(hist, "\x1b[H\x1b[2J");
     }
 
     #[test]
@@ -851,7 +856,7 @@ mod tests {
     fn test_append_to_history_multiple_clear_screens() {
         let mut hist = String::from("old");
         append_to_history(&mut hist, "a\x1b[2Jb\x1b[2Jc");
-        // rfind picks the LAST \x1b[2J
-        assert_eq!(hist, "\x1b[2Jc");
+        // rfind picks the LAST \x1b[2J; \x1b[H is prepended for correct cursor home on replay
+        assert_eq!(hist, "\x1b[H\x1b[2Jc");
     }
 }

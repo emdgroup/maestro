@@ -80,9 +80,13 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     const rafId = requestAnimationFrame(() => {
       fitAddon.fit();
       // fit() triggers onResize -> api.resizeTerminal() -> SIGWINCH -> program repaints.
-      // Clear the terminal before attaching so the first visible frame is blank,
-      // not stale content from a previous session's history replay.
-      terminal.write('\x1b[2J\x1b[H');
+      // Reset terminal state before attaching:
+      //   - Disable mouse tracking modes that a previous TUI (e.g. claude) may have
+      //     enabled without disabling on exit. Without this, bash echoes mouse escape
+      //     sequences as raw text when the user clicks in the terminal.
+      //   - Clear screen and home cursor so the first visible frame is blank.
+      // History replay will re-enable mouse tracking if the remote session set it up.
+      terminal.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[2J\x1b[H');
       tryAttach();
     });
 

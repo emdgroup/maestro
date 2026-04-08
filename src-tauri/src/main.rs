@@ -60,10 +60,10 @@ fn main() {
                 }
                 let mut snapshots: Vec<(i32, String)> = Vec::new();
                 for (log_id, handle) in sessions.iter() {
-                    if handle.process_ended.load(std::sync::atomic::Ordering::Relaxed) {
-                        // Already ended — history was persisted by attach_terminal
-                        continue;
-                    }
+                    // Flush all sessions — both live and process_ended — because a session
+                    // may have ended while no reader was attached, leaving history in memory
+                    // only (attach_terminal only persists on process_ended if it is the
+                    // active reader at that moment).
                     let hist = handle.history.lock().await;
                     if !hist.is_empty() {
                         snapshots.push((*log_id, hist.clone()));
