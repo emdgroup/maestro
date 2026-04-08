@@ -295,6 +295,7 @@ Phase 18 Architecture Decisions:
 | 260408-g78 | reconnect failed session should reuse existing parameters not prompt for branch selection | 2026-04-08 | dc81db5 | [260408-g78-reconnect-failed-session-should-reuse-ex](./quick/260408-g78-reconnect-failed-session-should-reuse-ex/) |
 | 260408-guc | reconnect removes failed session instead of leaving duplicate in sidebar | 2026-04-08 | b6f7894 | [260408-guc-reconnect-removes-failed-session-instead](./quick/260408-guc-reconnect-removes-failed-session-instead/) |
 | 260408-h39 | remove all eprintln! from Rust backend (178 occurrences, 14 files) | 2026-04-08 | b0b2a23 | [260408-h39-remove-all-eprintln-for-agent-session-in](./quick/260408-h39-remove-all-eprintln-for-agent-session-in/) |
+| 260408-il9 | fix CSP violations blocking Google Fonts and Tauri IPC custom protocol | 2026-04-08 | b10e8b9 | [260408-il9-fix-csp-violations-blocking-google-fonts](./quick/260408-il9-fix-csp-violations-blocking-google-fonts/) |
 
 ### Blockers/Concerns
 
