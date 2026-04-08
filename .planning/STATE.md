@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-08T16:03:23.096Z"
+last_updated: "2026-04-08T16:07:22.140Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 39 (fix-ssh-terminal-session-switching) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -140,6 +140,7 @@ Plan: 2 of 3
 | Phase 38 P02 | 0.133 | 2 tasks | 3 files |
 | Phase 38 P03 | 0.067 | 2 tasks | 2 files |
 | Phase 39-fix-ssh-terminal-session-switching P01 | 0.05 | 2 tasks | 2 files |
+| Phase 39 P03 | 0.017 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -276,6 +277,8 @@ Phase 18 Architecture Decisions:
 - [Phase 38]: AlertDialogTrigger/PopoverTrigger use render= prop (base-ui pattern); hunk selection props skipped when whole file staged
 - [Phase 39-fix-ssh-terminal-session-switching]: SshPtyHandle.history changed from Arc<Mutex<Vec<String>>> to Arc<Mutex<String>>; append_to_history maintains clear-screen trimming and 512 KB cap invariant
 - [Phase 39-fix-ssh-terminal-session-switching]: attach_terminal SSH live sessions start at pos=hist.len() (no history replay); dead sessions read terminal_output from DB by log_id; history persisted to DB on process_ended
+- [Phase 39]: tryAttach() moved inside rAF after fitAddon.fit() — SIGWINCH fires before attach, programs repaint into blank xterm buffer
+- [Phase 39]: terminal.write('\x1b[2J\x1b[H') cosmetic guard inside rAF clears xterm viewport before attachTerminal call
 
 ### Pending Todos
 
