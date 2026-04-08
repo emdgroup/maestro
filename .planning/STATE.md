@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
 last_updated: "2026-04-08"
-last_activity: "2026-04-08 - Completed quick task 260408-iyu: fix execute button calling removed spawn_agent_execution instead of spawnInteractiveExecution"
+last_activity: "2026-04-08 - Completed quick task 260408-il9: Fix CSP violations blocking Google Fonts and Tauri IPC protocol"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -296,7 +296,6 @@ Phase 18 Architecture Decisions:
 | 260408-guc | reconnect removes failed session instead of leaving duplicate in sidebar | 2026-04-08 | b6f7894 | [260408-guc-reconnect-removes-failed-session-instead](./quick/260408-guc-reconnect-removes-failed-session-instead/) |
 | 260408-h39 | remove all eprintln! from Rust backend (178 occurrences, 14 files) | 2026-04-08 | b0b2a23 | [260408-h39-remove-all-eprintln-for-agent-session-in](./quick/260408-h39-remove-all-eprintln-for-agent-session-in/) |
 | 260408-il9 | fix CSP violations blocking Google Fonts and Tauri IPC custom protocol | 2026-04-08 | b10e8b9 | [260408-il9-fix-csp-violations-blocking-google-fonts](./quick/260408-il9-fix-csp-violations-blocking-google-fonts/) |
-| 260408-iyu | fix Execute button on Kanban task cards calling removed spawn_agent_execution IPC | 2026-04-08 | b5e7292 | [260408-iyu-fix-execute-button-calling-removed-spawn](./quick/260408-iyu-fix-execute-button-calling-removed-spawn/) |
 
 ### Blockers/Concerns
 
