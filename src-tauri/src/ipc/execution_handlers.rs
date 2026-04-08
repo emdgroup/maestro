@@ -219,6 +219,7 @@ pub async fn attach_terminal(
         let history = Arc::clone(&handle.history);
         let notify = Arc::clone(&handle.notify);
         let process_ended = Arc::clone(&handle.process_ended);
+        let total_drained = Arc::clone(&handle.total_drained);
         let log_id = handle.log_id;
         let app_state_arc = (*app_state).clone();
 
@@ -248,19 +249,39 @@ pub async fn attach_terminal(
             }
 
             // Live session: replay full history from pos=0.
-            // append_to_history already trims to after the last \x1b[2J, so the history
-            // string is the minimal data needed to reconstruct the current screen state.
+            // append_to_history trims to after the last \x1b[2J so replaying from 0
+            // gives the minimal data needed to reconstruct the current screen state.
             // SIGWINCH alone is insufficient for shells (only redraws the prompt line).
             let mut pos: usize = 0;
+            // Snapshot drain counter so we can detect front-drains on each iteration.
+            // Initialising to the *current* value means the initial replay (pos=0) is
+            // not perturbed by drains that happened before this attach.
+            let mut last_drained: usize = total_drained.load(Ordering::Acquire);
 
             loop {
                 {
                     let hist = history.lock().await;
-                    // Guard: if history was trimmed (clear-screen or 512KB cap),
-                    // pos may exceed hist.len() — reset to replay from the new start.
+
+                    // Adjust pos for any bytes removed from the front of the history buffer
+                    // since the last iteration (512 KB cap drain). Without this correction
+                    // pos ends up at a wrong — and possibly non-char-boundary — offset,
+                    // causing a panic or silently skipping all future output.
+                    let now_drained = total_drained.load(Ordering::Acquire);
+                    let drain_delta = now_drained.wrapping_sub(last_drained);
+                    if drain_delta > 0 {
+                        pos = pos.saturating_sub(drain_delta);
+                        // Snap to a valid UTF-8 char boundary (walk back ≤3 bytes).
+                        while pos > 0 && !hist.is_char_boundary(pos) {
+                            pos -= 1;
+                        }
+                        last_drained = now_drained;
+                    }
+
+                    // Clear-screen guard: history was replaced entirely (e.g. `clear` cmd).
                     if pos > hist.len() {
                         pos = 0;
                     }
+
                     if pos < hist.len() {
                         let slice = &hist[pos..];
                         if !slice.is_empty() {
@@ -275,6 +296,14 @@ pub async fn attach_terminal(
                 if process_ended.load(Ordering::Acquire) {
                     // Final drain after process ended
                     let hist = history.lock().await;
+                    let now_drained = total_drained.load(Ordering::Acquire);
+                    let drain_delta = now_drained.wrapping_sub(last_drained);
+                    if drain_delta > 0 {
+                        pos = pos.saturating_sub(drain_delta);
+                        while pos > 0 && !hist.is_char_boundary(pos) {
+                            pos -= 1;
+                        }
+                    }
                     if pos > hist.len() {
                         pos = 0;
                     }

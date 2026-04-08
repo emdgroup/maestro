@@ -28,10 +28,16 @@ pub enum SshWriteOp {
 /// including the LAST occurrence is dropped — respecting the semantic meaning of
 /// clear-screen. A 512 KB byte-cap fallback trims from the front to the nearest
 /// `\r\n` boundary to prevent unbounded growth.
-fn append_to_history(history: &mut String, chunk: &str) {
+///
+/// Returns the number of bytes removed from the **front** of the buffer (0 for
+/// clear-screen replacement and no-op appends). Callers must add this value to a
+/// monotonic `total_drained` counter so that readers can adjust their byte positions.
+fn append_to_history(history: &mut String, chunk: &str) -> usize {
     if let Some(pos) = chunk.rfind("\x1b[2J") {
+        // Clear-screen: replace buffer entirely — not a front-drain.
         history.clear();
         history.push_str(&chunk[pos..]);
+        0
     } else {
         history.push_str(chunk);
         const MAX_BYTES: usize = 512 * 1024;
@@ -42,10 +48,15 @@ fn append_to_history(history: &mut String, chunk: &str) {
                 .find(|&i| history.is_char_boundary(i))
                 .unwrap_or(trim_to);
             if let Some(nl) = history[trim_to..].find("\r\n") {
-                history.drain(..trim_to + nl + 2);
+                let actual = trim_to + nl + 2;
+                history.drain(..actual);
+                actual
             } else {
                 history.drain(..trim_to);
+                trim_to
             }
+        } else {
+            0
         }
     }
 }
@@ -56,6 +67,9 @@ fn append_to_history(history: &mut String, chunk: &str) {
 /// `history` buffers session output as a trimmed String (ANSI clear-screen aware, 512 KB cap).
 /// `notify` fires whenever a new chunk is appended to `history`.
 /// `process_ended` is set true when the remote process exits or the channel closes.
+/// `total_drained` is the cumulative bytes ever removed from the **front** of `history` by the
+/// 512 KB cap (not by clear-screen replacements). Readers subtract the delta from their byte
+/// position on each iteration to stay correctly positioned after a drain.
 #[derive(Clone)]
 pub struct SshPtyHandle {
     pub log_id: i32,
@@ -63,6 +77,7 @@ pub struct SshPtyHandle {
     pub history: Arc<tokio::sync::Mutex<String>>,
     pub notify: Arc<tokio::sync::Notify>,
     pub process_ended: Arc<AtomicBool>,
+    pub total_drained: Arc<AtomicUsize>,
 }
 
 /// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
@@ -672,15 +687,18 @@ impl RemoteSshSession {
         let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<SshWriteOp>(32);
 
         // History buffer: accumulates session output with ANSI clear-screen trimming and 512 KB cap.
-        // attach_terminal starts at pos=end for live sessions (SIGWINCH triggers repaint).
-        // Dead sessions recover from the DB snapshot written when the attach loop exits.
+        // attach_terminal replays from pos=0 for live sessions and reads the DB for dead sessions.
         let history: Arc<tokio::sync::Mutex<String>> = Arc::new(tokio::sync::Mutex::new(String::new()));
         let notify: Arc<tokio::sync::Notify> = Arc::new(tokio::sync::Notify::new());
         let process_ended: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+        // Cumulative front-drain counter: incremented only by the 512 KB cap path, never by
+        // clear-screen replacements. Readers use this to adjust their byte positions after a drain.
+        let total_drained: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
 
         let history_writer = Arc::clone(&history);
         let notify_writer = Arc::clone(&notify);
         let ended_writer = Arc::clone(&process_ended);
+        let total_drained_writer = Arc::clone(&total_drained);
 
         // Writer task: owns write_half, processes data and resize ops sequentially.
         // make_writer() clones the internal sender, leaving write_half available for window_change.
@@ -702,23 +720,29 @@ impl RemoteSshSession {
         });
 
         // Reader task: appends output to history and notifies waiters.
-        // attach_terminal starts at pos=end for live sessions; dead sessions recover from DB.
+        // attach_terminal replays from pos=0 for live sessions; dead sessions recover from DB.
         tokio::spawn(async move {
             loop {
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        {
+                        let drained = {
                             let mut hist = history_writer.lock().await;
-                            append_to_history(&mut hist, &text);
+                            append_to_history(&mut hist, &text)
+                        };
+                        if drained > 0 {
+                            total_drained_writer.fetch_add(drained, Ordering::Release);
                         }
                         notify_writer.notify_one();
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        {
+                        let drained = {
                             let mut hist = history_writer.lock().await;
-                            append_to_history(&mut hist, &text);
+                            append_to_history(&mut hist, &text)
+                        };
+                        if drained > 0 {
+                            total_drained_writer.fetch_add(drained, Ordering::Release);
                         }
                         notify_writer.notify_one();
                     }
@@ -733,6 +757,7 @@ impl RemoteSshSession {
                         };
                         {
                             let mut hist = history_writer.lock().await;
+                            // Exit message is short — drain return value not needed here
                             append_to_history(&mut hist, &msg);
                         }
                         notify_writer.notify_one();
@@ -756,7 +781,7 @@ impl RemoteSshSession {
             notify_writer.notify_one();
         });
 
-        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended })
+        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained })
     }
 }
 
