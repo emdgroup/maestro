@@ -17,8 +17,6 @@ pub async fn list_worktrees_with_status(
     project_id: i32,
     repo_path: String,
 ) -> Result<Vec<WorktreeWithStatus>, String> {
-    eprintln!("list_worktrees_with_status(project={}) called", project_id);
-
     // Resolve project and git connection (local vs remote SSH)
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -83,10 +81,7 @@ pub async fn list_worktrees_with_status(
             .map_err(|e| format!("Failed to query worktrees: {}", e))?
             .filter_map(|r| match r {
                 Ok(row) => Some(row),
-                Err(e) => {
-                    eprintln!("[list_worktrees] Skipping corrupted DB row: {}", e);
-                    None
-                }
+                Err(_) => None,
             })
             .collect();
         rows
@@ -199,10 +194,6 @@ pub async fn list_worktrees_with_status(
         for id in &unmatched_db_ids {
             let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]);
         }
-        eprintln!(
-            "list_worktrees_with_status: auto-deleted {} stale DB rows",
-            unmatched_db_ids.len()
-        );
     }
 
     // Sort by created_at descending (None goes last)
@@ -215,10 +206,6 @@ pub async fn list_worktrees_with_status(
         }
     });
 
-    eprintln!(
-        "list_worktrees_with_status: returning {} worktrees",
-        result.len()
-    );
     Ok(result)
 }
 
@@ -233,8 +220,6 @@ pub async fn get_worktree_diff(
     worktree_id: i32,
     diff_target: DiffTarget,
 ) -> Result<String, String> {
-    eprintln!("get_worktree_diff(worktree={}) called", worktree_id);
-
     // Step 1: Query DB for worktree path, branch_name, project repo_path, and project_id via JOIN
     let (wt_path, _branch_name, repo_path, wt_project_id): (String, String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -266,11 +251,6 @@ pub async fn get_worktree_diff(
         }
     };
 
-    eprintln!(
-        "get_worktree_diff: returning {} bytes for worktree {}",
-        diff_output.len(),
-        worktree_id
-    );
     Ok(diff_output)
 }
 
@@ -288,11 +268,6 @@ pub async fn create_worktree(
     new_branch_name: Option<String>,
     repo_path: String,
 ) -> Result<Worktree, String> {
-    eprintln!(
-        "create_worktree(project={}, task={:?}, origin={}, new={:?}) called",
-        project_id, task_id, origin_branch, new_branch_name
-    );
-
     // Step 1: Determine the stored branch name and relative worktree path
     let branch_name = new_branch_name.clone().unwrap_or_else(|| origin_branch.clone());
     let relative_path = if let Some(tid) = task_id {
@@ -328,7 +303,6 @@ pub async fn create_worktree(
         conn.last_insert_rowid() as i32
     };
 
-    eprintln!("create_worktree: created worktree {} at {}", worktree_id, relative_path);
     Ok(Worktree {
         id: worktree_id,
         project_id,
@@ -408,8 +382,6 @@ pub async fn delete_worktree(
     _repo_path: String,
     delete_branch: bool,
 ) -> Result<(), String> {
-    eprintln!("delete_worktree(worktree={}, delete_branch={}) called", worktree_id, delete_branch);
-
     // Step 1: Query DB for worktree path, project_id, and branch_name
     let (wt_path, wt_project_id, wt_branch_name): (String, i32, String) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -438,14 +410,14 @@ pub async fn delete_worktree(
                     .await;
                 match output {
                     Ok(o) if !o.status.success() => {
-                        let stderr = String::from_utf8_lossy(&o.stderr);
-                        eprintln!("delete_worktree: branch delete failed (non-fatal): {}", stderr);
+                        // Non-fatal: branch delete failed
+                        let _ = o;
                     }
-                    Err(e) => {
-                        eprintln!("delete_worktree: branch delete error (non-fatal): {}", e);
+                    Err(_) => {
+                        // Non-fatal: branch delete error
                     }
                     _ => {
-                        eprintln!("delete_worktree: branch {} deleted", wt_branch_name);
+                        // Branch deleted successfully
                     }
                 }
             }
@@ -456,7 +428,6 @@ pub async fn delete_worktree(
                     crate::git::remote::shell_quote(&wt_branch_name)
                 );
                 let _ = ssh.execute_command(&cmd).await;
-                eprintln!("delete_worktree: remote branch delete attempted for {}", wt_branch_name);
             }
         }
     }
@@ -469,7 +440,6 @@ pub async fn delete_worktree(
     )
     .map_err(|e| format!("Failed to delete worktree: {}", e))?;
 
-    eprintln!("delete_worktree: deleted worktree {}", worktree_id);
     Ok(())
 }
 
@@ -484,8 +454,6 @@ pub async fn cleanup_zombie_worktrees(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    eprintln!("cleanup_zombie_worktrees(project={}) called", project_id);
-
     let threshold = Utc::now() - Duration::minutes(10);
 
     // Query DB for zombie candidates — lock is released after this block
@@ -510,10 +478,7 @@ pub async fn cleanup_zombie_worktrees(
             .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
             .filter_map(|r| match r {
                 Ok(row) => Some(row),
-                Err(e) => {
-                    eprintln!("[cleanup_zombie_worktrees] Skipping corrupted DB row: {}", e);
-                    None
-                }
+                Err(_) => None,
             })
             .collect();
             Ok(rows)
@@ -557,10 +522,6 @@ pub async fn cleanup_zombie_worktrees(
             .await
             .unwrap_or_default();
         if !status.trim().is_empty() {
-            eprintln!(
-                "[cleanup_zombie_worktrees] Skipping worktree {} — has uncommitted changes",
-                relative_path
-            );
             continue;
         }
 
@@ -584,10 +545,6 @@ pub async fn cleanup_zombie_worktrees(
         0
     };
 
-    eprintln!(
-        "cleanup_zombie_worktrees: deleted {} zombie worktrees for project {}",
-        deleted, project_id
-    );
     Ok(deleted)
 }
 
@@ -603,8 +560,6 @@ pub async fn stage_worktree_files(
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    eprintln!("stage_worktree_files(worktree={}) called", worktree_id);
-
     let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
@@ -659,8 +614,6 @@ pub async fn commit_worktree(
     worktree_id: i32,
     message: String,
 ) -> Result<(), String> {
-    eprintln!("commit_worktree(worktree={}) called", worktree_id);
-
     let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
@@ -673,8 +626,7 @@ pub async fn commit_worktree(
     let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
     let worktree_abs = format!("{}/{}", repo_path, wt_path);
 
-    let output = crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["commit", "-m", &message]).await?;
-    eprintln!("commit_worktree: {}", output);
+    crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["commit", "-m", &message]).await?;
     Ok(())
 }
 
@@ -690,8 +642,6 @@ pub async fn discard_worktree_changes(
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    eprintln!("discard_worktree_changes(worktree={}) called", worktree_id);
-
     let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
@@ -751,8 +701,6 @@ pub async fn shelve_worktree_changes(
     stash_name: String,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
-    eprintln!("shelve_worktree_changes(worktree={}) called", worktree_id);
-
     let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(

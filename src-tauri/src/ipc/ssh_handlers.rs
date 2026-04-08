@@ -47,7 +47,6 @@ async fn finalize_ssh_connection(
 pub fn get_ssh_connections(
     app_state: State<Arc<AppState>>,
 ) -> Result<Vec<SshConnection>, String> {
-    eprintln!("get_ssh_connections() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
@@ -70,7 +69,6 @@ pub fn get_ssh_connection(
     connection_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<SshConnection, String> {
-    eprintln!("get_ssh_connection({}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let connection = conn.query_row(
@@ -90,8 +88,6 @@ pub fn save_ssh_connection(
     connection_string: String,
     auth_method: SshAuthMethod,
 ) -> Result<i32, String> {
-    eprintln!("save_ssh_connection({}) called via IPC", connection_string);
-
     // Parse connection string: user@host:port or user@host
     let parts: Vec<&str> = connection_string.split('@').collect();
     if parts.len() != 2 {
@@ -117,8 +113,6 @@ pub fn save_ssh_connection(
     if host.is_empty() {
         return Err("Invalid host".to_string());
     }
-
-    eprintln!("Saving SSH connection: host={}, user={}, port={}", host, username, port);
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
@@ -151,7 +145,6 @@ pub fn save_ssh_connection(
     .map_err(|e| e.to_string())?;
 
     let id = conn.last_insert_rowid() as i32;
-    eprintln!("Saved SSH connection with id: {}", id);
     Ok(id)
 }
 
@@ -162,12 +155,8 @@ pub async fn connect_ssh_without_credentials(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<i32, String> {
-    eprintln!("connect_ssh_without_credentials(connection_id={}) called via IPC", connection_id);
-
     // Check if session already exists (e.g., from previous password authentication in same session)
     if let Some(_existing_session) = app_state.get_ssh_session(connection_id).await {
-        eprintln!("Reusing existing session for connection_id={} (already authenticated)", connection_id);
-
         // Update last_used_at since we're reusing the connection
         {
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -183,8 +172,6 @@ pub async fn connect_ssh_without_credentials(
     }
 
     // No existing session, proceed with fresh authentication
-    eprintln!("No existing session found, attempting fresh authentication");
-
     // Get connection details from database
     let connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
@@ -195,7 +182,6 @@ pub async fn connect_ssh_without_credentials(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
-    eprintln!("SSH connection established for connection_id: {}", connection_id);
     Ok(connection_id)
 }
 
@@ -208,8 +194,6 @@ pub async fn connect_ssh_with_password(
     password: String,
     save_password: bool,
 ) -> Result<i32, String> {
-    eprintln!("connect_ssh_with_password(connection_id={}, save={}) called via IPC", connection_id, save_password);
-
     // Get connection details from database
     let mut connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
@@ -219,7 +203,6 @@ pub async fn connect_ssh_with_password(
         // Save password to keyring
         PasswordManager::store_password(&connection.host, &connection.username, password.clone())
             .map_err(|e| format!("Failed to save password: {}", e))?;
-        eprintln!("Password saved to OS keyring for {}@{}", connection.username, connection.host);
     } else {
         app_state.set_ssh_password(connection_id, password.clone()).await;
     };
@@ -232,7 +215,6 @@ pub async fn connect_ssh_with_password(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    eprintln!("SSH connection established with password for connection_id: {}", connection_id);
     Ok(connection_id)
 }
 
@@ -243,8 +225,6 @@ pub async fn connect_ssh_with_agent(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<i32, String> {
-    eprintln!("connect_ssh_with_agent(connection_id={}) called via IPC", connection_id);
-
     let mut connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
@@ -256,7 +236,6 @@ pub async fn connect_ssh_with_agent(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    eprintln!("SSH connection established via agent for connection_id: {}", connection_id);
     Ok(connection_id)
 }
 
@@ -270,8 +249,6 @@ pub async fn connect_ssh_with_key(
     passphrase: Option<String>,
     save_passphrase: bool,
 ) -> Result<i32, String> {
-    eprintln!("connect_ssh_with_key(connection_id={}, save_passphrase={}) called via IPC", connection_id, save_passphrase);
-
     let mut connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
@@ -293,13 +270,11 @@ pub async fn connect_ssh_with_key(
         if let Some(ref p) = passphrase {
             PasswordManager::store_passphrase(&key_path, p.clone())
                 .map_err(|e| format!("Failed to save passphrase: {}", e))?;
-            eprintln!("Passphrase saved to OS keyring for key: {}", key_path);
         }
     }
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    eprintln!("SSH connection established with key file for connection_id: {}", connection_id);
     Ok(connection_id)
 }
 
@@ -311,8 +286,6 @@ pub async fn list_remote_directories(
     connection_id: i32,
     path: String,
 ) -> Result<Vec<String>, String> {
-    eprintln!("list_remote_directories(connection_id={}, path={}) called via IPC", connection_id, path);
-
     // Get SSH session from AppState
     let session = app_state.get_ssh_session(connection_id)
         .await
@@ -333,7 +306,6 @@ pub async fn list_remote_directories(
         .map(|line| line.to_string())
         .collect();
 
-    eprintln!("Found {} subdirectories in {}", directories.len(), path);
     Ok(directories)
 }
 
@@ -352,7 +324,6 @@ pub fn delete_ssh_connection(
     remove_projects_by_connection_id(app_state.clone(), connection_id)
         .map_err(|e| format!("Could not remove projects: {}", e))?;
 
-    eprintln!("delete_ssh_connection(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
@@ -368,7 +339,6 @@ pub fn delete_ssh_connection(
         let _ = PasswordManager::delete_passphrase(&path);
     }
 
-    eprintln!("Deleted SSH connection: {}", connection_id);
     Ok(())
 }
 
@@ -379,7 +349,6 @@ pub fn forget_saved_password(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    eprintln!("forget_saved_password(connection_id={}) called via IPC", connection_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     // Get connection details before deleting (for keyring cleanup)
@@ -394,7 +363,6 @@ pub fn forget_saved_password(
     // Optionally delete password from keyring (ignore errors)
     let _ = PasswordManager::delete_password(&host, &username);
 
-    eprintln!("Forgot saved password for connection: {}", connection_id);
     Ok(())
 }
 
@@ -406,7 +374,6 @@ pub fn rename_ssh_connection(
     connection_id: i32,
     display_name: String,
 ) -> Result<(), String> {
-    eprintln!("rename_ssh_connection(connection_id={}, display_name={}) called via IPC", connection_id, display_name);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -417,7 +384,6 @@ pub fn rename_ssh_connection(
     )
     .map_err(|e| e.to_string())?;
 
-    eprintln!("Renamed SSH connection {} to '{}'", connection_id, display_name);
     Ok(())
 }
 
@@ -429,8 +395,6 @@ pub async fn get_ssh_connection_status(
     connection_id: i32,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ConnectionStatus, String> {
-    eprintln!("get_ssh_connection_status({}) called", connection_id);
-
     // Get the SSH session for this project (lazy - may not be connected yet)
     let session = state.get_ssh_session(connection_id).await;
 

@@ -7,69 +7,25 @@ use crate::models::{AppSettings, SyncResult, GitHubIssue, JiraSearchResponse};
 use crate::db::AppState;
 
 /// Get current application settings from the database
-///
-/// Loads all stored settings including project paths, default model,
-/// MCP allowlist defaults, and skills defaults.
-///
-/// # Arguments
-/// * `app_state` - The application state containing the database connection
-///
-/// # Returns
-/// * `Result<AppSettings, String>` - The current application settings or an error message
-///
-/// # Errors
-/// Returns a string error if:
-/// - The database lock cannot be acquired
-/// - The settings cannot be loaded from the database
 #[tauri::command]
 #[specta::specta]
 pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
-    eprintln!("get_settings() called via IPC");
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::load_settings(&conn).map_err(|e| e.to_string())
 }
 
 /// Save application settings to the database
-///
-/// Persists all application settings including project paths, default model,
-/// MCP allowlist defaults, and skills defaults to the settings table.
-///
-/// # Arguments
-/// * `app_state` - The application state containing the database connection
-/// * `settings` - The application settings to persist
-///
-/// # Returns
-/// * `Result<(), String>` - Success or an error message
-///
-/// # Errors
-/// Returns a string error if:
-/// - The database lock cannot be acquired
-/// - The settings cannot be saved to the database
 #[tauri::command]
 #[specta::specta]
 pub fn save_settings(
     app_state: State<Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    eprintln!("save_settings() called via IPC");
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
 }
 
 /// Upsert imported tasks from an external source (GitHub, Jira).
-///
-/// Checks if each item already exists by external_id + project_id and either
-/// updates the title/description or inserts a new Backlog task.
-///
-/// # Arguments
-/// * `tx` - Active rusqlite transaction to use for all writes
-/// * `project_id` - The project to import into
-/// * `import_source` - Source label stored on task ("github" or "jira")
-/// * `items` - Tuple of (external_id, title, description) for each item
-/// * `now` - RFC3339 timestamp string used for created_at / updated_at
-///
-/// # Returns
-/// `(imported_count, updated_count)` — number of newly inserted vs updated tasks
 fn upsert_imported_tasks(
     tx: &rusqlite::Transaction,
     project_id: i32,
@@ -111,34 +67,6 @@ fn upsert_imported_tasks(
 }
 
 /// Sync issues from GitHub repository
-///
-/// Fetches open issues from a GitHub repository using the GitHub REST API and
-/// imports them as tasks into the specified project. Supports both creating new
-/// tasks and updating existing ones if the issue has already been imported.
-///
-/// # Arguments
-/// * `state` - The application state containing the database connection
-/// * `project_id` - The ID of the project to import issues into
-/// * `owner` - The GitHub repository owner
-/// * `repo` - The GitHub repository name
-/// * `token` - A GitHub personal access token with repo read permissions
-///
-/// # Returns
-/// * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
-///
-/// # Errors
-/// Returns a string error if:
-/// - The GitHub API request fails
-/// - The response cannot be parsed as JSON
-/// - The database lock cannot be acquired
-/// - A database transaction fails
-///
-/// # Implementation Details
-/// - Fetches only open issues (state=open)
-/// - Retrieves up to 100 issues per request
-/// - Creates a database transaction to ensure atomicity
-/// - Uses the issue number as the external_id
-/// - Sets all imported tasks to "Backlog" status initially
 #[tauri::command]
 #[specta::specta]
 pub async fn sync_github_issues(
@@ -148,8 +76,6 @@ pub async fn sync_github_issues(
     repo: String,
     token: String,
 ) -> Result<SyncResult, String> {
-    eprintln!("sync_github_issues() called: owner={}, repo={}, project_id={}", owner, repo, project_id);
-
     // Construct GitHub API URL
     let url = format!("https://api.github.com/repos/{}/{}/issues?state=open&per_page=100", owner, repo);
 
@@ -195,36 +121,6 @@ pub async fn sync_github_issues(
 }
 
 /// Sync issues from Jira
-///
-/// Fetches issues from a Jira instance using the Jira REST API and imports them
-/// as tasks into the specified project. Supports both creating new tasks and
-/// updating existing ones if the issue has already been imported.
-///
-/// # Arguments
-/// * `state` - The application state containing the database connection
-/// * `project_id` - The ID of the project to import issues into
-/// * `host` - The Jira instance hostname (e.g., "your-instance.atlassian.net")
-/// * `email` - The Jira user email for authentication
-/// * `api_token` - A Jira API token for the user
-/// * `jql` - A Jira Query Language (JQL) string to filter issues (e.g., "project = PROJ AND status = 'To Do'")
-///
-/// # Returns
-/// * `Result<SyncResult, String>` - A sync result containing imported/updated counts or an error
-///
-/// # Errors
-/// Returns a string error if:
-/// - The Jira API request fails
-/// - The HTTP response indicates an error
-/// - The response cannot be parsed as JSON
-/// - The database lock cannot be acquired
-/// - A database transaction fails
-///
-/// # Implementation Details
-/// - Uses HTTP Basic authentication with base64 encoded credentials
-/// - Sends JQL query as a request parameter
-/// - Creates a database transaction to ensure atomicity
-/// - Uses the issue key (e.g., "PROJ-123") as the external_id
-/// - Sets all imported tasks to "Backlog" status initially
 #[tauri::command]
 #[specta::specta]
 pub async fn sync_jira_issues(
@@ -235,8 +131,6 @@ pub async fn sync_jira_issues(
     api_token: String,
     jql: String,
 ) -> Result<SyncResult, String> {
-    eprintln!("sync_jira_issues() called: host={}, project_id={}", host, project_id);
-
     // Construct Jira API URL with query parameters
     let encoded_jql = urlencoding::encode(&jql);
     let url = format!("https://{}/rest/api/3/search?jql={}", host, encoded_jql);
@@ -292,31 +186,6 @@ pub async fn sync_jira_issues(
 }
 
 /// Save import configuration to settings
-///
-/// Persists import provider configuration (GitHub or Jira) to the settings table
-/// for later retrieval and reuse in subsequent import operations.
-///
-/// # Arguments
-/// * `state` - The application state containing the database connection
-/// * `project_id` - The ID of the project (for reference, not stored in config)
-/// * `provider` - The import provider name ("github" or "jira")
-/// * `config` - The configuration as a JSON value (provider-specific structure)
-///
-/// # Returns
-/// * `Result<(), String>` - Success or an error message
-///
-/// # Errors
-/// Returns a string error if:
-/// - The provider is not "github" or "jira"
-/// - The database lock cannot be acquired
-/// - The config cannot be serialized to JSON
-/// - The database INSERT fails
-///
-/// # Implementation Details
-/// - Validates that provider is either "github" or "jira"
-/// - Stores config as JSON string in settings table with key format: "import_config_{provider}"
-/// - Uses INSERT OR REPLACE to update existing configs
-/// - Records the timestamp of the save operation
 #[tauri::command]
 #[specta::specta]
 pub fn save_import_config(
@@ -325,7 +194,7 @@ pub fn save_import_config(
     provider: String,
     config: serde_json::Value,
 ) -> Result<(), String> {
-    eprintln!("save_import_config() called: provider={}, project_id={}", provider, project_id);
+    let _ = project_id;
 
     // Validate provider
     if provider != "github" && provider != "jira" {

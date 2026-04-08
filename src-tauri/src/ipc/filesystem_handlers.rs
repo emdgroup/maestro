@@ -5,8 +5,6 @@ use std::path::Path;
 #[tauri::command]
 #[specta::specta]
 pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
-    eprintln!("list_local_directories(path={}) called via IPC", path);
-
     let dir_path = Path::new(&path);
 
     // Check if path exists and is a directory
@@ -42,7 +40,6 @@ pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
     // Sort alphabetically
     directories.sort();
 
-    eprintln!("Found {} subdirectories in {}", directories.len(), path);
     Ok(directories)
 }
 
@@ -86,7 +83,6 @@ pub fn list_drives() -> Result<Vec<String>, String> {
             }
         }
 
-        eprintln!("Found {} drives: {:?}", drives.len(), drives);
         Ok(drives)
     }
 
@@ -113,7 +109,6 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
         {
             if output.status.success() {
                 let color_name = String::from_utf8_lossy(&output.stdout).trim().trim_matches('\'').to_string();
-                eprintln!("[Accent] GNOME accent-color: {}", color_name);
 
                 // GNOME accent colors mapping (GNOME 42+)
                 let rgb = match color_name.as_str() {
@@ -134,14 +129,12 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
         }
 
         // Fallback: Return a neutral blue
-        eprintln!("[Accent] Using fallback blue accent color");
         Ok(vec![53, 132, 228]) // GNOME blue
     }
 
     #[cfg(target_os = "macos")]
     {
         // TODO: Implement macOS accent color detection via NSColor
-        eprintln!("[Accent] macOS accent color not yet implemented, using fallback");
         Ok(vec![0, 122, 255]) // macOS default blue
     }
 
@@ -160,17 +153,14 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
                         let g = color.G;
                         let b = color.B;
 
-                        eprintln!("[Accent] Windows accent color detected via UISettings: RGB({}, {}, {})", r, g, b);
                         Ok(vec![r, g, b])
                     }
-                    Err(e) => {
-                        eprintln!("[Accent] Failed to get accent color from UISettings: {:?}, using fallback", e);
+                    Err(_) => {
                         Ok(vec![0, 120, 212]) // Windows default blue
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("[Accent] Failed to create UISettings instance: {:?}, using fallback", e);
+            Err(_) => {
                 Ok(vec![0, 120, 212]) // Windows default blue
             }
         }

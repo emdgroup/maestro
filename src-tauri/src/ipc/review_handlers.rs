@@ -49,8 +49,6 @@ pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    eprintln!("get_diff_for_review({}) called", task_id);
-
     // 1. Single JOIN query to get all needed data
     let (project, worktree_path, branch_name) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -81,8 +79,6 @@ pub async fn get_diff_for_review(
     // 2. Handle diff generation based on project type
     if project.is_remote() {
         // Remote project: use git dispatcher which executes over SSH
-        eprintln!("  Generating diff for remote project via SSH");
-
         let git_conn = get_git_connection(&project, &app_state)
             .await
             .map_err(|e| format!("Failed to get git connection: {}", e))?;
@@ -91,22 +87,17 @@ pub async fn get_diff_for_review(
             .await
             .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
 
-        eprintln!("get_diff_for_review: task {} from remote: {} bytes", task_id, diff.len());
         Ok(diff)
     } else {
         // Local project: use git dispatcher directly
-        eprintln!("  Generating diff for local project via git dispatcher");
-
         let full_worktree_path = format!("{}/{}", project.path, worktree_path);
-
-        eprintln!("  Generating diff for branch {} in worktree {}", branch_name, full_worktree_path);
+        let _ = full_worktree_path; // used above for context
 
         let git_conn = crate::models::GitConnection::Local { path: project.path.clone() };
         let diff = git::git_diff(&git_conn, &branch_name, "main")
             .await
             .map_err(|e| format!("Failed to get diff: {}", e))?;
 
-        eprintln!("get_diff_for_review: task {}: {} bytes", task_id, diff.len());
         Ok(diff)
     }
 }
@@ -127,15 +118,12 @@ pub async fn save_task_review(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    eprintln!("save_task_review({}, decision={}) called", task_id, decision);
-
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
     let review_id = insert_review_with_comments(
         &conn, task_id, &decision, general_feedback.as_deref(), comments_ref, &now,
     )?;
-    eprintln!("Saved review for task {}: review_id={}", task_id, review_id);
 
     Ok(ReviewResult { success: true, review_id, task_status: None })
 }
@@ -154,8 +142,6 @@ pub async fn request_changes(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    eprintln!("request_changes({}) called", task_id);
-
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
@@ -166,7 +152,6 @@ pub async fn request_changes(
         "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
         rusqlite::params![&now, task_id],
     ).map_err(|e| format!("Update task status failed: {}", e))?;
-    eprintln!("Requested changes for task {}: review_id={}, status=InProgress", task_id, review_id);
 
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
 }
@@ -191,7 +176,7 @@ pub async fn approve_task_and_merge(
     task_id: i32,
     merge_strategy: String,
 ) -> Result<MergeResult, String> {
-    eprintln!("approve_task_and_merge({}, strategy={}) called", task_id, merge_strategy);
+    let _ = merge_strategy;
 
     // 1. Single JOIN query to get task, worktree, and project data
     let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
@@ -211,11 +196,6 @@ pub async fn approve_task_and_merge(
     // 2. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-    eprintln!(
-        "[merge] Starting synchronous merge for task {} (branch: {})",
-        task_id, branch_name
-    );
-
     // 3. Perform squash merge via native Rust git subprocess
     let merge_result = git::squash_merge_to_main(
         &repo_path,
@@ -226,7 +206,6 @@ pub async fn approve_task_and_merge(
 
     if merge_result.success {
         // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
-        eprintln!("[merge] Merge succeeded for task {}", task_id);
         finalize_successful_merge(
             app_state.inner(),
             task_id,
@@ -235,11 +214,9 @@ pub async fn approve_task_and_merge(
             &branch_name,
         )
         .await?;
-        eprintln!("[merge] Merge finalized for task {}", task_id);
         Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
     } else if !merge_result.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
-        eprintln!("[merge] Merge conflict for task {}", task_id);
         reject_merge_on_conflict(app_state.inner(), task_id, &merge_result.conflicts).await?;
         Ok(merge_result)
     } else {
@@ -264,10 +241,6 @@ pub(crate) async fn finalize_successful_merge(
     // Note: DB writes are intentionally split across lock acquisitions because async
     // git cleanup happens between task update and worktree deletion. If the process
     // crashes between these steps, cleanup_zombie_worktrees handles recovery.
-    eprintln!(
-        "[finalize] Finalizing merge for task {}: updating task to Done",
-        task_id
-    );
 
     // 1. Update task status to Done
     {
@@ -279,8 +252,6 @@ pub(crate) async fn finalize_successful_merge(
             rusqlite::params![&now, task_id],
         )
         .map_err(|e| format!("Update task failed: {}", e))?;
-
-        eprintln!("[finalize] Task {} moved to Done", task_id);
     }
 
     // 2. Delete worktree from disk via git dispatcher (and DB on success)
@@ -310,14 +281,14 @@ pub(crate) async fn finalize_successful_merge(
                 .await;
             match branch_result {
                 Ok(output) if !output.status.success() => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("[finalize] Failed to delete branch {} (non-fatal): {}", branch_name, stderr);
+                    // Non-fatal: branch delete failed
+                    let _ = output;
                 }
-                Err(e) => {
-                    eprintln!("[finalize] Failed to run git branch -D {} (non-fatal): {}", branch_name, e);
+                Err(_) => {
+                    // Non-fatal: failed to run git branch -D
                 }
                 _ => {
-                    eprintln!("[finalize] Branch {} deleted", branch_name);
+                    // Branch deleted successfully
                 }
             }
             // Delete from database on successful cleanup
@@ -329,15 +300,11 @@ pub(crate) async fn finalize_successful_merge(
                 )
                 .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
             }
-            eprintln!("[finalize] Worktree {} deleted from disk and DB", worktree_id);
         }
-        Err(e) => {
-            eprintln!("[finalize] Cleanup failed (will retry): {}", e);
+        Err(_e) => {
+            // Cleanup failed — zombie cleanup will retry
         }
     }
-
-    // 3. Final status log
-    eprintln!("[finalize] Merge finalization complete for task {}", task_id);
 
     Ok(())
 }
@@ -358,8 +325,6 @@ pub async fn reject_review(
     action: String,
     instruction: Option<String>,
 ) -> Result<Task, String> {
-    eprintln!("reject_review({}, action={}) called", task_id, action);
-
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
@@ -371,8 +336,6 @@ pub async fn reject_review(
                 rusqlite::params![&now, task_id],
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
-
-            eprintln!("[reject_review] Task {} moved to Backlog", task_id);
             // TODO: delete worktree for this task
         }
         "ResumeWithInstructions" => {
@@ -393,8 +356,6 @@ pub async fn reject_review(
                 rusqlite::params![task_id, &instr, &now],
             )
             .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
-
-            eprintln!("[reject_review] Task {} resumed with instructions", task_id);
         }
         "CancelTask" => {
             // Move task to Cancelled; worktree cleanup is a TODO for full implementation
@@ -403,8 +364,6 @@ pub async fn reject_review(
                 rusqlite::params![&now, task_id],
             )
             .map_err(|e| format!("Failed to update task status: {}", e))?;
-
-            eprintln!("[reject_review] Task {} cancelled", task_id);
             // TODO: delete worktree for this task
         }
         _ => {
@@ -433,11 +392,6 @@ pub(crate) async fn reject_merge_on_conflict(
     task_id: i32,
     conflicts: &[String],
 ) -> Result<(), String> {
-    eprintln!(
-        "[reject] Rejecting merge for task {} due to conflicts",
-        task_id
-    );
-
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let conflict_feedback = format!("Merge conflict detected:\n{}", conflicts.join("\n"));
@@ -449,8 +403,6 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Update task failed: {}", e))?;
 
-    eprintln!("[reject] Task {} moved to InProgress", task_id);
-
     // Save conflict feedback as review comment for visibility
     conn.execute(
         "INSERT INTO task_reviews (task_id, decision, general_feedback, created_at)
@@ -458,8 +410,6 @@ pub(crate) async fn reject_merge_on_conflict(
         rusqlite::params![task_id, &conflict_feedback, &now],
     )
     .map_err(|e| format!("Save feedback failed: {}", e))?;
-
-    eprintln!("[reject] Conflict feedback saved for task {}", task_id);
 
     Ok(())
 }

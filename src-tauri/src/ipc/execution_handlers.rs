@@ -4,6 +4,7 @@ use chrono::Utc;
 
 use crate::models::{ExecutionLog, ExecutionStatus, ExecutionWithTask};
 use crate::db::AppState;
+use crate::ssh::SshWriteOp;
 
 /// Drain the Ready queue for auto-mode execution
 ///
@@ -27,7 +28,6 @@ pub async fn drain_ready_queue(
     project_id: i32,
     project_path: String,
 ) -> Result<Vec<i32>, String> {
-    eprintln!("drain_ready_queue(project={}) called", project_id);
     let _ = project_path; // reserved for future use
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -37,7 +37,6 @@ pub async fn drain_ready_queue(
         .map_err(|e| format!("Failed to load settings: {}", e))?;
 
     if !settings.auto_mode {
-        eprintln!("drain_ready_queue: auto_mode is disabled, returning empty");
         return Ok(vec![]);
     }
 
@@ -52,8 +51,6 @@ pub async fn drain_ready_queue(
 
     let slots_available = settings.max_concurrent_agents - running_count;
     if slots_available <= 0 {
-        eprintln!("drain_ready_queue: no slots available ({} running, max {})",
-            running_count, settings.max_concurrent_agents);
         return Ok(vec![]);
     }
 
@@ -78,14 +75,10 @@ pub async fn drain_ready_queue(
     ).map_err(|e| format!("Failed to query ready tasks: {}", e))?
     .filter_map(|r| match r {
         Ok(id) => Some(id),
-        Err(e) => {
-            eprintln!("[drain_ready_queue] Skipping corrupted task row: {}", e);
-            None
-        }
+        Err(_) => None,
     })
     .collect();
 
-    eprintln!("drain_ready_queue: found {} task(s) to start", task_ids.len());
     Ok(task_ids)
 }
 
@@ -96,7 +89,6 @@ pub fn get_execution_logs(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<ExecutionLog>, String> {
-    eprintln!("get_execution_logs({}) called", task_id);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
@@ -151,7 +143,6 @@ pub async fn retry_execution(
     task_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    eprintln!("retry_execution(project={}, task={}) called", project_id, task_id);
     let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
 
     // Reset the most recent execution log for this task back to running
@@ -167,7 +158,6 @@ pub async fn retry_execution(
         rusqlite::params![log_id],
     ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
 
-    eprintln!("retry_execution: reset execution log {} to running", log_id);
     Ok(log_id)
 }
 
@@ -178,8 +168,6 @@ pub fn cancel_execution(
     app_state: State<Arc<AppState>>,
     log_id: i32,
 ) -> Result<(), String> {
-    eprintln!("cancel_execution({}) called", log_id);
-
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
@@ -189,7 +177,6 @@ pub fn cancel_execution(
     )
     .map_err(|e| format!("Failed to cancel execution: {}", e))?;
 
-    eprintln!("✓ Cancelled execution log {}", log_id);
     Ok(())
 }
 
@@ -222,17 +209,56 @@ pub async fn attach_terminal(
     output_channel: tauri::ipc::Channel<String>,
     include_history: Option<bool>,
 ) -> Result<(), String> {
-    eprintln!("attach_terminal({}) called (include_history: {})", task_id, include_history.unwrap_or(false));
+    // Check remote SSH PTY sessions first
+    let ssh_handle = {
+        let sessions = app_state.ssh_pty_sessions.lock().await;
+        sessions.get(&task_id).cloned()
+    };
 
-    // Get PTY session from AppState
+    if let Some(handle) = ssh_handle {
+        let history = Arc::clone(&handle.history);
+        let notify = Arc::clone(&handle.notify);
+        let process_ended = Arc::clone(&handle.process_ended);
+        tokio::spawn(async move {
+            use std::sync::atomic::Ordering;
+            let mut pos = 0usize;
+            loop {
+                // Drain all chunks since last pos
+                {
+                    let chunks = history.lock().await;
+                    while pos < chunks.len() {
+                        if output_channel.send(chunks[pos].clone()).is_err() {
+                            return;
+                        }
+                        pos += 1;
+                    }
+                }
+                // Exit when process ended AND we've drained everything
+                if process_ended.load(Ordering::Acquire) {
+                    // One final drain after the flag is set
+                    let chunks = history.lock().await;
+                    while pos < chunks.len() {
+                        if output_channel.send(chunks[pos].clone()).is_err() {
+                            return;
+                        }
+                        pos += 1;
+                    }
+                    break;
+                }
+                // Wait for more output
+                notify.notified().await;
+            }
+        });
+        return Ok(());
+    }
+
+    // Get local PTY session from AppState
     let sessions = app_state.pty_sessions.lock().await;
     let session = sessions
         .get(&task_id)
         .ok_or_else(|| format!("No PTY session for task {}", task_id))?
         .clone();
     drop(sessions); // Release lock
-
-    eprintln!("[attach] Starting output streaming for task {}", task_id);
 
     // If requested, send terminal history first
     if include_history.unwrap_or(false) {
@@ -255,32 +281,58 @@ pub async fn attach_terminal(
         }
     }
 
+    // Clone AppState Arc for use in the background task (State<'_> can't cross await points)
+    let app_state_arc = (*app_state).clone();
+
     // Spawn background task to stream PTY output
     tokio::spawn(async move {
-        // Create bounded channel for buffering between PTY reader and frontend sender
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
 
-        // Spawn PTY reader task
-        let session_reader = session.clone();
-        let reader_task = tokio::spawn(async move {
-            // Clone the reader once — try_clone_reader() creates an OS fd clone, do it outside the loop
-            let session_lock = session_reader.lock().await;
-            let mut reader = match session_lock.master.lock().await.try_clone_reader() {
+        // Acquire the PTY reader before entering spawn_blocking — try_clone_reader() needs async locks.
+        // Drop guards explicitly so they don't straddle an await point.
+        let reader = {
+            let session_lock = session.lock().await;
+            let master = session_lock.master.lock().await;
+            let result = master.try_clone_reader();
+            drop(master);
+            drop(session_lock);
+            match result {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("[PTY reader] Failed to clone reader: {}", e);
+                    let _ = output_channel.send(
+                        format!("\r\n\x1b[31m[Terminal error: {}]\x1b[0m\r\n", e)
+                    );
                     return;
                 }
-            };
-            drop(session_lock);
+            }
+        };
 
+        // Sender runs concurrently with the reader, forwarding output to the frontend in real time.
+        // It also accumulates output for DB persistence once the session ends.
+        let sender_task = tokio::spawn(async move {
+            let mut accumulated = String::new();
+            while let Some(output) = rx.recv().await {
+                accumulated.push_str(&output);
+                if output_channel.send(output).is_err() {
+                    break;
+                }
+            }
+            accumulated
+        });
+
+        // PTY reader in a blocking thread — std::io::Read::read() is a blocking syscall and
+        // must not run on the tokio async thread pool (it would block a worker thread indefinitely).
+        let tx_reader = tx.clone();
+        let reader_task = tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let mut reader = reader;
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
                         let output = String::from_utf8_lossy(&buf[..n]).to_string();
-                        if tx.send(output).await.is_err() {
+                        if tx_reader.blocking_send(output).is_err() {
                             break;
                         }
                     }
@@ -289,30 +341,52 @@ pub async fn attach_terminal(
             }
         });
 
-        // Spawn frontend sender task
-        let sender_task = tokio::spawn(async move {
-            while let Some(output) = rx.recv().await {
-                if output_channel.send(output).is_err() {
-                    eprintln!("[frontend sender] Channel closed, stopping");
-                    break;
-                }
-            }
-        });
+        // Wait for the reader to finish (PTY EOF = process exited)
+        let _ = reader_task.await;
 
-        // Wait for either task to complete
-        tokio::select! {
-            _ = reader_task => {
-                eprintln!("[attach] Reader task completed");
-            }
-            _ = sender_task => {
-                eprintln!("[attach] Sender task completed");
+        // Check exit code while session is still available
+        let exit_code: Option<u32> = {
+            let sess = session.lock().await;
+            let mut child = sess.child.lock().await;
+            child.try_wait().ok().flatten().map(|s| s.exit_code())
+        };
+
+        // Send exit notification through the mpsc channel so sender_task forwards it to the frontend
+        let exit_msg = match exit_code {
+            Some(0) => "\r\n\x1b[32m[Process exited]\x1b[0m\r\n".to_string(),
+            Some(code) => format!("\r\n\x1b[31m[Process exited with code {}]\x1b[0m\r\n", code),
+            None => "\r\n\x1b[33m[Process ended]\x1b[0m\r\n".to_string(),
+        };
+        let _ = tx.send(exit_msg).await;
+        drop(tx); // both senders now dropped — sender_task drains exit_msg then finishes
+
+        // Wait for sender to flush everything including the exit message
+        let accumulated = sender_task.await.unwrap_or_else(|_| String::new());
+
+        // Persist terminal output for historical replay in DeadSessionTerminal
+        if !accumulated.is_empty() {
+            if let Ok(conn) = app_state_arc.db.lock() {
+                let _ = conn.execute(
+                    "UPDATE execution_logs SET terminal_output = COALESCE(terminal_output, '') || ?1 WHERE id = ?2",
+                    rusqlite::params![&accumulated, task_id],
+                );
             }
         }
 
-        eprintln!("[attach] Output streaming ended for task {}", task_id);
+        // Update execution log status
+        let now = Utc::now().to_rfc3339();
+        let status = match exit_code {
+            Some(0) => "complete",
+            _ => "failed",
+        };
+        if let Ok(conn) = app_state_arc.db.lock() {
+            let _ = conn.execute(
+                "UPDATE execution_logs SET status = ?1, completed_at = ?2 WHERE id = ?3",
+                rusqlite::params![status, &now, task_id],
+            );
+        }
     });
 
-    eprintln!("[attach] ✓ Streaming started for task {}", task_id);
     Ok(())
 }
 
@@ -346,13 +420,19 @@ pub async fn send_terminal_input(
     task_id: i32,
     input: String,
 ) -> Result<(), String> {
-    // Log control sequences for debugging
-    if input == "\x03" {
-        eprintln!("send_terminal_input({}) - Ctrl+C (SIGINT)", task_id);
-    } else if input == "\x1a" {
-        eprintln!("send_terminal_input({}) - Ctrl+Z (SIGTSTP)", task_id);
-    } else {
-        eprintln!("send_terminal_input({}) - {} bytes of text", task_id, input.len());
+    // Check remote SSH PTY sessions first
+    let ssh_handle = {
+        let sessions = app_state.ssh_pty_sessions.lock().await;
+        sessions.get(&task_id).cloned()
+    };
+
+    if let Some(handle) = ssh_handle {
+        handle
+            .write_tx
+            .send(SshWriteOp::Data(input.into_bytes()))
+            .await
+            .map_err(|e| format!("Failed to send input to remote PTY: {}", e))?;
+        return Ok(());
     }
 
     let sessions = app_state.pty_sessions.lock().await;
@@ -388,7 +468,19 @@ pub async fn resize_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    eprintln!("resize_terminal({}) called with {}x{}", task_id, cols, rows);
+    // Check remote SSH PTY sessions first
+    let ssh_handle = {
+        let sessions = app_state.ssh_pty_sessions.lock().await;
+        sessions.get(&task_id).cloned()
+    };
+
+    if let Some(handle) = ssh_handle {
+        let _ = handle
+            .write_tx
+            .send(SshWriteOp::Resize(cols as u32, rows as u32))
+            .await;
+        return Ok(());
+    }
 
     let sessions = app_state.pty_sessions.lock().await;
     let session = sessions
@@ -441,15 +533,7 @@ pub async fn append_terminal_output(
     );
 
     match result {
-        Ok(0) => {
-            // No rows updated (no active execution log found)
-            eprintln!("[append_terminal] No active execution log found for task {}", task_id);
-            Ok(())
-        }
-        Ok(_) => {
-            eprintln!("[append_terminal] ✓ Appended {} bytes to execution log for task {}", output.len(), task_id);
-            Ok(())
-        }
+        Ok(_) => Ok(()),
         Err(e) => Err(format!("Failed to append terminal output: {}", e)),
     }
 }
@@ -463,14 +547,11 @@ pub async fn append_terminal_output(
 #[specta::specta]
 pub async fn detach_terminal(
     _app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
+    _task_id: i32,
 ) -> Result<(), String> {
-    eprintln!("detach_terminal({}) called", task_id);
-    eprintln!("[detach] ✓ Detached from terminal for task {}", task_id);
-
     // Note: The actual cleanup happens when the channel is dropped on the frontend.
     // The streaming tasks in attach_terminal will exit when they detect the channel is closed.
-    // We don't need to explicitly stop anything here - just log and return.
+    // We don't need to explicitly stop anything here — just return.
     Ok(())
 }
 
@@ -481,15 +562,11 @@ pub async fn pause_agent_execution(
     state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    eprintln!("pause_agent_execution(task={}) called", task_id);
-
     let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
     let exec_log = crate::db::get_current_execution_log(&conn, task_id)
         .map_err(|e| format!("Failed to get execution log: {}", e))?;
     crate::db::pause_execution_log(&conn, exec_log.id)
         .map_err(|e| format!("Failed to pause execution: {}", e))?;
-
-    eprintln!("[pause] ✓ Updated execution log status to paused");
 
     // TODO: Send SIGSTOP to running process (implementation depends on process handle management)
     // For now, we just update the database status. Full process pause requires process handle tracking.
@@ -509,7 +586,6 @@ pub async fn resume_agent_execution(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    eprintln!("resume_agent_execution(task={}, project={}) called", task_id, project_id);
     let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
 
     // Reset the most recent execution log for this task back to running
@@ -525,7 +601,6 @@ pub async fn resume_agent_execution(
         rusqlite::params![log_id],
     ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
 
-    eprintln!("resume_agent_execution: reset execution log {} to running", log_id);
     Ok(log_id)
 }
 
@@ -552,10 +627,6 @@ pub async fn spawn_interactive_execution(
     repo_path: String,
     label: Option<String>,
 ) -> Result<i32, String> {
-    eprintln!(
-        "spawn_interactive_execution(project={}, branch={}, label={:?}) called",
-        project_id, branch_name, label
-    );
     let _ = label;
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
@@ -582,10 +653,6 @@ pub async fn spawn_interactive_execution(
     });
 
     let worktree_abs_path: String = if let Some(wt) = existing_checkout {
-        eprintln!(
-            "spawn_interactive_execution: branch '{}' already checked out at '{}', reusing",
-            branch_name, wt.path
-        );
         wt.path
     } else {
         use crate::models::WORKTREE_DIR;
@@ -615,38 +682,64 @@ pub async fn spawn_interactive_execution(
         format!("{}/{}", repo_path, relative_path)
     };
 
-    // Step 2: Create execution log with task_id = NULL
+    // Step 2: Create execution log with task_id = NULL, storing branch_name directly
+    // so list_executions_with_task_info can display the correct branch without a worktree JOIN.
     let now = chrono::Utc::now().to_rfc3339();
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, status, started_at) VALUES (NULL, 'running', ?)",
-            rusqlite::params![&now],
+            "INSERT INTO execution_logs (task_id, branch_name, status, started_at) VALUES (NULL, ?, 'running', ?)",
+            rusqlite::params![&branch_name, &now],
         )
         .map_err(|e| format!("Failed to create execution log: {}", e))?;
         conn.last_insert_rowid() as i32
     };
 
-    eprintln!("spawn_interactive_execution: created execution log {}", log_id);
+    // Step 3: Spawn PTY session — local or remote depending on project type
+    if is_remote {
+        let conn_id = project
+            .connection_id
+            .ok_or("Remote project has no connection_id")?;
+        let ssh_session = app_state
+            .get_ssh_session(conn_id)
+            .await
+            .ok_or("SSH session not active — connect to the remote host first")?;
 
-    // Step 3: Spawn interactive PTY session keyed by log_id
-    let pty_session = crate::process::spawn_agent_cli_pty(
-        log_id,
-        "claude".to_string(),
-        vec![],
-        std::path::PathBuf::from(&worktree_abs_path),
-    )
-    .await?;
+        // Start the user's configured login shell via SSH request_shell. We send
+        // `cd && claude` as input so the user can quit claude and still have a working shell.
+        let pty_handle = ssh_session
+            .spawn_remote_pty(80, 24, log_id)
+            .await?;
 
-    let app_state_arc: Arc<AppState> = (*app_state).clone();
-    let mut sessions = app_state_arc.pty_sessions.lock().await;
-    sessions.insert(
-        log_id,
-        Arc::new(tokio::sync::Mutex::new(pty_session)),
-    );
-    drop(sessions);
+        // Send `cd` + `claude` as shell input so claude starts automatically.
+        // The shell buffers stdin, so sending immediately is safe — no sleep needed.
+        // Single-quote the path and escape any embedded single quotes.
+        let escaped_path = worktree_abs_path.replace('\'', "'\\''");
+        let init_cmd = format!("cd '{}' && clear && claude\n", escaped_path);
+        pty_handle.write_tx
+            .send(crate::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
+            .await
+            .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
-    eprintln!("spawn_interactive_execution: PTY session {} started at {}", log_id, worktree_abs_path);
+        app_state.ssh_pty_sessions.lock().await.insert(log_id, pty_handle);
+    } else {
+        let pty_session = crate::process::spawn_agent_cli_pty(
+            log_id,
+            "claude".to_string(),
+            vec![],
+            std::path::PathBuf::from(&worktree_abs_path),
+        )
+        .await?;
+
+        let app_state_arc: Arc<AppState> = (*app_state).clone();
+        let mut sessions = app_state_arc.pty_sessions.lock().await;
+        sessions.insert(
+            log_id,
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
+        drop(sessions);
+    }
+
     Ok(log_id)
 }
 
@@ -670,7 +763,6 @@ pub async fn delete_execution_log(
     )
     .map_err(|e| format!("Failed to delete execution log: {}", e))?;
 
-    eprintln!("delete_execution_log: deleted execution {}", execution_id);
     Ok(())
 }
 
@@ -685,15 +777,13 @@ pub fn list_executions_with_task_info(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
-        "SELECT el.id, el.task_id, t.name AS task_name, w.branch_name,
+        "SELECT el.id, el.task_id, t.name AS task_name,
+                COALESCE(el.branch_name, w.branch_name) AS branch_name,
                 el.status, el.started_at, el.completed_at, el.terminal_output
          FROM execution_logs el
          LEFT JOIN tasks t ON t.id = el.task_id
-         LEFT JOIN worktrees w ON (
-             (el.task_id IS NOT NULL AND w.task_id = el.task_id)
-             OR (el.task_id IS NULL AND w.task_id IS NULL AND w.project_id = ?1)
-         )
-         WHERE t.project_id = ?1 OR (el.task_id IS NULL AND w.project_id = ?1)
+         LEFT JOIN worktrees w ON el.task_id IS NOT NULL AND w.task_id = el.task_id
+         WHERE t.project_id = ?1 OR (el.task_id IS NULL AND el.branch_name IS NOT NULL)
          ORDER BY el.started_at DESC"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
