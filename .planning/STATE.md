@@ -293,7 +293,7 @@ Phase 18 Architecture Decisions:
 | 260407-eu5 | Fix Phase 38 UI issues: folder tri-state checkboxes, chunk header inline checkbox, diff panel full height | 2026-04-07 | 3427db9 | [260407-eu5-fix-phase-38-ui-issues-folder-tri-state-](./quick/260407-eu5-fix-phase-38-ui-issues-folder-tri-state-/) |
 | 260408-cee | Style terminal with mono font and app background for better integration | 2026-04-08 | 42e44d5 | [260408-cee-style-terminal-with-mono-font-and-app-ba](./quick/260408-cee-style-terminal-with-mono-font-and-app-ba/) |
 | 260408-g78 | reconnect failed session should reuse existing parameters not prompt for branch selection | 2026-04-08 | dc81db5 | [260408-g78-reconnect-failed-session-should-reuse-ex](./quick/260408-g78-reconnect-failed-session-should-reuse-ex/) |
-| 260408-guc | reconnect removes failed session instead of leaving duplicate in sidebar | 2026-04-08 | d30a434 | [260408-guc-reconnect-removes-failed-session-instead](./quick/260408-guc-reconnect-removes-failed-session-instead/) |
+| 260408-guc | reconnect removes failed session instead of leaving duplicate in sidebar | 2026-04-08 | b6f7894 | [260408-guc-reconnect-removes-failed-session-instead](./quick/260408-guc-reconnect-removes-failed-session-instead/) |
 
 ### Blockers/Concerns
 
