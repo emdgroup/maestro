@@ -3,7 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-02T11:10:08.832Z"
+last_updated: "2026-04-08"
+last_activity: "2026-04-08 - Completed quick task 260408-g78: reconnect failed session should reuse existing parameters not prompt for branch selection"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -291,6 +292,7 @@ Phase 18 Architecture Decisions:
 | 260402-d3x | add branch deletion checkbox to worktree removal modal | 2026-04-02 | db61a9b | [260402-d3x-add-branch-deletion-checkbox-to-worktree](./quick/260402-d3x-add-branch-deletion-checkbox-to-worktree/) |
 | 260407-eu5 | Fix Phase 38 UI issues: folder tri-state checkboxes, chunk header inline checkbox, diff panel full height | 2026-04-07 | 3427db9 | [260407-eu5-fix-phase-38-ui-issues-folder-tri-state-](./quick/260407-eu5-fix-phase-38-ui-issues-folder-tri-state-/) |
 | 260408-cee | Style terminal with mono font and app background for better integration | 2026-04-08 | 42e44d5 | [260408-cee-style-terminal-with-mono-font-and-app-ba](./quick/260408-cee-style-terminal-with-mono-font-and-app-ba/) |
+| 260408-g78 | reconnect failed session should reuse existing parameters not prompt for branch selection | 2026-04-08 | dc81db5 | [260408-g78-reconnect-failed-session-should-reuse-ex](./quick/260408-g78-reconnect-failed-session-should-reuse-ex/) |
 
 ### Blockers/Concerns
 
