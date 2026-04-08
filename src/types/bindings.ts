@@ -510,9 +510,9 @@ async resizeTerminal(taskId: number, cols: number, rows: number) : Promise<Resul
 /**
  * Detach from a PTY session
  * 
- * Stops streaming PTY output to the frontend.
- * The actual cleanup happens when the channel is dropped on the frontend.
- * The streaming tasks in attach_terminal will exit when they detect the channel is closed.
+ * Cancels the active local PTY reader task for the given task_id by setting its
+ * AtomicBool cancel flag. This stops the spawn_blocking reader on the next iteration,
+ * preventing a stale reader from racing with a new attach_terminal call.
  */
 async detachTerminal(taskId: number) : Promise<Result<null, string>> {
     try {

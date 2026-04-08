@@ -40,7 +40,6 @@ pub async fn spawn_agent_execution(
             let handle = remote::spawn_remote_agent_execution(
                 ssh,
                 &remote_worktree_path,
-                worktree,
                 task,
                 config,
             )

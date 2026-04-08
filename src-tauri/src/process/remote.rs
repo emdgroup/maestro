@@ -1,4 +1,4 @@
-use crate::models::{Task, Worktree};
+use crate::models::Task;
 use crate::ssh::RemoteSshSession;
 use std::sync::Arc;
 
@@ -32,7 +32,6 @@ pub struct RemoteProcessHandle {
 pub async fn spawn_remote_agent_execution(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
-    worktree: &Worktree,
     task: &Task,
     config: &ExecutionConfig,
 ) -> Result<RemoteProcessHandle, String> {

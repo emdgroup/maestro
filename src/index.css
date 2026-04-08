@@ -1,6 +1,22 @@
 /* Google Fonts */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap");
+
+/* Bundled monospace font — includes Nerd Font symbols for terminal rendering */
+@font-face {
+  font-family: "FiraCode Nerd Font Mono";
+  src: url("/fonts/FiraCodeNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "FiraCode Nerd Font Mono";
+  src: url("/fonts/FiraCodeNerdFontMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
 
 @import "tailwindcss" source("../src");
 

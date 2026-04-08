@@ -68,7 +68,9 @@ export function DeadSessionTerminal({ execution }: DeadSessionTerminalProps) {
   return (
     <div className="flex flex-col h-full">
       <SessionEndedBanner execution={execution} />
-      <div ref={terminalRef} className="flex-1 overflow-hidden" />
+      <div className="pt-2 pl-2 h-full w-full">
+        <div ref={terminalRef} className="flex-1 overflow-hidden" />
+      </div>
     </div>
   );
 }

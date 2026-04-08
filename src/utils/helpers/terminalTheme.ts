@@ -22,7 +22,7 @@ function cssVar(varName: string): string {
  */
 export function getTerminalTheme(): ITerminalOptions {
   return {
-    fontFamily: '"Fira Code", "Cascadia Code", "DejaVu Sans Mono", Menlo, Consolas, monospace',
+    fontFamily: '"FiraCode Nerd Font Mono", "Fira Code", monospace',
     fontSize: 13,
     theme: {
       background: cssVar("--background"),

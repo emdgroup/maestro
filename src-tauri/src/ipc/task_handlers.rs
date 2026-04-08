@@ -133,13 +133,14 @@ pub fn update_task(
     tx.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
 
+    // Read back inside the same transaction before committing — avoids re-locking the mutex
+    let query = format!("{} WHERE id = ?", TASK_SELECT);
+    let task = tx.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| e.to_string())?;
+
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
-    // Re-lock to read back (conn was moved into tx, acquire a fresh lock)
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())
+    Ok(task)
 }
 
 /// Update task-level configuration overrides
