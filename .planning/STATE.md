@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-08"
-last_activity: "2026-04-08 - Completed quick task 260408-il9: Fix CSP violations blocking Google Fonts and Tauri IPC protocol"
+last_updated: "2026-04-08T16:03:23.096Z"
 progress:
   total_phases: 1
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
+  percent: 100
 ---
 
 # Project State: v1.3 — Agents & Worktrees (ARCHIVED 2026-03-30)
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 38 — git-commit-features-diff-view
+**Current focus:** Phase 39 — fix-ssh-terminal-session-switching
 
 ## Current Position
 
-Phase: 38 (git-commit-features-diff-view) — EXECUTING
-Plan: 3 of 3
+Phase: 39 (fix-ssh-terminal-session-switching) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -139,6 +139,7 @@ Plan: 3 of 3
 | Phase 38 P01 | 0.078 | 2 tasks | 6 files |
 | Phase 38 P02 | 0.133 | 2 tasks | 3 files |
 | Phase 38 P03 | 0.067 | 2 tasks | 2 files |
+| Phase 39-fix-ssh-terminal-session-switching P01 | 0.05 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -273,6 +274,8 @@ Phase 18 Architecture Decisions:
 - [Phase 38]: FileTree checkedFiles/onToggleFile props optional; checkboxes only render when both provided — backward compatible
 - [Phase 38]: Use hunk summary strip (fallback) above DiffView — @git-diff-view/react has no dedicated hunk header render slot
 - [Phase 38]: AlertDialogTrigger/PopoverTrigger use render= prop (base-ui pattern); hunk selection props skipped when whole file staged
+- [Phase 39-fix-ssh-terminal-session-switching]: SshPtyHandle.history changed from Arc<Mutex<Vec<String>>> to Arc<Mutex<String>>; append_to_history maintains clear-screen trimming and 512 KB cap invariant
+- [Phase 39-fix-ssh-terminal-session-switching]: attach_terminal SSH live sessions start at pos=hist.len() (no history replay); dead sessions read terminal_output from DB by log_id; history persisted to DB on process_ended
 
 ### Pending Todos
 
@@ -354,6 +357,7 @@ Phase 18 Architecture Decisions:
 - Phase 36 added: Redesign the diff pane in the worktrees view (uncommitted-only default, unified/split toggle, file selector)
 - Phase 37 added: Redesign the worktrees view with card grid and slide-in diff panel
 - Phase 38 added: Add git commit features to the diff view — file selection with tri-state checkboxes, revert/shelve/commit actions, block-level staging from diff pane
+- Phase 39 added: Fix SSH terminal session switching — SIGWINCH-based live repaint, clear-signal-trimmed history buffer (String with `\x1b[2J` boundary trimming + byte-cap fallback), DB snapshot on session end and app close, dead session recovery from DB snapshot
 
 ## Session Continuity
 
