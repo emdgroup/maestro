@@ -22,17 +22,45 @@ pub enum SshWriteOp {
     Resize(u32, u32),
 }
 
+/// Append a chunk to the SSH session history buffer with clear-screen trimming.
+///
+/// If the chunk contains `\x1b[2J` (ANSI clear-screen), all content before and
+/// including the LAST occurrence is dropped — respecting the semantic meaning of
+/// clear-screen. A 512 KB byte-cap fallback trims from the front to the nearest
+/// `\r\n` boundary to prevent unbounded growth.
+fn append_to_history(history: &mut String, chunk: &str) {
+    if let Some(pos) = chunk.rfind("\x1b[2J") {
+        history.clear();
+        history.push_str(&chunk[pos..]);
+    } else {
+        history.push_str(chunk);
+        const MAX_BYTES: usize = 512 * 1024;
+        if history.len() > MAX_BYTES {
+            let trim_to = history.len() - MAX_BYTES;
+            // Round up to a valid char boundary
+            let trim_to = (trim_to..history.len())
+                .find(|&i| history.is_char_boundary(i))
+                .unwrap_or(trim_to);
+            if let Some(nl) = history[trim_to..].find("\r\n") {
+                history.drain(..trim_to + nl + 2);
+            } else {
+                history.drain(..trim_to);
+            }
+        }
+    }
+}
+
 /// Handle to a remote interactive SSH PTY session.
 ///
 /// `write_tx` sends input bytes or resize events to the remote PTY.
-/// `history` buffers all output chunks since the session started (replay-safe).
+/// `history` buffers session output as a trimmed String (ANSI clear-screen aware, 512 KB cap).
 /// `notify` fires whenever a new chunk is appended to `history`.
 /// `process_ended` is set true when the remote process exits or the channel closes.
 #[derive(Clone)]
 pub struct SshPtyHandle {
     pub log_id: i32,
     pub write_tx: tokio::sync::mpsc::Sender<SshWriteOp>,
-    pub history: Arc<tokio::sync::Mutex<Vec<String>>>,
+    pub history: Arc<tokio::sync::Mutex<String>>,
     pub notify: Arc<tokio::sync::Notify>,
     pub process_ended: Arc<AtomicBool>,
 }
@@ -643,9 +671,10 @@ impl RemoteSshSession {
         // Create I/O channels
         let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<SshWriteOp>(32);
 
-        // History buffer: accumulates ALL output so attach_terminal can replay from the start.
-        // This avoids the broadcast race where early output is lost before anyone subscribes.
-        let history: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        // History buffer: accumulates session output with ANSI clear-screen trimming and 512 KB cap.
+        // attach_terminal starts at pos=end for live sessions (SIGWINCH triggers repaint).
+        // Dead sessions recover from the DB snapshot written when the attach loop exits.
+        let history: Arc<tokio::sync::Mutex<String>> = Arc::new(tokio::sync::Mutex::new(String::new()));
         let notify: Arc<tokio::sync::Notify> = Arc::new(tokio::sync::Notify::new());
         let process_ended: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 
@@ -673,18 +702,24 @@ impl RemoteSshSession {
         });
 
         // Reader task: appends output to history and notifies waiters.
-        // attach_terminal reads from history[pos..] so it never misses early output.
+        // attach_terminal starts at pos=end for live sessions; dead sessions recover from DB.
         tokio::spawn(async move {
             loop {
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        history_writer.lock().await.push(text);
+                        {
+                            let mut hist = history_writer.lock().await;
+                            append_to_history(&mut hist, &text);
+                        }
                         notify_writer.notify_one();
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        history_writer.lock().await.push(text);
+                        {
+                            let mut hist = history_writer.lock().await;
+                            append_to_history(&mut hist, &text);
+                        }
                         notify_writer.notify_one();
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -696,7 +731,10 @@ impl RemoteSshSession {
                                 exit_status
                             )
                         };
-                        history_writer.lock().await.push(msg);
+                        {
+                            let mut hist = history_writer.lock().await;
+                            append_to_history(&mut hist, &msg);
+                        }
                         notify_writer.notify_one();
                         break;
                     }
@@ -728,5 +766,67 @@ impl std::fmt::Debug for RemoteSshSession {
             .field("ssh_connection", &self.ssh_connection)
             .field("reconnect_attempts", &self.reconnect_attempts.load(Ordering::SeqCst))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_to_history;
+
+    #[test]
+    fn test_append_to_history_clear_screen_mid_chunk() {
+        let mut hist = String::from("old content");
+        append_to_history(&mut hist, "prefix\x1b[2Jfresh");
+        assert_eq!(hist, "\x1b[2Jfresh");
+    }
+
+    #[test]
+    fn test_append_to_history_clear_screen_at_end() {
+        let mut hist = String::from("old content");
+        append_to_history(&mut hist, "some\x1b[2J");
+        assert_eq!(hist, "\x1b[2J");
+    }
+
+    #[test]
+    fn test_append_to_history_no_clear_under_cap() {
+        let mut hist = String::from("hello ");
+        append_to_history(&mut hist, "world");
+        assert_eq!(hist, "hello world");
+    }
+
+    #[test]
+    fn test_append_to_history_byte_cap_trim() {
+        let mut hist = String::new();
+        // Fill with lines totaling > 512 KB
+        for i in 0..60000 {
+            hist.push_str(&format!("line {}\r\n", i));
+        }
+        let before_len = hist.len();
+        assert!(before_len > 512 * 1024);
+        append_to_history(&mut hist, "final chunk");
+        assert!(hist.len() <= 512 * 1024 + 20); // some tolerance for the final chunk
+        assert!(hist.ends_with("final chunk"));
+        // Should have trimmed at a \r\n boundary
+        assert!(!hist.starts_with("line 0\r\n"));
+    }
+
+    #[test]
+    fn test_append_to_history_utf8_boundary_safety() {
+        let mut hist = String::new();
+        // Fill near cap with multi-byte chars (each e-acute is 2 bytes)
+        let repeated = "\u{00e9}".repeat(256 * 1024); // 512 KB of 2-byte chars
+        hist.push_str(&repeated);
+        // Append more to trigger trim
+        append_to_history(&mut hist, &"\u{00e9}".repeat(1024));
+        // Should not panic — that's the test
+        assert!(hist.len() <= 512 * 1024 + 4096);
+    }
+
+    #[test]
+    fn test_append_to_history_multiple_clear_screens() {
+        let mut hist = String::from("old");
+        append_to_history(&mut hist, "a\x1b[2Jb\x1b[2Jc");
+        // rfind picks the LAST \x1b[2J
+        assert_eq!(hist, "\x1b[2Jc");
     }
 }
