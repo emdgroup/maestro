@@ -329,6 +329,21 @@ pub async fn attach_terminal(
     // Clone AppState Arc for use in the background task (State<'_> can't cross await points)
     let app_state_arc = (*app_state).clone();
 
+    // Cancel any existing reader for this task (handles re-attach without explicit detach)
+    {
+        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        if let Some(old_flag) = cancel_map.remove(&task_id) {
+            old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    // Create cancel flag for the new reader task
+    let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        cancel_map.insert(task_id, Arc::clone(&cancel_flag));
+    }
+
     // Spawn background task to stream PTY output
     tokio::spawn(async move {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
@@ -368,11 +383,15 @@ pub async fn attach_terminal(
         // PTY reader in a blocking thread — std::io::Read::read() is a blocking syscall and
         // must not run on the tokio async thread pool (it would block a worker thread indefinitely).
         let tx_reader = tx.clone();
+        let cancel_flag_reader = Arc::clone(&cancel_flag);
         let reader_task = tokio::task::spawn_blocking(move || {
             use std::io::Read;
             let mut reader = reader;
             let mut buf = [0u8; 4096];
             loop {
+                if cancel_flag_reader.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
@@ -585,18 +604,19 @@ pub async fn append_terminal_output(
 
 /// Detach from a PTY session
 ///
-/// Stops streaming PTY output to the frontend.
-/// The actual cleanup happens when the channel is dropped on the frontend.
-/// The streaming tasks in attach_terminal will exit when they detect the channel is closed.
+/// Cancels the active local PTY reader task for the given task_id by setting its
+/// AtomicBool cancel flag. This stops the spawn_blocking reader on the next iteration,
+/// preventing a stale reader from racing with a new attach_terminal call.
 #[tauri::command]
 #[specta::specta]
 pub async fn detach_terminal(
-    _app_state: State<'_, Arc<AppState>>,
-    _task_id: i32,
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
 ) -> Result<(), String> {
-    // Note: The actual cleanup happens when the channel is dropped on the frontend.
-    // The streaming tasks in attach_terminal will exit when they detect the channel is closed.
-    // We don't need to explicitly stop anything here — just return.
+    let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+    if let Some(flag) = cancel_map.remove(&task_id) {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     Ok(())
 }
 

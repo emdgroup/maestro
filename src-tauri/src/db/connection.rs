@@ -1,6 +1,7 @@
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
 
@@ -50,7 +51,11 @@ pub struct AppState {
     /// Remote interactive PTY sessions keyed by execution log_id
     pub ssh_pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
     pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
-    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>
+    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>,
+    /// Per-session cancel flag for local PTY attach reader tasks.
+    /// When detach_terminal is called, the flag is set to true, causing
+    /// the spawn_blocking reader to exit cleanly before a new attach starts.
+    pub pty_attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
 }
 
 impl AppState {
@@ -62,6 +67,7 @@ impl AppState {
             ssh_pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
             ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
