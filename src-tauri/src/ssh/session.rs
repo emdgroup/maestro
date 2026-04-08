@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use rusqlite::ToSql;
@@ -16,6 +16,27 @@ use russh::keys::PrivateKeyWithHashAlg;
 use crate::ssh::error::SshError;
 use crate::ssh::PasswordManager;
 
+/// Operation sent to the SSH PTY writer task
+pub enum SshWriteOp {
+    Data(Vec<u8>),
+    Resize(u32, u32),
+}
+
+/// Handle to a remote interactive SSH PTY session.
+///
+/// `write_tx` sends input bytes or resize events to the remote PTY.
+/// `history` buffers all output chunks since the session started (replay-safe).
+/// `notify` fires whenever a new chunk is appended to `history`.
+/// `process_ended` is set true when the remote process exits or the channel closes.
+#[derive(Clone)]
+pub struct SshPtyHandle {
+    pub log_id: i32,
+    pub write_tx: tokio::sync::mpsc::Sender<SshWriteOp>,
+    pub history: Arc<tokio::sync::Mutex<Vec<String>>>,
+    pub notify: Arc<tokio::sync::Notify>,
+    pub process_ended: Arc<AtomicBool>,
+}
+
 /// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
 struct SshClientHandler;
 
@@ -24,13 +45,8 @@ impl client::Handler for SshClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::PublicKey,
+        _server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // TODO: Full TOFU implementation requires passing AppState to the handler.
-        // The russh Handler trait doesn't support injecting application state easily.
-        // For now, log the key fingerprint so users can see it in debug logs.
-        // The check_and_store_host_key() function in db/connection.rs is ready
-        // to be wired once we restructure the handler to receive AppState.
         Ok(true)
     }
 }
@@ -582,6 +598,127 @@ impl RemoteSshSession {
                 result
             }
         }
+    }
+
+    /// Open an interactive SSH PTY session on the remote machine.
+    ///
+    /// Allocates a PTY with `TERM=xterm-256color`, then issues a `request_shell` so the
+    /// SSH server starts the user's configured login shell (zsh, bash, fish, etc.).
+    /// Returns an `SshPtyHandle` for streaming I/O between the local xterm and the remote shell.
+    pub async fn spawn_remote_pty(
+        &self,
+        cols: u16,
+        rows: u16,
+        log_id: i32,
+    ) -> Result<SshPtyHandle, String> {
+        if !self.is_connected().await {
+            self.reconnect_if_needed().await.map_err(|e| e.to_string())?;
+        }
+
+        // Open a dedicated SSH channel for this PTY session
+        let channel = {
+            let guard = self.handle.lock().await;
+            let h = guard
+                .as_ref()
+                .ok_or("No active SSH session")?;
+            h.channel_open_session()
+                .await
+                .map_err(|e| format!("Failed to open SSH channel: {}", e))?
+        };
+
+        let (mut read_half, write_half) = channel.split();
+
+        // Allocate a PTY — this sets TERM=xterm-256color on the remote side
+        write_half
+            .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+            .await
+            .map_err(|e| format!("Failed to request PTY: {}", e))?;
+
+        // Request the user's configured login shell via SSH request_shell
+        write_half
+            .request_shell(true)
+            .await
+            .map_err(|e| format!("Failed to request remote shell: {}", e))?;
+
+        // Create I/O channels
+        let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<SshWriteOp>(32);
+
+        // History buffer: accumulates ALL output so attach_terminal can replay from the start.
+        // This avoids the broadcast race where early output is lost before anyone subscribes.
+        let history: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let notify: Arc<tokio::sync::Notify> = Arc::new(tokio::sync::Notify::new());
+        let process_ended: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
+        let history_writer = Arc::clone(&history);
+        let notify_writer = Arc::clone(&notify);
+        let ended_writer = Arc::clone(&process_ended);
+
+        // Writer task: owns write_half, processes data and resize ops sequentially.
+        // make_writer() clones the internal sender, leaving write_half available for window_change.
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let mut writer = write_half.make_writer();
+            while let Some(op) = write_rx.recv().await {
+                match op {
+                    SshWriteOp::Data(bytes) => {
+                        if writer.write_all(&bytes).await.is_err() {
+                            break;
+                        }
+                    }
+                    SshWriteOp::Resize(cols, rows) => {
+                        let _ = write_half.window_change(cols, rows, 0, 0).await;
+                    }
+                }
+            }
+        });
+
+        // Reader task: appends output to history and notifies waiters.
+        // attach_terminal reads from history[pos..] so it never misses early output.
+        tokio::spawn(async move {
+            loop {
+                match read_half.wait().await {
+                    Some(ChannelMsg::Data { data }) => {
+                        let text = String::from_utf8_lossy(&data).to_string();
+                        history_writer.lock().await.push(text);
+                        notify_writer.notify_one();
+                    }
+                    Some(ChannelMsg::ExtendedData { data, .. }) => {
+                        let text = String::from_utf8_lossy(&data).to_string();
+                        history_writer.lock().await.push(text);
+                        notify_writer.notify_one();
+                    }
+                    Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        let msg = if exit_status == 0 {
+                            "\r\n\x1b[32m[Process exited]\x1b[0m\r\n".to_string()
+                        } else {
+                            format!(
+                                "\r\n\x1b[31m[Process exited with code {}]\x1b[0m\r\n",
+                                exit_status
+                            )
+                        };
+                        history_writer.lock().await.push(msg);
+                        notify_writer.notify_one();
+                        break;
+                    }
+                    Some(ChannelMsg::Eof) => {
+                        break;
+                    }
+                    Some(ChannelMsg::Close) => {
+                        break;
+                    }
+                    None => {
+                        break;
+                    }
+                    Some(_other) => {
+                        // Unhandled message type — ignored
+                    }
+                }
+            }
+            ended_writer.store(true, Ordering::Release);
+            notify_writer.notify_one();
+        });
+
+        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended })
     }
 }
 

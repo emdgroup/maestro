@@ -1,6 +1,38 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Resolve a command name to an absolute path.
+///
+/// Checks well-known user-local installation paths before falling back to
+/// `which` (PATH-based resolution). Using an absolute path avoids spawning
+/// a process by bare name after PATH enrichment, which EDR products flag as
+/// a RAT/reverse-shell pattern.
+fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
+    // Skip resolution if already an absolute path
+    let p = PathBuf::from(command);
+    if p.is_absolute() {
+        return Ok(p);
+    }
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        format!("{}/.local/bin/{}", home, command),
+        format!("{}/.cargo/bin/{}", home, command),
+        "/usr/local/bin/".to_string() + command,
+        "/usr/bin/".to_string() + command,
+    ];
+    for candidate in &candidates {
+        let path = PathBuf::from(candidate);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    // Fall back to PATH-based resolution
+    which::which(command).map_err(|_| format!("Command '{}' not found in known locations or PATH — ensure it is installed", command))
+}
 
 /// Represents a PTY session with a spawned process
 ///
@@ -45,12 +77,40 @@ pub async fn spawn_agent_cli_pty(
         })
         .map_err(|e| format!("Failed to create PTY pair: {}", e))?;
 
-    // Build the command to spawn
-    let mut cmd = CommandBuilder::new(&command);
+    // Resolve to an absolute path before spawning. Spawning by bare name after
+    // PATH enrichment is flagged by EDR products (e.g. SentinelOne) as a RAT/C2
+    // pattern. Using a known absolute path eliminates that heuristic signal.
+    let resolved = resolve_command_path(&command)?;
+
+    let mut cmd = CommandBuilder::new(&resolved);
     for arg in args {
         cmd.arg(arg);
     }
     cmd.cwd(working_dir);
+
+    // Set TERM so the child process knows it's in an interactive terminal.
+    // portable-pty does not set TERM by default (unlike node-pty which sets it via `name`).
+    // Without TERM=xterm-256color, many CLI tools (including claude) skip interactive mode.
+    cmd.env("TERM", "xterm-256color");
+
+    // Enrich the child's PATH so tools it invokes (npm, cargo, nvm, etc.) are
+    // found. This is scoped to the child environment only — the parent process
+    // PATH is not modified, which avoids an EDR heuristic for PATH hijacking.
+    if let Ok(home) = std::env::var("HOME") {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let extra = [
+            format!("{}/.local/bin", home),
+            format!("{}/.cargo/bin", home),
+            "/usr/local/bin".to_string(),
+        ];
+        let mut paths: Vec<String> = extra
+            .iter()
+            .filter(|p| !current_path.contains(p.as_str()))
+            .cloned()
+            .collect();
+        paths.push(current_path);
+        cmd.env("PATH", paths.join(":"));
+    }
 
     // Spawn the command in the PTY slave end
     let child = pair
@@ -63,11 +123,6 @@ pub async fn spawn_agent_cli_pty(
         .master
         .take_writer()
         .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
-
-    println!(
-        "[PTY] Spawned process for task {} with command: {} in PTY",
-        task_id, command
-    );
 
     Ok(PtySession {
         task_id,

@@ -17,9 +17,20 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
     let app_state = Arc::new(AppState::new(conn));
+
+    // Mark stale running sessions as failed — PTY processes don't survive restarts
+    {
+        let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let count = db.execute(
+            "UPDATE execution_logs SET status = 'failed', completed_at = ?1 WHERE status = 'running'",
+            rusqlite::params![now],
+        ).unwrap_or(0);
+        let _ = count;
+    }
+
     app.manage(app_state);
 
-    eprintln!("Tauri app initialized successfully");
     Ok(())
 }
 
