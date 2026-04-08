@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
@@ -8,7 +7,8 @@ import {
   useSpawnInteractiveExecutionMutation,
   useDeleteExecutionMutation,
 } from "@/services/execution.service";
-import { useWorktreesQuery, worktreeQueryKeys } from "@/services/worktree.service";
+import { useWorktreesQuery } from "@/services/worktree.service";
+import type { WorktreeWithStatus } from "@/types/bindings";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import {
@@ -45,10 +45,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
 
   // Spawn Agent dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
-  const [selectedBranchName, setSelectedBranchName] = useState("");
+  const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [spawnLabel, setSpawnLabel] = useState("");
 
-  const queryClient = useQueryClient();
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const deleteMutation = useDeleteExecutionMutation();
@@ -110,8 +109,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           search={search}
           statusFilter={statusFilter}
           onSpawn={() => {
-            queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
-            setSelectedBranchName(worktrees[0]?.branch_name ?? "");
+            setSelectedWorktree(worktrees[0] ?? null);
             setSpawnLabel("");
             setShowSpawnDialog(true);
           }}
@@ -127,6 +125,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                   branchName: execution.branch_name,
                   repoPath,
                   label: null,
+                  worktreeId: null,
                 },
                 {
                   onSuccess: (logId) => {
@@ -154,8 +153,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             <div className="space-y-2">
               <Label htmlFor="spawn-worktree">Worktree</Label>
               <Select
-                value={selectedBranchName}
-                onValueChange={(v) => setSelectedBranchName(v ?? "")}
+                value={selectedWorktree?.branch_name ?? ""}
+                onValueChange={(v) => setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)}
               >
                 <SelectTrigger id="spawn-worktree">
                   <SelectValue placeholder="Select a worktree" />
@@ -187,14 +186,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
               Cancel
             </Button>
             <Button
-              disabled={!selectedBranchName || spawnMutation.isPending}
+              disabled={!selectedWorktree || spawnMutation.isPending}
               onClick={() => {
                 spawnMutation.mutate(
                   {
                     projectId: projectId!,
-                    branchName: selectedBranchName,
+                    branchName: selectedWorktree!.branch_name,
                     repoPath: repoPath!,
                     label: spawnLabel.trim() || null,
+                    worktreeId: selectedWorktree!.id,
                   },
                   {
                     onSuccess: (logId) => {

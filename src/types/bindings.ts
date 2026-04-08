@@ -351,9 +351,9 @@ async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
  * # Returns
  * Execution log ID (used as PTY session key for attach_terminal)
  */
-async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, label: string | null) : Promise<Result<number, string>> {
+async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, label: string | null, worktreeId: number | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, label }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, label, worktreeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

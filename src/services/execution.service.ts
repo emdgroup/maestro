@@ -67,13 +67,15 @@ export function useSpawnInteractiveExecutionMutation() {
       branchName,
       repoPath,
       label,
+      worktreeId,
     }: {
       projectId: number;
       branchName: string;
       repoPath: string;
       label: string | null;
+      worktreeId?: number | null;
     }) => {
-      return await api.spawnInteractiveExecution(projectId, branchName, repoPath, label);
+      return await api.spawnInteractiveExecution(projectId, branchName, repoPath, label, worktreeId ?? null);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });

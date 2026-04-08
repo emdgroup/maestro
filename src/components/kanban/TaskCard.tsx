@@ -96,7 +96,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         toast.error(`No worktree or branch found for "${task.name}". Create a worktree first.`);
         return;
       }
-      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name);
+      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, null);
       toast.success(`Session started for "${task.name}"`);
     } catch (error) {
       toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
