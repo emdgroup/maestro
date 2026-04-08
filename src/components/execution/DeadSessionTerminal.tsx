@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { formatDistanceStrict } from "date-fns";
 import type { ExecutionWithTask } from "@/types/bindings";
+import { getTerminalTheme } from "@/utils/helpers/terminalTheme";
 import "@xterm/xterm/css/xterm.css";
 
 function SessionEndedBanner({ execution }: { execution: ExecutionWithTask }) {
@@ -31,9 +32,9 @@ export function DeadSessionTerminal({ execution }: DeadSessionTerminalProps) {
 
     const terminal = new Terminal({
       cursorBlink: false,
-      fontSize: 14,
       scrollback: 5000,
       disableStdin: true,
+      ...getTerminalTheme(),
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);

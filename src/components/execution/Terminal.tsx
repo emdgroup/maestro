@@ -3,6 +3,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api } from "@/lib";
+import { getTerminalTheme } from "@/utils/helpers/terminalTheme";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
@@ -20,8 +21,8 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     // Create xterm terminal instance
     const terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
       scrollback: 1000,
+      ...getTerminalTheme(),
     });
 
     // Create and load FitAddon for auto-sizing
@@ -30,9 +31,18 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
     // Open terminal in container
     terminal.open(terminalRef.current);
-    fitAddon.fit();
 
     xtermRef.current = terminal;
+
+    // Register resize handler BEFORE fitAddon.fit() so the initial fit
+    // sends the correct dimensions to the backend PTY immediately.
+    terminal.onResize(({ cols, rows }) => {
+      api.resizeTerminal(taskId, cols, rows).catch((err) => {
+        console.error("Failed to resize terminal:", err);
+      });
+    });
+
+    fitAddon.fit();
 
     // Set up Tauri channel for streaming output
     const channel = new Channel<string>();
@@ -61,13 +71,6 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     terminal.onData((data: string) => {
       api.sendTerminalInput(taskId, data).catch((err) => {
         console.error("Failed to send terminal input:", err);
-      });
-    });
-
-    // Set up terminal resize handler
-    terminal.onResize(({ cols, rows }) => {
-      api.resizeTerminal(taskId, cols, rows).catch((err) => {
-        console.error("Failed to resize terminal:", err);
       });
     });
 
