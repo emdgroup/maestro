@@ -214,6 +214,18 @@ Plans:
 - [x] 38-02-PLAN.md — TanStack mutation hooks + file-level checkboxes + commit area in WorktreeDiffPanel
 - [x] 38-03-PLAN.md — Hunk checkboxes in DiffViewer + Revert/Shelve action bar buttons
 
+### Phase 39: Fix SSH terminal session switching: SIGWINCH-based live repaint, clear-signal-trimmed history buffer, DB snapshot on session end and app close, dead session recovery from DB snapshot
+
+**Goal:** Fix two root causes of the "cached screen" bug when switching terminal sessions: (1) SSH sessions replay full history from pos=0 on every attach — fix by converting history to trimmed String, starting live sessions at pos=end, and reading dead sessions from DB; (2) local PTY sessions have a two-reader race from no-op detach_terminal — fix with AtomicBool cancel token. Also adds Tauri shutdown hook to flush SSH histories to DB on app close, and frontend rAF reorder to ensure blank-then-repaint mount timing.
+**Requirements**: [SSH-HISTORY-TRIM, SSH-ATTACH-LIVE, SSH-ATTACH-DEAD, SSH-DB-PERSIST-EXIT, SSH-DB-PERSIST-SHUTDOWN, LOCAL-PTY-CANCEL-TOKEN, FRONTEND-RAF-REORDER, FRONTEND-CLEAR-SCREEN-GUARD]
+**Depends on:** Phase 38
+**Plans:** 3 plans
+
+Plans:
+- [ ] 39-01-PLAN.md — SSH history buffer (Vec->String + append_to_history) + attach_terminal rewrite (live/dead split + DB persist)
+- [ ] 39-02-PLAN.md — Local PTY cancel token (AtomicBool in AppState + detach_terminal) + Tauri shutdown hook (SSH history flush)
+- [ ] 39-03-PLAN.md — Frontend rAF reorder (tryAttach inside rAF after fit + clear-screen guard)
+
 ---
 
 *Roadmap created: 2026-02-09*
