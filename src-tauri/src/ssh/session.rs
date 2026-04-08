@@ -249,7 +249,7 @@ async fn authenticate_via_agent(
             ))?;
         for pubkey in &identities {
             let result = handle
-                .authenticate_publickey_with(username, pubkey.clone(), None, &mut agent)
+                .authenticate_publickey_with(username, pubkey.public_key().into_owned(), None, &mut agent)
                 .await
                 .map_err(|e| SshError::AuthenticationError(
                     format!("Agent authentication failed: {:?}", e)
@@ -277,7 +277,7 @@ async fn authenticate_via_agent(
             ))?;
         for pubkey in &identities {
             let result = handle
-                .authenticate_publickey_with(username, pubkey.clone(), None, &mut agent)
+                .authenticate_publickey_with(username, pubkey.public_key().into_owned(), None, &mut agent)
                 .await
                 .map_err(|e| SshError::AuthenticationError(
                     format!("Agent authentication failed: {:?}", e)

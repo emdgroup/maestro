@@ -47,34 +47,27 @@ fn main() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            // Flush all live SSH PTY session histories to DB on app close.
-            // This ensures sessions that are still running when the user quits
-            // can be recovered as dead sessions on next launch.
+            // Flush all SSH PTY session histories to DB on app close.
+            //
+            // We CANNOT use Handle::current().block_on() here: Tauri 2's event loop runs
+            // inside the tokio runtime, so block_on panics ("cannot call block_on inside
+            // an async context"). Use try_lock (synchronous, safe from any context) instead.
+            // Background reader tasks are idle (waiting on Notify) or already dropped by
+            // the time the exit event fires, so try_lock succeeds in practice.
             let app_state = app_handle.state::<std::sync::Arc<AppState>>();
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                // Phase 1: Collect snapshots from tokio Mutexes (async-safe)
-                let sessions = app_state.ssh_pty_sessions.lock().await;
-                if sessions.is_empty() {
-                    return;
-                }
-                let mut snapshots: Vec<(i32, String)> = Vec::new();
+
+            let mut snapshots: Vec<(i32, String)> = Vec::new();
+            if let Ok(sessions) = app_state.ssh_pty_sessions.try_lock() {
                 for (log_id, handle) in sessions.iter() {
-                    // Flush all sessions — both live and process_ended — because a session
-                    // may have ended while no reader was attached, leaving history in memory
-                    // only (attach_terminal only persists on process_ended if it is the
-                    // active reader at that moment).
-                    let hist = handle.history.lock().await;
-                    if !hist.is_empty() {
-                        snapshots.push((*log_id, hist.clone()));
+                    if let Ok(hist) = handle.history.try_lock() {
+                        if !hist.is_empty() {
+                            snapshots.push((*log_id, hist.clone()));
+                        }
                     }
                 }
-                drop(sessions); // Release tokio Mutex before acquiring std::sync::Mutex
+            }
 
-                // Phase 2: Write to DB — std::sync::Mutex only, no .await after this
-                if snapshots.is_empty() {
-                    return;
-                }
+            if !snapshots.is_empty() {
                 if let Ok(conn) = app_state.db.lock() {
                     for (log_id, snapshot) in &snapshots {
                         let _ = conn.execute(
@@ -83,7 +76,7 @@ fn main() {
                         );
                     }
                 }
-            });
+            }
         }
     });
 }

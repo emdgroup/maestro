@@ -369,12 +369,44 @@ pub async fn attach_terminal(
     }
 
     // Get local PTY session from AppState
-    let sessions = app_state.pty_sessions.lock().await;
-    let session = sessions
-        .get(&task_id)
-        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
-        .clone();
-    drop(sessions); // Release lock
+    let session = {
+        let sessions = app_state.pty_sessions.lock().await;
+        sessions.get(&task_id).cloned()
+    };
+
+    if session.is_none() {
+        // No live session (SSH handled above, local PTY also absent). This happens for
+        // dead sessions after an app restart — the in-memory handles are gone but
+        // terminal_output was flushed to DB on the previous shutdown.
+        // Try by execution log id first (interactive SSH sessions are keyed by log_id),
+        // then by task_id column (task-based local PTY sessions).
+        let db_output = {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let by_id: Option<String> = conn.query_row(
+                "SELECT terminal_output FROM execution_logs WHERE id = ?",
+                rusqlite::params![task_id],
+                |row| row.get::<_, Option<String>>(0),
+            ).ok().flatten();
+            if by_id.is_some() {
+                by_id
+            } else {
+                conn.query_row(
+                    "SELECT terminal_output FROM execution_logs \
+                     WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+                    rusqlite::params![task_id],
+                    |row| row.get::<_, Option<String>>(0),
+                ).ok().flatten()
+            }
+        }; // conn dropped here
+        if let Some(text) = db_output {
+            if !text.is_empty() {
+                let _ = output_channel.send(text);
+                return Ok(());
+            }
+        }
+        return Err(format!("No PTY session for task {}", task_id));
+    }
+    let session = session.unwrap();
 
     // If requested, send terminal history first
     if include_history.unwrap_or(false) {
