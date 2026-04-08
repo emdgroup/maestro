@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
@@ -7,7 +8,7 @@ import {
   useSpawnInteractiveExecutionMutation,
   useDeleteExecutionMutation,
 } from "@/services/execution.service";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useWorktreesQuery, worktreeQueryKeys } from "@/services/worktree.service";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import {
@@ -44,12 +45,11 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
 
   // Spawn Agent dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
-  const [spawnBranch, setSpawnBranch] = useState("");
+  const [selectedBranchName, setSelectedBranchName] = useState("");
   const [spawnLabel, setSpawnLabel] = useState("");
 
-  const { data: branchData } = useProjectBranchesQuery(projectId ?? null);
-  const branches = branchData?.[0] ?? [];
-  const currentBranch = branchData?.[1] ?? "main";
+  const queryClient = useQueryClient();
+  const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const deleteMutation = useDeleteExecutionMutation();
 
@@ -110,7 +110,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           search={search}
           statusFilter={statusFilter}
           onSpawn={() => {
-            setSpawnBranch(currentBranch);
+            queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+            setSelectedBranchName(worktrees[0]?.branch_name ?? "");
             setSpawnLabel("");
             setShowSpawnDialog(true);
           }}
@@ -145,21 +146,27 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           <DialogHeader>
             <DialogTitle>Spawn Interactive Agent</DialogTitle>
             <DialogDescription>
-              Start an interactive agent session on a branch. No task required — you drive the
+              Start an interactive agent session in a worktree. No task required — you drive the
               terminal.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="spawn-branch">Branch</Label>
-              <Select value={spawnBranch} onValueChange={(v) => setSpawnBranch(v ?? "")}>
-                <SelectTrigger id="spawn-branch">
-                  <SelectValue placeholder="Select a branch" />
+              <Label htmlFor="spawn-worktree">Worktree</Label>
+              <Select
+                value={selectedBranchName}
+                onValueChange={(v) => setSelectedBranchName(v ?? "")}
+              >
+                <SelectTrigger id="spawn-worktree">
+                  <SelectValue placeholder="Select a worktree" />
                 </SelectTrigger>
                 <SelectContent>
-                  {branches.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
+                  {worktrees.map((wt) => (
+                    <SelectItem key={wt.branch_name} value={wt.branch_name}>
+                      <span className="font-mono">{wt.branch_name}</span>
+                      {wt.agent_status === "running" && (
+                        <span className="ml-2 text-xs text-green-500">running</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -180,12 +187,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
               Cancel
             </Button>
             <Button
-              disabled={!spawnBranch || spawnMutation.isPending}
+              disabled={!selectedBranchName || spawnMutation.isPending}
               onClick={() => {
                 spawnMutation.mutate(
                   {
                     projectId: projectId!,
-                    branchName: spawnBranch,
+                    branchName: selectedBranchName,
                     repoPath: repoPath!,
                     label: spawnLabel.trim() || null,
                   },
