@@ -219,33 +219,78 @@ pub async fn attach_terminal(
         let history = Arc::clone(&handle.history);
         let notify = Arc::clone(&handle.notify);
         let process_ended = Arc::clone(&handle.process_ended);
+        let log_id = handle.log_id;
+        let app_state_arc = (*app_state).clone();
+
         tokio::spawn(async move {
             use std::sync::atomic::Ordering;
-            let mut pos = 0usize;
-            loop {
-                // Drain all chunks since last pos
-                {
-                    let chunks = history.lock().await;
-                    while pos < chunks.len() {
-                        if output_channel.send(chunks[pos].clone()).is_err() {
-                            return;
-                        }
-                        pos += 1;
+            let is_dead = process_ended.load(Ordering::Acquire);
+
+            if is_dead {
+                // Dead session: read terminal_output from DB by log_id and send as single write
+                let db_output: Option<String> = {
+                    if let Ok(conn) = app_state_arc.db.lock() {
+                        conn.query_row(
+                            "SELECT terminal_output FROM execution_logs WHERE id = ?",
+                            rusqlite::params![log_id],
+                            |row| row.get::<_, Option<String>>(0),
+                        ).ok().flatten()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(text) = db_output {
+                    if !text.is_empty() {
+                        let _ = output_channel.send(text);
                     }
                 }
-                // Exit when process ended AND we've drained everything
-                if process_ended.load(Ordering::Acquire) {
-                    // One final drain after the flag is set
-                    let chunks = history.lock().await;
-                    while pos < chunks.len() {
-                        if output_channel.send(chunks[pos].clone()).is_err() {
-                            return;
+                return;
+            }
+
+            // Live session: start at pos=end (skip all history).
+            // SIGWINCH from fitAddon.fit() -> resizeTerminal() will trigger
+            // the running program to repaint its current screen.
+            let mut pos: usize = {
+                let hist = history.lock().await;
+                hist.len()
+            };
+
+            loop {
+                {
+                    let hist = history.lock().await;
+                    if pos < hist.len() {
+                        let slice = &hist[pos..];
+                        if !slice.is_empty() {
+                            if output_channel.send(slice.to_string()).is_err() {
+                                return;
+                            }
+                            pos = hist.len();
                         }
-                        pos += 1;
+                    }
+                }
+                // Check process_ended after draining
+                if process_ended.load(Ordering::Acquire) {
+                    // Final drain after process ended
+                    let hist = history.lock().await;
+                    if pos < hist.len() {
+                        let slice = &hist[pos..];
+                        if !slice.is_empty() {
+                            let _ = output_channel.send(slice.to_string());
+                        }
+                    }
+                    // Persist history to DB for dead-session recovery
+                    let history_snapshot: String = hist.clone();
+                    drop(hist);
+                    if !history_snapshot.is_empty() {
+                        if let Ok(conn) = app_state_arc.db.lock() {
+                            let _ = conn.execute(
+                                "UPDATE execution_logs SET terminal_output = ? WHERE id = ?",
+                                rusqlite::params![&history_snapshot, log_id],
+                            );
+                        }
                     }
                     break;
                 }
-                // Wait for more output
                 notify.notified().await;
             }
         });
