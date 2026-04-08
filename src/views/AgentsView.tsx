@@ -8,6 +8,7 @@ import {
   useDeleteExecutionMutation,
 } from "@/services/execution.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
+import { api } from "@/lib";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import {
@@ -130,6 +131,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                 {
                   onSuccess: (logId) => {
                     setSelectedExecutionId(logId);
+                    void api.deleteExecutionLog(execution.id);
                   },
                 },
               );
