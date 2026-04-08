@@ -6,7 +6,6 @@ import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
 import { api } from "@/lib";
-import { useNavigate } from "@/store/navigationStore";
 
 /// Get status dot color based on task status
 function getStatusDotColor(status: string): string {
@@ -72,7 +71,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
   const updateTask = useUpdateTask();
-  const navigate = useNavigate();
 
   // Load latest execution logs using TanStack Query
   const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
@@ -98,8 +96,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         toast.error(`No worktree or branch found for "${task.name}". Create a worktree first.`);
         return;
       }
-      const logId = await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name);
-      navigate({ agentId: String(logId) });
+      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name);
       toast.success(`Session started for "${task.name}"`);
     } catch (error) {
       toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
