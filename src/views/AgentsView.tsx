@@ -119,10 +119,20 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             if (selectedExecutionId === executionId) setSelectedExecutionId(null);
           }}
           onReconnect={(execution) => {
-            if (execution.branch_name) {
-              setSpawnBranch(execution.branch_name);
-              setSpawnLabel("");
-              setShowSpawnDialog(true);
+            if (execution.branch_name && projectId != null && repoPath != null) {
+              spawnMutation.mutate(
+                {
+                  projectId,
+                  branchName: execution.branch_name,
+                  repoPath,
+                  label: null,
+                },
+                {
+                  onSuccess: (logId) => {
+                    setSelectedExecutionId(logId);
+                  },
+                },
+              );
             }
           }}
         />
