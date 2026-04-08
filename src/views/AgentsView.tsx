@@ -76,7 +76,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           <InputGroup>
             <InputGroupInput
               type="text"
-              placeholder="Search agents..."
+              placeholder="Search sessions..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 w-48 text-sm"

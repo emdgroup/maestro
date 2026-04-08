@@ -59,7 +59,7 @@ export function AgentMonitor({
       .filter(
         (e) =>
           search.trim() === "" ||
-          (e.task_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
+          (e.task_name ?? e.branch_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
       );
   }, [executions, statusFilter, search]);
 
