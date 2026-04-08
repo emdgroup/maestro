@@ -219,11 +219,11 @@ Plans:
 **Goal:** Fix two root causes of the "cached screen" bug when switching terminal sessions: (1) SSH sessions replay full history from pos=0 on every attach — fix by converting history to trimmed String, starting live sessions at pos=end, and reading dead sessions from DB; (2) local PTY sessions have a two-reader race from no-op detach_terminal — fix with AtomicBool cancel token. Also adds Tauri shutdown hook to flush SSH histories to DB on app close, and frontend rAF reorder to ensure blank-then-repaint mount timing.
 **Requirements**: [SSH-HISTORY-TRIM, SSH-ATTACH-LIVE, SSH-ATTACH-DEAD, SSH-DB-PERSIST-EXIT, SSH-DB-PERSIST-SHUTDOWN, LOCAL-PTY-CANCEL-TOKEN, FRONTEND-RAF-REORDER, FRONTEND-CLEAR-SCREEN-GUARD]
 **Depends on:** Phase 38
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 39-01-PLAN.md — SSH history buffer (Vec->String + append_to_history) + attach_terminal rewrite (live/dead split + DB persist)
-- [ ] 39-02-PLAN.md — Local PTY cancel token (AtomicBool in AppState + detach_terminal) + Tauri shutdown hook (SSH history flush)
+- [x] 39-02-PLAN.md — Local PTY cancel token (AtomicBool in AppState + detach_terminal) + Tauri shutdown hook (SSH history flush)
 - [x] 39-03-PLAN.md — Frontend rAF reorder (tryAttach inside rAF after fit + clear-screen guard)
 
 ---

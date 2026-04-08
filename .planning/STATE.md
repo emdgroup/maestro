@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-08T16:07:22.140Z"
+last_updated: "2026-04-08T16:12:51.308Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -141,6 +141,7 @@ Plan: 3 of 3
 | Phase 38 P03 | 0.067 | 2 tasks | 2 files |
 | Phase 39-fix-ssh-terminal-session-switching P01 | 0.05 | 2 tasks | 2 files |
 | Phase 39 P03 | 0.017 | 1 tasks | 1 files |
+| Phase 39-fix-ssh-terminal-session-switching P02 | 0.05 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -279,6 +280,8 @@ Phase 18 Architecture Decisions:
 - [Phase 39-fix-ssh-terminal-session-switching]: attach_terminal SSH live sessions start at pos=hist.len() (no history replay); dead sessions read terminal_output from DB by log_id; history persisted to DB on process_ended
 - [Phase 39]: tryAttach() moved inside rAF after fitAddon.fit() — SIGWINCH fires before attach, programs repaint into blank xterm buffer
 - [Phase 39]: terminal.write('\x1b[2J\x1b[H') cosmetic guard inside rAF clears xterm viewport before attachTerminal call
+- [Phase 39-fix-ssh-terminal-session-switching]: AtomicBool chosen over tokio::sync::watch for cancel token — watch::Receiver::changed().await is async and cannot be polled inside spawn_blocking; AtomicBool with Ordering::Relaxed is directly checkable from blocking threads
+- [Phase 39-fix-ssh-terminal-session-switching]: Two-phase lock pattern in shutdown hook: collect all tokio Mutex snapshots first, drop async guards, then write via std::sync::Mutex — std::sync::MutexGuard<Connection> never crosses an .await point
 
 ### Pending Todos
 
