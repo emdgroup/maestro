@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
 last_updated: "2026-04-08"
-last_activity: "2026-04-08 - Completed quick task 260408-h39: remove all eprintln! from Rust backend (178 occurrences, 14 files)"
+last_activity: "2026-04-08 - Completed quick task 260408-il9: Fix CSP violations blocking Google Fonts and Tauri IPC protocol"
 progress:
   total_phases: 1
   completed_phases: 1
