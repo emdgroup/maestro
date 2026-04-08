@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
 last_updated: "2026-04-08"
-last_activity: "2026-04-08 - Completed quick task 260408-guc: reconnect removes failed session instead of leaving duplicate in sidebar"
+last_activity: "2026-04-08 - Completed quick task 260408-h39: remove all eprintln! from Rust backend (178 occurrences, 14 files)"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -294,6 +294,7 @@ Phase 18 Architecture Decisions:
 | 260408-cee | Style terminal with mono font and app background for better integration | 2026-04-08 | 42e44d5 | [260408-cee-style-terminal-with-mono-font-and-app-ba](./quick/260408-cee-style-terminal-with-mono-font-and-app-ba/) |
 | 260408-g78 | reconnect failed session should reuse existing parameters not prompt for branch selection | 2026-04-08 | dc81db5 | [260408-g78-reconnect-failed-session-should-reuse-ex](./quick/260408-g78-reconnect-failed-session-should-reuse-ex/) |
 | 260408-guc | reconnect removes failed session instead of leaving duplicate in sidebar | 2026-04-08 | b6f7894 | [260408-guc-reconnect-removes-failed-session-instead](./quick/260408-guc-reconnect-removes-failed-session-instead/) |
+| 260408-h39 | remove all eprintln! from Rust backend (178 occurrences, 14 files) | 2026-04-08 | b0b2a23 | [260408-h39-remove-all-eprintln-for-agent-session-in](./quick/260408-h39-remove-all-eprintln-for-agent-session-in/) |
 
 ### Blockers/Concerns
 
