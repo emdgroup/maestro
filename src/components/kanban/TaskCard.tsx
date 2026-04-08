@@ -5,6 +5,8 @@ import { useExecutionLogsQuery, useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
+import { api } from "@/lib";
+import { useNavigate } from "@/store/navigationStore";
 
 /// Get status dot color based on task status
 function getStatusDotColor(status: string): string {
@@ -63,13 +65,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onArchiveClick,
 }) => {
   // Get context from KanbanProvider
-  const { projectPath, onTaskClick } = useKanban();
+  const { projectId, projectPath, onTaskClick } = useKanban();
 
   const [isExecuting, setIsExecuting] = useState(false);
   const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
   const updateTask = useUpdateTask();
+  const navigate = useNavigate();
 
   // Load latest execution logs using TanStack Query
   const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
@@ -87,14 +90,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      const executionLogId = await store.executeTask(task.project_id, task.id, projectPath);
-      console.log("Execution started:", executionLogId);
-      toast.success(`Execution started for "${task.name}"`);
+      // Find the worktree branch for this task
+      const worktrees = await api.listWorktreesWithStatus(projectId, projectPath);
+      const worktree = worktrees.find((w) => w.task_id === task.id);
+      const branchName = worktree?.branch_name ?? task.origin_branch;
+      if (!branchName) {
+        toast.error(`No worktree or branch found for "${task.name}". Create a worktree first.`);
+        return;
+      }
+      const logId = await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name);
+      navigate({ agentId: String(logId) });
+      toast.success(`Session started for "${task.name}"`);
     } catch (error) {
-      console.error("Execution failed:", error);
-      toast.error(
-        `Failed to start execution: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsExecuting(false);
     }
