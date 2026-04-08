@@ -247,17 +247,20 @@ pub async fn attach_terminal(
                 return;
             }
 
-            // Live session: start at pos=end (skip all history).
-            // SIGWINCH from fitAddon.fit() -> resizeTerminal() will trigger
-            // the running program to repaint its current screen.
-            let mut pos: usize = {
-                let hist = history.lock().await;
-                hist.len()
-            };
+            // Live session: replay full history from pos=0.
+            // append_to_history already trims to after the last \x1b[2J, so the history
+            // string is the minimal data needed to reconstruct the current screen state.
+            // SIGWINCH alone is insufficient for shells (only redraws the prompt line).
+            let mut pos: usize = 0;
 
             loop {
                 {
                     let hist = history.lock().await;
+                    // Guard: if history was trimmed (clear-screen or 512KB cap),
+                    // pos may exceed hist.len() — reset to replay from the new start.
+                    if pos > hist.len() {
+                        pos = 0;
+                    }
                     if pos < hist.len() {
                         let slice = &hist[pos..];
                         if !slice.is_empty() {
@@ -272,6 +275,9 @@ pub async fn attach_terminal(
                 if process_ended.load(Ordering::Acquire) {
                     // Final drain after process ended
                     let hist = history.lock().await;
+                    if pos > hist.len() {
+                        pos = 0;
+                    }
                     if pos < hist.len() {
                         let slice = &hist[pos..];
                         if !slice.is_empty() {
