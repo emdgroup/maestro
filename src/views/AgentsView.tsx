@@ -124,7 +124,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                   projectId,
                   branchName: execution.branch_name,
                   repoPath,
-                  sessionName: null,
+                  sessionName: execution.session_name ?? null,
                   worktreeId: null,
                 },
                 {
