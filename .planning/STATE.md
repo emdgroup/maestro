@@ -307,6 +307,7 @@ Phase 18 Architecture Decisions:
 | 260408-il9 | fix CSP violations blocking Google Fonts and Tauri IPC custom protocol | 2026-04-08 | b10e8b9 | [260408-il9-fix-csp-violations-blocking-google-fonts](./quick/260408-il9-fix-csp-violations-blocking-google-fonts/) |
 | 260408-r6o | Fix broken session name search + rename placeholder in agents view | 2026-04-08 | fb2a172 | [260408-r6o-fix-broken-session-name-search-rename-pl](./quick/260408-r6o-fix-broken-session-name-search-rename-pl/) |
 | 260408-s08 | new session dialog: select worktree instead of branch, refresh list on open | 2026-04-08 | 3eee4da | [260408-s08-new-session-dialog-select-worktree-inste](./quick/260408-s08-new-session-dialog-select-worktree-inste/) |
+| 260409-fnx | replace label by session name and wire it to storage and display | 2026-04-09 | 17a42eb | [260409-fnx-replace-label-by-session-name-and-wire-i](./quick/260409-fnx-replace-label-by-session-name-and-wire-i/) |
 
 ### Blockers/Concerns
 
