@@ -29,10 +29,15 @@ pub enum SshWriteOp {
 /// clear-screen. A 512 KB byte-cap fallback trims from the front to the nearest
 /// `\r\n` boundary to prevent unbounded growth.
 ///
-/// Returns the number of bytes removed from the **front** of the buffer (0 for
-/// clear-screen replacement and no-op appends). Callers must add this value to a
-/// monotonic `total_drained` counter so that readers can adjust their byte positions.
-fn append_to_history(history: &mut String, chunk: &str) -> usize {
+/// Returns `(drained_bytes, was_clear_screen)`:
+/// - `drained_bytes`: bytes removed from the **front** of the buffer by the 512 KB cap
+///   path (0 for clear-screen replacement and no-op appends). Callers add this to a
+///   monotonic `total_drained` counter so readers can adjust their byte positions.
+/// - `was_clear_screen`: true when the history buffer was completely replaced due to a
+///   `\x1b[2J` sequence. Readers must reset their byte position to 0 when this is true,
+///   regardless of whether the new history length is larger than the old position — the
+///   old position is meaningless in the new (completely different) buffer.
+fn append_to_history(history: &mut String, chunk: &str) -> (usize, bool) {
     if let Some(pos) = chunk.rfind("\x1b[2J") {
         // Clear-screen: replace buffer entirely — not a front-drain.
         // Prepend \x1b[H (cursor home) so readers always start at the top-left corner
@@ -42,7 +47,7 @@ fn append_to_history(history: &mut String, chunk: &str) -> usize {
         history.clear();
         history.push_str("\x1b[H");
         history.push_str(&chunk[pos..]);
-        0
+        (0, true)
     } else {
         history.push_str(chunk);
         const MAX_BYTES: usize = 512 * 1024;
@@ -55,13 +60,13 @@ fn append_to_history(history: &mut String, chunk: &str) -> usize {
             if let Some(nl) = history[trim_to..].find("\r\n") {
                 let actual = trim_to + nl + 2;
                 history.drain(..actual);
-                actual
+                (actual, false)
             } else {
                 history.drain(..trim_to);
-                trim_to
+                (trim_to, false)
             }
         } else {
-            0
+            (0, false)
         }
     }
 }
@@ -75,6 +80,11 @@ fn append_to_history(history: &mut String, chunk: &str) -> usize {
 /// `total_drained` is the cumulative bytes ever removed from the **front** of `history` by the
 /// 512 KB cap (not by clear-screen replacements). Readers subtract the delta from their byte
 /// position on each iteration to stay correctly positioned after a drain.
+/// `clear_screen_count` increments each time `append_to_history` completely replaces the buffer
+/// due to a `\x1b[2J` sequence. Readers reset their byte position to 0 when this counter
+/// advances — the old position is meaningless in the newly-replaced buffer, and failing to
+/// reset causes partial escape sequences (e.g. `?2026l` without the leading `\x1b[`) to be
+/// sent to the frontend as literal printable characters.
 #[derive(Clone)]
 pub struct SshPtyHandle {
     pub log_id: i32,
@@ -83,6 +93,7 @@ pub struct SshPtyHandle {
     pub notify: Arc<tokio::sync::Notify>,
     pub process_ended: Arc<AtomicBool>,
     pub total_drained: Arc<AtomicUsize>,
+    pub clear_screen_count: Arc<AtomicUsize>,
 }
 
 /// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
@@ -699,11 +710,16 @@ impl RemoteSshSession {
         // Cumulative front-drain counter: incremented only by the 512 KB cap path, never by
         // clear-screen replacements. Readers use this to adjust their byte positions after a drain.
         let total_drained: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+        // Clear-screen replacement counter: incremented each time the history buffer is fully
+        // replaced due to a \x1b[2J sequence. Readers reset pos=0 when this counter advances,
+        // preventing partial escape sequences from being sent as literal printable characters.
+        let clear_screen_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
 
         let history_writer = Arc::clone(&history);
         let notify_writer = Arc::clone(&notify);
         let ended_writer = Arc::clone(&process_ended);
         let total_drained_writer = Arc::clone(&total_drained);
+        let clear_screen_count_writer = Arc::clone(&clear_screen_count);
 
         // Writer task: owns write_half, processes data and resize ops sequentially.
         // make_writer() clones the internal sender, leaving write_half available for window_change.
@@ -731,22 +747,26 @@ impl RemoteSshSession {
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        let drained = {
+                        let (drained, was_clear_screen) = {
                             let mut hist = history_writer.lock().await;
                             append_to_history(&mut hist, &text)
                         };
-                        if drained > 0 {
+                        if was_clear_screen {
+                            clear_screen_count_writer.fetch_add(1, Ordering::Release);
+                        } else if drained > 0 {
                             total_drained_writer.fetch_add(drained, Ordering::Release);
                         }
                         notify_writer.notify_one();
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        let drained = {
+                        let (drained, was_clear_screen) = {
                             let mut hist = history_writer.lock().await;
                             append_to_history(&mut hist, &text)
                         };
-                        if drained > 0 {
+                        if was_clear_screen {
+                            clear_screen_count_writer.fetch_add(1, Ordering::Release);
+                        } else if drained > 0 {
                             total_drained_writer.fetch_add(drained, Ordering::Release);
                         }
                         notify_writer.notify_one();
@@ -762,7 +782,7 @@ impl RemoteSshSession {
                         };
                         {
                             let mut hist = history_writer.lock().await;
-                            // Exit message is short — drain return value not needed here
+                            // Exit message is short — clear-screen/drain return values not needed here
                             append_to_history(&mut hist, &msg);
                         }
                         notify_writer.notify_one();
@@ -786,7 +806,7 @@ impl RemoteSshSession {
             notify_writer.notify_one();
         });
 
-        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained })
+        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained, clear_screen_count })
     }
 }
 

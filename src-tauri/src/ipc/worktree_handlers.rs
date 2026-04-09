@@ -32,11 +32,7 @@ pub async fn list_worktrees_with_status(
     // Step 1: Get on-disk worktrees
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
 
-    // Step 2: Filter out main worktree (the repo root itself)
-    let disk_worktrees: Vec<_> = disk_worktrees
-        .into_iter()
-        .filter(|wt| wt.path != repo_path)
-        .collect();
+    // Step 2: No filter — include main worktree (repo root) so it appears in the spawn dialog.
 
     // Step 3: Query DB for all worktrees for this project, enriched with task/execution info
     struct DbWorktreeRow {
@@ -149,7 +145,7 @@ pub async fn list_worktrees_with_status(
                 project_id: Some(db_row.project_id),
                 task_id: db_row.task_id,
                 branch_name: db_row.branch_name.clone(),
-                path: db_row.path.clone(),
+                path: format!("{}/{}", repo_path, db_row.path),
                 git_status,
                 created_at: Some(db_row.created_at.clone()),
                 task_name: db_row.task_name.clone(),
@@ -217,37 +213,19 @@ pub async fn list_worktrees_with_status(
 #[specta::specta]
 pub async fn get_worktree_diff(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
+    project_id: i32,
+    worktree_path: String,
     diff_target: DiffTarget,
 ) -> Result<String, String> {
-    // Step 1: Query DB for worktree path, branch_name, project repo_path, and project_id via JOIN
-    let (wt_path, _branch_name, repo_path, wt_project_id): (String, String, String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT w.path, w.branch_name, p.path, w.project_id
-             FROM worktrees w
-             JOIN projects p ON p.id = w.project_id
-             WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
 
-    // Step 2: Resolve GitConnection
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
-
-    // Step 3: Construct absolute worktree path
-    let worktree_abs = format!("{}/{}", repo_path, wt_path);
-
-    // Step 4: Build git args based on DiffTarget and dispatch
     let diff_output = match &diff_target {
         DiffTarget::Head => {
-            crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["diff", "HEAD"]).await?
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "HEAD"]).await?
         }
         DiffTarget::Branch(branch) => {
             let range = format!("origin/{}..HEAD", branch);
-            crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["diff", "--unified=6", &range]).await?
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
         }
     };
 
@@ -378,67 +356,51 @@ pub async fn create_worktree_for_task(
 #[specta::specta]
 pub async fn delete_worktree(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
-    _repo_path: String,
+    project_id: i32,
+    worktree_path: String,
+    branch_name: String,
+    worktree_id: Option<i32>,
     delete_branch: bool,
 ) -> Result<(), String> {
-    // Step 1: Query DB for worktree path, project_id, and branch_name
-    let (wt_path, wt_project_id, wt_branch_name): (String, i32, String) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, project_id, branch_name FROM worktrees WHERE id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
-
     // Resolve project and git connection (local vs remote SSH)
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
 
-    // Step 2: Call git worktree remove via dispatcher (best effort — don't fail if already gone)
-    let _ = crate::git::delete_worktree(&git_conn, &wt_path).await;
+    // Call git worktree remove via dispatcher (best effort — don't fail if already gone)
+    let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
 
-    // Step 2b: Optionally delete the branch (best-effort, non-fatal)
+    // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
         match &git_conn {
             crate::models::GitConnection::Local { path } => {
                 let output = tokio::process::Command::new("git")
-                    .args(["branch", "-d", &wt_branch_name])
+                    .args(["branch", "-d", &branch_name])
                     .current_dir(path)
                     .output()
                     .await;
                 match output {
                     Ok(o) if !o.status.success() => {
-                        // Non-fatal: branch delete failed
                         let _ = o;
                     }
-                    Err(_) => {
-                        // Non-fatal: branch delete error
-                    }
-                    _ => {
-                        // Branch deleted successfully
-                    }
+                    Err(_) => {}
+                    _ => {}
                 }
             }
             crate::models::GitConnection::Remote { ssh, remote_path } => {
                 let cmd = format!(
                     "git -C {} branch -d {}",
                     crate::git::remote::shell_quote(remote_path),
-                    crate::git::remote::shell_quote(&wt_branch_name)
+                    crate::git::remote::shell_quote(&branch_name)
                 );
                 let _ = ssh.execute_command(&cmd).await;
             }
         }
     }
 
-    // Step 3: Delete DB row
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute(
-        "DELETE FROM worktrees WHERE id = ?",
-        rusqlite::params![worktree_id],
-    )
-    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
+    // Delete DB row if id provided (orphans have no DB row)
+    if let Some(id) = worktree_id {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
+    }
 
     Ok(())
 }
@@ -556,21 +518,13 @@ pub async fn cleanup_zombie_worktrees(
 #[specta::specta]
 pub async fn stage_worktree_files(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
+    project_id: i32,
+    worktree_path: String,
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT w.path, p.path, w.project_id
-             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
-    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let worktree_abs = worktree_path;
 
     if !file_paths.is_empty() {
         let mut args = vec!["add", "--"];
@@ -611,22 +565,12 @@ pub async fn stage_worktree_files(
 #[specta::specta]
 pub async fn commit_worktree(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
+    project_id: i32,
+    worktree_path: String,
     message: String,
 ) -> Result<(), String> {
-    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT w.path, p.path, w.project_id
-             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
-    let worktree_abs = format!("{}/{}", repo_path, wt_path);
-
-    crate::git::run_git_in_dir(&git_conn, &worktree_abs, &["commit", "-m", &message]).await?;
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    crate::git::run_git_in_dir(&git_conn, &worktree_path, &["commit", "-m", &message]).await?;
     Ok(())
 }
 
@@ -638,21 +582,13 @@ pub async fn commit_worktree(
 #[specta::specta]
 pub async fn discard_worktree_changes(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
+    project_id: i32,
+    worktree_path: String,
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT w.path, p.path, w.project_id
-             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
-    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let worktree_abs = worktree_path;
 
     if !file_paths.is_empty() {
         let mut reset_args = vec!["reset", "HEAD", "--"];
@@ -697,21 +633,13 @@ pub async fn discard_worktree_changes(
 #[specta::specta]
 pub async fn shelve_worktree_changes(
     app_state: State<'_, Arc<AppState>>,
-    worktree_id: i32,
+    project_id: i32,
+    worktree_path: String,
     stash_name: String,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
-    let (wt_path, repo_path, wt_project_id): (String, String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT w.path, p.path, w.project_id
-             FROM worktrees w JOIN projects p ON p.id = w.project_id WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
-    };
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, wt_project_id).await?;
-    let worktree_abs = format!("{}/{}", repo_path, wt_path);
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let worktree_abs = worktree_path;
 
     let mut args = vec!["stash", "push", "-m", &stash_name];
     if !file_paths.is_empty() {

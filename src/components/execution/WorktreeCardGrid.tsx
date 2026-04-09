@@ -8,8 +8,9 @@ interface WorktreeCardGridProps {
   groups: Array<{ groupKey: string; items: WorktreeWithStatus[] }>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (group: string) => void;
-  onSelectWorktree: (id: number) => void;
-  onDeleteWorktree: (id: number) => void;
+  onSelectWorktree: (path: string) => void;
+  onDeleteWorktree: (path: string) => void;
+  repoPath: string;
   emptyMessage?: string;
 }
 
@@ -21,6 +22,7 @@ export function WorktreeCardGrid({
   onToggleGroup,
   onSelectWorktree,
   onDeleteWorktree,
+  repoPath,
   emptyMessage,
 }: WorktreeCardGridProps) {
   if (viewMode === "grid") {
@@ -38,6 +40,7 @@ export function WorktreeCardGrid({
             <WorktreeCard
               key={wt.path}
               worktree={wt}
+              repoPath={repoPath}
               onSelect={onSelectWorktree}
               onDelete={onDeleteWorktree}
             />
@@ -69,6 +72,7 @@ export function WorktreeCardGrid({
             <WorktreeCard
               key={wt.path}
               worktree={wt}
+              repoPath={repoPath}
               onSelect={onSelectWorktree}
               onDelete={onDeleteWorktree}
             />

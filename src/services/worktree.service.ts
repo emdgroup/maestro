@@ -6,8 +6,8 @@ import type { DiffTarget } from "@/types/bindings";
 export const worktreeQueryKeys = {
   all: ["worktrees"] as const,
   list: (projectId: number) => [...worktreeQueryKeys.all, "list", projectId] as const,
-  diff: (worktreeId: number, diffTarget: DiffTarget) =>
-    [...worktreeQueryKeys.all, "diff", worktreeId, diffTarget] as const,
+  diff: (worktreePath: string, diffTarget: DiffTarget) =>
+    [...worktreeQueryKeys.all, "diff", worktreePath, diffTarget] as const,
 };
 
 /**
@@ -25,14 +25,17 @@ export function useWorktreesQuery(projectId: number | undefined, repoPath: strin
 
 /**
  * Query hook for fetching worktree diff (unified diff string).
- * Only fetches when a worktree is selected (worktreeId is non-null).
- * diffTarget controls whether we diff HEAD (uncommitted) or a branch (full branch diff).
+ * Uses project_id + absolute worktree path — no DB lookup needed.
  */
-export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: DiffTarget) {
+export function useWorktreeDiffQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  diffTarget: DiffTarget,
+) {
   return useQuery({
-    queryKey: worktreeQueryKeys.diff(worktreeId ?? 0, diffTarget),
-    queryFn: () => api.getWorktreeDiff(worktreeId!, diffTarget),
-    enabled: worktreeId != null,
+    queryKey: worktreeQueryKeys.diff(worktreePath ?? "", diffTarget),
+    queryFn: () => api.getWorktreeDiff(projectId!, worktreePath!, diffTarget),
+    enabled: projectId != null && worktreePath != null,
     refetchInterval: 5000,
     staleTime: 2000,
   });
@@ -40,21 +43,26 @@ export function useWorktreeDiffQuery(worktreeId: number | null, diffTarget: Diff
 
 /**
  * Mutation hook for deleting a worktree.
+ * Passes optional worktreeId so DB row is deleted when present (orphans skip DB deletion).
  * Invalidates worktree list on success.
  */
 export function useDeleteWorktreeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
+      projectId,
+      worktreePath,
+      branchName,
       worktreeId,
-      repoPath,
       deleteBranch,
     }: {
-      worktreeId: number;
-      repoPath: string;
+      projectId: number;
+      worktreePath: string;
+      branchName: string;
+      worktreeId: number | null;
       deleteBranch: boolean;
     }) => {
-      return await api.deleteWorktree(worktreeId, repoPath, deleteBranch);
+      return await api.deleteWorktree(projectId, worktreePath, branchName, worktreeId, deleteBranch);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
@@ -98,15 +106,17 @@ export function useCleanupZombieWorktreesMutation() {
 export function useStageWorktreeFilesMutation() {
   return useMutation({
     mutationFn: async ({
-      worktreeId,
+      projectId,
+      worktreePath,
       filePaths,
       patch,
     }: {
-      worktreeId: number;
+      projectId: number;
+      worktreePath: string;
       filePaths: string[];
       patch: string | null;
     }) => {
-      return await api.stageWorktreeFiles(worktreeId, filePaths, patch);
+      return await api.stageWorktreeFiles(projectId, worktreePath, filePaths, patch);
     },
     onError: (error) => {
       toast.error(`Failed to stage files: ${error}`);
@@ -122,13 +132,15 @@ export function useCommitWorktreeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      worktreeId,
+      projectId,
+      worktreePath,
       message,
     }: {
-      worktreeId: number;
+      projectId: number;
+      worktreePath: string;
       message: string;
     }) => {
-      return await api.commitWorktree(worktreeId, message);
+      return await api.commitWorktree(projectId, worktreePath, message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
@@ -149,15 +161,17 @@ export function useDiscardWorktreeChangesMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      worktreeId,
+      projectId,
+      worktreePath,
       filePaths,
       patch,
     }: {
-      worktreeId: number;
+      projectId: number;
+      worktreePath: string;
       filePaths: string[];
       patch: string | null;
     }) => {
-      return await api.discardWorktreeChanges(worktreeId, filePaths, patch);
+      return await api.discardWorktreeChanges(projectId, worktreePath, filePaths, patch);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
@@ -178,15 +192,17 @@ export function useShelveWorktreeChangesMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      worktreeId,
+      projectId,
+      worktreePath,
       stashName,
       filePaths,
     }: {
-      worktreeId: number;
+      projectId: number;
+      worktreePath: string;
       stashName: string;
       filePaths: string[];
     }) => {
-      return await api.shelveWorktreeChanges(worktreeId, stashName, filePaths);
+      return await api.shelveWorktreeChanges(projectId, worktreePath, stashName, filePaths);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });

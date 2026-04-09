@@ -280,9 +280,9 @@ async listWorktreesWithStatus(projectId: number, repoPath: string) : Promise<Res
     else return { status: "error", error: e  as any };
 }
 },
-async getWorktreeDiff(worktreeId: number, diffTarget: DiffTarget) : Promise<Result<string, string>> {
+async getWorktreeDiff(projectId: number, worktreePath: string, diffTarget: DiffTarget) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { worktreeId, diffTarget }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { projectId, worktreePath, diffTarget }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -296,9 +296,9 @@ async createWorktree(projectId: number, taskId: number | null, originBranch: str
     else return { status: "error", error: e  as any };
 }
 },
-async deleteWorktree(worktreeId: number, repoPath: string, deleteBranch: boolean) : Promise<Result<null, string>> {
+async deleteWorktree(projectId: number, worktreePath: string, branchName: string, worktreeId: number | null, deleteBranch: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { worktreeId, repoPath, deleteBranch }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { projectId, worktreePath, branchName, worktreeId, deleteBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -879,33 +879,33 @@ async renameSshConnection(connectionId: number, displayName: string) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
-async stageWorktreeFiles(worktreeId: number, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
+async stageWorktreeFiles(projectId: number, worktreePath: string, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("stage_worktree_files", { worktreeId, filePaths, patch }) };
+    return { status: "ok", data: await TAURI_INVOKE("stage_worktree_files", { projectId, worktreePath, filePaths, patch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async commitWorktree(worktreeId: number, message: string) : Promise<Result<null, string>> {
+async commitWorktree(projectId: number, worktreePath: string, message: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("commit_worktree", { worktreeId, message }) };
+    return { status: "ok", data: await TAURI_INVOKE("commit_worktree", { projectId, worktreePath, message }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async discardWorktreeChanges(worktreeId: number, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
+async discardWorktreeChanges(projectId: number, worktreePath: string, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("discard_worktree_changes", { worktreeId, filePaths, patch }) };
+    return { status: "ok", data: await TAURI_INVOKE("discard_worktree_changes", { projectId, worktreePath, filePaths, patch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async shelveWorktreeChanges(worktreeId: number, stashName: string, filePaths: string[]) : Promise<Result<null, string>> {
+async shelveWorktreeChanges(projectId: number, worktreePath: string, stashName: string, filePaths: string[]) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("shelve_worktree_changes", { worktreeId, stashName, filePaths }) };
+    return { status: "ok", data: await TAURI_INVOKE("shelve_worktree_changes", { projectId, worktreePath, stashName, filePaths }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

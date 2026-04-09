@@ -20,13 +20,15 @@ function parseDiffStat(
 
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;
-  onSelect: (id: number) => void;
-  onDelete: (id: number) => void;
+  repoPath: string;
+  onSelect: (path: string) => void;
+  onDelete: (path: string) => void;
 }
 
-export function WorktreeCard({ worktree, onSelect, onDelete }: WorktreeCardProps) {
+export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: WorktreeCardProps) {
   const diffStat = parseDiffStat(worktree.diff_stat);
   const aheadBehind = worktree.ahead_behind;
+  const isMain = worktree.path === repoPath;
 
   return (
     <div
@@ -37,22 +39,23 @@ export function WorktreeCard({ worktree, onSelect, onDelete }: WorktreeCardProps
           : "cursor-default",
       )}
       onClick={() => {
-        if (worktree.id == null) return;
         if (worktree.git_status === "" && worktree.diff_stat === null) return;
-        onSelect(worktree.id);
+        onSelect(worktree.path);
       }}
     >
-      {/* Delete button — appears on hover */}
-      <button
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (worktree.id != null) onDelete(worktree.id);
-        }}
-        aria-label="Delete worktree"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
+      {/* Delete button — appears on hover, hidden for main worktree */}
+      {!isMain && (
+        <button
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(worktree.path);
+          }}
+          aria-label="Delete worktree"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
 
       {/* Branch name */}
       <div className="font-mono text-sm font-medium truncate pr-6">{worktree.branch_name}</div>

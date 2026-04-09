@@ -163,6 +163,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                   {worktrees.map((wt) => (
                     <SelectItem key={wt.branch_name} value={wt.branch_name}>
                       <span className="font-mono">{wt.branch_name}</span>
+                      {wt.path === repoPath && (
+                        <span className="ml-2 text-xs text-muted-foreground">main</span>
+                      )}
                       {wt.agent_status === "running" && (
                         <span className="ml-2 text-xs text-green-500">running</span>
                       )}

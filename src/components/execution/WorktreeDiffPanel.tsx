@@ -34,10 +34,11 @@ const DIFF_TARGET_HEAD: DiffTarget = { type: "Head" };
 
 interface WorktreeDiffPanelProps {
   worktree: WorktreeWithStatus | null;
+  projectId: number | null;
   onClose: () => void;
 }
 
-export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps) {
+export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiffPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
@@ -46,13 +47,13 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   const [stagedHunks, setStagedHunks] = useState<Map<string, Set<number>>>(new Map());
   const [commitMessage, setCommitMessage] = useState("");
 
-  const worktreeId = worktree?.id ?? null;
+  const worktreePath = worktree?.path ?? null;
 
   const {
     data: diffString,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(worktreeId, DIFF_TARGET_HEAD);
+  } = useWorktreeDiffQuery(projectId, worktreePath, DIFF_TARGET_HEAD);
 
   const stageMutation = useStageWorktreeFilesMutation();
   const commitMutation = useCommitWorktreeMutation();
@@ -164,7 +165,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   }
 
   async function handleRevert() {
-    if (!worktreeId) return;
+    if (!projectId || !worktreePath) return;
 
     const filePathsToRevert = [...stagedFiles];
 
@@ -182,7 +183,8 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
 
     try {
       await discardMutation.mutateAsync({
-        worktreeId,
+        projectId,
+        worktreePath,
         filePaths: filePathsToRevert,
         patch: combinedPatch,
       });
@@ -194,7 +196,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   }
 
   async function handleShelve() {
-    if (!worktreeId || !shelveName.trim()) return;
+    if (!projectId || !worktreePath || !shelveName.trim()) return;
 
     const filePaths = [
       ...stagedFiles,
@@ -203,7 +205,8 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
 
     try {
       await shelveMutation.mutateAsync({
-        worktreeId,
+        projectId,
+        worktreePath,
         stashName: shelveName.trim(),
         filePaths,
       });
@@ -216,7 +219,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
   }
 
   async function handleCommit() {
-    if (!worktreeId || !commitMessage.trim()) return;
+    if (!projectId || !worktreePath || !commitMessage.trim()) return;
 
     // Stage files first
     const filesToStage = [...stagedFiles];
@@ -235,12 +238,14 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
 
     try {
       await stageMutation.mutateAsync({
-        worktreeId,
+        projectId,
+        worktreePath,
         filePaths: filesToStage,
         patch: combinedPatch,
       });
       await commitMutation.mutateAsync({
-        worktreeId,
+        projectId,
+        worktreePath,
         message: commitMessage.trim(),
       });
 
@@ -273,7 +278,7 @@ export function WorktreeDiffPanel({ worktree, onClose }: WorktreeDiffPanelProps)
     setStagedHunks(new Map());
     setCommitMessage("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worktreeId]);
+  }, [worktreePath]);
 
   // Update auto-generated shelve name when worktree changes
   useEffect(() => {

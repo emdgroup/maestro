@@ -220,6 +220,7 @@ pub async fn attach_terminal(
         let notify = Arc::clone(&handle.notify);
         let process_ended = Arc::clone(&handle.process_ended);
         let total_drained = Arc::clone(&handle.total_drained);
+        let clear_screen_count = Arc::clone(&handle.clear_screen_count);
         let log_id = handle.log_id;
         let app_state_arc = (*app_state).clone();
 
@@ -284,10 +285,24 @@ pub async fn attach_terminal(
             // Initialising to the *current* value means the initial replay (pos=0) is
             // not perturbed by drains that happened before this attach.
             let mut last_drained: usize = total_drained.load(Ordering::Acquire);
+            // Snapshot clear-screen counter. When this advances the history buffer was
+            // completely replaced; pos must reset to 0 or it will point mid-sequence into
+            // the new buffer, causing partial escape sequences (e.g. `?2026l` without
+            // the leading `\x1b[`) to reach the frontend as literal printable characters.
+            let mut last_clear_screen: usize = clear_screen_count.load(Ordering::Acquire);
 
             loop {
                 {
                     let hist = history.lock().await;
+
+                    // Clear-screen guard: history was fully replaced (e.g. `clear` cmd sends
+                    // \x1b[2J). Must be checked before the drain adjustment because a
+                    // clear-screen is not a front-drain — total_drained does not advance.
+                    let now_clear = clear_screen_count.load(Ordering::Acquire);
+                    if now_clear != last_clear_screen {
+                        pos = 0;
+                        last_clear_screen = now_clear;
+                    }
 
                     // Adjust pos for any bytes removed from the front of the history buffer
                     // since the last iteration (512 KB cap drain). Without this correction
@@ -304,7 +319,7 @@ pub async fn attach_terminal(
                         last_drained = now_drained;
                     }
 
-                    // Clear-screen guard: history was replaced entirely (e.g. `clear` cmd).
+                    // Fallback bounds guard.
                     if pos > hist.len() {
                         pos = 0;
                     }

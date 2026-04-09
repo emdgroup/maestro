@@ -57,7 +57,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const { clearPendingWorktree } = useNavigationActions();
   const queryClient = useQueryClient();
 
-  const [selectedWorktreeId, setSelectedWorktreeId] = useState<number | null>(null);
+  const [selectedWorktreePath, setSelectedWorktreePath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -65,7 +65,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
   const [deleteBranch, setDeleteBranch] = useState(true);
 
   // Create dialog state
@@ -85,8 +85,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   useEffect(() => {
     if (pendingWorktreeId && worktrees.length > 0) {
       const match = worktrees.find((w) => String(w.id) === pendingWorktreeId);
-      if (match && match.id != null) {
-        setSelectedWorktreeId(match.id);
+      if (match) {
+        setSelectedWorktreePath(match.path);
         clearPendingWorktree();
       }
     }
@@ -133,8 +133,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     setCollapsedGroups(Object.fromEntries(groupKeys.map((k) => [k, anyExpanded])));
   };
 
-  const pendingDeleteWorktree = worktrees.find((w) => w.id === pendingDeleteId) ?? null;
-  const selectedWorktree = worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
+  const pendingDeleteWorktree = worktrees.find((w) => w.path === pendingDeletePath) ?? null;
+  const selectedWorktree = worktrees.find((w) => w.path === selectedWorktreePath) ?? null;
 
   // A branch is local-only when ahead_behind is null (no upstream tracking branch)
   const isBranchLocalOnly = pendingDeleteWorktree?.ahead_behind == null;
@@ -146,7 +146,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
         <div
           className={cn(
             "flex h-full w-[200%] transition-transform duration-300 ease-in-out",
-            selectedWorktreeId != null && "-translate-x-1/2",
+            selectedWorktreePath != null && "-translate-x-1/2",
           )}
         >
           {/* Screen 1 — Card grid */}
@@ -228,12 +228,13 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               groups={groupedWorktrees}
               collapsedGroups={collapsedGroups}
               onToggleGroup={toggleGroup}
-              onSelectWorktree={setSelectedWorktreeId}
-              onDeleteWorktree={(id) => {
-                setPendingDeleteId(id);
+              onSelectWorktree={setSelectedWorktreePath}
+              onDeleteWorktree={(path) => {
+                setPendingDeletePath(path);
                 setDeleteBranch(true);
                 setShowDeleteDialog(true);
               }}
+              repoPath={repoPath ?? ""}
               emptyMessage={
                 worktrees.length === 0 ? "No worktrees yet" : "No worktrees match your filter"
               }
@@ -244,7 +245,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
           <div className="w-1/2 h-full flex flex-col min-w-0">
             <WorktreeDiffPanel
               worktree={selectedWorktree}
-              onClose={() => setSelectedWorktreeId(null)}
+              projectId={projectId ?? null}
+              onClose={() => setSelectedWorktreePath(null)}
             />
           </div>
         </div>
@@ -256,7 +258,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
           <AlertDialogHeader>
             <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the worktree directory and its database record.
+              This will remove the worktree directory
+              {pendingDeleteWorktree?.id != null && " and its database record"}.
               {pendingDeleteWorktree && (
                 <>
                   {" "}
@@ -283,7 +286,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => {
-                setPendingDeleteId(null);
+                setPendingDeletePath(null);
               }}
             >
               Cancel
@@ -291,17 +294,19 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
             <AlertDialogAction
               onClick={() => {
                 setShowDeleteDialog(false);
-                if (pendingDeleteId != null) {
+                if (pendingDeletePath != null && pendingDeleteWorktree != null) {
                   deleteMutation.mutate(
                     {
-                      worktreeId: pendingDeleteId,
-                      repoPath: repoPath ?? "",
+                      projectId: projectId ?? 0,
+                      worktreePath: pendingDeletePath,
+                      branchName: pendingDeleteWorktree.branch_name,
+                      worktreeId: pendingDeleteWorktree.id ?? null,
                       deleteBranch: isBranchLocalOnly && deleteBranch,
                     },
                     {
                       onSuccess: () => {
-                        setSelectedWorktreeId(null);
-                        setPendingDeleteId(null);
+                        setSelectedWorktreePath(null);
+                        setPendingDeletePath(null);
                       },
                     },
                   );
