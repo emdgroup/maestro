@@ -346,14 +346,14 @@ async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
  * * `project_id` - Project ID
  * * `branch_name` - Branch to open in the worktree
  * * `repo_path` - Repository path
- * * `label` - Optional display label for the session
+ * * `session_name` - Optional display name for the session
  * 
  * # Returns
  * Execution log ID (used as PTY session key for attach_terminal)
  */
-async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, label: string | null, worktreeId: number | null) : Promise<Result<number, string>> {
+async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, sessionName: string | null, worktreeId: number | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, label, worktreeId }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -945,7 +945,7 @@ export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "ca
 /**
  * View model for the Agents view — execution log enriched with task and worktree info
  */
-export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
+export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; session_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Typed response for approve_task_and_merge IPC command

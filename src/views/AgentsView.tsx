@@ -46,7 +46,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
   // Spawn Agent dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
-  const [spawnLabel, setSpawnLabel] = useState("");
+  const [sessionName, setSessionName] = useState("");
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
@@ -110,7 +110,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           statusFilter={statusFilter}
           onSpawn={() => {
             setSelectedWorktree(worktrees[0] ?? null);
-            setSpawnLabel("");
+            setSessionName("");
             setShowSpawnDialog(true);
           }}
           onDelete={(executionId) => {
@@ -124,7 +124,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                   projectId,
                   branchName: execution.branch_name,
                   repoPath,
-                  label: null,
+                  sessionName: null,
                   worktreeId: null,
                 },
                 {
@@ -175,12 +175,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="spawn-label">Label (optional)</Label>
+              <Label htmlFor="spawn-session-name">Session name (optional)</Label>
               <Input
-                id="spawn-label"
+                id="spawn-session-name"
                 placeholder="e.g. debugging, exploration"
-                value={spawnLabel}
-                onChange={(e) => setSpawnLabel(e.target.value)}
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
               />
             </div>
           </div>
@@ -196,7 +196,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                     projectId: projectId!,
                     branchName: selectedWorktree!.branch_name,
                     repoPath: repoPath!,
-                    label: spawnLabel.trim() || null,
+                    sessionName: sessionName.trim() || null,
                     worktreeId: selectedWorktree!.id,
                   },
                   {

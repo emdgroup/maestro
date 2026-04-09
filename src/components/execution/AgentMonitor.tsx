@@ -59,7 +59,7 @@ export function AgentMonitor({
       .filter(
         (e) =>
           search.trim() === "" ||
-          (e.task_name ?? e.branch_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
+          (e.session_name ?? e.task_name ?? e.branch_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
       );
   }, [executions, statusFilter, search]);
 
@@ -111,7 +111,7 @@ export function AgentMonitor({
                   )}
                 />
                 <span className="text-sm font-medium truncate">
-                  {execution.task_name ?? execution.branch_name ?? "Interactive session"}
+                  {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
                 </span>
                 {!execution.task_name && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium shrink-0">
@@ -142,7 +142,8 @@ export function AgentMonitor({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold truncate">
-                  {selectedExecution.task_name ??
+                  {selectedExecution.session_name ??
+                    selectedExecution.task_name ??
                     selectedExecution.branch_name ??
                     "Interactive session"}
                 </h3>
