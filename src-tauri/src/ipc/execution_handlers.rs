@@ -797,7 +797,7 @@ pub async fn resume_agent_execution(
 /// * `project_id` - Project ID
 /// * `branch_name` - Branch to open in the worktree
 /// * `repo_path` - Repository path
-/// * `label` - Optional display label for the session
+/// * `session_name` - Optional display name for the session
 ///
 /// # Returns
 /// Execution log ID (used as PTY session key for attach_terminal)
@@ -808,10 +808,9 @@ pub async fn spawn_interactive_execution(
     project_id: i32,
     branch_name: String,
     repo_path: String,
-    label: Option<String>,
+    session_name: Option<String>,
     worktree_id: Option<i32>,
 ) -> Result<i32, String> {
-    let _ = label;
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
     let (project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
@@ -886,8 +885,8 @@ pub async fn spawn_interactive_execution(
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, status, started_at) VALUES (NULL, ?, 'running', ?)",
-            rusqlite::params![&branch_name, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, started_at) VALUES (NULL, ?, ?, 'running', ?)",
+            rusqlite::params![&branch_name, &session_name, &now],
         )
         .map_err(|e| format!("Failed to create execution log: {}", e))?;
         conn.last_insert_rowid() as i32
@@ -975,7 +974,7 @@ pub fn list_executions_with_task_info(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn.prepare(
-        "SELECT el.id, el.task_id, t.name AS task_name,
+        "SELECT el.id, el.task_id, t.name AS task_name, el.session_name,
                 COALESCE(el.branch_name, w.branch_name) AS branch_name,
                 el.status, el.started_at, el.completed_at, el.terminal_output
          FROM execution_logs el
@@ -990,11 +989,12 @@ pub fn list_executions_with_task_info(
             id: row.get(0)?,
             task_id: row.get(1)?,
             task_name: row.get(2)?,
-            branch_name: row.get(3)?,
-            status: row.get(4)?,
-            started_at: row.get(5)?,
-            completed_at: row.get(6)?,
-            terminal_output: row.get(7)?,
+            session_name: row.get(3)?,
+            branch_name: row.get(4)?,
+            status: row.get(5)?,
+            started_at: row.get(6)?,
+            completed_at: row.get(7)?,
+            terminal_output: row.get(8)?,
         })
     }).map_err(|e| format!("Failed to query executions: {}", e))?;
 

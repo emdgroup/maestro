@@ -59,6 +59,7 @@ pub struct ExecutionWithTask {
     pub id: i32,
     pub task_id: Option<i32>,            // None for interactive sessions (no task linked)
     pub task_name: Option<String>,       // None for interactive sessions
+    pub session_name: Option<String>,    // Optional user-provided display name for interactive sessions
     pub branch_name: Option<String>,     // from worktrees table join
     pub status: String,                  // execution status as string
     pub started_at: String,
