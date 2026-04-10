@@ -347,13 +347,16 @@ async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
  * * `branch_name` - Branch to open in the worktree
  * * `repo_path` - Repository path
  * * `session_name` - Optional display name for the session
+ * * `worktree_id` - Optional worktree ID to use directly
+ * * `task_id` - Optional task ID to associate with this execution (updates task status to InProgress)
+ * * `task_description` - Optional task description to inject into the PTY 2s after spawn
  * 
  * # Returns
  * Execution log ID (used as PTY session key for attach_terminal)
  */
-async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, sessionName: string | null, worktreeId: number | null) : Promise<Result<number, string>> {
+async spawnInteractiveExecution(projectId: number, branchName: string, repoPath: string, sessionName: string | null, worktreeId: number | null, taskId: number | null, taskDescription: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId, taskId, taskDescription }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

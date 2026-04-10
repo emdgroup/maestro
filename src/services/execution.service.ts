@@ -58,6 +58,9 @@ export function useSpawnExecutionMutation() {
 /**
  * Mutation hook for spawning an interactive (task-free) PTY session on a branch.
  * Returns the log_id which can be used as the session key for attach_terminal.
+ *
+ * taskId and taskDescription are optional — callers from AgentsView omit them,
+ * callers from TaskCard pass them to wire task context into the session.
  */
 export function useSpawnInteractiveExecutionMutation() {
   const queryClient = useQueryClient();
@@ -68,17 +71,25 @@ export function useSpawnInteractiveExecutionMutation() {
       repoPath,
       sessionName,
       worktreeId,
+      taskId,
+      taskDescription,
     }: {
       projectId: number;
       branchName: string;
       repoPath: string;
       sessionName: string | null;
       worktreeId?: number | null;
+      taskId?: number | null;
+      taskDescription?: string | null;
     }) => {
-      return await api.spawnInteractiveExecution(projectId, branchName, repoPath, sessionName, worktreeId ?? null);
+      return await api.spawnInteractiveExecution(
+        projectId, branchName, repoPath, sessionName,
+        worktreeId ?? null, taskId ?? null, taskDescription ?? null
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
     onError: (error) => {
       toast.error(`Failed to spawn interactive session: ${error}`);

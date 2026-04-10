@@ -117,7 +117,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         branchName = worktree.branch_name;
       }
 
-      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, worktreeId);
+      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, worktreeId, task.id, task.description);
+      store.updateTaskStatus(task.id, "InProgress");
       toast.success(`Session started for "${task.name}"`);
     } catch (error) {
       toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
