@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-08T16:12:51.308Z"
+last_updated: "2026-04-10T13:02:23.258Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 39 — fix-ssh-terminal-session-switching
+**Current focus:** Phase 40 — ssh-disconnection-handling-heartbeat-keepalive-reconnect-backdrop-pty-session-cleanup
 
 ## Current Position
 
-Phase: 39 (fix-ssh-terminal-session-switching) — EXECUTING
-Plan: 3 of 3
+Phase: 40 (ssh-disconnection-handling-heartbeat-keepalive-reconnect-backdrop-pty-session-cleanup) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -142,6 +142,7 @@ Plan: 3 of 3
 | Phase 39-fix-ssh-terminal-session-switching P01 | 0.05 | 2 tasks | 2 files |
 | Phase 39 P03 | 0.017 | 1 tasks | 1 files |
 | Phase 39-fix-ssh-terminal-session-switching P02 | 0.05 | 2 tasks | 3 files |
+| Phase 40 P00 | 0.05 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -282,6 +283,8 @@ Phase 18 Architecture Decisions:
 - [Phase 39]: terminal.write('\x1b[2J\x1b[H') cosmetic guard inside rAF clears xterm viewport before attachTerminal call
 - [Phase 39-fix-ssh-terminal-session-switching]: AtomicBool chosen over tokio::sync::watch for cancel token — watch::Receiver::changed().await is async and cannot be polled inside spawn_blocking; AtomicBool with Ordering::Relaxed is directly checkable from blocking threads
 - [Phase 39-fix-ssh-terminal-session-switching]: Two-phase lock pattern in shutdown hook: collect all tokio Mutex snapshots first, drop async guards, then write via std::sync::Mutex — std::sync::MutexGuard<Connection> never crosses an .await point
+- [Phase 40]: Wave 0 test stubs intentionally fail — they establish behavioral contracts for Plan 03 implementors
+- [Phase 40]: Tauri event mock pattern: mutable mockListeners registry + vi.mock(@tauri-apps/api/event) + emitMockEvent helper for synchronous act()-wrapped event simulation in hook tests
 
 ### Pending Todos
 
@@ -369,6 +372,7 @@ Phase 18 Architecture Decisions:
 - Phase 37 added: Redesign the worktrees view with card grid and slide-in diff panel
 - Phase 38 added: Add git commit features to the diff view — file selection with tri-state checkboxes, revert/shelve/commit actions, block-level staging from diff pane
 - Phase 39 added: Fix SSH terminal session switching — SIGWINCH-based live repaint, clear-signal-trimmed history buffer (String with `\x1b[2J` boundary trimming + byte-cap fallback), DB snapshot on session end and app close, dead session recovery from DB snapshot
+- Phase 40 added: SSH disconnection handling — heartbeat keepalive, full-screen reconnect backdrop with exponential backoff, PTY session cleanup on connection loss, Tauri event emission for connection state changes
 
 ## Session Continuity
 
