@@ -226,6 +226,19 @@ Plans:
 - [x] 39-02-PLAN.md — Local PTY cancel token (AtomicBool in AppState + detach_terminal) + Tauri shutdown hook (SSH history flush)
 - [x] 39-03-PLAN.md — Frontend rAF reorder (tryAttach inside rAF after fit + clear-screen guard)
 
+### Phase 40: SSH disconnection handling — heartbeat keepalive, reconnect backdrop, PTY session cleanup
+
+**Goal:** Detect SSH connection loss via heartbeat polling, prevent idle disconnects with russh keepalive, show a full-screen blocking backdrop ("Trying to reconnect") with exponential backoff retries, clean up dead PTY sessions by marking them Failed with reason 'SSH connection lost', and emit Tauri events for frontend connection state subscriptions. Backend: configure russh keepalive interval, emit ssh-connection-lost/reconnecting/reconnected events, wire existing is_transient_error helpers. Frontend: DisconnectBackdrop component + useConnectionHealth hook. SSH-only scope.
+**Requirements**: [SSH-KA-01, SSH-KA-02, SSH-HB-01, SSH-HB-02, SSH-HB-03, SSH-HB-04, SSH-HB-05, SSH-PTY-01, SSH-FE-01, SSH-FE-02, SSH-FE-03]
+**Depends on:** Phase 39
+**Plans:** 4 plans
+
+Plans:
+- [ ] 40-00-PLAN.md — Wave 0: test stubs for DisconnectBackdrop and useConnectionHealth
+- [ ] 40-01-PLAN.md — Rust: keepalive config in open_handle, AppHandle in AppState, heartbeat task with Tauri event emission
+- [ ] 40-02-PLAN.md — Rust: PTY session cleanup on connection loss (mark failed with error_event, persist history, remove handles)
+- [ ] 40-03-PLAN.md — Frontend: useConnectionHealth hook + DisconnectBackdrop component + App.tsx wiring
+
 ---
 
 *Roadmap created: 2026-02-09*
