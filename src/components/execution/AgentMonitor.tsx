@@ -65,11 +65,9 @@ export function AgentMonitor({
 
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
 
-  // For terminal: interactive sessions (task_id null) are keyed by execution.id (log_id)
-  // Task-based sessions are keyed by task_id in the PTY session map
-  const terminalSessionId = selectedExecution
-    ? (selectedExecution.task_id ?? selectedExecution.id)
-    : null;
+  // PTY sessions are always keyed by log_id (execution.id), regardless of whether
+  // the execution is linked to a task. task_id is a FK to the tasks table, not a session key.
+  const terminalSessionId = selectedExecution?.id ?? null;
 
   return (
     <div className="flex h-full">
