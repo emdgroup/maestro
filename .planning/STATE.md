@@ -308,6 +308,7 @@ Phase 18 Architecture Decisions:
 | 260408-r6o | Fix broken session name search + rename placeholder in agents view | 2026-04-08 | fb2a172 | [260408-r6o-fix-broken-session-name-search-rename-pl](./quick/260408-r6o-fix-broken-session-name-search-rename-pl/) |
 | 260408-s08 | new session dialog: select worktree instead of branch, refresh list on open | 2026-04-08 | 3eee4da | [260408-s08-new-session-dialog-select-worktree-inste](./quick/260408-s08-new-session-dialog-select-worktree-inste/) |
 | 260409-fnx | replace label by session name and wire it to storage and display | 2026-04-09 | 17a42eb | [260409-fnx-replace-label-by-session-name-and-wire-i](./quick/260409-fnx-replace-label-by-session-name-and-wire-i/) |
+| 260410-amc | add Maestro logo (public/maestro-logo.png) to project picker startup screen above app name | 2026-04-10 | e1623f5 | [260410-amc-integrate-public-maestro-logo-png-gracef](./quick/260410-amc-integrate-public-maestro-logo-png-gracef/) |
 
 ### Blockers/Concerns
 
