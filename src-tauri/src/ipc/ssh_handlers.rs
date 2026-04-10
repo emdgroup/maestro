@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::models::{ConnectionStatus};
 use crate::db::AppState;
 use super::project_handlers::remove_projects_by_connection_id;
-use crate::ssh::{RemoteSshSession, PasswordManager};
+use crate::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::ssh::session::{SshAuthMethod, SshConnection};
 
 /// Store SSH session in AppState and update DB timestamps (+ optionally auth_method).
@@ -182,6 +182,15 @@ pub async fn connect_ssh_without_credentials(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
+    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+        spawn_heartbeat_task(
+            s,
+            app_state.app_handle.clone(),
+            connection_id,
+            app_state.ssh_sessions.clone(),
+        );
+    }
+
     Ok(connection_id)
 }
 
@@ -215,6 +224,15 @@ pub async fn connect_ssh_with_password(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
+    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+        spawn_heartbeat_task(
+            s,
+            app_state.app_handle.clone(),
+            connection_id,
+            app_state.ssh_sessions.clone(),
+        );
+    }
+
     Ok(connection_id)
 }
 
@@ -235,6 +253,15 @@ pub async fn connect_ssh_with_agent(
         .map_err(|e| format!("SSH agent authentication failed: {}", e))?;
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
+
+    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+        spawn_heartbeat_task(
+            s,
+            app_state.app_handle.clone(),
+            connection_id,
+            app_state.ssh_sessions.clone(),
+        );
+    }
 
     Ok(connection_id)
 }
@@ -274,6 +301,15 @@ pub async fn connect_ssh_with_key(
     }
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
+
+    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+        spawn_heartbeat_task(
+            s,
+            app_state.app_handle.clone(),
+            connection_id,
+            app_state.ssh_sessions.clone(),
+        );
+    }
 
     Ok(connection_id)
 }

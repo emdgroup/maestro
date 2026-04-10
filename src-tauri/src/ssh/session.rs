@@ -13,8 +13,9 @@ use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::ChannelMsg;
 use russh::keys::PrivateKeyWithHashAlg;
-use crate::ssh::error::SshError;
+use crate::ssh::error::{SshError, is_transient_error};
 use crate::ssh::PasswordManager;
+use tauri::Emitter;
 
 /// Operation sent to the SSH PTY writer task
 pub enum SshWriteOp {
@@ -149,6 +150,14 @@ pub enum SshConnectionState {
     Connected,
     Reconnecting,
     Disconnected,
+}
+
+/// Payload for ssh-reconnecting Tauri events
+#[derive(Clone, Serialize)]
+pub struct ReconnectingPayload {
+    pub connection_id: i32,
+    pub attempt: usize,
+    pub max_attempts: usize,
 }
 
 /// Manages a persistent SSH connection for a remote project
@@ -810,6 +819,107 @@ impl RemoteSshSession {
 
         Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained, clear_screen_count })
     }
+}
+
+/// Spawn a background heartbeat task for an SSH connection.
+///
+/// The task probes the connection every 30 seconds with a lightweight `true` command.
+/// On failure it emits `ssh-connection-lost`, attempts reconnection with exponential
+/// backoff (emitting `ssh-reconnecting` per attempt), and emits `ssh-reconnected` on
+/// success or `ssh-connection-failed` after all attempts are exhausted.
+/// The task exits cleanly when the session is removed or explicitly disconnected.
+pub fn spawn_heartbeat_task(
+    session: RemoteSshSession,
+    app_handle: tauri::AppHandle,
+    connection_id: i32,
+    ssh_sessions: Arc<tokio::sync::Mutex<std::collections::HashMap<i32, RemoteSshSession>>>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        // Skip the first immediate tick — just connected, no need to probe
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+
+            // Stop if connection was removed from the session map (user disconnected or deleted)
+            {
+                let sessions = ssh_sessions.lock().await;
+                if !sessions.contains_key(&connection_id) {
+                    break;
+                }
+            }
+
+            // Check if explicitly disconnected
+            let state = session.get_state().await;
+            if state == SshConnectionState::Disconnected {
+                break;
+            }
+
+            // Probe: lightweight SSH command
+            match session.execute_command("true").await {
+                Ok(_) => {
+                    // Still alive — reset reconnect counter on successful probe
+                    session.reconnect_attempts.store(0, Ordering::SeqCst);
+                }
+                Err(e) => {
+                    // Only retry transient errors (connection drop); permanent errors (auth) stop the loop
+                    if !is_transient_error(&e) {
+                        break;
+                    }
+
+                    // Connection lost — emit event and begin reconnection
+                    let _ = app_handle.emit("ssh-connection-lost", connection_id);
+
+                    // Mark state as Reconnecting
+                    *session.state.lock().await = SshConnectionState::Reconnecting;
+
+                    let max_attempts: usize = 5;
+                    let mut reconnected = false;
+
+                    for attempt in 1..=max_attempts {
+                        let _ = app_handle.emit("ssh-reconnecting", ReconnectingPayload {
+                            connection_id,
+                            attempt,
+                            max_attempts,
+                        });
+
+                        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                        let delay = Duration::from_secs(1u64 << (attempt - 1));
+                        tokio::time::sleep(delay).await;
+
+                        // Check if removed while we were sleeping
+                        {
+                            let sessions = ssh_sessions.lock().await;
+                            if !sessions.contains_key(&connection_id) {
+                                return;
+                            }
+                        }
+
+                        // Attempt reconnect via connect() — reuses stored credentials
+                        let password = session.session_password.lock().await.as_ref().map(|p| p.to_string());
+                        match session.connect(password).await {
+                            Ok(()) => {
+                                let _ = app_handle.emit("ssh-reconnected", connection_id);
+                                reconnected = true;
+                                break;
+                            }
+                            Err(_) => {
+                                // Will try again on next iteration
+                            }
+                        }
+                    }
+
+                    if !reconnected {
+                        // All attempts exhausted — emit final failure event and stop
+                        let _ = app_handle.emit("ssh-connection-failed", connection_id);
+                        *session.state.lock().await = SshConnectionState::Disconnected;
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 impl std::fmt::Debug for RemoteSshSession {
