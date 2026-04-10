@@ -821,10 +821,81 @@ impl RemoteSshSession {
     }
 }
 
+/// Clean up all SSH PTY sessions associated with a given connection_id.
+///
+/// Iterates `ssh_pty_sessions`, collects all log_ids (SSH PTY sessions are always
+/// remote — local sessions use `pty_sessions`), persists terminal history to the DB,
+/// marks execution_logs as failed with `error_event = ssh_connection_lost`, and
+/// removes the handles from the map. Reader tasks are signalled to stop via the
+/// `process_ended` flag + `notify`.
+///
+/// Called from `spawn_heartbeat_task` on connection loss (both initial loss and after
+/// all reconnect attempts are exhausted).
+async fn cleanup_pty_sessions_for_connection(
+    app_state: &Arc<crate::db::AppState>,
+    _connection_id: i32,
+) {
+    let mut log_ids_to_cleanup: Vec<i32> = Vec::new();
+    let mut history_snapshots: Vec<(i32, String)> = Vec::new();
+
+    {
+        let sessions = app_state.ssh_pty_sessions.lock().await;
+        for (log_id, handle) in sessions.iter() {
+            log_ids_to_cleanup.push(*log_id);
+            // Snapshot terminal history before marking failed so the UI can show it
+            if let Ok(hist) = handle.history.try_lock() {
+                if !hist.is_empty() {
+                    history_snapshots.push((*log_id, hist.clone()));
+                }
+            }
+            // Signal reader task to stop
+            handle.process_ended.store(true, Ordering::Release);
+            handle.notify.notify_one();
+        }
+    }
+
+    if log_ids_to_cleanup.is_empty() {
+        return;
+    }
+
+    // Persist history and mark as failed in DB
+    if let Ok(conn) = app_state.db.lock() {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        for (log_id, snapshot) in &history_snapshots {
+            let _ = conn.execute(
+                "UPDATE execution_logs SET terminal_output = ?1 WHERE id = ?2",
+                rusqlite::params![snapshot, log_id],
+            );
+        }
+
+        for log_id in &log_ids_to_cleanup {
+            let _ = conn.execute(
+                "UPDATE execution_logs SET status = 'failed', completed_at = ?1, \
+                 error_event = json_object('error_type', 'ssh_connection_lost', \
+                 'message', 'SSH connection lost', \
+                 'suggestions', json_array(), \
+                 'detected_at', ?1) \
+                 WHERE id = ?2 AND status = 'running'",
+                rusqlite::params![&now, log_id],
+            );
+        }
+    }
+
+    // Remove handles from the map
+    {
+        let mut sessions = app_state.ssh_pty_sessions.lock().await;
+        for log_id in &log_ids_to_cleanup {
+            sessions.remove(log_id);
+        }
+    }
+}
+
 /// Spawn a background heartbeat task for an SSH connection.
 ///
 /// The task probes the connection every 30 seconds with a lightweight `true` command.
-/// On failure it emits `ssh-connection-lost`, attempts reconnection with exponential
+/// On failure it emits `ssh-connection-lost`, cleans up running PTY sessions
+/// (marking them as failed in the DB), attempts reconnection with exponential
 /// backoff (emitting `ssh-reconnecting` per attempt), and emits `ssh-reconnected` on
 /// success or `ssh-connection-failed` after all attempts are exhausted.
 /// The task exits cleanly when the session is removed or explicitly disconnected.
@@ -832,7 +903,7 @@ pub fn spawn_heartbeat_task(
     session: RemoteSshSession,
     app_handle: tauri::AppHandle,
     connection_id: i32,
-    ssh_sessions: Arc<tokio::sync::Mutex<std::collections::HashMap<i32, RemoteSshSession>>>,
+    app_state: Arc<crate::db::AppState>,
 ) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -844,7 +915,7 @@ pub fn spawn_heartbeat_task(
 
             // Stop if connection was removed from the session map (user disconnected or deleted)
             {
-                let sessions = ssh_sessions.lock().await;
+                let sessions = app_state.ssh_sessions.lock().await;
                 if !sessions.contains_key(&connection_id) {
                     break;
                 }
@@ -868,8 +939,11 @@ pub fn spawn_heartbeat_task(
                         break;
                     }
 
-                    // Connection lost — emit event and begin reconnection
+                    // Connection lost — emit event and clean up PTY sessions before reconnecting
                     let _ = app_handle.emit("ssh-connection-lost", connection_id);
+
+                    // Clean up PTY sessions — they are dead now
+                    cleanup_pty_sessions_for_connection(&app_state, connection_id).await;
 
                     // Mark state as Reconnecting
                     *session.state.lock().await = SshConnectionState::Reconnecting;
@@ -890,7 +964,7 @@ pub fn spawn_heartbeat_task(
 
                         // Check if removed while we were sleeping
                         {
-                            let sessions = ssh_sessions.lock().await;
+                            let sessions = app_state.ssh_sessions.lock().await;
                             if !sessions.contains_key(&connection_id) {
                                 return;
                             }

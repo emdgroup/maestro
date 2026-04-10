@@ -187,7 +187,7 @@ pub async fn connect_ssh_without_credentials(
             s,
             app_state.app_handle.clone(),
             connection_id,
-            app_state.ssh_sessions.clone(),
+            Arc::clone(app_state.inner()),
         );
     }
 
@@ -229,7 +229,7 @@ pub async fn connect_ssh_with_password(
             s,
             app_state.app_handle.clone(),
             connection_id,
-            app_state.ssh_sessions.clone(),
+            Arc::clone(app_state.inner()),
         );
     }
 
@@ -259,7 +259,7 @@ pub async fn connect_ssh_with_agent(
             s,
             app_state.app_handle.clone(),
             connection_id,
-            app_state.ssh_sessions.clone(),
+            Arc::clone(app_state.inner()),
         );
     }
 
@@ -307,7 +307,7 @@ pub async fn connect_ssh_with_key(
             s,
             app_state.app_handle.clone(),
             connection_id,
-            app_state.ssh_sessions.clone(),
+            Arc::clone(app_state.inner()),
         );
     }
 
