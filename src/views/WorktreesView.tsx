@@ -70,7 +70,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
   // Create dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [originBranch, setOriginBranch] = useState("");
+  const [baseBranch, setOriginBranch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -330,9 +330,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="origin-branch">Origin branch</Label>
-              <Select value={originBranch} onValueChange={(v) => setOriginBranch(v ?? "")}>
-                <SelectTrigger id="origin-branch">
+              <Label htmlFor="base-branch">Base branch</Label>
+              <Select value={baseBranch} onValueChange={(v) => setOriginBranch(v ?? "")}>
+                <SelectTrigger id="base-branch">
                   <SelectValue placeholder="Select a branch" />
                 </SelectTrigger>
                 <SelectContent>
@@ -353,7 +353,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                 onChange={(e) => setNewBranchName(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Leave blank to check out the origin branch directly.
+                Leave blank to check out the base branch directly.
               </p>
             </div>
             {createError && <p className="text-sm text-destructive">{createError}</p>}
@@ -363,14 +363,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               Cancel
             </Button>
             <Button
-              disabled={!originBranch || createMutation.isPending}
+              disabled={!baseBranch || createMutation.isPending}
               onClick={() => {
                 setCreateError(null);
                 createMutation.mutate(
                   {
                     projectId: projectId ?? 0,
                     taskId: null,
-                    originBranch,
+                    baseBranch,
                     newBranchName: newBranchName.trim() || null,
                     repoPath: repoPath ?? "",
                   },

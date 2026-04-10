@@ -216,8 +216,8 @@ export function useShelveWorktreeChangesMutation() {
 
 /**
  * Mutation hook for creating a new worktree.
- * Accepts originBranch (base branch) and optional newBranchName (creates new branch from origin).
- * When newBranchName is null, the existing originBranch is checked out directly.
+ * Accepts baseBranch and optional newBranchName (creates new branch from base).
+ * When newBranchName is null, the existing baseBranch is checked out directly.
  * Invalidates worktree list on success.
  */
 export function useCreateWorktreeMutation() {
@@ -226,17 +226,17 @@ export function useCreateWorktreeMutation() {
     mutationFn: async ({
       projectId,
       taskId,
-      originBranch,
+      baseBranch,
       newBranchName,
       repoPath,
     }: {
       projectId: number;
       taskId: number | null;
-      originBranch: string;
+      baseBranch: string;
       newBranchName: string | null;
       repoPath: string;
     }) => {
-      return await api.createWorktree(projectId, taskId, originBranch, newBranchName, repoPath);
+      return await api.createWorktree(projectId, taskId, baseBranch, newBranchName, repoPath);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });

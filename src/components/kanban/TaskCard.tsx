@@ -88,15 +88,36 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      // Find the worktree branch for this task
       const worktrees = await api.listWorktreesWithStatus(projectId, projectPath);
-      const worktree = worktrees.find((w) => w.task_id === task.id);
-      const branchName = worktree?.branch_name ?? task.origin_branch;
-      if (!branchName) {
-        toast.error(`No worktree or branch found for "${task.name}". Create a worktree first.`);
-        return;
+      const existingWorktree = worktrees.find((w) => w.task_id === task.id);
+
+      let worktreeId: number;
+      let branchName: string;
+
+      if (existingWorktree && existingWorktree.id != null) {
+        // Resume: use existing worktree
+        worktreeId = existingWorktree.id;
+        branchName = existingWorktree.branch_name;
+      } else {
+        // First execution: create new worktree + branch from base_branch
+        const slug = task.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 50);
+        const newBranchName = `${task.id}-${slug}`;
+        const worktree = await api.createWorktree(
+          projectId,
+          task.id,
+          task.base_branch,
+          newBranchName,
+          projectPath,
+        );
+        worktreeId = worktree.id;
+        branchName = worktree.branch_name;
       }
-      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, null);
+
+      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, worktreeId);
       toast.success(`Session started for "${task.name}"`);
     } catch (error) {
       toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);

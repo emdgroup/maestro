@@ -5,12 +5,12 @@ use std::str::FromStr;
 /// SQL SELECT clause for all task columns, matching Task::from_row column order.
 ///
 /// Column order: id(0), project_id(1), name(2), description(3), acceptance_criteria(4),
-/// status(5), priority(6), origin_branch(7), archived_at(8), external_id(9),
+/// status(5), priority(6), base_branch(7), archived_at(8), external_id(9),
 /// is_imported(10), import_source(11), skills(12), model_override(13),
 /// mcp_allowlist(14), skills_override(15), created_at(16), updated_at(17)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
-     origin_branch, archived_at, external_id, is_imported, import_source, skills, \
+     base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -24,8 +24,7 @@ pub struct Task {
     pub acceptance_criteria: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
-    #[specta(optional)]
-    pub origin_branch: Option<String>,
+    pub base_branch: String,
     #[specta(optional)]
     pub archived_at: Option<String>,
     #[specta(optional)]
@@ -112,7 +111,7 @@ impl FromStr for TaskStatus {
 impl Task {
     /// Column order matches TASK_SELECT constant defined in this file:
     /// id(0), project_id(1), name(2), description(3), acceptance_criteria(4),
-    /// status(5), priority(6), origin_branch(7), archived_at(8),
+    /// status(5), priority(6), base_branch(7), archived_at(8),
     /// external_id(9), is_imported(10), import_source(11), skills(12),
     /// model_override(13), mcp_allowlist(14), skills_override(15),
     /// created_at(16), updated_at(17)
@@ -125,7 +124,7 @@ impl Task {
             acceptance_criteria: row.get(4)?,
             status: row.get::<_, String>(5)?.parse().unwrap_or(TaskStatus::Backlog),
             priority: row.get::<_, String>(6)?.parse().unwrap_or(TaskPriority::Medium),
-            origin_branch: row.get(7)?,
+            base_branch: row.get::<_, String>(7)?,
             archived_at: row.get(8)?,
             external_id: row.get(9)?,
             is_imported: row.get(10)?,

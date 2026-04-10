@@ -242,12 +242,12 @@ pub async fn create_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     task_id: Option<i32>,
-    origin_branch: String,
+    base_branch: String,
     new_branch_name: Option<String>,
     repo_path: String,
 ) -> Result<Worktree, String> {
     // Step 1: Determine the stored branch name and relative worktree path
-    let branch_name = new_branch_name.clone().unwrap_or_else(|| origin_branch.clone());
+    let branch_name = new_branch_name.clone().unwrap_or_else(|| base_branch.clone());
     let relative_path = if let Some(tid) = task_id {
         crate::models::worktree_path_for_task(tid)
     } else {
@@ -266,8 +266,8 @@ pub async fn create_worktree(
     }
 
     // Step 3: Create git worktree via dispatcher (local or SSH)
-    // Pass new_branch_name so git can create a new branch from origin_branch, or None to checkout existing
-    crate::git::create_worktree(&git_conn, &origin_branch, &relative_path, new_branch_name.as_deref()).await?;
+    // Pass new_branch_name so git can create a new branch from base_branch, or None to checkout existing
+    crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?;
 
     // Step 4: Insert DB row (lock DB after async git work)
     let now = Utc::now().to_rfc3339();
@@ -275,7 +275,7 @@ pub async fn create_worktree(
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
             "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![project_id, task_id, &branch_name, &origin_branch, &relative_path, &now],
+            rusqlite::params![project_id, task_id, &branch_name, &base_branch, &relative_path, &now],
         )
         .map_err(|e| format!("Failed to insert worktree: {}", e))?;
         conn.last_insert_rowid() as i32
@@ -286,7 +286,7 @@ pub async fn create_worktree(
         project_id,
         task_id,
         branch_name,
-        base_branch: Some(origin_branch),
+        base_branch: Some(base_branch),
         path: relative_path,
         git_status: None,
         created_at: now,

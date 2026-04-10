@@ -35,6 +35,7 @@ pub fn create_task(
     description: String,
     acceptance_criteria: String,
     skills: Vec<String>,
+    base_branch: String,
 ) -> Result<Task, String> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() || trimmed_name.len() < 3 || trimmed_name.len() > 255 {
@@ -55,9 +56,9 @@ pub fn create_task(
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
-        "INSERT INTO tasks (project_id, name, description, acceptance_criteria, skills, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        rusqlite::params![project_id, &name, &description, &acceptance_criteria, &skills_json, "Backlog", &now, &now],
+        "INSERT INTO tasks (project_id, name, description, acceptance_criteria, skills, status, base_branch, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![project_id, &name, &description, &acceptance_criteria, &skills_json, "Backlog", &base_branch, &now, &now],
     )
     .map_err(|e| e.to_string())?;
 
@@ -78,7 +79,7 @@ pub fn update_task(
     name: Option<String>,
     priority: Option<String>,
     acceptance_criteria: Option<String>,
-    origin_branch: Option<String>,
+    base_branch: Option<String>,
     skills: Option<Vec<String>>,
 ) -> Result<Task, String> {
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -110,8 +111,8 @@ pub fn update_task(
         set_parts.push("acceptance_criteria = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = origin_branch {
-        set_parts.push("origin_branch = ?".to_string());
+    if let Some(ref v) = base_branch {
+        set_parts.push("base_branch = ?".to_string());
         params.push(Box::new(v.clone()));
     }
     if let Some(ref new_skills) = skills {

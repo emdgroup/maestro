@@ -21,6 +21,7 @@ function makeTask(id: number, status: TaskStatus): Task {
     description: "",
     status,
     priority: "Medium",
+    base_branch: "main",
     skills: [],
     project_id: 1,
     created_at: "2024-01-01T00:00:00Z",

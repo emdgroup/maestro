@@ -83,6 +83,7 @@ export function useCreateTaskMutation() {
         request.description,
         request.acceptance_criteria || "",
         request.skills,
+        request.base_branch,
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
@@ -106,7 +107,7 @@ export function useUpdateTask() {
         updates.name ?? null,
         updates.priority ?? null,
         updates.acceptance_criteria ?? null,
-        updates.origin_branch ?? null,
+        updates.base_branch ?? null,
         updates.skills ?? null,
       ),
     onSuccess: (data) => {

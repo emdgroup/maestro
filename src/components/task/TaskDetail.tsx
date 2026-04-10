@@ -307,13 +307,11 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
                 <Badge variant="secondary">{task.priority}</Badge>
               </div>
 
-              {/* Origin Branch — read-only (backend expansion required for editing) */}
-              {task.origin_branch && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-foreground">Origin Branch</h3>
-                  <p className="text-sm text-muted-foreground font-mono">{task.origin_branch}</p>
-                </div>
-              )}
+              {/* Base Branch — read-only (backend expansion required for editing) */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">Base Branch</h3>
+                <p className="text-sm text-muted-foreground font-mono">{task.base_branch}</p>
+              </div>
 
               {/* Status — always read-only */}
               <div className="space-y-2">

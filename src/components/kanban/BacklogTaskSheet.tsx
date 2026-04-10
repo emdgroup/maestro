@@ -19,7 +19,7 @@ function taskToFormValues(task: Task): Partial<TaskFormData> {
     description: task.description,
     acceptanceCriteria: task.acceptance_criteria ?? "",
     priority: task.priority,
-    originBranch: task.origin_branch ?? "",
+    baseBranch: task.base_branch ?? "",
   };
 }
 
@@ -61,7 +61,7 @@ export function BacklogTaskSheet({
             description: data.description,
             acceptance_criteria: data.acceptance_criteria,
             priority: data.priority,
-            origin_branch: data.origin_branch,
+            base_branch: data.base_branch,
           },
         },
         {

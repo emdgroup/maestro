@@ -13,7 +13,7 @@ export interface TaskFormData {
   description: string;
   acceptanceCriteria: string;
   priority: "Urgent" | "High" | "Medium" | "Low";
-  originBranch: string;
+  baseBranch: string;
 }
 
 interface TaskFormProps {
@@ -43,7 +43,7 @@ export function TaskForm({
     mode: "onBlur",
     defaultValues: {
       priority: "Medium",
-      originBranch: initialValues?.originBranch ?? "",
+      baseBranch: initialValues?.baseBranch ?? "",
       ...initialValues,
     },
   });
@@ -56,10 +56,10 @@ export function TaskForm({
   // Set default origin branch to the current checked-out branch when
   // branch data loads and form has no initial value
   useEffect(() => {
-    if (currentBranch && !initialValues?.originBranch) {
-      setValue("originBranch", currentBranch);
+    if (currentBranch && !initialValues?.baseBranch) {
+      setValue("baseBranch", currentBranch);
     }
-  }, [currentBranch, initialValues?.originBranch, setValue]);
+  }, [currentBranch, initialValues?.baseBranch, setValue]);
 
   const submitHandler: SubmitHandler<TaskFormData> = async (data) => {
     try {
@@ -68,7 +68,7 @@ export function TaskForm({
         id: 0,
         status: "Backlog",
         priority: data.priority,
-        origin_branch: data.originBranch || null,
+        base_branch: data.baseBranch,
         updated_at: "",
         project_id: projectId,
         name: data.title,
@@ -166,13 +166,14 @@ export function TaskForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="originBranch">Origin Branch (Optional)</Label>
+        <Label htmlFor="baseBranch">Base Branch *</Label>
         <Controller
-          name="originBranch"
+          name="baseBranch"
           control={control}
+          rules={{ required: "Base branch is required" }}
           render={({ field: { value, onChange } }) => (
             <Select value={value} onValueChange={onChange}>
-              <SelectTrigger id="originBranch" className="w-full">
+              <SelectTrigger id="baseBranch" className="w-full">
                 <SelectValue placeholder="Select branch..." />
               </SelectTrigger>
               <SelectContent>
@@ -185,6 +186,9 @@ export function TaskForm({
             </Select>
           )}
         />
+        {errors.baseBranch && (
+          <span className="text-destructive text-xs mt-1">{errors.baseBranch.message}</span>
+        )}
       </div>
 
       <div className="flex gap-4 mt-4 justify-end">
