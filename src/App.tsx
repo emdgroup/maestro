@@ -8,6 +8,9 @@ import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
+import { useExecutionsWithTaskInfoQuery } from "@/services/execution.service";
+import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
+import { DisconnectBackdrop } from "@/components/common/DisconnectBackdrop";
 import {
   useActiveTab,
   useSlideDirection,
@@ -69,6 +72,18 @@ function App() {
 
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
+
+  // Running agent count for header badge
+  const { data: executions = [] } = useExecutionsWithTaskInfoQuery(currentProject?.id);
+  const runningAgentCount = executions.filter((e) => e.status === "running").length;
+
+  // SSH connection health monitoring — only active for SSH projects
+  const {
+    state: connectionHealth,
+    attempt: reconnectAttempt,
+    maxAttempts: reconnectMaxAttempts,
+    dismiss: dismissBackdrop,
+  } = useConnectionHealth(currentProject?.connection_id ?? null);
 
   // Consume pendingTaskId from store to open TaskDetail sheet
   const pendingTaskId = usePendingTaskId();
@@ -135,7 +150,7 @@ function App() {
             onViewChange={setActiveTab}
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
-            agentCount={0}
+            agentCount={runningAgentCount}
           />
           <main className="flex-1 overflow-hidden relative">
             <AnimatePresence initial={false} custom={slideDirection}>
@@ -247,6 +262,16 @@ function App() {
               />
             </Suspense>
           </main>
+
+          {/* SSH connection loss overlay — blocks interaction during reconnect */}
+          {connectionHealth !== "connected" && (
+            <DisconnectBackdrop
+              state={connectionHealth}
+              attempt={reconnectAttempt}
+              maxAttempts={reconnectMaxAttempts}
+              onDismiss={dismissBackdrop}
+            />
+          )}
         </div>
       )}
     </>
