@@ -957,7 +957,7 @@ pub async fn spawn_interactive_execution(
                 let write_tx = pty_handle.write_tx.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let input = format!("{}\n", desc_text);
+                    let input = format!("{}\r", desc_text);
                     let _ = write_tx.send(crate::ssh::SshWriteOp::Data(input.into_bytes())).await;
                 });
             }
@@ -988,7 +988,7 @@ pub async fn spawn_interactive_execution(
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let session_lock = session_clone.lock().await;
-                    let input = format!("{}\n", desc_text);
+                    let input = format!("{}\r", desc_text);
                     let _ = session_lock.write_input(input.as_bytes()).await;
                 });
             }
