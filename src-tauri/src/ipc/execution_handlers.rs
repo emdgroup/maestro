@@ -798,6 +798,9 @@ pub async fn resume_agent_execution(
 /// * `branch_name` - Branch to open in the worktree
 /// * `repo_path` - Repository path
 /// * `session_name` - Optional display name for the session
+/// * `worktree_id` - Optional worktree ID to use directly
+/// * `task_id` - Optional task ID to associate with this execution (updates task status to InProgress)
+/// * `task_description` - Optional task description to inject into the PTY 2s after spawn
 ///
 /// # Returns
 /// Execution log ID (used as PTY session key for attach_terminal)
@@ -810,6 +813,8 @@ pub async fn spawn_interactive_execution(
     repo_path: String,
     session_name: Option<String>,
     worktree_id: Option<i32>,
+    task_id: Option<i32>,
+    task_description: Option<String>,
 ) -> Result<i32, String> {
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
@@ -879,17 +884,37 @@ pub async fn spawn_interactive_execution(
         }
     };
 
-    // Step 2: Create execution log with task_id = NULL, storing branch_name directly
-    // so list_executions_with_task_info can display the correct branch without a worktree JOIN.
+    // Step 2: Create execution log, optionally associating with a task_id.
+    // Storing branch_name directly so list_executions_with_task_info can display
+    // the correct branch without a worktree JOIN.
     let now = chrono::Utc::now().to_rfc3339();
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, started_at) VALUES (NULL, ?, ?, 'running', ?)",
-            rusqlite::params![&branch_name, &session_name, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, started_at) VALUES (?, ?, ?, 'running', ?)",
+            rusqlite::params![&task_id, &branch_name, &session_name, &now],
         )
         .map_err(|e| format!("Failed to create execution log: {}", e))?;
-        conn.last_insert_rowid() as i32
+        let id = conn.last_insert_rowid() as i32;
+
+        // Update task status to InProgress when task_id provided and status is Ready.
+        // AND status = 'Ready' guard prevents overwriting status if the task is already
+        // InProgress (e.g., on re-execute/resume).
+        if let Some(tid) = task_id {
+            conn.execute(
+                "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Ready'",
+                rusqlite::params![&now, tid],
+            ).map_err(|e| format!("Failed to update task status: {}", e))?;
+        }
+
+        id
+    };
+
+    // Build claude CLI args — use `-n <session_name>` for named sessions when available.
+    // This allows claude to resume or identify the session by name.
+    let claude_args: Vec<String> = match &session_name {
+        Some(name) => vec!["-n".to_string(), name.clone()],
+        None => vec![],
     };
 
     // Step 3: Spawn PTY session — local or remote depending on project type
@@ -908,22 +933,42 @@ pub async fn spawn_interactive_execution(
             .spawn_remote_pty(80, 24, log_id)
             .await?;
 
-        // Send `cd` + `claude` as shell input so claude starts automatically.
+        // Send `cd` + `claude [-n <name>]` as shell input so claude starts automatically.
         // The shell buffers stdin, so sending immediately is safe — no sleep needed.
-        // Single-quote the path and escape any embedded single quotes.
+        // Single-quote the path and session name to prevent command injection.
         let escaped_path = worktree_abs_path.replace('\'', "'\\''");
-        let init_cmd = format!("cd '{}' && clear && claude\n", escaped_path);
+        let claude_cmd = match &session_name {
+            Some(name) => {
+                let escaped_name = name.replace('\'', "'\\''");
+                format!("claude -n '{}'", escaped_name)
+            }
+            None => "claude".to_string(),
+        };
+        let init_cmd = format!("cd '{}' && clear && {}\n", escaped_path, claude_cmd);
         pty_handle.write_tx
             .send(crate::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
             .await
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
+
+        // Inject task description into PTY 2s after spawn (gives claude time to start).
+        if let Some(ref desc) = task_description {
+            if !desc.trim().is_empty() {
+                let desc_text = desc.clone();
+                let write_tx = pty_handle.write_tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let input = format!("{}\n", desc_text);
+                    let _ = write_tx.send(crate::ssh::SshWriteOp::Data(input.into_bytes())).await;
+                });
+            }
+        }
 
         app_state.ssh_pty_sessions.lock().await.insert(log_id, pty_handle);
     } else {
         let pty_session = crate::process::spawn_agent_cli_pty(
             log_id,
             "claude".to_string(),
-            vec![],
+            claude_args,
             std::path::PathBuf::from(&worktree_abs_path),
         )
         .await?;
@@ -934,6 +979,21 @@ pub async fn spawn_interactive_execution(
             log_id,
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
+
+        // Inject task description into PTY 2s after spawn (gives claude time to start).
+        if let Some(ref desc) = task_description {
+            if !desc.trim().is_empty() {
+                let desc_text = desc.clone();
+                let session_clone = Arc::clone(sessions.get(&log_id).unwrap());
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let session_lock = session_clone.lock().await;
+                    let input = format!("{}\n", desc_text);
+                    let _ = session_lock.write_input(input.as_bytes()).await;
+                });
+            }
+        }
+
         drop(sessions);
     }
 
