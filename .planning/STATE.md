@@ -3,13 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-10T13:13:53.059Z"
+last_updated: "2026-04-10T13:19:29.175Z"
 progress:
   total_phases: 1
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
-  percent: 100
 ---
 
 # Project State: v1.3 — Agents & Worktrees (ARCHIVED 2026-03-30)
@@ -145,6 +144,7 @@ Plan: 4 of 4
 | Phase 40 P00 | 0.05 | 1 tasks | 2 files |
 | Phase 40 P01 | 0.077 | 2 tasks | 5 files |
 | Phase 40 P02 | 0.046 | 1 tasks | 2 files |
+| Phase 40 P03 | 0.055 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -291,6 +291,7 @@ Phase 18 Architecture Decisions:
 - [Phase 40]: Heartbeat probe uses execute_command('true') — lightweight, no output, always exits 0 on live connection; is_transient_error gate prevents retrying auth failures
 - [Phase 40]: AppHandle stored in AppState for Tauri event emission from background tasks (Plan 40-01); passed from app.handle().clone() in main.rs setup
 - [Phase 40]: Arc<AppState> threaded into spawn_heartbeat_task for PTY cleanup access to both ssh_pty_sessions and db
+- [Phase 40]: useConnectionHealth null guard prevents listener registration for local projects; Promise.all cleanup satisfies T-40-08 mitigate; backdrop placed after main inside currentProject branch
 
 ### Pending Todos
 

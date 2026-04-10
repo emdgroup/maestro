@@ -231,7 +231,7 @@ Plans:
 **Goal:** Detect SSH connection loss via heartbeat polling, prevent idle disconnects with russh keepalive, show a full-screen blocking backdrop ("Trying to reconnect") with exponential backoff retries, clean up dead PTY sessions by marking them Failed with reason 'SSH connection lost', and emit Tauri events for frontend connection state subscriptions. Backend: configure russh keepalive interval, emit ssh-connection-lost/reconnecting/reconnected events, wire existing is_transient_error helpers. Frontend: DisconnectBackdrop component + useConnectionHealth hook. SSH-only scope.
 **Requirements**: [SSH-KA-01, SSH-KA-02, SSH-HB-01, SSH-HB-02, SSH-HB-03, SSH-HB-04, SSH-HB-05, SSH-PTY-01, SSH-FE-01, SSH-FE-02, SSH-FE-03]
 **Depends on:** Phase 39
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [x] 40-00-PLAN.md — Wave 0: test stubs for DisconnectBackdrop and useConnectionHealth
