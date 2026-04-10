@@ -16,7 +16,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let conn = init_db(db_path)
         .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
-    let app_state = Arc::new(AppState::new(conn));
+    let app_state = Arc::new(AppState::new(conn, app.handle().clone()));
 
     // Mark stale running sessions as failed — PTY processes don't survive restarts
     {

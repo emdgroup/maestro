@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
+use tauri::AppHandle;
 
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
@@ -47,6 +48,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
 /// Application state containing the database connection, PTY sessions, and SSH sessions
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub app_handle: AppHandle,
     pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
     /// Remote interactive PTY sessions keyed by execution log_id
     pub ssh_pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
@@ -59,10 +61,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Create a new AppState with a database connection
-    pub fn new(db: Connection) -> Self {
+    /// Create a new AppState with a database connection and Tauri app handle
+    pub fn new(db: Connection, app_handle: AppHandle) -> Self {
         AppState {
             db: Mutex::new(db),
+            app_handle,
             pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
             ssh_pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
             ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),

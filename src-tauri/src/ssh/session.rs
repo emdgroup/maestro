@@ -231,6 +231,8 @@ fn expand_tilde(path: &str) -> String {
 async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClientHandler>, SshError> {
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(300)),
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
         ..Default::default()
     });
     let addr = format!("{}:{}", host, port);
