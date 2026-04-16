@@ -41,13 +41,13 @@ describe("DisconnectBackdrop", () => {
     expect(onLeaveConnection).toHaveBeenCalledOnce();
   });
 
-  it("does not show leave connection button in lost or reconnecting state", () => {
+  it("shows leave connection button in lost and reconnecting states", () => {
     const { rerender } = render(
       <DisconnectBackdrop {...defaultProps} state="lost" />,
     );
-    expect(screen.queryByRole("button", { name: /leave connection/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave connection/i })).toBeInTheDocument();
 
     rerender(<DisconnectBackdrop {...defaultProps} state="reconnecting" />);
-    expect(screen.queryByRole("button", { name: /leave connection/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave connection/i })).toBeInTheDocument();
   });
 });

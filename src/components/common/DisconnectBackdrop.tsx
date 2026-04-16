@@ -26,42 +26,31 @@ export function DisconnectBackdrop({
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/90 backdrop-blur-sm">
       {state === "failed" ? (
-        <>
-          <AlertTriangle className="h-8 w-8 text-destructive" />
-          <p className="text-sm font-medium text-foreground">
-            SSH connection lost
-          </p>
-          <p className="text-xs text-muted-foreground max-w-xs text-center">
-            Could not reconnect after {maxAttempts} attempts. Check your network
-            and SSH server, then try connecting again.
-          </p>
-          <button
-            onClick={onLeaveConnection}
-            className="mt-2 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <LogOut className="h-3.5 w-3.5 mr-1.5 inline" />
-            Leave Connection
-          </button>
-        </>
+        <AlertTriangle className="h-8 w-8 text-destructive" />
+      ) : state === "lost" ? (
+        <WifiOff className="h-8 w-8 text-muted-foreground animate-pulse" />
       ) : (
-        <>
-          {state === "lost" ? (
-            <WifiOff className="h-8 w-8 text-muted-foreground animate-pulse" />
-          ) : (
-            <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
-          )}
-          <p className="text-sm font-medium text-foreground">
-            {state === "lost"
-              ? "SSH connection lost"
-              : `Reconnecting\u2026 (${attempt}/${maxAttempts})`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {state === "lost"
-              ? "Detecting connection status\u2026"
-              : "Attempting to restore the connection"}
-          </p>
-        </>
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
       )}
+      <p className="text-sm font-medium text-foreground">
+        {state === "reconnecting"
+          ? `Reconnecting\u2026 (${attempt}/${maxAttempts})`
+          : "SSH connection lost"}
+      </p>
+      <p className="text-xs text-muted-foreground max-w-xs text-center">
+        {state === "failed"
+          ? `Could not reconnect after ${maxAttempts} attempts. Check your network and SSH server, then try connecting again.`
+          : state === "lost"
+            ? "Detecting connection status\u2026"
+            : "Attempting to restore the connection"}
+      </p>
+      <button
+        onClick={onLeaveConnection}
+        className="mt-2 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        <LogOut className="h-3.5 w-3.5 mr-1.5 inline" />
+        Leave Connection
+      </button>
     </div>
   );
 }
