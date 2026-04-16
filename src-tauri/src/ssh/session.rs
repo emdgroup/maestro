@@ -906,7 +906,7 @@ pub fn spawn_heartbeat_task(
     app_state: Arc<crate::db::AppState>,
 ) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
         // Skip the first immediate tick — just connected, no need to probe
         interval.tick().await;
 
