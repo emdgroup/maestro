@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense } from "react";
+import { useEffect, useState, useRef, lazy, Suspense, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
@@ -84,6 +84,12 @@ function App() {
     maxAttempts: reconnectMaxAttempts,
     dismiss: dismissBackdrop,
   } = useConnectionHealth(currentProject?.connection_id ?? null);
+
+  // Leave Connection: reset health state then navigate back to project picker
+  const handleLeaveConnection = useCallback(() => {
+    dismissBackdrop();
+    clearSelectedProject();
+  }, [dismissBackdrop, clearSelectedProject]);
 
   // Consume pendingTaskId from store to open TaskDetail sheet
   const pendingTaskId = usePendingTaskId();
@@ -269,7 +275,7 @@ function App() {
               state={connectionHealth}
               attempt={reconnectAttempt}
               maxAttempts={reconnectMaxAttempts}
-              onDismiss={dismissBackdrop}
+              onLeaveConnection={handleLeaveConnection}
             />
           )}
         </div>
