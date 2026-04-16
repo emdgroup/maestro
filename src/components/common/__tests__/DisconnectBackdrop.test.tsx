@@ -6,7 +6,7 @@ describe("DisconnectBackdrop", () => {
   const defaultProps = {
     attempt: 0,
     maxAttempts: 5,
-    onDismiss: vi.fn(),
+    onLeaveConnection: vi.fn(),
   };
 
   it("renders 'SSH connection lost' text in lost state", () => {
@@ -26,28 +26,28 @@ describe("DisconnectBackdrop", () => {
     expect(screen.getByText(/Reconnecting.*2\/5/)).toBeInTheDocument();
   });
 
-  it("renders failed state with dismiss button", () => {
+  it("renders failed state with leave connection button", () => {
     render(<DisconnectBackdrop {...defaultProps} state="failed" />);
     expect(screen.getByText(/Could not reconnect/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dismiss/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave connection/i })).toBeInTheDocument();
   });
 
-  it("calls onDismiss when dismiss button is clicked in failed state", () => {
-    const onDismiss = vi.fn();
+  it("calls onLeaveConnection when button is clicked in failed state", () => {
+    const onLeaveConnection = vi.fn();
     render(
-      <DisconnectBackdrop {...defaultProps} state="failed" onDismiss={onDismiss} />,
+      <DisconnectBackdrop {...defaultProps} state="failed" onLeaveConnection={onLeaveConnection} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
-    expect(onDismiss).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /leave connection/i }));
+    expect(onLeaveConnection).toHaveBeenCalledOnce();
   });
 
-  it("does not show dismiss button in lost or reconnecting state", () => {
+  it("does not show leave connection button in lost or reconnecting state", () => {
     const { rerender } = render(
       <DisconnectBackdrop {...defaultProps} state="lost" />,
     );
-    expect(screen.queryByRole("button", { name: /dismiss/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /leave connection/i })).not.toBeInTheDocument();
 
     rerender(<DisconnectBackdrop {...defaultProps} state="reconnecting" />);
-    expect(screen.queryByRole("button", { name: /dismiss/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /leave connection/i })).not.toBeInTheDocument();
   });
 });

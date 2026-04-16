@@ -1,11 +1,11 @@
-import { Loader2, WifiOff, AlertTriangle } from "lucide-react";
+import { Loader2, WifiOff, AlertTriangle, LogOut } from "lucide-react";
 import type { ConnectionHealthState } from "@/utils/hooks/useConnectionHealth";
 
 interface DisconnectBackdropProps {
   state: Exclude<ConnectionHealthState, "connected">;
   attempt: number;
   maxAttempts: number;
-  onDismiss: () => void;
+  onLeaveConnection: () => void;
 }
 
 /**
@@ -21,7 +21,7 @@ export function DisconnectBackdrop({
   state,
   attempt,
   maxAttempts,
-  onDismiss,
+  onLeaveConnection,
 }: DisconnectBackdropProps) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/90 backdrop-blur-sm">
@@ -33,13 +33,14 @@ export function DisconnectBackdrop({
           </p>
           <p className="text-xs text-muted-foreground max-w-xs text-center">
             Could not reconnect after {maxAttempts} attempts. Check your network
-            and SSH server, then reconnect from the project picker.
+            and SSH server, then try connecting again.
           </p>
           <button
-            onClick={onDismiss}
+            onClick={onLeaveConnection}
             className="mt-2 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            Dismiss
+            <LogOut className="h-3.5 w-3.5 mr-1.5 inline" />
+            Leave Connection
           </button>
         </>
       ) : (
