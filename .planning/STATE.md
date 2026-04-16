@@ -320,6 +320,7 @@ Phase 18 Architecture Decisions:
 | 260409-fnx | replace label by session name and wire it to storage and display | 2026-04-09 | 17a42eb | [260409-fnx-replace-label-by-session-name-and-wire-i](./quick/260409-fnx-replace-label-by-session-name-and-wire-i/) |
 | 260410-amc | add Maestro logo (public/maestro-logo.png) to project picker startup screen above app name | 2026-04-10 | e1623f5 | [260410-amc-integrate-public-maestro-logo-png-gracef](./quick/260410-amc-integrate-public-maestro-logo-png-gracef/) |
 | 260410-awn | enhance task execution: named session (-n flag), task description injection, InProgress status on spawn | 2026-04-10 | 23e2473 | [260410-awn-enhance-task-execution-named-session-inj](./quick/260410-awn-enhance-task-execution-named-session-inj/) |
+| 260416-sir | replace dismiss button with cancel/abort/leave button that navigates back to connection screen on SSH connection lost backdrop | 2026-04-16 | 43743c5 | [260416-sir-replace-dismiss-button-with-cancel-abort](./quick/260416-sir-replace-dismiss-button-with-cancel-abort/) |
 
 ### Blockers/Concerns
 
