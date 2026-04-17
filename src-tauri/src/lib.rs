@@ -5,6 +5,7 @@ pub mod process;
 pub mod ssh;
 pub mod git;
 pub mod websocket;
+pub mod acp;
 
 pub use db::{init_db, AppState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ExecutionWithTask, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
@@ -87,7 +88,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::stage_worktree_files,
             crate::ipc::commit_worktree,
             crate::ipc::discard_worktree_changes,
-            crate::ipc::shelve_worktree_changes
+            crate::ipc::shelve_worktree_changes,
+            crate::ipc::delete_untracked_files
         ])
 }
 
