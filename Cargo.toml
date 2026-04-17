@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "src-tauri",
+    "maestro-server",
+    "maestro-protocol",
+]
+resolver = "2"
