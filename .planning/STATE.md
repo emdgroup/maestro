@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
 status: planning
-last_updated: "2026-04-17T20:32:35.048Z"
+last_updated: "2026-04-17T20:38:38.002Z"
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -150,6 +150,7 @@ Plan: 2 of 2
 | Phase 41 P02 | 0.032 | 2 tasks | 7 files |
 | Phase 41 P03 | 0.033 | 1 tasks | 2 files |
 | Phase 42 P01 | 0.061 | 3 tasks | 5 files |
+| Phase 42 P02 | 0.030 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -307,6 +308,9 @@ Phase 18 Architecture Decisions:
 - [Phase 42]: Rc<tokio::sync::Mutex<Stdout>> for stdout: Rc because Client is ?Send, Mutex needed for await-safe locking in send_response
 - [Phase 42]: PermitResponse uses existing PermissionResponse struct as ServerRequest variant — no new type needed; serializes as permit_response via snake_case serde tag
 - [Phase 42]: T-42-01 cwd validation in create_terminal: reject '..' components and non-existent paths before subprocess spawn
+- [Phase 42]: Import Agent trait explicitly in main.rs scope — Rust requires trait in scope for ClientSideConnection method calls
+- [Phase 42]: Use .client_capabilities() not .capabilities() on InitializeRequest — correct ACP SDK v0.10.4 method name
+- [Phase 42]: PermitResponse dispatch maps bool allowed to RequestPermissionOutcome: true->Selected(allow_once), false->Cancelled
 
 ### v1.5 Roadmap Notes
 

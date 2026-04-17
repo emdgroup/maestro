@@ -97,7 +97,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 
 **Milestone Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
 
-- [ ] **Phase 42: maestro-server Activation** — Wire real ACP message loop in maestro-server binary
+- [x] **Phase 42: maestro-server Activation** — Wire real ACP message loop in maestro-server binary (completed 2026-04-17)
 - [ ] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState
 - [ ] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
 - [ ] **Phase 45: Agent Registry Fetch + Caching** — Fetch, cache, and resolve agents from ACP CDN registry
@@ -120,7 +120,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 **Plans**: 2 plans
 Plans:
 - [x] 42-01-PLAN.md — Protocol extension + session types + ACP Client trait implementation
-- [ ] 42-02-PLAN.md — Agent spawner + main.rs stdin/stdout read loop with full ACP lifecycle
+- [x] 42-02-PLAN.md — Agent spawner + main.rs stdin/stdout read loop with full ACP lifecycle
 
 ### Phase 43: Local ACP Session Manager
 **Goal**: Tauri backend can launch maestro-server as a managed subprocess per session, track live ACP sessions in AppState, and stream typed Tauri events to the frontend for each session
@@ -223,7 +223,7 @@ Plans:
 | 39 - Fix SSH terminal session switching | v1.4 | 3/3 | Complete | 2026-04-08 |
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
-| 42 - maestro-server Activation | v1.5 | 1/2 | In Progress|  |
+| 42 - maestro-server Activation | v1.5 | 2/2 | Complete   | 2026-04-17 |
 | 43 - Local ACP Session Manager | v1.5 | 0/? | Not started | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
