@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-17T17:23:32.622Z"
+last_updated: "2026-04-17T17:26:55.920Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -148,6 +148,7 @@ Plan: 3 of 3
 | Phase 40 P03 | 0.055 | 2 tasks | 3 files |
 | Phase 41-acp-agent-selection-discovery-system P01 | 0.067 | 1 tasks | 6 files |
 | Phase 41 P02 | 0.032 | 2 tasks | 7 files |
+| Phase 41 P03 | 0.033 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -300,6 +301,8 @@ Phase 18 Architecture Decisions:
 - [Phase 41-01]: [Phase 41-01]: maestro-server placeholder (fn main() {}) created in this plan so cargo check --workspace passes; Plan 03 overwrites with real implementation
 - [Phase 41]: ACP Client trait is #[async_trait::async_trait(?Send)] — verified from SDK source v0.10.4; request_permission and session_notification are the only required methods
 - [Phase 41]: MaestroAcpClient stubs: request_permission returns Err(method_not_found()), session_notification returns Ok(()) — T-41-03 mitigated, no filesystem access in Phase 41
+- [Phase 41]: [Phase 41-03]: Use tokio current_thread flavor + LocalSet in maestro-server main so Phase 42 can use spawn_local for !Send ACP Client futures
+- [Phase 41]: [Phase 41-03]: Add tokio-util with compat feature explicitly (not just transitively) so Phase 42 can use TokioAsyncReadCompatExt/TokioAsyncWriteCompatExt for stdio bridging
 
 ### Pending Todos
 
