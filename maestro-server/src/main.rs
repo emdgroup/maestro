@@ -10,6 +10,9 @@
 
 use maestro_protocol::MaestroRpcMessage;
 
+mod client;
+mod sessions;
+
 #[cfg(test)]
 mod tests;
 

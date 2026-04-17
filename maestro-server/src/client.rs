@@ -6,9 +6,9 @@ use std::time::Duration;
 use agent_client_protocol::{
     CreateTerminalRequest, CreateTerminalResponse, KillTerminalRequest, KillTerminalResponse,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, RequestPermissionOutcome, SelectedPermissionOutcome,
-    SessionNotification, TerminalExitStatus, TerminalId, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    RequestPermissionResponse, SessionNotification, TerminalExitStatus, TerminalId,
+    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
     MaestroRpcMessage, ServerResponse, SessionUpdate, PermissionRequest, TerminalOutput,
@@ -71,16 +71,14 @@ impl agent_client_protocol::Client for MaestroServerClient {
     /// SERVER-02: Forward ACP SessionNotification as a ServerResponse::SessionUpdate frame.
     async fn session_notification(&self, args: SessionNotification) -> agent_client_protocol::Result<()> {
         let payload = serde_json::to_value(&args).map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .with_message(e.to_string())
+            agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
         let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
             session_id: self.maestro_session_id.clone(),
             payload,
         }));
         send_response(&self.stdout, &msg).await.map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .with_message(e.to_string())
+            agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
         Ok(())
     }
@@ -97,8 +95,7 @@ impl agent_client_protocol::Client for MaestroServerClient {
         self.pending_permissions.borrow_mut().insert(request_id.clone(), tx);
 
         let payload = serde_json::to_value(&args).map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .with_message(e.to_string())
+            agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
         let msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
             session_id: self.maestro_session_id.clone(),
@@ -106,14 +103,12 @@ impl agent_client_protocol::Client for MaestroServerClient {
             payload,
         }));
         send_response(&self.stdout, &msg).await.map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .with_message(e.to_string())
+            agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
 
         // Await the PermitResponse dispatched by the stdin loop
         rx.await.map_err(|_| {
-            agent_client_protocol::Error::internal_error()
-                .with_message("permission channel closed".to_string())
+            agent_client_protocol::Error::new(-32603, "permission channel closed")
         })
     }
 
@@ -127,19 +122,16 @@ impl agent_client_protocol::Client for MaestroServerClient {
             // Reject paths containing ".." components
             for component in cwd.components() {
                 if component == std::path::Component::ParentDir {
-                    return Err(agent_client_protocol::Error::internal_error()
-                        .with_message(format!("cwd contains '..' component: {}", cwd.display())));
+                    return Err(agent_client_protocol::Error::new(-32603, format!("cwd contains '..' component: {}", cwd.display())));
                 }
             }
             match tokio::fs::metadata(cwd).await {
                 Ok(meta) if meta.is_dir() => {}
                 Ok(_) => {
-                    return Err(agent_client_protocol::Error::internal_error()
-                        .with_message(format!("cwd is not a directory: {}", cwd.display())));
+                    return Err(agent_client_protocol::Error::new(-32603, format!("cwd is not a directory: {}", cwd.display())));
                 }
                 Err(e) => {
-                    return Err(agent_client_protocol::Error::internal_error()
-                        .with_message(format!("cwd does not exist: {}: {}", cwd.display(), e)));
+                    return Err(agent_client_protocol::Error::new(-32603, format!("cwd does not exist: {}: {}", cwd.display(), e)));
                 }
             }
         }
@@ -162,8 +154,7 @@ impl agent_client_protocol::Client for MaestroServerClient {
         cmd.kill_on_drop(true);
 
         let mut child = cmd.spawn().map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .with_message(e.to_string())
+            agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
 
         let stdout_pipe = child.stdout.take();
@@ -277,15 +268,14 @@ impl agent_client_protocol::Client for MaestroServerClient {
         };
         self.terminals.borrow_mut().insert(terminal_id.clone(), handle);
 
-        Ok(CreateTerminalResponse::new(TerminalId::new(&terminal_id)))
+        Ok(CreateTerminalResponse::new(TerminalId::new(&*terminal_id)))
     }
 
     async fn terminal_output(&self, args: TerminalOutputRequest) -> agent_client_protocol::Result<TerminalOutputResponse> {
         let terminal_id_str = args.terminal_id.to_string();
         let terminals = self.terminals.borrow();
         let handle = terminals.get(&terminal_id_str).ok_or_else(|| {
-            agent_client_protocol::Error::internal_error()
-                .with_message("unknown terminal".to_string())
+            agent_client_protocol::Error::new(-32603, "unknown terminal")
         })?;
 
         let output = handle.output_buf.borrow().clone();
