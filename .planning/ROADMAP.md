@@ -239,6 +239,18 @@ Plans:
 - [x] 40-02-PLAN.md — Rust: PTY session cleanup on connection loss (mark failed with error_event, persist history, remove handles)
 - [ ] 40-03-PLAN.md — Frontend: useConnectionHealth hook + DisconnectBackdrop component + App.tsx wiring
 
+### Phase 41: ACP Agent Selection & Discovery System
+
+**Goal:** Add ACP (Agent Client Protocol) infrastructure: Cargo workspace root, maestro-protocol shared crate with wire protocol types and framing, src-tauri/src/acp/ module with MaestroAcpClient stub implementing ACP Client trait, and maestro-server binary crate skeleton
+**Requirements**: TBD
+**Depends on:** Phase 40
+**Plans:** 1/3 plans executed
+
+Plans:
+- [x] 41-01-PLAN.md — Cargo workspace root + maestro-protocol crate with wire protocol types, framing functions, and roundtrip tests
+- [ ] 41-02-PLAN.md — src-tauri/src/acp/ module: MaestroAcpClient stub, session types, registry types, transport re-exports
+- [ ] 41-03-PLAN.md — maestro-server binary crate with tokio current_thread runtime and LocalSet skeleton
+
 ---
 
 *Roadmap created: 2026-02-09*

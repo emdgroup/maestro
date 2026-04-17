@@ -3,12 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Agents & Worktrees view polish and bug fixes
 status: completed
-last_updated: "2026-04-10T13:19:29.175Z"
+last_updated: "2026-04-17T17:19:41.766Z"
 progress:
   total_phases: 1
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
+  percent: 100
 ---
 
 # Project State: v1.3 — Agents & Worktrees (ARCHIVED 2026-03-30)
@@ -18,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 40 — ssh-disconnection-handling-heartbeat-keepalive-reconnect-backdrop-pty-session-cleanup
+**Current focus:** Phase 41 — acp-agent-selection-discovery-system
 
 ## Current Position
 
-Phase: 40 (ssh-disconnection-handling-heartbeat-keepalive-reconnect-backdrop-pty-session-cleanup) — EXECUTING
-Plan: 4 of 4
+Phase: 41 (acp-agent-selection-discovery-system) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -145,6 +146,7 @@ Plan: 4 of 4
 | Phase 40 P01 | 0.077 | 2 tasks | 5 files |
 | Phase 40 P02 | 0.046 | 1 tasks | 2 files |
 | Phase 40 P03 | 0.055 | 2 tasks | 3 files |
+| Phase 41-acp-agent-selection-discovery-system P01 | 0.067 | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -292,6 +294,9 @@ Phase 18 Architecture Decisions:
 - [Phase 40]: AppHandle stored in AppState for Tauri event emission from background tasks (Plan 40-01); passed from app.handle().clone() in main.rs setup
 - [Phase 40]: Arc<AppState> threaded into spawn_heartbeat_task for PTY cleanup access to both ssh_pty_sessions and db
 - [Phase 40]: useConnectionHealth null guard prevents listener registration for local projects; Promise.all cleanup satisfies T-40-08 mitigate; backdrop placed after main inside currentProject branch
+- [Phase 41-01]: [Phase 41-01]: Use #[serde(tag = "direction")] on MaestroRpcMessage to distinguish Request/Response without untagged ambiguity pitfall
+- [Phase 41-01]: [Phase 41-01]: 16 MB MAX_MESSAGE_SIZE guard in read_message before body buffer allocation — T-41-01 DoS mitigation
+- [Phase 41-01]: [Phase 41-01]: maestro-server placeholder (fn main() {}) created in this plan so cargo check --workspace passes; Plan 03 overwrites with real implementation
 
 ### Pending Todos
 
@@ -381,6 +386,7 @@ Phase 18 Architecture Decisions:
 - Phase 38 added: Add git commit features to the diff view — file selection with tri-state checkboxes, revert/shelve/commit actions, block-level staging from diff pane
 - Phase 39 added: Fix SSH terminal session switching — SIGWINCH-based live repaint, clear-signal-trimmed history buffer (String with `\x1b[2J` boundary trimming + byte-cap fallback), DB snapshot on session end and app close, dead session recovery from DB snapshot
 - Phase 40 added: SSH disconnection handling — heartbeat keepalive, full-screen reconnect backdrop with exponential backoff, PTY session cleanup on connection loss, Tauri event emission for connection state changes
+- Phase 30 added: ACP Agent Selection & Discovery System — agent detection (PATH/user folder/project folder), default agent in settings, session type selection (agent/terminal), per-task agent assignment
 
 ## Session Continuity
 
