@@ -21,6 +21,7 @@ pub enum ServerRequest {
     Spawn(SpawnRequest),
     Prompt(PromptRequest),
     Cancel(CancelRequest),
+    PermitResponse(PermissionResponse),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -249,6 +250,32 @@ mod tests {
         let result = read_message(&mut cursor).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Message too large"));
+    }
+
+    #[test]
+    fn roundtrip_permit_response_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            session_id: "sess-1".to_string(),
+            request_id: "perm-42".to_string(),
+            allowed: true,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[tokio::test]
+    async fn framing_permit_response_roundtrip() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            session_id: "sess-1".to_string(),
+            request_id: "perm-42".to_string(),
+            allowed: false,
+        }));
+        let mut buf: Vec<u8> = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+        let mut cursor = std::io::Cursor::new(buf);
+        let back = read_message(&mut cursor).await.unwrap();
+        assert_eq!(msg, back);
     }
 
     #[test]
