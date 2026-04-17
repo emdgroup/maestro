@@ -1,5 +1,15 @@
 # Project Milestones: Maestro
 
+## v1.4 Quality & Worktrees (Shipped: 2026-04-17)
+
+**Phases completed:** 1 phases, 2 plans, 0 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.3 Agents & Worktrees (Shipped: 2026-03-30)
 
 **Phases completed:** 4 phases, 10 plans, 2 tasks

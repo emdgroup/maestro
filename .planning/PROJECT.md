@@ -10,9 +10,9 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 ## Current State
 
-**Latest Release:** v1.3 Agents & Worktrees (shipped 2026-03-30)
+**Latest Release:** v1.4 Quality & Worktrees (shipped 2026-04-17)
 
-**Active milestone:** v1.4 — not yet defined. Run `/gsd:new-milestone` to start planning.
+**Active milestone:** v1.5 — not yet defined. Run `/gsd:new-milestone` to start planning.
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
@@ -91,7 +91,19 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ `worktree.service.ts` with TanStack Query hooks (5s poll, diff query, mutations) — v1.3 (Phase 27)
 - ✓ Zombie cleanup on project open: automatic background removal of stale worktrees — v1.3 (Phase 28)
 
-## Next Milestone: v1.4
+**v1.4 Requirements (shipped 2026-04-17):**
+
+- ✓ Node.js sidecar removed; squash merge implemented natively in Rust — v1.4 (Phase 34)
+- ✓ Unified `run_git_in_dir` dispatcher for local+SSH git ops; git2 dependency removed — v1.4 (Phase 35)
+- ✓ Worktrees view card grid grouped by origin branch with collapsible sections — v1.4 (Phase 37)
+- ✓ Slide-in diff panel replacing side-by-side layout; schema V6 base_branch + AheadBehind — v1.4 (Phase 37)
+- ✓ In-diff git commit workflow: file tri-state checkboxes, hunk staging, revert/shelve — v1.4 (Phase 38)
+- ✓ SSH terminal "cached screen" bug fixed: String history, live/dead session split, DB persist — v1.4 (Phase 39)
+- ✓ SSH disconnection handling: russh keepalive, heartbeat, full-screen reconnect backdrop — v1.4 (Phase 40)
+- ✓ ACP infrastructure: Cargo workspace, maestro-protocol crate, MaestroAcpClient stub, maestro-server binary — v1.4 (Phase 41)
+- ✓ Full backend code quality sweep (30 findings: panics, DRY, shell injection, password zeroing) — v1.4 (Phases 32-33)
+
+## Next Milestone: v1.5
 
 *Not yet planned. Run `/gsd:new-milestone` to define scope.*
 
@@ -174,4 +186,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | `diff_stat_map` in same tokio spawn as `status_map` | Single parallel closure runs git status + git diff --shortstat per worktree | ✓ Good — halves git subprocess overhead at list time |
 
 ---
-*Last updated: 2026-03-30 after v1.3 milestone archive — v1.4 planning not yet started*
+*Last updated: 2026-04-17 after v1.4 milestone archive — v1.5 planning not yet started*

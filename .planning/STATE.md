@@ -1,30 +1,28 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Agents & Worktrees view polish and bug fixes
+milestone: v1.4
+milestone_name: Quality & Worktrees
 status: completed
-last_updated: "2026-04-17T17:26:55.920Z"
+last_updated: "2026-04-17T19:11:06.622Z"
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_phases: 13
+  completed_phases: 13
+  total_plans: 37
+  completed_plans: 37
 ---
 
-# Project State: v1.3 — Agents & Worktrees (ARCHIVED 2026-03-30)
+# Project State: v1.4 — Quality & Worktrees (ARCHIVED 2026-04-17)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-29)
+See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 41 — acp-agent-selection-discovery-system
+**Current focus:** v1.5 planning — run `/gsd:new-milestone` to define scope
 
 ## Current Position
 
-Phase: 41 (acp-agent-selection-discovery-system) — EXECUTING
-Plan: 3 of 3
+Milestone v1.4 complete. Ready for v1.5 planning.
 
 ## Performance Metrics
 
