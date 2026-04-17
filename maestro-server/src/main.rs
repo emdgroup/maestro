@@ -10,6 +10,9 @@
 
 use maestro_protocol::MaestroRpcMessage;
 
+#[cfg(test)]
+mod tests;
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local = tokio::task::LocalSet::new();
