@@ -119,7 +119,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
   4. Permission requests pause the agent and arrive on stdout as ServerResponse::PermissionRequest; sending PermissionResponse on stdin unblocks the agent
 **Plans**: 2 plans
 Plans:
-- [ ] 42-01-PLAN.md — Protocol extension + session types + ACP Client trait implementation
+- [x] 42-01-PLAN.md — Protocol extension + session types + ACP Client trait implementation
 - [ ] 42-02-PLAN.md — Agent spawner + main.rs stdin/stdout read loop with full ACP lifecycle
 
 ### Phase 43: Local ACP Session Manager
@@ -223,7 +223,7 @@ Plans:
 | 39 - Fix SSH terminal session switching | v1.4 | 3/3 | Complete | 2026-04-08 |
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
-| 42 - maestro-server Activation | v1.5 | 0/2 | In progress | - |
+| 42 - maestro-server Activation | v1.5 | 1/2 | In Progress|  |
 | 43 - Local ACP Session Manager | v1.5 | 0/? | Not started | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |

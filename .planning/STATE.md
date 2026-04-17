@@ -1,28 +1,30 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Quality & Worktrees
-status: completed
-last_updated: "2026-04-17T19:11:06.622Z"
+milestone: v1.5
+milestone_name: ACP Integration
+status: planning
+last_updated: "2026-04-17T20:32:35.048Z"
 progress:
-  total_phases: 13
-  completed_phases: 13
-  total_plans: 37
-  completed_plans: 37
+  total_phases: 8
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 50
 ---
 
-# Project State: v1.4 — Quality & Worktrees (ARCHIVED 2026-04-17)
+# Project State: v1.5 — ACP Integration
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** v1.5 planning — run `/gsd:new-milestone` to define scope
+**Current focus:** Phase 42 — maestro-server-activation
 
 ## Current Position
 
-Milestone v1.4 complete. Ready for v1.5 planning.
+Phase: 42 (maestro-server-activation) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -147,6 +149,7 @@ Milestone v1.4 complete. Ready for v1.5 planning.
 | Phase 41-acp-agent-selection-discovery-system P01 | 0.067 | 1 tasks | 6 files |
 | Phase 41 P02 | 0.032 | 2 tasks | 7 files |
 | Phase 41 P03 | 0.033 | 1 tasks | 2 files |
+| Phase 42 P01 | 0.061 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -294,13 +297,23 @@ Phase 18 Architecture Decisions:
 - [Phase 40]: AppHandle stored in AppState for Tauri event emission from background tasks (Plan 40-01); passed from app.handle().clone() in main.rs setup
 - [Phase 40]: Arc<AppState> threaded into spawn_heartbeat_task for PTY cleanup access to both ssh_pty_sessions and db
 - [Phase 40]: useConnectionHealth null guard prevents listener registration for local projects; Promise.all cleanup satisfies T-40-08 mitigate; backdrop placed after main inside currentProject branch
-- [Phase 41-01]: [Phase 41-01]: Use #[serde(tag = "direction")] on MaestroRpcMessage to distinguish Request/Response without untagged ambiguity pitfall
-- [Phase 41-01]: [Phase 41-01]: 16 MB MAX_MESSAGE_SIZE guard in read_message before body buffer allocation — T-41-01 DoS mitigation
-- [Phase 41-01]: [Phase 41-01]: maestro-server placeholder (fn main() {}) created in this plan so cargo check --workspace passes; Plan 03 overwrites with real implementation
+- [Phase 41-01]: Use #[serde(tag = "direction")] on MaestroRpcMessage to distinguish Request/Response without untagged ambiguity pitfall
+- [Phase 41-01]: 16 MB MAX_MESSAGE_SIZE guard in read_message before body buffer allocation — T-41-01 DoS mitigation
+- [Phase 41-01]: maestro-server placeholder (fn main() {}) created in this plan so cargo check --workspace passes; Plan 03 overwrites with real implementation
 - [Phase 41]: ACP Client trait is #[async_trait::async_trait(?Send)] — verified from SDK source v0.10.4; request_permission and session_notification are the only required methods
 - [Phase 41]: MaestroAcpClient stubs: request_permission returns Err(method_not_found()), session_notification returns Ok(()) — T-41-03 mitigated, no filesystem access in Phase 41
 - [Phase 41]: [Phase 41-03]: Use tokio current_thread flavor + LocalSet in maestro-server main so Phase 42 can use spawn_local for !Send ACP Client futures
 - [Phase 41]: [Phase 41-03]: Add tokio-util with compat feature explicitly (not just transitively) so Phase 42 can use TokioAsyncReadCompatExt/TokioAsyncWriteCompatExt for stdio bridging
+- [Phase 42]: Rc<tokio::sync::Mutex<Stdout>> for stdout: Rc because Client is ?Send, Mutex needed for await-safe locking in send_response
+- [Phase 42]: PermitResponse uses existing PermissionResponse struct as ServerRequest variant — no new type needed; serializes as permit_response via snake_case serde tag
+- [Phase 42]: T-42-01 cwd validation in create_terminal: reject '..' components and non-existent paths before subprocess spawn
+
+### v1.5 Roadmap Notes
+
+- Phase 45 (Registry) is independent of Phases 42-43 and can be developed in parallel
+- Phase 46 depends on both Phase 44 and Phase 45 — both must complete before frontend spawn flow
+- Phases 47 and 48 both depend on 46 and can be developed in parallel with each other
+- Phase 49 (Dispatcher) depends on 47 and 48 — final integration phase for the milestone
 
 ### Pending Todos
 
@@ -316,7 +329,7 @@ Phase 18 Architecture Decisions:
 | 260401-csx | Revert Rust logging from log crate back to console prints | 2026-04-01 | 2b4776d | [260401-csx-revert-rust-logging-from-log-crate-back-](./quick/260401-csx-revert-rust-logging-from-log-crate-back-/) |
 | 260401-is7 | Add unified/split view toggle in git diff pane | 2026-04-01 | aad4dfd | [260401-is7-add-unified-and-split-view-toggle-in-git](./quick/260401-is7-add-unified-and-split-view-toggle-in-git/) |
 | 260401-tau | Fix 3 post-phase-37 UI issues: gate diff pane on dirty status, slide action bar, center branch name | 2026-04-01 | 7eb166b | [260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-](./quick/260401-tau-fix-3-post-phase-37-ui-issues-diff-pane-/) |
-| 260402-ctz | Add group/grid toggle to worktrees view action bar | 2026-04-02 | 72c638b | [260402-ctz-in-the-worktrees-view-add-a-group-toggle](./quick/260402-ctz-in-the-worktrees-view-add-a-group-toggle/) |
+| 260402-ctz | Add group/grid toggle to worktrees view action bar | 2026-04-02 | 72c638b | [260402-ctz-in-the-worktrees-view-add-a-group-toggle](./quick/260402-ctz-in-the-worktrees-view-add-a-group-grid-/) |
 | 260402-d3x | add branch deletion checkbox to worktree removal modal | 2026-04-02 | db61a9b | [260402-d3x-add-branch-deletion-checkbox-to-worktree](./quick/260402-d3x-add-branch-deletion-checkbox-to-worktree/) |
 | 260407-eu5 | Fix Phase 38 UI issues: folder tri-state checkboxes, chunk header inline checkbox, diff panel full height | 2026-04-07 | 3427db9 | [260407-eu5-fix-phase-38-ui-issues-folder-tri-state-](./quick/260407-eu5-fix-phase-38-ui-issues-folder-tri-state-/) |
 | 260408-cee | Style terminal with mono font and app background for better integration | 2026-04-08 | 42e44d5 | [260408-cee-style-terminal-with-mono-font-and-app-ba](./quick/260408-cee-style-terminal-with-mono-font-and-app-ba/) |
@@ -333,37 +346,7 @@ Phase 18 Architecture Decisions:
 
 ### Blockers/Concerns
 
-**COMPLETE - Phase 17.1 FULLY COMPLETE (2026-02-11):**
-
-- ✓ Phase 17.1-01 COMPLETE: Production IPC logging infrastructure
-  - safeInvoke wrapper created with [Tauri] console logging
-  - ProjectPicker instrumented with [DEBUG] statements
-  - App.tsx instrumented with [DEBUG] statements
-- ✓ Phase 17.1-02 COMPLETE: Modern header with project dropdown and tab navigation
-  - AppHeader redesigned with project dropdown (Select component)
-  - 4-tab navigation for Tasks, Agents, Worktrees, Settings
-  - Tab-based page routing in App.tsx (activePage state)
-  - All icons from lucide-react, modern flex layout (h-12)
-  - Inline project switching without full-screen modal
-- ✓ Phase 17.1-03 COMPLETE: System accent color integration
-  - Accent color loaded from system theme in ThemeProvider
-  - CSS variables injected dynamically on mount
-  - Theme changes update accent color in real-time
-- ✓ Phase 17.1-04 COMPLETE: Playwright visual regression testing
-  - E2E framework configured with dev server integration
-  - 10 visual regression tests covering major UI elements
-  - Baseline screenshots established for ProjectPicker, layouts, viewports
-  - Automated CLS and DOM stability verification
-  - Test infrastructure ready for regression detection (pnpm test:e2e)
-
-**Phase 17.1 Impact Summary:**
-
-- ✓ UI now has modern aesthetic matching exemple/ design patterns
-- ✓ UX improved: Project switching from header dropdown instead of full-screen modal
-- ✓ Navigation: Compact tab bar with icons and active state styling
-- ✓ System accent color integration complete: Dynamic theme-aware accent color injection
-- ✓ Visual regression testing infrastructure: Automated baseline capture and regression detection
-- Phase 17.1 milestone complete; all 4 plans executed successfully
+None.
 
 ### Roadmap Evolution
 
@@ -390,229 +373,17 @@ Phase 18 Architecture Decisions:
 - Phase 38 added: Add git commit features to the diff view — file selection with tri-state checkboxes, revert/shelve/commit actions, block-level staging from diff pane
 - Phase 39 added: Fix SSH terminal session switching — SIGWINCH-based live repaint, clear-signal-trimmed history buffer (String with `\x1b[2J` boundary trimming + byte-cap fallback), DB snapshot on session end and app close, dead session recovery from DB snapshot
 - Phase 40 added: SSH disconnection handling — heartbeat keepalive, full-screen reconnect backdrop with exponential backoff, PTY session cleanup on connection loss, Tauri event emission for connection state changes
-- Phase 30 added: ACP Agent Selection & Discovery System — agent detection (PATH/user folder/project folder), default agent in settings, session type selection (agent/terminal), per-task agent assignment
+- Phase 41 added: ACP Agent Selection & Discovery System — agent detection (PATH/user folder/project folder), default agent in settings, session type selection (agent/terminal), per-task agent assignment
+- Phases 42-49 added: v1.5 ACP Integration milestone — maestro-server activation, local session manager, DB schema v11 + IPC, registry fetch/caching, agent selector UI, activity panel, permission dialog, dual-mode dispatcher
 
 ## Session Continuity
 
-Current session: 2026-03-16 (Phase 22-01 executed)
-Completed: Phase 22-01 - Validate Project Paths in get_connection_projects (Local + SSH) (COMPLETE)
-Status: Phase 22 complete; 22/23 phases complete
-Session timestamp: 2026-03-16T15:29:00Z
+Current session: 2026-04-17 (v1.5 roadmap defined)
+Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
+Status: Ready to begin Phase 42 planning
+Session timestamp: 2026-04-17T00:00:00Z
 
 ---
 
-**v1.1 MILESTONE STATUS: IN PROGRESS**
-**Phase 19 STATUS: IN PROGRESS (5/6 plans complete)**
-
-v1.1 UI/UX Polish milestone - 18 of 19 phases complete + Phase 19 architecture refactoring underway.
-Phase 19-05 (Organize Utils Layer - Hooks and Helpers) COMPLETE 2026-02-26.
-
-**Phase 19 Plan Status:**
-
-- 19-01: COMPLETE - Extract Page-Level Components to Views
-- 19-02: COMPLETE - Organize Domain-Grouped Services Layer
-- 19-03: COMPLETE - Organize Reusable Components into Domain-Specific Folders
-- 19-04: COMPLETE - Replace Scattered invoke() Calls with Service Layer
-- 19-05: COMPLETE - Organize Utils Layer (Hooks and Helpers)
-- 19-06: PENDING - Implement Feature Modules
-
-Phase 18 (Maestro Folder Architecture & Rebranding) complete:
-
-- ✓ 18-01: ProjectConfig and ProjectState models with JSON serialization (COMPLETE)
-  - Rust models with load/save methods for .maestro/settings.json and .maestro/state.json
-  - TypeScript bindings generated and available at src/types/bindings.ts
-  - Cross-platform path handling using std::path::Path
-  - Backward compatibility with #[serde(default)] for schema versioning
-- ✓ 18-02: Project Storage File I/O layer (COMPLETE)
-  - 6 utility functions for file I/O operations
-  - Graceful defaults for new projects
-  - Module integration with db/mod.rs
-- ✓ 18-03: Maestro rebranding (COMPLETE)
-  - tauri.conf.json: productName, identifier, window title updated to Maestro
-  - Cargo.toml description updated with Maestro branding
-  - CLAUDE.md and README.md updated with new application branding
-  - Technical identifiers (maestro, .planning/) maintained for backwards compatibility
-- ✓ 18-04: IPC Handler Integration (COMPLETE)
-  - create_project IPC handler now calls project_storage::create_project_maestro_folder()
-  - .maestro folder initialized on project creation with error handling
-  - Integration tested with cargo check
-
-**Phase 18 VERIFIED:** All 4 success criteria met (verified 2026-02-23). Architecture shift complete: project-local storage established, rebranding complete, all integration points wired.
-
-**Phase 19 Status - IN PROGRESS:**
-
-- Phase 19-01 COMPLETE (2026-02-26): Extract Page-Level Components to Views
-  - Views directory created with 5 orchestrator components
-  - KanbanView, AgentsView, SettingsView, ProjectPickerView, WorktreesView
-  - Barrel export src/views/index.ts working
-  - App.tsx updated to import from @/views
-  - TypeScript compilation: 0 errors, build successful
-  - All routing and navigation working correctly
-
-- Phase 19-02 COMPLETE (2026-02-26): Organize Domain-Grouped Services Layer
-  - Centralized IPC wrapper created (src/services/ipc.ts)
-  - 6 domain-specific services created: task, project, settings, execution, connection
-  - All services follow consistent pattern with typed methods
-  - Barrel export (src/services/index.ts) enables single import for all services
-  - Production build passed: 3286 modules transformed, CSS coverage verified
-  - Ready for integration with components and stores
-
-- Phase 19-03 COMPLETE (2026-02-26): Organize Reusable Components into Domain-Specific Folders
-  - 5 domain folders verified: kanban, project, task, execution, common
-  - Barrel exports (index.ts) configured for each domain
-  - 33 files updated with new domain-based import paths
-  - All imports refactored: App.tsx, views, components, stores
-  - Cross-folder imports fixed with proper relative/absolute paths
-  - TypeScript compilation: 0 errors
-  - Production build verified: CSS coverage verified, no mock code
-  - Component organization complete: clear separation of concerns established
-
-*State initialized: 2026-02-09*
-*Updated: 2026-02-26 — Phase 19-03 complete (Component organization refactoring); 3/6 plans complete (50%)*
-
-- Phase 19-04 COMPLETE (2026-02-26): Replace Scattered invoke() Calls with Service Layer
-  - 31 IPC calls migrated from components/providers to service layer
-  - 10 components and providers updated with service layer imports
-  - 7 service methods added/enhanced in src/services
-  - Centralized error handling and logging through services
-  - Type-safe IPC integration via service abstraction
-  - All components using consistent service-layer patterns
-
-- Phase 19-05 COMPLETE (2026-02-26): Organize Utils Layer (Hooks and Helpers)
-  - src/utils/{hooks,helpers} folder structure created
-  - 4 complex hooks organized in individual folders: useProjectPickerNavigation, useRecentProjects, useSshConnectionManager, useSshConnectionsQuery
-  - 1 simple hook kept as single file: use-mobile.ts
-  - 3 helpers consolidated: path-utils.ts, diff-utils.ts, ui-utils.ts
-  - Barrel exports created for hooks/, helpers/, and root utils/
-  - 63 files updated with new @/utils/hooks and @/utils/helpers import paths
-  - Old src/hooks/ and src/lib/ directories removed
-  - TypeScript compilation: 0 errors
-  - All imports verified: 0 old @/hooks or @/lib imports remaining
-
-*Updated: 2026-02-26 — Phase 19-05 complete (Utils layer organization); 5/6 plans complete (83%)*
-
-**Phase 20 Status - IN PROGRESS:**
-
-- Phase 20-01 COMPLETE (2026-02-26): Add TanStack Query Hooks to Task and Project Services
-  - 10 TanStack Query hooks added to task.service.ts (useTasksQuery, useExecutionLogsQuery, useTaskSettingsQuery, useDiffForReviewQuery, useCreateTaskMutation, useUpdateTaskMutation, useUpdateTaskStatusMutation, useRetryExecutionMutation, useCancelExecutionMutation, useUpdateTaskSettingsMutation)
-  - 7 TanStack Query hooks added to project.service.ts (useProjectsQuery, useProjectQuery, useProjectSettingsQuery, useCreateProjectMutation, useRemoveProjectMutation, useUpdateProjectSettingsMutation, useSaveImportConfigMutation)
-  - taskQueryKeys and projectQueryKeys factories for consistent cache invalidation
-  - All hooks with proper enabled conditions for dependent queries
-  - useUpdateTaskStatusMutation implements optimistic updates with rollback
-  - All mutations use queryClient.invalidateQueries() for cache consistency
-  - Sonner integration for error/success feedback
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 349 lines added to 2 files, 2 tasks complete
-
-- Phase 20-02 COMPLETE (2026-02-26): Add TanStack Query Hooks to Execution and Settings Services
-  - 7 TanStack Query mutation hooks added to execution.service.ts (useSpawnExecutionMutation, usePauseExecutionMutation, useResumeExecutionMutation, useAttachTerminalMutation, useDetachTerminalMutation, useSendTerminalInputMutation, useResizeTerminalMutation)
-  - 3 TanStack Query hooks added to settings.service.ts (useSettingsQuery with 10-min staleTime, useSystemAccentColorQuery with Infinity staleTime, useSaveSettingsMutation)
-  - executionQueryKeys and settingsQueryKeys factories for consistency
-  - All execution mutations are fire-and-forget RPC side-effects with onError toast handling
-  - Settings queries tuned for data volatility (10min for app settings, Infinity for OS accent color)
-  - useSaveSettingsMutation invalidates cache and shows success/error toast
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 205 lines added to 2 files, 2 tasks complete
-  - Wave 1 infrastructure: 21 total hooks created (task 10 + project 7 + execution 7 + settings 3)
-
-- Phase 20-03 COMPLETE (2026-02-27): Audit and Extend Connection Service with TanStack Query Hooks
-  - Audited connection.service.ts and identified missing TanStack Query hooks
-  - Added connectionQueryKeys factory (nested query key structure)
-  - Added useSshConnectionsQuery() for fetching all SSH connections (30s staleTime)
-  - Added useCreateSshConnectionMutation() for creating SSH connections
-  - Added useUpdateSshConnectionMutation() with optimistic updates for renaming
-  - Added useDeleteSshConnectionMutation() for deleting connections
-  - Added useForgetSavedPasswordMutation() for forgetting saved passwords
-  - All mutations have Sonner toast error/success feedback
-  - Verified exemplar pattern (useSshConnectionsQuery.ts) as working reference
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 176 lines added to 1 file, 1 task complete
-  - Wave 1 infrastructure complete: 32 total hooks across 5 services
-
-*Updated: 2026-02-27 00:07 — Phase 20-03 complete (Connection Service TanStack Query hooks); 3/7 plans complete (43%)*
-
-- Phase 20-04 COMPLETE (2026-02-27): Migrate Core Components to TanStack Query Hooks (Wave 2)
-  - Migrated App.tsx from direct invoke() to useSettingsQuery hook
-  - Removed manual useState for settings, loading/error states managed by TanStack Query
-  - Migrated ApprovalForm.tsx to use 3 new mutation hooks: useSaveTaskReviewMutation, useApproveTaskAndMergeMutation, useRequestChangesMutation (Rule 2 deviation)
-  - Migrated ReviewModal.tsx from direct invoke() to useDiffForReviewQuery hook
-  - All components now delegate loading/error state management to TanStack Query
-  - Sonner toast integration for all error/success feedback
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 121 lines added to task.service.ts for mutation hooks
-  - 3 core foundation components migrated, 3 new mutation hooks added
-  - Wave 2 component migrations begun: 3/7 components complete
-
-*Updated: 2026-02-27 00:11 — Phase 20-04 complete (Core Component migrations); 4/7 plans complete (57%)*
-
-- Phase 20-05 COMPLETE (2026-02-27): Migrate Kanban Workflow Components to TanStack Query Hooks (Wave 2)
-  - Migrated SyncButton.tsx from direct invoke() to useSyncGithubIssuesMutation and useSyncJiraIssuesMutation hooks
-  - Added 2 sync mutation hooks to project.service.ts with automatic error/success toast handling
-  - Migrated TaskCard.tsx from manual useEffect + invoke() to useExecutionLogsQuery hook
-  - Removed 15 lines of state management from TaskCard for execution logs
-  - Migrated TaskModal.tsx from direct invoke() to useCreateTaskMutation hook
-  - Replaced showErrorToast/showSuccessToast with direct sonner toast calls throughout
-  - All 3 components now use TanStack Query for state and loading management
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 78 lines added to project.service.ts for sync mutations
-  - 60+ lines of manual state management code removed
-  - Wave 2 component migrations: 6/7 components complete
-  - Rule 1 deviation: Fixed SyncButton import_provider type mismatch by accepting provider as prop
-
-*Updated: 2026-02-27 00:30 — Phase 20-05 complete (Kanban Component migrations); 5/7 plans complete (71%)*
-
-- Phase 20-06 COMPLETE (2026-02-27): Migrate Final Components and Hooks to TanStack Query (Wave 2)
-  - Migrated FilePicker.tsx from direct invoke() to useMutation hooks (file operations)
-  - Migrated ImportSettings.tsx to project.service mutation hooks (sync and config save)
-  - Refactored useRecentProjects.ts from useState to useQuery hook pattern
-  - All 9 Wave 2 components now complete (3+3+3 migrations)
-  - Connection service, Project service, Settings service all fully integrated
-  - Build verified: 0 TypeScript errors, production bundle passed
-  - 3 commits, 5 files modified, 0.042h duration
-  - Wave 2 infrastructure complete: All component direct invoke() calls replaced with TanStack Query hooks
-
-*Updated: 2026-02-27 00:46 — Phase 20-06 complete (Final component migrations); 6/7 plans complete (86%)*
-
-- Phase 20-07 COMPLETE (2026-02-27): Wave 3 Verification and Sign-Off
-  - Task 1: Verify no direct invoke() calls remain in UI layer
-    - Found 2 hook regressions with direct Tauri invoke() calls
-    - Auto-fixed both hooks (useSshConnectionsQuery, useSshConnectionManager)
-    - Result: 0 direct invoke() in components, 0 direct invoke() in hooks
-  - Task 2: Verify TanStack Query hook consistency
-    - ✓ 5/5 query key factories present across services
-    - ✓ 6 dependent queries using enabled conditions
-    - ✓ 17 cache invalidation calls across mutations
-    - ✓ 2 optimistic update mutations (status + SSH connection rename)
-  - Task 3: Verify application builds and runs
-    - ✓ Build succeeded in 17.03s
-    - ✓ TypeScript: 0 errors
-    - ✓ Production bundle verified (CSS coverage OK, no mock code)
-  - Task 4: Generate Phase 20 completion report
-    - Created 20-COMPLETION-REPORT.md with full metrics and recommendations
-    - Documented all 3 waves, 37 hooks, 9 components migrated
-    - Sign-off: Phase ready for Phase 21 or production
-  - Commits: 3 (fix regression + completion report + summary)
-  - Duration: 0.010h (6 minutes)
-  - Wave 3 complete: All verification tasks passed, Phase 20 ready for sign-off
-
-*Updated: 2026-02-27 00:55 — Phase 20-07 COMPLETE (Wave 3 verification); 7/7 plans complete (100%)*
-
-**PHASE 20 COMPLETE** ✓
-
-- Wave 1 (Infrastructure): 21 hooks created across 5 services (3 plans)
-- Wave 2 (Component Migration): 9 UI components migrated (3 plans)
-- Wave 3 (Verification): 0 regressions, production validated (1 plan)
-- Total: 37 TanStack Query hooks, 0 direct invoke() calls, ready for Phase 21
-
-**PHASE 21 COMPLETE** ✓ (2026-02-28)
-
-- Task 1: Extended connection.service.ts with 4 new file browser hooks
-- Task 2: Verified project.service.ts has all required hooks
-- Task 3: Refactored ProjectList.tsx to use service hooks
-- Task 4: Refactored ConnectionHeader.tsx to use service hooks
-- Task 5: Refactored FilePicker.tsx to use service hooks
-- Task 6: Refactored SettingsPage.tsx to use service hooks
-- Task 7: Refactored useSshConnectionManager.ts to use service hooks
-- Task 8: Comprehensive verification - 0 direct commands usage, TypeScript clean, build passes
-- Total: 5 components refactored, 15 command usages eliminated, service layer complete
-- Metrics: 0.083h duration, 8 commits, 6 files modified, 0 deviations
+**v1.5 MILESTONE STATUS: IN PROGRESS**
+**Phase 42 STATUS: NOT STARTED**
