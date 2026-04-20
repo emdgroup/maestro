@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: planning
-last_updated: "2026-04-20T22:21:59.197Z"
+status: executing
+last_updated: "2026-04-20T23:10:34.579Z"
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -18,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 42 — maestro-server-activation
+**Current focus:** Phase 43 — local-acp-session-manager
 
 ## Current Position
 
-Phase: 42 (maestro-server-activation) — EXECUTING
+Phase: 43 (local-acp-session-manager) — EXECUTING
 Plan: 2 of 2
 
 ## Performance Metrics
@@ -150,6 +151,7 @@ Plan: 2 of 2
 | Phase 41 P03 | 0.033 | 1 tasks | 2 files |
 | Phase 42 P01 | 0.061 | 3 tasks | 5 files |
 | Phase 42 P02 | 0.030 | 1 tasks | 2 files |
+| Phase 43-local-acp-session-manager P01 | 0.112 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -310,6 +312,9 @@ Phase 18 Architecture Decisions:
 - [Phase 42]: Import Agent trait explicitly in main.rs scope — Rust requires trait in scope for ClientSideConnection method calls
 - [Phase 42]: Use .client_capabilities() not .capabilities() on InitializeRequest — correct ACP SDK v0.10.4 method name
 - [Phase 42]: PermitResponse dispatch maps bool allowed to RequestPermissionOutcome: true->Selected(allow_once), false->Cancelled
+- AcpProcess.reader_cancel_tx is Option<oneshot::Sender<()>> so it can be .take()-ed without Clone requirement
+- Session inserted into acp_sessions BEFORE reader task spawned — ensures IPC handlers see it immediately after spawn_acp_process returns
+- BufWriter::flush() called after every write_message — CRITICAL; server would not receive message without explicit flush
 
 ### v1.5 Roadmap Notes
 
@@ -383,7 +388,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Ready to begin Phase 42 planning
+Status: Ready to execute
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---
