@@ -98,7 +98,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 **Milestone Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
 
 - [x] **Phase 42: maestro-server Activation** — Wire real ACP message loop in maestro-server binary (completed 2026-04-17)
-- [ ] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState
+- [x] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState (completed 2026-04-20)
 - [ ] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
 - [ ] **Phase 45: Agent Registry Fetch + Caching** — Fetch, cache, and resolve agents from ACP CDN registry
 - [ ] **Phase 46: Frontend: Agent Selector + Spawn Flow** — Browse registry and spawn ACP sessions from UI
@@ -227,7 +227,7 @@ Plans:
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
 | 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
-| 43 - Local ACP Session Manager | v1.5 | 0/2 | Not started | - |
+| 43 - Local ACP Session Manager | v1.5 | Complete    | 2026-04-20 | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 0/? | Not started | - |
