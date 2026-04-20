@@ -93,7 +93,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 
 </details>
 
-### 🚧 v1.5 ACP Integration (In Progress)
+### v1.5 ACP Integration (In Progress)
 
 **Milestone Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
 
@@ -130,7 +130,10 @@ Plans:
   1. Developer can call an IPC command that spawns a maestro-server child process with piped stdin/stdout and a unique log_id key
   2. A background reader task parses maestro-server stdout and emits typed Tauri events (acp://session-update/{log_id}, acp://terminal-output/{log_id}, acp://permission-request/{log_id})
   3. Active ACP sessions are accessible in AppState.acp_sessions and cleaned up when the session ends
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 43-01-PLAN.md — AcpProcess struct + AppState extension + spawn/reader/writer in acp/manager.rs
+- [ ] 43-02-PLAN.md — IPC commands (start_acp_session, send_to_acp_session, cancel_acp_session) + lib.rs registration
 
 ### Phase 44: DB Schema + ACP IPC Handlers
 **Goal**: Database schema v11 captures ACP-specific fields on execution_logs, and the full IPC surface (spawn, prompt, permission response, cancel, structured output flush) is available to the frontend
@@ -224,7 +227,7 @@ Plans:
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
 | 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
-| 43 - Local ACP Session Manager | v1.5 | 0/? | Not started | - |
+| 43 - Local ACP Session Manager | v1.5 | 0/2 | Not started | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 0/? | Not started | - |
