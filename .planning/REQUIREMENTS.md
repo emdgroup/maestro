@@ -14,9 +14,12 @@
 
 ### Local Session Management
 
-- [ ] **SESSION-01**: Tauri backend launches maestro-server as local subprocess per ACP session with piped stdin/stdout
-- [ ] **SESSION-02**: ACP sessions tracked in AppState (acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpSession>>, keyed by log_id)
-- [ ] **SESSION-03**: Tauri emits typed events per session (acp://session-update/{log_id}, acp://permission-request/{log_id}, acp://terminal-output/{log_id}) from background reader task
+- [x] **SESSION-01
+**: Tauri backend launches maestro-server as local subprocess per ACP session with piped stdin/stdout
+- [x] **SESSION-02
+**: ACP sessions tracked in AppState (acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpSession>>, keyed by log_id)
+- [x] **SESSION-03
+**: Tauri emits typed events per session (acp://session-update/{log_id}, acp://permission-request/{log_id}, acp://terminal-output/{log_id}) from background reader task
 
 ### Database & IPC
 

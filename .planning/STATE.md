@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: executing
-last_updated: "2026-04-20T23:10:34.579Z"
+status: verifying
+last_updated: "2026-04-20T23:15:09.948Z"
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -152,6 +152,7 @@ Plan: 2 of 2
 | Phase 42 P01 | 0.061 | 3 tasks | 5 files |
 | Phase 42 P02 | 0.030 | 1 tasks | 2 files |
 | Phase 43-local-acp-session-manager P01 | 0.112 | 2 tasks | 3 files |
+| Phase 43 P02 | 0.035 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -315,6 +316,9 @@ Phase 18 Architecture Decisions:
 - AcpProcess.reader_cancel_tx is Option<oneshot::Sender<()>> so it can be .take()-ed without Clone requirement
 - Session inserted into acp_sessions BEFORE reader task spawned — ensures IPC handlers see it immediately after spawn_acp_process returns
 - BufWriter::flush() called after every write_message — CRITICAL; server would not receive message without explicit flush
+- session_id derived from log_id as format!("session-{}", log_id) — ties ACP protocol session to DB row without extra state
+- cancel_acp_session sends CancelRequest best-effort before dropping AcpProcess — server notified of clean shutdown even if process already gone
+- DB lock dropped before async spawn_acp_process call — avoids holding std::sync::MutexGuard across .await
 
 ### v1.5 Roadmap Notes
 
@@ -388,7 +392,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---
