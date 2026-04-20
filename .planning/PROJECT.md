@@ -103,9 +103,23 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ ACP infrastructure: Cargo workspace, maestro-protocol crate, MaestroAcpClient stub, maestro-server binary — v1.4 (Phase 41)
 - ✓ Full backend code quality sweep (30 findings: panics, DRY, shell injection, password zeroing) — v1.4 (Phases 32-33)
 
-## Next Milestone: v1.5
+**v1.5 Requirements (in progress):**
 
-*Not yet planned. Run `/gsd:new-milestone` to define scope.*
+- ✓ maestro-server activation: real ACP stdin/stdout loop, spawn agents, forward prompts/cancels/permissions — v1.5 (Phase 42)
+
+## Current Milestone: v1.5 ACP Integration
+
+**Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
+
+**Target features:**
+- ~~maestro-server activation: real ACP agent spawning via stdin/stdout message loop~~ ✓ Phase 42
+- Local ACP session manager in Tauri backend with AppState integration
+- DB schema v11 + IPC handlers for ACP session lifecycle
+- Agent registry fetch and caching from ACP CDN
+- AgentSelector UI: browse and spawn ACP agents from registry
+- AgentActivityPanel: structured output (messages, tool calls, diffs) with Tauri event streaming
+- PermissionDialog: approve/reject agent permission requests
+- Dual-mode execution dispatcher: ACP vs PTY routing
 
 ### Out of Scope
 
@@ -186,4 +200,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | `diff_stat_map` in same tokio spawn as `status_map` | Single parallel closure runs git status + git diff --shortstat per worktree | ✓ Good — halves git subprocess overhead at list time |
 
 ---
-*Last updated: 2026-04-17 after v1.4 milestone archive — v1.5 planning not yet started*
+*Last updated: 2026-04-20 — Phase 42 complete, maestro-server activated*
