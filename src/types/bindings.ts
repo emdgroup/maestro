@@ -280,7 +280,7 @@ async listWorktreesWithStatus(projectId: number, repoPath: string) : Promise<Res
     else return { status: "error", error: e  as any };
 }
 },
-async getWorktreeDiff(projectId: number, worktreePath: string, diffTarget: DiffTarget) : Promise<Result<string, string>> {
+async getWorktreeDiff(projectId: number, worktreePath: string, diffTarget: DiffTarget) : Promise<Result<WorktreeDiffResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_worktree_diff", { projectId, worktreePath, diffTarget }) };
 } catch (e) {
@@ -913,6 +913,89 @@ async shelveWorktreeChanges(projectId: number, worktreePath: string, stashName: 
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_untracked_files", { projectId, worktreePath, filePaths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Launch a new ACP agent session via maestro-server subprocess.
+ * 
+ * Creates an execution_log row with status='running', spawns maestro-server with
+ * piped stdin/stdout, sends SpawnRequest, and starts a background reader task
+ * that emits Tauri events for each session update.
+ * 
+ * The session is keyed by the returned log_id in AppState.acp_sessions.
+ * Phase 44 will add execution_mode='acp' and agent_id columns to execution_logs.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `agent_id` - ACP agent identifier (e.g. "claude-code", package name)
+ * * `cwd` - Working directory for the agent
+ * * `session_name` - Optional display name for the session
+ * 
+ * # Returns
+ * Execution log ID (i32) — used as session key for send_to_acp_session, cancel_acp_session,
+ * and Tauri event subscription (acp://session-update/{log_id}, etc.)
+ */
+async startAcpSession(agentId: string, cwd: string, sessionName: string | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_acp_session", { agentId, cwd, sessionName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Send a message to a running ACP session (prompt or permission response).
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `log_id` - Session key (execution log ID)
+ * * `message_type` - "prompt" or "permission_response"
+ * * `content` - For prompt: the prompt text. For permission_response: unused.
+ * * `request_id` - For permission_response: the permission request ID. For prompt: unused.
+ * * `allowed` - For permission_response: whether to allow. For prompt: unused.
+ * 
+ * # Security
+ * T-43-06: message_type is strictly matched — unknown values return Err immediately.
+ */
+async sendToAcpSession(logId: number, messageType: string, content: string | null, requestId: string | null, allowed: boolean | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_to_acp_session", { logId, messageType, content, requestId, allowed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
+ * 
+ * Steps:
+ * 1. Send CancelRequest to maestro-server (best-effort, ignored if session already gone)
+ * 2. Remove session from AppState.acp_sessions (drops AcpProcess, which kills subprocess via kill_on_drop)
+ * 3. Send cancel signal to the background reader task
+ * 4. Update execution_log status to 'cancelled'
+ * 
+ * # Security
+ * T-43-08: cancel_acp_session sends CancelRequest then removes from map (drops Child with
+ * kill_on_drop). Reader task also removes on EOF. Double-cleanup is safe.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `log_id` - Session key (execution log ID)
+ */
+async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_acp_session", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -993,6 +1076,11 @@ export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" 
  * Worktree record from database (schema v6)
  */
 export type Worktree = { id: number; project_id: number; task_id: number | null; branch_name: string; base_branch: string | null; path: string; git_status: string | null; created_at: string }
+/**
+ * Return type for get_worktree_diff. Bundles the unified diff string with the
+ * list of untracked files (not yet `git add`-ed) so both are fetched in one IPC call.
+ */
+export type WorktreeDiffResult = { diff: string; untracked_files: string[] }
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
