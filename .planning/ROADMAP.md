@@ -144,7 +144,10 @@ Plans:
   2. Calling spawn_acp_session IPC creates an execution_log row with execution_mode='acp' and returns the log_id to the caller
   3. Calling send_acp_prompt and respond_acp_permission IPC commands forward the payloads to the correct maestro-server stdin without error
   4. Structured output from in-memory AcpSession is periodically flushed to execution_logs.structured_output so dead session replay works after app restart
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 44-01-PLAN.md — Schema v11 migration + IPC command renames + ExecutionWithTask extension
+- [ ] 44-02-PLAN.md — Structured output flush in reader task + TypeScript bindings regeneration
 
 ### Phase 45: Agent Registry Fetch + Caching
 **Goal**: Tauri backend can fetch the ACP agent registry from the CDN, cache it in AppState with a 5-minute TTL, and resolve a concrete launch command for any agent in the registry
@@ -228,7 +231,7 @@ Plans:
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
 | 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
 | 43 - Local ACP Session Manager | v1.5 | Complete    | 2026-04-20 | - |
-| 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
+| 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 0/? | Not started | - |
 | 47 - Frontend: AgentActivityPanel | v1.5 | 0/? | Not started | - |
