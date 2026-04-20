@@ -223,7 +223,7 @@ Plans:
 | 39 - Fix SSH terminal session switching | v1.4 | 3/3 | Complete | 2026-04-08 |
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
-| 42 - maestro-server Activation | v1.5 | 2/2 | Complete   | 2026-04-17 |
+| 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
 | 43 - Local ACP Session Manager | v1.5 | 0/? | Not started | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/? | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
