@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use zeroize::Zeroizing;
 use tauri::AppHandle;
 
+use crate::acp::AcpProcess;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
 use crate::ssh::{RemoteSshSession, SshPtyHandle};
@@ -58,6 +59,10 @@ pub struct AppState {
     /// When detach_terminal is called, the flag is set to true, causing
     /// the spawn_blocking reader to exit cleanly before a new attach starts.
     pub pty_attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
+    /// Live ACP sessions keyed by execution log_id (i32).
+    /// No inner Arc/Mutex needed — only IPC commands write to stdin (under outer lock)
+    /// and the reader task owns stdout independently.
+    pub acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
 }
 
 impl AppState {
@@ -71,6 +76,7 @@ impl AppState {
             ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
+            acp_sessions: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
