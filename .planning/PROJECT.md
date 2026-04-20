@@ -200,4 +200,4 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 | `diff_stat_map` in same tokio spawn as `status_map` | Single parallel closure runs git status + git diff --shortstat per worktree | ✓ Good — halves git subprocess overhead at list time |
 
 ---
-*Last updated: 2026-04-20 — Phase 42 complete, maestro-server activated*
+*Last updated: 2026-04-20 — Phase 43 complete, local ACP session manager implemented*
