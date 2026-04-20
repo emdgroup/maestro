@@ -7,6 +7,7 @@ pub mod execution_handlers;
 pub mod review_handlers;
 pub mod settings_handlers;
 pub mod filesystem_handlers;
+pub mod acp_handlers;
 
 // Re-export all handlers for use in main.rs
 pub use project_handlers::*;
@@ -17,3 +18,4 @@ pub use review_handlers::*;
 pub use settings_handlers::*;
 pub use filesystem_handlers::*;
 pub use ssh_handlers::*;
+pub use acp_handlers::*;
