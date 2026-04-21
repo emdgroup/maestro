@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: executing
-last_updated: "2026-04-21T14:18:17.740Z"
+status: verifying
+last_updated: "2026-04-21T14:23:34.441Z"
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -158,6 +158,7 @@ Plan: 2 of 2
 | Phase 45-agent-registry-fetch-caching P01 | 0.073 | 1 tasks | 3 files |
 | Phase 45-agent-registry-fetch-caching P02 | 0.067 | 2 tasks | 3 files |
 | Phase 46 P01 | 0.073 | 3 tasks | 4 files |
+| Phase 46-frontend-agent-selector-spawn-flow P02 | 0.05 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -338,6 +339,9 @@ Phase 18 Architecture Decisions:
 - useAgentRegistryQuery gates fetch on enabled=open to avoid CDN calls on every AgentsView mount
 - 5-minute staleTime in useAgentRegistryQuery mirrors backend registry TTL to prevent redundant IPC calls
 - AgentSelectorDialog cwd uses WorktreeWithStatus.path (absolute path) not worktree.id — spawn_acp_session takes cwd: string
+- Spawn Agent button placed in right group of action bar; existing search+filter controls stay in left group
+- Badge always renders for all sessions (not gated on !task_name) — every session gets a type label
+- PTY dialog renamed to 'New Terminal Session' to differentiate from 'Spawn ACP Agent' dialog
 
 ### v1.5 Roadmap Notes
 
@@ -411,7 +415,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---

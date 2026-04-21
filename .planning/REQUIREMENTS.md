@@ -51,7 +51,8 @@
 **: User can browse and search available ACP agents by name and description in a modal
 - [x] **SPAWN-02
 **: User can spawn an ACP session by selecting an agent, choosing a worktree/branch, and clicking Spawn
-- [ ] **SPAWN-03**: ACP sessions displayed with "ACP" badge in execution sidebar alongside PTY ("Interactive") sessions
+- [x] **SPAWN-03
+**: ACP sessions displayed with "ACP" badge in execution sidebar alongside PTY ("Interactive") sessions
 
 ### Frontend: Activity Panel
 
