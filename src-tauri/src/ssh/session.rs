@@ -618,6 +618,36 @@ impl RemoteSshSession {
         Ok(stdout)
     }
 
+    /// Open an SSH exec channel and execute `cmd`, returning the channel for streaming I/O.
+    ///
+    /// Unlike `execute_command` (which collects all output), this returns the raw channel so
+    /// callers can use split() for concurrent stdin writes and stdout reads (e.g. ACP sessions).
+    pub async fn open_exec_channel(&self, cmd: &str) -> Result<russh::Channel<russh::client::Msg>, SshError> {
+        if !self.is_connected().await {
+            self.reconnect_if_needed().await?;
+        }
+
+        let mut channel = {
+            let guard = self.handle.lock().await;
+            let handle = guard.as_ref().ok_or_else(|| {
+                SshError::ConnectionError("No active SSH session".to_string())
+            })?;
+            handle.channel_open_session().await.map_err(|e| {
+                SshError::ConnectionError(format!("Failed to open SSH channel: {}", e))
+            })?
+        };
+
+        channel
+            .exec(true, cmd.as_bytes())
+            .await
+            .map_err(|e| SshError::CommandExecutionError {
+                exit_code: -1,
+                stderr: format!("Failed to exec '{}': {}", cmd, e),
+            })?;
+
+        Ok(channel)
+    }
+
     /// Reconnect if needed with exponential backoff.
     /// Holds state lock across check+transition to prevent concurrent reconnection.
     async fn reconnect_if_needed(&self) -> Result<(), SshError> {

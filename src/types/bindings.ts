@@ -941,9 +941,9 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
  * Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
  * cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
  */
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, connectionId: number | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

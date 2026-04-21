@@ -249,12 +249,14 @@ export function useSpawnAcpSessionMutation() {
       agentId,
       cwd,
       sessionName,
+      connectionId,
     }: {
       agentId: string;
       cwd: string;
       sessionName: string | null;
+      connectionId: number | null;
     }) => {
-      return await api.spawnAcpSession(agentId, cwd, sessionName);
+      return await api.spawnAcpSession(agentId, cwd, sessionName, connectionId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });

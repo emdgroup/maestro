@@ -24,33 +24,33 @@ const defaultProps = {
 };
 
 describe("AgentMonitor session-type badge (SPAWN-03)", () => {
-  it("renders 'ACP' badge for execution_mode 'acp'", () => {
+  it("renders agent name badge for execution_mode 'acp' with agent_id", () => {
     render(
       <AgentMonitor
         {...defaultProps}
-        executions={[{ ...baseExecution, execution_mode: "acp" }]}
+        executions={[{ ...baseExecution, execution_mode: "acp", agent_id: "claude-code" }]}
       />,
     );
-    expect(screen.getByText("ACP")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("renders 'Interactive' badge for execution_mode 'pty'", () => {
+  it("renders 'Terminal' badge for execution_mode 'pty'", () => {
     render(
       <AgentMonitor
         {...defaultProps}
         executions={[{ ...baseExecution, execution_mode: "pty" }]}
       />,
     );
-    expect(screen.getByText("Interactive")).toBeInTheDocument();
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
   });
 
-  it("renders 'Interactive' badge for null execution_mode", () => {
+  it("renders 'Terminal' badge for null execution_mode", () => {
     render(
       <AgentMonitor
         {...defaultProps}
         executions={[{ ...baseExecution, execution_mode: null }]}
       />,
     );
-    expect(screen.getByText("Interactive")).toBeInTheDocument();
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
   });
 });

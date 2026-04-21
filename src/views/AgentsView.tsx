@@ -5,7 +5,9 @@ import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore
 import {
   useExecutionsWithTaskInfoQuery,
   useSpawnInteractiveExecutionMutation,
+  useSpawnAcpSessionMutation,
   useDeleteExecutionMutation,
+  useAgentRegistryQuery,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
@@ -22,21 +24,16 @@ import {
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { AgentSelectorDialog } from "@/components/execution/AgentSelectorDialog";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
-import { Bot, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
+  connectionId?: number | null;
 }
 
-/**
- * AgentsView - Page-level orchestrator for the agent monitoring screen.
- * Owns the execution data query and filter state, passes props down to AgentMonitor.
- * Handles deep-link selection via pendingAgentId from navigationStore.
- */
-export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connectionId }) => {
   const { data: executions = [] } = useExecutionsWithTaskInfoQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
@@ -44,17 +41,22 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
-  // Spawn Agent dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
-  const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [sessionName, setSessionName] = useState("");
+  // "terminal" or an agent id from registry
+  const [sessionType, setSessionType] = useState<string>("terminal");
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
+  // Fetch registry only when dialog is open and we're on a local connection
+  const { data: registry } = useAgentRegistryQuery(showSpawnDialog && !connectionId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
+  const spawnAcpMutation = useSpawnAcpSessionMutation();
   const deleteMutation = useDeleteExecutionMutation();
 
-  // Deep-link: pendingAgentId overrides selection on first mount (matches by task_id)
+  const isRemote = !!connectionId;
+  const agents = registry?.agents ?? [];
+
   useEffect(() => {
     if (pendingAgentId && executions.length > 0) {
       const match = executions.find((e) => String(e.task_id) === pendingAgentId);
@@ -63,11 +65,55 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
         clearPendingAgent();
       }
     } else if (selectedExecutionId == null && executions.length > 0) {
-      // Fallback: auto-select most recent Running execution
       const running = executions.find((e) => e.status === "running");
       if (running) setSelectedExecutionId(running.id);
     }
   }, [executions, pendingAgentId, clearPendingAgent, selectedExecutionId]);
+
+  function openSpawnDialog() {
+    setSelectedWorktree(worktrees[0] ?? null);
+    setSessionName("");
+    setSessionType("terminal");
+    setShowSpawnDialog(true);
+  }
+
+  function handleSpawn() {
+    if (!selectedWorktree) return;
+    if (sessionType === "terminal") {
+      spawnMutation.mutate(
+        {
+          projectId: projectId!,
+          branchName: selectedWorktree.branch_name,
+          repoPath: repoPath!,
+          sessionName: sessionName.trim() || null,
+          worktreeId: selectedWorktree.id,
+        },
+        {
+          onSuccess: (logId) => {
+            setShowSpawnDialog(false);
+            setSelectedExecutionId(logId);
+          },
+        },
+      );
+    } else {
+      spawnAcpMutation.mutate(
+        {
+          agentId: sessionType,
+          cwd: selectedWorktree.path,
+          sessionName: sessionName.trim() || null,
+          connectionId: connectionId ?? null,
+        },
+        {
+          onSuccess: (logId) => {
+            setShowSpawnDialog(false);
+            setSelectedExecutionId(logId);
+          },
+        },
+      );
+    }
+  }
+
+  const isPending = spawnMutation.isPending || spawnAcpMutation.isPending;
 
   return (
     <div className="flex flex-col h-full">
@@ -100,12 +146,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             ))}
           </ToggleGroup>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowAgentSelector(true)}>
-            <Bot className="w-3.5 h-3.5 mr-1" />
-            Spawn Agent
-          </Button>
-        </div>
       </div>
 
       {/* Agent monitor */}
@@ -116,11 +156,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           onSelect={setSelectedExecutionId}
           search={search}
           statusFilter={statusFilter}
-          onSpawn={() => {
-            setSelectedWorktree(worktrees[0] ?? null);
-            setSessionName("");
-            setShowSpawnDialog(true);
-          }}
+          onSpawn={openSpawnDialog}
           onDelete={(executionId) => {
             deleteMutation.mutate({ executionId });
             if (selectedExecutionId === executionId) setSelectedExecutionId(null);
@@ -147,16 +183,40 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
         />
       </div>
 
-      {/* Spawn Agent dialog */}
+      {/* New Session dialog — Terminal or ACP agent */}
       <Dialog open={showSpawnDialog} onOpenChange={setShowSpawnDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New Terminal Session</DialogTitle>
+            <DialogTitle>New Session</DialogTitle>
             <DialogDescription>
-              Start an interactive terminal session in a worktree.
+              Start a terminal session or spawn an AI agent in a worktree.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Session type: Terminal or agent from registry */}
+            <div className="space-y-2">
+              <Label htmlFor="spawn-type">Type</Label>
+              <Select value={sessionType} onValueChange={(v) => v && setSessionType(v)}>
+                <SelectTrigger id="spawn-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="terminal">Terminal</SelectItem>
+                  {!isRemote && agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                  {isRemote && (
+                    <SelectItem value="terminal" disabled>
+                      Agents not available on remote (install maestro-server on host)
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Worktree */}
             <div className="space-y-2">
               <Label htmlFor="spawn-worktree">Worktree</Label>
               <Select
@@ -181,6 +241,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Session name */}
             <div className="space-y-2">
               <Label htmlFor="spawn-session-name">Session name (optional)</Label>
               <Input
@@ -195,39 +257,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             <Button variant="outline" onClick={() => setShowSpawnDialog(false)}>
               Cancel
             </Button>
-            <Button
-              disabled={!selectedWorktree || spawnMutation.isPending}
-              onClick={() => {
-                spawnMutation.mutate(
-                  {
-                    projectId: projectId!,
-                    branchName: selectedWorktree!.branch_name,
-                    repoPath: repoPath!,
-                    sessionName: sessionName.trim() || null,
-                    worktreeId: selectedWorktree!.id,
-                  },
-                  {
-                    onSuccess: (logId) => {
-                      setShowSpawnDialog(false);
-                      setSelectedExecutionId(logId);
-                    },
-                  },
-                );
-              }}
-            >
-              {spawnMutation.isPending ? "Spawning..." : "Spawn"}
+            <Button disabled={!selectedWorktree || isPending} onClick={handleSpawn}>
+              {isPending ? "Spawning..." : "Spawn"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AgentSelectorDialog
-        open={showAgentSelector}
-        onOpenChange={setShowAgentSelector}
-        worktrees={worktrees}
-        repoPath={repoPath}
-        onSpawned={(logId) => setSelectedExecutionId(logId)}
-      />
     </div>
   );
 };

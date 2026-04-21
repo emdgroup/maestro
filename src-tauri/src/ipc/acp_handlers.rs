@@ -41,10 +41,10 @@ pub async fn spawn_acp_session(
     agent_id: String,
     cwd: String,
     session_name: Option<String>,
+    connection_id: Option<i32>,
 ) -> Result<i32, String> {
     let now = Utc::now().to_rfc3339();
 
-    // Insert execution_log row in a scoped block to drop the lock before async operations.
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
@@ -54,11 +54,15 @@ pub async fn spawn_acp_session(
         conn.last_insert_rowid() as i32
     };
 
-    // Derive session_id from log_id for the ACP protocol.
     let session_id = format!("session-{}", log_id);
 
-    // Spawn maestro-server subprocess and register the session in AppState.
-    crate::acp::spawn_acp_process(&agent_id, &cwd, log_id, &session_id, &app_state).await?;
+    if let Some(conn_id) = connection_id {
+        let ssh = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+        crate::acp::spawn_acp_process_remote(&agent_id, &cwd, log_id, &session_id, &app_state, &ssh).await?;
+    } else {
+        crate::acp::spawn_acp_process(&agent_id, &cwd, log_id, &session_id, &app_state).await?;
+    }
 
     Ok(log_id)
 }

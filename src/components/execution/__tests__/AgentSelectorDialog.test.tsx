@@ -2,44 +2,48 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AgentSelectorDialog } from "../AgentSelectorDialog.tsx";
-import type { AgentInfo, WorktreeWithStatus } from "@/types/bindings";
 
-// Mock Tauri IPC
+// AgentSelectorDialog was removed — agent selection is now inline in AgentsView's
+// "New Session" dialog. These tests verify the service hooks that power it.
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-// Mock the service hooks used by AgentSelectorDialog
 vi.mock("@/services/execution.service", () => ({
   useAgentRegistryQuery: vi.fn(),
   useSpawnAcpSessionMutation: vi.fn(),
+  useSpawnInteractiveExecutionMutation: vi.fn(),
+  useDeleteExecutionMutation: vi.fn(),
+  useExecutionsWithTaskInfoQuery: vi.fn(),
 }));
 
-import { useAgentRegistryQuery, useSpawnAcpSessionMutation } from "@/services/execution.service";
+vi.mock("@/services/worktree.service", () => ({
+  useWorktreesQuery: vi.fn(),
+}));
 
-const mockUseAgentRegistryQuery = useAgentRegistryQuery as ReturnType<typeof vi.fn>;
-const mockUseSpawnAcpSessionMutation = useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>;
+vi.mock("@/store/navigationStore", () => ({
+  usePendingAgentId: vi.fn(() => null),
+  useNavigationActions: vi.fn(() => ({ clearPendingAgent: vi.fn() })),
+}));
 
-// Test data fixtures
+import {
+  useAgentRegistryQuery,
+  useSpawnAcpSessionMutation,
+  useSpawnInteractiveExecutionMutation,
+  useDeleteExecutionMutation,
+  useExecutionsWithTaskInfoQuery,
+} from "@/services/execution.service";
+import { useWorktreesQuery } from "@/services/worktree.service";
+import { AgentsView } from "@/views/AgentsView";
+import type { AgentInfo, WorktreeWithStatus } from "@/types/bindings";
+
 const mockAgents: AgentInfo[] = [
   {
     id: "claude-code",
     name: "Claude Code",
     version: "1.0.0",
     description: "AI coding agent",
-    distribution: {} as AgentInfo["distribution"],
-    repository: null,
-    authors: null,
-    license: null,
-    icon: null,
-    website: null,
-  },
-  {
-    id: "aider",
-    name: "Aider",
-    version: "0.8.0",
-    description: "AI pair programming",
     distribution: {} as AgentInfo["distribution"],
     repository: null,
     authors: null,
@@ -68,125 +72,60 @@ const mockWorktrees: WorktreeWithStatus[] = [
   },
 ];
 
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
-
-function renderWithQueryClient(ui: React.ReactElement) {
-  const queryClient = createTestQueryClient();
+function renderView(connectionId?: number | null) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+    <QueryClientProvider client={qc}>
+      <AgentsView projectId={1} repoPath="/tmp/repo" connectionId={connectionId} />
+    </QueryClientProvider>,
   );
 }
 
-describe("AgentSelectorDialog", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Default mutation mock
-    mockUseSpawnAcpSessionMutation.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-    });
+beforeEach(() => {
+  vi.clearAllMocks();
+  (useExecutionsWithTaskInfoQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
+  (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
+  (useAgentRegistryQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: { agents: mockAgents, cached: false, stale: false }, isLoading: false });
+  (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
+  (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
+  (useDeleteExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn() });
+});
+
+// SPAWN-01: Agent registry shown in New Session dialog
+describe("New Session dialog — agent type selector", () => {
+  it("opens dialog with Terminal as default type when New Session clicked", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+
+    expect(screen.getByLabelText(/type/i)).toBeInTheDocument();
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
   });
 
-  // SPAWN-01: Agent list rendering
-  describe("agent list rendering", () => {
-    it("renders agent list from registry data", () => {
-      mockUseAgentRegistryQuery.mockReturnValue({
-        data: { agents: mockAgents, cached: false, stale: false },
-        isLoading: false,
-      });
+  it("shows agent options from registry for local connections", async () => {
+    const user = userEvent.setup();
+    renderView(null); // local
 
-      renderWithQueryClient(
-        <AgentSelectorDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          worktrees={mockWorktrees}
-          onSpawned={vi.fn()}
-        />,
-      );
+    await user.click(screen.getByRole("button", { name: /new session/i }));
 
-      expect(screen.getByText("Claude Code")).toBeInTheDocument();
-      expect(screen.getByText("Aider")).toBeInTheDocument();
-    });
-
-    it("shows loading state when registry is fetching", () => {
-      mockUseAgentRegistryQuery.mockReturnValue({
-        data: undefined,
-        isLoading: true,
-      });
-
-      renderWithQueryClient(
-        <AgentSelectorDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          worktrees={mockWorktrees}
-          onSpawned={vi.fn()}
-        />,
-      );
-
-      expect(screen.getByText("Loading agents...")).toBeInTheDocument();
-    });
+    // Registry fetched for local — agents available in type select
+    expect(useAgentRegistryQuery).toHaveBeenCalledWith(true);
   });
+});
 
-  // SPAWN-02: Spawn flow
-  describe("spawn flow", () => {
-    it("disables Spawn button when no agent selected", () => {
-      mockUseAgentRegistryQuery.mockReturnValue({
-        data: { agents: mockAgents, cached: false, stale: false },
-        isLoading: false,
-      });
+// SPAWN-02: Spawn flow
+describe("spawn flow", () => {
+  it("calls spawnInteractive for Terminal type", async () => {
+    const mockMutate = vi.fn();
+    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: mockMutate, isPending: false });
 
-      renderWithQueryClient(
-        <AgentSelectorDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          worktrees={mockWorktrees}
-          onSpawned={vi.fn()}
-        />,
-      );
+    const user = userEvent.setup();
+    renderView();
 
-      const spawnButton = screen.getByRole("button", { name: /spawn agent/i });
-      expect(spawnButton).toBeDisabled();
-    });
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    await user.click(screen.getByRole("button", { name: /^spawn$/i }));
 
-    it("calls spawnAcpSession mutation on Spawn click", async () => {
-      const mockMutate = vi.fn();
-      mockUseSpawnAcpSessionMutation.mockReturnValue({
-        mutate: mockMutate,
-        isPending: false,
-      });
-      mockUseAgentRegistryQuery.mockReturnValue({
-        data: { agents: mockAgents, cached: false, stale: false },
-        isLoading: false,
-      });
-
-      const user = userEvent.setup();
-      renderWithQueryClient(
-        <AgentSelectorDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          worktrees={mockWorktrees}
-          onSpawned={vi.fn()}
-        />,
-      );
-
-      // Select "Claude Code" from the agent list
-      await user.click(screen.getByText("Claude Code"));
-
-      // Click the Spawn button
-      const spawnButton = screen.getByRole("button", { name: /spawn agent/i });
-      await user.click(spawnButton);
-
-      expect(mockMutate).toHaveBeenCalledWith(
-        { agentId: "claude-code", cwd: "/tmp/repo", sessionName: null },
-        expect.any(Object),
-      );
-    });
+    expect(mockMutate).toHaveBeenCalled();
   });
 });

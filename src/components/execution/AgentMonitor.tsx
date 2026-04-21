@@ -113,7 +113,11 @@ export function AgentMonitor({
                   {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
                 </span>
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0">
-                  {execution.execution_mode === "acp" ? "ACP" : "Interactive"}
+                  {execution.execution_mode === "acp"
+                    ? (execution.agent_id
+                        ? execution.agent_id.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+                        : "ACP")
+                    : "Terminal"}
                 </Badge>
               </div>
               {/* Line 2: status label + elapsed time */}
