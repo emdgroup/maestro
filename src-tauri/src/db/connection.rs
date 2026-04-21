@@ -7,6 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 
 use crate::acp::AcpProcess;
+use crate::acp::registry::RegistryCacheEntry;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
 use crate::ssh::{RemoteSshSession, SshPtyHandle};
@@ -63,6 +64,8 @@ pub struct AppState {
     /// No inner Arc/Mutex needed — only IPC commands write to stdin (under outer lock)
     /// and the reader task owns stdout independently.
     pub acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
+    /// In-memory cache for the ACP agent registry with 5-minute TTL.
+    pub agent_registry_cache: tokio::sync::Mutex<Option<RegistryCacheEntry>>,
 }
 
 impl AppState {
@@ -77,6 +80,7 @@ impl AppState {
             ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
             acp_sessions: tokio::sync::Mutex::new(HashMap::new()),
+            agent_registry_cache: tokio::sync::Mutex::new(None),
         }
     }
 
