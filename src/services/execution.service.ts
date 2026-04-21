@@ -213,3 +213,54 @@ export function useResizeTerminalMutation() {
     },
   });
 }
+
+/**
+ * Query key factory for agent registry operations
+ */
+export const registryQueryKeys = {
+  all: ["agentRegistry"] as const,
+  fetch: () => [...registryQueryKeys.all, "fetch"] as const,
+};
+
+/**
+ * Query hook for fetching the ACP agent registry.
+ * Only fires when the dialog is open (enabled flag) to avoid CDN calls on every mount.
+ * 5-minute staleTime mirrors backend TTL to avoid redundant IPC calls within the cache window.
+ */
+export function useAgentRegistryQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: registryQueryKeys.fetch(),
+    queryFn: () => api.fetchAgentRegistry(false),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+/**
+ * Mutation hook for spawning an ACP session for a given agent and worktree path.
+ * On success, invalidates all execution queries so the sidebar refreshes immediately.
+ * On error, shows a toast via sonner (consistent with other mutation hooks).
+ */
+export function useSpawnAcpSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      agentId,
+      cwd,
+      sessionName,
+    }: {
+      agentId: string;
+      cwd: string;
+      sessionName: string | null;
+    }) => {
+      return await api.spawnAcpSession(agentId, cwd, sessionName);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+    },
+    onError: (error) => {
+      toast.error(`Failed to spawn ACP session: ${error}`);
+    },
+  });
+}
