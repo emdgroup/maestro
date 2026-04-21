@@ -11,6 +11,7 @@ use tauri::State;
 use chrono::Utc;
 
 use crate::db::AppState;
+use crate::acp::registry::{RegistryResponse, ResolvedLaunchCommand};
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest,
     PromptRequest, CancelRequest, PermissionResponse,
@@ -160,6 +161,63 @@ pub async fn cancel_acp_session(
     );
 
     Ok(())
+}
+
+/// Fetch the ACP agent registry from CDN, returning cached results when available.
+///
+/// Respects a 5-minute TTL on cached data. When CDN is unreachable but a cached
+/// result exists, returns stale data with `stale: true`. When no cache exists and
+/// CDN is unreachable, returns Err.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state
+/// * `force_refresh` - When true, bypasses TTL and re-fetches from CDN
+///
+/// # Returns
+/// RegistryResponse { agents, cached, stale }
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_agent_registry(
+    app_state: State<'_, Arc<AppState>>,
+    force_refresh: bool,
+) -> Result<RegistryResponse, String> {
+    crate::acp::registry::fetch_or_return_cached(
+        &app_state.agent_registry_cache,
+        force_refresh,
+    ).await
+}
+
+/// Resolve the launch command for a specific agent from the cached registry.
+///
+/// Looks up the agent by ID in the cached registry (must have been fetched first
+/// via `fetch_agent_registry`), then resolves the distribution using priority order:
+/// npx (preferred) -> binary (compile-time platform key) -> uvx (last resort).
+///
+/// # Arguments
+/// * `app_state` - Tauri app state
+/// * `agent_id` - The agent identifier (e.g. "claude-code")
+///
+/// # Returns
+/// ResolvedLaunchCommand { cmd, args } ready for subprocess spawn
+///
+/// # Errors
+/// - Registry not loaded (call fetch_agent_registry first)
+/// - Agent not found in registry
+/// - No compatible distribution for current platform
+#[tauri::command]
+#[specta::specta]
+pub async fn resolve_agent_launch_command(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+) -> Result<ResolvedLaunchCommand, String> {
+    let guard = app_state.agent_registry_cache.lock().await;
+    let entry = guard.as_ref()
+        .ok_or_else(|| "Registry not loaded — call fetch_agent_registry first".to_string())?;
+    let agent = entry.registry.agents.iter()
+        .find(|a| a.id == agent_id)
+        .ok_or_else(|| format!("Agent '{}' not found in registry", agent_id))?;
+    crate::acp::registry::resolve_distribution(&agent.distribution)
+        .ok_or_else(|| format!("No compatible distribution found for agent '{}'", agent_id))
 }
 
 #[cfg(test)]
