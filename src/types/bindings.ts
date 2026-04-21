@@ -925,12 +925,11 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
 /**
  * Launch a new ACP agent session via maestro-server subprocess.
  * 
- * Creates an execution_log row with status='running', spawns maestro-server with
- * piped stdin/stdout, sends SpawnRequest, and starts a background reader task
- * that emits Tauri events for each session update.
+ * Creates an execution_log row with status='running', execution_mode='acp', and agent_id set,
+ * spawns maestro-server with piped stdin/stdout, sends SpawnRequest, and starts a background
+ * reader task that emits Tauri events for each session update.
  * 
  * The session is keyed by the returned log_id in AppState.acp_sessions.
- * Phase 44 will add execution_mode='acp' and agent_id columns to execution_logs.
  * 
  * # Arguments
  * * `app_state` - Tauri app state
@@ -939,34 +938,53 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
  * * `session_name` - Optional display name for the session
  * 
  * # Returns
- * Execution log ID (i32) — used as session key for send_to_acp_session, cancel_acp_session,
- * and Tauri event subscription (acp://session-update/{log_id}, etc.)
+ * Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
+ * cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
  */
-async startAcpSession(agentId: string, cwd: string, sessionName: string | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_acp_session", { agentId, cwd, sessionName }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Send a message to a running ACP session (prompt or permission response).
+ * Send a prompt message to a running ACP session.
  * 
  * # Arguments
  * * `app_state` - Tauri app state
  * * `log_id` - Session key (execution log ID)
- * * `message_type` - "prompt" or "permission_response"
- * * `content` - For prompt: the prompt text. For permission_response: unused.
- * * `request_id` - For permission_response: the permission request ID. For prompt: unused.
- * * `allowed` - For permission_response: whether to allow. For prompt: unused.
+ * * `content` - The prompt text to send to the agent
  * 
  * # Security
- * T-43-06: message_type is strictly matched — unknown values return Err immediately.
+ * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
+ * valid sessions can receive messages (inherited from Phase 43).
  */
-async sendToAcpSession(logId: number, messageType: string, content: string | null, requestId: string | null, allowed: boolean | null) : Promise<Result<null, string>> {
+async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_to_acp_session", { logId, messageType, content, requestId, allowed }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt", { logId, content }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Respond to a permission request from the agent.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `log_id` - Session key (execution log ID)
+ * * `request_id` - The permission request ID from the agent's PermissionRequest event
+ * * `allowed` - Whether to allow the requested action
+ * 
+ * # Security
+ * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
+ * valid sessions can receive messages (inherited from Phase 43).
+ */
+async respondAcpPermission(logId: number, requestId: string, allowed: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, allowed }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1031,7 +1049,7 @@ export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "ca
 /**
  * View model for the Agents view — execution log enriched with task and worktree info
  */
-export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; session_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null }
+export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; session_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null; execution_mode: string | null; agent_id: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Typed response for approve_task_and_merge IPC command
