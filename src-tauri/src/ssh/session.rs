@@ -927,17 +927,22 @@ pub fn spawn_heartbeat_task(
                 break;
             }
 
-            // Probe: lightweight SSH command
-            match session.execute_command("true").await {
-                Ok(_) => {
+            // Probe: lightweight SSH command with timeout to detect silent TCP drops fast
+            let probe = tokio::time::timeout(
+                Duration::from_secs(8),
+                session.execute_command("true"),
+            ).await;
+            match probe {
+                Ok(Ok(_)) => {
                     // Still alive — reset reconnect counter on successful probe
                     session.reconnect_attempts.store(0, Ordering::SeqCst);
                 }
-                Err(e) => {
-                    // Only retry transient errors (connection drop); permanent errors (auth) stop the loop
-                    if !is_transient_error(&e) {
-                        break;
-                    }
+                Ok(Err(ref e)) if !is_transient_error(e) => {
+                    // Permanent error (auth failure etc.) — stop heartbeat
+                    break;
+                }
+                _ => {
+                    // Transient error or timeout — treat as connection loss
 
                     // Connection lost — emit event and clean up PTY sessions before reconnecting
                     let _ = app_handle.emit("ssh-connection-lost", connection_id);
