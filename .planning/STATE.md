@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: verifying
-last_updated: "2026-04-20T23:18:49.865Z"
+status: executing
+last_updated: "2026-04-21T00:15:53.873Z"
 progress:
   total_phases: 8
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -18,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 43 — local-acp-session-manager
+**Current focus:** Phase 44 — db-schema-acp-ipc-handlers
 
 ## Current Position
 
-Phase: 43 (local-acp-session-manager) — EXECUTING
+Phase: 44 (db-schema-acp-ipc-handlers) — EXECUTING
 Plan: 2 of 2
 
 ## Performance Metrics
@@ -152,6 +153,7 @@ Plan: 2 of 2
 | Phase 42 P02 | 0.030 | 1 tasks | 2 files |
 | Phase 43-local-acp-session-manager P01 | 0.112 | 2 tasks | 3 files |
 | Phase 43 P02 | 0.035 | 2 tasks | 4 files |
+| Phase 44-db-schema-acp-ipc-handlers P01 | 0.072 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -318,6 +320,9 @@ Phase 18 Architecture Decisions:
 - session_id derived from log_id as format!("session-{}", log_id) — ties ACP protocol session to DB row without extra state
 - cancel_acp_session sends CancelRequest best-effort before dropping AcpProcess — server notified of clean shutdown even if process already gone
 - DB lock dropped before async spawn_acp_process call — avoids holding std::sync::MutexGuard across .await
+- spawn_acp_session INSERT uses execution_mode='acp' and agent_id columns directly (v11 schema)
+- send_acp_prompt and respond_acp_permission are dedicated commands with typed params (no message_type dispatch)
+- ExecutionWithTask.execution_mode and agent_id are Option<String> for LEFT JOIN backward compat
 
 ### v1.5 Roadmap Notes
 
@@ -391,7 +396,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---

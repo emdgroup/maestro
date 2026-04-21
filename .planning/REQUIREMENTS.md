@@ -23,11 +23,16 @@
 
 ### Database & IPC
 
-- [ ] **PERSIST-01**: Schema v11 adds execution_mode TEXT DEFAULT 'pty', agent_id TEXT, structured_output TEXT columns to execution_logs
-- [ ] **PERSIST-02**: User can spawn ACP session via IPC (creates execution_log with execution_mode='acp', launches maestro-server subprocess, returns log_id)
-- [ ] **PERSIST-03**: User can send prompt to running ACP session via IPC (forwards PromptRequest to maestro-server stdin)
-- [ ] **PERSIST-04**: User can respond to permission request via IPC (forwards PermissionResponse to maestro-server stdin, unblocking agent)
-- [ ] **PERSIST-05**: User can cancel ACP session via IPC (forwards CancelRequest, cleans up session)
+- [x] **PERSIST-01
+**: Schema v11 adds execution_mode TEXT DEFAULT 'pty', agent_id TEXT, structured_output TEXT columns to execution_logs
+- [x] **PERSIST-02
+**: User can spawn ACP session via IPC (creates execution_log with execution_mode='acp', launches maestro-server subprocess, returns log_id)
+- [x] **PERSIST-03
+**: User can send prompt to running ACP session via IPC (forwards PromptRequest to maestro-server stdin)
+- [x] **PERSIST-04
+**: User can respond to permission request via IPC (forwards PermissionResponse to maestro-server stdin, unblocking agent)
+- [x] **PERSIST-05
+**: User can cancel ACP session via IPC (forwards CancelRequest, cleans up session)
 - [ ] **PERSIST-06**: Structured output periodically flushed from in-memory AcpSession.structured_updates to DB execution_logs.structured_output for dead session replay
 
 ### Agent Registry
