@@ -38,9 +38,12 @@
 
 ### Agent Registry
 
-- [ ] **REGISTRY-01**: User can fetch list of available ACP agents from CDN registry (https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json)
-- [ ] **REGISTRY-02**: Registry cached in AppState with 5-min TTL; user can force refresh via IPC
-- [ ] **REGISTRY-03**: Agent launch command resolved from AgentInfo.distribution (npx package / binary target / uvx package) for use in SpawnRequest
+- [x] **REGISTRY-01
+**: User can fetch list of available ACP agents from CDN registry (https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json)
+- [x] **REGISTRY-02
+**: Registry cached in AppState with 5-min TTL; user can force refresh via IPC
+- [x] **REGISTRY-03
+**: Agent launch command resolved from AgentInfo.distribution (npx package / binary target / uvx package) for use in SpawnRequest
 
 ### Frontend: Agent Selector
 

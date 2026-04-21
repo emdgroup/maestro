@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: active
-last_updated: "2026-04-21T00:50:00.000Z"
+status: executing
+last_updated: "2026-04-21T07:29:32.135Z"
 progress:
   total_phases: 8
-  completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
-  percent: 50
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 7
+  percent: 88
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-04-17)
 
 ## Current Position
 
-Phase: 45 (agent-registry-fetch-caching) — PENDING
-Plan: 0 of ?
+Phase: 45 (agent-registry-fetch-caching) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -155,6 +155,7 @@ Plan: 0 of ?
 | Phase 43 P02 | 0.035 | 2 tasks | 4 files |
 | Phase 44-db-schema-acp-ipc-handlers P01 | 0.072 | 3 tasks | 5 files |
 | Phase 44-db-schema-acp-ipc-handlers P02 | 0.033 | 2 tasks | 2 files |
+| Phase 45-agent-registry-fetch-caching P01 | 0.073 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -326,6 +327,9 @@ Phase 18 Architecture Decisions:
 - ExecutionWithTask.execution_mode and agent_id are Option<String> for LEFT JOIN backward compat
 - structured_updates never cleared between flushes — overwrite semantics mean column always stores full accumulated list for dead-session replay
 - Final flush placed before acp_sessions.lock().await.remove() — ensures data written before session entry removed from map
+- Lock-drop-before-await: RegistryCacheEntry guard released before CDN fetch to prevent holding tokio Mutex across .await point
+- RegistryCacheEntry not TS-exported (no Type derive): Instant is not serializable; RegistryResponse is the IPC boundary type
+- current_binary_target_key() returns empty string on unknown platforms; resolve_distribution treats empty key as no match falling through to uvx
 
 ### v1.5 Roadmap Notes
 
@@ -399,7 +403,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---
