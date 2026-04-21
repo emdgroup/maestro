@@ -1,8 +1,9 @@
 //! IPC command handlers for ACP (Agent Control Protocol) session management.
 //!
-//! Exposes three Tauri IPC commands to the frontend:
-//! - `start_acp_session`: Launch a new ACP agent session via maestro-server subprocess
-//! - `send_to_acp_session`: Write a prompt or permission response to a running session
+//! Exposes four Tauri IPC commands to the frontend:
+//! - `spawn_acp_session`: Launch a new ACP agent session via maestro-server subprocess
+//! - `send_acp_prompt`: Send a prompt message to a running session
+//! - `respond_acp_permission`: Respond to a permission request from the agent
 //! - `cancel_acp_session`: Stop a running session and clean up resources
 
 use std::sync::Arc;
@@ -17,12 +18,11 @@ use crate::acp::transport::{
 
 /// Launch a new ACP agent session via maestro-server subprocess.
 ///
-/// Creates an execution_log row with status='running', spawns maestro-server with
-/// piped stdin/stdout, sends SpawnRequest, and starts a background reader task
-/// that emits Tauri events for each session update.
+/// Creates an execution_log row with status='running', execution_mode='acp', and agent_id set,
+/// spawns maestro-server with piped stdin/stdout, sends SpawnRequest, and starts a background
+/// reader task that emits Tauri events for each session update.
 ///
 /// The session is keyed by the returned log_id in AppState.acp_sessions.
-/// Phase 44 will add execution_mode='acp' and agent_id columns to execution_logs.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state
@@ -31,11 +31,11 @@ use crate::acp::transport::{
 /// * `session_name` - Optional display name for the session
 ///
 /// # Returns
-/// Execution log ID (i32) — used as session key for send_to_acp_session, cancel_acp_session,
-/// and Tauri event subscription (acp://session-update/{log_id}, etc.)
+/// Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
+/// cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
 #[tauri::command]
 #[specta::specta]
-pub async fn start_acp_session(
+pub async fn spawn_acp_session(
     app_state: State<'_, Arc<AppState>>,
     agent_id: String,
     cwd: String,
@@ -47,8 +47,8 @@ pub async fn start_acp_session(
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, started_at) VALUES (NULL, NULL, ?1, 'running', ?2)",
-            rusqlite::params![&session_name, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, 'running', 'acp', ?2, ?3)",
+            rusqlite::params![&session_name, &agent_id, &now],
         ).map_err(|e| format!("Failed to create execution log: {}", e))?;
         conn.last_insert_rowid() as i32
     };
@@ -62,43 +62,56 @@ pub async fn start_acp_session(
     Ok(log_id)
 }
 
-/// Send a message to a running ACP session (prompt or permission response).
+/// Send a prompt message to a running ACP session.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state
 /// * `log_id` - Session key (execution log ID)
-/// * `message_type` - "prompt" or "permission_response"
-/// * `content` - For prompt: the prompt text. For permission_response: unused.
-/// * `request_id` - For permission_response: the permission request ID. For prompt: unused.
-/// * `allowed` - For permission_response: whether to allow. For prompt: unused.
+/// * `content` - The prompt text to send to the agent
 ///
 /// # Security
-/// T-43-06: message_type is strictly matched — unknown values return Err immediately.
+/// T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
+/// valid sessions can receive messages (inherited from Phase 43).
 #[tauri::command]
 #[specta::specta]
-pub async fn send_to_acp_session(
+pub async fn send_acp_prompt(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
-    message_type: String,
-    content: Option<String>,
-    request_id: Option<String>,
-    allowed: Option<bool>,
+    content: String,
 ) -> Result<(), String> {
     let session_id = format!("session-{}", log_id);
+    let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        session_id,
+        content,
+    }));
+    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+}
 
-    let msg = match message_type.as_str() {
-        "prompt" => MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
-            session_id,
-            content: content.unwrap_or_default(),
-        })),
-        "permission_response" => MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-            session_id,
-            request_id: request_id.ok_or("request_id required for permission_response")?,
-            allowed: allowed.unwrap_or(false),
-        })),
-        _ => return Err(format!("Unknown message_type: {}", message_type)),
-    };
-
+/// Respond to a permission request from the agent.
+///
+/// # Arguments
+/// * `app_state` - Tauri app state
+/// * `log_id` - Session key (execution log ID)
+/// * `request_id` - The permission request ID from the agent's PermissionRequest event
+/// * `allowed` - Whether to allow the requested action
+///
+/// # Security
+/// T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
+/// valid sessions can receive messages (inherited from Phase 43).
+#[tauri::command]
+#[specta::specta]
+pub async fn respond_acp_permission(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    request_id: String,
+    allowed: bool,
+) -> Result<(), String> {
+    let session_id = format!("session-{}", log_id);
+    let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+        session_id,
+        request_id,
+        allowed,
+    }));
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 

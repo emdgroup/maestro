@@ -90,9 +90,10 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::discard_worktree_changes,
             crate::ipc::shelve_worktree_changes,
             crate::ipc::delete_untracked_files,
-            // ACP session management (Phase 43)
-            crate::ipc::start_acp_session,
-            crate::ipc::send_to_acp_session,
+            // ACP session management (Phase 44)
+            crate::ipc::spawn_acp_session,
+            crate::ipc::send_acp_prompt,
+            crate::ipc::respond_acp_permission,
             crate::ipc::cancel_acp_session
         ])
 }
