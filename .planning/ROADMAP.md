@@ -157,7 +157,10 @@ Plans:
   1. Calling the fetch_agent_registry IPC returns the current list of available ACP agents from https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json
   2. A second call within 5 minutes returns the cached result without hitting the network; calling force-refresh bypasses the cache
   3. Given an AgentInfo from the registry, the backend resolves the correct launch command (npx package, binary target, or uvx package) for use in SpawnRequest
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 45-01-PLAN.md — Registry types extension + CDN fetch + cache logic + distribution resolution
+- [ ] 45-02-PLAN.md — IPC commands (fetch_agent_registry, resolve_agent_launch_command) + TypeScript bindings
 **UI hint**: no
 
 ### Phase 46: Frontend: Agent Selector + Spawn Flow
@@ -232,7 +235,7 @@ Plans:
 | 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
 | 43 - Local ACP Session Manager | v1.5 | Complete    | 2026-04-20 | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
-| 45 - Agent Registry Fetch + Caching | v1.5 | 0/? | Not started | - |
+| 45 - Agent Registry Fetch + Caching | v1.5 | 0/2 | Not started | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 0/? | Not started | - |
 | 47 - Frontend: AgentActivityPanel | v1.5 | 0/? | Not started | - |
 | 48 - Frontend: PermissionDialog | v1.5 | 0/? | Not started | - |
