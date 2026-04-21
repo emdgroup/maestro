@@ -1063,6 +1063,26 @@ async resolveAgentLaunchCommand(agentId: string) : Promise<Result<ResolvedLaunch
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Check which ACP agents (and maestro-server itself) are available on a remote SSH host.
+ * 
+ * Runs `which <cmd>` for each agent's launch binary over the existing SSH session.
+ * Results are cached in AppState for 5 minutes to avoid re-checking on every dialog open.
+ * 
+ * # Arguments
+ * * `connection_id` - SSH connection ID (must have an active session in AppState)
+ * 
+ * # Returns
+ * RemoteAgentStatus { maestro_server_available, available_agent_ids }
+ */
+async checkRemoteAgents(connectionId: number) : Promise<Result<RemoteAgentStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_remote_agents", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1121,6 +1141,10 @@ export type ProjectConfigResponse = { model_default: string; mcp_allowlist: stri
  * IPC response wrapper giving frontend cache status context.
  */
 export type RegistryResponse = { agents: AgentInfo[]; cached: boolean; stale: boolean }
+/**
+ * Remote availability check result for an SSH-connected project.
+ */
+export type RemoteAgentStatus = { maestro_server_available: boolean; available_agent_ids: string[] }
 /**
  * Resolved launch command ready for subprocess spawn.
  */

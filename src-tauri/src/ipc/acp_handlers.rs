@@ -7,11 +7,12 @@
 //! - `cancel_acp_session`: Stop a running session and clean up resources
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::State;
 use chrono::Utc;
 
 use crate::db::AppState;
-use crate::acp::registry::{RegistryResponse, ResolvedLaunchCommand};
+use crate::acp::registry::{RegistryResponse, ResolvedLaunchCommand, RemoteAgentStatus, check_agent_on_remote};
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest,
     PromptRequest, CancelRequest, PermissionResponse,
@@ -222,6 +223,63 @@ pub async fn resolve_agent_launch_command(
         .ok_or_else(|| format!("Agent '{}' not found in registry", agent_id))?;
     crate::acp::registry::resolve_distribution(&agent.distribution)
         .ok_or_else(|| format!("No compatible distribution found for agent '{}'", agent_id))
+}
+
+/// Check which ACP agents (and maestro-server itself) are available on a remote SSH host.
+///
+/// Runs `which <cmd>` for each agent's launch binary over the existing SSH session.
+/// Results are cached in AppState for 5 minutes to avoid re-checking on every dialog open.
+///
+/// # Arguments
+/// * `connection_id` - SSH connection ID (must have an active session in AppState)
+///
+/// # Returns
+/// RemoteAgentStatus { maestro_server_available, available_agent_ids }
+#[tauri::command]
+#[specta::specta]
+pub async fn check_remote_agents(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+) -> Result<RemoteAgentStatus, String> {
+    // Return cached result if still fresh (5-min TTL)
+    {
+        let cache = app_state.remote_agent_status.lock().await;
+        if let Some((ts, status)) = cache.get(&connection_id) {
+            if ts.elapsed() < Duration::from_secs(300) {
+                return Ok(status.clone());
+            }
+        }
+    }
+
+    let ssh = app_state.get_ssh_session(connection_id).await
+        .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", connection_id))?;
+
+    let maestro_server_available = ssh
+        .execute_command("which maestro-server 2>/dev/null")
+        .await
+        .is_ok();
+
+    let registry = crate::acp::registry::fetch_or_return_cached(
+        &app_state.agent_registry_cache,
+        false,
+    ).await.map_err(|e| format!("Failed to fetch registry: {}", e))?;
+
+    let mut available_agent_ids = Vec::new();
+    for agent in &registry.agents {
+        if check_agent_on_remote(agent, &ssh).await {
+            available_agent_ids.push(agent.id.clone());
+        }
+    }
+
+    let status = RemoteAgentStatus {
+        maestro_server_available,
+        available_agent_ids,
+    };
+
+    app_state.remote_agent_status.lock().await
+        .insert(connection_id, (Instant::now(), status.clone()));
+
+    Ok(status)
 }
 
 #[cfg(test)]

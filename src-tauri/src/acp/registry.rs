@@ -1,3 +1,4 @@
+use crate::ssh::RemoteSshSession;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -87,6 +88,43 @@ pub struct UvxDistribution {
     #[serde(default)]
     #[specta(optional)]
     pub args: Option<Vec<String>>,
+}
+
+/// Remote availability check result for an SSH-connected project.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct RemoteAgentStatus {
+    pub maestro_server_available: bool,
+    pub available_agent_ids: Vec<String>,
+}
+
+/// Returns the command name to `which` on a remote Linux host for a given agent.
+fn resolve_remote_check_command(agent: &AgentInfo) -> Option<String> {
+    if let Some(binary_map) = &agent.distribution.binary {
+        for (key, target) in binary_map {
+            if key.contains("linux") {
+                return Some(target.cmd.clone());
+            }
+        }
+    }
+    if agent.distribution.npx.is_some() {
+        return Some("npx".to_string());
+    }
+    if agent.distribution.uvx.is_some() {
+        return Some("uvx".to_string());
+    }
+    None
+}
+
+/// Returns true if the agent's launch command is available on the remote SSH host.
+pub async fn check_agent_on_remote(agent: &AgentInfo, ssh: &RemoteSshSession) -> bool {
+    if let Some(cmd) = resolve_remote_check_command(agent) {
+        ssh.execute_command(&format!("which {} 2>/dev/null", cmd))
+            .await
+            .is_ok()
+    } else {
+        false
+    }
 }
 
 /// Cache entry for the in-memory registry TTL cache. Internal only — not exported to TS.

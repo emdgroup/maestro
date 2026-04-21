@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 
 use crate::acp::AcpProcess;
-use crate::acp::registry::RegistryCacheEntry;
+use crate::acp::registry::{RegistryCacheEntry, RemoteAgentStatus};
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
 use crate::ssh::{RemoteSshSession, SshPtyHandle};
@@ -66,6 +66,8 @@ pub struct AppState {
     pub acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
     /// In-memory cache for the ACP agent registry with 5-minute TTL.
     pub agent_registry_cache: tokio::sync::Mutex<Option<RegistryCacheEntry>>,
+    /// Per-connection cache of remote agent availability checks with 5-minute TTL.
+    pub remote_agent_status: tokio::sync::Mutex<HashMap<i32, (std::time::Instant, RemoteAgentStatus)>>,
 }
 
 impl AppState {
@@ -81,6 +83,7 @@ impl AppState {
             pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
             acp_sessions: tokio::sync::Mutex::new(HashMap::new()),
             agent_registry_cache: tokio::sync::Mutex::new(None),
+            remote_agent_status: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 

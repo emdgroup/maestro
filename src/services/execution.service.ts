@@ -238,6 +238,29 @@ export function useAgentRegistryQuery(enabled: boolean) {
 }
 
 /**
+ * Query key factory for remote agent availability checks.
+ */
+export const remoteAgentKeys = {
+  all: ["remoteAgentStatus"] as const,
+  check: (connectionId: number) => [...remoteAgentKeys.all, connectionId] as const,
+};
+
+/**
+ * Query hook that checks which agents (and maestro-server) are available on a remote SSH host.
+ * Fires once when connectionId is set; results are cached 5 min (mirrors backend TTL).
+ * Only enabled for remote connections (connectionId != null).
+ */
+export function useRemoteAgentStatusQuery(connectionId: number | null) {
+  return useQuery({
+    queryKey: remoteAgentKeys.check(connectionId ?? 0),
+    queryFn: () => api.checkRemoteAgents(connectionId!),
+    enabled: connectionId != null,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+/**
  * Mutation hook for spawning an ACP session for a given agent and worktree path.
  * On success, invalidates all execution queries so the sidebar refreshes immediately.
  * On error, shows a toast via sonner (consistent with other mutation hooks).

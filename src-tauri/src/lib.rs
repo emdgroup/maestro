@@ -96,7 +96,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::respond_acp_permission,
             crate::ipc::cancel_acp_session,
             crate::ipc::fetch_agent_registry,
-            crate::ipc::resolve_agent_launch_command
+            crate::ipc::resolve_agent_launch_command,
+            crate::ipc::check_remote_agents
         ])
 }
 

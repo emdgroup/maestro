@@ -12,6 +12,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@/services/execution.service", () => ({
   useAgentRegistryQuery: vi.fn(),
+  useRemoteAgentStatusQuery: vi.fn(),
   useSpawnAcpSessionMutation: vi.fn(),
   useSpawnInteractiveExecutionMutation: vi.fn(),
   useDeleteExecutionMutation: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("@/store/navigationStore", () => ({
 
 import {
   useAgentRegistryQuery,
+  useRemoteAgentStatusQuery,
   useSpawnAcpSessionMutation,
   useSpawnInteractiveExecutionMutation,
   useDeleteExecutionMutation,
@@ -86,6 +88,7 @@ beforeEach(() => {
   (useExecutionsWithTaskInfoQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
   (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
   (useAgentRegistryQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: { agents: mockAgents, cached: false, stale: false }, isLoading: false });
+  (useRemoteAgentStatusQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: undefined, isLoading: false });
   (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
   (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
   (useDeleteExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn() });
