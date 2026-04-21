@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: executing
-last_updated: "2026-04-21T00:15:53.873Z"
+status: verifying
+last_updated: "2026-04-21T00:20:05.901Z"
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -154,6 +154,7 @@ Plan: 2 of 2
 | Phase 43-local-acp-session-manager P01 | 0.112 | 2 tasks | 3 files |
 | Phase 43 P02 | 0.035 | 2 tasks | 4 files |
 | Phase 44-db-schema-acp-ipc-handlers P01 | 0.072 | 3 tasks | 5 files |
+| Phase 44-db-schema-acp-ipc-handlers P02 | 0.033 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -323,6 +324,8 @@ Phase 18 Architecture Decisions:
 - spawn_acp_session INSERT uses execution_mode='acp' and agent_id columns directly (v11 schema)
 - send_acp_prompt and respond_acp_permission are dedicated commands with typed params (no message_type dispatch)
 - ExecutionWithTask.execution_mode and agent_id are Option<String> for LEFT JOIN backward compat
+- structured_updates never cleared between flushes — overwrite semantics mean column always stores full accumulated list for dead-session replay
+- Final flush placed before acp_sessions.lock().await.remove() — ensures data written before session entry removed from map
 
 ### v1.5 Roadmap Notes
 
@@ -396,7 +399,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---

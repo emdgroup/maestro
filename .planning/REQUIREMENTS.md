@@ -33,7 +33,8 @@
 **: User can respond to permission request via IPC (forwards PermissionResponse to maestro-server stdin, unblocking agent)
 - [x] **PERSIST-05
 **: User can cancel ACP session via IPC (forwards CancelRequest, cleans up session)
-- [ ] **PERSIST-06**: Structured output periodically flushed from in-memory AcpSession.structured_updates to DB execution_logs.structured_output for dead session replay
+- [x] **PERSIST-06
+**: Structured output periodically flushed from in-memory AcpSession.structured_updates to DB execution_logs.structured_output for dead session replay
 
 ### Agent Registry
 
