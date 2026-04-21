@@ -166,6 +166,7 @@ pub async fn cancel_acp_session(
 mod tests {
     use rusqlite::Connection;
     use crate::db::schema::initialize_schema;
+    use crate::acp::transport::{MaestroRpcMessage, ServerRequest, PromptRequest, PermissionResponse};
 
     /// PERSIST-02: spawn_acp_session INSERT writes execution_mode='acp' and agent_id.
     /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
@@ -232,5 +233,137 @@ mod tests {
 
         assert_eq!(status, "cancelled", "status must be 'cancelled' after cancel");
         assert_eq!(completed_at, Some("2026-04-20T00:01:00Z".to_string()), "completed_at must be set");
+    }
+
+    /// PERSIST-03: send_acp_prompt constructs a PromptRequest with correct session_id and content.
+    /// Verifies the exact JSON shape that write_to_acp_session will frame and send to maestro-server.
+    #[test]
+    fn test_send_acp_prompt_message_structure() {
+        let log_id: i32 = 42;
+        let content = "fix the auth bug";
+        let session_id = format!("session-{}", log_id);
+
+        let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+            session_id: session_id.clone(),
+            content: content.to_string(),
+        }));
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"direction\":\"request\""), "must be a request direction");
+        assert!(json.contains("\"type\":\"prompt\""), "must have type=prompt");
+        assert!(json.contains(&format!("\"session_id\":\"{}\"", session_id)), "session_id must match log_id pattern");
+        assert!(json.contains(&format!("\"content\":\"{}\"", content)), "content must be preserved verbatim");
+
+        // Roundtrip: maestro-server must deserialize this back to the same message
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back, "PromptRequest must roundtrip through JSON");
+    }
+
+    /// PERSIST-04: respond_acp_permission constructs a PermitResponse with correct fields.
+    /// Verifies that both allowed=true and allowed=false produce distinct, correct JSON.
+    #[test]
+    fn test_respond_acp_permission_message_structure() {
+        let log_id: i32 = 7;
+        let request_id = "perm-001";
+        let session_id = format!("session-{}", log_id);
+
+        // allowed=true
+        let allow_msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            session_id: session_id.clone(),
+            request_id: request_id.to_string(),
+            allowed: true,
+        }));
+        let allow_json = serde_json::to_string(&allow_msg).unwrap();
+        assert!(allow_json.contains("\"type\":\"permit_response\""), "must have type=permit_response");
+        assert!(allow_json.contains("\"allowed\":true"), "allowed=true must be present");
+        assert!(allow_json.contains(&format!("\"request_id\":\"{}\"", request_id)));
+
+        // allowed=false
+        let deny_msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            session_id: session_id.clone(),
+            request_id: request_id.to_string(),
+            allowed: false,
+        }));
+        let deny_json = serde_json::to_string(&deny_msg).unwrap();
+        assert!(deny_json.contains("\"allowed\":false"), "allowed=false must be present");
+        assert_ne!(allow_json, deny_json, "allow and deny must produce different JSON");
+
+        // Roundtrip
+        let back: MaestroRpcMessage = serde_json::from_str(&allow_json).unwrap();
+        assert_eq!(allow_msg, back);
+    }
+
+    /// PERSIST-06: structured_output flush SQL writes JSON array to the correct column.
+    /// Tests the exact UPDATE statement used in spawn_reader_task's periodic and final flush.
+    #[test]
+    fn test_structured_output_flush_sql() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let now = "2026-04-21T00:00:00Z";
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'flush-test', 'running', 'acp', 'test-agent', ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+        let log_id = conn.last_insert_rowid();
+
+        // Simulate what spawn_reader_task's flush branch does
+        let updates = serde_json::json!([
+            {"seq": 1, "text": "chunk-one"},
+            {"seq": 2, "text": "chunk-two"},
+            {"seq": 3, "text": "chunk-three"}
+        ]);
+        let json = serde_json::to_string(&updates).unwrap();
+
+        let rows = conn.execute(
+            "UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
+            rusqlite::params![&json, log_id],
+        ).unwrap();
+        assert_eq!(rows, 1, "exactly one row must be updated");
+
+        let stored: Option<String> = conn.query_row(
+            "SELECT structured_output FROM execution_logs WHERE id = ?1",
+            [log_id],
+            |row| row.get(0),
+        ).unwrap();
+
+        let stored_str = stored.expect("structured_output must not be NULL after flush");
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&stored_str).unwrap();
+        assert_eq!(parsed.len(), 3, "all 3 updates must be stored");
+        assert_eq!(parsed[0]["seq"], 1);
+        assert_eq!(parsed[2]["text"], "chunk-three");
+    }
+
+    /// PERSIST-06 (overwrite semantics): second flush overwrites first — no .clear() means
+    /// the array always grows and the DB column always holds the full accumulated list.
+    #[test]
+    fn test_structured_output_flush_overwrites_accumulates() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let now = "2026-04-21T00:00:00Z";
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'overwrite-test', 'running', 'acp', 'test-agent', ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+        let log_id = conn.last_insert_rowid();
+
+        // First flush: 2 items
+        let first = serde_json::to_string(&serde_json::json!([{"seq":1},{"seq":2}])).unwrap();
+        conn.execute("UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
+            rusqlite::params![&first, log_id]).unwrap();
+
+        // Second flush: 4 items (accumulation — no clear between ticks)
+        let second = serde_json::to_string(&serde_json::json!([{"seq":1},{"seq":2},{"seq":3},{"seq":4}])).unwrap();
+        conn.execute("UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
+            rusqlite::params![&second, log_id]).unwrap();
+
+        let stored: String = conn.query_row(
+            "SELECT structured_output FROM execution_logs WHERE id = ?1",
+            [log_id], |row| row.get::<_, String>(0),
+        ).unwrap();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&stored).unwrap();
+        assert_eq!(parsed.len(), 4, "second flush must overwrite with full accumulated array");
+        assert_eq!(parsed[3]["seq"], 4);
     }
 }

@@ -43,9 +43,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let msg = match read_message(&mut stdin).await {
                 Ok(msg) => msg,
                 Err(e) => {
-                    // stdin closed (Tauri host exited) — exit cleanly
-                    let err_str = e.to_string();
-                    if err_str.contains("unexpected eof") || err_str.contains("UnexpectedEof") {
+                    // stdin closed (Tauri host exited) — exit cleanly.
+                    // tokio read_exact returns io::ErrorKind::UnexpectedEof with message "early eof"
+                    // when the write end of the pipe closes; check both the kind and string variants.
+                    let is_eof = e
+                        .downcast_ref::<std::io::Error>()
+                        .map(|io_err| io_err.kind() == std::io::ErrorKind::UnexpectedEof)
+                        .unwrap_or_else(|| {
+                            let s = e.to_string();
+                            s.contains("early eof")
+                                || s.contains("unexpected eof")
+                                || s.contains("UnexpectedEof")
+                        });
+                    if is_eof {
                         break;
                     }
                     // Write error and continue
@@ -167,7 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sessions.insert(
                         req.session_id.clone(),
                         ActiveSession {
-                            conn,
+                            conn: Rc::new(conn),
                             acp_session_id,
                             terminals,
                             child,
@@ -187,35 +197,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 MaestroRpcMessage::Request(ServerRequest::Prompt(req)) => {
                     if let Some(session) = sessions.get(&req.session_id) {
                         let acp_session_id = session.acp_session_id.clone();
-                        // Build ACP PromptRequest with user content
                         let prompt_req = acp::PromptRequest::new(
                             acp_session_id,
                             vec![acp::ContentBlock::Text(acp::TextContent::new(req.content))],
                         );
-                        // prompt() is called inline — the single-threaded runtime interleaves
-                        // stdin reads and prompt processing via .await points.
-                        // The stdin loop blocks during prompt() execution, which is correct:
-                        // the Tauri host waits for prompt completion before sending next message.
-                        match session.conn.prompt(prompt_req).await {
-                            Ok(_prompt_resp) => {
-                                // PromptResponse arrives here after agent finishes.
-                                // All streaming output was already forwarded via session_notification.
-                            }
-                            Err(e) => {
+                        // Spawn prompt as a separate task so the stdin loop keeps running.
+                        // Required: while prompt() awaits, the agent may send a permission
+                        // request that needs a PermitResponse from stdin — if we block here,
+                        // that response can never arrive (deadlock).
+                        let conn = Rc::clone(&session.conn);
+                        let stdout2 = Rc::clone(&stdout);
+                        let session_id = req.session_id.clone();
+                        tokio::task::spawn_local(async move {
+                            if let Err(e) = conn.prompt(prompt_req).await {
                                 let _ = send_response(
-                                    &stdout,
+                                    &stdout2,
                                     &MaestroRpcMessage::Response(ServerResponse::Error(
                                         ErrorResponse {
                                             message: format!(
                                                 "prompt failed for session {}: {}",
-                                                req.session_id, e
+                                                session_id, e
                                             ),
                                         },
                                     )),
                                 )
                                 .await;
                             }
-                        }
+                        });
                     } else {
                         let _ = send_response(
                             &stdout,
@@ -242,15 +250,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .borrow_mut()
                             .remove(&perm_resp.request_id)
                         {
-                            let outcome = if perm_resp.allowed {
-                                acp::RequestPermissionOutcome::Selected(
-                                    acp::SelectedPermissionOutcome::new("allow_once"),
-                                )
-                            } else {
-                                acp::RequestPermissionOutcome::Cancelled
-                            };
-                            let response = acp::RequestPermissionResponse::new(outcome);
-                            let _ = tx.send(response);
+                            // client.rs constructs the outcome using the agent's actual option_id
+                            let _ = tx.send(perm_resp.allowed);
                         }
                     }
                 }
