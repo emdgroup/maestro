@@ -65,4 +65,6 @@ pub struct ExecutionWithTask {
     pub started_at: String,
     pub completed_at: Option<String>,
     pub terminal_output: Option<String>,
+    pub execution_mode: Option<String>,  // "pty" or "acp"; Option for backward compat with LEFT JOIN
+    pub agent_id: Option<String>,        // ACP agent identifier; None for PTY sessions
 }

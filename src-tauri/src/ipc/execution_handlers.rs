@@ -1036,7 +1036,8 @@ pub fn list_executions_with_task_info(
     let mut stmt = conn.prepare(
         "SELECT el.id, el.task_id, t.name AS task_name, el.session_name,
                 COALESCE(el.branch_name, w.branch_name) AS branch_name,
-                el.status, el.started_at, el.completed_at, el.terminal_output
+                el.status, el.started_at, el.completed_at, el.terminal_output,
+                el.execution_mode, el.agent_id
          FROM execution_logs el
          LEFT JOIN tasks t ON t.id = el.task_id
          LEFT JOIN worktrees w ON el.task_id IS NOT NULL AND w.task_id = el.task_id
@@ -1055,6 +1056,8 @@ pub fn list_executions_with_task_info(
             started_at: row.get(6)?,
             completed_at: row.get(7)?,
             terminal_output: row.get(8)?,
+            execution_mode: row.get(9)?,
+            agent_id: row.get(10)?,
         })
     }).map_err(|e| format!("Failed to query executions: {}", e))?;
 

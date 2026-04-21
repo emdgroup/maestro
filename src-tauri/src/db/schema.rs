@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
-pub const SCHEMA_V10: &str = r#"
+pub const SCHEMA_V11: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     terminal_output TEXT,
     status TEXT NOT NULL DEFAULT 'running',
     error_event TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'pty',
+    agent_id TEXT,
+    structured_output TEXT,
     started_at TEXT NOT NULL,
     completed_at TEXT
 );
@@ -182,7 +185,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V10)?;
+        conn.execute_batch(SCHEMA_V11)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -235,7 +238,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -252,5 +255,18 @@ mod tests {
         assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
         assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
         assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");
+
+        // Verify execution_logs table has new v11 columns
+        let exec_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(execution_logs)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(exec_columns.contains(&"execution_mode".to_string()), "execution_mode column should exist");
+        assert!(exec_columns.contains(&"agent_id".to_string()), "agent_id column should exist");
+        assert!(exec_columns.contains(&"structured_output".to_string()), "structured_output column should exist");
     }
 }
