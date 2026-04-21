@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: executing
-last_updated: "2026-04-21T07:29:32.135Z"
+status: verifying
+last_updated: "2026-04-21T07:36:17.360Z"
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -156,6 +156,7 @@ Plan: 2 of 2
 | Phase 44-db-schema-acp-ipc-handlers P01 | 0.072 | 3 tasks | 5 files |
 | Phase 44-db-schema-acp-ipc-handlers P02 | 0.033 | 2 tasks | 2 files |
 | Phase 45-agent-registry-fetch-caching P01 | 0.073 | 1 tasks | 3 files |
+| Phase 45-agent-registry-fetch-caching P02 | 0.067 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -330,6 +331,9 @@ Phase 18 Architecture Decisions:
 - Lock-drop-before-await: RegistryCacheEntry guard released before CDN fetch to prevent holding tokio Mutex across .await point
 - RegistryCacheEntry not TS-exported (no Type derive): Instant is not serializable; RegistryResponse is the IPC boundary type
 - current_binary_target_key() returns empty string on unknown platforms; resolve_distribution treats empty key as no match falling through to uvx
+- fetch_agent_registry delegates entirely to acp::registry::fetch_or_return_cached — handler is a thin IPC boundary with no logic
+- resolve_agent_launch_command holds cache lock only during the lookup — no await across the guard
+- AcpRegistry not in bindings.ts: tauri-specta only exports types reachable from registered IPC command signatures; RegistryResponse is the IPC boundary type
 
 ### v1.5 Roadmap Notes
 
@@ -403,7 +407,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---
