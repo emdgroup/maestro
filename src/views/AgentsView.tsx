@@ -22,8 +22,9 @@ import {
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { AgentSelectorDialog } from "@/components/execution/AgentSelectorDialog";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
-import { SearchIcon } from "lucide-react";
+import { Bot, SearchIcon } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -45,6 +46,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
 
   // Spawn Agent dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
+  const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [sessionName, setSessionName] = useState("");
 
@@ -98,6 +100,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
             ))}
           </ToggleGroup>
         </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowAgentSelector(true)}>
+            <Bot className="w-3.5 h-3.5 mr-1" />
+            Spawn Agent
+          </Button>
+        </div>
       </div>
 
       {/* Agent monitor */}
@@ -143,10 +151,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
       <Dialog open={showSpawnDialog} onOpenChange={setShowSpawnDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Spawn Interactive Agent</DialogTitle>
+            <DialogTitle>New Terminal Session</DialogTitle>
             <DialogDescription>
-              Start an interactive agent session in a worktree. No task required — you drive the
-              terminal.
+              Start an interactive terminal session in a worktree.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -213,6 +220,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath }) =
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AgentSelectorDialog
+        open={showAgentSelector}
+        onOpenChange={setShowAgentSelector}
+        worktrees={worktrees}
+        repoPath={repoPath}
+        onSpawned={(logId) => setSelectedExecutionId(logId)}
+      />
     </div>
   );
 };
