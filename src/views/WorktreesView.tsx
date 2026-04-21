@@ -61,7 +61,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [viewMode, setViewMode] = useState<"grouped" | "grid">("grouped");
+  const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);

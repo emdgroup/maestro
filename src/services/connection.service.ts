@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import { SshAuthMethod } from "@/types/bindings";
@@ -17,6 +19,8 @@ export const connectionQueryKeys = {
     [...connectionQueryKeys.fileBrowser(), connectionId ?? "local", path] as const,
   defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
+  status: (connectionId: number) =>
+    [...connectionQueryKeys.baseKey, "status", connectionId] as const,
 };
 
 /**
@@ -239,4 +243,36 @@ export function useListDrives() {
     queryFn: () => api.listDrives(),
     staleTime: Infinity,
   });
+}
+
+export function useSshConnectionStatus(connectionId: number) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const key = connectionQueryKeys.status(connectionId);
+    const invalidate = (id: number) => {
+      if (id === connectionId) void queryClient.invalidateQueries({ queryKey: key });
+    };
+    const unsub = Promise.all([
+      listen<number>("ssh-connection-lost", (e) => invalidate(e.payload)),
+      listen<number>("ssh-connection-failed", (e) => invalidate(e.payload)),
+      listen<number>("ssh-reconnected", (e) => invalidate(e.payload)),
+    ]);
+    return () => {
+      void unsub.then(([a, b, c]) => { a(); b(); c(); });
+    };
+  }, [connectionId, queryClient]);
+
+  const query = useQuery({
+    queryKey: connectionQueryKeys.status(connectionId),
+    queryFn: () => api.getSshConnectionStatus(connectionId),
+    refetchInterval: 8000,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+  // Pessimistic: treat as unreachable until first fresh probe lands (dataUpdatedAt = 0 on mount)
+  const connected = !!query.dataUpdatedAt && (query.data?.connected ?? false);
+
+  return { ...query, connected };
 }

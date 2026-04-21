@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::{Duration, Utc};
 
-use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget};
+use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult};
 use crate::db::AppState;
 
 // ============================================================================
@@ -216,7 +216,7 @@ pub async fn get_worktree_diff(
     project_id: i32,
     worktree_path: String,
     diff_target: DiffTarget,
-) -> Result<String, String> {
+) -> Result<WorktreeDiffResult, String> {
     let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
 
     let diff_output = match &diff_target {
@@ -229,7 +229,17 @@ pub async fn get_worktree_diff(
         }
     };
 
-    Ok(diff_output)
+    let untracked_output = crate::git::run_git_in_dir(
+        &git_conn,
+        &worktree_path,
+        &["ls-files", "--others", "--exclude-standard"],
+    ).await.unwrap_or_default();
+    let untracked_files = untracked_output.lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+
+    Ok(WorktreeDiffResult { diff: diff_output, untracked_files })
 }
 
 // ============================================================================
@@ -648,6 +658,26 @@ pub async fn shelve_worktree_changes(
         args.extend(refs);
     }
     crate::git::run_git_in_dir(&git_conn, &worktree_abs, &args).await?;
+    Ok(())
+}
+
+// ============================================================================
+// delete_untracked_files — removes untracked files via `git clean -f`
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_untracked_files(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    file_paths: Vec<String>,
+) -> Result<(), String> {
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let mut args = vec!["clean", "-f", "--"];
+    let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+    args.extend(refs);
+    crate::git::run_git_in_dir(&git_conn, &worktree_path, &args).await?;
     Ok(())
 }
 

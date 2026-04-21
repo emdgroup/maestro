@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use agent_client_protocol::{
     CreateTerminalRequest, CreateTerminalResponse, KillTerminalRequest, KillTerminalResponse,
-    ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, TerminalExitStatus, TerminalId,
-    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse,
+    PermissionOptionKind, ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification, TerminalExitStatus, TerminalId, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
     MaestroRpcMessage, ServerResponse, SessionUpdate, PermissionRequest, TerminalOutput,
@@ -27,8 +27,8 @@ use crate::sessions::{TerminalExitInfo, TerminalHandle};
 pub struct MaestroServerClient {
     /// Shared stdout writer for sending ServerResponse frames to the Tauri host
     pub stdout: Rc<tokio::sync::Mutex<tokio::io::Stdout>>,
-    /// Pending permission requests: request_id -> oneshot sender for PermitResponse dispatch
-    pub pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<RequestPermissionResponse>>>>,
+    /// Pending permission requests: request_id -> oneshot sender (bool = allowed)
+    pub pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<bool>>>>,
     /// Managed terminals shared with the ActiveSession
     pub terminals: Rc<RefCell<HashMap<String, TerminalHandle>>>,
     /// Maestro session ID for tagging outgoing frames
@@ -91,7 +91,7 @@ impl agent_client_protocol::Client for MaestroServerClient {
     async fn request_permission(&self, args: RequestPermissionRequest) -> agent_client_protocol::Result<RequestPermissionResponse> {
         let request_id = args.tool_call.tool_call_id.to_string();
 
-        let (tx, rx) = oneshot::channel::<RequestPermissionResponse>();
+        let (tx, rx) = oneshot::channel::<bool>();
         self.pending_permissions.borrow_mut().insert(request_id.clone(), tx);
 
         let payload = serde_json::to_value(&args).map_err(|e| {
@@ -106,10 +106,25 @@ impl agent_client_protocol::Client for MaestroServerClient {
             agent_client_protocol::Error::new(-32603, e.to_string())
         })?;
 
-        // Await the PermitResponse dispatched by the stdin loop
-        rx.await.map_err(|_| {
+        // Await the bool from the stdin loop, then map to the correct option_id from args.options
+        let allowed = rx.await.map_err(|_| {
             agent_client_protocol::Error::new(-32603, "permission channel closed")
-        })
+        })?;
+
+        let outcome = if allowed {
+            let opt = args.options.iter().find(|o| {
+                matches!(o.kind, PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways)
+            });
+            match opt {
+                Some(o) => RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(o.option_id.clone()),
+                ),
+                None => RequestPermissionOutcome::Cancelled,
+            }
+        } else {
+            RequestPermissionOutcome::Cancelled
+        };
+        Ok(RequestPermissionResponse::new(outcome))
     }
 
     /// SERVER-03: Spawn a subprocess, accumulate its output, and push TerminalOutput frames.

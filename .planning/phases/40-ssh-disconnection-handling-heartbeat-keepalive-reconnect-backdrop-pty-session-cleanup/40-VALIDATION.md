@@ -39,7 +39,7 @@ created: 2026-04-10
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | 40-00-01 | 00 | 0 | Wave 0 test stubs | stub | `ls src/components/common/__tests__/DisconnectBackdrop.test.tsx src/utils/hooks/__tests__/useConnectionHealth.test.ts` | N/A | ⬜ pending |
-| 40-01-01 | 01 | 1 | keepalive config | unit | `cd src-tauri && cargo test` | ✅ | ⬜ pending |
+| 40-01-01 | 01 | 1 | keepalive config | acceptance criteria (grep) | `cd src-tauri && cargo test` | N/A (grep) | ⬜ pending |
 | 40-01-02 | 01 | 1 | heartbeat task spawn | unit | `cd src-tauri && cargo test` | ✅ | ⬜ pending |
 | 40-01-03 | 01 | 1 | ssh-connection-lost event | unit | `cd src-tauri && cargo test` | ✅ | ⬜ pending |
 | 40-02-01 | 02 | 2 | PTY session cleanup | unit | `cd src-tauri && cargo test` | ✅ | ⬜ pending |

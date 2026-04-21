@@ -215,6 +215,29 @@ export function useShelveWorktreeChangesMutation() {
 }
 
 /**
+ * Mutation hook for deleting untracked files via `git clean -f`.
+ * Used in the "Untracked Changes" mode of WorktreeDiffPanel to revert/discard untracked files.
+ */
+export function useDeleteUntrackedFilesMutation() {
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      worktreePath,
+      filePaths,
+    }: {
+      projectId: number;
+      worktreePath: string;
+      filePaths: string[];
+    }) => {
+      return await api.deleteUntrackedFiles(projectId, worktreePath, filePaths);
+    },
+    onError: (error) => {
+      toast.error(`Failed to delete files: ${error}`);
+    },
+  });
+}
+
+/**
  * Mutation hook for creating a new worktree.
  * Accepts baseBranch and optional newBranchName (creates new branch from base).
  * When newBranchName is null, the existing baseBranch is checked out directly.

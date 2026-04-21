@@ -24,8 +24,8 @@ pub struct TerminalExitInfo {
 
 /// A live ACP session: maps maestro session_id to ACP internals
 pub struct ActiveSession {
-    /// The ACP SDK connection to the agent subprocess
-    pub conn: ClientSideConnection,
+    /// The ACP SDK connection to the agent subprocess (Rc so prompt() can run in spawn_local)
+    pub conn: Rc<ClientSideConnection>,
     /// ACP-assigned session ID (from NewSessionResponse)
     pub acp_session_id: agent_client_protocol::SessionId,
     /// Managed terminals for this session

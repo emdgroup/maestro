@@ -1,12 +1,14 @@
+Here's the compressed version:
+
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Project Overview
 
-**Maestro** - A Tauri desktop app for orchestrating autonomous AI coding agents. Users manage tasks on a Kanban board, agents execute them in isolated git worktrees with real-time monitoring. Built with React + TypeScript (frontend) and Rust (backend).
+**Maestro** - Tauri desktop app orchestrating autonomous AI coding agents. Users manage tasks on Kanban board, agents execute in isolated git worktrees with real-time monitoring. React + TypeScript frontend, Rust backend.
 
-See `.planning/PROJECT.md` for detailed project goals, current milestone progress, and requirements.
+See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 
 ## Development Commands
 
@@ -17,6 +19,7 @@ pnpm dev              # Start Vite dev server (port 5173)
 pnpm build            # Build frontend (tsc + vite build + bundle verification)
 pnpm preview          # Preview production build
 pnpm test             # Run Vitest unit tests
+pnpm test <pattern>   # Run single test file (e.g. pnpm test usePathNavigation)
 pnpm test:e2e         # Run Playwright E2E tests
 pnpm test:e2e:ui      # Run Playwright tests with interactive UI
 pnpm lint             # Run oxlint
@@ -56,49 +59,49 @@ cargo check           # Check compilation without building
 
 **Frontend (`src/`):**
 
-- `App.tsx` - Main app component, handles routing between views
-- `views/` - Top-level page views (AgentsView, KanbanView, ProjectPickerView, SettingsView, WorktreesView)
-- `components/` - Reusable components organized by domain (kanban, task, project-picker, execution, common, ui)
+- `App.tsx` - Main component, routing between views
+- `views/` - Page views (AgentsView, KanbanView, ProjectPickerView, SettingsView, WorktreesView)
+- `components/` - Reusable components by domain (kanban, task, project-picker, execution, common, ui)
 - `contexts/` - React contexts (ConnectionContext, KanbanContext)
-- `services/` - Service layer wrapping Tauri IPC (connection, execution, project, settings, task)
+- `services/` - Tauri IPC wrappers (connection, execution, project, settings, task)
 - `store/` - Zustand stores: boardStore, configStore, projectStore, reviewStore
 - `utils/hooks/` - Custom React hooks
 - `utils/helpers/` - Utility functions
-- `types/bindings.ts` - Auto-generated TypeScript types from Rust (via tauri-specta)
+- `types/bindings.ts` - Auto-generated TS types from Rust (via tauri-specta)
 
 **Backend (`src-tauri/src/`):**
 
-- `lib.rs` - Library entry point, re-exports all public modules
-- `main.rs` - Tauri app entry point, registers IPC handlers
+- `lib.rs` - Library entry, re-exports public modules
+- `main.rs` - Tauri entry, registers IPC handlers
 - `db/` - Database layer (SQLite connection, schema, settings)
-  - `connection.rs` - Database initialization and AppState management
-  - `schema.rs` - SQL schema definitions (projects, tasks, worktrees, execution_logs, settings)
-  - `settings.rs` - Settings persistence (load/save operations)
+  - `connection.rs` - DB init and AppState management
+  - `schema.rs` - SQL schema (projects, tasks, worktrees, execution_logs, settings)
+  - `settings.rs` - Settings persistence (load/save)
 - `models/` - Domain models with Serialize/Deserialize/TS derives (task, project, worktree, execution_log, settings, review, sync, etc.)
-- `ipc/` - Tauri IPC command handlers split by domain
-  - `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`
+- `ipc/` - IPC handlers split by domain
+  - `project_handlers.rs`, `task_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`
   - `settings_handlers.rs`, `ssh_handlers.rs`, `filesystem_handlers.rs`, `review_handlers.rs`
-- `git/` - Git operations
-- `ssh/` - SSH connection management (client, session, password manager)
-- `process/` - Agent CLI process spawning, including PTY sessions
-- `websocket/` - WebSocket communication
-- `error.rs` - Custom error types for the app
+- `git/` - Git ops; `mod.rs` dispatches via `GitConnection` enum, `remote.rs` runs local subprocess
+- `ssh/` - SSH management (`session.rs` = RemoteSshSession, `password_manager.rs`, `error.rs`)
+- `process/` - Agent execution: `spawner.rs` (local subprocess), `pty.rs` (local PTY), `remote.rs` (SSH)
+- `websocket/` - WebSocket streaming (`streaming.rs`)
+- `error.rs` - Custom error types
 
 ### Database Schema
 
-SQLite database with foreign key constraints enabled:
+SQLite with foreign key constraints enabled:
 
 - **projects** - Project metadata (id, name, path, timestamps)
-- **tasks** - Tasks with status, skills, acceptance criteria (references project_id)
-- **worktrees** - Git worktree instances (references project_id)
-- **execution_logs** - Command execution logs (references task_id)
-- **settings** - Key-value settings store (project_path, recent_projects, model_default, mcp_defaults, skills_defaults)
+- **tasks** - Status, skills, acceptance criteria (refs project_id)
+- **worktrees** - Git worktree instances (refs project_id)
+- **execution_logs** - Command execution logs (refs task_id)
+- **settings** - Key-value store (project_path, recent_projects, model_default, mcp_defaults, skills_defaults)
 
-All timestamps are ISO 8601 RFC3339 strings. Skills are stored as JSON arrays in TEXT columns.
+Timestamps are ISO 8601 RFC3339 strings. Skills stored as JSON arrays in TEXT columns.
 
 ### Type Safety Flow
 
-Rust structs with `#[derive(TS)]` → auto-generate TypeScript types in `src/types/bindings.ts` → imported by React components. This ensures frontend/backend type consistency.
+Rust structs with `#[derive(TS)]` → auto-generate TS types in `src/types/bindings.ts` → imported by React components. Ensures frontend/backend type consistency.
 
 ### IPC Communication
 
@@ -109,82 +112,106 @@ import { invoke } from "@tauri-apps/api/core";
 const tasks = await invoke<Task[]>("get_tasks", { projectId: 1 });
 ```
 
-Rust handlers are marked with `#[tauri::command]`, split across domain-specific files in `src-tauri/src/ipc/`, and registered via `tauri-specta` in `lib.rs`.
+Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta` in `lib.rs`.
 
 ## Key Patterns
 
 ### State Management
 
-- Use Zustand with Immer middleware for state updates (see `boardStore.ts`)
-- Immer allows direct state mutations in reducers (proxied to immutable updates)
-- Store provides action methods (loadTasks, updateTaskStatus, addTask) and selector methods (getTasks, getTasksByStatus)
+- Zustand with Immer middleware for state updates (see `boardStore.ts`)
+- Immer allows direct mutations in reducers (proxied to immutable updates)
+- Store exposes action methods (loadTasks, updateTaskStatus, addTask) and selectors (getTasks, getTasksByStatus)
 
 ### Tauri State
 
-- `AppState` contains Mutex-wrapped SQLite connection
-- Injected into IPC handlers via `State<Arc<AppState>>`
-- Always lock the mutex before database operations
+`AppState` (in `db/connection.rs`) holds runtime state injected into IPC handlers via `State<Arc<AppState>>`:
+
+- `db: Mutex<Connection>` - SQLite connection (sync Mutex)
+- `pty_sessions` - Local PTY sessions keyed by `execution_log.id` (`i32`)
+- `ssh_pty_sessions` - Remote SSH PTY sessions keyed by `execution_log.id`
+- `ssh_sessions` - Persistent SSH connections keyed by `connection_id` (`i32`)
+- `ssh_passwords` - In-memory password store (zeroized on drop), keyed by `connection_id`
+- `pty_attach_cancel` - Per-session cancel flags for PTY attach reader tasks
+
+Use async `tokio::sync::Mutex` for session maps; sync `Mutex` only for DB connection.
+
+### Git/SSH Dispatch
+
+`GitConnection` enum in `models/connection.rs` routes git ops through single API in `git/mod.rs`:
+
+```rust
+pub enum GitConnection {
+    Local { path: String },
+    Remote { ssh: Arc<RemoteSshSession>, remote_path: String },
+}
+```
+
+Pass `GitConnection` to git functions; dispatch to local subprocess or SSH channel is transparent. `run_git_in_dir` is primary local executor in `git/remote.rs`.
 
 ### Error Handling
 
 - Rust functions return `Result<T, String>` for IPC commands
-- Database errors are mapped to strings for Tauri serialization
-- Frontend displays errors in console (consider adding user-facing error UI)
+- DB errors mapped to strings for Tauri serialization
+- Frontend shows errors in console (consider user-facing error UI)
+
+### No Rust Logging
+
+No `println!`, `eprintln!`, `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug via IPC return values or frontend console.
 
 ### Type Generation Workflow
 
 When modifying Rust models:
 
 1. Add/update struct with `#[derive(Serialize, Deserialize, TS)]` and `#[ts(export)]`
-2. Configure export directory in `Cargo.toml`: `export_dir = "../src/types"`
-3. Run `pnpm tauri:gen` to generate TypeScript types (runs `cargo test generate_typescript_bindings`)
-4. TypeScript types appear in `src/types/bindings.ts`
-5. Import and use in React components
+2. Set export dir in `Cargo.toml`: `export_dir = "../src/types"`
+3. Run `pnpm tauri:gen` (runs `cargo test generate_typescript_bindings`)
+4. TS types appear in `src/types/bindings.ts`
+5. Import in React components
 
 ### Database Migrations
 
 - Schema version tracked via `PRAGMA user_version`
-- Current version: `SCHEMA_VERSION = 1` in `src-tauri/src/db/schema.rs`
-- Schema initialization checks version and applies migrations on first run
-- Foreign keys are enabled via `PRAGMA foreign_keys = ON`
+- Current: `SCHEMA_VERSION = 10` in `src-tauri/src/db/schema.rs`
+- Init checks version, applies migrations on first run
+- Foreign keys enabled via `PRAGMA foreign_keys = ON`
 
 ## Project Conventions
 
 ### File Organization
 
 - React components in `src/components/` (PascalCase filenames)
-- Rust modules use snake_case filenames
-- Store files in `src/store/` (camelCase with "Store" suffix)
+- Rust modules snake_case filenames
+- Stores in `src/store/` (camelCase + "Store" suffix)
 - Generated types in `src/types/`
 
 ### Import Conventions
 
-- Use direct imports; barrel `index.ts` files have been removed from all domain directories
-- Use path aliases `@/hooks`, `@/lib` for hooks and helpers, `@/ui` for UI components (see `tsconfig.json` for full alias map)
+- Direct imports; barrel `index.ts` files removed from all domain dirs
+- Path aliases: `@/*` → `src/*`, `@/hooks` → `src/utils/hooks`, `@/lib` → `src/utils/helpers`, `@/ui` → `src/components/ui/*`
 
 ### Naming
 
-- Rust: snake_case for functions/variables, PascalCase for types/enums
-- TypeScript/React: camelCase for functions/variables, PascalCase for components/types
-- Database: snake_case for tables and columns
+- Rust: snake_case functions/variables, PascalCase types/enums
+- TypeScript/React: camelCase functions/variables, PascalCase components/types
+- Database: snake_case tables and columns
 
 ### Status Enums
 
 - TaskStatus: Backlog, Ready, InProgress, Review, Done
-- Serialized as PascalCase in JSON (`#[serde(rename_all = "PascalCase")]`)
+- Serialized PascalCase in JSON (`#[serde(rename_all = "PascalCase")]`)
 - Used for Kanban column organization
 
 ## Configuration Files
 
-- `tauri.conf.json` - Tauri app configuration (window size, bundle settings, build commands)
-- `vite.config.ts` - Vite configuration (port 5173, HMR on port 5174 for remote dev)
-- `tsconfig.json` - TypeScript strict mode enabled
-- `Cargo.toml` - Rust dependencies and ts-rs export configuration
+- `tauri.conf.json` - Tauri config (window size, bundle, build commands)
+- `vite.config.ts` - Vite config (port 5173, HMR port 5174 for remote dev)
+- `tsconfig.json` - TypeScript strict mode
+- `Cargo.toml` - Rust deps and ts-rs export config
 
 ## Important Notes
 
-- SQLite database file location is managed by Tauri's app data directory
-- Skills are stored as JSON-serialized Vec<String> in the database
-- The app uses a two-phase startup: settings loading → project selection → main UI
-- Foreign key constraints ensure referential integrity (CASCADE on delete)
-- All IPC commands use Arc<AppState> for thread-safe database access
+- SQLite DB location managed by Tauri app data directory
+- Skills stored as JSON-serialized Vec<String> in DB
+- Two-phase startup: settings load → project selection → main UI
+- Foreign keys ensure referential integrity (CASCADE on delete)
+- All IPC commands use `Arc<AppState>` for thread-safe DB access

@@ -155,10 +155,10 @@ pub async fn connect_ssh_without_credentials(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<i32, String> {
-    // Check if session already exists (e.g., from previous password authentication in same session)
-    if let Some(_existing_session) = app_state.get_ssh_session(connection_id).await {
-        // Update last_used_at since we're reusing the connection
-        {
+    // Check if session already exists and is still alive
+    if let Some(existing_session) = app_state.get_ssh_session(connection_id).await {
+        if existing_session.is_connected().await {
+            // Reuse live session — update last_used_at
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
             let now = Utc::now().to_rfc3339();
             conn.execute(
@@ -166,9 +166,10 @@ pub async fn connect_ssh_without_credentials(
                 rusqlite::params![&now, &now, connection_id],
             )
             .map_err(|e| e.to_string())?;
+            return Ok(connection_id);
         }
-
-        return Ok(connection_id);
+        // Session is dead — remove it and fall through to fresh auth
+        app_state.remove_ssh_session(connection_id).await;
     }
 
     // No existing session, proceed with fresh authentication
@@ -431,22 +432,29 @@ pub async fn get_ssh_connection_status(
     connection_id: i32,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ConnectionStatus, String> {
-    // Get the SSH session for this project (lazy - may not be connected yet)
-    let session = state.get_ssh_session(connection_id).await;
+    // Active session alive → connected
+    if let Some(s) = state.get_ssh_session(connection_id).await {
+        if s.is_connected().await {
+            return Ok(ConnectionStatus { connection_id, connected: true, disconnected_reason: None });
+        }
+    }
 
-    let connected = if let Some(s) = session {
-        s.is_connected().await
-    } else {
-        false
-    };
+    // No alive session — probe TCP port to check host reachability
+    let connection = get_ssh_connection(connection_id, state.clone())
+        .map_err(|e| format!("Connection not found: {}", e))?;
+
+    let addr = format!("{}:{}", connection.host, connection.port);
+    let reachable = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false);
 
     Ok(ConnectionStatus {
         connection_id,
-        connected,
-        disconnected_reason: if !connected {
-            Some("Not connected".into())
-        } else {
-            None
-        },
+        connected: reachable,
+        disconnected_reason: if !reachable { Some("Host unreachable".into()) } else { None },
     })
 }
