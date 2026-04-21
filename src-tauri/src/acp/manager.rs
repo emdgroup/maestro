@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
+use tokio::time::{interval, Duration};
 use tauri::Emitter;
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
@@ -119,6 +120,8 @@ fn spawn_reader_task(
     tokio::spawn(async move {
         let mut stdout_reader = BufReader::new(child_stdout);
         let mut cancel_rx = cancel_rx;
+        let mut flush_interval = interval(Duration::from_secs(10));
+        let mut structured_updates: Vec<serde_json::Value> = Vec::new();
 
         loop {
             tokio::select! {
@@ -127,10 +130,26 @@ fn spawn_reader_task(
                 // Cancel branch: IPC caller requested session teardown
                 _ = &mut cancel_rx => break,
 
+                // Periodic flush: write accumulated structured updates to DB
+                _ = flush_interval.tick() => {
+                    if !structured_updates.is_empty() {
+                        let json = serde_json::to_string(&structured_updates)
+                            .unwrap_or_default();
+                        // Scoped block to drop MutexGuard immediately (never hold across .await)
+                        if let Ok(conn) = app_state.db.lock() {
+                            let _ = conn.execute(
+                                "UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
+                                rusqlite::params![&json, log_id],
+                            );
+                        }
+                    }
+                }
+
                 // Normal read branch: parse the next response from maestro-server
                 result = read_message(&mut stdout_reader) => {
                     match result {
                         Ok(MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd))) => {
+                            structured_updates.push(upd.payload.clone());
                             let _ = app_handle.emit(
                                 &format!("acp://session-update/{}", log_id),
                                 &upd.payload,
@@ -167,6 +186,18 @@ fn spawn_reader_task(
                         }
                     }
                 }
+            }
+        }
+
+        // Final flush: write all accumulated updates to DB on session end.
+        if !structured_updates.is_empty() {
+            let json = serde_json::to_string(&structured_updates)
+                .unwrap_or_default();
+            if let Ok(conn) = app_state.db.lock() {
+                let _ = conn.execute(
+                    "UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
+                    rusqlite::params![&json, log_id],
+                );
             }
         }
 
