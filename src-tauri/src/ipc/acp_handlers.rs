@@ -148,3 +148,76 @@ pub async fn cancel_acp_session(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+    use crate::db::schema::initialize_schema;
+
+    /// PERSIST-02: spawn_acp_session INSERT writes execution_mode='acp' and agent_id.
+    /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
+    #[test]
+    fn test_spawn_acp_session_creates_log() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let session_name = "test-session";
+        let agent_id = "claude-code";
+        let now = "2026-04-20T00:00:00Z";
+
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, 'running', 'acp', ?2, ?3)",
+            rusqlite::params![session_name, agent_id, now],
+        ).unwrap();
+
+        let log_id = conn.last_insert_rowid();
+
+        let (mode, stored_agent_id, status): (String, Option<String>, String) = conn
+            .query_row(
+                "SELECT execution_mode, agent_id, status FROM execution_logs WHERE id = ?1",
+                [log_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(mode, "acp", "execution_mode must be 'acp'");
+        assert_eq!(stored_agent_id, Some("claude-code".to_string()), "agent_id must be set");
+        assert_eq!(status, "running", "initial status must be 'running'");
+    }
+
+    /// PERSIST-05: cancel_acp_session UPDATE sets status='cancelled' and completed_at.
+    /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
+    #[test]
+    fn test_cancel_acp_session_updates_status() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        // Create an execution_log row first (simulates spawn).
+        let now = "2026-04-20T00:00:00Z";
+        conn.execute(
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'test', 'running', 'acp', 'claude-code', ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+        let log_id = conn.last_insert_rowid();
+
+        // Execute the same UPDATE that cancel_acp_session uses.
+        let cancel_time = "2026-04-20T00:01:00Z";
+        let rows_updated = conn.execute(
+            "UPDATE execution_logs SET status = 'cancelled', completed_at = ?1 WHERE id = ?2",
+            rusqlite::params![cancel_time, log_id],
+        ).unwrap();
+
+        assert_eq!(rows_updated, 1, "exactly one row should be updated");
+
+        let (status, completed_at): (String, Option<String>) = conn
+            .query_row(
+                "SELECT status, completed_at FROM execution_logs WHERE id = ?1",
+                [log_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(status, "cancelled", "status must be 'cancelled' after cancel");
+        assert_eq!(completed_at, Some("2026-04-20T00:01:00Z".to_string()), "completed_at must be set");
+    }
+}
