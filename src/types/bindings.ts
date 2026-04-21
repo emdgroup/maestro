@@ -1014,6 +1014,55 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Fetch the ACP agent registry from CDN, returning cached results when available.
+ * 
+ * Respects a 5-minute TTL on cached data. When CDN is unreachable but a cached
+ * result exists, returns stale data with `stale: true`. When no cache exists and
+ * CDN is unreachable, returns Err.
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `force_refresh` - When true, bypasses TTL and re-fetches from CDN
+ * 
+ * # Returns
+ * RegistryResponse { agents, cached, stale }
+ */
+async fetchAgentRegistry(forceRefresh: boolean) : Promise<Result<RegistryResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_agent_registry", { forceRefresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resolve the launch command for a specific agent from the cached registry.
+ * 
+ * Looks up the agent by ID in the cached registry (must have been fetched first
+ * via `fetch_agent_registry`), then resolves the distribution using priority order:
+ * npx (preferred) -> binary (compile-time platform key) -> uvx (last resort).
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `agent_id` - The agent identifier (e.g. "claude-code")
+ * 
+ * # Returns
+ * ResolvedLaunchCommand { cmd, args } ready for subprocess spawn
+ * 
+ * # Errors
+ * - Registry not loaded (call fetch_agent_registry first)
+ * - Agent not found in registry
+ * - No compatible distribution for current platform
+ */
+async resolveAgentLaunchCommand(agentId: string) : Promise<Result<ResolvedLaunchCommand, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_agent_launch_command", { agentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1028,10 +1077,19 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
 /** user-defined types **/
 
 /**
+ * How an agent can be installed/launched.
+ */
+export type AgentDistribution = { npx?: NpxDistribution | null; binary?: Partial<{ [key in string]: BinaryTarget }> | null; uvx?: UvxDistribution | null }
+/**
+ * Metadata for a single ACP-compatible agent.
+ */
+export type AgentInfo = { id: string; name: string; version: string; description?: string | null; repository?: string | null; authors?: string[] | null; license?: string | null; icon?: string | null; website?: string | null; distribution: AgentDistribution }
+/**
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; updated_at: string }
+export type BinaryTarget = { archive: string; cmd: string; args?: string[] | null }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1055,9 +1113,18 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
  * Typed response for approve_task_and_merge IPC command
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
+export type NpxDistribution = { package: string; args?: string[] | null; env?: Partial<{ [key in string]: string }> | null }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
 export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
+/**
+ * IPC response wrapper giving frontend cache status context.
+ */
+export type RegistryResponse = { agents: AgentInfo[]; cached: boolean; stale: boolean }
+/**
+ * Resolved launch command ready for subprocess spawn.
+ */
+export type ResolvedLaunchCommand = { cmd: string; args: string[] }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -1090,6 +1157,7 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
+export type UvxDistribution = { package: string; args?: string[] | null }
 /**
  * Worktree record from database (schema v6)
  */
