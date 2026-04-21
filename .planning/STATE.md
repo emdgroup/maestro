@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: verifying
-last_updated: "2026-04-21T00:20:05.901Z"
+status: active
+last_updated: "2026-04-21T00:50:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 6
   completed_plans: 6
-  percent: 100
+  percent: 50
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 44 — db-schema-acp-ipc-handlers
+**Current focus:** Phase 45 — agent-registry-fetch-caching
 
 ## Current Position
 
-Phase: 44 (db-schema-acp-ipc-handlers) — EXECUTING
-Plan: 2 of 2
+Phase: 45 (agent-registry-fetch-caching) — PENDING
+Plan: 0 of ?
 
 ## Performance Metrics
 

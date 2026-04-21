@@ -99,7 +99,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 
 - [x] **Phase 42: maestro-server Activation** — Wire real ACP message loop in maestro-server binary (completed 2026-04-17)
 - [x] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState (completed 2026-04-20)
-- [ ] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
+- [x] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
 - [ ] **Phase 45: Agent Registry Fetch + Caching** — Fetch, cache, and resolve agents from ACP CDN registry
 - [ ] **Phase 46: Frontend: Agent Selector + Spawn Flow** — Browse registry and spawn ACP sessions from UI
 - [ ] **Phase 47: Frontend: AgentActivityPanel** — Structured output viewer with real-time event streaming
