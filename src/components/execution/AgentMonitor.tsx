@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { formatDistanceStrict } from "date-fns";
 import { Plus, Trash2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
@@ -111,11 +112,9 @@ export function AgentMonitor({
                 <span className="text-sm font-medium truncate">
                   {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
                 </span>
-                {!execution.task_name && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium shrink-0">
-                    Interactive
-                  </span>
-                )}
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0">
+                  {execution.execution_mode === "acp" ? "ACP" : "Interactive"}
+                </Badge>
               </div>
               {/* Line 2: status label + elapsed time */}
               <div className="text-xs text-muted-foreground mt-0.5 pl-4">
