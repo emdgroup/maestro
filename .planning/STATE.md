@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: verifying
-last_updated: "2026-04-21T08:34:46.704Z"
+status: executing
+last_updated: "2026-04-21T14:18:17.740Z"
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -18,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 45 — agent-registry-fetch-caching
+**Current focus:** Phase 46 — frontend-agent-selector-spawn-flow
 
 ## Current Position
 
-Phase: 45 (agent-registry-fetch-caching) — EXECUTING
+Phase: 46 (frontend-agent-selector-spawn-flow) — EXECUTING
 Plan: 2 of 2
 
 ## Performance Metrics
@@ -156,6 +157,7 @@ Plan: 2 of 2
 | Phase 44-db-schema-acp-ipc-handlers P02 | 0.033 | 2 tasks | 2 files |
 | Phase 45-agent-registry-fetch-caching P01 | 0.073 | 1 tasks | 3 files |
 | Phase 45-agent-registry-fetch-caching P02 | 0.067 | 2 tasks | 3 files |
+| Phase 46 P01 | 0.073 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -333,6 +335,9 @@ Phase 18 Architecture Decisions:
 - fetch_agent_registry delegates entirely to acp::registry::fetch_or_return_cached — handler is a thin IPC boundary with no logic
 - resolve_agent_launch_command holds cache lock only during the lookup — no await across the guard
 - AcpRegistry not in bindings.ts: tauri-specta only exports types reachable from registered IPC command signatures; RegistryResponse is the IPC boundary type
+- useAgentRegistryQuery gates fetch on enabled=open to avoid CDN calls on every AgentsView mount
+- 5-minute staleTime in useAgentRegistryQuery mirrors backend registry TTL to prevent redundant IPC calls
+- AgentSelectorDialog cwd uses WorktreeWithStatus.path (absolute path) not worktree.id — spawn_acp_session takes cwd: string
 
 ### v1.5 Roadmap Notes
 
@@ -406,7 +411,7 @@ None.
 
 Current session: 2026-04-17 (v1.5 roadmap defined)
 Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Session timestamp: 2026-04-17T00:00:00Z
 
 ---
