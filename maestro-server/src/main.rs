@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use maestro_protocol::{
-    read_message, ErrorResponse, MaestroRpcMessage, ServerRequest, ServerResponse, SpawnResponse,
+    read_message, ErrorResponse, ListAgentsResponse, MaestroRpcMessage, ServerRequest,
+    ServerResponse, SpawnResponse,
 };
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use agent_client_protocol::{self as acp, Agent};
@@ -71,10 +72,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             match msg {
+                MaestroRpcMessage::Request(ServerRequest::ListAgents(req)) => {
+                    let mut available_agent_ids = Vec::new();
+                    for entry in &req.agents {
+                        let ok = tokio::process::Command::new("which")
+                            .arg(&entry.check_cmd)
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status()
+                            .await
+                            .map(|s| s.success())
+                            .unwrap_or(false);
+                        if ok {
+                            available_agent_ids.push(entry.id.clone());
+                        }
+                    }
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
+                            ListAgentsResponse { available_agent_ids },
+                        )),
+                    )
+                    .await;
+                }
+
                 MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
                     // 1. Spawn agent subprocess
                     let mut child =
-                        match agent::spawn_agent_subprocess(&req.agent_id, &[], &req.cwd).await {
+                        match agent::spawn_agent_subprocess(&req.cmd, &req.args, &req.cwd).await {
                             Ok(c) => c,
                             Err(e) => {
                                 let _ = send_response(

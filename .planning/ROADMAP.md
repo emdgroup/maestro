@@ -101,7 +101,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 - [x] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState (completed 2026-04-20)
 - [x] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
 - [x] **Phase 45: Agent Registry Fetch + Caching** — Fetch, cache, and resolve agents from ACP CDN registry (completed 2026-04-21)
-- [ ] **Phase 46: Frontend: Agent Selector + Spawn Flow** — Browse registry and spawn ACP sessions from UI
+- [x] **Phase 46: Frontend: Agent Selector + Spawn Flow** — Browse registry and spawn ACP sessions from UI (completed 2026-04-22)
 - [ ] **Phase 47: Frontend: AgentActivityPanel** — Structured output viewer with real-time event streaming
 - [ ] **Phase 48: Frontend: PermissionDialog** — Approve/deny permission requests with session allowlist
 - [ ] **Phase 49: Dual-Mode Execution Dispatcher** — Route spawn/attach through ACP or PTY path transparently
@@ -173,8 +173,8 @@ Plans:
   3. ACP sessions in the sidebar display an "ACP" badge, distinguishing them from PTY ("Interactive") sessions at a glance
 **Plans**: 2 plans
 Plans:
-- [ ] 46-01-PLAN.md — Service hooks (useAgentRegistryQuery, useSpawnAcpSessionMutation) + AgentSelectorDialog component
-- [ ] 46-02-PLAN.md — Wire AgentSelectorDialog into AgentsView + ACP badge in AgentMonitor sidebar
+- [x] 46-01-PLAN.md — Service hooks (useAgentRegistryQuery, useSpawnAcpSessionMutation) + AgentSelectorDialog component
+- [x] 46-02-PLAN.md — Wire AgentSelectorDialog into AgentsView + ACP badge in AgentMonitor sidebar
 **UI hint**: yes
 
 ### Phase 47: Frontend: AgentActivityPanel
@@ -239,7 +239,7 @@ Plans:
 | 43 - Local ACP Session Manager | v1.5 | Complete    | 2026-04-20 | - |
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | Complete    | 2026-04-21 | - |
-| 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 0/2 | Not started | - |
+| 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 2/2 | Complete | 2026-04-22 |
 | 47 - Frontend: AgentActivityPanel | v1.5 | 0/? | Not started | - |
 | 48 - Frontend: PermissionDialog | v1.5 | 0/? | Not started | - |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | 0/? | Not started | - |

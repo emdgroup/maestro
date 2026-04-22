@@ -22,6 +22,7 @@ pub enum ServerRequest {
     Prompt(PromptRequest),
     Cancel(CancelRequest),
     PermitResponse(PermissionResponse),
+    ListAgents(ListAgentsRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -29,6 +30,26 @@ pub struct SpawnRequest {
     pub agent_id: String,
     pub session_id: String,
     pub cwd: String,
+    /// Resolved command to run (e.g. "npx" for npx agents, absolute binary path for binary agents).
+    pub cmd: String,
+    /// Arguments for `cmd` (e.g. ["-y", "--", "@org/pkg"] for npx auto-install).
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAgentsRequest {
+    pub agents: Vec<AgentCheckEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AgentCheckEntry {
+    pub id: String,
+    pub check_cmd: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAgentsResponse {
+    pub available_agent_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -52,6 +73,7 @@ pub enum ServerResponse {
     SessionUpdate(SessionUpdate),
     PermissionRequest(PermissionRequest),
     TerminalOutput(TerminalOutput),
+    ListAgentsOk(ListAgentsResponse),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -126,6 +148,8 @@ mod tests {
             agent_id: "claude-acp".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
+            cmd: "npx".to_string(),
+            args: vec!["-y".to_string(), "--".to_string(), "@agentclientprotocol/claude-agent-acp".to_string()],
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -228,6 +252,8 @@ mod tests {
             agent_id: "gemini".to_string(),
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
+            cmd: "npx".to_string(),
+            args: vec!["-y".to_string(), "--".to_string(), "@agentclientprotocol/gemini-agent-acp".to_string()],
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -286,6 +312,8 @@ mod tests {
             agent_id: "test".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
+            cmd: "test-cmd".to_string(),
+            args: vec![],
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

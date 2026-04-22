@@ -8,8 +8,8 @@ use super::project_handlers::remove_projects_by_connection_id;
 use crate::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::ssh::session::{SshAuthMethod, SshConnection};
 
-/// Store SSH session in AppState and update DB timestamps (+ optionally auth_method).
-/// Shared by all connect_ssh_* handlers.
+/// Store SSH session in AppState, update DB timestamps, and kick off a background
+/// remote-agent availability check so the result is ready before the user opens a dialog.
 async fn finalize_ssh_connection(
     app_state: &Arc<AppState>,
     connection_id: i32,
@@ -23,8 +23,6 @@ async fn finalize_ssh_connection(
 
     match auth_method_update {
         Some(method) => {
-            // SshAuthMethod implements ToSql (ssh/session.rs ~line 91),
-            // so &connection.auth_method is a valid rusqlite binding.
             conn.execute(
                 "UPDATE ssh_connections SET auth_method = ?, last_used_at = ?, updated_at = ? WHERE id = ?",
                 rusqlite::params![method, &now, &now, connection_id],
@@ -37,6 +35,14 @@ async fn finalize_ssh_connection(
             ).map_err(|e| e.to_string())?;
         }
     }
+    drop(conn);
+
+    // Fire-and-forget: check maestro-server + agent availability in background.
+    // Results are cached in AppState so the New Session dialog reads them instantly.
+    let state_clone = Arc::clone(app_state);
+    tokio::spawn(async move {
+        super::acp_handlers::prefetch_remote_agent_status(state_clone, connection_id).await;
+    });
 
     Ok(())
 }

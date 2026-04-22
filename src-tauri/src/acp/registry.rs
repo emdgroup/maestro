@@ -96,6 +96,11 @@ pub struct UvxDistribution {
 pub struct RemoteAgentStatus {
     pub maestro_server_available: bool,
     pub available_agent_ids: Vec<String>,
+    /// Absolute path to maestro-server on the remote host (from `which` at connect time).
+    /// Used by spawn_acp_process_remote to open the exec channel without relying on SSH exec PATH.
+    #[serde(default)]
+    #[specta(optional)]
+    pub maestro_server_path: Option<String>,
 }
 
 /// Returns the command name to `which` on a remote Linux host for a given agent.
@@ -117,6 +122,7 @@ fn resolve_remote_check_command(agent: &AgentInfo) -> Option<String> {
 }
 
 /// Returns true if the agent's launch command is available on the remote SSH host.
+/// Uses a login shell (`bash -l`) so PATH includes user-local dirs like ~/.local/bin.
 pub async fn check_agent_on_remote(agent: &AgentInfo, ssh: &RemoteSshSession) -> bool {
     if let Some(cmd) = resolve_remote_check_command(agent) {
         ssh.execute_command(&format!("which {} 2>/dev/null", cmd))
@@ -262,6 +268,54 @@ fn current_binary_target_key() -> &'static str {
     {
         return "";
     }
+}
+
+/// Extract the name of the underlying binary from an npx/uvx package name.
+///
+/// `@agentclientprotocol/claude-agent-acp` → `claude`
+/// `@org/amp-agent-acp` → `amp`
+/// `@org/my-tool-acp` → `my-tool`
+pub fn extract_underlying_binary(package: &str) -> Option<String> {
+    let name = package.split('/').next_back()?;
+    let stripped = name
+        .strip_suffix("-agent-acp")
+        .or_else(|| name.strip_suffix("-acp"))
+        .unwrap_or(name);
+    if stripped.is_empty() { None } else { Some(stripped.to_string()) }
+}
+
+/// Resolve the spawn command for an agent (used when launching via maestro-server).
+///
+/// Differs from `resolve_distribution`: npx agents get `-y --` prefix for auto-install.
+/// Priority: npx → binary (current platform) → uvx
+pub fn resolve_spawn_command(dist: &AgentDistribution) -> Option<ResolvedLaunchCommand> {
+    if let Some(npx) = &dist.npx {
+        let mut args = vec!["-y".to_string(), "--".to_string(), npx.package.clone()];
+        if let Some(extra_args) = &npx.args {
+            args.extend(extra_args.iter().cloned());
+        }
+        return Some(ResolvedLaunchCommand { cmd: "npx".to_string(), args });
+    }
+    if let Some(binary_map) = &dist.binary {
+        let key = current_binary_target_key();
+        if !key.is_empty() {
+            if let Some(target) = binary_map.get(key) {
+                let mut args = Vec::new();
+                if let Some(extra_args) = &target.args {
+                    args.extend(extra_args.iter().cloned());
+                }
+                return Some(ResolvedLaunchCommand { cmd: target.cmd.clone(), args });
+            }
+        }
+    }
+    if let Some(uvx) = &dist.uvx {
+        let mut args = vec![uvx.package.clone()];
+        if let Some(extra_args) = &uvx.args {
+            args.extend(extra_args.iter().cloned());
+        }
+        return Some(ResolvedLaunchCommand { cmd: "uvx".to_string(), args });
+    }
+    None
 }
 
 /// Resolve the best available launch command for an agent distribution.

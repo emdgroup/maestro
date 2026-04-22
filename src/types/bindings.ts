@@ -1067,8 +1067,8 @@ async resolveAgentLaunchCommand(agentId: string) : Promise<Result<ResolvedLaunch
 /**
  * Check which ACP agents (and maestro-server itself) are available on a remote SSH host.
  * 
- * Runs `which <cmd>` for each agent's launch binary over the existing SSH session.
- * Results are cached in AppState for 5 minutes to avoid re-checking on every dialog open.
+ * Returns the cached result if still within the 5-minute TTL; otherwise re-runs the check.
+ * The check is also pre-populated at SSH connect time via prefetch_remote_agent_status.
  * 
  * # Arguments
  * * `connection_id` - SSH connection ID (must have an active session in AppState)
@@ -1144,7 +1144,12 @@ export type RegistryResponse = { agents: AgentInfo[]; cached: boolean; stale: bo
 /**
  * Remote availability check result for an SSH-connected project.
  */
-export type RemoteAgentStatus = { maestro_server_available: boolean; available_agent_ids: string[] }
+export type RemoteAgentStatus = { maestro_server_available: boolean; available_agent_ids: string[]; 
+/**
+ * Absolute path to maestro-server on the remote host (from `which` at connect time).
+ * Used by spawn_acp_process_remote to open the exec channel without relying on SSH exec PATH.
+ */
+maestro_server_path?: string | null }
 /**
  * Resolved launch command ready for subprocess spawn.
  */

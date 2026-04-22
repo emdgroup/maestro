@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: verifying
-last_updated: "2026-04-21T14:23:34.441Z"
+status: active
+last_updated: "2026-04-22T00:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 10
   completed_plans: 10
-  percent: 100
+  percent: 75
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 46 — frontend-agent-selector-spawn-flow
+**Current focus:** Phase 47 — frontend-agent-activity-panel
 
 ## Current Position
 
-Phase: 46 (frontend-agent-selector-spawn-flow) — EXECUTING
-Plan: 2 of 2
+Phase: 47 (frontend-agent-activity-panel) — NOT STARTED
+Phase 46 completed 2026-04-22
 
 ## Performance Metrics
 

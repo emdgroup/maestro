@@ -48,7 +48,7 @@ fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
 }
 
 /// Parse one complete framed message from `buf`, consuming its bytes on success.
-fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage> {
+pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage> {
     if buf.len() < 4 {
         return None;
     }
@@ -75,6 +75,8 @@ pub async fn spawn_acp_process(
     log_id: i32,
     session_id: &str,
     app_state: &Arc<crate::db::AppState>,
+    cmd: &str,
+    args: &[String],
 ) -> Result<(), String> {
     use std::process::Stdio;
 
@@ -97,6 +99,8 @@ pub async fn spawn_acp_process(
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
+        cmd: cmd.to_string(),
+        args: args.to_vec(),
     }));
     write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
 
@@ -136,18 +140,13 @@ pub async fn spawn_acp_process_remote(
     session_id: &str,
     app_state: &Arc<crate::db::AppState>,
     ssh_session: &crate::ssh::RemoteSshSession,
+    maestro_server_path: &str,
+    cmd: &str,
+    args: &[String],
 ) -> Result<(), String> {
-    // Verify maestro-server is reachable on the remote host.
-    ssh_session.execute_command("which maestro-server")
-        .await
-        .map_err(|_| {
-            "maestro-server not found on remote PATH. \
-             Install it on the remote host to use ACP sessions.".to_string()
-        })?;
-
-    // Open a new exec channel for maestro-server.
-    let mut channel = ssh_session
-        .open_exec_channel("maestro-server")
+    // Open a new exec channel using the absolute maestro-server path (resolved at connect time).
+    let channel = ssh_session
+        .open_exec_channel(maestro_server_path)
         .await
         .map_err(|e| format!("Failed to open remote ACP channel: {}", e))?;
 
@@ -161,6 +160,8 @@ pub async fn spawn_acp_process_remote(
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
+        cmd: cmd.to_string(),
+        args: args.to_vec(),
     }));
     let spawn_bytes = serialize_message(&spawn_req)?;
     write_tx.send(spawn_bytes).await
