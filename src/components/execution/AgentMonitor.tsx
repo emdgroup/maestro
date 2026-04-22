@@ -6,6 +6,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
+import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
 import type { ExecutionWithTask } from "@/types/bindings";
 
 export const STATUS_FILTERS = ["All", "running", "complete", "failed"] as const;
@@ -192,7 +193,13 @@ export function AgentMonitor({
             </div>
           </div>
         )}
-        {selectedExecution?.status === "running" && terminalSessionId != null ? (
+        {selectedExecution?.execution_mode === "acp" ? (
+          <AgentActivityPanel
+            key={selectedExecution.id}
+            execution={selectedExecution}
+            isDead={selectedExecution.status !== "running"}
+          />
+        ) : selectedExecution?.status === "running" && terminalSessionId != null ? (
           <TerminalComponent key={terminalSessionId} taskId={terminalSessionId} />
         ) : selectedExecution ? (
           <DeadSessionTerminal key={selectedExecution.id} execution={selectedExecution} />
