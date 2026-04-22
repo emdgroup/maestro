@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
 status: verifying
-last_updated: "2026-04-22T23:36:09Z"
+last_updated: "2026-04-22T23:43:53Z"
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -22,8 +22,8 @@ See: .planning/PROJECT.md (updated 2026-04-17)
 
 ## Current Position
 
-Phase: 47 (frontend-agentactivitypanel) — EXECUTING
-Plan: 2 of 2
+Phase: 47 (frontend-agentactivitypanel) — COMPLETE
+Plan: 2 of 2 (all plans complete)
 
 ## Performance Metrics
 
@@ -159,6 +159,7 @@ Plan: 2 of 2
 | Phase 46 P01 | 0.073 | 3 tasks | 4 files |
 | Phase 46-frontend-agent-selector-spawn-flow P02 | 0.05 | 3 tasks | 3 files |
 | Phase 47-frontend-agentactivitypanel P01 | 0.060 | 2 tasks | 7 files |
+| Phase 47-frontend-agentactivitypanel P02 | 0.068 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -346,6 +347,10 @@ Phase 18 Architecture Decisions:
 - [Phase 47-01]: activityReducer exported from useAcpActivity.ts as single canonical accumulation path for both live and dead sessions; Plan 02 uses useReducer + load_from_db dispatch
 - [Phase 47-01]: Unknown sessionUpdate variants silently ignored via default: return newState in processEvent — T-47-02 threat mitigation
 - [Phase 47-01]: useStructuredOutputQuery uses staleTime: Infinity — dead sessions are immutable once completed
+- [Phase 47-02]: useSelectedProject() from projectStore used for projectId in AgentActivityPanel — ConnectionContext has no projectId field; plan's useConnection() reference was incorrect
+- [Phase 47-02]: Dead session replay uses useReducer(activityReducer, INITIAL_ACTIVITY_STATE) + load_from_db dispatch — single canonical accumulation path for live and dead sessions
+- [Phase 47-02]: AcpTerminalPanel uses listen() on acp://terminal-output/{logId} not attachTerminal IPC — ACP sessions have no PTY entry in pty_sessions
+- [Phase 47-02]: Terminal toggle button hidden for dead sessions — no persisted terminal output for completed ACP sessions
 
 ### v1.5 Roadmap Notes
 
@@ -417,12 +422,12 @@ None.
 
 ## Session Continuity
 
-Current session: 2026-04-22 (Phase 47 Plan 01 executed)
-Completed: 47-01-PLAN.md — get_structured_output IPC, activity types, useAcpActivity, useStructuredOutputQuery, activityReducer exported
-Status: Phase 47 Plan 01 complete — Plan 02 ready
-Session timestamp: 2026-04-22T23:36:09Z
+Current session: 2026-04-22 (Phase 47 Plans 01 + 02 executed)
+Completed: 47-02-PLAN.md — ActivityMessageItem, ActivityToolCallCard, ActivityPlanPanel, AcpTerminalPanel, AgentActivityPanel, AgentMonitor ACP routing
+Status: Phase 47 complete — all 2 plans done
+Session timestamp: 2026-04-22T23:43:53Z
 
 ---
 
 **v1.5 MILESTONE STATUS: IN PROGRESS**
-**Phase 47 STATUS: EXECUTING (Plan 02 remaining)**
+**Phase 47 STATUS: COMPLETE**
