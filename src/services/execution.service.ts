@@ -18,6 +18,8 @@ export const executionQueryKeys = {
   detail: (executionId: number) => [...executionQueryKeys.details(), executionId] as const,
   withTaskInfo: (projectId: number) =>
     [...executionQueryKeys.all, "withTaskInfo", projectId] as const,
+  structuredOutput: (logId: number) =>
+    [...executionQueryKeys.all, "structuredOutput", logId] as const,
 };
 
 /**
@@ -287,5 +289,19 @@ export function useSpawnAcpSessionMutation() {
     onError: (error) => {
       toast.error(`Failed to spawn ACP session: ${error}`);
     },
+  });
+}
+
+/**
+ * Query hook for fetching structured output from a completed ACP session.
+ * Only enabled when logId is provided (dead session view).
+ * staleTime Infinity: dead sessions never change once completed.
+ */
+export function useStructuredOutputQuery(logId: number | null) {
+  return useQuery({
+    queryKey: executionQueryKeys.structuredOutput(logId ?? 0),
+    queryFn: () => api.getStructuredOutput(logId!),
+    enabled: logId != null,
+    staleTime: Infinity,
   });
 }
