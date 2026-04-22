@@ -2,14 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: active
-last_updated: "2026-04-22T00:00:00.000Z"
+status: verifying
+last_updated: "2026-04-22T23:36:09Z"
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
-  percent: 75
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -19,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 47 — frontend-agent-activity-panel
+**Current focus:** Phase 47 — frontend-agentactivitypanel
 
 ## Current Position
 
-Phase: 47 (frontend-agent-activity-panel) — NOT STARTED
-Phase 46 completed 2026-04-22
+Phase: 47 (frontend-agentactivitypanel) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -159,6 +158,7 @@ Phase 46 completed 2026-04-22
 | Phase 45-agent-registry-fetch-caching P02 | 0.067 | 2 tasks | 3 files |
 | Phase 46 P01 | 0.073 | 3 tasks | 4 files |
 | Phase 46-frontend-agent-selector-spawn-flow P02 | 0.05 | 3 tasks | 3 files |
+| Phase 47-frontend-agentactivitypanel P01 | 0.060 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -342,6 +342,10 @@ Phase 18 Architecture Decisions:
 - Spawn Agent button placed in right group of action bar; existing search+filter controls stay in left group
 - Badge always renders for all sessions (not gated on !task_name) — every session gets a type label
 - PTY dialog renamed to 'New Terminal Session' to differentiate from 'Spawn ACP Agent' dialog
+- [Phase 47-01]: SessionUpdate types defined frontend-only (not Rust-generated) — backend emits serde_json::Value; TS types narrow at hook consume site
+- [Phase 47-01]: activityReducer exported from useAcpActivity.ts as single canonical accumulation path for both live and dead sessions; Plan 02 uses useReducer + load_from_db dispatch
+- [Phase 47-01]: Unknown sessionUpdate variants silently ignored via default: return newState in processEvent — T-47-02 threat mitigation
+- [Phase 47-01]: useStructuredOutputQuery uses staleTime: Infinity — dead sessions are immutable once completed
 
 ### v1.5 Roadmap Notes
 
@@ -413,12 +417,12 @@ None.
 
 ## Session Continuity
 
-Current session: 2026-04-17 (v1.5 roadmap defined)
-Completed: Roadmap creation — 8 phases, 29 requirements mapped, files written
-Status: Phase complete — ready for verification
-Session timestamp: 2026-04-17T00:00:00Z
+Current session: 2026-04-22 (Phase 47 Plan 01 executed)
+Completed: 47-01-PLAN.md — get_structured_output IPC, activity types, useAcpActivity, useStructuredOutputQuery, activityReducer exported
+Status: Phase 47 Plan 01 complete — Plan 02 ready
+Session timestamp: 2026-04-22T23:36:09Z
 
 ---
 
 **v1.5 MILESTONE STATUS: IN PROGRESS**
-**Phase 42 STATUS: NOT STARTED**
+**Phase 47 STATUS: EXECUTING (Plan 02 remaining)**

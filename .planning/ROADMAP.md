@@ -187,7 +187,7 @@ Plans:
   3. Selecting a completed ACP session loads its structured output from the database and renders it identically to the live view
 **Plans**: 2 plans
 Plans:
-- [ ] 47-01-PLAN.md — Backend IPC (get_structured_output) + frontend types + event hooks (useAcpActivity, useStructuredOutputQuery) + react-markdown install
+- [x] 47-01-PLAN.md — Backend IPC (get_structured_output) + frontend types + event hooks (useAcpActivity, useStructuredOutputQuery) + react-markdown install
 - [ ] 47-02-PLAN.md — Activity sub-components (MessageItem, ToolCallCard, PlanPanel, AcpTerminalPanel) + AgentActivityPanel + AgentMonitor ACP branch wiring
 **UI hint**: yes
 
@@ -243,7 +243,7 @@ Plans:
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | Complete    | 2026-04-21 | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 2/2 | Complete | 2026-04-22 |
-| 47 - Frontend: AgentActivityPanel | v1.5 | 0/2 | Not started | - |
+| 47 - Frontend: AgentActivityPanel | v1.5 | 1/2 | In Progress | - |
 | 48 - Frontend: PermissionDialog | v1.5 | 0/? | Not started | - |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | 0/? | Not started | - |
 
