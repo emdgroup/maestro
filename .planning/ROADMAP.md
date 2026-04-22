@@ -183,12 +183,13 @@ Plans:
 **Requirements**: ACTIVITY-01, ACTIVITY-02, ACTIVITY-03
 **Success Criteria** (what must be TRUE):
   1. While an ACP session is running, structured output (messages, tool calls, diffs, plans) appears in real-time in the activity panel via Tauri event subscription
-  2. Raw terminal output from the agent is visible in a split pane using the existing TerminalComponent alongside the structured view
+  2. Raw terminal output from the agent is accessible via a toggleable bottom panel (AcpTerminalPanel) that slides in when the user clicks the Terminal button; the structured activity view remains the primary content area
   3. Selecting a completed ACP session loads its structured output from the database and renders it identically to the live view
-**Plans**: 2 plans
+**Plans**: 3 plans
 Plans:
 - [x] 47-01-PLAN.md — Backend IPC (get_structured_output) + frontend types + event hooks (useAcpActivity, useStructuredOutputQuery) + react-markdown install
 - [x] 47-02-PLAN.md — Activity sub-components (MessageItem, ToolCallCard, PlanPanel, AcpTerminalPanel) + AgentActivityPanel + AgentMonitor ACP branch wiring
+- [x] 47-03-PLAN.md — Documentation gap closure: align REQUIREMENTS.md and ROADMAP.md with toggle-panel design
 **UI hint**: yes
 
 ### Phase 48: Frontend: PermissionDialog
@@ -243,7 +244,7 @@ Plans:
 | 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
 | 45 - Agent Registry Fetch + Caching | v1.5 | Complete    | 2026-04-21 | - |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 2/2 | Complete | 2026-04-22 |
-| 47 - Frontend: AgentActivityPanel | v1.5 | 2/2 | Complete | 2026-04-22 |
+| 47 - Frontend: AgentActivityPanel | v1.5 | 3/3 | Complete | 2026-04-22 |
 | 48 - Frontend: PermissionDialog | v1.5 | 0/? | Not started | - |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | 0/? | Not started | - |
 
