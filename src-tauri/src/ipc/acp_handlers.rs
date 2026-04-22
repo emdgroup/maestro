@@ -147,6 +147,37 @@ pub async fn respond_acp_permission(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
+/// Read structured output from a completed ACP session for dead session replay.
+///
+/// Returns the accumulated SessionUpdate payloads stored in execution_logs.structured_output.
+/// Returns an empty array if the column is NULL (session had no structured output).
+///
+/// # Arguments
+/// * `app_state` - Tauri app state
+/// * `log_id` - Execution log ID
+///
+/// # Returns
+/// Vec<serde_json::Value> — the accumulated payload array from the session
+#[tauri::command]
+#[specta::specta]
+pub async fn get_structured_output(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+) -> Result<Vec<serde_json::Value>, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let json: Option<String> = conn.query_row(
+        "SELECT structured_output FROM execution_logs WHERE id = ?1",
+        rusqlite::params![log_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("DB query failed: {}", e))?;
+
+    match json {
+        None => Ok(vec![]),
+        Some(s) => serde_json::from_str::<Vec<serde_json::Value>>(&s)
+            .map_err(|e| format!("Failed to parse structured_output: {}", e)),
+    }
+}
+
 /// Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
 ///
 /// Steps:

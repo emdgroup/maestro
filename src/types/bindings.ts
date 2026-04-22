@@ -1083,6 +1083,27 @@ async checkRemoteAgents(connectionId: number) : Promise<Result<RemoteAgentStatus
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Read structured output from a completed ACP session for dead session replay.
+ * 
+ * Returns the accumulated SessionUpdate payloads stored in execution_logs.structured_output.
+ * Returns an empty array if the column is NULL (session had no structured output).
+ * 
+ * # Arguments
+ * * `app_state` - Tauri app state
+ * * `log_id` - Execution log ID
+ * 
+ * # Returns
+ * Vec<serde_json::Value> — the accumulated payload array from the session
+ */
+async getStructuredOutput(logId: number) : Promise<Result<JsonValue[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_structured_output", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
