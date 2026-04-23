@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
-status: verifying
-last_updated: "2026-04-22T23:43:53Z"
+status: completed
+last_updated: "2026-04-23T01:09:05.505Z"
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 12
-  completed_plans: 12
+  completed_phases: 5
+  total_plans: 13
+  completed_plans: 13
 ---
 
 # Project State: v1.5 — ACP Integration
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 47 — frontend-agentactivitypanel
+**Current focus:** Phase 48 — frontend-permissiondialog
 
 ## Current Position
 
 Phase: 47 (frontend-agentactivitypanel) — COMPLETE
-Plan: 2 of 2 (all plans complete)
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -160,6 +160,7 @@ Plan: 2 of 2 (all plans complete)
 | Phase 46-frontend-agent-selector-spawn-flow P02 | 0.05 | 3 tasks | 3 files |
 | Phase 47-frontend-agentactivitypanel P01 | 0.060 | 2 tasks | 7 files |
 | Phase 47-frontend-agentactivitypanel P02 | 0.068 | 2 tasks | 6 files |
+| Phase 47-frontend-agentactivitypanel P03 | 0.015 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -422,10 +423,10 @@ None.
 
 ## Session Continuity
 
-Current session: 2026-04-22 (Phase 47 Plans 01 + 02 executed)
-Completed: 47-02-PLAN.md — ActivityMessageItem, ActivityToolCallCard, ActivityPlanPanel, AcpTerminalPanel, AgentActivityPanel, AgentMonitor ACP routing
-Status: Phase 47 complete — all 2 plans done
-Session timestamp: 2026-04-22T23:43:53Z
+Current session: 2026-04-23 (Phase 47 Plan 03 executed)
+Completed: 47-03-PLAN.md — REQUIREMENTS.md ACTIVITY-02 marked complete, description updated to AcpTerminalPanel toggle-panel design; ROADMAP.md SC#2 confirmed correct
+Status: Phase 47 complete — all 3 plans done
+Session timestamp: 2026-04-23T01:09:32Z
 
 ---
 
