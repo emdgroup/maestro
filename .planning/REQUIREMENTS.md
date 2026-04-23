@@ -57,7 +57,7 @@
 ### Frontend: Activity Panel
 
 - [x] **ACTIVITY-01**: User sees structured ACP agent output (messages, tool calls with args/results, file diffs, plans) in real-time via Tauri event subscription
-- [ ] **ACTIVITY-02**: User sees raw terminal output alongside structured output in a split pane using existing TerminalComponent
+- [x] **ACTIVITY-02**: User can toggle a terminal bottom panel to see raw ACP terminal output alongside the structured activity view (AcpTerminalPanel, slide-in from bottom)
 - [x] **ACTIVITY-03**: Completed ACP sessions replay structured output loaded from DB (dead session view)
 
 ### Frontend: Permission Dialog
@@ -125,7 +125,7 @@
 | SPAWN-02 | Phase 46 | Pending |
 | SPAWN-03 | Phase 46 | Pending |
 | ACTIVITY-01 | Phase 47 | Complete |
-| ACTIVITY-02 | Phase 47 | Pending |
+| ACTIVITY-02 | Phase 47 | Complete |
 | ACTIVITY-03 | Phase 47 | Complete |
 | PERM-01 | Phase 48 | Pending |
 | PERM-02 | Phase 48 | Pending |
@@ -142,4 +142,4 @@
 
 ---
 *Requirements defined: 2026-04-17*
-*Last updated: 2026-04-17 after milestone v1.5 initialization*
+*Last updated: 2026-04-22 — ACTIVITY-02 marked complete; description updated to reflect toggle-panel design (AcpTerminalPanel)*
