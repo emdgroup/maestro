@@ -34,7 +34,7 @@ pub async fn spawn_agent_subprocess(
         .envs(env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit()) // agent stderr goes to maestro-server stderr
+        .stderr(std::process::Stdio::null()) // suppress agent stderr noise
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("failed to spawn agent '{}': {}", command, e))?;

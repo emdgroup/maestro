@@ -168,6 +168,7 @@ async fn spawn_acp_session(
                         let so = so.clone();
                         let sid = sid.clone();
                         async move {
+
                             let request_id = request.tool_call.tool_call_id.to_string();
 
                             let (tx, rx) = oneshot::channel::<bool>();
@@ -254,6 +255,7 @@ async fn spawn_acp_session(
                         let so = so.clone();
                         let sid = sid.clone();
                         async move {
+
                             let resp = handle_create_terminal(request, terms, tc, so, sid).await?;
                             responder.respond(resp)
                         }
@@ -268,6 +270,7 @@ async fn spawn_acp_session(
                     move |request: TerminalOutputRequest, responder: acp::Responder<TerminalOutputResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
+
                             let terminal_id_str = request.terminal_id.to_string();
                             let terminals = terms.lock().await;
                             let handle = terminals.get(&terminal_id_str).ok_or_else(|| {
@@ -303,6 +306,7 @@ async fn spawn_acp_session(
                     move |request: ReleaseTerminalRequest, responder: acp::Responder<ReleaseTerminalResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
+
                             let terminal_id_str = request.terminal_id.to_string();
                             terms.lock().await.remove(&terminal_id_str);
                             responder.respond(ReleaseTerminalResponse::new())
@@ -318,6 +322,7 @@ async fn spawn_acp_session(
                     move |request: WaitForTerminalExitRequest, responder: acp::Responder<WaitForTerminalExitResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
+
                             let terminal_id_str = request.terminal_id.to_string();
                             loop {
                                 let (exit_status_arc, exit_notify_arc) = {
@@ -362,6 +367,7 @@ async fn spawn_acp_session(
                     move |request: KillTerminalRequest, responder: acp::Responder<KillTerminalResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
+
                             let terminal_id_str = request.terminal_id.to_string();
                             let mut terminals = terms.lock().await;
                             if let Some(handle) = terminals.get_mut(&terminal_id_str) {
@@ -380,7 +386,7 @@ async fn spawn_acp_session(
                 {
                     move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, _cx: acp::ConnectionTo<acp::Agent>| {
                         async move {
-                            if request.method() == "session/elicitation" {
+                            if request.method() == "elicitation/create" {
                                 responder.respond(serde_json::json!({
                                     "action": { "action": "decline" }
                                 }))
