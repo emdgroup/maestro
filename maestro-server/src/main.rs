@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
+
 use acp::schema::{
     ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Implementation,
     InitializeRequest, KillTerminalRequest, KillTerminalResponse, PermissionOptionKind,
@@ -369,6 +370,25 @@ async fn spawn_acp_session(
                                 }
                             }
                             responder.respond(KillTerminalResponse::new())
+                        }
+                    }
+                },
+                acp::on_receive_request!(),
+            )
+            // --- catch-all: handle unregistered request methods (e.g. session/elicitation) ---
+            .on_receive_request(
+                {
+                    move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, _cx: acp::ConnectionTo<acp::Agent>| {
+                        async move {
+                            if request.method() == "session/elicitation" {
+                                responder.respond(serde_json::json!({
+                                    "action": { "action": "decline" }
+                                }))
+                            } else {
+                                responder.respond_with_error(
+                                    acp::Error::method_not_found().data(request.method().to_string())
+                                )
+                            }
                         }
                     }
                 },
