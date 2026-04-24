@@ -7,8 +7,7 @@ import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
   useDeleteExecutionMutation,
-  useAgentRegistryQuery,
-  useRemoteAgentStatusQuery,
+  useAgentDiscoveryQuery,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
@@ -49,23 +48,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const [sessionType, setSessionType] = useState<string>("terminal");
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
-  // Fetch registry when dialog is open (both local and remote need names for display)
-  const { data: registry } = useAgentRegistryQuery(showSpawnDialog);
-  // Check remote availability eagerly on mount so results are ready when dialog opens
-  const { data: remoteStatus, isLoading: remoteStatusLoading } = useRemoteAgentStatusQuery(connectionId ?? null);
+  const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(
+    connectionId ?? null,
+    showSpawnDialog || !!connectionId,
+  );
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
   const deleteMutation = useDeleteExecutionMutation();
 
-  const isRemote = !!connectionId;
-  const agents = registry?.agents ?? [];
-  // For remote: only show agents if maestro-server present AND agent binary available
-  const availableAgents = isRemote
-    ? agents.filter((a) => remoteStatus?.available_agent_ids.includes(a.id))
-    : agents;
-  const visibleAgents = isRemote
-    ? (remoteStatus?.maestro_server_available ? availableAgents : [])
-    : agents;
+  const visibleAgents = discovery?.agents ?? [];
 
   useEffect(() => {
     if (pendingAgentId && executions.length > 0) {
@@ -212,12 +203,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="terminal">Terminal</SelectItem>
-                  {isRemote && remoteStatusLoading && (
-                    <SelectItem value="_loading" disabled>Checking remote agents...</SelectItem>
+                  {discoveryLoading && (
+                    <SelectItem value="_loading" disabled>Checking available agents...</SelectItem>
                   )}
-                  {isRemote && !remoteStatusLoading && !remoteStatus?.maestro_server_available && (
+                  {!discoveryLoading && !discovery?.maestro_server_available && (
                     <SelectItem value="_no_server" disabled>
-                      maestro-server not found on remote host
+                      maestro-server not found
+                    </SelectItem>
+                  )}
+                  {!discoveryLoading && discovery?.error && (
+                    <SelectItem value="_error" disabled>
+                      Discovery error: {discovery.error}
                     </SelectItem>
                   )}
                   {visibleAgents.map((agent) => (

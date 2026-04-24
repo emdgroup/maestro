@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const MSG_LEN_SIZE: usize = 4;
@@ -30,26 +31,21 @@ pub struct SpawnRequest {
     pub agent_id: String,
     pub session_id: String,
     pub cwd: String,
-    /// Resolved command to run (e.g. "npx" for npx agents, absolute binary path for binary agents).
-    pub cmd: String,
-    /// Arguments for `cmd` (e.g. ["-y", "--", "@org/pkg"] for npx auto-install).
-    pub args: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListAgentsRequest {
-    pub agents: Vec<AgentCheckEntry>,
-}
+pub struct ListAgentsRequest {}
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AgentCheckEntry {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiscoveredAgent {
     pub id: String,
-    pub check_cmd: String,
+    pub name: String,
+    pub icon: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListAgentsResponse {
-    pub available_agent_ids: Vec<String>,
+    pub agents: Vec<DiscoveredAgent>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -118,6 +114,9 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
     msg: &MaestroRpcMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = serde_json::to_vec(msg)?;
+    if bytes.len() > MAX_MESSAGE_SIZE {
+        return Err(format!("Message too large to send: {} bytes (max {})", bytes.len(), MAX_MESSAGE_SIZE).into());
+    }
     let len = bytes.len() as u32;
     stream.write_all(&len.to_le_bytes()).await?;
     stream.write_all(&bytes).await?;
@@ -138,6 +137,68 @@ pub async fn read_message<R: AsyncRead + Unpin>(
     Ok(serde_json::from_slice(&body)?)
 }
 
+// --- CDN registry types — used by maestro-server for agent discovery ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AcpRegistry {
+    pub version: String,
+    pub agents: Vec<AgentRegistryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentRegistryEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub distribution: AgentDistribution,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub authors: Option<Vec<String>>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub website: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AgentDistribution {
+    #[serde(default)]
+    pub npx: Option<NpxDistribution>,
+    #[serde(default)]
+    pub binary: Option<HashMap<String, BinaryTarget>>,
+    #[serde(default)]
+    pub uvx: Option<UvxDistribution>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NpxDistribution {
+    pub package: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+    #[serde(default)]
+    pub env: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BinaryTarget {
+    pub archive: String,
+    pub cmd: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UvxDistribution {
+    pub package: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,8 +209,6 @@ mod tests {
             agent_id: "claude-acp".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
-            cmd: "npx".to_string(),
-            args: vec!["-y".to_string(), "--".to_string(), "@agentclientprotocol/claude-agent-acp".to_string()],
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -252,8 +311,6 @@ mod tests {
             agent_id: "gemini".to_string(),
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
-            cmd: "npx".to_string(),
-            args: vec!["-y".to_string(), "--".to_string(), "@agentclientprotocol/gemini-agent-acp".to_string()],
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -312,8 +369,6 @@ mod tests {
             agent_id: "test".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
-            cmd: "test-cmd".to_string(),
-            args: vec![],
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

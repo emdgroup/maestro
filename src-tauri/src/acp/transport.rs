@@ -7,7 +7,7 @@ pub use maestro_protocol::{
     PromptRequest, CancelRequest,
     SessionUpdate, PermissionRequest, PermissionResponse,
     TerminalOutput, ErrorResponse,
-    ListAgentsRequest, AgentCheckEntry, ListAgentsResponse,
+    ListAgentsRequest, ListAgentsResponse, DiscoveredAgent,
     write_message, read_message,
     MSG_LEN_SIZE, MAX_MESSAGE_SIZE,
 };

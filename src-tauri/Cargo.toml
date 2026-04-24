@@ -35,8 +35,6 @@ specta-typescript = "0.0.9"
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 urlencoding = "2.1"
 which = "8.0.2"
-agent-client-protocol = "0.10.4"
-async-trait = "0.1"
 maestro-protocol = { path = "../maestro-protocol" }
 
 [profile.release]

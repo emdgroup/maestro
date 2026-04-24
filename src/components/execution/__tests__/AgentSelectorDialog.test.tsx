@@ -11,8 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@/services/execution.service", () => ({
-  useAgentRegistryQuery: vi.fn(),
-  useRemoteAgentStatusQuery: vi.fn(),
+  useAgentDiscoveryQuery: vi.fn(),
   useSpawnAcpSessionMutation: vi.fn(),
   useSpawnInteractiveExecutionMutation: vi.fn(),
   useDeleteExecutionMutation: vi.fn(),
@@ -29,8 +28,7 @@ vi.mock("@/store/navigationStore", () => ({
 }));
 
 import {
-  useAgentRegistryQuery,
-  useRemoteAgentStatusQuery,
+  useAgentDiscoveryQuery,
   useSpawnAcpSessionMutation,
   useSpawnInteractiveExecutionMutation,
   useDeleteExecutionMutation,
@@ -38,21 +36,10 @@ import {
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { AgentsView } from "@/views/AgentsView";
-import type { AgentInfo, WorktreeWithStatus } from "@/types/bindings";
+import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 
-const mockAgents: AgentInfo[] = [
-  {
-    id: "claude-code",
-    name: "Claude Code",
-    version: "1.0.0",
-    description: "AI coding agent",
-    distribution: {} as AgentInfo["distribution"],
-    repository: null,
-    authors: null,
-    license: null,
-    icon: null,
-    website: null,
-  },
+const mockAgents: DiscoveredAgent[] = [
+  { id: "claude-code", name: "Claude Code", icon: "" },
 ];
 
 const mockWorktrees: WorktreeWithStatus[] = [
@@ -87,8 +74,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   (useExecutionsWithTaskInfoQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
   (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
-  (useAgentRegistryQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: { agents: mockAgents, cached: false, stale: false }, isLoading: false });
-  (useRemoteAgentStatusQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: undefined, isLoading: false });
+  (useAgentDiscoveryQuery as ReturnType<typeof vi.fn>).mockReturnValue({
+    data: { maestro_server_available: true, agents: mockAgents, error: null },
+    isLoading: false,
+  });
   (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
   (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
   (useDeleteExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn() });
@@ -113,7 +102,7 @@ describe("New Session dialog — agent type selector", () => {
     await user.click(screen.getByRole("button", { name: /new session/i }));
 
     // Registry fetched for local — agents available in type select
-    expect(useAgentRegistryQuery).toHaveBeenCalledWith(true);
+    expect(useAgentDiscoveryQuery).toHaveBeenCalled();
   });
 });
 

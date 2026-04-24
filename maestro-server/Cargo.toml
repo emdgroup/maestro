@@ -11,9 +11,10 @@ path = "src/main.rs"
 
 [dependencies]
 maestro-protocol = { path = "../maestro-protocol" }
-agent-client-protocol = "0.10.4"
+agent-client-protocol = "0.11.1"
+agent-client-protocol-tokio = "0.11.1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 serde_json = "1"
-async-trait = "0.1"
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
 futures = "0.3"

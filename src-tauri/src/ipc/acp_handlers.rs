@@ -7,15 +7,16 @@
 //! - `cancel_acp_session`: Stop a running session and clean up resources
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::State;
 use chrono::Utc;
 
 use crate::db::AppState;
-use crate::acp::registry::{RegistryResponse, ResolvedLaunchCommand, RemoteAgentStatus};
+use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
 use crate::acp::transport::{
-    MaestroRpcMessage, ServerRequest,
+    MaestroRpcMessage, ServerRequest, ServerResponse,
     PromptRequest, CancelRequest, PermissionResponse,
+    ListAgentsRequest, write_message,
 };
 
 /// Launch a new ACP agent session via maestro-server subprocess.
@@ -57,22 +58,11 @@ pub async fn spawn_acp_session(
 
     let session_id = format!("session-{}", log_id);
 
-    // Resolve cmd+args for this agent from the registry.
-    let registry = crate::acp::registry::fetch_or_return_cached(
-        &app_state.agent_registry_cache,
-        false,
-    ).await.map_err(|e| format!("Failed to fetch registry: {}", e))?;
-    let agent = registry.agents.iter()
-        .find(|a| a.id == agent_id)
-        .ok_or_else(|| format!("Agent '{}' not found in registry", agent_id))?;
-    let launch = crate::acp::registry::resolve_spawn_command(&agent.distribution)
-        .ok_or_else(|| format!("No compatible distribution for agent '{}'", agent_id))?;
-
     if let Some(conn_id) = connection_id {
         let maestro_path = {
-            let cache = app_state.remote_agent_status.lock().await;
-            cache.get(&conn_id)
-                .and_then(|(_, s)| s.maestro_server_path.clone())
+            let cache = app_state.agent_discovery_cache.lock().await;
+            cache.get(&Some(conn_id))
+                .and_then(|e| e.maestro_server_path.clone())
                 .ok_or_else(|| format!(
                     "maestro-server path not cached for connection {}. Reconnect to refresh.",
                     conn_id
@@ -82,12 +72,11 @@ pub async fn spawn_acp_session(
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         crate::acp::spawn_acp_process_remote(
             &agent_id, &cwd, log_id, &session_id, &app_state, &ssh,
-            &maestro_path, &launch.cmd, &launch.args,
+            &maestro_path,
         ).await?;
     } else {
         crate::acp::spawn_acp_process(
             &agent_id, &cwd, log_id, &session_id, &app_state,
-            &launch.cmd, &launch.args,
         ).await?;
     }
 
@@ -225,154 +214,123 @@ pub async fn cancel_acp_session(
     Ok(())
 }
 
-/// Fetch the ACP agent registry from CDN, returning cached results when available.
-///
-/// Respects a 5-minute TTL on cached data. When CDN is unreachable but a cached
-/// result exists, returns stale data with `stale: true`. When no cache exists and
-/// CDN is unreachable, returns Err.
-///
-/// # Arguments
-/// * `app_state` - Tauri app state
-/// * `force_refresh` - When true, bypasses TTL and re-fetches from CDN
-///
-/// # Returns
-/// RegistryResponse { agents, cached, stale }
-#[tauri::command]
-#[specta::specta]
-pub async fn fetch_agent_registry(
-    app_state: State<'_, Arc<AppState>>,
-    force_refresh: bool,
-) -> Result<RegistryResponse, String> {
-    crate::acp::registry::fetch_or_return_cached(
-        &app_state.agent_registry_cache,
-        force_refresh,
-    ).await
-}
-
-/// Resolve the launch command for a specific agent from the cached registry.
-///
-/// Looks up the agent by ID in the cached registry (must have been fetched first
-/// via `fetch_agent_registry`), then resolves the distribution using priority order:
-/// npx (preferred) -> binary (compile-time platform key) -> uvx (last resort).
-///
-/// # Arguments
-/// * `app_state` - Tauri app state
-/// * `agent_id` - The agent identifier (e.g. "claude-code")
-///
-/// # Returns
-/// ResolvedLaunchCommand { cmd, args } ready for subprocess spawn
-///
-/// # Errors
-/// - Registry not loaded (call fetch_agent_registry first)
-/// - Agent not found in registry
-/// - No compatible distribution for current platform
-#[tauri::command]
-#[specta::specta]
-pub async fn resolve_agent_launch_command(
-    app_state: State<'_, Arc<AppState>>,
-    agent_id: String,
-) -> Result<ResolvedLaunchCommand, String> {
-    let guard = app_state.agent_registry_cache.lock().await;
-    let entry = guard.as_ref()
-        .ok_or_else(|| "Registry not loaded — call fetch_agent_registry first".to_string())?;
-    let agent = entry.registry.agents.iter()
-        .find(|a| a.id == agent_id)
-        .ok_or_else(|| format!("Agent '{}' not found in registry", agent_id))?;
-    crate::acp::registry::resolve_distribution(&agent.distribution)
-        .ok_or_else(|| format!("No compatible distribution found for agent '{}'", agent_id))
-}
-
-/// Run the remote agent availability check and store the result in the AppState cache.
-/// Fire-and-forget safe: returns silently if no SSH session is present.
-/// Called at SSH connect time from ssh_handlers (background task) and on-demand
-/// from the `check_remote_agents` IPC command when the cache is stale.
-pub async fn prefetch_remote_agent_status(app_state: Arc<AppState>, connection_id: i32) {
-    let Some(ssh) = app_state.get_ssh_session(connection_id).await else {
-        return;
-    };
-
-    // Use login+interactive shell to source .zshrc/.bashrc so user PATH is available.
-    let maestro_path = ssh
-        .execute_command("which maestro-server 2>/dev/null")
-        .await
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let maestro_server_available = maestro_path.is_some();
-
-    let mut available_agent_ids = Vec::new();
-
-    if let Some(ref path) = maestro_path {
-        let Ok(registry) = crate::acp::registry::fetch_or_return_cached(
-            &app_state.agent_registry_cache,
-            false,
-        ).await else {
-            let status = RemoteAgentStatus {
-                maestro_server_available,
-                available_agent_ids,
-                maestro_server_path: maestro_path,
+/// Run agent discovery and store result in the AppState cache.
+/// Fire-and-forget safe: returns silently on errors (result stored with error field set).
+/// Called at SSH connect time (connection_id = Some) and on-demand from `discover_agents` IPC.
+/// For local discovery (connection_id = None), called on first `discover_agents` query.
+pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: Option<i32>) {
+    match connection_id {
+        Some(conn_id) => {
+            let Some(ssh) = app_state.get_ssh_session(conn_id).await else {
+                return;
             };
-            app_state.remote_agent_status.lock().await
-                .insert(connection_id, (Instant::now(), status));
-            return;
-        };
-
-        // Build check entries: derive underlying binary name from package name heuristic.
-        let check_entries: Vec<crate::acp::transport::AgentCheckEntry> = registry.agents.iter()
-            .filter_map(|a| {
-                resolve_check_command_for_agent(a).map(|check_cmd| {
-                    crate::acp::transport::AgentCheckEntry {
-                        id: a.id.clone(),
-                        check_cmd,
-                    }
-                })
-            })
-            .collect();
-
-        if let Ok(resp) = query_list_agents(&ssh, path, check_entries).await {
-            available_agent_ids = resp.available_agent_ids;
+            let maestro_path = ssh
+                .execute_command("which maestro-server 2>/dev/null")
+                .await
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let maestro_server_available = maestro_path.is_some();
+            let (agents, error) = match &maestro_path {
+                Some(path) => match query_list_agents_remote(&ssh, path).await {
+                    Ok(a) => (a, None),
+                    Err(e) => (Vec::new(), Some(e)),
+                },
+                None => (Vec::new(), None),
+            };
+            let entry = AgentDiscoveryCacheEntry {
+                result: AgentDiscoveryResult { maestro_server_available, agents, error },
+                maestro_server_path: maestro_path,
+                fetched_at: std::time::Instant::now(),
+            };
+            app_state.agent_discovery_cache.lock().await.insert(Some(conn_id), entry);
         }
-    }
-
-    let status = RemoteAgentStatus {
-        maestro_server_available,
-        available_agent_ids,
-        maestro_server_path: maestro_path,
-    };
-    app_state.remote_agent_status.lock().await
-        .insert(connection_id, (Instant::now(), status));
-}
-
-/// Resolve the check command for a given agent (the underlying tool, not the ACP wrapper).
-/// Used to build ListAgents requests: maestro-server runs `which <check_cmd>` on remote.
-fn resolve_check_command_for_agent(agent: &crate::acp::registry::AgentInfo) -> Option<String> {
-    if let Some(binary_map) = &agent.distribution.binary {
-        for (key, target) in binary_map {
-            if key.contains("linux") {
-                if !target.cmd.starts_with('.') {
-                    return Some(target.cmd.clone());
+        None => {
+            let maestro_path = which::which("maestro-server").ok()
+                .map(|p| p.to_string_lossy().to_string());
+            let maestro_server_available = maestro_path.is_some();
+            let (agents, error) = if maestro_server_available {
+                match query_list_agents_local().await {
+                    Ok(a) => (a, None),
+                    Err(e) => (Vec::new(), Some(e)),
                 }
-                return None;
-            }
+            } else {
+                (Vec::new(), None)
+            };
+            let entry = AgentDiscoveryCacheEntry {
+                result: AgentDiscoveryResult { maestro_server_available, agents, error },
+                maestro_server_path: None,
+                fetched_at: std::time::Instant::now(),
+            };
+            app_state.agent_discovery_cache.lock().await.insert(None, entry);
         }
     }
-    if let Some(npx) = &agent.distribution.npx {
-        return crate::acp::registry::extract_underlying_binary(&npx.package)
-            .or_else(|| Some("npx".to_string()));
-    }
-    if let Some(uvx) = &agent.distribution.uvx {
-        return crate::acp::registry::extract_underlying_binary(&uvx.package)
-            .or_else(|| Some("uvx".to_string()));
-    }
-    None
 }
 
-/// Open a one-shot exec channel to maestro-server, send ListAgents, return the response.
-async fn query_list_agents(
+/// Spawn a one-shot local maestro-server, send ListAgents, read response.
+async fn query_list_agents_local() -> Result<Vec<DiscoveredAgent>, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let server_path = which::which("maestro-server")
+        .map_err(|e| format!("maestro-server not found: {}", e))?;
+
+    let mut child = tokio::process::Command::new(server_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let mut stdout = child.stdout.take().expect("stdout piped");
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
+    let mut writer = tokio::io::BufWriter::new(&mut stdin);
+    write_message(&mut writer, &msg)
+        .await
+        .map_err(|e| format!("ListAgents local write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    drop(writer);
+    drop(stdin);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        async {
+            use tokio::io::AsyncReadExt;
+            let mut tmp = [0u8; 4096];
+            loop {
+                let n = stdout.read(&mut tmp).await
+                    .map_err(|e| format!("read error: {}", e))?;
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                    return Ok::<_, String>(Some(rpc_msg));
+                }
+            }
+            Ok(None)
+        },
+    )
+    .await
+    .map_err(|_| "ListAgents local timed out after 15s".to_string())??;
+
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
+            Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
+        }
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid ListAgentsOk response from local maestro-server".to_string()),
+    }
+}
+
+/// Open a one-shot exec channel to maestro-server, send ListAgents, return discovered agents.
+async fn query_list_agents_remote(
     ssh: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
-    agents: Vec<crate::acp::transport::AgentCheckEntry>,
-) -> Result<crate::acp::transport::ListAgentsResponse, String> {
+) -> Result<Vec<DiscoveredAgent>, String> {
     use tokio::io::AsyncWriteExt;
     use russh::ChannelMsg;
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, ListAgentsRequest, ServerResponse, write_message};
@@ -383,7 +341,7 @@ async fn query_list_agents(
 
     let (mut read_half, write_half) = channel.split();
 
-    let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest { agents }));
+    let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
     let mut writer = write_half.make_writer();
     write_message(&mut writer, &msg)
         .await
@@ -417,45 +375,42 @@ async fn query_list_agents(
     .map_err(|_| "ListAgents timed out after 30s".to_string())?;
 
     match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => Ok(resp),
+        Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
+            Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
+        }
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
         _ => Err("No valid ListAgentsOk response from maestro-server".to_string()),
     }
 }
 
-/// Check which ACP agents (and maestro-server itself) are available on a remote SSH host.
-///
-/// Returns the cached result if still within the 5-minute TTL; otherwise re-runs the check.
-/// The check is also pre-populated at SSH connect time via prefetch_remote_agent_status.
-///
-/// # Arguments
-/// * `connection_id` - SSH connection ID (must have an active session in AppState)
-///
-/// # Returns
-/// RemoteAgentStatus { maestro_server_available, available_agent_ids }
+/// Discover available ACP agents via maestro-server.
+/// Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
+/// Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
 #[tauri::command]
 #[specta::specta]
-pub async fn check_remote_agents(
+pub async fn discover_agents(
     app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-) -> Result<RemoteAgentStatus, String> {
-    // Return cached result if still fresh (5-min TTL)
+    connection_id: Option<i32>,
+) -> Result<AgentDiscoveryResult, String> {
     {
-        let cache = app_state.remote_agent_status.lock().await;
-        if let Some((ts, status)) = cache.get(&connection_id) {
-            if ts.elapsed() < Duration::from_secs(300) {
-                return Ok(status.clone());
+        let cache = app_state.agent_discovery_cache.lock().await;
+        if let Some(entry) = cache.get(&connection_id) {
+            if entry.fetched_at.elapsed() < Duration::from_secs(300) {
+                return Ok(entry.result.clone());
             }
         }
     }
 
     let arc = Arc::clone(app_state.inner());
-    prefetch_remote_agent_status(arc, connection_id).await;
+    prefetch_agent_discovery(arc, connection_id).await;
 
-    app_state.remote_agent_status.lock().await
+    app_state.agent_discovery_cache.lock().await
         .get(&connection_id)
-        .map(|(_, s)| s.clone())
-        .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", connection_id))
+        .map(|e| e.result.clone())
+        .ok_or_else(|| match connection_id {
+            None => "Local agent discovery failed — is maestro-server installed?".to_string(),
+            Some(id) => format!("No active SSH session for connection_id {}. Connect first.", id),
+        })
 }
 
 #[cfg(test)]

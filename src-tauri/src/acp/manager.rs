@@ -75,8 +75,6 @@ pub async fn spawn_acp_process(
     log_id: i32,
     session_id: &str,
     app_state: &Arc<crate::db::AppState>,
-    cmd: &str,
-    args: &[String],
 ) -> Result<(), String> {
     use std::process::Stdio;
 
@@ -99,8 +97,6 @@ pub async fn spawn_acp_process(
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
-        cmd: cmd.to_string(),
-        args: args.to_vec(),
     }));
     write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
 
@@ -141,8 +137,6 @@ pub async fn spawn_acp_process_remote(
     app_state: &Arc<crate::db::AppState>,
     ssh_session: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
-    cmd: &str,
-    args: &[String],
 ) -> Result<(), String> {
     // Open a new exec channel using the absolute maestro-server path (resolved at connect time).
     let channel = ssh_session
@@ -160,8 +154,6 @@ pub async fn spawn_acp_process_remote(
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
-        cmd: cmd.to_string(),
-        args: args.to_vec(),
     }));
     let spawn_bytes = serialize_message(&spawn_req)?;
     write_tx.send(spawn_bytes).await

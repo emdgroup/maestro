@@ -137,12 +137,12 @@ async fn test_terminal_output_frame() {
 /// request_permission -> PermitResponse -> oneshot dispatch flow.
 #[tokio::test]
 async fn test_permission_pause_creates_pending_entry() {
-    // Simulate the pending_permissions map from MaestroServerClient
-    let pending: Rc<RefCell<HashMap<String, oneshot::Sender<String>>>> =
+    // Simulate the pending_permissions map from MaestroServerClient (bool matches client.rs)
+    let pending: Rc<RefCell<HashMap<String, oneshot::Sender<bool>>>> =
         Rc::new(RefCell::new(HashMap::new()));
 
     // Simulate request_permission: create channel, insert sender
-    let (tx, rx) = oneshot::channel::<String>();
+    let (tx, rx) = oneshot::channel::<bool>();
     let request_id = "perm-42".to_string();
     pending.borrow_mut().insert(request_id.clone(), tx);
 
@@ -154,12 +154,12 @@ async fn test_permission_pause_creates_pending_entry() {
     let sender = pending.borrow_mut().remove(&request_id).unwrap();
     assert!(pending.borrow().is_empty(), "sender removed after dispatch");
 
-    // Send the permission outcome (simulating the stdin loop resolving the oneshot)
-    sender.send("allowed".to_string()).unwrap();
+    // Send allowed=true (simulating the stdin loop resolving the oneshot)
+    sender.send(true).unwrap();
 
     // Receive on the other end (simulating request_permission unblocking)
     let result = rx.await.unwrap();
-    assert_eq!(result, "allowed");
+    assert!(result, "expected allowed=true");
 
     // Also test the PermissionRequest ServerResponse wire format (what request_permission writes)
     let perm_req_msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(

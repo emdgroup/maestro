@@ -12,14 +12,18 @@ pub async fn spawn_agent_subprocess(
     command: &str,
     args: &[String],
     cwd: &str,
+    env: &std::collections::HashMap<String, String>,
 ) -> Result<tokio::process::Child, String> {
-    // Reject path traversal (T-42-01)
-    if cwd.contains("..") {
-        return Err(format!("cwd contains path traversal: {}", cwd));
+    // Reject path traversal via Component::ParentDir (T-42-01)
+    // Using Path::components() avoids false positives from substring match (e.g. /my..project)
+    let cwd_path = Path::new(cwd);
+    for component in cwd_path.components() {
+        if component == std::path::Component::ParentDir {
+            return Err(format!("cwd contains '..' component: {}", cwd));
+        }
     }
 
     // Validate cwd exists on disk (T-42-01)
-    let cwd_path = Path::new(cwd);
     if tokio::fs::metadata(cwd_path).await.is_err() {
         return Err(format!("cwd does not exist: {}", cwd));
     }
@@ -27,6 +31,7 @@ pub async fn spawn_agent_subprocess(
     let child = tokio::process::Command::new(command)
         .args(args)
         .current_dir(cwd_path)
+        .envs(env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit()) // agent stderr goes to maestro-server stderr

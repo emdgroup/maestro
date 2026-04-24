@@ -217,46 +217,19 @@ export function useResizeTerminalMutation() {
 }
 
 /**
- * Query key factory for agent registry operations
+ * Unified agent discovery hook — works for both local and remote connections.
+ * connectionId = null → local maestro-server
+ * connectionId = number → remote SSH connection
+ * 5-minute staleTime mirrors backend TTL.
  */
-export const registryQueryKeys = {
-  all: ["agentRegistry"] as const,
-  fetch: () => [...registryQueryKeys.all, "fetch"] as const,
-};
-
-/**
- * Query hook for fetching the ACP agent registry.
- * Only fires when the dialog is open (enabled flag) to avoid CDN calls on every mount.
- * 5-minute staleTime mirrors backend TTL to avoid redundant IPC calls within the cache window.
- */
-export function useAgentRegistryQuery(enabled: boolean) {
+export function useAgentDiscoveryQuery(
+  connectionId: number | null,
+  enabled: boolean = true,
+) {
   return useQuery({
-    queryKey: registryQueryKeys.fetch(),
-    queryFn: () => api.fetchAgentRegistry(false),
+    queryKey: ["agentDiscovery", connectionId],
+    queryFn: () => api.discoverAgents(connectionId),
     enabled,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-}
-
-/**
- * Query key factory for remote agent availability checks.
- */
-export const remoteAgentKeys = {
-  all: ["remoteAgentStatus"] as const,
-  check: (connectionId: number) => [...remoteAgentKeys.all, connectionId] as const,
-};
-
-/**
- * Query hook that checks which agents (and maestro-server) are available on a remote SSH host.
- * Fires once when connectionId is set; results are cached 5 min (mirrors backend TTL).
- * Only enabled for remote connections (connectionId != null).
- */
-export function useRemoteAgentStatusQuery(connectionId: number | null) {
-  return useQuery({
-    queryKey: remoteAgentKeys.check(connectionId ?? 0),
-    queryFn: () => api.checkRemoteAgents(connectionId!),
-    enabled: connectionId != null,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });

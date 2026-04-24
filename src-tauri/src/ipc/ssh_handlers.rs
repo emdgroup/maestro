@@ -41,7 +41,7 @@ async fn finalize_ssh_connection(
     // Results are cached in AppState so the New Session dialog reads them instantly.
     let state_clone = Arc::clone(app_state);
     tokio::spawn(async move {
-        super::acp_handlers::prefetch_remote_agent_status(state_clone, connection_id).await;
+        super::acp_handlers::prefetch_agent_discovery(state_clone, Some(connection_id)).await;
     });
 
     Ok(())

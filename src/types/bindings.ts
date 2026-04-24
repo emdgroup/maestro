@@ -1016,69 +1016,13 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Fetch the ACP agent registry from CDN, returning cached results when available.
- * 
- * Respects a 5-minute TTL on cached data. When CDN is unreachable but a cached
- * result exists, returns stale data with `stale: true`. When no cache exists and
- * CDN is unreachable, returns Err.
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `force_refresh` - When true, bypasses TTL and re-fetches from CDN
- * 
- * # Returns
- * RegistryResponse { agents, cached, stale }
+ * Discover available ACP agents via maestro-server.
+ * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
+ * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
  */
-async fetchAgentRegistry(forceRefresh: boolean) : Promise<Result<RegistryResponse, string>> {
+async discoverAgents(connectionId: number | null) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_agent_registry", { forceRefresh }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Resolve the launch command for a specific agent from the cached registry.
- * 
- * Looks up the agent by ID in the cached registry (must have been fetched first
- * via `fetch_agent_registry`), then resolves the distribution using priority order:
- * npx (preferred) -> binary (compile-time platform key) -> uvx (last resort).
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `agent_id` - The agent identifier (e.g. "claude-code")
- * 
- * # Returns
- * ResolvedLaunchCommand { cmd, args } ready for subprocess spawn
- * 
- * # Errors
- * - Registry not loaded (call fetch_agent_registry first)
- * - Agent not found in registry
- * - No compatible distribution for current platform
- */
-async resolveAgentLaunchCommand(agentId: string) : Promise<Result<ResolvedLaunchCommand, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_agent_launch_command", { agentId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Check which ACP agents (and maestro-server itself) are available on a remote SSH host.
- * 
- * Returns the cached result if still within the 5-minute TTL; otherwise re-runs the check.
- * The check is also pre-populated at SSH connect time via prefetch_remote_agent_status.
- * 
- * # Arguments
- * * `connection_id` - SSH connection ID (must have an active session in AppState)
- * 
- * # Returns
- * RemoteAgentStatus { maestro_server_available, available_agent_ids }
- */
-async checkRemoteAgents(connectionId: number) : Promise<Result<RemoteAgentStatus, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("check_remote_agents", { connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1118,19 +1062,15 @@ async getStructuredOutput(logId: number) : Promise<Result<JsonValue[], string>> 
 /** user-defined types **/
 
 /**
- * How an agent can be installed/launched.
+ * Unified discovery result returned to the frontend via IPC.
+ * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
-export type AgentDistribution = { npx?: NpxDistribution | null; binary?: Partial<{ [key in string]: BinaryTarget }> | null; uvx?: UvxDistribution | null }
-/**
- * Metadata for a single ACP-compatible agent.
- */
-export type AgentInfo = { id: string; name: string; version: string; description?: string | null; repository?: string | null; authors?: string[] | null; license?: string | null; icon?: string | null; website?: string | null; distribution: AgentDistribution }
+export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; updated_at: string }
-export type BinaryTarget = { archive: string; cmd: string; args?: string[] | null }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1142,6 +1082,11 @@ export type ConnectionStatus = { connection_id: number; connected: boolean; disc
  * - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
  */
 export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string }
+/**
+ * Agent discovered by maestro-server's CDN registry check.
+ * Returned by the `discover_agents` IPC command for both local and remote connections.
+ */
+export type DiscoveredAgent = { id: string; name: string; icon: string }
 export type ErrorEvent = { error_type: string; message: string; suggestions: string[]; detected_at: string }
 export type ExecutionLog = { id: number; task_id: number; output: string; terminal_output: string | null; status: ExecutionStatus; started_at: string; completed_at: string | null; error_event: ErrorEvent | null }
 export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled"
@@ -1154,27 +1099,9 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
  * Typed response for approve_task_and_merge IPC command
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
-export type NpxDistribution = { package: string; args?: string[] | null; env?: Partial<{ [key in string]: string }> | null }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
 export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
-/**
- * IPC response wrapper giving frontend cache status context.
- */
-export type RegistryResponse = { agents: AgentInfo[]; cached: boolean; stale: boolean }
-/**
- * Remote availability check result for an SSH-connected project.
- */
-export type RemoteAgentStatus = { maestro_server_available: boolean; available_agent_ids: string[]; 
-/**
- * Absolute path to maestro-server on the remote host (from `which` at connect time).
- * Used by spawn_acp_process_remote to open the exec channel without relying on SSH exec PATH.
- */
-maestro_server_path?: string | null }
-/**
- * Resolved launch command ready for subprocess spawn.
- */
-export type ResolvedLaunchCommand = { cmd: string; args: string[] }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -1207,7 +1134,6 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
-export type UvxDistribution = { package: string; args?: string[] | null }
 /**
  * Worktree record from database (schema v6)
  */
