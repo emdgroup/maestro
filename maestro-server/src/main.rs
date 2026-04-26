@@ -30,9 +30,9 @@ use acp::schema::{
     TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
-    read_message, DiscoveredAgent, ErrorResponse, ListAgentsResponse, MaestroRpcMessage,
-    PermissionRequest as MaestroPermissionRequest, ServerRequest, ServerResponse,
-    SessionUpdate, SpawnResponse, TerminalOutput,
+    read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, ListAgentsResponse,
+    MaestroRpcMessage, PermissionRequest as MaestroPermissionRequest, ServerRequest,
+    ServerResponse, SessionUpdate, SpawnResponse, TerminalOutput,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
@@ -66,36 +66,21 @@ fn truncate_buf(buf: &mut String, limit: usize) {
     }
 }
 
-/// Refresh the agent cache if stale or empty. Returns true if caller should `continue`
-/// (discovery failed and an error response has already been sent).
 async fn ensure_agent_cache(
     cache: &mut Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)>,
     ttl: std::time::Duration,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
-) -> bool {
+    reg: &AcpRegistry,
+) -> Vec<registry::DiscoveredAgentWithSpawn> {
     let needs_refresh = cache
         .as_ref()
         .map(|(ts, _)| ts.elapsed() > ttl)
         .unwrap_or(true);
     if !needs_refresh {
-        return false;
+        return cache.as_ref().unwrap().1.clone();
     }
-    match registry::discover_agents().await {
-        Ok(agents) => {
-            *cache = Some((std::time::Instant::now(), agents));
-            false
-        }
-        Err(e) => {
-            let _ = send_response(
-                stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: format!("Agent discovery failed: {}", e),
-                })),
-            )
-            .await;
-            true
-        }
-    }
+    let agents = registry::discover_agents(reg).await;
+    *cache = Some((std::time::Instant::now(), agents.clone()));
+    agents
 }
 
 /// Spawn the ACP connection task for one agent session.
@@ -662,6 +647,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None;
     const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
+    let registry: AcpRegistry = tokio::task::spawn_blocking(registry::load_registry)
+        .await
+        .unwrap_or_else(|_| registry::parse_backup_registry());
+
     loop {
         let msg = match read_message(&mut stdin).await {
             Ok(msg) => msg,
@@ -691,13 +680,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match msg {
             MaestroRpcMessage::Request(ServerRequest::ListAgents(_req)) => {
-                if ensure_agent_cache(&mut agent_cache, CACHE_TTL, &stdout).await {
-                    continue;
-                }
-                let agents: Vec<DiscoveredAgent> = agent_cache
-                    .as_ref()
-                    .unwrap()
-                    .1
+                let agents_with_spawn =
+                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
+                let agents: Vec<DiscoveredAgent> = agents_with_spawn
                     .iter()
                     .map(|a| DiscoveredAgent {
                         id: a.id.clone(),
@@ -715,14 +700,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
-                // Look up spawn command from CDN-driven cache
-                if ensure_agent_cache(&mut agent_cache, CACHE_TTL, &stdout).await {
-                    continue;
-                }
-                let (spawn_cmd, spawn_args_owned, spawn_env) = match agent_cache
-                    .as_ref()
-                    .unwrap()
-                    .1
+                let agents_with_spawn =
+                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
+                let (spawn_cmd, spawn_args_owned, spawn_env) = match agents_with_spawn
                     .iter()
                     .find(|a| a.id == req.agent_id)
                 {

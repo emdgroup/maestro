@@ -64,6 +64,7 @@ def main():
 
     print(f"""
 Commands:
+  list                      — ListAgentsRequest
   spawn [agent_id] [cwd]   — SpawnRequest (default: claude-acp, {cwd})
   prompt <text>             — PromptRequest
   permit <request_id>       — PermitResponse allowed=true
@@ -84,7 +85,13 @@ Commands:
         parts = line.split(maxsplit=2)
         cmd = parts[0].lower()
 
-        if cmd == "spawn":
+        if cmd == "list":
+            write_msg(proc, {
+                "direction": "request",
+                "type": "list_agents",
+            })
+
+        elif cmd == "spawn":
             agent_id = parts[1] if len(parts) > 1 else "claude-acp"
             spawn_cwd = parts[2] if len(parts) > 2 else cwd
             write_msg(proc, {

@@ -23,7 +23,7 @@ use std::process::{Command, Stdio};
 
 use maestro_protocol::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
-    SpawnRequest, PromptRequest, CancelRequest, PermissionResponse,
+    SpawnRequest, PromptRequest, CancelRequest, PermissionResponse, ListAgentsRequest,
 };
 
 fn server_binary() -> PathBuf {
@@ -238,4 +238,38 @@ fn test_server_exits_cleanly_on_stdin_close() {
     drop(child.stdin.take());
     let status = child.wait().expect("wait for server");
     assert_eq!(status.code(), Some(0), "server must exit 0 on stdin close");
+}
+
+/// ListAgents end-to-end: spawns maestro-server, sends ListAgentsRequest, asserts
+/// the server responds with ListAgentsOk (possibly empty list if no runtimes installed)
+/// or a structured Error if the CDN registry is unreachable.
+///
+/// This is the same flow the Tauri host uses in `query_list_agents_local` in
+/// `src-tauri/src/ipc/acp_handlers.rs`: spawn server, write request, close stdin, read response.
+#[test]
+fn test_list_agents_returns_ok_response() {
+    let mut child = spawn_server();
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+
+    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})));
+
+    let resp = read_msg(stdout);
+    println!("response: {}", serde_json::to_string_pretty(&resp).unwrap());
+    match resp {
+        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(list)) => {
+            println!("agents ({}):", list.agents.len());
+            for agent in &list.agents {
+                println!("  {} — {} (icon: {})", agent.id, agent.name, agent.icon);
+                assert!(!agent.id.is_empty(), "agent id must be non-empty");
+                assert!(!agent.name.is_empty(), "agent name must be non-empty");
+            }
+        }
+        other => panic!(
+            "expected ListAgentsOk (backup guarantees success), got: {}",
+            serde_json::to_string(&other).unwrap()
+        ),
+    }
+
+    let _ = child.kill();
 }
