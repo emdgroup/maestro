@@ -6,6 +6,7 @@ pub use maestro_protocol::{
     SpawnRequest, SpawnResponse,
     PromptRequest, CancelRequest,
     SessionUpdate, PermissionRequest, PermissionResponse,
+    ElicitationRequest, ElicitationResponse,
     TerminalOutput, ErrorResponse,
     ListAgentsRequest, ListAgentsResponse, DiscoveredAgent,
     write_message, read_message,

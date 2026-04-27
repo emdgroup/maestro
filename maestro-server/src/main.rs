@@ -31,7 +31,8 @@ use acp::schema::{
 };
 use maestro_protocol::{
     read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, ListAgentsResponse,
-    MaestroRpcMessage, PermissionRequest as MaestroPermissionRequest, ServerRequest,
+    MaestroRpcMessage, PermissionRequest as MaestroPermissionRequest,
+    ElicitationRequest as MaestroElicitationRequest, ServerRequest,
     ServerResponse, SessionUpdate, SpawnResponse, TerminalOutput,
 };
 use tokio::io::AsyncWriteExt;
@@ -121,6 +122,8 @@ async fn spawn_acp_session(
     // 3. Shared state for callbacks (Arc for Send + Sync)
     let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let terminals: Arc<Mutex<HashMap<String, TerminalHandle>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let terminal_counter = Arc::new(AtomicU64::new(0));
@@ -131,11 +134,13 @@ async fn spawn_acp_session(
 
     // 5. Clone state for builder callbacks
     let pp = Arc::clone(&pending_permissions);
+    let pe = Arc::clone(&pending_elicitations);
     let terms = Arc::clone(&terminals);
     let tc = Arc::clone(&terminal_counter);
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id.clone();
     let cwd_owned = cwd.to_string();
+    let elicit_counter = Arc::new(AtomicU64::new(0));
 
     // 6. Spawn ACP connection as background task
     let task = tokio::spawn(async move {
@@ -366,15 +371,38 @@ async fn spawn_acp_session(
                 },
                 acp::on_receive_request!(),
             )
-            // --- catch-all: handle unregistered request methods (e.g. session/elicitation) ---
+            // --- catch-all: forward elicitation/create to Tauri; reject others ---
             .on_receive_request(
                 {
+                    let pe = Arc::clone(&pe);
+                    let so = Arc::clone(&so);
+                    let sid = sid.clone();
+                    let elicit_counter = Arc::clone(&elicit_counter);
                     move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, _cx: acp::ConnectionTo<acp::Agent>| {
+                        let pe = pe.clone();
+                        let so = so.clone();
+                        let sid = sid.clone();
+                        let elicit_counter = elicit_counter.clone();
                         async move {
                             if request.method() == "elicitation/create" {
-                                responder.respond(serde_json::json!({
-                                    "action": { "action": "decline" }
-                                }))
+                                let request_id = format!("elicit-{}", elicit_counter.fetch_add(1, Ordering::Relaxed) + 1);
+                                let (tx, rx) = oneshot::channel::<serde_json::Value>();
+                                pe.lock().await.insert(request_id.clone(), tx);
+                                let payload = request.params().clone();
+                                let msg = MaestroRpcMessage::Response(
+                                    ServerResponse::ElicitationRequest(MaestroElicitationRequest {
+                                        session_id: sid,
+                                        request_id,
+                                        payload,
+                                    }),
+                                );
+                                send_response(&so, &msg).await.map_err(|e| {
+                                    acp::Error::new(-32603, e.to_string())
+                                })?;
+                                let response = rx.await.map_err(|_| {
+                                    acp::Error::new(-32603, "elicitation channel closed")
+                                })?;
+                                responder.respond(response)
                             } else {
                                 responder.respond_with_error(
                                     acp::Error::method_not_found().data(request.method().to_string())
@@ -447,6 +475,7 @@ async fn spawn_acp_session(
         Ok(Ok(())) => Some(ActiveSession {
             cmd_tx,
             pending_permissions,
+            pending_elicitations,
             task,
         }),
         Ok(Err(e)) => {
@@ -792,6 +821,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .remove(&perm_resp.request_id)
                     {
                         let _ = tx.send(perm_resp.allowed);
+                    }
+                }
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(elicit_resp)) => {
+                if let Some(session) = sessions.get(&elicit_resp.session_id) {
+                    if let Some(tx) = session
+                        .pending_elicitations
+                        .lock()
+                        .await
+                        .remove(&elicit_resp.request_id)
+                    {
+                        let _ = tx.send(elicit_resp.response);
                     }
                 }
             }

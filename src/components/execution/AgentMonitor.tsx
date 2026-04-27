@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { formatDistanceStrict } from "date-fns";
-import { Plus, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Terminal } from "lucide-react";
 import { cn } from "@/lib";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -43,6 +43,9 @@ interface AgentMonitorProps {
   onSpawn?: () => void;
   onDelete?: (executionId: number) => void;
   onReconnect?: (execution: ExecutionWithTask) => void;
+  onRestart?: (execution: ExecutionWithTask) => void;
+  onOpenTerminal?: (execution: ExecutionWithTask) => void;
+  agentIcons?: Record<string, string>;
 }
 
 export function AgentMonitor({
@@ -54,6 +57,9 @@ export function AgentMonitor({
   onSpawn,
   onDelete,
   onReconnect,
+  onRestart,
+  onOpenTerminal,
+  agentIcons,
 }: AgentMonitorProps) {
   const filteredExecutions = useMemo(() => {
     return executions
@@ -64,6 +70,16 @@ export function AgentMonitor({
           (e.session_name ?? e.task_name ?? e.branch_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
       );
   }, [executions, statusFilter, search]);
+
+  const grouped = useMemo(() => {
+    const groups = new Map<string, ExecutionWithTask[]>();
+    for (const exec of filteredExecutions) {
+      const key = exec.branch_name ?? "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(exec);
+    }
+    return [...groups.entries()];
+  }, [filteredExecutions]);
 
   const selectedExecution = executions.find((e) => e.id === selectedExecutionId);
 
@@ -91,47 +107,63 @@ export function AgentMonitor({
               No agents match your filter
             </div>
           )}
-          {filteredExecutions.map((execution) => (
-            <div
-              key={execution.id}
-              onClick={() => onSelect(execution.id)}
-              className={cn(
-                "px-3 py-3 cursor-pointer border-l-2 transition-colors",
-                execution.id === selectedExecutionId
-                  ? "border-ring bg-muted/20"
-                  : "border-transparent hover:bg-muted/10",
-              )}
-            >
-              {/* Line 1: status dot + task/branch name */}
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "inline-block w-2 h-2 rounded-full shrink-0",
-                    STATUS_DOT[execution.status] ?? "bg-muted",
-                  )}
-                />
-                <span className="text-sm font-medium truncate">
-                  {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
-                </span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0">
-                  {execution.execution_mode === "acp"
-                    ? (execution.agent_id
-                        ? execution.agent_id.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
-                        : "ACP")
-                    : "Terminal"}
-                </Badge>
-              </div>
-              {/* Line 2: status label + elapsed time */}
-              <div className="text-xs text-muted-foreground mt-0.5 pl-4">
-                {STATUS_LABEL[execution.status] ?? execution.status} &middot;{" "}
-                {formatElapsed(execution.started_at, execution.completed_at)}
-              </div>
-              {/* Line 3: branch name in monospace */}
-              {execution.branch_name && (
-                <div className="text-xs text-muted-foreground font-mono mt-0.5 pl-4 truncate">
-                  {execution.branch_name}
+          {grouped.map(([branchName, execList]) => (
+            <div key={branchName || "_none"}>
+              {grouped.length > 1 && (
+                <div className="px-3 py-1 text-[10px] font-mono text-muted-foreground/50 bg-muted/10 border-b border-border/30 sticky top-0">
+                  {branchName || "no branch"}
                 </div>
               )}
+              {execList.map((execution) => (
+                <div
+                  key={execution.id}
+                  onClick={() => onSelect(execution.id)}
+                  className={cn(
+                    "px-3 py-3 cursor-pointer border-l-2 transition-colors",
+                    execution.id === selectedExecutionId
+                      ? "border-ring bg-muted/20"
+                      : "border-transparent hover:bg-muted/10",
+                  )}
+                >
+                  {/* Line 1: status dot + task/branch name */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-block w-2 h-2 rounded-full shrink-0",
+                        STATUS_DOT[execution.status] ?? "bg-muted",
+                      )}
+                    />
+                    <span className="text-sm font-medium truncate">
+                      {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1">
+                      {execution.execution_mode === "acp" && execution.agent_id && agentIcons?.[execution.agent_id] && (
+                        <img
+                          src={agentIcons[execution.agent_id]}
+                          className="w-3 h-3 rounded-sm brightness-0 dark:invert"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                        />
+                      )}
+                      {execution.execution_mode === "acp"
+                        ? (execution.agent_id
+                            ? execution.agent_id.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+                            : "ACP")
+                        : "Terminal"}
+                    </Badge>
+                  </div>
+                  {/* Line 2: status label + elapsed time */}
+                  <div className="text-xs text-muted-foreground mt-0.5 pl-4">
+                    {STATUS_LABEL[execution.status] ?? execution.status} &middot;{" "}
+                    {formatElapsed(execution.started_at, execution.completed_at)}
+                  </div>
+                  {/* Line 3: branch name in monospace (only when not grouped by branch) */}
+                  {execution.branch_name && grouped.length <= 1 && (
+                    <div className="text-xs text-muted-foreground font-mono mt-0.5 pl-4 truncate">
+                      {execution.branch_name}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -143,12 +175,21 @@ export function AgentMonitor({
           <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold truncate">
-                  {selectedExecution.session_name ??
-                    selectedExecution.task_name ??
-                    selectedExecution.branch_name ??
-                    "Interactive session"}
-                </h3>
+                <div className="flex items-center gap-2">
+                  {selectedExecution.execution_mode === "acp" && selectedExecution.agent_id && agentIcons?.[selectedExecution.agent_id] && (
+                    <img
+                      src={agentIcons[selectedExecution.agent_id]}
+                      className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <h3 className="text-sm font-semibold truncate">
+                    {selectedExecution.session_name ??
+                      selectedExecution.task_name ??
+                      selectedExecution.branch_name ??
+                      "Interactive session"}
+                  </h3>
+                </div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span
                     className={cn(
@@ -167,7 +208,33 @@ export function AgentMonitor({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {selectedExecution.status !== "running" && onReconnect && (
+                {selectedExecution.status !== "running" && selectedExecution.execution_mode === "acp" && (
+                  <>
+                    {onRestart && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => onRestart(selectedExecution)}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                        Restart
+                      </Button>
+                    )}
+                    {onOpenTerminal && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => onOpenTerminal(selectedExecution)}
+                      >
+                        <Terminal className="w-3.5 h-3.5 mr-1" />
+                        Terminal
+                      </Button>
+                    )}
+                  </>
+                )}
+                {selectedExecution.status !== "running" && selectedExecution.execution_mode !== "acp" && onReconnect && (
                   <Button
                     variant="outline"
                     size="sm"

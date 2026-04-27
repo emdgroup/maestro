@@ -1,8 +1,14 @@
-Here's the compressed version:
-
 # CLAUDE.md
 
 Guidance for Claude Code (claude.ai/code) working in this repo.
+
+1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
+
+2. Minimum code that solves the problem. Nothing speculative.
+
+3. Touch only what you must. Clean up only your own mess.
+
+4. Define success criteria. Loop until verified.
 
 ## Project Overview
 
@@ -75,26 +81,48 @@ cargo check           # Check compilation without building
 - `main.rs` - Tauri entry, registers IPC handlers
 - `db/` - Database layer (SQLite connection, schema, settings)
   - `connection.rs` - DB init and AppState management
-  - `schema.rs` - SQL schema (projects, tasks, worktrees, execution_logs, settings)
+  - `schema.rs` - SQL schema (all tables, migrations)
   - `settings.rs` - Settings persistence (load/save)
 - `models/` - Domain models with Serialize/Deserialize/TS derives (task, project, worktree, execution_log, settings, review, sync, etc.)
 - `ipc/` - IPC handlers split by domain
   - `project_handlers.rs`, `task_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`
   - `settings_handlers.rs`, `ssh_handlers.rs`, `filesystem_handlers.rs`, `review_handlers.rs`
+  - `acp_handlers.rs` - ACP session lifecycle (spawn, send prompt, permission response, cancel)
+- `acp/` - ACP session management
+  - `mod.rs` - Re-exports `AcpProcess`, `AcpTransportWriter`, spawn fns
+  - `manager.rs` - Spawns `maestro-server` as subprocess (local/remote SSH), manages `AcpProcess`
+  - `registry.rs` - Agent discovery cache (`AgentDiscoveryCacheEntry`, `DiscoveredAgent`)
+  - `transport.rs` - JSON-framed RPC message types for maestro-server IPC
 - `git/` - Git ops; `mod.rs` dispatches via `GitConnection` enum, `remote.rs` runs local subprocess
 - `ssh/` - SSH management (`session.rs` = RemoteSshSession, `password_manager.rs`, `error.rs`)
 - `process/` - Agent execution: `spawner.rs` (local subprocess), `pty.rs` (local PTY), `remote.rs` (SSH)
 - `websocket/` - WebSocket streaming (`streaming.rs`)
 - `error.rs` - Custom error types
 
+**maestro-server (`maestro-server/src/`):**
+
+Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout.
+
+- `main.rs` - Entry point, reads SpawnRequest then runs session loop
+- `agent.rs` - Launches ACP agent subprocess for a session
+- `registry.rs` - Fetches/caches ACP agent registry from CDN; resolves platform spawn commands (npx, binary)
+- `sessions.rs` - Session state management
+- `tests.rs` - Integration tests
+
 ### Database Schema
 
 SQLite with foreign key constraints enabled:
 
-- **projects** - Project metadata (id, name, path, timestamps)
-- **tasks** - Status, skills, acceptance criteria (refs project_id)
-- **worktrees** - Git worktree instances (refs project_id)
-- **execution_logs** - Command execution logs (refs task_id)
+- **projects** - Project metadata (id, name, path, timestamps, connection_id→ssh_connections)
+- **tasks** - Status, skills, acceptance criteria, model_override, mcp_allowlist, skills_override (refs project_id)
+- **task_relationships** - Dependencies between tasks (from_task_id, to_task_id, relationship_type)
+- **task_instructions** - Instruction log entries for tasks (content, source)
+- **worktrees** - Git worktree instances (refs project_id, task_id)
+- **execution_logs** - Command execution logs; `execution_mode` = 'pty' | 'acp'; `agent_id` = ACP agent identifier; `structured_output` = JSON blob (refs task_id, project_id)
+- **task_reviews** - Approval decisions (decision, general_feedback, reviewed_at)
+- **review_comments** - Per-file comments on reviews (file_path, comment)
+- **known_hosts** - Accepted SSH host keys (host_fingerprint, fingerprint_type)
+- **ssh_connections** - Saved SSH connections (connection_string, username, host, port, auth_method)
 - **settings** - Key-value store (project_path, recent_projects, model_default, mcp_defaults, skills_defaults)
 
 Timestamps are ISO 8601 RFC3339 strings. Skills stored as JSON arrays in TEXT columns.
@@ -132,6 +160,7 @@ Rust handlers marked `#[tauri::command]`, split across domain files in `src-taur
 - `ssh_sessions` - Persistent SSH connections keyed by `connection_id` (`i32`)
 - `ssh_passwords` - In-memory password store (zeroized on drop), keyed by `connection_id`
 - `pty_attach_cancel` - Per-session cancel flags for PTY attach reader tasks
+- `acp_sessions` - ACP sessions (`AcpProcess`) keyed by `execution_log.id` (`i32`)
 
 Use async `tokio::sync::Mutex` for session maps; sync `Mutex` only for DB connection.
 
@@ -171,8 +200,8 @@ When modifying Rust models:
 ### Database Migrations
 
 - Schema version tracked via `PRAGMA user_version`
-- Current: `SCHEMA_VERSION = 10` in `src-tauri/src/db/schema.rs`
-- Init checks version, applies migrations on first run
+- Current: `SCHEMA_VERSION = 12` in `src-tauri/src/db/schema.rs`
+- Init checks version; if stale, drops all tables and recreates (no production data preserved)
 - Foreign keys enabled via `PRAGMA foreign_keys = ON`
 
 ## Project Conventions
@@ -215,3 +244,5 @@ When modifying Rust models:
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
 - All IPC commands use `Arc<AppState>` for thread-safe DB access
+- ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
+- Schema migration drops all tables on version mismatch (no data preservation strategy)

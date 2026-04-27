@@ -57,6 +57,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const deleteMutation = useDeleteExecutionMutation();
 
   const visibleAgents = discovery?.agents ?? [];
+  const agentIcons: Record<string, string> = Object.fromEntries(
+    visibleAgents.filter((a) => a.icon).map((a) => [a.id, a.icon]),
+  );
 
   useEffect(() => {
     if (pendingAgentId && executions.length > 0) {
@@ -102,6 +105,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           agentId: sessionType,
           cwd: selectedWorktree.path,
           sessionName: sessionName.trim() || null,
+          projectId: projectId!,
           connectionId: connectionId ?? null,
         },
         {
@@ -162,6 +166,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             deleteMutation.mutate({ executionId });
             if (selectedExecutionId === executionId) setSelectedExecutionId(null);
           }}
+          agentIcons={agentIcons}
           onReconnect={(execution) => {
             if (execution.branch_name && projectId != null && repoPath != null) {
               spawnMutation.mutate(
@@ -180,6 +185,41 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 },
               );
             }
+          }}
+          onRestart={(execution) => {
+            if (!execution.agent_id || projectId == null) return;
+            const worktree = worktrees.find((wt) => wt.branch_name === execution.branch_name);
+            if (!worktree) return;
+            spawnAcpMutation.mutate(
+              {
+                agentId: execution.agent_id,
+                cwd: worktree.path,
+                sessionName: execution.session_name ?? null,
+                projectId,
+                connectionId: connectionId ?? null,
+              },
+              {
+                onSuccess: (logId) => {
+                  setSelectedExecutionId(logId);
+                  deleteMutation.mutate({ executionId: execution.id });
+                },
+              },
+            );
+          }}
+          onOpenTerminal={(execution) => {
+            if (projectId == null || repoPath == null) return;
+            const worktree = worktrees.find((wt) => wt.branch_name === execution.branch_name);
+            if (!worktree) return;
+            spawnMutation.mutate(
+              {
+                projectId,
+                branchName: worktree.branch_name,
+                repoPath,
+                sessionName: null,
+                worktreeId: worktree.id,
+              },
+              { onSuccess: (logId) => setSelectedExecutionId(logId) },
+            );
           }}
         />
       </div>
@@ -218,7 +258,16 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                   )}
                   {visibleAgents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
+                      <div className="flex items-center gap-2">
+                        {agent.icon && (
+                          <img
+                            src={agent.icon}
+                            className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                          />
+                        )}
+                        {agent.name}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>

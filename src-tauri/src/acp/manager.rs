@@ -302,6 +302,9 @@ fn handle_server_message(
         MaestroRpcMessage::Response(ServerResponse::PermissionRequest(req)) => {
             let _ = app_handle.emit(&format!("acp://permission-request/{}", log_id), &req);
         }
+        MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(req)) => {
+            let _ = app_handle.emit(&format!("acp://elicitation-request/{}", log_id), &req);
+        }
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(_)) => {
             // Implied by spawn_acp_process returning Ok(()) — no event needed.
         }

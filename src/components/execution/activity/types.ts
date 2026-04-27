@@ -6,6 +6,11 @@ export type AgentMessageChunk = {
   content: { type: "text"; text: string };
 };
 
+export type AgentThoughtChunk = {
+  sessionUpdate: "agent_thought_chunk";
+  content: { type: "text"; text: string };
+};
+
 export type ToolCallCreated = {
   sessionUpdate: "tool_call";
   toolCallId: string;
@@ -39,6 +44,7 @@ export type PlanUpdate = {
 
 export type SessionUpdatePayload =
   | AgentMessageChunk
+  | AgentThoughtChunk
   | ToolCallCreated
   | ToolCallUpdate
   | PlanUpdate;
@@ -51,6 +57,19 @@ export type MessageItem = {
   isStreaming: boolean;
 };
 
+export type ThinkingItem = {
+  id: string;
+  text: string;
+  isStreaming: boolean;
+};
+
+export type UserMessageItem = {
+  id: string;
+  content: string;
+  attachments?: string[];
+  sentAt: number;
+};
+
 export type ToolCallItem = {
   toolCallId: string;
   title: string;
@@ -59,9 +78,17 @@ export type ToolCallItem = {
   content: ToolCallContent[];
 };
 
+export type PermissionDeniedItem = {
+  id: string;
+  payload: Record<string, unknown>;
+};
+
 export type ActivityItem =
   | { type: "message"; item: MessageItem }
-  | { type: "toolCall"; item: ToolCallItem };
+  | { type: "thinking"; item: ThinkingItem }
+  | { type: "userMessage"; item: UserMessageItem }
+  | { type: "toolCall"; item: ToolCallItem }
+  | { type: "permissionDenied"; item: PermissionDeniedItem };
 
 export type ActivityState = {
   items: ActivityItem[];

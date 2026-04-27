@@ -941,9 +941,9 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
  * Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
  * cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
  */
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, connectionId: number | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connectionId: number | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -985,6 +985,17 @@ async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, strin
 async respondAcpPermission(logId: number, requestId: string, allowed: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, allowed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Respond to an elicitation request from the agent.
+ */
+async respondAcpElicitation(logId: number, requestId: string, response: JsonValue) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_acp_elicitation", { logId, requestId, response }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

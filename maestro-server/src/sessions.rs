@@ -22,6 +22,7 @@ pub struct TerminalExitInfo {
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+    pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
     pub task: tokio::task::JoinHandle<()>,
 }
 

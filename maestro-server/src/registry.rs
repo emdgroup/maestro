@@ -73,35 +73,6 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
     None
 }
 
-fn derive_check_cmd(dist: &AgentDistribution) -> Option<String> {
-    if dist.npx.is_some() {
-        return Some("npx".to_string());
-    }
-    let key = current_platform_key();
-    if !key.is_empty() {
-        if let Some(bins) = &dist.binary {
-            if let Some(target) = bins.get(key) {
-                return Some(target.cmd.clone());
-            }
-        }
-    }
-    if dist.uvx.is_some() {
-        return Some("uvx".to_string());
-    }
-    None
-}
-
-async fn check_cmd_available(cmd: &str) -> bool {
-    tokio::process::Command::new("$SHELL")
-        .args(["-cl", &format!("which {}", cmd)])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 fn cache_file_path() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     let home = std::env::var("USERPROFILE").ok();
@@ -201,12 +172,6 @@ pub fn load_registry() -> AcpRegistry {
 pub async fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> {
     let mut result = Vec::new();
     for entry in &registry.agents {
-        let Some(check_cmd) = derive_check_cmd(&entry.distribution) else {
-            continue;
-        };
-        if !check_cmd_available(&check_cmd).await {
-            continue;
-        }
         let Some((spawn_cmd, spawn_args, spawn_env)) = resolve_spawn(&entry.distribution) else {
             continue;
         };

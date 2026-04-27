@@ -14,15 +14,15 @@
     "windows": [
       {
         "title": "Maestro",
-        "width": 1200,
-        "height": 800,
+        "width": 1400,
+        "height": 900,
         "resizable": true,
         "fullscreen": false,
         "visible": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://api.github.com https://*.atlassian.net; font-src 'self' data: https://fonts.gstatic.com"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://cdn.agentclientprotocol.com; connect-src 'self' ipc: http://ipc.localhost https://api.github.com https://*.atlassian.net; font-src 'self' data: https://fonts.gstatic.com"
     }
   },
   "bundle": {

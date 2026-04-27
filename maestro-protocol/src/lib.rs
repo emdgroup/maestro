@@ -23,6 +23,7 @@ pub enum ServerRequest {
     Prompt(PromptRequest),
     Cancel(CancelRequest),
     PermitResponse(PermissionResponse),
+    ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
 }
 
@@ -68,6 +69,7 @@ pub enum ServerResponse {
     Error(ErrorResponse),
     SessionUpdate(SessionUpdate),
     PermissionRequest(PermissionRequest),
+    ElicitationRequest(ElicitationRequest),
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
 }
@@ -100,6 +102,20 @@ pub struct PermissionResponse {
     pub session_id: String,
     pub request_id: String,
     pub allowed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ElicitationRequest {
+    pub session_id: String,
+    pub request_id: String,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ElicitationResponse {
+    pub session_id: String,
+    pub request_id: String,
+    pub response: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

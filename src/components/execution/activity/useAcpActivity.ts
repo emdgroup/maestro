@@ -7,6 +7,7 @@ import type {
   ActivityItem,
   ToolCallItem,
   MessageItem,
+  ThinkingItem,
 } from "./types";
 
 export type ActivityAction =
@@ -14,7 +15,6 @@ export type ActivityAction =
   | { type: "session_ended" }
   | { type: "load_from_db"; payloads: SessionUpdatePayload[] };
 
-// Generate unique IDs for message items
 let msgCounter = 0;
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
@@ -39,27 +39,42 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
   const newState = { ...state, isInitializing: false };
 
   switch (payload.sessionUpdate) {
+    case "agent_thought_chunk": {
+      const lastItem = newState.items[newState.items.length - 1];
+      if (lastItem && lastItem.type === "thinking" && lastItem.item.isStreaming) {
+        const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
+        newState.items = [...newState.items.slice(0, -1), { type: "thinking", item: updated }];
+      } else {
+        const thought: ThinkingItem = {
+          id: `thought-${++msgCounter}`,
+          text: payload.content.text,
+          isStreaming: true,
+        };
+        newState.items = [...finalizeLastStreaming(newState.items), { type: "thinking", item: thought }];
+      }
+      return newState;
+    }
+
     case "agent_message_chunk": {
       const lastItem = newState.items[newState.items.length - 1];
       if (lastItem && lastItem.type === "message" && lastItem.item.isStreaming) {
-        // Append to existing streaming message
         const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
         newState.items = [...newState.items.slice(0, -1), { type: "message", item: updated }];
       } else {
-        // Start new message turn
+        // Finalize any streaming thinking block before starting agent message
+        const items = finalizeLastStreaming(newState.items);
         const msg: MessageItem = {
           id: `msg-${++msgCounter}`,
           text: payload.content.text,
           isStreaming: true,
         };
-        newState.items = [...newState.items, { type: "message", item: msg }];
+        newState.items = [...items, { type: "message", item: msg }];
       }
       return newState;
     }
 
     case "tool_call": {
-      // Mark previous streaming message as complete
-      const items = finalizeLastMessage(newState.items);
+      const items = finalizeLastStreaming(newState.items);
       const tc: ToolCallItem = {
         toolCallId: payload.toolCallId,
         title: payload.title,
@@ -73,7 +88,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
     }
 
     case "tool_call_update": {
-      const items = finalizeLastMessage(newState.items);
+      const items = finalizeLastStreaming(newState.items);
       const newMap = new Map(newState.toolCallMap);
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
@@ -81,7 +96,6 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         if (payload.status) updated.status = payload.status;
         if (payload.content) updated.content = [...updated.content, payload.content];
         newMap.set(payload.toolCallId, updated);
-        // Update in items array too
         const updatedItems = items.map((i) =>
           i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
             ? { ...i, item: updated }
@@ -93,7 +107,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
     }
 
     case "plan": {
-      const items = finalizeLastMessage(newState.items);
+      const items = finalizeLastStreaming(newState.items);
       return { ...newState, items, plan: payload.entries };
     }
 
@@ -102,11 +116,14 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
   }
 }
 
-function finalizeLastMessage(items: ActivityItem[]): ActivityItem[] {
+function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
   if (items.length === 0) return items;
   const last = items[items.length - 1];
   if (last.type === "message" && last.item.isStreaming) {
     return [...items.slice(0, -1), { type: "message", item: { ...last.item, isStreaming: false } }];
+  }
+  if (last.type === "thinking" && last.item.isStreaming) {
+    return [...items.slice(0, -1), { type: "thinking", item: { ...last.item, isStreaming: false } }];
   }
   return items;
 }

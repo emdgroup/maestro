@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
-pub const SCHEMA_V11: &str = r#"
+pub const SCHEMA_V12: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS worktrees (
 -- Execution logs table: stores command execution logs
 CREATE TABLE IF NOT EXISTS execution_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
     task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     branch_name TEXT,
     session_name TEXT,
@@ -149,6 +150,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);
 CREATE INDEX IF NOT EXISTS idx_execution_logs_task_id ON execution_logs(task_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_execution_logs_project_id ON execution_logs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_worktrees_project_id ON worktrees(project_id);
 CREATE INDEX IF NOT EXISTS idx_worktrees_task_id ON worktrees(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
@@ -185,7 +187,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V11)?;
+        conn.execute_batch(SCHEMA_V12)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -238,7 +240,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -268,5 +270,6 @@ mod tests {
         assert!(exec_columns.contains(&"execution_mode".to_string()), "execution_mode column should exist");
         assert!(exec_columns.contains(&"agent_id".to_string()), "agent_id column should exist");
         assert!(exec_columns.contains(&"structured_output".to_string()), "structured_output column should exist");
+        assert!(exec_columns.contains(&"project_id".to_string()), "project_id column should exist");
     }
 }

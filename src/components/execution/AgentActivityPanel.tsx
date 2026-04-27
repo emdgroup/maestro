@@ -1,40 +1,50 @@
-import { useState, useReducer, useEffect } from "react";
-import { TerminalSquare, Loader2 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useState, useReducer, useEffect, useCallback, useMemo, useRef } from "react";
+import { Loader2, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/ui/button";
+import { listen } from "@tauri-apps/api/event";
 import { formatDistanceStrict } from "date-fns";
-import { useAcpActivity } from "./activity/useAcpActivity";
-import { activityReducer } from "./activity/useAcpActivity";
+import { useAcpActivity, activityReducer } from "./activity/useAcpActivity";
 import { useStructuredOutputQuery, executionQueryKeys } from "@/services/execution.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
-import { ActivityToolCallCard } from "./activity/ActivityToolCallCard";
+import { ActivityUserMessage } from "./activity/ActivityUserMessage";
+import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
+import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
-import { AcpTerminalPanel } from "./activity/AcpTerminalPanel";
+import { ComposeBar } from "./activity/ComposeBar";
+import { SessionToolbar } from "./activity/SessionToolbar";
+import type { PermissionMode, ClaudeModelId } from "./activity/SessionToolbar";
+import { PermissionPrompt } from "./activity/PermissionPrompt";
+import { PermissionDeniedCard } from "./activity/PermissionDeniedCard";
+import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { INITIAL_ACTIVITY_STATE } from "./activity/types";
-import type { SessionUpdatePayload } from "./activity/types";
+import type { SessionUpdatePayload, UserMessageItem, PermissionDeniedItem, ToolCallItem, ActivityItem } from "./activity/types";
 import type { ExecutionWithTask } from "@/types/bindings";
+import { api } from "@/lib/tauri-utils";
 
 interface AgentActivityPanelProps {
   execution: ExecutionWithTask;
   isDead?: boolean;
 }
 
+let userMsgCounter = 0;
+
 export function AgentActivityPanel({ execution, isDead = false }: AgentActivityPanelProps) {
-  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollFab, setShowScrollFab] = useState(false);
+  const atBottomRef = useRef(true);
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
+  const [modelId, setModelId] = useState<ClaudeModelId>("claude-sonnet-4-6");
   const queryClient = useQueryClient();
   const selectedProject = useSelectedProject();
   const projectId = selectedProject?.id ?? null;
 
-  // Live mode: subscribe to Tauri events
   const liveState = useAcpActivity(isDead ? null : execution.id);
 
-  // Dead mode: load from DB and replay through the SAME activityReducer
   const { data: storedPayloads } = useStructuredOutputQuery(isDead ? execution.id : null);
   const [deadState, deadDispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
 
-  // When stored payloads arrive, replay them through the reducer's load_from_db action
   useEffect(() => {
     if (!isDead || !storedPayloads || storedPayloads.length === 0) return;
     deadDispatch({
@@ -45,14 +55,160 @@ export function AgentActivityPanel({ execution, isDead = false }: AgentActivityP
 
   const state = isDead ? deadState : liveState;
 
-  // When a live session ends, invalidate the execution list query so sidebar refreshes status
   useEffect(() => {
-    if (!isDead && state.sessionEnded && projectId != null) {
-      queryClient.invalidateQueries({
-        queryKey: executionQueryKeys.withTaskInfo(projectId),
-      });
+    if (isProcessing && state.items.length > 0) {
+      const last = state.items[state.items.length - 1];
+      if (last.type === "message" || last.type === "toolCall" || last.type === "thinking") {
+        setIsProcessing(false);
+      }
+    }
+  }, [isProcessing, state.items]);
+
+  useEffect(() => {
+    if (!isDead && state.sessionEnded) {
+      setIsProcessing(false);
+      if (projectId != null) {
+        queryClient.invalidateQueries({
+          queryKey: executionQueryKeys.withTaskInfo(projectId),
+        });
+      }
     }
   }, [isDead, state.sessionEnded, projectId, queryClient]);
+
+  const [liveUserMessages, setLiveUserMessages] = useState<UserMessageItem[]>([]);
+
+  const [pendingPermission, setPendingPermission] = useState<{
+    requestId: string;
+    payload: Record<string, unknown>;
+  } | null>(null);
+  const [liveDeniedPermissions, setLiveDeniedPermissions] = useState<PermissionDeniedItem[]>([]);
+
+  useEffect(() => {
+    if (isDead) return;
+    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
+      `acp://permission-request/${execution.id}`,
+      (event) => {
+        setPendingPermission({
+          requestId: event.payload.request_id,
+          payload: event.payload.payload,
+        });
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [isDead, execution.id]);
+
+  const [pendingElicitation, setPendingElicitation] = useState<{
+    requestId: string;
+    payload: Record<string, unknown>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (isDead) return;
+    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
+      `acp://elicitation-request/${execution.id}`,
+      (event) => {
+        setPendingElicitation({ requestId: event.payload.request_id, payload: event.payload.payload });
+      },
+    );
+    return () => { unlisten.then((fn) => fn()); };
+  }, [isDead, execution.id]);
+
+  const handleElicitationSubmit = useCallback(
+    async (requestId: string, values: Record<string, unknown>) => {
+      try {
+        await api.respondAcpElicitation(execution.id, requestId, { action: "accept", content: values } as never);
+      } catch { /* best-effort */ }
+      setPendingElicitation(null);
+    },
+    [execution.id],
+  );
+
+  const handleElicitationDecline = useCallback(
+    async (requestId: string) => {
+      try {
+        await api.respondAcpElicitation(execution.id, requestId, { action: "decline" });
+      } catch { /* best-effort */ }
+      setPendingElicitation(null);
+    },
+    [execution.id],
+  );
+
+  const handlePermissionRespond = useCallback(
+    async (requestId: string, allowed: boolean) => {
+      try {
+        await api.respondAcpPermission(execution.id, requestId, allowed);
+      } catch {
+        // best-effort
+      }
+      if (!allowed && pendingPermission) {
+        const denied: PermissionDeniedItem = {
+          id: `denied-${requestId}`,
+          payload: pendingPermission.payload,
+        };
+        setLiveDeniedPermissions((prev) => [...prev, denied]);
+      }
+      setPendingPermission(null);
+    },
+    [execution.id, pendingPermission],
+  );
+
+  const handleSend = useCallback(
+    async (content: string) => {
+      if (isDead || isProcessing) return;
+      const userMsg: UserMessageItem = {
+        id: `user-${++userMsgCounter}`,
+        content,
+        sentAt: Date.now(),
+      };
+      setLiveUserMessages((prev) => [...prev, userMsg]);
+      setIsProcessing(true);
+      try {
+        await api.sendAcpPrompt(execution.id, content);
+      } catch {
+        setIsProcessing(false);
+      }
+    },
+    [isDead, isProcessing, execution.id],
+  );
+
+  const handleCancel = useCallback(async () => {
+    try {
+      await api.cancelAcpSession(execution.id);
+    } catch {
+      // best-effort
+    }
+    setIsProcessing(false);
+  }, [execution.id]);
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = atBottom;
+    setShowScrollFab((prev) => {
+      const next = !atBottom;
+      return prev === next ? prev : next;
+    });
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior });
+  }, []);
+
+  const displayItems = useMemo(
+    () => isDead ? state.items : mergeLiveItems(state.items, liveUserMessages, liveDeniedPermissions),
+    [isDead, state.items, liveUserMessages, liveDeniedPermissions],
+  );
+
+  const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
+
+  useEffect(() => {
+    if (atBottomRef.current) {
+      scrollToBottom("instant");
+    }
+  }, [groupedItems, scrollToBottom]);
 
   // Session ended banner
   const sessionEndedBanner =
@@ -73,27 +229,17 @@ export function AgentActivityPanel({ execution, isDead = false }: AgentActivityP
       </div>
     ) : null;
 
-  // Initializing state (spinner + "Starting agent..." until first event)
   if (state.isInitializing && !isDead) {
     return (
-      <div className="flex-1 flex flex-col">
-        {/* Header bar */}
-        <div className="h-8 border-b border-border bg-muted/30 flex items-center justify-between px-3 shrink-0">
-          <span className="text-xs text-muted-foreground">
-            {execution.agent_id ?? "ACP Agent"}
-          </span>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Starting agent...
-          </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Starting agent...
         </div>
       </div>
     );
   }
 
-  // Dead mode loading state (waiting for DB query to resolve)
   if (isDead && state.isInitializing) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
@@ -102,72 +248,152 @@ export function AgentActivityPanel({ execution, isDead = false }: AgentActivityP
     );
   }
 
+  const isSessionDead = isDead || state.sessionEnded;
+  const elicitationContent = pendingElicitation
+    ? { requestId: pendingElicitation.requestId, ...parseElicitationFields(pendingElicitation.payload) }
+    : null;
+
+  let bottomBar: React.ReactNode = null;
+  if (!isSessionDead) {
+    if (elicitationContent) {
+      bottomBar = (
+        <ElicitationPrompt
+          requestId={elicitationContent.requestId}
+          message={elicitationContent.message}
+          fields={elicitationContent.fields}
+          onSubmit={handleElicitationSubmit}
+          onDecline={handleElicitationDecline}
+        />
+      );
+    } else if (pendingPermission) {
+      bottomBar = (
+        <PermissionPrompt
+          requestId={pendingPermission.requestId}
+          payload={pendingPermission.payload}
+          onRespond={handlePermissionRespond}
+        />
+      );
+    } else {
+      bottomBar = (
+        <>
+          <ComposeBar
+            onSend={handleSend}
+            onCancel={handleCancel}
+            isProcessing={isProcessing}
+          />
+          <SessionToolbar
+            modelId={modelId}
+            permissionMode={permissionMode}
+            onModelChange={setModelId}
+            onPermissionModeChange={setPermissionMode}
+          />
+        </>
+      );
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Header bar with session info + terminal toggle */}
-      <div className="h-8 border-b border-border bg-muted/30 flex items-center justify-between px-3 shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {execution.agent_id ?? "ACP Agent"}
-        </span>
-        {/* Terminal toggle — only for live sessions (dead ACP sessions have no persisted terminal output) */}
-        {!isDead && (
-          <Button
-            variant={isTerminalOpen ? "secondary" : "ghost"}
-            size="sm"
-            className="h-6 text-[10px] px-2 gap-1"
-            onClick={() => setIsTerminalOpen((v) => !v)}
-          >
-            <TerminalSquare className="w-3 h-3" />
-            Terminal
-          </Button>
-        )}
-      </div>
-
-      {/* Session ended banner */}
       {sessionEndedBanner}
 
       {/* Activity content area */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Scrollable activity + sticky plan */}
-        <div className="flex-1 flex flex-col overflow-y-auto relative">
-          {/* Sticky plan panel (sticky top, compact checklist, hides when no plan) */}
-          {state.plan && (
-            <div className="sticky top-0 z-10 bg-card border-b border-border">
-              <ActivityPlanPanel entries={state.plan} />
-            </div>
-          )}
+        {/* Scroll area with FAB overlay */}
+        <div className="flex-1 relative min-h-0 overflow-hidden">
+          <div
+            className="absolute inset-0 overflow-y-auto flex flex-col"
+            ref={chatScrollRef}
+            onScroll={handleChatScroll}
+          >
+            {state.plan && (
+              <div className="sticky top-0 z-10 bg-card border-b border-border">
+                <ActivityPlanPanel entries={state.plan} />
+              </div>
+            )}
 
-          {/* Activity items */}
-          <div className="flex-1 p-3 space-y-3">
-            {state.items.map((item) => {
-              if (item.type === "message") {
-                return <ActivityMessageItem key={item.item.id} message={item.item} />;
-              }
-              if (item.type === "toolCall") {
-                return (
-                  <ActivityToolCallCard key={item.item.toolCallId} toolCall={item.item} />
-                );
-              }
-              return null;
-            })}
+            <div className="flex-1 p-3 space-y-3">
+              {groupedItems.map((gi, idx) => {
+                if (gi.type === "toolGroup") {
+                  return (
+                    <ActivityToolCallGroup
+                      key={`tg-${idx}-${gi.items[0].toolCallId}`}
+                      items={gi.items}
+                    />
+                  );
+                }
+                const item = gi.item;
+                if (item.type === "message") {
+                  return <ActivityMessageItem key={item.item.id} message={item.item} />;
+                }
+                if (item.type === "thinking") {
+                  return <ActivityThinkingBlock key={item.item.id} thinking={item.item} />;
+                }
+                if (item.type === "userMessage") {
+                  return <ActivityUserMessage key={item.item.id} message={item.item} />;
+                }
+                if (item.type === "permissionDenied") {
+                  return <PermissionDeniedCard key={item.item.id} item={item.item} />;
+                }
+                return null;
+              })}
+            </div>
           </div>
+
+          {showScrollFab && (
+            <button
+              type="button"
+              onClick={() => scrollToBottom()}
+              className="absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full bg-card border border-border shadow-md flex items-center justify-center hover:bg-muted/80 transition-colors"
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            </button>
+          )}
         </div>
 
-        {/* Terminal bottom panel (VS Code-style slide-in) */}
-        <AnimatePresence>
-          {isTerminalOpen && !isDead && (
-            <motion.div
-              initial={{ height: 0 }}
-              animate={{ height: 280 }}
-              exit={{ height: 0 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="border-t border-border overflow-hidden shrink-0"
-            >
-              <AcpTerminalPanel logId={execution.id} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {bottomBar}
       </div>
     </div>
   );
+}
+
+type GroupedDisplayItem =
+  | { type: "solo"; item: ActivityItem }
+  | { type: "toolGroup"; items: ToolCallItem[] };
+
+function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
+  const result: GroupedDisplayItem[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const item = items[i];
+    if (item.type === "toolCall") {
+      const group: ToolCallItem[] = [item.item];
+      while (i + 1 < items.length && items[i + 1].type === "toolCall") {
+        i++;
+        group.push((items[i] as { type: "toolCall"; item: ToolCallItem }).item);
+      }
+      result.push({ type: "toolGroup", items: group });
+    } else {
+      result.push({ type: "solo", item });
+    }
+    i++;
+  }
+  return result;
+}
+
+// Append-order heuristic: no timestamps on agent items, so append user messages last.
+function mergeLiveItems(
+  items: ReturnType<typeof useAcpActivity>["items"],
+  userMessages: UserMessageItem[],
+  deniedPermissions: PermissionDeniedItem[],
+) {
+  if (userMessages.length === 0 && deniedPermissions.length === 0) return items;
+  const result = [...items];
+  for (const um of userMessages) {
+    result.push({ type: "userMessage", item: um });
+  }
+  for (const dp of deniedPermissions) {
+    result.push({ type: "permissionDenied", item: dp });
+  }
+  return result;
 }

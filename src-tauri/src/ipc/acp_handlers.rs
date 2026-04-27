@@ -16,6 +16,7 @@ use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscovery
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
     PromptRequest, CancelRequest, PermissionResponse,
+    ElicitationResponse,
     ListAgentsRequest, write_message,
 };
 
@@ -43,6 +44,7 @@ pub async fn spawn_acp_session(
     agent_id: String,
     cwd: String,
     session_name: Option<String>,
+    project_id: i32,
     connection_id: Option<i32>,
 ) -> Result<i32, String> {
     let now = Utc::now().to_rfc3339();
@@ -50,8 +52,8 @@ pub async fn spawn_acp_session(
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, 'running', 'acp', ?2, ?3)",
-            rusqlite::params![&session_name, &agent_id, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, ?2, 'running', 'acp', ?3, ?4)",
+            rusqlite::params![&session_name, project_id, &agent_id, &now],
         ).map_err(|e| format!("Failed to create execution log: {}", e))?;
         conn.last_insert_rowid() as i32
     };
@@ -132,6 +134,24 @@ pub async fn respond_acp_permission(
         session_id,
         request_id,
         allowed,
+    }));
+    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+}
+
+/// Respond to an elicitation request from the agent.
+#[tauri::command]
+#[specta::specta]
+pub async fn respond_acp_elicitation(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    request_id: String,
+    response: serde_json::Value,
+) -> Result<(), String> {
+    let session_id = format!("session-{}", log_id);
+    let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
+        session_id,
+        request_id,
+        response,
     }));
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }

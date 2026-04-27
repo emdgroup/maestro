@@ -891,8 +891,8 @@ pub async fn spawn_interactive_execution(
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, started_at) VALUES (?, ?, ?, 'running', ?)",
-            rusqlite::params![&task_id, &branch_name, &session_name, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, started_at) VALUES (?, ?, ?, ?, 'running', ?)",
+            rusqlite::params![&task_id, &branch_name, &session_name, project_id, &now],
         )
         .map_err(|e| format!("Failed to create execution log: {}", e))?;
         let id = conn.last_insert_rowid() as i32;
@@ -1041,7 +1041,7 @@ pub fn list_executions_with_task_info(
          FROM execution_logs el
          LEFT JOIN tasks t ON t.id = el.task_id
          LEFT JOIN worktrees w ON el.task_id IS NOT NULL AND w.task_id = el.task_id
-         WHERE t.project_id = ?1 OR (el.task_id IS NULL AND el.branch_name IS NOT NULL)
+         WHERE t.project_id = ?1 OR el.project_id = ?1
          ORDER BY el.started_at DESC"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
