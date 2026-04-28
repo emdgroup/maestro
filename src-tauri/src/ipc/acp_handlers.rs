@@ -46,14 +46,28 @@ pub async fn spawn_acp_session(
     session_name: Option<String>,
     project_id: i32,
     connection_id: Option<i32>,
+    worktree_branch: Option<String>,
 ) -> Result<i32, String> {
     let now = Utc::now().to_rfc3339();
 
     let log_id: i32 = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let branch_name: Option<String> = worktree_branch.or_else(|| {
+            std::path::Path::new(&cwd)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|basename| {
+                    conn.query_row(
+                        "SELECT branch_name FROM worktrees WHERE project_id = ?1 AND (path = ?2 OR path LIKE '%/' || ?2) LIMIT 1",
+                        rusqlite::params![project_id, basename],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                })
+        });
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, ?2, 'running', 'acp', ?3, ?4)",
-            rusqlite::params![&session_name, project_id, &agent_id, &now],
+            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, execution_mode, agent_id, started_at) VALUES (NULL, ?1, ?2, ?3, 'running', 'acp', ?4, ?5)",
+            rusqlite::params![&branch_name, &session_name, project_id, &agent_id, &now],
         ).map_err(|e| format!("Failed to create execution log: {}", e))?;
         conn.last_insert_rowid() as i32
     };

@@ -107,6 +107,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           sessionName: sessionName.trim() || null,
           projectId: projectId!,
           connectionId: connectionId ?? null,
+          worktreeBranch: selectedWorktree.branch_name,
         },
         {
           onSuccess: (logId) => {
@@ -197,6 +198,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 sessionName: execution.session_name ?? null,
                 projectId,
                 connectionId: connectionId ?? null,
+                worktreeBranch: worktree.branch_name,
               },
               {
                 onSuccess: (logId) => {
