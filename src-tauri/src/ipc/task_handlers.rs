@@ -71,6 +71,7 @@ pub fn create_task(
 /// Update a task's status or other fields
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub fn update_task(
     app_state: State<Arc<AppState>>,
     task_id: i32,
@@ -158,14 +159,14 @@ pub fn update_task_settings(
     let mcp_allowlist_value = settings
         .mcp_allowlist
         .as_ref()
-        .map(|v| serde_json::to_string(v))
+        .map(serde_json::to_string)
         .transpose()
         .map_err(|e| format!("Failed to serialize mcp_allowlist: {}", e))?;
 
     let skills_override_value = settings
         .skills_override
         .as_ref()
-        .map(|v| serde_json::to_string(v))
+        .map(serde_json::to_string)
         .transpose()
         .map_err(|e| format!("Failed to serialize skills_override: {}", e))?;
 

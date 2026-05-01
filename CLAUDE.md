@@ -21,9 +21,6 @@ See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 ### Frontend Development
 
 ```bash
-pnpm dev              # Start Vite dev server (port 5173)
-pnpm build            # Build frontend (tsc + vite build + bundle verification)
-pnpm preview          # Preview production build
 pnpm test             # Run Vitest unit tests
 pnpm test <pattern>   # Run single test file (e.g. pnpm test usePathNavigation)
 pnpm test:e2e         # Run Playwright E2E tests
@@ -37,7 +34,6 @@ pnpm format:fix       # Fix formatting with oxfmt
 ### Tauri Development
 
 ```bash
-pnpm tauri:dev        # Run Tauri app in dev mode (starts Vite + Tauri)
 pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Build production Tauri app
 pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
 ```
@@ -58,78 +54,19 @@ cargo check           # Check compilation without building
 - **Frontend**: React 19 + TypeScript, Vite build
 - **Backend**: Tauri 2 (Rust), SQLite for persistence
 - **State Management**: Zustand with Immer middleware
-- **UI Components**: Radix UI (Dialog, Select), dnd-kit for drag-and-drop
+- **UI Components**: Base UI (Dialog, Select)
 - **Type Safety**: ts-rs for Rust → TypeScript type generation
 
 ### Code Structure
-
-**Frontend (`src/`):**
-
-- `App.tsx` - Main component, routing between views
-- `views/` - Page views (AgentsView, KanbanView, ProjectPickerView, SettingsView, WorktreesView)
-- `components/` - Reusable components by domain (kanban, task, project-picker, execution, common, ui)
-- `contexts/` - React contexts (ConnectionContext, KanbanContext)
-- `services/` - Tauri IPC wrappers (connection, execution, project, settings, task)
-- `store/` - Zustand stores: boardStore, configStore, projectStore, reviewStore
-- `utils/hooks/` - Custom React hooks
-- `utils/helpers/` - Utility functions
-- `types/bindings.ts` - Auto-generated TS types from Rust (via tauri-specta)
-
-**Backend (`src-tauri/src/`):**
-
-- `lib.rs` - Library entry, re-exports public modules
-- `main.rs` - Tauri entry, registers IPC handlers
-- `db/` - Database layer (SQLite connection, schema, settings)
-  - `connection.rs` - DB init and AppState management
-  - `schema.rs` - SQL schema (all tables, migrations)
-  - `settings.rs` - Settings persistence (load/save)
-- `models/` - Domain models with Serialize/Deserialize/TS derives (task, project, worktree, execution_log, settings, review, sync, etc.)
-- `ipc/` - IPC handlers split by domain
-  - `project_handlers.rs`, `task_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`
-  - `settings_handlers.rs`, `ssh_handlers.rs`, `filesystem_handlers.rs`, `review_handlers.rs`
-  - `acp_handlers.rs` - ACP session lifecycle (spawn, send prompt, permission response, cancel)
-- `acp/` - ACP session management
-  - `mod.rs` - Re-exports `AcpProcess`, `AcpTransportWriter`, spawn fns
-  - `manager.rs` - Spawns `maestro-server` as subprocess (local/remote SSH), manages `AcpProcess`
-  - `registry.rs` - Agent discovery cache (`AgentDiscoveryCacheEntry`, `DiscoveredAgent`)
-  - `transport.rs` - JSON-framed RPC message types for maestro-server IPC
-- `git/` - Git ops; `mod.rs` dispatches via `GitConnection` enum, `remote.rs` runs local subprocess
-- `ssh/` - SSH management (`session.rs` = RemoteSshSession, `password_manager.rs`, `error.rs`)
-- `process/` - Agent execution: `spawner.rs` (local subprocess), `pty.rs` (local PTY), `remote.rs` (SSH)
-- `websocket/` - WebSocket streaming (`streaming.rs`)
-- `error.rs` - Custom error types
 
 **maestro-server (`maestro-server/src/`):**
 
 Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout.
 
-- `main.rs` - Entry point, reads SpawnRequest then runs session loop
-- `agent.rs` - Launches ACP agent subprocess for a session
-- `registry.rs` - Fetches/caches ACP agent registry from CDN; resolves platform spawn commands (npx, binary)
-- `sessions.rs` - Session state management
-- `tests.rs` - Integration tests
-
 ### Database Schema
 
 SQLite with foreign key constraints enabled:
 
-- **projects** - Project metadata (id, name, path, timestamps, connection_id→ssh_connections)
-- **tasks** - Status, skills, acceptance criteria, model_override, mcp_allowlist, skills_override (refs project_id)
-- **task_relationships** - Dependencies between tasks (from_task_id, to_task_id, relationship_type)
-- **task_instructions** - Instruction log entries for tasks (content, source)
-- **worktrees** - Git worktree instances (refs project_id, task_id)
-- **execution_logs** - Command execution logs; `execution_mode` = 'pty' | 'acp'; `agent_id` = ACP agent identifier; `structured_output` = JSON blob (refs task_id, project_id)
-- **task_reviews** - Approval decisions (decision, general_feedback, reviewed_at)
-- **review_comments** - Per-file comments on reviews (file_path, comment)
-- **known_hosts** - Accepted SSH host keys (host_fingerprint, fingerprint_type)
-- **ssh_connections** - Saved SSH connections (connection_string, username, host, port, auth_method)
-- **settings** - Key-value store (project_path, recent_projects, model_default, mcp_defaults, skills_defaults)
-
-Timestamps are ISO 8601 RFC3339 strings. Skills stored as JSON arrays in TEXT columns.
-
-### Type Safety Flow
-
-Rust structs with `#[derive(TS)]` → auto-generate TS types in `src/types/bindings.ts` → imported by React components. Ensures frontend/backend type consistency.
 
 ### IPC Communication
 
@@ -150,33 +87,6 @@ Rust handlers marked `#[tauri::command]`, split across domain files in `src-taur
 - Immer allows direct mutations in reducers (proxied to immutable updates)
 - Store exposes action methods (loadTasks, updateTaskStatus, addTask) and selectors (getTasks, getTasksByStatus)
 
-### Tauri State
-
-`AppState` (in `db/connection.rs`) holds runtime state injected into IPC handlers via `State<Arc<AppState>>`:
-
-- `db: Mutex<Connection>` - SQLite connection (sync Mutex)
-- `pty_sessions` - Local PTY sessions keyed by `execution_log.id` (`i32`)
-- `ssh_pty_sessions` - Remote SSH PTY sessions keyed by `execution_log.id`
-- `ssh_sessions` - Persistent SSH connections keyed by `connection_id` (`i32`)
-- `ssh_passwords` - In-memory password store (zeroized on drop), keyed by `connection_id`
-- `pty_attach_cancel` - Per-session cancel flags for PTY attach reader tasks
-- `acp_sessions` - ACP sessions (`AcpProcess`) keyed by `execution_log.id` (`i32`)
-
-Use async `tokio::sync::Mutex` for session maps; sync `Mutex` only for DB connection.
-
-### Git/SSH Dispatch
-
-`GitConnection` enum in `models/connection.rs` routes git ops through single API in `git/mod.rs`:
-
-```rust
-pub enum GitConnection {
-    Local { path: String },
-    Remote { ssh: Arc<RemoteSshSession>, remote_path: String },
-}
-```
-
-Pass `GitConnection` to git functions; dispatch to local subprocess or SSH channel is transparent. `run_git_in_dir` is primary local executor in `git/remote.rs`.
-
 ### Error Handling
 
 - Rust functions return `Result<T, String>` for IPC commands
@@ -185,24 +95,15 @@ Pass `GitConnection` to git functions; dispatch to local subprocess or SSH chann
 
 ### No Rust Logging
 
-No `println!`, `eprintln!`, `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug via IPC return values or frontend console.
+No `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug via IPC return values or frontend console.
 
 ### Type Generation Workflow
 
 When modifying Rust models:
 
-1. Add/update struct with `#[derive(Serialize, Deserialize, TS)]` and `#[ts(export)]`
-2. Set export dir in `Cargo.toml`: `export_dir = "../src/types"`
-3. Run `pnpm tauri:gen` (runs `cargo test generate_typescript_bindings`)
-4. TS types appear in `src/types/bindings.ts`
-5. Import in React components
-
-### Database Migrations
-
-- Schema version tracked via `PRAGMA user_version`
-- Current: `SCHEMA_VERSION = 12` in `src-tauri/src/db/schema.rs`
-- Init checks version; if stale, drops all tables and recreates (no production data preserved)
-- Foreign keys enabled via `PRAGMA foreign_keys = ON`
+1. Run `pnpm tauri:gen` (runs `cargo test generate_typescript_bindings`)
+2. TS types appear in `src/types/bindings.ts`
+3. Import in React components
 
 ## Project Conventions
 
@@ -246,3 +147,52 @@ When modifying Rust models:
 - All IPC commands use `Arc<AppState>` for thread-safe DB access
 - ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
 - Schema migration drops all tables on version mismatch (no data preservation strategy)
+
+
+# Rust coding guidelines
+
+* Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.
+* Do not write organizational or comments that summarize the code. Comments should only be written in order to explain "why" the code is written in some way in the case there is a reason that is tricky / non-obvious.
+* Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
+* Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.
+* Be careful with operations like indexing which may panic if the indexes are out of bounds.
+* Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:
+  - Propagate errors with `?` when the calling function should handle them
+  - Use `.log_err()` or similar when you need to ignore errors but want visibility
+  - Use explicit error handling with `match` or `if let Err(...)` when you need custom logic
+  - Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead
+* When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
+* Never create files with `mod.rs` paths - prefer `src/some_module.rs` instead of `src/some_module/mod.rs`.
+* When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
+* Avoid creative additions unless explicitly requested
+* Use full words for variable names (no abbreviations like "q" for "queue")
+* Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
+  Example:
+  ```rust
+  executor.spawn({
+      let task_ran = task_ran.clone();
+      async move {
+          *task_ran.borrow_mut() = true;
+      }
+  });
+  ```
+
+# Pull request hygiene
+
+When an agent opens or updates a pull request, it must:
+
+- Use a clear, correctly capitalized, imperative PR title (for example, `Fix crash in project panel`).
+- Avoid conventional commit prefixes in PR titles (`fix:`, `feat:`, `docs:`, etc.).
+- Avoid trailing punctuation in PR titles.
+- Optionally prefix the title with a crate name when one crate is the clear scope (for example, `git_ui: Add history view`).
+- Include a `Release Notes:` section as the final section in the PR body.
+- Use one bullet under `Release Notes:`:
+  - `- Added ...`, `- Fixed ...`, or `- Improved ...` for user-facing changes, or
+  - `- N/A` for docs-only and other non-user-facing changes.
+- Format release notes exactly with a blank line after the heading, for example:
+
+```
+Release Notes:
+
+- N/A
+```

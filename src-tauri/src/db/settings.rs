@@ -68,7 +68,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
     let max_concurrent_str = settings.max_concurrent_agents.to_string();
     let pairs = vec![
-        ("theme_preference", settings.theme_preference.as_ref().map(|s| s.as_str()).unwrap_or("system")),
+        ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
         ("max_concurrent_agents", max_concurrent_str.as_str()),
         ("updated_at", &settings.updated_at),

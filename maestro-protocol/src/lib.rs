@@ -25,6 +25,9 @@ pub enum ServerRequest {
     PermitResponse(PermissionResponse),
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
+    SetModel(SetModelRequest),
+    FileSearch(FileSearchRequest),
+    FileRead(FileReadRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -52,7 +55,8 @@ pub struct ListAgentsResponse {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct PromptRequest {
     pub session_id: String,
-    pub content: String,
+    /// String (legacy, wrapped in text block by receiver) or Array of ContentBlock JSON objects
+    pub content: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -72,11 +76,74 @@ pub enum ServerResponse {
     ElicitationRequest(ElicitationRequest),
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
+    SetModelOk(SetModelOkResponse),
+    FileSearchOk(FileSearchResponse),
+    FileReadOk(FileReadResponse),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ModelInfo {
+    pub model_id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SessionModelState {
+    pub current_model_id: String,
+    pub available_models: Vec<ModelInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetModelRequest {
+    pub session_id: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetModelOkResponse {
+    pub session_id: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PromptCapabilitiesInfo {
+    pub embedded_context: bool,
+    pub image: bool,
+    pub audio: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileSearchRequest {
+    pub cwd: String,
+    pub query: String,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileReadRequest {
+    pub cwd: String,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileSearchResponse {
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileReadResponse {
+    pub content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnResponse {
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<SessionModelState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -101,7 +168,7 @@ pub struct PermissionRequest {
 pub struct PermissionResponse {
     pub session_id: String,
     pub request_id: String,
-    pub allowed: bool,
+    pub option_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -235,7 +302,7 @@ mod tests {
     fn roundtrip_prompt_request() {
         let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
             session_id: "sess-1".to_string(),
-            content: "fix the bug in auth.rs".to_string(),
+            content: serde_json::Value::String("fix the bug in auth.rs".to_string()),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -256,6 +323,60 @@ mod tests {
     fn roundtrip_spawn_ok_response() {
         let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
+            models: None,
+            prompt_capabilities: None,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_spawn_ok_with_models() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+            session_id: "sess-1".to_string(),
+            prompt_capabilities: Some(PromptCapabilitiesInfo {
+                embedded_context: true,
+                image: false,
+                audio: false,
+            }),
+            models: Some(SessionModelState {
+                current_model_id: "claude-sonnet-4-6".to_string(),
+                available_models: vec![
+                    ModelInfo {
+                        model_id: "claude-opus-4-7".to_string(),
+                        name: "Opus 4.7".to_string(),
+                        description: None,
+                    },
+                    ModelInfo {
+                        model_id: "claude-sonnet-4-6".to_string(),
+                        name: "Sonnet 4.6".to_string(),
+                        description: Some("Fast and capable".to_string()),
+                    },
+                ],
+            }),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_set_model_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+            session_id: "sess-1".to_string(),
+            model_id: "claude-opus-4-7".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_set_model_ok_response() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::SetModelOk(SetModelOkResponse {
+            session_id: "sess-1".to_string(),
+            model_id: "claude-opus-4-7".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -309,12 +430,10 @@ mod tests {
 
     #[test]
     fn roundtrip_permission_response() {
-        // PermissionResponse is standalone (not wrapped in MaestroRpcMessage)
-        // but still needs roundtrip verification
         let resp = PermissionResponse {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
-            allowed: true,
+            option_id: Some("default".into()),
         };
         let json = serde_json::to_string(&resp).unwrap();
         let back: PermissionResponse = serde_json::from_str(&json).unwrap();
@@ -356,7 +475,7 @@ mod tests {
         let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
-            allowed: true,
+            option_id: Some("default".into()),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -368,12 +487,55 @@ mod tests {
         let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
-            allowed: false,
+            option_id: None,
         }));
         let mut buf: Vec<u8> = Vec::new();
         write_message(&mut buf, &msg).await.unwrap();
         let mut cursor = std::io::Cursor::new(buf);
         let back = read_message(&mut cursor).await.unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_file_search_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+            cwd: "/home/user/project".to_string(),
+            query: "main".to_string(),
+            limit: Some(20),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_file_search_ok() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse {
+            files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_file_read_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+            cwd: "/home/user/project".to_string(),
+            relative_path: "src/main.rs".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_file_read_ok() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
+            content: "fn main() {}".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
@@ -388,6 +550,8 @@ mod tests {
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
+            models: None,
+            prompt_capabilities: None,
         }));
         let req_json = serde_json::to_string(&req).unwrap();
         let resp_json = serde_json::to_string(&resp).unwrap();

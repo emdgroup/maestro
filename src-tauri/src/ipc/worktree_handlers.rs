@@ -75,10 +75,7 @@ pub async fn list_worktrees_with_status(
                 })
             })
             .map_err(|e| format!("Failed to query worktrees: {}", e))?
-            .filter_map(|r| match r {
-                Ok(row) => Some(row),
-                Err(_) => None,
-            })
+            .filter_map(|r| r.ok())
             .collect();
         rows
     };
@@ -429,11 +426,11 @@ pub async fn cleanup_zombie_worktrees(
     let threshold = Utc::now() - Duration::minutes(10);
 
     // Query DB for zombie candidates — lock is released after this block
-    let all_candidates: Vec<(i32, String, String)> = {
+    let all_candidates: Vec<(i32, String, String, String)> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let result: Result<Vec<(i32, String, String)>, String> = (|| {
+        let result: Result<Vec<(i32, String, String, String)>, String> = (|| {
             let mut stmt = conn.prepare(
-                "SELECT w.id, w.path, w.created_at
+                "SELECT w.id, w.path, w.created_at, w.branch_name
                  FROM worktrees w
                  LEFT JOIN tasks t ON t.id = w.task_id
                  WHERE w.project_id = ?1
@@ -444,14 +441,11 @@ pub async fn cleanup_zombie_worktrees(
                    )"
             ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
-            let rows: Vec<(i32, String, String)> = stmt.query_map(rusqlite::params![project_id], |row| {
-                Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            let rows: Vec<(i32, String, String, String)> = stmt.query_map(rusqlite::params![project_id], |row| {
+                Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?))
             })
             .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
-            .filter_map(|r| match r {
-                Ok(row) => Some(row),
-                Err(_) => None,
-            })
+            .filter_map(|r| r.ok())
             .collect();
             Ok(rows)
         })();
@@ -459,14 +453,14 @@ pub async fn cleanup_zombie_worktrees(
     }; // Mutex lock released here
 
     // Filter by time threshold (only worktrees older than 10 minutes)
-    let candidates: Vec<(i32, String)> = all_candidates
+    let candidates: Vec<(i32, String, String)> = all_candidates
         .into_iter()
-        .filter(|(_, _, created_at)| {
+        .filter(|(_, _, created_at, _)| {
             created_at.parse::<chrono::DateTime<chrono::Utc>>()
                 .map(|dt| dt < threshold)
                 .unwrap_or(false)
         })
-        .map(|(id, path, _)| (id, path))
+        .map(|(id, path, _, branch_name)| (id, path, branch_name))
         .collect();
 
     if candidates.is_empty() {
@@ -480,8 +474,8 @@ pub async fn cleanup_zombie_worktrees(
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
     let disk_paths: HashSet<String> = disk_worktrees.iter().map(|wt| wt.path.clone()).collect();
 
-    let mut to_delete: Vec<(i32, &str)> = Vec::new();
-    for (id, relative_path) in &candidates {
+    let mut to_delete: Vec<(i32, &str, &str)> = Vec::new();
+    for (id, relative_path, branch_name) in &candidates {
         let abs_path = format!("{}/{}", repo_path, relative_path);
         if !disk_paths.contains(&abs_path) {
             continue;
@@ -497,17 +491,37 @@ pub async fn cleanup_zombie_worktrees(
             continue;
         }
 
-        to_delete.push((*id, relative_path.as_str()));
+        to_delete.push((*id, relative_path.as_str(), branch_name.as_str()));
     }
 
-    // Remove git worktrees (best-effort — don't fail the whole cleanup)
-    for (_, relative_path) in &to_delete {
+    // Remove git worktrees and branches (best-effort — don't fail the whole cleanup).
+    // Uses `git branch -d` (safe delete): git refuses to delete branches with unmerged
+    // commits, so branches with actual work are preserved automatically.
+    for (_, relative_path, branch_name) in &to_delete {
         let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
+
+        match &git_conn {
+            crate::models::GitConnection::Local { path } => {
+                let _ = tokio::process::Command::new("git")
+                    .args(["branch", "-d", branch_name])
+                    .current_dir(path)
+                    .output()
+                    .await;
+            }
+            crate::models::GitConnection::Remote { ssh, remote_path } => {
+                let cmd = format!(
+                    "git -C {} branch -d {}",
+                    crate::git::remote::shell_quote(remote_path),
+                    crate::git::remote::shell_quote(branch_name)
+                );
+                let _ = ssh.execute_command(&cmd).await;
+            }
+        }
     }
 
     // Batch-delete DB rows under a single lock
     let deleted = if !to_delete.is_empty() {
-        let ids: Vec<i32> = to_delete.iter().map(|(id, _)| *id).collect();
+        let ids: Vec<i32> = to_delete.iter().map(|(id, _, _)| *id).collect();
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let sql = format!("DELETE FROM worktrees WHERE id IN ({})", placeholders);

@@ -22,15 +22,13 @@ pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
 
     // Filter for directories only
     let mut directories: Vec<String> = Vec::new();
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Ok(metadata) = entry.metadata() {
-                if metadata.is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        // Skip . and .. (though these shouldn't appear from read_dir)
-                        if name != "." && name != ".." {
-                            directories.push(name.to_string());
-                        }
+    for entry in entries.flatten() {
+        if let Ok(metadata) = entry.metadata() {
+            if metadata.is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    // Skip . and .. (though these shouldn't appear from read_dir)
+                    if name != "." && name != ".." {
+                        directories.push(name.to_string());
                     }
                 }
             }
@@ -104,7 +102,7 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
 
         // Try GNOME/GTK accent color via gsettings
         if let Ok(output) = Command::new("gsettings")
-            .args(&["get", "org.gnome.desktop.interface", "accent-color"])
+            .args(["get", "org.gnome.desktop.interface", "accent-color"])
             .output()
         {
             if output.status.success() {

@@ -8,21 +8,26 @@ import type {
   ToolCallItem,
   MessageItem,
   ThinkingItem,
+  UserMessageItem,
 } from "./types";
 
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload }
   | { type: "session_ended" }
+  | { type: "finalize_streaming" }
+  | { type: "set_initialized" }
   | { type: "load_from_db"; payloads: SessionUpdatePayload[] };
-
-let msgCounter = 0;
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
     case "event":
       return processEvent(state, action.payload);
     case "session_ended":
-      return { ...state, sessionEnded: true, endReason: "completed" };
+      return { ...state, items: finalizeLastStreaming(state.items), sessionEnded: true, endReason: "completed" };
+    case "finalize_streaming":
+      return { ...state, items: finalizeLastStreaming(state.items) };
+    case "set_initialized":
+      return { ...state, isInitializing: false };
     case "load_from_db": {
       let s = { ...INITIAL_ACTIVITY_STATE, isInitializing: false, sessionEnded: true };
       for (const p of action.payloads) {
@@ -46,7 +51,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         newState.items = [...newState.items.slice(0, -1), { type: "thinking", item: updated }];
       } else {
         const thought: ThinkingItem = {
-          id: `thought-${++msgCounter}`,
+          id: `thought-${crypto.randomUUID()}`,
           text: payload.content.text,
           isStreaming: true,
         };
@@ -64,7 +69,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         // Finalize any streaming thinking block before starting agent message
         const items = finalizeLastStreaming(newState.items);
         const msg: MessageItem = {
-          id: `msg-${++msgCounter}`,
+          id: `msg-${crypto.randomUUID()}`,
           text: payload.content.text,
           isStreaming: true,
         };
@@ -79,8 +84,8 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         toolCallId: payload.toolCallId,
         title: payload.title,
         kind: payload.kind,
-        status: "pending",
-        content: [],
+        status: payload.status ?? "pending",
+        content: payload.content ?? [],
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
@@ -93,8 +98,8 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
         const updated = { ...existing };
-        if (payload.status) updated.status = payload.status;
-        if (payload.content) updated.content = [...updated.content, payload.content];
+        if (payload.status) updated.status = payload.status === "failed" ? "error" : payload.status;
+        if (payload.content) updated.content = payload.content;
         newMap.set(payload.toolCallId, updated);
         const updatedItems = items.map((i) =>
           i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
@@ -109,6 +114,15 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
     case "plan": {
       const items = finalizeLastStreaming(newState.items);
       return { ...newState, items, plan: payload.entries };
+    }
+
+    case "user_message": {
+      const userMsg: UserMessageItem = {
+        id: `user-${crypto.randomUUID()}`,
+        content: payload.content,
+        sentAt: payload.sentAt,
+      };
+      return { ...newState, items: [...newState.items, { type: "userMessage", item: userMsg }] };
     }
 
     default:
@@ -128,7 +142,7 @@ function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
   return items;
 }
 
-export function useAcpActivity(logId: number | null): ActivityState {
+export function useAcpActivity(logId: number | null): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
 
   useEffect(() => {
@@ -136,7 +150,11 @@ export function useAcpActivity(logId: number | null): ActivityState {
 
     const unlisteners = Promise.all([
       listen<unknown>(`acp://session-update/${logId}`, (event) => {
-        dispatch({ type: "event", payload: event.payload as SessionUpdatePayload });
+        const payload = event.payload as SessionUpdatePayload;
+        // user_message echoes are for dead-session persistence only; live session
+        // tracks user messages via liveUserMessages in AgentActivityPanel
+        if (payload.sessionUpdate === "user_message") return;
+        dispatch({ type: "event", payload });
       }),
       listen<null>(`acp://session-ended/${logId}`, () => {
         dispatch({ type: "session_ended" });
@@ -151,5 +169,5 @@ export function useAcpActivity(logId: number | null): ActivityState {
     };
   }, [logId]);
 
-  return state;
+  return [state, dispatch];
 }

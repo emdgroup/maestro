@@ -41,6 +41,7 @@ fn main() {
     let app = tauri::Builder::default()
         .setup(setup)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(builder.invoke_handler())
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

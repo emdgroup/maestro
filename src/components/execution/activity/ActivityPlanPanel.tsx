@@ -13,7 +13,7 @@ const STATUS_ICON: Record<string, React.ElementType> = {
 };
 
 const UPCOMING_VISIBLE = 4;
-const CIRCLE_RADIUS = 10;
+const CIRCLE_RADIUS = 15;
 const CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS;
 
 export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
@@ -39,27 +39,27 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
     <div className="px-3 py-2 space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-foreground">Plan</span>
-        <svg width="28" height="28" viewBox="0 0 28 28" aria-label={`${pct}% complete`}>
+        <svg width="40" height="40" viewBox="0 0 40 40" aria-label={`${pct}% complete`}>
           <circle
-            cx="14" cy="14" r={CIRCLE_RADIUS}
+            cx="20" cy="20" r={CIRCLE_RADIUS}
             fill="none" stroke="currentColor"
-            className="text-muted/40" strokeWidth="2.5"
+            className="text-muted/40" strokeWidth="3"
           />
           <circle
-            cx="14" cy="14" r={CIRCLE_RADIUS}
+            cx="20" cy="20" r={CIRCLE_RADIUS}
             fill="none" stroke="currentColor"
             className="text-accent"
-            strokeWidth="2.5"
+            strokeWidth="3"
             strokeDasharray={CIRCUMFERENCE}
             strokeDashoffset={offset}
             strokeLinecap="round"
-            transform="rotate(-90 14 14)"
+            transform="rotate(-90 20 20)"
           />
           <text
-            x="14" y="14"
+            x="20" y="20"
             textAnchor="middle" dominantBaseline="central"
             className="fill-foreground"
-            style={{ fontSize: "6px", fontWeight: 600 }}
+            style={{ fontSize: "9px", fontWeight: 600 }}
           >
             {pct}%
           </text>

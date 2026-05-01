@@ -598,7 +598,7 @@ impl RemoteSshSession {
                 Some(ChannelMsg::Data { ref data }) => {
                     stdout.push_str(&String::from_utf8_lossy(data));
                 }
-                Some(ChannelMsg::ExtendedData { ref data, ext }) if ext == 1 => {
+                Some(ChannelMsg::ExtendedData { ref data, ext: 1 }) => {
                     stderr_buf.push_str(&String::from_utf8_lossy(data));
                 }
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -627,7 +627,7 @@ impl RemoteSshSession {
             self.reconnect_if_needed().await?;
         }
 
-        let mut channel = {
+        let channel = {
             let guard = self.handle.lock().await;
             let handle = guard.as_ref().ok_or_else(|| {
                 SshError::ConnectionError("No active SSH session".to_string())

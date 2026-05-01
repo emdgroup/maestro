@@ -50,6 +50,7 @@ const LANGS = [
   () => import("@shikijs/langs/terraform"),
   () => import("@shikijs/langs/makefile"),
   () => import("@shikijs/langs/groovy"),
+  () => import("@shikijs/langs/diff"),
 ];
 
 // ── singleton ────────────────────────────────────────────────────────────────

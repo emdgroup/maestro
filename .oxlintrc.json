@@ -2,7 +2,9 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "react-perf", "vitest"],
   "categories": {},
-  "rules": {},
+  "rules": {
+    "vitest/require-mock-type-parameters": "off"
+  },
   "settings": {
     "jsx-a11y": {
       "polymorphicPropName": null,
@@ -36,5 +38,5 @@
     "builtin": true
   },
   "globals": {},
-  "ignorePatterns": [".claude/*", "sidecar/*", ".planning/*"]
+  "ignorePatterns": [".claude/*", "sidecar/*", ".planning/*", "src/types/bindings.ts"]
 }

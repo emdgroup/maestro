@@ -1,24 +1,50 @@
 //! IPC command handlers for ACP (Agent Control Protocol) session management.
-//!
-//! Exposes four Tauri IPC commands to the frontend:
-//! - `spawn_acp_session`: Launch a new ACP agent session via maestro-server subprocess
-//! - `send_acp_prompt`: Send a prompt message to a running session
-//! - `respond_acp_permission`: Respond to a permission request from the agent
-//! - `cancel_acp_session`: Stop a running session and clean up resources
 
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::db::AppState;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AcpModelInfo {
+    pub model_id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AcpSessionModelState {
+    pub current_model_id: String,
+    pub available_models: Vec<AcpModelInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AcpPromptCapabilities {
+    pub embedded_context: bool,
+    pub image: bool,
+    pub audio: bool,
+}
+
 use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
     PromptRequest, CancelRequest, PermissionResponse,
-    ElicitationResponse,
+    ElicitationResponse, SetModelRequest,
     ListAgentsRequest, write_message,
+    FileSearchRequest, FileReadRequest,
 };
+use tokio::sync::oneshot;
+
+fn session_id_for(log_id: i32) -> String {
+    format!("session-{}", log_id)
+}
 
 /// Launch a new ACP agent session via maestro-server subprocess.
 ///
@@ -72,7 +98,7 @@ pub async fn spawn_acp_session(
         conn.last_insert_rowid() as i32
     };
 
-    let session_id = format!("session-{}", log_id);
+    let session_id = session_id_for(log_id);
 
     if let Some(conn_id) = connection_id {
         let maestro_path = {
@@ -99,12 +125,19 @@ pub async fn spawn_acp_session(
     Ok(log_id)
 }
 
-/// Send a prompt message to a running ACP session.
-///
-/// # Arguments
-/// * `app_state` - Tauri app state
-/// * `log_id` - Session key (execution log ID)
-/// * `content` - The prompt text to send to the agent
+async fn send_prompt_impl(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+    content: serde_json::Value,
+) -> Result<(), String> {
+    let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        session_id: session_id_for(log_id),
+        content,
+    }));
+    crate::acp::write_to_acp_session(app_state, log_id, &msg).await
+}
+
+/// Send a plain-text prompt to a running ACP session.
 ///
 /// # Security
 /// T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
@@ -116,12 +149,18 @@ pub async fn send_acp_prompt(
     log_id: i32,
     content: String,
 ) -> Result<(), String> {
-    let session_id = format!("session-{}", log_id);
-    let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
-        session_id,
-        content,
-    }));
-    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+    send_prompt_impl(&app_state, log_id, serde_json::Value::String(content)).await
+}
+
+/// Send a structured prompt (JSON array of ContentBlock objects) enabling file attachments.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_acp_prompt_structured(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    content_blocks: serde_json::Value,
+) -> Result<(), String> {
+    send_prompt_impl(&app_state, log_id, content_blocks).await
 }
 
 /// Respond to a permission request from the agent.
@@ -130,8 +169,6 @@ pub async fn send_acp_prompt(
 /// * `app_state` - Tauri app state
 /// * `log_id` - Session key (execution log ID)
 /// * `request_id` - The permission request ID from the agent's PermissionRequest event
-/// * `allowed` - Whether to allow the requested action
-///
 /// # Security
 /// T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
 /// valid sessions can receive messages (inherited from Phase 43).
@@ -141,13 +178,13 @@ pub async fn respond_acp_permission(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
     request_id: String,
-    allowed: bool,
+    option_id: Option<String>,
 ) -> Result<(), String> {
-    let session_id = format!("session-{}", log_id);
+    let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id,
         request_id,
-        allowed,
+        option_id,
     }));
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
@@ -161,7 +198,7 @@ pub async fn respond_acp_elicitation(
     request_id: String,
     response: serde_json::Value,
 ) -> Result<(), String> {
-    let session_id = format!("session-{}", log_id);
+    let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id,
         request_id,
@@ -223,7 +260,7 @@ pub async fn cancel_acp_session(
     log_id: i32,
 ) -> Result<(), String> {
     // Send CancelRequest to maestro-server first (best-effort — server may already be gone).
-    let session_id = format!("session-{}", log_id);
+    let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
@@ -246,6 +283,77 @@ pub async fn cancel_acp_session(
     );
 
     Ok(())
+}
+
+/// Send a SetModel request to change the active model for a running ACP session.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_acp_model(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    model_id: String,
+) -> Result<(), String> {
+    let session_id = session_id_for(log_id);
+    let msg = MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+        session_id,
+        model_id,
+    }));
+    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+}
+
+/// Get cached model state for a running ACP session.
+/// Returns None if the session hasn't reported models yet or session not found.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_acp_models(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+) -> Result<Option<AcpSessionModelState>, String> {
+    let models_arc = {
+        let sessions = app_state.acp_sessions.lock().await;
+        sessions.get(&log_id).map(|s| Arc::clone(&s.models))
+    };
+    let Some(models_arc) = models_arc else {
+        return Ok(None);
+    };
+    let cloned = models_arc
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?
+        .clone();
+    Ok(cloned.map(|m| AcpSessionModelState {
+        current_model_id: m.current_model_id,
+        available_models: m.available_models.into_iter().map(|mi| AcpModelInfo {
+            model_id: mi.model_id,
+            name: mi.name,
+            description: mi.description,
+        }).collect(),
+    }))
+}
+
+/// Get cached prompt capabilities for a running ACP session.
+/// Returns None if the session hasn't reported capabilities yet or session not found.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_acp_capabilities(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+) -> Result<Option<AcpPromptCapabilities>, String> {
+    let capabilities_arc = {
+        let sessions = app_state.acp_sessions.lock().await;
+        sessions.get(&log_id).map(|s| Arc::clone(&s.prompt_capabilities))
+    };
+    let Some(capabilities_arc) = capabilities_arc else {
+        return Ok(None);
+    };
+    let cloned = capabilities_arc
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?
+        .clone();
+    Ok(cloned.map(|c| AcpPromptCapabilities {
+        embedded_context: c.embedded_context,
+        image: c.image,
+        audio: c.audio,
+    }))
 }
 
 /// Run agent discovery and store result in the AppState cache.
@@ -447,11 +555,98 @@ pub async fn discover_agents(
         })
 }
 
+/// Search files in the project directory via the active maestro-server session.
+/// Routes the FileSearch request through the existing session transport so it works
+/// for both local and remote (SSH) projects.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_session_files(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    query: String,
+    limit: Option<u32>,
+) -> Result<Vec<String>, String> {
+    let (cwd, pending_search) = {
+        let sessions = app_state.acp_sessions.lock().await;
+        let session = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+        (session.cwd.clone(), Arc::clone(&session.pending_file_search))
+    };
+
+    let (tx, rx) = oneshot::channel::<Result<Vec<String>, String>>();
+    {
+        let mut guard = pending_search
+            .lock()
+            .map_err(|_| "pending_file_search lock poisoned".to_string())?;
+        *guard = Some(tx);
+    }
+
+    crate::acp::write_to_acp_session(
+        &app_state,
+        log_id,
+        &MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+            cwd,
+            query,
+            limit,
+        })),
+    )
+    .await?;
+
+    tokio::time::timeout(Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "File search timed out".to_string())?
+        .map_err(|_| "File search response channel closed".to_string())?
+}
+
+/// Read a file from the project via the active maestro-server session.
+/// Routes the FileRead request through the existing session transport so it works
+/// for both local and remote (SSH) projects.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_session_file(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    relative_path: String,
+) -> Result<String, String> {
+    let (cwd, pending_read) = {
+        let sessions = app_state.acp_sessions.lock().await;
+        let session = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+        (session.cwd.clone(), Arc::clone(&session.pending_file_read))
+    };
+
+    let (tx, rx) = oneshot::channel::<Result<String, String>>();
+    {
+        let mut guard = pending_read
+            .lock()
+            .map_err(|_| "pending_file_read lock poisoned".to_string())?;
+        *guard = Some(tx);
+    }
+
+    crate::acp::write_to_acp_session(
+        &app_state,
+        log_id,
+        &MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+            cwd,
+            relative_path,
+        })),
+    )
+    .await?;
+
+    tokio::time::timeout(Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "File read timed out".to_string())?
+        .map_err(|_| "File read response channel closed".to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
     use crate::db::schema::initialize_schema;
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, PromptRequest, PermissionResponse};
+    use super::session_id_for;
 
     /// PERSIST-02: spawn_acp_session INSERT writes execution_mode='acp' and agent_id.
     /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
@@ -526,11 +721,11 @@ mod tests {
     fn test_send_acp_prompt_message_structure() {
         let log_id: i32 = 42;
         let content = "fix the auth bug";
-        let session_id = format!("session-{}", log_id);
+        let session_id = session_id_for(log_id);
 
         let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
             session_id: session_id.clone(),
-            content: content.to_string(),
+            content: serde_json::Value::String(content.to_string()),
         }));
 
         let json = serde_json::to_string(&msg).unwrap();
@@ -545,33 +740,32 @@ mod tests {
     }
 
     /// PERSIST-04: respond_acp_permission constructs a PermitResponse with correct fields.
-    /// Verifies that both allowed=true and allowed=false produce distinct, correct JSON.
+    /// Verifies that option_id=Some and option_id=None produce distinct, correct JSON.
     #[test]
     fn test_respond_acp_permission_message_structure() {
         let log_id: i32 = 7;
         let request_id = "perm-001";
-        let session_id = format!("session-{}", log_id);
+        let session_id = session_id_for(log_id);
 
-        // allowed=true
+        // option_id=Some
         let allow_msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: session_id.clone(),
             request_id: request_id.to_string(),
-            allowed: true,
+            option_id: Some("allow_once".into()),
         }));
         let allow_json = serde_json::to_string(&allow_msg).unwrap();
         assert!(allow_json.contains("\"type\":\"permit_response\""), "must have type=permit_response");
-        assert!(allow_json.contains("\"allowed\":true"), "allowed=true must be present");
+        assert!(allow_json.contains("\"option_id\""), "option_id must be present");
         assert!(allow_json.contains(&format!("\"request_id\":\"{}\"", request_id)));
 
-        // allowed=false
-        let deny_msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+        // option_id=None (cancelled)
+        let cancel_msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: session_id.clone(),
             request_id: request_id.to_string(),
-            allowed: false,
+            option_id: None,
         }));
-        let deny_json = serde_json::to_string(&deny_msg).unwrap();
-        assert!(deny_json.contains("\"allowed\":false"), "allowed=false must be present");
-        assert_ne!(allow_json, deny_json, "allow and deny must produce different JSON");
+        let cancel_json = serde_json::to_string(&cancel_msg).unwrap();
+        assert_ne!(allow_json, cancel_json, "allow and cancel must produce different JSON");
 
         // Roundtrip
         let back: MaestroRpcMessage = serde_json::from_str(&allow_json).unwrap();

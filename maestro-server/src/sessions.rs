@@ -4,6 +4,8 @@ use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 
 pub enum SessionCommand {
     Prompt(String),
+    PromptStructured(Vec<serde_json::Value>),
+    SetModel(String),
 }
 
 pub struct TerminalHandle {
@@ -21,7 +23,7 @@ pub struct TerminalExitInfo {
 
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
     pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
     pub task: tokio::task::JoinHandle<()>,
 }

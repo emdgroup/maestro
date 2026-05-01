@@ -199,7 +199,7 @@ function App() {
                     duration: PAGE_TRANSITION_DURATION,
                     ease: PAGE_TRANSITION_EASING,
                   }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
+                  className="absolute inset-0 overflow-hidden"
                 >
                   <Suspense fallback={fallback}>
                     <AgentsView projectId={currentProject.id} repoPath={currentProject.path} connectionId={currentProject.connection_id} />

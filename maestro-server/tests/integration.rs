@@ -125,7 +125,7 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     // Step 2: prompt on the never-registered session
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: "session-99".to_string(),
-        content: "hello world".to_string(),
+        content: serde_json::Value::String("hello world".to_string()),
     })));
     let prompt_resp = read_msg(stdout);
     match prompt_resp {
@@ -156,7 +156,7 @@ fn test_permit_response_unknown_session_produces_no_output() {
         write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: "session-never".to_string(),
             request_id: "perm-001".to_string(),
-            allowed: true,
+            option_id: Some("default".into()),
         })));
         // Drop stdin here (end of scope) — causes server to receive EOF and exit
     }
@@ -216,7 +216,7 @@ fn test_protocol_framing_large_prompt_payload() {
     let _ = read_msg(stdout);
 
     // 64 KB prompt
-    let large_content = "x".repeat(64 * 1024);
+    let large_content = serde_json::Value::String("x".repeat(64 * 1024));
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: "session-large".to_string(),
         content: large_content,

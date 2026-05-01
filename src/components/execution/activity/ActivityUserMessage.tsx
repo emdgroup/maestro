@@ -5,7 +5,38 @@ interface ActivityUserMessageProps {
   message: UserMessageItem;
 }
 
+interface ParsedUserContent {
+  text: string;
+  attachments: string[];
+}
+
+function parseUserContent(raw: string): ParsedUserContent {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return { text: raw, attachments: [] };
+    }
+    const textParts: string[] = [];
+    const attachments: string[] = [];
+    for (const block of parsed) {
+      if (block.type === "text" && typeof block.text === "string") {
+        textParts.push(block.text);
+      } else if (block.type === "resource" && block.resource?.uri) {
+        const uri: string = block.resource.uri;
+        const name = uri.split("/").pop() ?? uri;
+        attachments.push(name);
+      } else if (block.type === "resource_link" && block.name) {
+        attachments.push(block.name);
+      }
+    }
+    return { text: textParts.join(""), attachments };
+  } catch {
+    return { text: raw, attachments: [] };
+  }
+}
+
 export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
+  const parsed = parseUserContent(message.content);
   return (
     <div className="flex items-start gap-2.5 group">
       <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-xs font-semibold text-muted-foreground">
@@ -13,7 +44,19 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="bg-card border border-border rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
-          {message.content}
+          {parsed.text}
+          {parsed.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {parsed.attachments.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center rounded-md bg-accent/10 border border-accent/20 text-accent/80 px-1.5 py-0.5 text-xs font-mono"
+                >
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button

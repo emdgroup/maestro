@@ -950,12 +950,7 @@ async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, 
 }
 },
 /**
- * Send a prompt message to a running ACP session.
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `log_id` - Session key (execution log ID)
- * * `content` - The prompt text to send to the agent
+ * Send a plain-text prompt to a running ACP session.
  * 
  * # Security
  * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
@@ -970,21 +965,30 @@ async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, strin
 }
 },
 /**
+ * Send a structured prompt (JSON array of ContentBlock objects) enabling file attachments.
+ */
+async sendAcpPromptStructured(logId: number, contentBlocks: JsonValue) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt_structured", { logId, contentBlocks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Respond to a permission request from the agent.
  * 
  * # Arguments
  * * `app_state` - Tauri app state
  * * `log_id` - Session key (execution log ID)
  * * `request_id` - The permission request ID from the agent's PermissionRequest event
- * * `allowed` - Whether to allow the requested action
- * 
  * # Security
  * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
  * valid sessions can receive messages (inherited from Phase 43).
  */
-async respondAcpPermission(logId: number, requestId: string, allowed: boolean) : Promise<Result<null, string>> {
+async respondAcpPermission(logId: number, requestId: string, optionId: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, allowed }) };
+    return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, optionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1059,6 +1063,67 @@ async getStructuredOutput(logId: number) : Promise<Result<JsonValue[], string>> 
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Send a SetModel request to change the active model for a running ACP session.
+ */
+async setAcpModel(logId: number, modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_model", { logId, modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get cached model state for a running ACP session.
+ * Returns None if the session hasn't reported models yet or session not found.
+ */
+async getAcpModels(logId: number) : Promise<Result<AcpSessionModelState | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_acp_models", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get cached prompt capabilities for a running ACP session.
+ * Returns None if the session hasn't reported capabilities yet or session not found.
+ */
+async getAcpCapabilities(logId: number) : Promise<Result<AcpPromptCapabilities | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_acp_capabilities", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Search files in the project directory via the active maestro-server session.
+ * Routes the FileSearch request through the existing session transport so it works
+ * for both local and remote (SSH) projects.
+ */
+async searchSessionFiles(logId: number, query: string, limit: number | null) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_session_files", { logId, query, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Read a file from the project via the active maestro-server session.
+ * Routes the FileRead request through the existing session transport so it works
+ * for both local and remote (SSH) projects.
+ */
+async readSessionFile(logId: number, relativePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_session_file", { logId, relativePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1072,6 +1137,9 @@ async getStructuredOutput(logId: number) : Promise<Result<JsonValue[], string>> 
 
 /** user-defined types **/
 
+export type AcpModelInfo = { model_id: string; name: string; description: string | null }
+export type AcpPromptCapabilities = { embedded_context: boolean; image: boolean; audio: boolean }
+export type AcpSessionModelState = { current_model_id: string; available_models: AcpModelInfo[] }
 /**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).

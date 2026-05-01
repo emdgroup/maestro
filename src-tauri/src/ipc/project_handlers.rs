@@ -471,7 +471,7 @@ pub fn get_project_settings(
     let model_default = settings_map
         .get("model_default")
         .cloned()
-        .unwrap_or_else(|| "claude-opus-4-5".to_string());
+        .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
     let mcp_allowlist: Vec<String> = settings_map
         .get("mcp_allowlist")

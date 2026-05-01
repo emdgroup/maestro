@@ -93,11 +93,17 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             // ACP session management + unified agent discovery
             crate::ipc::spawn_acp_session,
             crate::ipc::send_acp_prompt,
+            crate::ipc::send_acp_prompt_structured,
             crate::ipc::respond_acp_permission,
             crate::ipc::respond_acp_elicitation,
             crate::ipc::cancel_acp_session,
             crate::ipc::discover_agents,
-            crate::ipc::get_structured_output
+            crate::ipc::get_structured_output,
+            crate::ipc::set_acp_model,
+            crate::ipc::get_acp_models,
+            crate::ipc::get_acp_capabilities,
+            crate::ipc::search_session_files,
+            crate::ipc::read_session_file
         ])
 }
 

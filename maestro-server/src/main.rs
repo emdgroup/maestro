@@ -23,18 +23,22 @@ use agent_client_protocol as acp;
 
 use acp::schema::{
     ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Implementation,
-    InitializeRequest, KillTerminalRequest, KillTerminalResponse, PermissionOptionKind,
-    ProtocolVersion, ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionNotification, TerminalExitStatus, TerminalId, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    InitializeRequest, KillTerminalRequest, KillTerminalResponse, NewSessionRequest,
+    PermissionOptionId, ProtocolVersion, ReleaseTerminalRequest, ReleaseTerminalResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionNotification, SetSessionModelRequest, TerminalExitStatus,
+    TerminalId, TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
-    read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, ListAgentsResponse,
-    MaestroRpcMessage, PermissionRequest as MaestroPermissionRequest,
-    ElicitationRequest as MaestroElicitationRequest, ServerRequest,
-    ServerResponse, SessionUpdate, SpawnResponse, TerminalOutput,
+    read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, FileReadRequest, FileReadResponse,
+    FileSearchRequest, FileSearchResponse, ListAgentsResponse, MaestroRpcMessage,
+    ModelInfo as ProtocolModelInfo, PermissionRequest as MaestroPermissionRequest,
+    ElicitationRequest as MaestroElicitationRequest, PromptCapabilitiesInfo, ServerRequest,
+    ServerResponse, SessionModelState as ProtocolSessionModelState, SessionUpdate,
+    SetModelOkResponse, SpawnResponse, TerminalOutput,
 };
+use ignore::WalkBuilder;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -67,6 +71,102 @@ fn truncate_buf(buf: &mut String, limit: usize) {
     }
 }
 
+fn fuzzy_score(haystack: &str, needle: &str) -> usize {
+    if needle.is_empty() {
+        return 1;
+    }
+    let mut score = 0usize;
+    let mut hay_chars = haystack.chars().peekable();
+    for nc in needle.chars() {
+        let mut found = false;
+        while let Some(&hc) = hay_chars.peek() {
+            hay_chars.next();
+            if hc == nc {
+                score += 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return 0;
+        }
+    }
+    score
+}
+
+fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
+    let limit = req.limit.unwrap_or(50) as usize;
+    let root = std::path::Path::new(&req.cwd);
+    if !root.is_dir() {
+        return Err(format!("Not a directory: {}", req.cwd));
+    }
+
+    let query_lower = req.query.to_lowercase();
+    let mut results: Vec<(usize, String)> = Vec::new();
+
+    let walker = WalkBuilder::new(root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .max_depth(Some(20))
+        .build();
+
+    for entry in walker.flatten() {
+        let file_type = entry.file_type();
+        if !file_type.map(|ft| ft.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let rel_path = match entry.path().strip_prefix(root) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+
+        let score = fuzzy_score(&rel_path.to_lowercase(), &query_lower);
+        if score > 0 || query_lower.is_empty() {
+            results.push((score, rel_path));
+        }
+    }
+
+    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.truncate(limit);
+    Ok(results.into_iter().map(|(_, p)| p).collect())
+}
+
+async fn handle_file_read(req: &FileReadRequest) -> Result<String, String> {
+    let rel = std::path::Path::new(&req.relative_path);
+    if rel.is_absolute() {
+        return Err("relative_path must not be absolute".to_string());
+    }
+    for component in rel.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err("relative_path must not contain '..' segments".to_string());
+        }
+    }
+
+    let full_path = std::path::Path::new(&req.cwd).join(rel);
+    let canonical = full_path
+        .canonicalize()
+        .map_err(|e| format!("File not found: {e}"))?;
+    let canonical_root = std::path::Path::new(&req.cwd)
+        .canonicalize()
+        .map_err(|e| format!("Invalid cwd: {e}"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("Path escapes project root".to_string());
+    }
+
+    let metadata = tokio::fs::metadata(&canonical)
+        .await
+        .map_err(|e| format!("Cannot stat file: {e}"))?;
+    if metadata.len() > 1_048_576 {
+        return Err("File too large (>1MB)".to_string());
+    }
+
+    tokio::fs::read_to_string(&canonical)
+        .await
+        .map_err(|e| format!("Cannot read file: {e}"))
+}
+
 async fn ensure_agent_cache(
     cache: &mut Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)>,
     ttl: std::time::Duration,
@@ -84,6 +184,23 @@ async fn ensure_agent_cache(
     agents
 }
 
+fn convert_acp_models(
+    acp_models: Option<&acp::schema::SessionModelState>,
+) -> Option<ProtocolSessionModelState> {
+    acp_models.map(|m| ProtocolSessionModelState {
+        current_model_id: m.current_model_id.0.to_string(),
+        available_models: m
+            .available_models
+            .iter()
+            .map(|mi| ProtocolModelInfo {
+                model_id: mi.model_id.0.to_string(),
+                name: mi.name.clone(),
+                description: mi.description.clone(),
+            })
+            .collect(),
+    })
+}
+
 /// Spawn the ACP connection task for one agent session.
 ///
 /// Returns an `ActiveSession` on success (session initialized, ready for prompts).
@@ -95,7 +212,7 @@ async fn spawn_acp_session(
     cwd: &str,
     maestro_session_id: String,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Option<ActiveSession> {
+) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, PromptCapabilitiesInfo)> {
     // 1. Spawn agent subprocess
     let mut child =
         match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
@@ -120,7 +237,7 @@ async fn spawn_acp_session(
     let transport = acp::ByteStreams::new(outgoing, incoming);
 
     // 3. Shared state for callbacks (Arc for Send + Sync)
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>> =
+    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -130,7 +247,7 @@ async fn spawn_acp_session(
 
     // 4. Channels: commands into the connection task, readiness signal out
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let (ready_tx, ready_rx) = oneshot::channel::<Result<(), String>>();
+    let (ready_tx, ready_rx) = oneshot::channel::<Result<(Option<ProtocolSessionModelState>, PromptCapabilitiesInfo), String>>();
 
     // 5. Clone state for builder callbacks
     let pp = Arc::clone(&pending_permissions);
@@ -161,7 +278,7 @@ async fn spawn_acp_session(
 
                             let request_id = request.tool_call.tool_call_id.to_string();
 
-                            let (tx, rx) = oneshot::channel::<bool>();
+                            let (tx, rx) = oneshot::channel::<Option<String>>();
                             pp.lock().await.insert(request_id.clone(), tx);
 
                             let payload = serde_json::to_value(&request).map_err(|e| {
@@ -178,26 +295,12 @@ async fn spawn_acp_session(
                                 acp::Error::new(-32603, e.to_string())
                             })?;
 
-                            let allowed = rx.await.map_err(|_| {
-                                acp::Error::new(-32603, "permission channel closed")
-                            })?;
-
-                            let outcome = if allowed {
-                                let opt = request.options.iter().find(|o| {
-                                    matches!(
-                                        o.kind,
-                                        PermissionOptionKind::AllowOnce
-                                            | PermissionOptionKind::AllowAlways
-                                    )
-                                });
-                                match opt {
-                                    Some(o) => RequestPermissionOutcome::Selected(
-                                        SelectedPermissionOutcome::new(o.option_id.clone()),
-                                    ),
-                                    None => RequestPermissionOutcome::Cancelled,
-                                }
-                            } else {
-                                RequestPermissionOutcome::Cancelled
+                            let outcome = match rx.await {
+                                Ok(Some(id)) => RequestPermissionOutcome::Selected(
+                                    SelectedPermissionOutcome::new(PermissionOptionId::new(id)),
+                                ),
+                                Ok(None) => RequestPermissionOutcome::Cancelled,
+                                Err(_) => RequestPermissionOutcome::Cancelled,
                             };
                             responder.respond(RequestPermissionResponse::new(outcome))
                         }
@@ -214,7 +317,7 @@ async fn spawn_acp_session(
                         let so = so.clone();
                         let sid = sid.clone();
                         async move {
-                            let payload = serde_json::to_value(&notification).map_err(|e| {
+                            let payload = serde_json::to_value(&notification.update).map_err(|e| {
                                 acp::Error::new(-32603, e.to_string())
                             })?;
                             let msg = MaestroRpcMessage::Response(
@@ -424,30 +527,39 @@ async fn spawn_acp_session(
                     )
                     .block_task()
                     .await;
-                if let Err(e) = init_result {
-                    let _ = ready_tx.send(Err(format!("ACP initialize failed: {}", e)));
-                    return Ok(());
-                }
+                let init_response = match init_result {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(format!("ACP initialize failed: {}", e)));
+                        return Ok(());
+                    }
+                };
+                let prompt_caps = PromptCapabilitiesInfo {
+                    embedded_context: init_response.agent_capabilities.prompt_capabilities.embedded_context,
+                    image: init_response.agent_capabilities.prompt_capabilities.image,
+                    audio: init_response.agent_capabilities.prompt_capabilities.audio,
+                };
 
-                // Create ACP session
-                let session_req = acp::schema::NewSessionRequest::new(
-                    std::path::PathBuf::from(&cwd_owned),
-                );
-                let session_result = cx
-                    .build_session_from(session_req)
-                    .block_task()
-                    .start_session()
-                    .await;
-                let mut session: acp::ActiveSession<'_, _> = match session_result {
-                    Ok(s) => s,
+                // Create ACP session — send request manually to capture models before attach
+                let session_req = NewSessionRequest::new(std::path::PathBuf::from(&cwd_owned));
+                let session_response = match cx.send_request(session_req).block_task().await {
+                    Ok(r) => r,
                     Err(e) => {
                         let _ = ready_tx.send(Err(format!("ACP new_session failed: {}", e)));
                         return Ok(());
                     }
                 };
+                let models = convert_acp_models(session_response.models.as_ref());
+                let mut session = match cx.attach_session(session_response, vec![]) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(format!("ACP attach_session failed: {}", e)));
+                        return Ok(());
+                    }
+                };
 
-                // Signal readiness
-                let _ = ready_tx.send(Ok(()));
+                // Signal readiness with model info and prompt capabilities
+                let _ = ready_tx.send(Ok((models, prompt_caps)));
 
                 // Process commands from the stdin event loop
                 while let Some(cmd) = cmd_rx.recv().await {
@@ -458,6 +570,49 @@ async fn spawn_acp_session(
                                 // The connection task will exit on its own.
                                 break;
                             }
+                        }
+                        SessionCommand::PromptStructured(blocks) => {
+                            let content_blocks: Vec<acp::schema::ContentBlock> = blocks
+                                .into_iter()
+                                .filter_map(|b| serde_json::from_value(b).ok())
+                                .collect();
+                            let result = session
+                                .connection()
+                                .send_request_to(
+                                    acp::Agent,
+                                    acp::schema::PromptRequest::new(
+                                        session.session_id().clone(),
+                                        content_blocks,
+                                    ),
+                                )
+                                .on_receiving_result(async |_result| Ok(()));
+                            if result.is_err() {
+                                break;
+                            }
+                        }
+                        SessionCommand::SetModel(model_id) => {
+                            let result = session
+                                .connection()
+                                .send_request(SetSessionModelRequest::new(
+                                    session.session_id().clone(),
+                                    model_id.clone(),
+                                ))
+                                .block_task()
+                                .await;
+                            let msg = match result {
+                                Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModelOk(
+                                    SetModelOkResponse {
+                                        session_id: sid.clone(),
+                                        model_id,
+                                    },
+                                )),
+                                Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
+                                    ErrorResponse {
+                                        message: format!("SetModel failed: {}", e),
+                                    },
+                                )),
+                            };
+                            let _ = send_response(&so, &msg).await;
                         }
                     }
                 }
@@ -472,12 +627,16 @@ async fn spawn_acp_session(
 
     // Wait for the connection task to signal readiness
     match ready_rx.await {
-        Ok(Ok(())) => Some(ActiveSession {
-            cmd_tx,
-            pending_permissions,
-            pending_elicitations,
-            task,
-        }),
+        Ok(Ok((models, prompt_caps))) => Some((
+            ActiveSession {
+                cmd_tx,
+                pending_permissions,
+                pending_elicitations,
+                task,
+            },
+            models,
+            prompt_caps,
+        )),
         Ok(Err(e)) => {
             let _ = send_response(
                 &stdout,
@@ -758,12 +917,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .await
                 {
-                    Some(session) => {
+                    Some((session, models, prompt_caps)) => {
                         sessions.insert(req.session_id.clone(), session);
                         let _ = send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
                                 session_id: req.session_id,
+                                models,
+                                prompt_capabilities: Some(prompt_caps),
                             })),
                         )
                         .await;
@@ -776,12 +937,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Request(ServerRequest::Prompt(req)) => {
                 if let Some(session) = sessions.get(&req.session_id) {
-                    if session
-                        .cmd_tx
-                        .send(SessionCommand::Prompt(req.content))
-                        .await
-                        .is_err()
-                    {
+                    let sent_at = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+                            session_id: req.session_id.clone(),
+                            payload: serde_json::json!({
+                                "sessionUpdate": "user_message",
+                                "content": req.content,
+                                "sentAt": sent_at,
+                            }),
+                        })),
+                    )
+                    .await;
+                    let cmd = match req.content {
+                        serde_json::Value::Array(blocks) => {
+                            SessionCommand::PromptStructured(blocks)
+                        }
+                        other => {
+                            SessionCommand::Prompt(other.as_str().unwrap_or("").to_string())
+                        }
+                    };
+                    if session.cmd_tx.send(cmd).await.is_err() {
                         let _ = send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -820,7 +1000,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                         .remove(&perm_resp.request_id)
                     {
-                        let _ = tx.send(perm_resp.allowed);
+                        let _ = tx.send(perm_resp.option_id);
                     }
                 }
             }
@@ -836,6 +1016,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = tx.send(elicit_resp.response);
                     }
                 }
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::SetModel(set_model_req)) => {
+                if let Some(session) = sessions.get(&set_model_req.session_id) {
+                    if session
+                        .cmd_tx
+                        .send(SessionCommand::SetModel(set_model_req.model_id))
+                        .await
+                        .is_err()
+                    {
+                        let _ = send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!(
+                                    "session {} connection closed",
+                                    set_model_req.session_id
+                                ),
+                            })),
+                        )
+                        .await;
+                    }
+                } else {
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: format!("unknown session: {}", set_model_req.session_id),
+                        })),
+                    )
+                    .await;
+                }
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
+                let result = handle_file_search(&req);
+                let response = match result {
+                    Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
+                        FileSearchResponse { files },
+                    )),
+                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(
+                        ErrorResponse { message: msg },
+                    )),
+                };
+                let _ = send_response(&stdout, &response).await;
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::FileRead(req)) => {
+                let result = handle_file_read(&req).await;
+                let response = match result {
+                    Ok(content) => MaestroRpcMessage::Response(ServerResponse::FileReadOk(
+                        FileReadResponse { content },
+                    )),
+                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(
+                        ErrorResponse { message: msg },
+                    )),
+                };
+                let _ = send_response(&stdout, &response).await;
             }
 
             MaestroRpcMessage::Response(_) => {}

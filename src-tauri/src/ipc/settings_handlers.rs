@@ -22,7 +22,7 @@ pub fn save_settings(
     settings: AppSettings,
 ) -> Result<(), String> {
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    crate::db::settings::save_settings(&mut *conn, &settings).map_err(|e| e.to_string())
+    crate::db::settings::save_settings(&mut conn, &settings).map_err(|e| e.to_string())
 }
 
 /// Upsert imported tasks from an external source (GitHub, Jira).

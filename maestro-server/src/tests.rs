@@ -23,7 +23,7 @@ async fn test_permit_response_roundtrip() {
     let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id: "sess-1".to_string(),
         request_id: "perm-42".to_string(),
-        allowed: true,
+        option_id: Some("default".into()),
     }));
 
     // JSON serde roundtrip
@@ -39,15 +39,15 @@ async fn test_permit_response_roundtrip() {
     let framed_back = read_message(&mut cursor).await.unwrap();
     assert_eq!(msg, framed_back);
 
-    // Also test allowed=false
-    let msg_deny = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+    // Also test option_id=None (cancelled)
+    let msg_cancel = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id: "sess-2".to_string(),
         request_id: "perm-99".to_string(),
-        allowed: false,
+        option_id: None,
     }));
-    let json_deny = serde_json::to_string(&msg_deny).unwrap();
-    let back_deny: MaestroRpcMessage = serde_json::from_str(&json_deny).unwrap();
-    assert_eq!(msg_deny, back_deny);
+    let json_cancel = serde_json::to_string(&msg_cancel).unwrap();
+    let back_cancel: MaestroRpcMessage = serde_json::from_str(&json_cancel).unwrap();
+    assert_eq!(msg_cancel, back_cancel);
 }
 
 /// SERVER-02: SessionUpdate ServerResponse serializes correctly with arbitrary

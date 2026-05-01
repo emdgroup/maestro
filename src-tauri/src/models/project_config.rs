@@ -63,7 +63,7 @@ impl ProjectConfig {
     /// Create a default ProjectConfig with sensible defaults
     pub fn new_default() -> Self {
         ProjectConfig {
-            model_default: "claude-opus-4-5".to_string(),
+            model_default: "claude-sonnet-4-6".to_string(),
             mcp_allowlist: vec![],
             skills_default: vec![],
             updated_at: Utc::now().to_rfc3339(),

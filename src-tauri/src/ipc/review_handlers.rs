@@ -120,7 +120,7 @@ pub async fn save_task_review(
 ) -> Result<ReviewResult, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
-    let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
+    let comments_ref = per_file_comments.as_deref();
     let review_id = insert_review_with_comments(
         &conn, task_id, &decision, general_feedback.as_deref(), comments_ref, &now,
     )?;
@@ -144,7 +144,7 @@ pub async fn request_changes(
 ) -> Result<ReviewResult, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
-    let comments_ref = per_file_comments.as_ref().map(|v| v.as_slice());
+    let comments_ref = per_file_comments.as_deref();
     let review_id = insert_review_with_comments(
         &conn, task_id, "RequestChanges", general_feedback.as_deref(), comments_ref, &now,
     )?;

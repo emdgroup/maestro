@@ -41,7 +41,6 @@ export function DeadSessionTerminal({ execution }: DeadSessionTerminalProps) {
 
     terminal.open(terminalRef.current);
 
-    console.log(execution);
     // Write DB-stored terminal output (REQ-21)
     if (execution.terminal_output) {
       terminal.write(execution.terminal_output);
@@ -63,7 +62,7 @@ export function DeadSessionTerminal({ execution }: DeadSessionTerminalProps) {
       observer.disconnect();
       terminal.dispose();
     };
-  }, [execution.id]);
+  }, [execution.id, execution.terminal_output]);
 
   return (
     <div className="flex flex-col h-full">

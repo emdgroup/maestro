@@ -19,7 +19,6 @@ pub struct ParsedWorktree {
 /// For remote projects: Executes git commands via SSH
 ///
 /// Callers don't need to know the difference - just pass a GitConnection and the operation works.
-
 /// Create a worktree on the project (local or remote)
 ///
 /// `branch` is the base branch (e.g. origin branch) to create from or check out.
@@ -385,8 +384,8 @@ async fn get_current_branch_local(
 /// 1. Checkout main
 /// 2. git merge <branch> --squash --no-commit
 /// 3. git status --porcelain to detect conflicts
-/// 4a. If conflicts: abort merge, return conflict list
-/// 4b. If nothing staged: return error (branches identical)
+///    4a. If conflicts: abort merge, return conflict list
+///    4b. If nothing staged: return error (branches identical)
 /// 5. Commit with standardised message
 pub async fn squash_merge_to_main(
     repo_path: &str,

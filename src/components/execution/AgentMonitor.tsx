@@ -34,6 +34,16 @@ function formatElapsed(startedAt: string, completedAt: string | null): string {
   return formatDistanceStrict(start, end);
 }
 
+function AgentIcon({ src, className }: { src: string; className: string }) {
+  return (
+    <img
+      src={src}
+      className={className}
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
+}
+
 interface AgentMonitorProps {
   executions: ExecutionWithTask[];
   selectedExecutionId: number | null;
@@ -138,11 +148,7 @@ export function AgentMonitor({
                     </span>
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1">
                       {execution.execution_mode === "acp" && execution.agent_id && agentIcons?.[execution.agent_id] && (
-                        <img
-                          src={agentIcons[execution.agent_id]}
-                          className="w-3 h-3 rounded-sm brightness-0 dark:invert"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                        />
+                        <AgentIcon src={agentIcons[execution.agent_id]} className="w-3 h-3 rounded-sm brightness-0 dark:invert" />
                       )}
                       {execution.execution_mode === "acp"
                         ? (execution.agent_id
@@ -177,11 +183,7 @@ export function AgentMonitor({
               <div>
                 <div className="flex items-center gap-2">
                   {selectedExecution.execution_mode === "acp" && selectedExecution.agent_id && agentIcons?.[selectedExecution.agent_id] && (
-                    <img
-                      src={agentIcons[selectedExecution.agent_id]}
-                      className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                    />
+                    <AgentIcon src={agentIcons[selectedExecution.agent_id]} className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert" />
                   )}
                   <h3 className="text-sm font-semibold truncate">
                     {selectedExecution.session_name ??
@@ -208,9 +210,9 @@ export function AgentMonitor({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {selectedExecution.status !== "running" && selectedExecution.execution_mode === "acp" && (
+                {selectedExecution.execution_mode === "acp" && (
                   <>
-                    {onRestart && (
+                    {selectedExecution.status !== "running" && onRestart && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -260,17 +262,27 @@ export function AgentMonitor({
             </div>
           </div>
         )}
-        {selectedExecution?.execution_mode === "acp" ? (
-          <AgentActivityPanel
-            key={selectedExecution.id}
-            execution={selectedExecution}
-            isDead={selectedExecution.status !== "running"}
-          />
-        ) : selectedExecution?.status === "running" && terminalSessionId != null ? (
+        {/* ACP panels are always mounted so state survives navigation to/from terminal sessions.
+            Only the selected one is visible; others are hidden via display:none. */}
+        {executions
+          .filter((e) => e.execution_mode === "acp")
+          .map((e) => (
+            <div
+              key={e.id}
+              className={cn("flex-1 flex flex-col min-h-0", e.id !== selectedExecutionId && "hidden")}
+            >
+              <AgentActivityPanel execution={e} isDead={e.status !== "running"} isSelected={e.id === selectedExecutionId} />
+            </div>
+          ))}
+
+        {/* PTY terminal / dead session / empty state for non-ACP selections */}
+        {selectedExecution?.execution_mode !== "acp" && selectedExecution?.status === "running" && terminalSessionId != null && (
           <TerminalComponent key={terminalSessionId} taskId={terminalSessionId} />
-        ) : selectedExecution ? (
+        )}
+        {selectedExecution?.execution_mode !== "acp" && selectedExecution && selectedExecution.status !== "running" && (
           <DeadSessionTerminal key={selectedExecution.id} execution={selectedExecution} />
-        ) : (
+        )}
+        {!selectedExecution && (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
             Select an agent to view its terminal
           </div>

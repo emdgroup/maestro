@@ -16,7 +16,8 @@ export type ToolCallCreated = {
   toolCallId: string;
   title: string;
   kind: string;
-  status: "pending";
+  status?: "pending" | "in_progress" | "completed" | "error";
+  content?: ToolCallContent[];
 };
 
 export type ToolCallContent =
@@ -27,8 +28,8 @@ export type ToolCallContent =
 export type ToolCallUpdate = {
   sessionUpdate: "tool_call_update";
   toolCallId: string;
-  status?: "pending" | "in_progress" | "completed" | "error";
-  content?: ToolCallContent;
+  status?: "pending" | "in_progress" | "completed" | "failed" | "error";
+  content?: ToolCallContent[];
 };
 
 export type PlanEntry = {
@@ -42,12 +43,33 @@ export type PlanUpdate = {
   entries: PlanEntry[];
 };
 
+export type UsageUpdatePayload = {
+  sessionUpdate: "usage_update";
+  used: number;
+  size: number;
+  cost?: { amount: number; currency: string };
+};
+
+export type UsageState = {
+  used: number;
+  size: number;
+  cost: { amount: number; currency: string } | null;
+};
+
+export type UserMessagePayload = {
+  sessionUpdate: "user_message";
+  content: string;
+  sentAt: number;
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
   | ToolCallCreated
   | ToolCallUpdate
-  | PlanUpdate;
+  | PlanUpdate
+  | UserMessagePayload
+  | UsageUpdatePayload;
 
 // Accumulated state for rendering
 
@@ -81,6 +103,13 @@ export type ToolCallItem = {
 export type PermissionDeniedItem = {
   id: string;
   payload: Record<string, unknown>;
+  optionName?: string;
+};
+
+export type ElicitationSummaryItem = {
+  id: string;
+  question: string;
+  answer: string; // e.g. "Yes, proceed" or "Declined"
 };
 
 export type ActivityItem =
@@ -88,7 +117,8 @@ export type ActivityItem =
   | { type: "thinking"; item: ThinkingItem }
   | { type: "userMessage"; item: UserMessageItem }
   | { type: "toolCall"; item: ToolCallItem }
-  | { type: "permissionDenied"; item: PermissionDeniedItem };
+  | { type: "permissionDenied"; item: PermissionDeniedItem }
+  | { type: "elicitationSummary"; item: ElicitationSummaryItem };
 
 export type ActivityState = {
   items: ActivityItem[];
@@ -97,6 +127,11 @@ export type ActivityState = {
   isInitializing: boolean;
   sessionEnded: boolean;
   endReason: "completed" | "failed" | "cancelled" | null;
+};
+
+export type AvailableCommand = {
+  name: string;
+  description: string;
 };
 
 export const INITIAL_ACTIVITY_STATE: ActivityState = {

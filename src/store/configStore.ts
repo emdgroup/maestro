@@ -22,7 +22,15 @@ export interface ConfigState {
 
 export const AVAILABLE_MCP_SERVERS = ["filesystem", "web", "git"];
 export const AVAILABLE_SKILLS = ["javascript", "python", "react", "rust"];
-export const AVAILABLE_MODELS = ["claude-opus-4-5", "claude-3-5-sonnet"];
+export const AVAILABLE_MODELS = ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"];
+
+function applyReset(state: ConfigState) {
+  state.model_default = "";
+  state.mcp_allowlist = [];
+  state.skills_default = [];
+  state.isLoading = false;
+  state.error = null;
+}
 
 export const useConfigStore = create<ConfigState>()(
   immer((set) => ({
@@ -73,22 +81,7 @@ export const useConfigStore = create<ConfigState>()(
         state.error = null;
       }),
 
-    resetConfig: () =>
-      set((state) => {
-        state.model_default = "";
-        state.mcp_allowlist = [];
-        state.skills_default = [];
-        state.isLoading = false;
-        state.error = null;
-      }),
-
-    clearConfig: () =>
-      set((state) => {
-        state.model_default = "";
-        state.mcp_allowlist = [];
-        state.skills_default = [];
-        state.isLoading = false;
-        state.error = null;
-      }),
+    resetConfig: () => set(applyReset),
+    clearConfig: () => set(applyReset),
   })),
 );

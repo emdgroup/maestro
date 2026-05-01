@@ -62,6 +62,12 @@
   --success: oklch(55% 0.15 145);
   --warning: oklch(60% 0.15 70);
 
+  /* Diff colors */
+  --diff-add-bg: oklch(95% 0.05 145 / 0.5);
+  --diff-add-fg: oklch(35% 0.12 145);
+  --diff-del-bg: oklch(95% 0.04 25 / 0.5);
+  --diff-del-fg: oklch(40% 0.15 25);
+
   /* Border and input colors */
   --border: oklch(86% 0.01 70);
   --input: oklch(99% 0.018 70);
@@ -98,6 +104,12 @@
   --success: oklch(65% 0.15 145);
   --warning: oklch(75% 0.15 70);
 
+  /* Diff colors */
+  --diff-add-bg: oklch(25% 0.06 145 / 0.5);
+  --diff-add-fg: oklch(75% 0.12 145);
+  --diff-del-bg: oklch(25% 0.06 25 / 0.5);
+  --diff-del-fg: oklch(75% 0.12 25);
+
   --border: oklch(45% 0.01 250);
   --input: oklch(32% 0.01 250);
   --ring: var(--accent);
@@ -123,6 +135,10 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-fg: var(--diff-add-fg);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-del-fg: var(--diff-del-fg);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -136,7 +152,7 @@
   html,
   body,
   #root {
-    @apply h-full w-full;
+    @apply h-full w-full overflow-hidden;
   }
 
   body {
@@ -149,7 +165,7 @@
   code,
   pre,
   .terminal-output {
-    font-family: "Fira Code", Menlo, Monaco, Consolas, monospace;
+    font-family: "FiraCode Nerd Font Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
   }
 
   /* Respect user's motion preference for accessibility */
@@ -203,11 +219,37 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% center; }
-  100% { background-position: -200% center; }
+  0% { background-position: 200% center; mask-position: 200% center; -webkit-mask-position: 200% center; }
+  100% { background-position: -200% center; mask-position: -200% center; -webkit-mask-position: -200% center; }
+}
+
+.shimmer-thinking-text {
+  background: linear-gradient(90deg,
+    oklch(from var(--muted-foreground) calc(l * 0.5) c h) 25%,
+    oklch(from var(--muted-foreground) calc(l * 1.4) c h) 50%,
+    oklch(from var(--muted-foreground) calc(l * 0.5) c h) 75%
+  );
+  background-size: 200%;
+  animation: shimmer 1.5s infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shimmer-thinking-icon {
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 25%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.3) 75%);
+  mask-size: 200%;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 25%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.3) 75%);
+  -webkit-mask-size: 200%;
+  animation: shimmer 1.5s infinite;
 }
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
 }

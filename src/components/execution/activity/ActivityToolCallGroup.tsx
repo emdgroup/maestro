@@ -1,8 +1,20 @@
-import { useState, useEffect, useRef } from "react";
-import { FileText, Terminal, Box, ChevronDown, ChevronRight, Pencil, Search } from "lucide-react";
+import { useState, useEffect, useRef, Component } from "react";
+import type { ReactNode } from "react";
+import { FileText, Terminal, Box, ChevronDown, ChevronRight, Pencil, Search, Loader2, Trash2, Globe, Brain, ArrowRightLeft, Settings2 } from "lucide-react";
 import type { ToolCallItem, ToolCallContent } from "./types";
 
 const KIND_ICON: Record<string, React.ElementType> = {
+  // ACP SDK ToolKind values
+  read: FileText,
+  edit: Pencil,
+  delete: Trash2,
+  move: ArrowRightLeft,
+  search: Search,
+  execute: Terminal,
+  think: Brain,
+  fetch: Globe,
+  switch_mode: Settings2,
+  // Legacy/custom kinds
   read_file: FileText,
   write_file: Pencil,
   edit_file: Pencil,
@@ -10,7 +22,6 @@ const KIND_ICON: Record<string, React.ElementType> = {
   run_terminal: Terminal,
   bash: Terminal,
   shell: Terminal,
-  search: Search,
 };
 
 function groupLabel(items: ToolCallItem[]): string {
@@ -38,6 +49,26 @@ function terminalSubtitle(items: ToolCallItem[]): string | null {
   if (items.length !== 1) return null;
   if (/run_terminal|bash|shell/.test(items[0].kind)) return items[0].title;
   return null;
+}
+
+class ContentErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="text-xs text-destructive italic px-2 py-1">
+          Failed to render content: {this.state.error.message}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 interface ActivityToolCallGroupProps {
@@ -96,14 +127,15 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
           <span className="text-[11px] font-mono text-muted-foreground/60 truncate">{subtitle}</span>
         )}
         <span
-          className={`ml-auto text-[10px] font-medium shrink-0 ${
+          className={`ml-auto flex items-center gap-1 text-[10px] font-medium shrink-0 ${
             isError
               ? "text-destructive"
               : status === "completed"
                 ? "text-muted-foreground"
-                : "text-blue-400"
+                : "text-secondary"
           }`}
         >
+          {status === "in_progress" && <Loader2 className="w-3 h-3 animate-spin" />}
           {statusText}
         </span>
         {groupOpen ? (
@@ -117,7 +149,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
         <div className="border-t border-border divide-y divide-border/40">
           {items.map((tc) => {
             const CardIcon = KIND_ICON[tc.kind] ?? Box;
-            const isReadFile = tc.kind === "read_file";
+            const isReadFile = tc.kind === "read_file" || tc.kind === "read";
             const hasContent = !isReadFile && tc.content.length > 0;
             const isExpanded = expandedIds.has(tc.toolCallId);
 
@@ -129,7 +161,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
                   onClick={() => hasContent && toggleExpand(tc.toolCallId)}
                   className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors ${
                     hasContent ? "cursor-pointer hover:bg-muted/30" : "cursor-default"
-                  } ${isExpanded ? "bg-muted/20" : ""}`}
+                  } ${isExpanded ? "bg-muted/20" : ""} ${tc.status === "in_progress" ? "animate-pulse" : ""}`}
                 >
                   <CardIcon
                     className={`w-3.5 h-3.5 shrink-0 ${
@@ -148,14 +180,16 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
                   )}
                 </button>
                 {isExpanded && (
-                  <div className="px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5 border-t border-border/40">
-                    {tc.content.map((c, i) => (
-                      <ToolCallContentBlock key={i} content={c} />
-                    ))}
-                    {tc.status === "error" && tc.content.length === 0 && (
-                      <span className="text-xs text-destructive italic">Tool call failed</span>
-                    )}
-                  </div>
+                  <ContentErrorBoundary>
+                    <div className="px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5 border-t border-border/40">
+                      {tc.content.map((c, i) => (
+                        <ToolCallContentBlock key={i} content={c} />
+                      ))}
+                      {tc.status === "error" && tc.content.length === 0 && (
+                        <span className="text-xs text-destructive italic">Tool call failed</span>
+                      )}
+                    </div>
+                  </ContentErrorBoundary>
                 )}
               </div>
             );
@@ -168,14 +202,20 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
 function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
   switch (content.type) {
-    case "content":
+    case "content": {
+      const text = content.content?.text;
+      if (!text) return null;
       return (
         <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
-          {content.content.text}
+          {text}
         </pre>
       );
-    case "diff":
-      return <InlineDiffBlock path={content.path} oldText={content.oldText} newText={content.newText} />;
+    }
+    case "diff": {
+      const newText = (content as { type: "diff"; path: string; oldText: string | null; newText?: string }).newText;
+      if (newText == null) return null;
+      return <InlineDiffBlock path={content.path} oldText={content.oldText} newText={newText} />;
+    }
     case "terminal":
       return (
         <div className="text-[11px] text-muted-foreground font-mono bg-muted/50 rounded px-2 py-1">
@@ -187,11 +227,17 @@ function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
   }
 }
 
-type DiffLineItem = { type: "add" | "del" | "ctx"; text: string };
+const DIFF_LINE_CAP = 200;
+
+type DiffLineItem = { type: "add" | "del" | "ctx" | "truncated"; text: string };
 
 function parseDiffLines(oldText: string | null, newText: string): DiffLineItem[] {
+  if (newText == null) return [];
+
   const lines = newText.split("\n");
   const firstNonEmpty = lines.find((l) => l.trim() !== "") ?? "";
+
+  let result: DiffLineItem[];
 
   if (
     firstNonEmpty.startsWith("--- ") ||
@@ -199,7 +245,7 @@ function parseDiffLines(oldText: string | null, newText: string): DiffLineItem[]
     firstNonEmpty.startsWith("@@ ") ||
     firstNonEmpty.startsWith("diff ")
   ) {
-    return lines
+    result = lines
       .filter((l, i) => !(i === lines.length - 1 && l === ""))
       .map((line) => ({
         type: (
@@ -211,18 +257,24 @@ function parseDiffLines(oldText: string | null, newText: string): DiffLineItem[]
         ) as DiffLineItem["type"],
         text: line,
       }));
-  }
-
-  if (oldText === null) {
-    return lines
+  } else if (oldText == null) {
+    result = lines
       .filter((l, i) => !(i === lines.length - 1 && l === ""))
       .map((line) => ({ type: "add" as const, text: `+${line}` }));
+  } else {
+    result = [
+      ...oldText.split("\n").map((line) => ({ type: "del" as const, text: `-${line}` })),
+      ...lines.filter((l, i) => !(i === lines.length - 1 && l === "")).map((line) => ({ type: "add" as const, text: `+${line}` })),
+    ];
   }
 
-  return [
-    ...oldText.split("\n").map((line) => ({ type: "del" as const, text: `-${line}` })),
-    ...lines.filter((l, i) => !(i === lines.length - 1 && l === "")).map((line) => ({ type: "add" as const, text: `+${line}` })),
-  ];
+  if (result.length > DIFF_LINE_CAP) {
+    return [
+      ...result.slice(0, DIFF_LINE_CAP),
+      { type: "truncated", text: `… ${result.length - DIFF_LINE_CAP} more lines` },
+    ];
+  }
+  return result;
 }
 
 function InlineDiffBlock({
@@ -248,10 +300,12 @@ function InlineDiffBlock({
             key={i}
             className={
               line.type === "add"
-                ? "bg-green-950/50 text-green-400 px-2.5 leading-relaxed whitespace-pre"
+                ? "bg-diff-add-bg text-diff-add-fg px-2.5 leading-relaxed whitespace-pre"
                 : line.type === "del"
-                  ? "bg-red-950/50 text-red-400 px-2.5 leading-relaxed whitespace-pre"
-                  : "text-muted-foreground/50 px-2.5 leading-relaxed whitespace-pre"
+                  ? "bg-diff-del-bg text-diff-del-fg px-2.5 leading-relaxed whitespace-pre"
+                  : line.type === "truncated"
+                    ? "text-muted-foreground/50 px-2.5 leading-relaxed italic text-[10px]"
+                    : "text-muted-foreground/50 px-2.5 leading-relaxed whitespace-pre"
             }
           >
             {line.text}

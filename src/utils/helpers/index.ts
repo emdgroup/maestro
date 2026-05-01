@@ -5,3 +5,4 @@ export { api } from "./tauri-utils";
 export { createErrorToastHandler } from "./error-utils";
 export { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "./diff-utils";
 export { getFolderName } from "./path-utils";
+export { humanizeTokenCount } from "./format-utils";

@@ -73,10 +73,7 @@ pub async fn drain_ready_queue(
         rusqlite::params![project_id, slots_available],
         |row| row.get(0),
     ).map_err(|e| format!("Failed to query ready tasks: {}", e))?
-    .filter_map(|r| match r {
-        Ok(id) => Some(id),
-        Err(_) => None,
-    })
+    .filter_map(|r| r.ok())
     .collect();
 
     Ok(task_ids)
@@ -436,11 +433,10 @@ pub async fn attach_terminal(
         };
 
         if let Some(history_text) = history {
-            if !history_text.is_empty() {
-                if output_channel.send(history_text).is_err() {
+            if !history_text.is_empty()
+                && output_channel.send(history_text).is_err() {
                     return Err("Channel closed before history could be sent".to_string());
                 }
-            }
         }
     }
 
@@ -806,6 +802,7 @@ pub async fn resume_agent_execution(
 /// Execution log ID (used as PTY session key for attach_terminal)
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_interactive_execution(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,

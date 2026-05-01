@@ -26,7 +26,7 @@ fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     { return "linux-aarch64"; }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { return "linux-x86_64"; }
+    { "linux-x86_64"}
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
     { return "windows-aarch64"; }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
