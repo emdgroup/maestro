@@ -23,6 +23,7 @@ import { INITIAL_ACTIVITY_STATE } from "./activity/types";
 import type { SessionUpdatePayload, UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
 import type { ExecutionWithTask, AcpPromptCapabilities, JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
+import { useSessionActivityStore } from "@/store/sessionActivityStore";
 
 interface AgentActivityPanelProps {
   execution: ExecutionWithTask;
@@ -43,6 +44,8 @@ function getOptionName(payload: Record<string, unknown>, optionId: string | null
 }
 
 export function AgentActivityPanel({ execution, isDead = false, isSelected = false }: AgentActivityPanelProps) {
+  const setActivityStatus = useSessionActivityStore((s) => s.setStatus);
+  const removeActivityStatus = useSessionActivityStore((s) => s.removeStatus);
   const [isProcessing, setIsProcessing] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
@@ -52,7 +55,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string>("");
-  const [actualModelId, setActualModelId] = useState<string | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [usageState, setUsageState] = useState<UsageState | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
@@ -66,6 +68,12 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const queryClient = useQueryClient();
   const selectedProject = useSelectedProject();
   const projectId = selectedProject?.id ?? null;
+
+  useEffect(() => {
+    if (isDead) return;
+    setActivityStatus(execution.id, "spawning");
+    return () => { removeActivityStatus(execution.id); };
+  }, [isDead, execution.id, setActivityStatus, removeActivityStatus]);
 
   const [liveState, liveDispatch] = useAcpActivity(isDead ? null : execution.id);
 
@@ -83,23 +91,30 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const state = isDead ? deadState : liveState;
 
   useEffect(() => {
+    if (isDead || state.isInitializing) return;
+    setActivityStatus(execution.id, "working");
+  }, [isDead, state.isInitializing, execution.id, setActivityStatus]);
+
+  useEffect(() => {
     if (isDead) return;
     const unlisten = listen<string>(`acp://turn-ended/${execution.id}`, () => {
       setIsProcessing(false);
+      setActivityStatus(execution.id, "idle");
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [isDead, execution.id, setActivityStatus]);
 
   useEffect(() => {
     if (!isDead && state.sessionEnded) {
       setIsProcessing(false);
+      removeActivityStatus(execution.id);
       if (projectId != null) {
         queryClient.invalidateQueries({
           queryKey: executionQueryKeys.withTaskInfo(projectId),
         });
       }
     }
-  }, [isDead, state.sessionEnded, projectId, queryClient]);
+  }, [isDead, state.sessionEnded, execution.id, projectId, queryClient, removeActivityStatus]);
 
   const agentItemsCountRef = useRef(0);
   useLayoutEffect(() => { agentItemsCountRef.current = state.items.length; });
@@ -122,12 +137,13 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
           requestId: event.payload.request_id,
           payload: event.payload.payload,
         });
+        setActivityStatus(execution.id, "awaiting_input");
       },
     );
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [isDead, execution.id]);
+  }, [isDead, execution.id, setActivityStatus]);
 
   const [pendingElicitation, setPendingElicitation] = useState<{
     requestId: string;
@@ -140,10 +156,11 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       `acp://elicitation-request/${execution.id}`,
       (event) => {
         setPendingElicitation({ requestId: event.payload.request_id, payload: event.payload.payload });
+        setActivityStatus(execution.id, "awaiting_input");
       },
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [isDead, execution.id, setActivityStatus]);
 
   // Fetch cached capabilities on mount (handles race where capabilities event fires before listener registers).
   useEffect(() => {
@@ -171,7 +188,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       if (modelState) {
         setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
         setModelId(modelState.current_model_id);
-        setActualModelId(modelState.current_model_id);
         setModelsLoaded(true);
       }
     }).catch(() => {});
@@ -185,7 +201,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         const { current_model_id, available_models } = event.payload;
         setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
         setModelId(current_model_id);
-        setActualModelId(current_model_id);
         setModelsLoaded(true);
       },
     );
@@ -202,18 +217,12 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
 
   useEffect(() => {
     if (isDead) return;
-    type ConfigOption = {
-      category?: string;
-      type?: string;
-      currentValue?: string;
-    };
     type SessionUpdatePayloadRaw = {
       sessionUpdate?: string;
       used?: number;
       size?: number;
       cost?: { amount: number; currency: string };
       availableCommands?: AvailableCommand[];
-      configOptions?: ConfigOption[];
     };
     const unlisten = listen<SessionUpdatePayloadRaw>(
       `acp://session-update/${execution.id}`,
@@ -230,13 +239,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         } else if (p.sessionUpdate === "available_commands_update") {
           if (Array.isArray(p.availableCommands)) {
             setAvailableCommands(p.availableCommands);
-          }
-        } else if (p.sessionUpdate === "config_option_update") {
-          const modelConfig = p.configOptions?.find(
-            (opt) => opt.category === "model" && opt.type === "select",
-          );
-          if (modelConfig?.currentValue) {
-            setActualModelId(modelConfig.currentValue);
           }
         }
       },
@@ -260,8 +262,9 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, formatElicitationAnswer(values)), insertAt }]);
       }
       setPendingElicitation(null);
+      setActivityStatus(execution.id, "working");
     },
-    [execution.id, pendingElicitation],
+    [execution.id, pendingElicitation, setActivityStatus],
   );
 
   const handleElicitationDecline = useCallback(
@@ -274,8 +277,9 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, "Declined"), insertAt }]);
       }
       setPendingElicitation(null);
+      setActivityStatus(execution.id, "working");
     },
-    [execution.id, pendingElicitation],
+    [execution.id, pendingElicitation, setActivityStatus],
   );
 
   const handlePermissionRespond = useCallback(
@@ -296,8 +300,9 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt }]);
       }
       setPendingPermission(null);
+      setActivityStatus(execution.id, "working");
     },
-    [execution.id, pendingPermission],
+    [execution.id, pendingPermission, setActivityStatus],
   );
 
   const handleSend = useCallback(
@@ -312,6 +317,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       const insertAt = agentItemsCountRef.current;
       setLiveUserMessages((prev) => [...prev, { item: userMsg, insertAt }]);
       setIsProcessing(true);
+      setActivityStatus(execution.id, "working");
       try {
         if (contentBlocks) {
           await api.sendAcpPromptStructured(execution.id, contentBlocks);
@@ -320,9 +326,10 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         }
       } catch {
         setIsProcessing(false);
+        setActivityStatus(execution.id, "idle");
       }
     },
-    [isDead, isProcessing, execution.id, liveDispatch],
+    [isDead, isProcessing, execution.id, liveDispatch, setActivityStatus],
   );
 
   const handleCancel = useCallback(async () => {
@@ -332,7 +339,8 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       // best-effort
     }
     setIsProcessing(false);
-  }, [execution.id]);
+    setActivityStatus(execution.id, "idle");
+  }, [execution.id, setActivityStatus]);
 
   // Focus compose bar when this panel becomes selected or finishes initializing
   useEffect(() => {
@@ -567,7 +575,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             projectPath={selectedProject?.path ?? null}
             models={models}
             modelId={modelId}
-            actualModelId={actualModelId}
             permissionMode={permissionMode}
             usageState={usageState}
             onModelChange={handleModelChange}

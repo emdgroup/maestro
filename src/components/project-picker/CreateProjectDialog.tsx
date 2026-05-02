@@ -13,6 +13,7 @@ import { Label } from "@/ui/label";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCreateNewProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import { api } from "@/lib";
 import type { SshConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
@@ -39,11 +40,12 @@ export function CreateProjectDialog({ open, onOpenChange, connection }: CreatePr
     if (!parentDir.trim() || !folderName.trim()) return;
     setError(null);
     try {
-      const project = await createNewProject({
+      const created = await createNewProject({
         parentDir: parentDir.trim(),
         folderName: folderName.trim(),
         connectionId: connection?.id ?? null,
       });
+      const project = await api.openProject(created.id);
       setSelectedProject(project);
       // Reset form and close
       setParentDir("");

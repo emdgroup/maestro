@@ -21,6 +21,7 @@ export const projectQueryKeys = {
   details: (id: number) => [...projectQueryKeys.baseKey, "details", id] as const,
   settings: () => [...projectQueryKeys.baseKey, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
+  locks: (ids: number[]) => [...projectQueryKeys.baseKey, "locks", ids] as const,
 };
 
 /**
@@ -64,6 +65,20 @@ export function useProjectSettings(projectId: number) {
     queryKey: projectQueryKeys.settingsDetail(projectId),
     queryFn: () => api.getProjectSettings(projectId),
     staleTime: Infinity,
+  });
+}
+
+/**
+ * Query hook for checking which projects are locked by another Maestro instance.
+ * Refetches on window focus to detect locks acquired while the window was backgrounded.
+ */
+export function useProjectLocks(projectIds: number[]) {
+  return useQuery({
+    queryKey: projectQueryKeys.locks(projectIds),
+    queryFn: () => api.checkProjectLocks(projectIds),
+    enabled: projectIds.length > 0,
+    staleTime: 5000,
+    refetchOnWindowFocus: true,
   });
 }
 

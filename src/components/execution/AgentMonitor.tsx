@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { formatDistanceStrict } from "date-fns";
-import { Plus, Trash2, RotateCcw, Terminal } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Terminal, Pencil } from "lucide-react";
 import { cn } from "@/lib";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -8,17 +8,35 @@ import { TerminalComponent } from "@/components/execution/Terminal";
 import { DeadSessionTerminal } from "@/components/execution/DeadSessionTerminal";
 import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
 import type { ExecutionWithTask } from "@/types/bindings";
+import { useSessionActivityStore, type SessionActivityStatus } from "@/store/sessionActivityStore";
 
 export const STATUS_FILTERS = ["All", "running", "complete", "failed"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
 
-const STATUS_DOT: Record<string, string> = {
-  running: "bg-warning animate-pulse",
+const TERMINAL_DOT: Record<string, string> = {
   complete: "bg-success",
   failed: "bg-destructive",
-  paused: "bg-muted-foreground",
-  cancelled: "bg-muted",
+  paused: "bg-destructive",
+  cancelled: "bg-destructive",
 };
+
+const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
+  spawning: "bg-muted-foreground/60 animate-pulse",
+  working: "bg-success animate-glow",
+  idle: "bg-success",
+  awaiting_input: "bg-warning",
+};
+
+function getStatusDot(execution: ExecutionWithTask, activityStatus: SessionActivityStatus | undefined): string {
+  if (execution.status !== "running") {
+    return TERMINAL_DOT[execution.status] ?? "bg-muted";
+  }
+  if (execution.execution_mode === "acp") {
+    return ACTIVITY_DOT[activityStatus ?? "working"];
+  }
+  // PTY terminal — no granular state
+  return "bg-success animate-pulse";
+}
 
 export const STATUS_LABEL: Record<string, string> = {
   running: "Running",
@@ -44,6 +62,49 @@ function AgentIcon({ src, className }: { src: string; className: string }) {
   );
 }
 
+function InlineRename({
+  currentName,
+  onSave,
+  onCancel,
+}: {
+  currentName: string;
+  onSave: (newName: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(currentName);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  const handleSave = () => {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== currentName) {
+      onSave(trimmed);
+    } else {
+      onCancel();
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") handleSave();
+        else if (e.key === "Escape") onCancel();
+        e.stopPropagation();
+      }}
+      onBlur={handleSave}
+      onClick={(e) => e.stopPropagation()}
+      className="text-sm font-medium truncate bg-input border border-border rounded px-1.5 py-0 h-6 w-full outline-none focus:ring-1 focus:ring-ring"
+      autoFocus
+    />
+  );
+}
+
 interface AgentMonitorProps {
   executions: ExecutionWithTask[];
   selectedExecutionId: number | null;
@@ -52,6 +113,7 @@ interface AgentMonitorProps {
   statusFilter: StatusFilter;
   onSpawn?: () => void;
   onDelete?: (executionId: number) => void;
+  onRename?: (executionId: number, newName: string) => void;
   onReconnect?: (execution: ExecutionWithTask) => void;
   onRestart?: (execution: ExecutionWithTask) => void;
   onOpenTerminal?: (execution: ExecutionWithTask) => void;
@@ -66,11 +128,14 @@ export function AgentMonitor({
   statusFilter,
   onSpawn,
   onDelete,
+  onRename,
   onReconnect,
   onRestart,
   onOpenTerminal,
   agentIcons,
 }: AgentMonitorProps) {
+  const activityStatuses = useSessionActivityStore((s) => s.statuses);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const filteredExecutions = useMemo(() => {
     return executions
       .filter((e) => statusFilter === "All" || e.status === statusFilter)
@@ -111,7 +176,7 @@ export function AgentMonitor({
           </div>
         )}
         {/* Execution list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredExecutions.length === 0 && (
             <div className="text-xs text-muted-foreground py-8 text-center">
               No agents match your filter
@@ -140,12 +205,31 @@ export function AgentMonitor({
                     <span
                       className={cn(
                         "inline-block w-2 h-2 rounded-full shrink-0",
-                        STATUS_DOT[execution.status] ?? "bg-muted",
+                        getStatusDot(execution, activityStatuses.get(execution.id)),
                       )}
                     />
-                    <span className="text-sm font-medium truncate">
-                      {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
-                    </span>
+                    {editingId === execution.id && onRename ? (
+                      <InlineRename
+                        currentName={execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
+                        onSave={(newName) => {
+                          onRename(execution.id, newName);
+                          setEditingId(null);
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    ) : (
+                      <span
+                        className="text-sm font-medium truncate"
+                        onDoubleClick={(e) => {
+                          if (onRename) {
+                            e.stopPropagation();
+                            setEditingId(execution.id);
+                          }
+                        }}
+                      >
+                        {execution.session_name ?? execution.task_name ?? execution.branch_name ?? "Interactive session"}
+                      </span>
+                    )}
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1">
                       {execution.execution_mode === "acp" && execution.agent_id && agentIcons?.[execution.agent_id] && (
                         <AgentIcon src={agentIcons[execution.agent_id]} className="w-3 h-3 rounded-sm brightness-0 dark:invert" />
@@ -156,14 +240,24 @@ export function AgentMonitor({
                             : "ACP")
                         : "Terminal"}
                     </Badge>
-                    {onDelete && execution.status !== "running" && (
-                      <button
-                        className="hidden group-hover:flex items-center justify-center w-5 h-5 ml-auto rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                        onClick={(e) => { e.stopPropagation(); onDelete(execution.id); }}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
+                    <div className="hidden group-hover:flex items-center ml-auto shrink-0 gap-0.5">
+                      {onRename && editingId !== execution.id && (
+                        <button
+                          className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          onClick={(e) => { e.stopPropagation(); setEditingId(execution.id); }}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                      {onDelete && execution.status !== "running" && (
+                        <button
+                          className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => { e.stopPropagation(); onDelete(execution.id); }}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {/* Line 2: status label + elapsed time */}
                   <div className="text-xs text-muted-foreground mt-0.5 pl-4">
@@ -204,7 +298,7 @@ export function AgentMonitor({
                   <span
                     className={cn(
                       "inline-block w-2 h-2 rounded-full shrink-0",
-                      STATUS_DOT[selectedExecution.status] ?? "bg-muted",
+                      getStatusDot(selectedExecution, activityStatuses.get(selectedExecution.id)),
                     )}
                   />
                   <span className="text-xs text-muted-foreground">

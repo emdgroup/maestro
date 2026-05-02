@@ -262,3 +262,12 @@
 @keyframes arc-spin-cw {
   to { transform: rotate(360deg); }
 }
+
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 0 0px color-mix(in oklch, var(--success) 30%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 30%, transparent); }
+}
+
+@utility animate-glow {
+  animation: glow-ring 2.5s ease-in-out infinite;
+}

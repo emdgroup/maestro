@@ -24,10 +24,10 @@ use agent_client_protocol as acp;
 use acp::schema::{
     ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Implementation,
     InitializeRequest, KillTerminalRequest, KillTerminalResponse, NewSessionRequest,
-    PermissionOptionId, PromptRequest, ProtocolVersion, ReleaseTerminalRequest,
+    PermissionOptionId, PromptRequest, PromptResponse, ProtocolVersion, ReleaseTerminalRequest,
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
-    SetSessionModelRequest, TerminalExitStatus, TerminalId, TerminalOutputRequest,
+    SetSessionModelRequest, StopReason, TerminalExitStatus, TerminalId, TerminalOutputRequest,
     TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
@@ -71,26 +71,24 @@ fn truncate_buf(buf: &mut String, limit: usize) {
     }
 }
 
-fn fuzzy_score(path: &str, query: &str) -> i64 {
-    if query.is_empty() {
+fn fuzzy_score(path: &str, query_lower: &str) -> i64 {
+    if query_lower.is_empty() {
         let depth = path.chars().filter(|c| *c == '/').count();
         return 1000 - depth as i64;
     }
 
     let path_lower = path.to_lowercase();
-    let query_lower = query.to_lowercase();
-    let basename = path.rsplit('/').next().unwrap_or(path);
-    let basename_lower = basename.to_lowercase();
+    let basename_lower = path_lower.rsplit('/').next().unwrap_or(&path_lower);
 
     let mut score: i64 = 0;
 
     if basename_lower == query_lower {
         score += 100;
-    } else if basename_lower.starts_with(&query_lower) {
+    } else if basename_lower.starts_with(query_lower) {
         score += 50;
-    } else if basename_lower.contains(&query_lower) {
+    } else if basename_lower.contains(query_lower) {
         score += 30;
-    } else if path_lower.contains(&query_lower) {
+    } else if path_lower.contains(query_lower) {
         score += 20;
     } else {
         let mut chars = path_lower.chars().peekable();
@@ -116,13 +114,14 @@ fn fuzzy_score(path: &str, query: &str) -> i64 {
     score.max(1)
 }
 
-fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
+fn handle_file_search(req: FileSearchRequest) -> Result<Vec<String>, String> {
     let limit = req.limit.unwrap_or(50) as usize;
     let root = std::path::Path::new(&req.cwd);
     if !root.is_dir() {
         return Err(format!("Not a directory: {}", req.cwd));
     }
 
+    let query_lower = req.query.to_lowercase();
     let mut results: Vec<(i64, String)> = Vec::new();
 
     let walker = WalkBuilder::new(root)
@@ -139,11 +138,11 @@ fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
             continue;
         }
         let rel_path = match entry.path().strip_prefix(root) {
-            Ok(p) => p.to_string_lossy().to_string(),
+            Ok(p) => p.to_string_lossy().into_owned(),
             Err(_) => continue,
         };
 
-        let score = fuzzy_score(&rel_path, &req.query);
+        let score = fuzzy_score(&rel_path, &query_lower);
         if score > 0 {
             results.push((score, rel_path));
         }
@@ -152,6 +151,30 @@ fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
     results.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     results.truncate(limit);
     Ok(results.into_iter().map(|(_, p)| p).collect())
+}
+
+async fn handle_prompt_result(
+    result: Result<PromptResponse, acp::Error>,
+    session_id: String,
+    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+) {
+    let stop_reason = match result {
+        Ok(resp) => match resp.stop_reason {
+            StopReason::EndTurn => "end_turn",
+            StopReason::MaxTokens => "max_tokens",
+            StopReason::MaxTurnRequests => "max_turn_requests",
+            StopReason::Refusal => "refusal",
+            StopReason::Cancelled => "cancelled",
+            _ => "unknown",
+        }
+        .to_string(),
+        Err(_) => "error".to_string(),
+    };
+    let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+        session_id,
+        stop_reason,
+    }));
+    let _ = send_response(stdout, &msg).await;
 }
 
 async fn handle_file_read(req: &FileReadRequest) -> Result<String, String> {
@@ -598,19 +621,7 @@ async fn spawn_acp_session(
                                     ),
                                 )
                                 .on_receiving_result(async move |result| {
-                                    let stop_reason = match result {
-                                        Ok(resp) => {
-                                            serde_json::to_value(&resp.stop_reason)
-                                                .ok()
-                                                .and_then(|v| v.as_str().map(str::to_owned))
-                                                .unwrap_or_else(|| "end_turn".to_string())
-                                        }
-                                        Err(_) => "error".to_string(),
-                                    };
-                                    let msg = MaestroRpcMessage::Response(
-                                        ServerResponse::TurnEnded(TurnEnded { session_id: sid, stop_reason }),
-                                    );
-                                    let _ = send_response(&so, &msg).await;
+                                    handle_prompt_result(result, sid, &so).await;
                                     Ok(())
                                 });
                             if result.is_err() {
@@ -634,19 +645,7 @@ async fn spawn_acp_session(
                                     ),
                                 )
                                 .on_receiving_result(async move |result| {
-                                    let stop_reason = match result {
-                                        Ok(resp) => {
-                                            serde_json::to_value(&resp.stop_reason)
-                                                .ok()
-                                                .and_then(|v| v.as_str().map(str::to_owned))
-                                                .unwrap_or_else(|| "end_turn".to_string())
-                                        }
-                                        Err(_) => "error".to_string(),
-                                    };
-                                    let msg = MaestroRpcMessage::Response(
-                                        ServerResponse::TurnEnded(TurnEnded { session_id: sid, stop_reason }),
-                                    );
-                                    let _ = send_response(&so, &msg).await;
+                                    handle_prompt_result(result, sid, &so).await;
                                     Ok(())
                                 });
                             if result.is_err() {
@@ -1112,7 +1111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
-                let result = handle_file_search(&req);
+                let result = tokio::task::spawn_blocking(move || handle_file_search(req))
+                    .await
+                    .unwrap_or_else(|e| Err(format!("spawn_blocking: {}", e)));
                 let response = match result {
                     Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
                         FileSearchResponse { files },

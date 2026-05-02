@@ -50,6 +50,41 @@ async getProject(projectId: number) : Promise<Result<Project, string>> {
 }
 },
 /**
+ * Open a project by ID: acquire the project lock, mark orphaned sessions as failed,
+ * update last_opened, and return the Project.
+ * 
+ * This is the entry point for project selection. It enforces single-instance access:
+ * if another live Maestro instance has the project open, it returns an error of the
+ * form "PROJECT_LOCKED:<id>" which the frontend interprets to show a toast.
+ */
+async openProject(projectId: number) : Promise<Result<Project, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_project", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Release the active project lock held by this instance.
+ * Called when the user navigates back to the project picker.
+ */
+async releaseActiveProjectLock() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("release_active_project_lock") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the subset of project IDs that are currently locked by another live instance.
+ * Used by the project picker to show visual lock indicators before the user clicks.
+ */
+async checkProjectLocks(projectIds: number[]) : Promise<number[]> {
+    return await TAURI_INVOKE("check_project_locks", { projectIds });
+},
+/**
  * remove project by id
  */
 async removeProject(projectId: number) : Promise<Result<null, string>> {
@@ -330,6 +365,17 @@ async listExecutionsWithTaskInfo(projectId: number) : Promise<Result<ExecutionWi
 async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_execution_log", { executionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Rename an execution log (update its session_name).
+ */
+async renameExecution(executionId: number, sessionName: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_execution", { executionId, sessionName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

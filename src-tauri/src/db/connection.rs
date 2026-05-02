@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
 use tauri::AppHandle;
+use crate::project_lock;
 
 use crate::acp::AcpProcess;
 use crate::acp::registry::AgentDiscoveryCacheEntry;
@@ -40,6 +41,13 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     conn.execute("PRAGMA foreign_keys = ON;", [])
         .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
 
+    // WAL mode allows concurrent readers from multiple instances without SQLITE_BUSY.
+    // busy_timeout retries writes for 5s instead of failing immediately.
+    // execute_batch is used here because PRAGMA journal_mode returns a result row
+    // which causes execute() to fail with "query returned rows".
+    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
+        .map_err(|e| format!("Failed to configure database pragmas: {}", e))?;
+
     // Initialize schema
     initialize_schema(&conn)
         .map_err(|e| format!("Failed to initialize schema: {}", e))?;
@@ -67,11 +75,16 @@ pub struct AppState {
     /// Per-connection agent discovery cache (5-minute TTL).
     /// Key: None = local maestro-server, Some(id) = remote SSH connection.
     pub agent_discovery_cache: tokio::sync::Mutex<HashMap<Option<i32>, AgentDiscoveryCacheEntry>>,
+    /// App data directory used for project lock files.
+    pub app_data_dir: PathBuf,
+    /// Active project lock: the project ID and the open File whose flock holds the lock.
+    /// Dropping the File releases the lock (including on crash/kill-9).
+    pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
 }
 
 impl AppState {
     /// Create a new AppState with a database connection and Tauri app handle
-    pub fn new(db: Connection, app_handle: AppHandle) -> Self {
+    pub fn new(db: Connection, app_handle: AppHandle, app_data_dir: PathBuf) -> Self {
         AppState {
             db: Mutex::new(db),
             app_handle,
@@ -82,6 +95,39 @@ impl AppState {
             pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
             acp_sessions: tokio::sync::Mutex::new(HashMap::new()),
             agent_discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
+            app_data_dir,
+            active_project_lock: Mutex::new(None),
+        }
+    }
+
+    /// Acquire a project lock for this instance, releasing any previous lock first.
+    /// Returns an error string if the project is locked by another live instance.
+    pub fn acquire_project_lock(&self, project_id: i32) -> Result<(), String> {
+        let mut current = self
+            .active_project_lock
+            .lock()
+            .map_err(|e| format!("Lock state error: {}", e))?;
+
+        // Already holding this project's lock — nothing to do
+        if let Some((current_id, _)) = current.as_ref() {
+            if *current_id == project_id {
+                return Ok(());
+            }
+        }
+
+        // Release previous lock by dropping the File handle
+        *current = None;
+
+        let file = project_lock::acquire_project_lock(&self.app_data_dir, project_id)?;
+        *current = Some((project_id, file));
+        Ok(())
+    }
+
+    /// Release the active project lock held by this instance.
+    pub fn release_active_project_lock(&self) {
+        if let Ok(mut current) = self.active_project_lock.lock() {
+            // Dropping the (id, File) tuple releases the flock automatically
+            *current = None;
         }
     }
 

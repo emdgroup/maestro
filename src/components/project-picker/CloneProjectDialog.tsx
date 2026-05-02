@@ -13,6 +13,7 @@ import { Label } from "@/ui/label";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCloneProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import { api } from "@/lib";
 import type { SshConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
@@ -39,11 +40,12 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
   const handleSubmit = async () => {
     if (!url.trim() || !targetPath.trim()) return;
     try {
-      const project = await cloneProject({
+      const created = await cloneProject({
         url: url.trim(),
         targetPath: targetPath.trim(),
         connectionId: connection?.id ?? null,
       });
+      const project = await api.openProject(created.id);
       setSelectedProject(project);
       // Reset form and close
       setUrl("");

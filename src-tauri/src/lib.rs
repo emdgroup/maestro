@@ -6,6 +6,7 @@ pub mod ssh;
 pub mod git;
 pub mod websocket;
 pub mod acp;
+pub mod project_lock;
 
 pub use db::{init_db, AppState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ExecutionWithTask, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
@@ -22,6 +23,9 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_connection_projects,
             crate::ipc::create_project,
             crate::ipc::get_project,
+            crate::ipc::open_project,
+            crate::ipc::release_active_project_lock,
+            crate::ipc::check_project_locks,
             crate::ipc::remove_project,
             crate::ipc::git_init_project,
             crate::ipc::clone_project,
@@ -49,6 +53,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::cleanup_zombie_worktrees,
             crate::ipc::list_executions_with_task_info,
             crate::ipc::delete_execution_log,
+            crate::ipc::rename_execution,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,
             crate::ipc::get_execution_logs,

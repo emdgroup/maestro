@@ -16,18 +16,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let conn = init_db(db_path)
         .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
-    let app_state = Arc::new(AppState::new(conn, app.handle().clone()));
-
-    // Mark stale running sessions as failed — PTY processes don't survive restarts
-    {
-        let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = chrono::Utc::now().to_rfc3339();
-        let count = db.execute(
-            "UPDATE execution_logs SET status = 'failed', completed_at = ?1 WHERE status = 'running'",
-            rusqlite::params![now],
-        ).unwrap_or(0);
-        let _ = count;
-    }
+    let app_state = Arc::new(AppState::new(conn, app.handle().clone(), app_data_dir.clone()));
 
     app.manage(app_state);
 
@@ -56,6 +45,9 @@ fn main() {
             // Background reader tasks are idle (waiting on Notify) or already dropped by
             // the time the exit event fires, so try_lock succeeds in practice.
             let app_state = app_handle.state::<std::sync::Arc<AppState>>();
+
+            // Release project lock so other instances can open this project immediately.
+            app_state.release_active_project_lock();
 
             let mut snapshots: Vec<(i32, String)> = Vec::new();
             if let Ok(sessions) = app_state.ssh_pty_sessions.try_lock() {

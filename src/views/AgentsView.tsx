@@ -8,6 +8,7 @@ import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
   useDeleteExecutionMutation,
+  useRenameExecutionMutation,
   useAgentDiscoveryQuery,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
@@ -56,6 +57,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
   const deleteMutation = useDeleteExecutionMutation();
+  const renameMutation = useRenameExecutionMutation();
 
   const visibleAgents = discovery?.agents ?? [];
   const agentIcons: Record<string, string> = Object.fromEntries(
@@ -167,6 +169,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           onDelete={(executionId) => {
             deleteMutation.mutate({ executionId });
             if (selectedExecutionId === executionId) setSelectedExecutionId(null);
+          }}
+          onRename={(executionId, newName) => {
+            renameMutation.mutate({ executionId, sessionName: newName });
           }}
           agentIcons={agentIcons}
           onReconnect={(execution) => {

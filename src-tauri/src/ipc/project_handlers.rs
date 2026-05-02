@@ -195,6 +195,76 @@ pub fn get_project(
     }
 }
 
+/// Open a project by ID: acquire the project lock, mark orphaned sessions as failed,
+/// update last_opened, and return the Project.
+///
+/// This is the entry point for project selection. It enforces single-instance access:
+/// if another live Maestro instance has the project open, it returns an error of the
+/// form "PROJECT_LOCKED:<id>" which the frontend interprets to show a toast.
+#[tauri::command]
+#[specta::specta]
+pub fn open_project(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+) -> Result<Project, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let project: Project = conn
+        .query_row(
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            [&project_id],
+            Project::from_row,
+        )
+        .map_err(|_| "Project not found".to_string())?;
+
+    // Acquire project lock — errors if another live instance owns it.
+    // Must drop conn first so the lock doesn't block during acquire.
+    drop(conn);
+
+    app_state.acquire_project_lock(project_id)?;
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    // Safe to mark orphaned sessions now — we hold the lock so no other instance
+    // is running sessions for this project.
+    let now = chrono::Utc::now().to_rfc3339();
+    let _ = conn.execute(
+        "UPDATE execution_logs SET status = 'failed', completed_at = ?1 WHERE status = 'running' AND project_id = ?2",
+        rusqlite::params![now, project_id],
+    );
+
+    conn.execute(
+        "UPDATE projects SET last_opened = ? WHERE id = ?",
+        rusqlite::params![now, project_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(project)
+}
+
+/// Release the active project lock held by this instance.
+/// Called when the user navigates back to the project picker.
+#[tauri::command]
+#[specta::specta]
+pub fn release_active_project_lock(app_state: State<Arc<AppState>>) -> Result<(), String> {
+    app_state.release_active_project_lock();
+    Ok(())
+}
+
+/// Return the subset of project IDs that are currently locked by another live instance.
+/// Used by the project picker to show visual lock indicators before the user clicks.
+#[tauri::command]
+#[specta::specta]
+pub fn check_project_locks(
+    app_state: State<Arc<AppState>>,
+    project_ids: Vec<i32>,
+) -> Vec<i32> {
+    project_ids
+        .into_iter()
+        .filter(|&id| crate::project_lock::is_project_locked(&app_state.app_data_dir, id))
+        .collect()
+}
+
 /// remove project by id
 #[tauri::command]
 #[specta::specta]

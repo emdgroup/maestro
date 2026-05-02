@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Project } from "@/types/bindings";
+import { api } from "@/lib";
 
 interface ProjectStore {
   selectedProject: Project | null;
@@ -19,7 +20,10 @@ const useStore = create<ProjectStore>((set) => ({
   selectedProject: null,
   actions: {
     setSelectedProject: (project) => set({ selectedProject: project }),
-    clearSelectedProject: () => set({ selectedProject: null }),
+    clearSelectedProject: () => {
+      void api.releaseActiveProjectLock();
+      set({ selectedProject: null });
+    },
   },
 }));
 

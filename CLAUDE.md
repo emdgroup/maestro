@@ -21,6 +21,7 @@ See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 ### Frontend Development
 
 ```bash
+pnpm dev              # Start Vite dev server (port 5173)
 pnpm test             # Run Vitest unit tests
 pnpm test <pattern>   # Run single test file (e.g. pnpm test usePathNavigation)
 pnpm test:e2e         # Run Playwright E2E tests
@@ -34,7 +35,9 @@ pnpm format:fix       # Fix formatting with oxfmt
 ### Tauri Development
 
 ```bash
-pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Build production Tauri app
+pnpm tauri:dev        # Start Tauri dev mode (frontend + Rust backend)
+pnpm tauri build      # Build production Tauri app
+pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Cross-compile for Windows
 pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
 ```
 
@@ -59,14 +62,38 @@ cargo check           # Check compilation without building
 
 ### Code Structure
 
+**Frontend (`src/`):**
+- `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
+- `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/)
+- `services/` — IPC service layer wrapping `invoke()` calls (task.service, worktree.service, etc.)
+- `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, sessionActivityStore)
+- `contexts/` — React contexts (ConnectionContext, KanbanContext)
+- `providers/` — Provider components (QueryProvider, ThemeProvider)
+- `utils/` — hooks/, helpers/, constants/
+
+**Rust backend (`src-tauri/src/`):**
+- `ipc/` — Tauri command handlers by domain
+- `models/` — Data models with ts-rs derive
+- `db/` — SQLite schema, storage, migrations
+- `acp/` — ACP session management (manager, registry, transport)
+- `ssh/` — SSH connections (session, password manager)
+- `git/` — Git remote operations
+- `process/` — PTY/process spawning (local + remote)
+- `websocket/` — WebSocket streaming to frontend
+
 **maestro-server (`maestro-server/src/`):**
 
 Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout.
 
+**maestro-protocol (`maestro-protocol/src/`):**
+
+Shared crate defining the JSON message types between maestro (Tauri) and maestro-server.
+
 ### Database Schema
 
-SQLite with foreign key constraints enabled:
+SQLite with foreign key constraints enabled. Schema V12 (destructive migration on version mismatch).
 
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `worktrees`, `execution_logs`, `ssh_connections`, `settings`, `acp_sessions`, `acp_messages`, `reviews`, `review_changes`
 
 ### IPC Communication
 
@@ -141,7 +168,8 @@ When modifying Rust models:
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Skills stored as JSON-serialized Vec<String> in DB
+- Schema version: 12. Migration is destructive (drops all tables on version mismatch)
+- `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
 - All IPC commands use `Arc<AppState>` for thread-safe DB access
@@ -162,7 +190,7 @@ When modifying Rust models:
   - Use explicit error handling with `match` or `if let Err(...)` when you need custom logic
   - Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead
 * When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
-* Never create files with `mod.rs` paths - prefer `src/some_module.rs` instead of `src/some_module/mod.rs`.
+* For new modules, prefer flat files (`src/some_module.rs`) over `src/some_module/mod.rs`. Existing `mod.rs` files in `ipc/`, `models/`, `db/` are legacy — don't refactor them, but don't add new ones.
 * When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
 * Avoid creative additions unless explicitly requested
 * Use full words for variable names (no abbreviations like "q" for "queue")
@@ -200,11 +228,7 @@ Release Notes:
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
+**This project has a code knowledge graph. Use code-review-graph MCP tools before Grep/Glob/Read.** Faster, fewer tokens, gives structural context (callers, dependents, test coverage).
 
 ### When to use graph tools FIRST
 

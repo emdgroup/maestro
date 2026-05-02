@@ -6,17 +6,19 @@ import { CreateProjectDialog } from "@/components/project-picker/CreateProjectDi
 import { useProjectPickerNavigation } from "@/utils/hooks";
 import {
   useRecentProjects,
+  useProjectLocks,
   useCreateProject,
   useRemoveProject,
   useGitInitProject,
 } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import { api } from "@/lib";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder } from "lucide-react";
 import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { Dialog, DialogContent } from "@/ui/dialog";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 /**
  * Unified component for displaying and managing project lists.
@@ -29,6 +31,10 @@ export function ProjectList() {
   const { data: recentProjects = [], isLoading: loading } = useRecentProjects(
     activeConnection?.sshConnection?.id,
   );
+  const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
+  const { data: lockedProjectIds = [] } = useProjectLocks(projectIds);
+  const lockedSet = useMemo(() => new Set(lockedProjectIds), [lockedProjectIds]);
+
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -52,24 +58,40 @@ export function ProjectList() {
       if (!connectionId) {
         await gitInitProject({ path: selectedPath, connectionId: null });
       }
-      const result = await createProject({
+      const created = await createProject({
         path: selectedPath,
-        connectionId: connectionId ?? null, // Use null for local projects, not 0
+        connectionId: connectionId ?? null,
       });
-      setSelectedProject(result);
+      // Acquire project lock via open_project (create_project does not lock)
+      const project = await api.openProject(created.id);
+      setSelectedProject(project);
       setShowFilePickerModal(false);
+    } catch (error) {
+      const msg = String(error);
+      if (msg.includes("PROJECT_LOCKED:")) {
+        toast.error("Project already open in another Maestro instance");
+      } else {
+        toast.error(`Failed to open project: ${msg}`);
+      }
     } finally {
       setProjectLoading(false);
     }
   };
 
-  const handleProjectClick = (projectId: number) => {
-    // Find the project from the recent list (already cached)
-    const project = recentProjects.find((p) => p.id === projectId);
-    if (project) {
+  const handleProjectClick = async (projectId: number) => {
+    setProjectLoading(true);
+    try {
+      const project = await api.openProject(projectId);
       setSelectedProject(project);
-    } else {
-      toast.error("Project not found in recent list");
+    } catch (error) {
+      const msg = String(error);
+      if (msg.includes("PROJECT_LOCKED:")) {
+        toast.error("Project already open in another Maestro instance");
+      } else {
+        toast.error(`Failed to open project: ${msg}`);
+      }
+    } finally {
+      setProjectLoading(false);
     }
   };
 
@@ -112,6 +134,7 @@ export function ProjectList() {
                   onClick={() => handleProjectClick(project.id)}
                   onRemove={() => handleRemoveProject(project.id)}
                   disabled={loading}
+                  locked={lockedSet.has(project.id)}
                 />
               ))}
             </ul>

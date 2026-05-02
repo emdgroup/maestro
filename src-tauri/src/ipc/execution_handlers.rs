@@ -1020,6 +1020,23 @@ pub async fn delete_execution_log(
     Ok(())
 }
 
+/// Rename an execution log (update its session_name).
+#[tauri::command]
+#[specta::specta]
+pub fn rename_execution(
+    app_state: State<Arc<AppState>>,
+    execution_id: i32,
+    session_name: String,
+) -> Result<(), String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.execute(
+        "UPDATE execution_logs SET session_name = ? WHERE id = ?",
+        rusqlite::params![&session_name, execution_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// List all executions for a project, enriched with task name and worktree branch.
 /// Used by the Agents View sidebar.
 #[tauri::command]

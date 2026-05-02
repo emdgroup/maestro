@@ -40,6 +40,10 @@ vi.mock("@/services/project.service", () => ({
     data: [],
     isLoading: false,
   }),
+  useProjectLocks: () => ({
+    data: [],
+    isLoading: false,
+  }),
 }));
 
 vi.mock("@/store/projectStore", () => ({

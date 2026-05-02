@@ -36,7 +36,6 @@ interface ComposeBarProps {
   projectPath?: string | null;
   models: ModelOption[];
   modelId: string;
-  actualModelId?: string | null;
   permissionMode: PermissionMode;
   usageState: UsageState | null;
   onModelChange: (id: string) => void;
@@ -162,7 +161,6 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
       projectPath,
       models,
       modelId,
-      actualModelId,
       permissionMode,
       usageState,
       onModelChange,
@@ -657,12 +655,6 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
                 </SelectContent>
               </Select>
             )}
-            {actualModelId && actualModelId !== modelId && (
-              <span className="text-[10px] text-muted-foreground/70 px-0.5">
-                {models.find((m) => m.id === actualModelId)?.label ?? actualModelId}
-              </span>
-            )}
-
             <Select
               value={permissionMode}
               onValueChange={(v) => v && onPermissionModeChange(v as PermissionMode)}

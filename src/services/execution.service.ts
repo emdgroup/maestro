@@ -100,6 +100,24 @@ export function useSpawnInteractiveExecutionMutation() {
 }
 
 /**
+ * Mutation hook for renaming an execution (updating its session_name).
+ */
+export function useRenameExecutionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ executionId, sessionName }: { executionId: number; sessionName: string }) => {
+      return await api.renameExecution(executionId, sessionName);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+    },
+    onError: (error) => {
+      toast.error(`Failed to rename session: ${error}`);
+    },
+  });
+}
+
+/**
  * Mutation hook for deleting an execution log (and cleaning up its PTY session)
  */
 export function useDeleteExecutionMutation() {
