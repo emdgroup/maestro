@@ -416,6 +416,12 @@ fn handle_server_message(
             }
             let _ = app_handle.emit(&format!("acp://session-error/{}", log_id), &err.message);
         }
+        MaestroRpcMessage::Response(ServerResponse::TurnEnded(turn_ended)) => {
+            let _ = app_handle.emit(
+                &format!("acp://turn-ended/{}", log_id),
+                &turn_ended.stop_reason,
+            );
+        }
         _ => {
             // Ignore Request variants arriving on stdout — wrong direction.
         }

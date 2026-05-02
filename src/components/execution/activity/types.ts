@@ -100,10 +100,10 @@ export type ToolCallItem = {
   content: ToolCallContent[];
 };
 
-export type PermissionDeniedItem = {
+export type PermissionResponseItem = {
   id: string;
-  payload: Record<string, unknown>;
-  optionName?: string;
+  optionName: string;
+  isRejection: boolean;
 };
 
 export type ElicitationSummaryItem = {
@@ -117,7 +117,7 @@ export type ActivityItem =
   | { type: "thinking"; item: ThinkingItem }
   | { type: "userMessage"; item: UserMessageItem }
   | { type: "toolCall"; item: ToolCallItem }
-  | { type: "permissionDenied"; item: PermissionDeniedItem }
+  | { type: "permissionResponse"; item: PermissionResponseItem }
   | { type: "elicitationSummary"; item: ElicitationSummaryItem };
 
 export type ActivityState = {

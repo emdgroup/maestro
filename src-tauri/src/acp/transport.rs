@@ -12,6 +12,7 @@ pub use maestro_protocol::{
     SetModelRequest, SetModelOkResponse,
     PromptCapabilitiesInfo,
     FileSearchRequest, FileSearchResponse, FileReadRequest, FileReadResponse,
+    TurnEnded,
     write_message, read_message,
     MSG_LEN_SIZE, MAX_MESSAGE_SIZE,
 };

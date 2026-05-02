@@ -14,6 +14,7 @@ import type {
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload }
   | { type: "session_ended" }
+  | { type: "turn_ended" }
   | { type: "finalize_streaming" }
   | { type: "set_initialized" }
   | { type: "load_from_db"; payloads: SessionUpdatePayload[] };
@@ -24,6 +25,8 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return processEvent(state, action.payload);
     case "session_ended":
       return { ...state, items: finalizeLastStreaming(state.items), sessionEnded: true, endReason: "completed" };
+    case "turn_ended":
+      return { ...state, items: finalizeLastStreaming(state.items) };
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "set_initialized":
@@ -159,12 +162,16 @@ export function useAcpActivity(logId: number | null): [ActivityState, React.Disp
       listen<null>(`acp://session-ended/${logId}`, () => {
         dispatch({ type: "session_ended" });
       }),
+      listen<string>(`acp://turn-ended/${logId}`, () => {
+        dispatch({ type: "turn_ended" });
+      }),
     ]);
 
     return () => {
-      unlisteners.then(([u1, u2]) => {
+      unlisteners.then(([u1, u2, u3]) => {
         u1();
         u2();
+        u3();
       });
     };
   }, [logId]);

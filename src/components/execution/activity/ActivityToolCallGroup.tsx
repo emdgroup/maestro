@@ -39,9 +39,10 @@ function groupLabel(items: ToolCallItem[]): string {
 }
 
 function groupStatus(items: ToolCallItem[]): ToolCallItem["status"] {
-  if (items.some((i) => i.status === "error")) return "error";
   if (items.some((i) => i.status === "in_progress")) return "in_progress";
   if (items.every((i) => i.status === "completed")) return "completed";
+  if (items.every((i) => i.status === "error")) return "error";
+  if (items.every((i) => i.status === "completed" || i.status === "error")) return "completed";
   return "pending";
 }
 
@@ -92,12 +93,15 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   const Icon = KIND_ICON[items[0]?.kind] ?? Box;
   const label = groupLabel(items);
   const subtitle = terminalSubtitle(items);
+  const errorCount = items.filter((i) => i.status === "error").length;
 
   const statusText =
     status === "error"
       ? "Failed"
       : status === "completed"
-        ? "Done"
+        ? errorCount > 0
+          ? `Done (${errorCount} failed)`
+          : "Done"
         : status === "in_progress"
           ? "Running"
           : "Pending";

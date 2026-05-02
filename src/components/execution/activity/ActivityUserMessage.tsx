@@ -5,14 +5,15 @@ interface ActivityUserMessageProps {
   message: UserMessageItem;
 }
 
-interface ParsedUserContent {
+export interface ParsedUserContent {
   text: string;
   attachments: string[];
 }
 
-function parseUserContent(raw: string): ParsedUserContent {
+export function parseUserContent(raw: string): ParsedUserContent {
   try {
-    const parsed = JSON.parse(raw);
+    // raw may already be a parsed array when replaying from DB (load_from_db path)
+    const parsed = Array.isArray(raw as unknown) ? (raw as unknown as unknown[]) : JSON.parse(raw);
     if (!Array.isArray(parsed)) {
       return { text: raw, attachments: [] };
     }
@@ -46,7 +47,7 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
         <div className="bg-card border border-border rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
           {parsed.text}
           {parsed.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
+            <span className="inline-flex flex-wrap gap-1 ml-1.5">
               {parsed.attachments.map((name) => (
                 <span
                   key={name}
@@ -55,7 +56,7 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
                   {name}
                 </span>
               ))}
-            </div>
+            </span>
           )}
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -129,7 +129,7 @@ export function AgentMonitor({
                   key={execution.id}
                   onClick={() => onSelect(execution.id)}
                   className={cn(
-                    "px-3 py-3 cursor-pointer border-l-2 transition-colors",
+                    "group px-3 py-3 cursor-pointer border-l-2 transition-colors",
                     execution.id === selectedExecutionId
                       ? "border-ring bg-muted/20"
                       : "border-transparent hover:bg-muted/10",
@@ -156,6 +156,14 @@ export function AgentMonitor({
                             : "ACP")
                         : "Terminal"}
                     </Badge>
+                    {onDelete && execution.status !== "running" && (
+                      <button
+                        className="hidden group-hover:flex items-center justify-center w-5 h-5 ml-auto rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); onDelete(execution.id); }}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                   {/* Line 2: status label + elapsed time */}
                   <div className="text-xs text-muted-foreground mt-0.5 pl-4">

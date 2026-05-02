@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { generateSessionName } from "@/lib/generateSessionName";
 import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
 import type { StatusFilter } from "@/components/execution/AgentMonitor";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
@@ -89,7 +90,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           projectId: projectId!,
           branchName: selectedWorktree.branch_name,
           repoPath: repoPath!,
-          sessionName: sessionName.trim() || null,
+          sessionName: sessionName.trim() || generateSessionName(),
           worktreeId: selectedWorktree.id,
         },
         {
@@ -104,7 +105,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         {
           agentId: sessionType,
           cwd: selectedWorktree.path,
-          sessionName: sessionName.trim() || null,
+          sessionName: sessionName.trim() || generateSessionName(),
           projectId: projectId!,
           connectionId: connectionId ?? null,
           worktreeBranch: selectedWorktree.branch_name,

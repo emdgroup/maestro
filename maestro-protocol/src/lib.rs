@@ -79,6 +79,13 @@ pub enum ServerResponse {
     SetModelOk(SetModelOkResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
+    TurnEnded(TurnEnded),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TurnEnded {
+    pub session_id: String,
+    pub stop_reason: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -533,6 +540,17 @@ mod tests {
     fn roundtrip_file_read_ok() {
         let msg = MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
             content: "fn main() {}".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_turn_ended() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+            session_id: "sess-1".to_string(),
+            stop_reason: "end_turn".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

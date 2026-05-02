@@ -253,3 +253,12 @@
   0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
   30% { opacity: 1; transform: scale(1); }
 }
+
+@keyframes ctx-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.75; }
+}
+
+@keyframes arc-spin-cw {
+  to { transform: rotate(360deg); }
+}

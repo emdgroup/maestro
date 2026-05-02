@@ -1,6 +1,6 @@
 import { useState, useReducer, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, ChevronDown } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,20 +9,18 @@ import { useAcpActivity, activityReducer } from "./activity/useAcpActivity";
 import { useStructuredOutputQuery, executionQueryKeys } from "@/services/execution.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
-import { ActivityUserMessage } from "./activity/ActivityUserMessage";
+import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
 import { ComposeBar } from "./activity/ComposeBar";
-import type { ComposeBarHandle } from "./activity/ComposeBar";
-import { SessionToolbar } from "./activity/SessionToolbar";
-import type { PermissionMode, ModelOption } from "./activity/SessionToolbar";
-import { PermissionPrompt, isAllowKind } from "./activity/PermissionPrompt";
-import { PermissionDeniedCard } from "./activity/PermissionDeniedCard";
+import type { ComposeBarHandle, PermissionMode, ModelOption } from "./activity/ComposeBar";
+import { PermissionPrompt, isAllowKind, isPlanPermission } from "./activity/PermissionPrompt";
+import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
 import { INITIAL_ACTIVITY_STATE } from "./activity/types";
-import type { SessionUpdatePayload, UserMessageItem, PermissionDeniedItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
+import type { SessionUpdatePayload, UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
 import type { ExecutionWithTask, AcpPromptCapabilities, JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 
@@ -54,12 +52,17 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string>("");
+  const [actualModelId, setActualModelId] = useState<string | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [usageState, setUsageState] = useState<UsageState | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
   const [promptCapabilities, setPromptCapabilities] = useState<AcpPromptCapabilities | null>(null);
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const userMsgCounterRef = useRef(0);
+  const lastUserMsgRef = useRef<HTMLDivElement>(null);
+  const agentResponseStartRef = useRef<HTMLDivElement>(null);
+  const [showStickyUserMsg, setShowStickyUserMsg] = useState(false);
+  const [agentResponseAbove, setAgentResponseAbove] = useState(false);
   const queryClient = useQueryClient();
   const selectedProject = useSelectedProject();
   const projectId = selectedProject?.id ?? null;
@@ -80,13 +83,12 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const state = isDead ? deadState : liveState;
 
   useEffect(() => {
-    if (isProcessing && state.items.length > 0) {
-      const last = state.items[state.items.length - 1];
-      if (last.type === "message" || last.type === "toolCall" || last.type === "thinking") {
-        setIsProcessing(false);
-      }
-    }
-  }, [isProcessing, state.items]);
+    if (isDead) return;
+    const unlisten = listen<string>(`acp://turn-ended/${execution.id}`, () => {
+      setIsProcessing(false);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [isDead, execution.id]);
 
   useEffect(() => {
     if (!isDead && state.sessionEnded) {
@@ -109,7 +111,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     requestId: string;
     payload: Record<string, unknown>;
   } | null>(null);
-  const [liveDeniedPermissions, setLiveDeniedPermissions] = useState<Array<{ item: PermissionDeniedItem; insertAt: number }>>([]);
+  const [livePermissionResponses, setLivePermissionResponses] = useState<Array<{ item: PermissionResponseItem; insertAt: number }>>([]);
 
   useEffect(() => {
     if (isDead) return;
@@ -169,6 +171,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       if (modelState) {
         setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
         setModelId(modelState.current_model_id);
+        setActualModelId(modelState.current_model_id);
         setModelsLoaded(true);
       }
     }).catch(() => {});
@@ -182,6 +185,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         const { current_model_id, available_models } = event.payload;
         setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
         setModelId(current_model_id);
+        setActualModelId(current_model_id);
         setModelsLoaded(true);
       },
     );
@@ -198,12 +202,18 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
 
   useEffect(() => {
     if (isDead) return;
+    type ConfigOption = {
+      category?: string;
+      type?: string;
+      currentValue?: string;
+    };
     type SessionUpdatePayloadRaw = {
       sessionUpdate?: string;
       used?: number;
       size?: number;
       cost?: { amount: number; currency: string };
       availableCommands?: AvailableCommand[];
+      configOptions?: ConfigOption[];
     };
     const unlisten = listen<SessionUpdatePayloadRaw>(
       `acp://session-update/${execution.id}`,
@@ -220,6 +230,13 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         } else if (p.sessionUpdate === "available_commands_update") {
           if (Array.isArray(p.availableCommands)) {
             setAvailableCommands(p.availableCommands);
+          }
+        } else if (p.sessionUpdate === "config_option_update") {
+          const modelConfig = p.configOptions?.find(
+            (opt) => opt.category === "model" && opt.type === "select",
+          );
+          if (modelConfig?.currentValue) {
+            setActualModelId(modelConfig.currentValue);
           }
         }
       },
@@ -268,15 +285,15 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       } catch {
         // best-effort
       }
-      const isRejection = !optionId || isRejectOption(pendingPermission?.payload ?? {}, optionId);
-      if (isRejection && pendingPermission) {
-        const denied: PermissionDeniedItem = {
-          id: `denied-${requestId}`,
-          payload: pendingPermission.payload,
-          optionName: getOptionName(pendingPermission.payload, optionId),
+      if (pendingPermission) {
+        const isRejection = !optionId || isRejectOption(pendingPermission.payload, optionId);
+        const responseItem: PermissionResponseItem = {
+          id: `perm-${requestId}`,
+          optionName: getOptionName(pendingPermission.payload, optionId) ?? (isRejection ? "Permission denied" : "Allowed"),
+          isRejection,
         };
         const insertAt = agentItemsCountRef.current;
-        setLiveDeniedPermissions((prev) => [...prev, { item: denied, insertAt }]);
+        setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt }]);
       }
       setPendingPermission(null);
     },
@@ -363,11 +380,26 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   }, []);
 
   const displayItems = useMemo(
-    () => isDead ? state.items : mergeLiveItems(state.items, liveUserMessages, liveDeniedPermissions, liveElicitationSummaries),
-    [isDead, state.items, liveUserMessages, liveDeniedPermissions, liveElicitationSummaries],
+    () => isDead ? state.items : mergeLiveItems(state.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries),
+    [isDead, state.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries],
   );
 
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
+
+  const { lastUserMessage, agentResponseStartIdx } = useMemo(() => {
+    let lastUserMessage: UserMessageItem | null = null;
+    let lastUserMessageIdx = -1;
+    for (let i = groupedItems.length - 1; i >= 0; i--) {
+      const gi = groupedItems[i];
+      if (gi.type === "solo" && gi.item.type === "userMessage") {
+        lastUserMessage = gi.item.item;
+        lastUserMessageIdx = i;
+        break;
+      }
+    }
+    const agentResponseStartIdx = lastUserMessageIdx >= 0 ? lastUserMessageIdx + 1 : -1;
+    return { lastUserMessage, agentResponseStartIdx };
+  }, [groupedItems]);
 
   // Refs are null while the spinner renders; register observer only after init clears.
   useEffect(() => {
@@ -396,6 +428,42 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     atBottomRef.current = true;
   }, [isDead, state.isInitializing]);
 
+  useEffect(() => {
+    const scrollEl = chatScrollRef.current;
+    const target = lastUserMsgRef.current;
+    if (!scrollEl || !target) {
+      setShowStickyUserMsg(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const aboveViewport = !entry.isIntersecting && entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
+        setShowStickyUserMsg(aboveViewport);
+      },
+      { root: scrollEl, threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [lastUserMessage, groupedItems]);
+
+  useEffect(() => {
+    const scrollEl = chatScrollRef.current;
+    const target = agentResponseStartRef.current;
+    if (!scrollEl || !target) {
+      setAgentResponseAbove(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const aboveViewport = !entry.isIntersecting && entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
+        setAgentResponseAbove(aboveViewport);
+      },
+      { root: scrollEl, threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [agentResponseStartIdx, groupedItems]);
+
   // 2s: mark session as responsive.
   useEffect(() => {
     if (isDead || !state.isInitializing) return;
@@ -409,19 +477,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     const timer = setTimeout(() => setModelsLoaded(true), 10000);
     return () => clearTimeout(timer);
   }, [isDead, modelsLoaded]);
-
-  const contextWarning = useMemo(() => {
-    if (!usageState || usageState.size === 0) return null;
-    const ratio = usageState.used / usageState.size;
-    if (ratio < 0.8) return null;
-    const pct = Math.round(ratio * 100);
-    const exceeded = ratio >= 1;
-    return (
-      <div className={`px-3.5 py-2 text-xs border-t border-border/30 ${exceeded ? "text-destructive" : "text-amber-500"}`}>
-        {exceeded ? "Context exhausted" : `Context window is ${pct}% full`}
-      </div>
-    );
-  }, [usageState]);
 
   // Session ended banner
   const sessionEndedBanner =
@@ -467,6 +522,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     : null;
 
   let bottomBar: React.ReactNode = null;
+  let planOverlay: React.ReactNode = null;
   if (!isSessionDead) {
     if (elicitationContent) {
       bottomBar = (
@@ -479,17 +535,27 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         />
       );
     } else if (pendingPermission) {
-      bottomBar = (
-        <PermissionPrompt
-          requestId={pendingPermission.requestId}
-          payload={pendingPermission.payload}
-          onRespond={handlePermissionRespond}
-        />
-      );
+      if (isPlanPermission(pendingPermission.payload)) {
+        planOverlay = (
+          <PermissionPrompt
+            requestId={pendingPermission.requestId}
+            payload={pendingPermission.payload}
+            onRespond={handlePermissionRespond}
+            fullHeight
+          />
+        );
+      } else {
+        bottomBar = (
+          <PermissionPrompt
+            requestId={pendingPermission.requestId}
+            payload={pendingPermission.payload}
+            onRespond={handlePermissionRespond}
+          />
+        );
+      }
     } else {
       bottomBar = (
-        <>
-          {contextWarning}
+        <div className="sticky bottom-0 z-10 px-16 pb-2.5 pt-1">
           <ComposeBar
             ref={composeBarRef}
             onSend={handleSend}
@@ -499,16 +565,15 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             embeddedContext={promptCapabilities?.embedded_context ?? false}
             logId={execution?.id ?? null}
             projectPath={selectedProject?.path ?? null}
-          />
-          <SessionToolbar
             models={models}
             modelId={modelId}
+            actualModelId={actualModelId}
             permissionMode={permissionMode}
+            usageState={usageState}
             onModelChange={handleModelChange}
             onPermissionModeChange={setPermissionMode}
-            usageState={usageState}
           />
-        </>
+        </div>
       );
     }
   }
@@ -527,44 +592,105 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             onScroll={handleChatScroll}
             onWheel={handleWheel}
           >
-            {state.plan && (
-              <div className="sticky top-0 z-10 bg-card border-b border-border">
-                <ActivityPlanPanel entries={state.plan} />
-              </div>
-            )}
+            <div className="sticky top-0 z-10">
+              {state.plan && (
+                <div className="bg-card border-b border-border">
+                  <ActivityPlanPanel entries={state.plan} />
+                </div>
+              )}
+              <AnimatePresence>
+                {showStickyUserMsg && lastUserMessage && (
+                  <motion.div
+                    key="sticky-user-msg"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.15 }}
+                    className="bg-muted/80 backdrop-blur-sm border-b border-border/50 cursor-pointer"
+                    onClick={() => lastUserMsgRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-[10px] font-semibold text-muted-foreground border border-border/50">
+                        M
+                      </div>
+                      <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">
+                        {parseUserContent(lastUserMessage.content).text}
+                      </span>
+                      <ChevronUp className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
               {groupedItems.map((gi, idx) => {
+                let element: React.ReactNode = null;
+                let key: string = `gi-${idx}`;
+
                 if (gi.type === "toolGroup") {
+                  key = `tg-${idx}-${gi.items[0].toolCallId}`;
+                  element = <ActivityToolCallGroup items={gi.items} />;
+                } else {
+                  const item = gi.item;
+                  if (item.type === "message") {
+                    key = item.item.id;
+                    element = <ActivityMessageItem message={item.item} />;
+                  } else if (item.type === "thinking") {
+                    key = item.item.id;
+                    element = <ActivityThinkingBlock thinking={item.item} />;
+                  } else if (item.type === "userMessage") {
+                    key = item.item.id;
+                    element = <ActivityUserMessage message={item.item} />;
+                  } else if (item.type === "permissionResponse") {
+                    key = item.item.id;
+                    element = <PermissionResponseCard item={item.item} />;
+                  } else if (item.type === "elicitationSummary") {
+                    key = item.item.id;
+                    element = <ActivityElicitationSummary item={item.item} />;
+                  }
+                }
+
+                const isLastUserMsg = gi.type === "solo" && gi.item.type === "userMessage" && gi.item.item === lastUserMessage;
+                const isAgentResponseStart = idx === agentResponseStartIdx;
+
+                if (isLastUserMsg || isAgentResponseStart) {
                   return (
-                    <ActivityToolCallGroup
-                      key={`tg-${idx}-${gi.items[0].toolCallId}`}
-                      items={gi.items}
-                    />
+                    <div key={key} ref={isLastUserMsg ? lastUserMsgRef : agentResponseStartRef}>
+                      {element}
+                    </div>
                   );
                 }
-                const item = gi.item;
-                if (item.type === "message") {
-                  return <ActivityMessageItem key={item.item.id} message={item.item} />;
-                }
-                if (item.type === "thinking") {
-                  return <ActivityThinkingBlock key={item.item.id} thinking={item.item} />;
-                }
-                if (item.type === "userMessage") {
-                  return <ActivityUserMessage key={item.item.id} message={item.item} />;
-                }
-                if (item.type === "permissionDenied") {
-                  return <PermissionDeniedCard key={item.item.id} item={item.item} />;
-                }
-                if (item.type === "elicitationSummary") {
-                  return <ActivityElicitationSummary key={item.item.id} item={item.item} />;
-                }
-                return null;
+
+                return element ? <div key={key}>{element}</div> : null;
               })}
             </div>
+
+            {bottomBar}
           </div>
 
+          {planOverlay && (
+            <div className="absolute inset-0 z-30 flex flex-col bg-background">
+              {planOverlay}
+            </div>
+          )}
+
           <AnimatePresence>
+            {showScrollFab && agentResponseAbove && (
+              <motion.button
+                key="scroll-response-top"
+                type="button"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.15 }}
+                onClick={() => agentResponseStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="absolute bottom-14 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors bg-card/60 border-border/30 hover:bg-muted/60"
+                aria-label="Scroll to start of response"
+              >
+                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              </motion.button>
+            )}
             {showScrollFab && (
               <motion.button
                 key="scroll-fab"
@@ -574,7 +700,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => scrollToBottom()}
-                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border shadow-md flex items-center justify-center transition-colors ${hasUnread ? "bg-accent border-accent hover:bg-accent/80" : "bg-card border-border hover:bg-muted/80"}`}
+                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/60 border-accent/40 hover:bg-accent/70" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
                 aria-label="Scroll to bottom"
               >
                 <ChevronDown className={`w-4 h-4 ${hasUnread ? "text-accent-foreground" : "text-muted-foreground"}`} />
@@ -582,8 +708,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             )}
           </AnimatePresence>
         </div>
-
-        {bottomBar}
       </div>
     </div>
   );
@@ -618,15 +742,15 @@ function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
 function mergeLiveItems(
   agentItems: ActivityItem[],
   userMessages: Array<{ item: UserMessageItem; insertAt: number }>,
-  deniedPermissions: Array<{ item: PermissionDeniedItem; insertAt: number }>,
+  permissionResponses: Array<{ item: PermissionResponseItem; insertAt: number }>,
   elicitationSummaries: Array<{ item: ElicitationSummaryItem; insertAt: number }>,
 ): ActivityItem[] {
-  if (userMessages.length === 0 && deniedPermissions.length === 0 && elicitationSummaries.length === 0) return agentItems;
+  if (userMessages.length === 0 && permissionResponses.length === 0 && elicitationSummaries.length === 0) return agentItems;
 
   type Slot = { insertAt: number; ai: ActivityItem };
   const slots: Slot[] = [
     ...userMessages.map(({ item, insertAt }) => ({ insertAt, ai: { type: "userMessage" as const, item } })),
-    ...deniedPermissions.map(({ item, insertAt }) => ({ insertAt, ai: { type: "permissionDenied" as const, item } })),
+    ...permissionResponses.map(({ item, insertAt }) => ({ insertAt, ai: { type: "permissionResponse" as const, item } })),
     ...elicitationSummaries.map(({ item, insertAt }) => ({ insertAt, ai: { type: "elicitationSummary" as const, item } })),
   ].sort((a, b) => a.insertAt - b.insertAt);
 

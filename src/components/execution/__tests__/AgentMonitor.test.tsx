@@ -2,6 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { AgentMonitor } from "../AgentMonitor";
 
+vi.mock("../AgentActivityPanel", () => ({
+  AgentActivityPanel: () => null,
+}));
+
 const baseExecution = {
   id: 1,
   task_id: null,

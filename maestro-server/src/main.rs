@@ -24,11 +24,11 @@ use agent_client_protocol as acp;
 use acp::schema::{
     ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, Implementation,
     InitializeRequest, KillTerminalRequest, KillTerminalResponse, NewSessionRequest,
-    PermissionOptionId, ProtocolVersion, ReleaseTerminalRequest, ReleaseTerminalResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, SetSessionModelRequest, TerminalExitStatus,
-    TerminalId, TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse,
+    PermissionOptionId, PromptRequest, ProtocolVersion, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
+    SetSessionModelRequest, TerminalExitStatus, TerminalId, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
 use maestro_protocol::{
     read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, FileReadRequest, FileReadResponse,
@@ -36,7 +36,7 @@ use maestro_protocol::{
     ModelInfo as ProtocolModelInfo, PermissionRequest as MaestroPermissionRequest,
     ElicitationRequest as MaestroElicitationRequest, PromptCapabilitiesInfo, ServerRequest,
     ServerResponse, SessionModelState as ProtocolSessionModelState, SessionUpdate,
-    SetModelOkResponse, SpawnResponse, TerminalOutput,
+    SetModelOkResponse, SpawnResponse, TerminalOutput, TurnEnded,
 };
 use ignore::WalkBuilder;
 use tokio::io::AsyncWriteExt;
@@ -71,27 +71,49 @@ fn truncate_buf(buf: &mut String, limit: usize) {
     }
 }
 
-fn fuzzy_score(haystack: &str, needle: &str) -> usize {
-    if needle.is_empty() {
-        return 1;
+fn fuzzy_score(path: &str, query: &str) -> i64 {
+    if query.is_empty() {
+        let depth = path.chars().filter(|c| *c == '/').count();
+        return 1000 - depth as i64;
     }
-    let mut score = 0usize;
-    let mut hay_chars = haystack.chars().peekable();
-    for nc in needle.chars() {
-        let mut found = false;
-        while let Some(&hc) = hay_chars.peek() {
-            hay_chars.next();
-            if hc == nc {
-                score += 1;
-                found = true;
-                break;
+
+    let path_lower = path.to_lowercase();
+    let query_lower = query.to_lowercase();
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    let basename_lower = basename.to_lowercase();
+
+    let mut score: i64 = 0;
+
+    if basename_lower == query_lower {
+        score += 100;
+    } else if basename_lower.starts_with(&query_lower) {
+        score += 50;
+    } else if basename_lower.contains(&query_lower) {
+        score += 30;
+    } else if path_lower.contains(&query_lower) {
+        score += 20;
+    } else {
+        let mut chars = path_lower.chars().peekable();
+        let mut matched = 0i64;
+        for qc in query_lower.chars() {
+            let mut found = false;
+            while let Some(&hc) = chars.peek() {
+                chars.next();
+                if hc == qc {
+                    matched += 1;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                return 0;
             }
         }
-        if !found {
-            return 0;
-        }
+        score += matched;
     }
-    score
+
+    score -= (path.len() as i64) / 10;
+    score.max(1)
 }
 
 fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
@@ -101,8 +123,7 @@ fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
         return Err(format!("Not a directory: {}", req.cwd));
     }
 
-    let query_lower = req.query.to_lowercase();
-    let mut results: Vec<(usize, String)> = Vec::new();
+    let mut results: Vec<(i64, String)> = Vec::new();
 
     let walker = WalkBuilder::new(root)
         .hidden(false)
@@ -122,13 +143,13 @@ fn handle_file_search(req: &FileSearchRequest) -> Result<Vec<String>, String> {
             Err(_) => continue,
         };
 
-        let score = fuzzy_score(&rel_path.to_lowercase(), &query_lower);
-        if score > 0 || query_lower.is_empty() {
+        let score = fuzzy_score(&rel_path, &req.query);
+        if score > 0 {
             results.push((score, rel_path));
         }
     }
 
-    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     results.truncate(limit);
     Ok(results.into_iter().map(|(_, p)| p).collect())
 }
@@ -550,7 +571,7 @@ async fn spawn_acp_session(
                     }
                 };
                 let models = convert_acp_models(session_response.models.as_ref());
-                let mut session = match cx.attach_session(session_response, vec![]) {
+                let session = match cx.attach_session(session_response, vec![]) {
                     Ok(s) => s,
                     Err(e) => {
                         let _ = ready_tx.send(Err(format!("ACP attach_session failed: {}", e)));
@@ -565,13 +586,40 @@ async fn spawn_acp_session(
                 while let Some(cmd) = cmd_rx.recv().await {
                     match cmd {
                         SessionCommand::Prompt(content) => {
-                            if let Err(_e) = session.send_prompt(&content) {
-                                // Prompt send failed — session may be dead.
-                                // The connection task will exit on its own.
+                            let so = Arc::clone(&so);
+                            let sid = sid.clone();
+                            let result = session
+                                .connection()
+                                .send_request_to(
+                                    acp::Agent,
+                                    PromptRequest::new(
+                                        session.session_id().clone(),
+                                        vec![content.into()],
+                                    ),
+                                )
+                                .on_receiving_result(async move |result| {
+                                    let stop_reason = match result {
+                                        Ok(resp) => {
+                                            serde_json::to_value(&resp.stop_reason)
+                                                .ok()
+                                                .and_then(|v| v.as_str().map(str::to_owned))
+                                                .unwrap_or_else(|| "end_turn".to_string())
+                                        }
+                                        Err(_) => "error".to_string(),
+                                    };
+                                    let msg = MaestroRpcMessage::Response(
+                                        ServerResponse::TurnEnded(TurnEnded { session_id: sid, stop_reason }),
+                                    );
+                                    let _ = send_response(&so, &msg).await;
+                                    Ok(())
+                                });
+                            if result.is_err() {
                                 break;
                             }
                         }
                         SessionCommand::PromptStructured(blocks) => {
+                            let so = Arc::clone(&so);
+                            let sid = sid.clone();
                             let content_blocks: Vec<acp::schema::ContentBlock> = blocks
                                 .into_iter()
                                 .filter_map(|b| serde_json::from_value(b).ok())
@@ -580,12 +628,27 @@ async fn spawn_acp_session(
                                 .connection()
                                 .send_request_to(
                                     acp::Agent,
-                                    acp::schema::PromptRequest::new(
+                                    PromptRequest::new(
                                         session.session_id().clone(),
                                         content_blocks,
                                     ),
                                 )
-                                .on_receiving_result(async |_result| Ok(()));
+                                .on_receiving_result(async move |result| {
+                                    let stop_reason = match result {
+                                        Ok(resp) => {
+                                            serde_json::to_value(&resp.stop_reason)
+                                                .ok()
+                                                .and_then(|v| v.as_str().map(str::to_owned))
+                                                .unwrap_or_else(|| "end_turn".to_string())
+                                        }
+                                        Err(_) => "error".to_string(),
+                                    };
+                                    let msg = MaestroRpcMessage::Response(
+                                        ServerResponse::TurnEnded(TurnEnded { session_id: sid, stop_reason }),
+                                    );
+                                    let _ = send_response(&so, &msg).await;
+                                    Ok(())
+                                });
                             if result.is_err() {
                                 break;
                             }
