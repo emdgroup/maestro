@@ -539,6 +539,11 @@ for dir in .claude .config/opencode .opencode .gemini .config/kilo .kilo .codex;
   rm -f "./$dir/cache/gsd-update-check.json"
   rm -f "$HOME/$dir/cache/gsd-update-check.json"
 done
+
+# Clear the shared tool-agnostic cache written by gsd-check-update.js hook (#2784).
+# The hook uses ~/.cache/gsd/gsd-update-check.json regardless of runtime; clear it
+# so the statusline stops showing the stale "⬆ /gsd-update" indicator after update.
+rm -f "$HOME/.cache/gsd/gsd-update-check.json"
 ```
 
 The SessionStart hook (`gsd-check-update.js`) writes to the detected runtime's cache directory, so preferred/env-derived paths and default paths must all be cleared to prevent stale update indicators.
@@ -568,7 +573,7 @@ Check for gsd-local-patches/backup-meta.json in the config directory.
 
 ```
 Local patches were backed up before the update.
-Run /gsd-reapply-patches to merge your modifications into the new version.
+Run /gsd-update --reapply to merge your modifications into the new version.
 ```
 
 **If no patches:** Continue normally.
