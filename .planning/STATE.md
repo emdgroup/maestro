@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: ACP Integration
 status: completed
-last_updated: "2026-04-29T18:00:58.913Z"
+last_updated: "2026-05-01T19:38:10.500Z"
 progress:
   total_phases: 8
   completed_phases: 6
