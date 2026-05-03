@@ -548,6 +548,7 @@ increases monotonically across waves. `{status}` is `complete` (success),
        only (STATE.md and ROADMAP.md are excluded automatically). Do NOT skip or defer
        this commit — the orchestrator force-removes the worktree after you return, and
        any uncommitted SUMMARY.md will be permanently lost (#2070).
+       REQUIRED ORDER: Write SUMMARY.md → commit → only then any narration. No text between Write and commit (truncation risk; #2070 rescue is not primary defense).
        </parallel_execution>
 
        <execution_context>
@@ -602,6 +603,7 @@ increases monotonically across waves. `{status}` is `complete` (success),
        <sequential_execution>
        You are running as a SEQUENTIAL executor agent on the main working tree.
        Use normal git commits (with hooks). Do NOT use --no-verify.
+       REQUIRED ORDER: Write SUMMARY.md → commit → only then any narration. No text between Write and commit (truncation risk; #2070 rescue is not primary defense).
        </sequential_execution>
    ```
 
@@ -1136,7 +1138,7 @@ REVIEW_STATUS=$(sed -n '/^---$/,/^---$/p' "$REVIEW_FILE" | grep "^status:" | hea
 If REVIEW_STATUS is not "clean" and not "skipped" and not empty, display:
 ```
 Code review found issues. Consider running:
-/gsd-code-review-fix ${PHASE_NUMBER}
+/gsd-code-review ${PHASE_NUMBER} --fix
 ```
 
 **Error handling:** If the Skill invocation fails or throws, catch the error, display "Code review encountered an error (non-blocking): {error}" and proceed to next step. Review failures must never block execution.
