@@ -597,7 +597,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
               <button
                 type="button"
                 onClick={onCancel}
-                className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 hover:bg-destructive/15 transition-colors relative"
+                className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
                 title="Cancel"
               >
                 <svg

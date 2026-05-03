@@ -91,9 +91,9 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const state = isDead ? deadState : liveState;
 
   useEffect(() => {
-    if (isDead || state.isInitializing) return;
-    setActivityStatus(execution.id, "working");
-  }, [isDead, state.isInitializing, execution.id, setActivityStatus]);
+    if (isDead || state.isInitializing || !modelsLoaded) return;
+    setActivityStatus(execution.id, "idle");
+  }, [isDead, state.isInitializing, modelsLoaded, execution.id, setActivityStatus]);
 
   useEffect(() => {
     if (isDead) return;

@@ -811,7 +811,7 @@ pub async fn spawn_interactive_execution(
     session_name: Option<String>,
     worktree_id: Option<i32>,
     task_id: Option<i32>,
-    task_description: Option<String>,
+    _task_description: Option<String>,
 ) -> Result<i32, String> {
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
@@ -907,13 +907,6 @@ pub async fn spawn_interactive_execution(
         id
     };
 
-    // Build claude CLI args — use `-n <session_name>` for named sessions when available.
-    // This allows claude to resume or identify the session by name.
-    let claude_args: Vec<String> = match &session_name {
-        Some(name) => vec!["-n".to_string(), name.clone()],
-        None => vec![],
-    };
-
     // Step 3: Spawn PTY session — local or remote depending on project type
     if is_remote {
         let conn_id = project
@@ -924,48 +917,26 @@ pub async fn spawn_interactive_execution(
             .await
             .ok_or("SSH session not active — connect to the remote host first")?;
 
-        // Start the user's configured login shell via SSH request_shell. We send
-        // `cd && claude` as input so the user can quit claude and still have a working shell.
         let pty_handle = ssh_session
             .spawn_remote_pty(80, 24, log_id)
             .await?;
 
-        // Send `cd` + `claude [-n <name>]` as shell input so claude starts automatically.
-        // The shell buffers stdin, so sending immediately is safe — no sleep needed.
-        // Single-quote the path and session name to prevent command injection.
+        // cd into the worktree directory and clear the screen.
+        // Single-quote the path to prevent command injection.
         let escaped_path = worktree_abs_path.replace('\'', "'\\''");
-        let claude_cmd = match &session_name {
-            Some(name) => {
-                let escaped_name = name.replace('\'', "'\\''");
-                format!("claude -n '{}'", escaped_name)
-            }
-            None => "claude".to_string(),
-        };
-        let init_cmd = format!("cd '{}' && clear && {}\n", escaped_path, claude_cmd);
+        let init_cmd = format!("cd '{}' && clear\n", escaped_path);
         pty_handle.write_tx
             .send(crate::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
             .await
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
-        // Inject task description into PTY 2s after spawn (gives claude time to start).
-        if let Some(ref desc) = task_description {
-            if !desc.trim().is_empty() {
-                let desc_text = desc.clone();
-                let write_tx = pty_handle.write_tx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let input = format!("{}\r", desc_text);
-                    let _ = write_tx.send(crate::ssh::SshWriteOp::Data(input.into_bytes())).await;
-                });
-            }
-        }
-
         app_state.ssh_pty_sessions.lock().await.insert(log_id, pty_handle);
     } else {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let pty_session = crate::process::spawn_agent_cli_pty(
             log_id,
-            "claude".to_string(),
-            claude_args,
+            shell,
+            vec![],
             std::path::PathBuf::from(&worktree_abs_path),
         )
         .await?;
@@ -976,20 +947,6 @@ pub async fn spawn_interactive_execution(
             log_id,
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
-
-        // Inject task description into PTY 2s after spawn (gives claude time to start).
-        if let Some(ref desc) = task_description {
-            if !desc.trim().is_empty() {
-                let desc_text = desc.clone();
-                let session_clone = Arc::clone(sessions.get(&log_id).unwrap());
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let session_lock = session_clone.lock().await;
-                    let input = format!("{}\r", desc_text);
-                    let _ = session_lock.write_input(input.as_bytes()).await;
-                });
-            }
-        }
 
         drop(sessions);
     }
