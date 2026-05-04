@@ -1,7 +1,6 @@
 pub mod project;
 pub mod task;
 pub mod worktree;
-pub mod execution_log;
 pub mod settings;
 pub mod sync;
 pub mod review;
@@ -13,8 +12,7 @@ pub mod diff;
 pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
 pub use task::{Task, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, TASK_SELECT};
-pub use worktree::{Worktree, WorktreeWithStatus, AheadBehind, ExecutionWithTask, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
-pub use execution_log::{ExecutionLog, ExecutionStatus, ErrorEvent};
+pub use worktree::{Worktree, WorktreeWithStatus, AheadBehind, ActiveSessionInfo, SessionListEntryDto, PtySessionMeta, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use settings::AppSettings;
 pub use sync::{SyncResult, GitHubIssue, JiraIssue, JiraSearchResponse, JiraFields};
 pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};

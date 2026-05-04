@@ -6,25 +6,25 @@ vi.mock("../AgentActivityPanel", () => ({
   AgentActivityPanel: () => null,
 }));
 
-const baseExecution = {
-  id: 1,
+const baseSession = {
+  session_key: 1,
   task_id: null,
   task_name: null,
   session_name: "test-session",
   branch_name: "main",
-  status: "running",
-  started_at: "2026-04-21T00:00:00Z",
-  completed_at: null,
-  terminal_output: null,
   agent_id: null,
+  execution_mode: "pty",
+  started_at: "2026-04-21T00:00:00Z",
+  supports_session_list: false,
+  supports_session_load: false,
+  supports_session_close: false,
 };
 
 const defaultProps = {
-  executions: [] as any[],
-  selectedExecutionId: null,
+  sessions: [] as typeof baseSession[],
+  selectedSessionKey: null,
   onSelect: vi.fn(),
   search: "",
-  statusFilter: "All" as const,
 };
 
 describe("AgentMonitor session-type badge (SPAWN-03)", () => {
@@ -32,7 +32,7 @@ describe("AgentMonitor session-type badge (SPAWN-03)", () => {
     render(
       <AgentMonitor
         {...defaultProps}
-        executions={[{ ...baseExecution, execution_mode: "acp", agent_id: "claude-code" }]}
+        sessions={[{ ...baseSession, execution_mode: "acp", agent_id: "claude-code" }]}
       />,
     );
     expect(screen.getByText("Claude Code")).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe("AgentMonitor session-type badge (SPAWN-03)", () => {
     render(
       <AgentMonitor
         {...defaultProps}
-        executions={[{ ...baseExecution, execution_mode: "pty" }]}
+        sessions={[{ ...baseSession, execution_mode: "pty" }]}
       />,
     );
     expect(screen.getByText("Terminal")).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("AgentMonitor session-type badge (SPAWN-03)", () => {
     render(
       <AgentMonitor
         {...defaultProps}
-        executions={[{ ...baseExecution, execution_mode: null }]}
+        sessions={[{ ...baseSession, execution_mode: "pty" }]}
       />,
     );
     expect(screen.getByText("Terminal")).toBeInTheDocument();

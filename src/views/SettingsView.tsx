@@ -3,15 +3,20 @@ import { SettingsPage, SettingsPageHandle } from "@/components/common/SettingsPa
 
 interface SettingsViewProps {
   projectId: number;
+  connectionId: number | null;
+  projectPath: string;
 }
 
-/**
- * SettingsView - Page-level orchestrator for the project settings screen
- * Manages model defaults, MCP servers, and skills configuration
- */
 export const SettingsView = forwardRef<SettingsPageHandle, SettingsViewProps>(
-  ({ projectId }, ref) => {
-    return <SettingsPage ref={ref} projectId={projectId} />;
+  ({ projectId, connectionId, projectPath }, ref) => {
+    return (
+      <SettingsPage
+        ref={ref}
+        projectId={projectId}
+        connectionId={connectionId}
+        projectPath={projectPath}
+      />
+    );
   },
 );
 

@@ -6,18 +6,16 @@ import {
   useImperativeHandle,
   useEffect,
   useLayoutEffect,
-  useId,
 } from "react";
 import { createPortal } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
 import { cn } from "@/lib";
-import { humanizeTokenCount } from "@/lib";
 import { api } from "@/lib/tauri-utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/ui/tooltip";
 import type { JsonValue } from "@/types/bindings";
 import type { AvailableCommand, UsageState } from "./types";
 import type { MentionEntry } from "./MentionEntry";
+import { LiquidContextIndicator } from "./LiquidContextIndicator";
 
 export type PermissionMode = "ask" | "auto" | "plan";
 
@@ -76,78 +74,6 @@ function mimeForPath(path: string): string | undefined {
   return MIME_MAP[ext];
 }
 
-function LiquidContextIndicator({ usage }: { usage: UsageState }) {
-  const clipId = useId();
-  const ratio = Math.min(1, Math.max(0, usage.size > 0 ? usage.used / usage.size : 0));
-  const fillY = 20 - ratio * 20;
-  const q1Y = fillY - 1.2;
-  const q2Y = fillY + 1.2;
-
-  const isCritical = ratio >= 0.85;
-  const isWarning = ratio >= 0.75;
-  const isAmber = ratio >= 0.6;
-
-  const fillColor = isCritical ? "var(--destructive)" : isAmber ? "var(--warning)" : "var(--success)";
-  const ringColor = isCritical
-    ? "var(--destructive)"
-    : isWarning
-      ? "var(--warning)"
-      : "var(--border)";
-  const ringOpacity = isWarning || isCritical ? 0.5 : 1;
-
-  const pct = Math.round(ratio * 100);
-  const costStr =
-    usage.cost !== null
-      ? ` · ${usage.cost.amount.toFixed(usage.cost.amount < 0.01 ? 4 : 2)} ${usage.cost.currency}`
-      : "";
-  const tooltipText =
-    usage.size <= 1
-      ? "Context window"
-      : `${pct}% · ${humanizeTokenCount(usage.used)} / ${humanizeTokenCount(usage.size)}${costStr}`;
-
-  const fillPath = `M0 ${fillY.toFixed(2)} Q4 ${q1Y.toFixed(2)} 10 ${fillY.toFixed(2)} Q16 ${q2Y.toFixed(2)} 20 ${fillY.toFixed(2)} L20 20 L0 20 Z`;
-  const highlightPath = `M0 ${fillY.toFixed(2)} Q4 ${q1Y.toFixed(2)} 10 ${fillY.toFixed(2)} Q16 ${q2Y.toFixed(2)} 20 ${fillY.toFixed(2)}`;
-
-  const pulseStyle: React.CSSProperties | undefined = isCritical
-    ? { animation: "ctx-pulse 1.4s ease-in-out infinite" }
-    : isWarning
-      ? { animation: "ctx-pulse 2s ease-in-out infinite" }
-      : undefined;
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger className="inline-flex items-center">
-          <span className="w-4 h-4 origin-center cursor-help" style={pulseStyle}>
-              <svg viewBox="0 0 20 20" className="w-full h-full block">
-                <defs>
-                  <clipPath id={clipId}>
-                    <circle cx="10" cy="10" r="7.5" />
-                  </clipPath>
-                </defs>
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="8.5"
-                  fill="none"
-                  stroke={ringColor}
-                  strokeOpacity={ringOpacity}
-                  strokeWidth="1.5"
-                />
-                <g clipPath={`url(#${clipId})`}>
-                  <path d={fillPath} fill={fillColor} />
-                  <path d={highlightPath} stroke="white" strokeWidth="0.7" fill="none" opacity="0.35" />
-                </g>
-              </svg>
-            </span>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <span className="text-[11px]">{tooltipText}</span>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
 
 export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
   function ComposeBar(
@@ -295,42 +221,53 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
 
       setIsSending(true);
       try {
-        const contentBlocks: JsonValue[] = [];
-        let messageText = trimmed;
-        for (const mention of mentions) {
-          messageText = messageText.replace(`@${mention.filePath}`, "").trim();
-        }
-        contentBlocks.push({ type: "text", text: messageText });
-
-        for (const mention of mentions) {
-          const uri = `file://${projectPath ?? ""}/${mention.filePath}`;
-          if (embeddedContext) {
-            try {
-              const fileText = await api.readSessionFile(logId, mention.filePath);
-              const mime = mimeForPath(mention.filePath);
-              contentBlocks.push({
-                type: "resource",
-                resource: {
-                  uri,
-                  text: fileText,
-                  ...(mime ? { mimeType: mime } : {}),
-                },
-              });
-            } catch {
-              contentBlocks.push({
-                type: "resource_link",
-                name: mention.displayName,
-                uri,
-              });
+        const fileContents = new Map<string, { text: string; mime: string | undefined } | null>();
+        if (embeddedContext) {
+          const results = await Promise.allSettled(
+            mentions.map(async (m) => {
+              const text = await api.readSessionFile(logId, m.filePath);
+              return { path: m.filePath, text, mime: mimeForPath(m.filePath) };
+            }),
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              fileContents.set(r.value.path, { text: r.value.text, mime: r.value.mime });
             }
-          } else {
-            contentBlocks.push({
-              type: "resource_link",
-              name: mention.displayName,
-              uri,
-            });
           }
         }
+
+        const contentBlocks: JsonValue[] = [];
+        const sortedMentions = [...mentions].sort((a, b) => {
+          const idxA = trimmed.indexOf(`@${a.filePath}`);
+          const idxB = trimmed.indexOf(`@${b.filePath}`);
+          return idxA - idxB;
+        });
+
+        let cursor = 0;
+        for (const mention of sortedMentions) {
+          const marker = `@${mention.filePath}`;
+          const idx = trimmed.indexOf(marker, cursor);
+          if (idx === -1) continue;
+
+          const before = trimmed.slice(cursor, idx);
+          if (before) contentBlocks.push({ type: "text", text: before });
+
+          const uri = `file://${projectPath ?? ""}/${mention.filePath}`;
+          const fetched = fileContents.get(mention.filePath);
+          if (fetched) {
+            contentBlocks.push({
+              type: "resource",
+              resource: { uri, text: fetched.text, ...(fetched.mime ? { mimeType: fetched.mime } : {}) },
+            });
+          } else {
+            contentBlocks.push({ type: "resource_link", name: mention.displayName, uri });
+          }
+
+          cursor = idx + marker.length;
+        }
+
+        const trailing = trimmed.slice(cursor);
+        if (trailing) contentBlocks.push({ type: "text", text: trailing });
 
         onSend(trimmed, contentBlocks as JsonValue);
         setValue("");
@@ -359,6 +296,14 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
     }, []);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        const modes: PermissionMode[] = ["ask", "auto", "plan"];
+        const idx = modes.indexOf(permissionMode);
+        onPermissionModeChange(modes[(idx + 1) % modes.length]);
+        return;
+      }
+
       if (showMentions && mentionSuggestions.length > 0) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
@@ -409,6 +354,12 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
           setShowCommands(false);
           return;
         }
+      }
+
+      if (e.key === "Escape" && isProcessing) {
+        e.preventDefault();
+        onCancel();
+        return;
       }
 
       if (e.key === "Enter" && !e.shiftKey) {
@@ -635,7 +586,10 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(
 
           {/* Meta row: context indicator · model · permission mode */}
           <div className="flex items-center gap-1 px-3 pb-2">
-            <LiquidContextIndicator usage={usageState ?? { used: 0, size: 1, cost: null }} />
+            <LiquidContextIndicator
+              usage={usageState ?? { used: 0, size: 1, cost: null }}
+              onCompact={isProcessing ? undefined : () => onSend("/compact")}
+            />
 
             {models.length > 0 && (
               <Select

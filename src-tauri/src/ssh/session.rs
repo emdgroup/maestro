@@ -648,6 +648,58 @@ impl RemoteSshSession {
         Ok(channel)
     }
 
+    /// Open an SFTP subsystem channel on the current SSH connection.
+    ///
+    /// Opens a session channel, requests the "sftp" subsystem, and returns a high-level
+    /// `SftpSession`. On channel open failure, reconnects once (same pattern as
+    /// `execute_command`). The returned session owns the channel — drop it when done.
+    pub async fn open_sftp_session(&self) -> Result<russh_sftp::client::SftpSession, SshError> {
+        if !self.is_connected().await {
+            self.reconnect_if_needed().await?;
+        }
+
+        let channel = {
+            let open_result = {
+                let guard = self.handle.lock().await;
+                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                    "No active SSH session".to_string(),
+                ))?;
+                handle.channel_open_session().await
+            };
+
+            match open_result {
+                Ok(ch) => ch,
+                Err(_) => {
+                    *self.state.lock().await = SshConnectionState::Disconnected;
+                    self.reconnect_if_needed().await?;
+                    let guard = self.handle.lock().await;
+                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                        "No active SSH session after reconnect".to_string(),
+                    ))?;
+                    handle
+                        .channel_open_session()
+                        .await
+                        .map_err(|e| SshError::ConnectionError(
+                            format!("Failed to create SFTP channel after reconnect: {}", e),
+                        ))?
+                }
+            }
+        };
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| SshError::ConnectionError(
+                format!("Failed to request SFTP subsystem: {}", e),
+            ))?;
+
+        russh_sftp::client::SftpSession::new(channel.into_stream())
+            .await
+            .map_err(|e| SshError::ConnectionError(
+                format!("Failed to initialize SFTP session: {}", e),
+            ))
+    }
+
     /// Reconnect if needed with exponential backoff.
     /// Holds state lock across check+transition to prevent concurrent reconnection.
     async fn reconnect_if_needed(&self) -> Result<(), SshError> {
@@ -853,31 +905,19 @@ impl RemoteSshSession {
 
 /// Clean up all SSH PTY sessions associated with a given connection_id.
 ///
-/// Iterates `ssh_pty_sessions`, collects all log_ids (SSH PTY sessions are always
-/// remote — local sessions use `pty_sessions`), persists terminal history to the DB,
-/// marks execution_logs as failed with `error_event = ssh_connection_lost`, and
-/// removes the handles from the map. Reader tasks are signalled to stop via the
-/// `process_ended` flag + `notify`.
-///
-/// Called from `spawn_heartbeat_task` on connection loss (both initial loss and after
-/// all reconnect attempts are exhausted).
+/// Signals reader tasks to stop, removes handles from the in-memory map,
+/// and removes PTY session metadata. Called from `spawn_heartbeat_task` on
+/// connection loss.
 async fn cleanup_pty_sessions_for_connection(
     app_state: &Arc<crate::db::AppState>,
     _connection_id: i32,
 ) {
     let mut log_ids_to_cleanup: Vec<i32> = Vec::new();
-    let mut history_snapshots: Vec<(i32, String)> = Vec::new();
 
     {
         let sessions = app_state.ssh_pty_sessions.lock().await;
         for (log_id, handle) in sessions.iter() {
             log_ids_to_cleanup.push(*log_id);
-            // Snapshot terminal history before marking failed so the UI can show it
-            if let Ok(hist) = handle.history.try_lock() {
-                if !hist.is_empty() {
-                    history_snapshots.push((*log_id, hist.clone()));
-                }
-            }
             // Signal reader task to stop
             handle.process_ended.store(true, Ordering::Release);
             handle.notify.notify_one();
@@ -888,37 +928,23 @@ async fn cleanup_pty_sessions_for_connection(
         return;
     }
 
-    // Persist history and mark as failed in DB
-    if let Ok(conn) = app_state.db.lock() {
-        let now = chrono::Utc::now().to_rfc3339();
-
-        for (log_id, snapshot) in &history_snapshots {
-            let _ = conn.execute(
-                "UPDATE execution_logs SET terminal_output = ?1 WHERE id = ?2",
-                rusqlite::params![snapshot, log_id],
-            );
-        }
-
-        for log_id in &log_ids_to_cleanup {
-            let _ = conn.execute(
-                "UPDATE execution_logs SET status = 'failed', completed_at = ?1, \
-                 error_event = json_object('error_type', 'ssh_connection_lost', \
-                 'message', 'SSH connection lost', \
-                 'suggestions', json_array(), \
-                 'detected_at', ?1) \
-                 WHERE id = ?2 AND status = 'running'",
-                rusqlite::params![&now, log_id],
-            );
-        }
-    }
-
-    // Remove handles from the map
+    // Remove handles from the sessions map
     {
         let mut sessions = app_state.ssh_pty_sessions.lock().await;
         for log_id in &log_ids_to_cleanup {
             sessions.remove(log_id);
         }
     }
+
+    // Remove PTY metadata entries
+    {
+        let mut meta = app_state.pty_session_meta.lock().await;
+        for log_id in &log_ids_to_cleanup {
+            meta.remove(log_id);
+        }
+    }
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
 }
 
 /// Spawn a background heartbeat task for an SSH connection.

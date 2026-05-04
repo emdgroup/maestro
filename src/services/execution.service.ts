@@ -1,68 +1,118 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib";
 import { toast } from "sonner";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 
-/**
- * Execution service providing type-safe operations for task execution and terminal management.
- * All execution and terminal-related IPC calls are centralized here.
- */
-
-/**
- * Query key factory for execution operations
- * Execution operations are primarily side-effects; included for consistency
- */
 export const executionQueryKeys = {
-  all: ["executions"] as const,
-  details: () => [...executionQueryKeys.all, "detail"] as const,
-  detail: (executionId: number) => [...executionQueryKeys.details(), executionId] as const,
-  withTaskInfo: (projectId: number) =>
-    [...executionQueryKeys.all, "withTaskInfo", projectId] as const,
-  structuredOutput: (logId: number) =>
-    [...executionQueryKeys.all, "structuredOutput", logId] as const,
+  activeSessions: ["activeSessions"] as const,
+  sessionList: (agentId: string, cwd: string, connectionId: number | null) =>
+    ["sessionList", agentId, cwd, connectionId] as const,
+  agentModelsCache: (projectId: number, agentId: string) =>
+    ["agentModelsCache", projectId, agentId] as const,
 };
 
 /**
- * Query hook for fetching executions with linked task info.
- * Polls every 2 seconds for live updates in the Agents view sidebar.
+ * Event-driven active session list. Refreshes on "sessions-changed" Tauri event.
+ * No polling — sidebar stays in sync without DB queries.
  */
-export function useExecutionsWithTaskInfoQuery(projectId: number | undefined) {
+export function useActiveSessionsQuery() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("sessions-changed", () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [queryClient]);
+
   return useQuery({
-    queryKey: executionQueryKeys.withTaskInfo(projectId ?? 0),
-    queryFn: () => api.listExecutionsWithTaskInfo(projectId!),
-    enabled: projectId != null,
-    refetchInterval: 2000,
+    queryKey: executionQueryKeys.activeSessions,
+    queryFn: () => api.getActiveSessions(),
   });
 }
 
 /**
- * Mutation hook for spawning agent execution
- * @deprecated Use useSpawnInteractiveExecutionMutation instead.
- * The sidecar-based spawn_agent_execution IPC has been removed.
+ * On-demand query for ACP session history from the agent.
+ * Only fires when enabled=true (e.g. when history panel is open).
  */
-export function useSpawnExecutionMutation() {
+export function useSessionListQuery(
+  agentId: string | null,
+  cwd: string | null,
+  connectionId: number | null,
+  enabled: boolean = true,
+) {
+  return useQuery({
+    queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connectionId),
+    queryFn: () => api.listAcpSessions(agentId!, cwd!, connectionId, null),
+    enabled: enabled && agentId != null && cwd != null,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Load a stored ACP session, creating a new active session that replays history.
+ */
+export function useLoadAcpSessionMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (_args: {
-      projectId: number;
-      taskId: number;
-      repoPath: string;
+    mutationFn: async ({
+      agentId,
+      sessionId,
+      cwd,
+      connectionId,
+      sessionName,
+    }: {
+      agentId: string;
+      sessionId: string;
+      cwd: string;
+      connectionId: number | null;
+      sessionName?: string | null;
     }) => {
-      throw new Error(
-        "spawn_agent_execution has been removed. Use spawnInteractiveExecution instead."
-      );
+      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
     onError: (error) => {
-      toast.error(`Failed to spawn execution: ${error}`);
+      toast.error(`Failed to load session: ${error}`);
+    },
+  });
+}
+
+/**
+ * Close a stored ACP session on the agent server (frees agent resources).
+ */
+export function useCloseStoredAcpSessionMutation() {
+  return useMutation({
+    mutationFn: async ({
+      agentId,
+      sessionId,
+      cwd,
+      connectionId,
+    }: {
+      agentId: string;
+      sessionId: string;
+      cwd: string;
+      connectionId: number | null;
+    }) => {
+      return await api.closeAcpSession(agentId, sessionId, cwd, connectionId);
+    },
+    onError: (error) => {
+      toast.error(`Failed to close session: ${error}`);
     },
   });
 }
 
 /**
  * Mutation hook for spawning an interactive (task-free) PTY session on a branch.
- * Returns the log_id which can be used as the session key for attach_terminal.
- *
- * taskId and taskDescription are optional — callers from AgentsView omit them,
- * callers from TaskCard pass them to wire task context into the session.
+ * Returns the session_key for attach_terminal.
  */
 export function useSpawnInteractiveExecutionMutation() {
   const queryClient = useQueryClient();
@@ -90,146 +140,11 @@ export function useSpawnInteractiveExecutionMutation() {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
     onError: (error) => {
       toast.error(`Failed to spawn interactive session: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for renaming an execution (updating its session_name).
- */
-export function useRenameExecutionMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ executionId, sessionName }: { executionId: number; sessionName: string }) => {
-      return await api.renameExecution(executionId, sessionName);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
-    },
-    onError: (error) => {
-      toast.error(`Failed to rename session: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for deleting an execution log (and cleaning up its PTY session)
- */
-export function useDeleteExecutionMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ executionId }: { executionId: number }) => {
-      return await api.deleteExecutionLog(executionId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
-      toast.success("Session deleted");
-    },
-    onError: (error) => {
-      toast.error(`Failed to delete session: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for pausing execution
- */
-export function usePauseExecutionMutation() {
-  return useMutation({
-    mutationFn: async ({ taskId }: { taskId: number }) => {
-      return await api.pauseAgentExecution(taskId);
-    },
-    onError: (error) => {
-      toast.error(`Failed to pause execution: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for resuming execution
- */
-export function useResumeExecutionMutation() {
-  return useMutation({
-    mutationFn: async ({
-      taskId,
-      projectId,
-      repoPath,
-    }: {
-      taskId: number;
-      projectId: number;
-      repoPath: string;
-    }) => {
-      return await api.resumeAgentExecution(taskId, projectId, repoPath);
-    },
-    onError: (error) => {
-      toast.error(`Failed to resume execution: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for attaching to execution terminal
- */
-export function useAttachTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({
-      taskId,
-      outputChannel,
-    }: {
-      taskId: number;
-      outputChannel: TAURI_CHANNEL<string>;
-    }) => {
-      return await api.attachTerminal(taskId, outputChannel, null);
-    },
-    onError: (error) => {
-      toast.error(`Failed to attach terminal: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for detaching from execution terminal
- */
-export function useDetachTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({ taskId }: { taskId: number }) => {
-      return await api.detachTerminal(taskId);
-    },
-    onError: (error) => {
-      toast.error(`Failed to detach terminal: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for sending input to execution terminal
- */
-export function useSendTerminalInputMutation() {
-  return useMutation({
-    mutationFn: async ({ taskId, input }: { taskId: number; input: string }) => {
-      return await api.sendTerminalInput(taskId, input);
-    },
-    onError: (error) => {
-      toast.error(`Failed to send terminal input: ${error}`);
-    },
-  });
-}
-
-/**
- * Mutation hook for resizing execution terminal
- */
-export function useResizeTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({ taskId, cols, rows }: { taskId: number; cols: number; rows: number }) => {
-      return await api.resizeTerminal(taskId, cols, rows);
-    },
-    onError: (error) => {
-      toast.error(`Failed to resize terminal: ${error}`);
     },
   });
 }
@@ -253,10 +168,31 @@ export function useAgentDiscoveryQuery(
   });
 }
 
+/** Cached model list for an agent in a given project (.maestro/agent_models_cache.json). */
+export function useAgentModelsCacheQuery(projectId: number, agentId: string | null) {
+  return useQuery({
+    queryKey: executionQueryKeys.agentModelsCache(projectId, agentId ?? ""),
+    queryFn: () => api.getAgentModelsCache(projectId, agentId!),
+    enabled: agentId != null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
+
+/** Spawn a one-shot probe session to fetch and cache models for an agent. */
+export function useRefreshAgentModelsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, agentId }: { projectId: number; agentId: string }) =>
+      api.refreshAgentModels(projectId, agentId),
+    onSuccess: (data, { projectId, agentId }) => {
+      queryClient.setQueryData(executionQueryKeys.agentModelsCache(projectId, agentId), data);
+    },
+  });
+}
+
 /**
  * Mutation hook for spawning an ACP session for a given agent and worktree path.
- * On success, invalidates all execution queries so the sidebar refreshes immediately.
- * On error, shows a toast via sonner (consistent with other mutation hooks).
  */
 export function useSpawnAcpSessionMutation() {
   const queryClient = useQueryClient();
@@ -279,7 +215,7 @@ export function useSpawnAcpSessionMutation() {
       return await api.spawnAcpSession(agentId, cwd, sessionName, projectId, connectionId, worktreeBranch ?? null);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
     onError: (error) => {
       toast.error(`Failed to spawn ACP session: ${error}`);
@@ -288,15 +224,79 @@ export function useSpawnAcpSessionMutation() {
 }
 
 /**
- * Query hook for fetching structured output from a completed ACP session.
- * Only enabled when logId is provided (dead session view).
- * staleTime Infinity: dead sessions never change once completed.
+ * Cancel/close an active session. ACP sessions receive a CancelRequest; PTY sessions are fully killed and removed.
  */
-export function useStructuredOutputQuery(logId: number | null) {
-  return useQuery({
-    queryKey: executionQueryKeys.structuredOutput(logId ?? 0),
-    queryFn: () => api.getStructuredOutput(logId!),
-    enabled: logId != null,
-    staleTime: Infinity,
+export function useCancelActiveSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      sessionKey,
+      executionMode,
+    }: {
+      sessionKey: number;
+      executionMode: string;
+    }) => {
+      if (executionMode === "acp") {
+        return await api.cancelAcpSession(sessionKey);
+      } else {
+        return await api.closePtySession(sessionKey);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+    },
+    onError: (error) => {
+      toast.error(`Failed to close session: ${error}`);
+    },
+  });
+}
+
+export function useAttachTerminalMutation() {
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      outputChannel,
+    }: {
+      taskId: number;
+      outputChannel: TAURI_CHANNEL<string>;
+    }) => {
+      return await api.attachTerminal(taskId, outputChannel, null);
+    },
+    onError: (error) => {
+      toast.error(`Failed to attach terminal: ${error}`);
+    },
+  });
+}
+
+export function useDetachTerminalMutation() {
+  return useMutation({
+    mutationFn: async ({ taskId }: { taskId: number }) => {
+      return await api.detachTerminal(taskId);
+    },
+    onError: (error) => {
+      toast.error(`Failed to detach terminal: ${error}`);
+    },
+  });
+}
+
+export function useSendTerminalInputMutation() {
+  return useMutation({
+    mutationFn: async ({ taskId, input }: { taskId: number; input: string }) => {
+      return await api.sendTerminalInput(taskId, input);
+    },
+    onError: (error) => {
+      toast.error(`Failed to send terminal input: ${error}`);
+    },
+  });
+}
+
+export function useResizeTerminalMutation() {
+  return useMutation({
+    mutationFn: async ({ taskId, cols, rows }: { taskId: number; cols: number; rows: number }) => {
+      return await api.resizeTerminal(taskId, cols, rows);
+    },
+    onError: (error) => {
+      toast.error(`Failed to resize terminal: ${error}`);
+    },
   });
 }

@@ -60,7 +60,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub app_handle: AppHandle,
     pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
-    /// Remote interactive PTY sessions keyed by execution log_id
+    /// Remote interactive PTY sessions keyed by session key
     pub ssh_pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
     pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
     pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>,
@@ -68,7 +68,7 @@ pub struct AppState {
     /// When detach_terminal is called, the flag is set to true, causing
     /// the spawn_blocking reader to exit cleanly before a new attach starts.
     pub pty_attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
-    /// Live ACP sessions keyed by execution log_id (i32).
+    /// Live ACP sessions keyed by session key (monotonic counter).
     /// No inner Arc/Mutex needed — only IPC commands write to stdin (under outer lock)
     /// and the reader task owns stdout independently.
     pub acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
@@ -80,6 +80,10 @@ pub struct AppState {
     /// Active project lock: the project ID and the open File whose flock holds the lock.
     /// Dropping the File releases the lock (including on crash/kill-9).
     pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
+    /// Monotonic counter for assigning session keys (replaces execution_logs autoincrement).
+    pub session_counter: std::sync::atomic::AtomicI32,
+    /// In-memory metadata for active PTY sessions, keyed by session key.
+    pub pty_session_meta: tokio::sync::Mutex<HashMap<i32, crate::models::worktree::PtySessionMeta>>,
 }
 
 impl AppState {
@@ -97,6 +101,8 @@ impl AppState {
             agent_discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
             app_data_dir,
             active_project_lock: Mutex::new(None),
+            session_counter: std::sync::atomic::AtomicI32::new(1),
+            pty_session_meta: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 

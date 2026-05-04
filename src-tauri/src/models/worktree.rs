@@ -44,7 +44,6 @@ pub struct WorktreeWithStatus {
     pub git_status: String,              // raw porcelain string; empty string if clean
     pub created_at: Option<String>,
     pub task_name: Option<String>,       // from tasks table join
-    pub agent_status: Option<String>,    // from execution_logs.status join
     pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention
     pub is_orphan: bool,                 // on-disk but not in DB
     pub diff_stat: Option<String>,       // raw output of `git diff --shortstat`; None if clean
@@ -52,19 +51,39 @@ pub struct WorktreeWithStatus {
     pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
 }
 
-/// View model for the Agents view — execution log enriched with task and worktree info
+/// Active session info — in-memory only, returned by get_active_sessions
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
-pub struct ExecutionWithTask {
-    pub id: i32,
-    pub task_id: Option<i32>,            // None for interactive sessions (no task linked)
-    pub task_name: Option<String>,       // None for interactive sessions
-    pub session_name: Option<String>,    // Optional user-provided display name for interactive sessions
-    pub branch_name: Option<String>,     // from worktrees table join
-    pub status: String,                  // execution status as string
+pub struct ActiveSessionInfo {
+    pub session_key: i32,
+    pub session_name: Option<String>,
+    pub agent_id: Option<String>,
+    pub execution_mode: String,  // "acp" or "pty"
     pub started_at: String,
-    pub completed_at: Option<String>,
-    pub terminal_output: Option<String>,
-    pub execution_mode: Option<String>,  // "pty" or "acp"; Option for backward compat with LEFT JOIN
-    pub agent_id: Option<String>,        // ACP agent identifier; None for PTY sessions
+    pub task_id: Option<i32>,
+    pub task_name: Option<String>,
+    pub branch_name: Option<String>,
+    pub supports_session_list: bool,
+    pub supports_session_load: bool,
+    pub supports_session_close: bool,
+}
+
+/// TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct SessionListEntryDto {
+    pub session_id: String,
+    pub title: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+/// Metadata stored alongside a PTY session for get_active_sessions
+#[derive(Debug, Clone)]
+pub struct PtySessionMeta {
+    pub session_name: Option<String>,
+    pub started_at: String,
+    pub task_id: Option<i32>,
+    pub task_name: Option<String>,
+    pub branch_name: Option<String>,
+    pub cwd: String,
 }

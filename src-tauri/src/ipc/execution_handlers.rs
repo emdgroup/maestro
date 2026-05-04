@@ -1,8 +1,6 @@
 use std::sync::Arc;
-use tauri::State;
-use chrono::Utc;
+use tauri::{State, Emitter};
 
-use crate::models::{ExecutionLog, ExecutionStatus, ExecutionWithTask};
 use crate::db::AppState;
 use crate::ssh::SshWriteOp;
 
@@ -30,24 +28,23 @@ pub async fn drain_ready_queue(
 ) -> Result<Vec<i32>, String> {
     let _ = project_path; // reserved for future use
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Load settings to check auto_mode and max_concurrent_agents
-    let settings = crate::db::settings::load_settings(&conn)
-        .map_err(|e| format!("Failed to load settings: {}", e))?;
+    // Load settings in a block so the sync MutexGuard drops before the async lock below
+    let settings = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::db::settings::load_settings(&conn)
+            .map_err(|e| format!("Failed to load settings: {}", e))?
+    };
 
     if !settings.auto_mode {
         return Ok(vec![]);
     }
 
-    // Count currently running executions for this project
-    let running_count: i32 = conn.query_row(
-        "SELECT COUNT(*) FROM execution_logs el
-         INNER JOIN tasks t ON t.id = el.task_id
-         WHERE t.project_id = ? AND el.status = 'running'",
-        rusqlite::params![project_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("Failed to count running executions: {}", e))?;
+    // Count running ACP sessions that have a task_id (proxy for running executions)
+    let running_count: i32 = {
+        let acp = app_state.acp_sessions.lock().await;
+        acp.values().filter(|p| p.task_id.is_some()).count() as i32
+    };
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let slots_available = settings.max_concurrent_agents - running_count;
     if slots_available <= 0 {
@@ -77,104 +74,6 @@ pub async fn drain_ready_queue(
     .collect();
 
     Ok(task_ids)
-}
-
-/// Get execution logs for a task
-#[tauri::command]
-#[specta::specta]
-pub fn get_execution_logs(
-    app_state: State<Arc<AppState>>,
-    task_id: i32,
-) -> Result<Vec<ExecutionLog>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    let mut stmt = conn.prepare(
-        "SELECT id, task_id, status, output, terminal_output, started_at, completed_at, error_event
-         FROM execution_logs
-         WHERE task_id = ?
-         ORDER BY started_at DESC"
-    ).map_err(|e| e.to_string())?;
-
-    let logs = stmt.query_map(rusqlite::params![task_id], |row| {
-        let status_str: String = row.get(2)?;
-        let status = match status_str.as_str() {
-            "complete" => ExecutionStatus::Complete,
-            "failed" => ExecutionStatus::Failed,
-            "paused" => ExecutionStatus::Paused,
-            "cancelled" => ExecutionStatus::Cancelled,
-            _ => ExecutionStatus::Running,
-        };
-
-        // Parse error_event from JSON if present
-        let error_event = row.get::<_, Option<String>>(7)?
-            .and_then(|s| serde_json::from_str(&s).ok());
-
-        Ok(ExecutionLog {
-            id: row.get(0)?,
-            task_id: row.get(1)?,
-            status,
-            output: row.get(3)?,
-            terminal_output: row.get(4)?,
-            started_at: row.get(5)?,
-            completed_at: row.get(6)?,
-            error_event,
-        })
-    }).map_err(|e| e.to_string())?;
-
-    let mut result = Vec::new();
-    for log in logs {
-        result.push(log.map_err(|e| e.to_string())?);
-    }
-    Ok(result)
-}
-
-/// Retry a paused execution
-///
-/// Resets the execution log status to 'running' so the task can be resumed.
-/// The frontend should use spawn_interactive_execution to create a new PTY session.
-#[tauri::command]
-#[specta::specta]
-pub async fn retry_execution(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    repo_path: String,
-) -> Result<i32, String> {
-    let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
-
-    // Reset the most recent execution log for this task back to running
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let log_id: i32 = conn.query_row(
-        "SELECT id FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
-        rusqlite::params![task_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("No execution log found for task {}: {}", task_id, e))?;
-
-    conn.execute(
-        "UPDATE execution_logs SET status = 'running', completed_at = NULL WHERE id = ?",
-        rusqlite::params![log_id],
-    ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
-
-    Ok(log_id)
-}
-
-/// Cancel a paused execution
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_execution(
-    app_state: State<Arc<AppState>>,
-    log_id: i32,
-) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-
-    conn.execute(
-        "UPDATE execution_logs SET status = 'cancelled', completed_at = ? WHERE id = ?",
-        rusqlite::params![&now, log_id],
-    )
-    .map_err(|e| format!("Failed to cancel execution: {}", e))?;
-
-    Ok(())
 }
 
 /// Attach to a PTY session and stream output to frontend
@@ -218,8 +117,8 @@ pub async fn attach_terminal(
         let process_ended = Arc::clone(&handle.process_ended);
         let total_drained = Arc::clone(&handle.total_drained);
         let clear_screen_count = Arc::clone(&handle.clear_screen_count);
-        let log_id = handle.log_id;
-        let app_state_arc = (*app_state).clone();
+        let _log_id = handle.log_id;
+        let _app_state_arc = (*app_state).clone();
 
         // Cancel any existing SSH reader for this session. Without this, each re-attach
         // spawns a new reader that fights the old one over the single-slot Notify, causing
@@ -245,25 +144,10 @@ pub async fn attach_terminal(
             let is_dead = process_ended.load(Ordering::Acquire);
 
             if is_dead {
-                // Dead session: prefer in-memory history (process just ended, handle still
-                // in the sessions map). Fall back to DB only if the buffer is empty, which
-                // happens when the history was flushed at shutdown or by a previous reader.
-                let mem_history = {
+                // Dead session: replay in-memory history if available.
+                let text = {
                     let hist = history.lock().await;
                     if !hist.is_empty() { Some(hist.clone()) } else { None }
-                };
-                let text = if let Some(h) = mem_history {
-                    Some(h)
-                } else {
-                    if let Ok(conn) = app_state_arc.db.lock() {
-                        conn.query_row(
-                            "SELECT terminal_output FROM execution_logs WHERE id = ?",
-                            rusqlite::params![log_id],
-                            |row| row.get::<_, Option<String>>(0),
-                        ).ok().flatten()
-                    } else {
-                        None
-                    }
                 };
                 if let Some(text) = text {
                     if !text.is_empty() {
@@ -356,17 +240,7 @@ pub async fn attach_terminal(
                             let _ = output_channel.send(slice.to_string());
                         }
                     }
-                    // Persist history to DB for dead-session recovery
-                    let history_snapshot: String = hist.clone();
                     drop(hist);
-                    if !history_snapshot.is_empty() {
-                        if let Ok(conn) = app_state_arc.db.lock() {
-                            let _ = conn.execute(
-                                "UPDATE execution_logs SET terminal_output = ? WHERE id = ?",
-                                rusqlite::params![&history_snapshot, log_id],
-                            );
-                        }
-                    }
                     break;
                 }
                 notify.notified().await;
@@ -387,61 +261,12 @@ pub async fn attach_terminal(
     };
 
     if session.is_none() {
-        // No live session (SSH handled above, local PTY also absent). This happens for
-        // dead sessions after an app restart — the in-memory handles are gone but
-        // terminal_output was flushed to DB on the previous shutdown.
-        // Try by execution log id first (interactive SSH sessions are keyed by log_id),
-        // then by task_id column (task-based local PTY sessions).
-        let db_output = {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            let by_id: Option<String> = conn.query_row(
-                "SELECT terminal_output FROM execution_logs WHERE id = ?",
-                rusqlite::params![task_id],
-                |row| row.get::<_, Option<String>>(0),
-            ).ok().flatten();
-            if by_id.is_some() {
-                by_id
-            } else {
-                conn.query_row(
-                    "SELECT terminal_output FROM execution_logs \
-                     WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
-                    rusqlite::params![task_id],
-                    |row| row.get::<_, Option<String>>(0),
-                ).ok().flatten()
-            }
-        }; // conn dropped here
-        if let Some(text) = db_output {
-            if !text.is_empty() {
-                let _ = output_channel.send(text);
-                return Ok(());
-            }
-        }
-        return Err(format!("No PTY session for task {}", task_id));
+        return Err(format!("No active PTY session for task {}", task_id));
     }
     let session = session.unwrap();
+    let _ = include_history; // history is in-memory only; no DB fallback
 
-    // If requested, send terminal history first
-    if include_history.unwrap_or(false) {
-        // Drop conn before calling output_channel.send() — never hold std::sync::Mutex across IPC I/O
-        let history: Option<String> = {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            conn.query_row(
-                "SELECT terminal_output FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
-                rusqlite::params![task_id],
-                |row| row.get::<_, Option<String>>(0)
-            ).ok().flatten()
-        };
-
-        if let Some(history_text) = history {
-            if !history_text.is_empty()
-                && output_channel.send(history_text).is_err() {
-                    return Err("Channel closed before history could be sent".to_string());
-                }
-        }
-    }
-
-    // Clone AppState Arc for use in the background task (State<'_> can't cross await points)
-    let app_state_arc = (*app_state).clone();
+    let _app_state_arc = (*app_state).clone();
 
     // Cancel any existing reader for this task (handles re-attach without explicit detach)
     {
@@ -539,30 +364,7 @@ pub async fn attach_terminal(
         drop(tx); // both senders now dropped — sender_task drains exit_msg then finishes
 
         // Wait for sender to flush everything including the exit message
-        let accumulated = sender_task.await.unwrap_or_else(|_| String::new());
-
-        // Persist terminal output for historical replay in DeadSessionTerminal
-        if !accumulated.is_empty() {
-            if let Ok(conn) = app_state_arc.db.lock() {
-                let _ = conn.execute(
-                    "UPDATE execution_logs SET terminal_output = COALESCE(terminal_output, '') || ?1 WHERE id = ?2",
-                    rusqlite::params![&accumulated, task_id],
-                );
-            }
-        }
-
-        // Update execution log status
-        let now = Utc::now().to_rfc3339();
-        let status = match exit_code {
-            Some(0) => "complete",
-            _ => "failed",
-        };
-        if let Ok(conn) = app_state_arc.db.lock() {
-            let _ = conn.execute(
-                "UPDATE execution_logs SET status = ?1, completed_at = ?2 WHERE id = ?3",
-                rusqlite::params![status, &now, task_id],
-            );
-        }
+        let _ = sender_task.await;
     });
 
     Ok(())
@@ -671,51 +473,6 @@ pub async fn resize_terminal(
     session_lock.resize_pty(cols, rows).await
 }
 
-/// Append terminal output to an execution log for persistence
-///
-/// Persists streamed PTY output to the database for execution history.
-/// Called periodically (via tokio::time::interval) or when accumulating large chunks
-/// to avoid excessive database writes.
-///
-/// # Arguments
-/// * `state` - Tauri app state with database connection
-/// * `task_id` - Task ID being executed
-/// * `output` - Terminal output chunk to append
-///
-/// # Returns
-/// `Result<(), String>` - Ok if append successful, Err on database error
-///
-/// # Behavior
-/// - Appends output to most recent execution log for this task
-/// - Uses COALESCE to handle NULL terminal_output gracefully
-/// - Only updates logs with status 'running', 'failed', or 'complete'
-#[tauri::command]
-#[specta::specta]
-pub async fn append_terminal_output(
-    state: State<'_, Arc<AppState>>,
-    task_id: i32,
-    output: String,
-) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Subquery targets the most recent execution log for this task
-    let result = conn.execute(
-        "UPDATE execution_logs
-         SET terminal_output = COALESCE(terminal_output, '') || ?1
-         WHERE id = (
-             SELECT id FROM execution_logs
-             WHERE task_id = ?2 AND status IN ('running', 'failed', 'complete')
-             ORDER BY id DESC LIMIT 1
-         )",
-        rusqlite::params![&output, task_id],
-    );
-
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("Failed to append terminal output: {}", e)),
-    }
-}
-
 /// Detach from a PTY session
 ///
 /// Cancels the active local PTY reader task for the given task_id by setting its
@@ -734,53 +491,36 @@ pub async fn detach_terminal(
     Ok(())
 }
 
-/// Pause a running agent execution by sending SIGSTOP to the process
-#[tauri::command]
-#[specta::specta]
-pub async fn pause_agent_execution(
-    state: State<'_, Arc<AppState>>,
-    task_id: i32,
-) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| format!("Failed to lock DB: {}", e))?;
-    let exec_log = crate::db::get_current_execution_log(&conn, task_id)
-        .map_err(|e| format!("Failed to get execution log: {}", e))?;
-    crate::db::pause_execution_log(&conn, exec_log.id)
-        .map_err(|e| format!("Failed to pause execution: {}", e))?;
-
-    // TODO: Send SIGSTOP to running process (implementation depends on process handle management)
-    // For now, we just update the database status. Full process pause requires process handle tracking.
-
-    Ok(())
-}
-
-/// Resume a paused agent execution
+/// Close and clean up a PTY session entirely.
 ///
-/// Resets the execution log status to 'running' so the task can be resumed.
-/// The frontend should use spawn_interactive_execution to create a new PTY session.
+/// Cancels the attach reader, kills the child process (local) or drops the write channel
+/// (remote SSH), removes all session state, and emits `sessions-changed` so the frontend
+/// removes it from the list.
 #[tauri::command]
 #[specta::specta]
-pub async fn resume_agent_execution(
+pub async fn close_pty_session(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
-    project_id: i32,
-    repo_path: String,
-) -> Result<i32, String> {
-    let _ = (project_id, repo_path); // unused — PTY sessions are managed by spawn_interactive_execution
+    session_key: i32,
+) -> Result<(), String> {
+    // Cancel any active attach reader
+    {
+        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        if let Some(flag) = cancel_map.remove(&session_key) {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 
-    // Reset the most recent execution log for this task back to running
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let log_id: i32 = conn.query_row(
-        "SELECT id FROM execution_logs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
-        rusqlite::params![task_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("No execution log found for task {}: {}", task_id, e))?;
+    // Remove local PTY session (dropping PtySession kills the child process)
+    app_state.pty_sessions.lock().await.remove(&session_key);
 
-    conn.execute(
-        "UPDATE execution_logs SET status = 'running', completed_at = NULL WHERE id = ?",
-        rusqlite::params![log_id],
-    ).map_err(|e| format!("Failed to reset execution log: {}", e))?;
+    // Remove remote SSH PTY session (dropping SshPtyHandle closes the write channel)
+    app_state.ssh_pty_sessions.lock().await.remove(&session_key);
 
-    Ok(log_id)
+    // Remove session metadata so get_active_sessions no longer lists it
+    app_state.pty_session_meta.lock().await.remove(&session_key);
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(())
 }
 
 /// Spawn an interactive (task-free) PTY session on a specific branch.
@@ -881,31 +621,17 @@ pub async fn spawn_interactive_execution(
         }
     };
 
-    // Step 2: Create execution log, optionally associating with a task_id.
-    // Storing branch_name directly so list_executions_with_task_info can display
-    // the correct branch without a worktree JOIN.
+    // Step 2: Assign session key and optionally update task status.
     let now = chrono::Utc::now().to_rfc3339();
-    let log_id: i32 = {
+    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    if let Some(tid) = task_id {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, started_at) VALUES (?, ?, ?, ?, 'running', ?)",
-            rusqlite::params![&task_id, &branch_name, &session_name, project_id, &now],
-        )
-        .map_err(|e| format!("Failed to create execution log: {}", e))?;
-        let id = conn.last_insert_rowid() as i32;
-
-        // Update task status to InProgress when task_id provided and status is Ready.
-        // AND status = 'Ready' guard prevents overwriting status if the task is already
-        // InProgress (e.g., on re-execute/resume).
-        if let Some(tid) = task_id {
-            conn.execute(
-                "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Ready'",
-                rusqlite::params![&now, tid],
-            ).map_err(|e| format!("Failed to update task status: {}", e))?;
-        }
-
-        id
-    };
+            "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Ready'",
+            rusqlite::params![&now, tid],
+        ).map_err(|e| format!("Failed to update task status: {}", e))?;
+    }
 
     // Step 3: Spawn PTY session — local or remote depending on project type
     if is_remote {
@@ -947,95 +673,23 @@ pub async fn spawn_interactive_execution(
             log_id,
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
-
         drop(sessions);
     }
 
-    Ok(log_id)
-}
-
-/// Delete an execution log and clean up its PTY session if it exists.
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_execution_log(
-    app_state: State<'_, Arc<AppState>>,
-    execution_id: i32,
-) -> Result<(), String> {
-    // First, clean up PTY session if it exists
-    let mut sessions = app_state.pty_sessions.lock().await;
-    sessions.remove(&execution_id);
-    drop(sessions);
-
-    // Delete from database
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute(
-        "DELETE FROM execution_logs WHERE id = ?",
-        rusqlite::params![execution_id],
-    )
-    .map_err(|e| format!("Failed to delete execution log: {}", e))?;
-
-    Ok(())
-}
-
-/// Rename an execution log (update its session_name).
-#[tauri::command]
-#[specta::specta]
-pub fn rename_execution(
-    app_state: State<Arc<AppState>>,
-    execution_id: i32,
-    session_name: String,
-) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute(
-        "UPDATE execution_logs SET session_name = ? WHERE id = ?",
-        rusqlite::params![&session_name, execution_id],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// List all executions for a project, enriched with task name and worktree branch.
-/// Used by the Agents View sidebar.
-#[tauri::command]
-#[specta::specta]
-pub fn list_executions_with_task_info(
-    app_state: State<Arc<AppState>>,
-    project_id: i32,
-) -> Result<Vec<ExecutionWithTask>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    let mut stmt = conn.prepare(
-        "SELECT el.id, el.task_id, t.name AS task_name, el.session_name,
-                COALESCE(el.branch_name, w.branch_name) AS branch_name,
-                el.status, el.started_at, el.completed_at, el.terminal_output,
-                el.execution_mode, el.agent_id
-         FROM execution_logs el
-         LEFT JOIN tasks t ON t.id = el.task_id
-         LEFT JOIN worktrees w ON el.task_id IS NOT NULL AND w.task_id = el.task_id
-         WHERE t.project_id = ?1 OR el.project_id = ?1
-         ORDER BY el.started_at DESC"
-    ).map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let results = stmt.query_map(rusqlite::params![project_id], |row| {
-        Ok(ExecutionWithTask {
-            id: row.get(0)?,
-            task_id: row.get(1)?,
-            task_name: row.get(2)?,
-            session_name: row.get(3)?,
-            branch_name: row.get(4)?,
-            status: row.get(5)?,
-            started_at: row.get(6)?,
-            completed_at: row.get(7)?,
-            terminal_output: row.get(8)?,
-            execution_mode: row.get(9)?,
-            agent_id: row.get(10)?,
-        })
-    }).map_err(|e| format!("Failed to query executions: {}", e))?;
-
-    let mut executions = Vec::new();
-    for result in results {
-        executions.push(result.map_err(|e| format!("Failed to read row: {}", e))?);
+    // Store PTY session metadata for get_active_sessions
+    {
+        use crate::models::worktree::PtySessionMeta;
+        let meta = PtySessionMeta {
+            session_name: session_name.clone(),
+            started_at: now.clone(),
+            task_id,
+            task_name: None,
+            branch_name: Some(branch_name.clone()),
+            cwd: worktree_abs_path.clone(),
+        };
+        app_state.pty_session_meta.lock().await.insert(log_id, meta);
     }
+    app_state.app_handle.emit("sessions-changed", ()).ok();
 
-    Ok(executions)
+    Ok(log_id)
 }

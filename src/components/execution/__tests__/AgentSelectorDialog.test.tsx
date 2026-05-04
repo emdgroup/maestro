@@ -3,9 +3,6 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// AgentSelectorDialog was removed — agent selection is now inline in AgentsView's
-// "New Session" dialog. These tests verify the service hooks that power it.
-
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
@@ -14,8 +11,8 @@ vi.mock("@/services/execution.service", () => ({
   useAgentDiscoveryQuery: vi.fn(),
   useSpawnAcpSessionMutation: vi.fn(),
   useSpawnInteractiveExecutionMutation: vi.fn(),
-  useDeleteExecutionMutation: vi.fn(),
-  useExecutionsWithTaskInfoQuery: vi.fn(),
+  useActiveSessionsQuery: vi.fn(),
+  useCancelActiveSessionMutation: vi.fn(),
 }));
 
 vi.mock("@/services/worktree.service", () => ({
@@ -31,8 +28,8 @@ import {
   useAgentDiscoveryQuery,
   useSpawnAcpSessionMutation,
   useSpawnInteractiveExecutionMutation,
-  useDeleteExecutionMutation,
-  useExecutionsWithTaskInfoQuery,
+  useActiveSessionsQuery,
+  useCancelActiveSessionMutation,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { AgentsView } from "@/views/AgentsView";
@@ -50,7 +47,6 @@ const mockWorktrees: WorktreeWithStatus[] = [
     branch_name: "main",
     base_branch: null,
     task_id: null,
-    agent_status: "idle",
     git_status: "clean",
     diff_stat: "",
     ahead_behind: null,
@@ -72,7 +68,7 @@ function renderView(connectionId?: number | null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (useExecutionsWithTaskInfoQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
+  (useActiveSessionsQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
   (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
   (useAgentDiscoveryQuery as ReturnType<typeof vi.fn>).mockReturnValue({
     data: { maestro_server_available: true, agents: mockAgents, error: null },
@@ -80,10 +76,9 @@ beforeEach(() => {
   });
   (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
   (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
-  (useDeleteExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn() });
+  (useCancelActiveSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
 });
 
-// SPAWN-01: Agent registry shown in New Session dialog
 describe("New Session dialog — agent type selector", () => {
   it("opens dialog with Terminal as default type when New Session clicked", async () => {
     const user = userEvent.setup();
@@ -97,16 +92,14 @@ describe("New Session dialog — agent type selector", () => {
 
   it("shows agent options from registry for local connections", async () => {
     const user = userEvent.setup();
-    renderView(null); // local
+    renderView(null);
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
 
-    // Registry fetched for local — agents available in type select
     expect(useAgentDiscoveryQuery).toHaveBeenCalled();
   });
 });
 
-// SPAWN-02: Spawn flow
 describe("spawn flow", () => {
   it("calls spawnInteractive for Terminal type", async () => {
     const mockMutate = vi.fn();

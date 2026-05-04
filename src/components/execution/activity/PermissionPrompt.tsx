@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Shield } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Shield, Pencil, Terminal, Eye, Trash2, ShieldCheck, ShieldEllipsis, ShieldAlert, ShieldOff, ChevronLeft } from "lucide-react";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib";
 import { MarkdownBlock } from "./MarkdownBlock";
@@ -93,64 +93,28 @@ function LegacyButtons({
 
 const BODY_COLLAPSE_LIMIT = 300;
 
-// ── Icons ────────────────────────────────────────────────────────────────────
+// ── Accept option metadata ────────────────────────────────────────────────────
 
-function IconShield() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
+type AcceptMeta = { icon: React.ElementType; description: string; order: number };
+
+const OPTION_META: Record<string, AcceptMeta> = {
+  default: { icon: ShieldCheck, description: "Approve each tool use", order: 0 },
+  acceptEdits: { icon: ShieldEllipsis, description: "File ops auto-approved", order: 1 },
+  auto: { icon: ShieldAlert, description: "All tools, full session", order: 2 },
+  bypassPermissions: { icon: ShieldOff, description: "No safety checks", order: 3 },
+};
+
+function getAcceptMeta(option: PermissionOption): AcceptMeta {
+  return OPTION_META[option.optionId] ?? { icon: ShieldCheck, description: "", order: 99 };
 }
 
-function IconPencil() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-    </svg>
-  );
-}
-
-function IconBot() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <rect x="3" y="11" width="18" height="10" rx="2" />
-      <path d="M12 11V7" />
-      <circle cx="12" cy="5" r="2" />
-      <circle cx="9" cy="15.5" r="1" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="15.5" r="1" fill="currentColor" stroke="none" />
-      <path d="M9 19h6" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconUnlock() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-    </svg>
-  );
-}
-
-function IconChevronLeft() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-const ACCEPT_ICONS = [IconShield, IconPencil, IconBot, IconUnlock];
-
-function isBypassOption(name: string): boolean {
-  return name.toLowerCase().includes("bypass");
+function isBypassOption(optionId: string): boolean {
+  return optionId === "bypassPermissions";
 }
 
 function KbdHint({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center px-[5px] py-px rounded-[3px] text-[10px] font-medium font-mono bg-black/10 border border-black/10 opacity-60 leading-[1.6] flex-shrink-0">
+    <span className="inline-flex items-center px-1.25 py-px rounded-[3px] text-[10px] font-medium font-mono bg-black/10 border border-black/10 opacity-60 leading-[1.6] shrink-0">
       {label}
     </span>
   );
@@ -166,7 +130,13 @@ interface PlanPermissionOverlayProps {
 }
 
 function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: PlanPermissionOverlayProps) {
-  const acceptOptions = options ? options.filter((o) => isAllowKind(o.kind)) : [];
+  const acceptOptions = useMemo(
+    () =>
+      options
+        ? options.filter((o) => isAllowKind(o.kind)).sort((a, b) => getAcceptMeta(a).order - getAcceptMeta(b).order)
+        : [],
+    [options],
+  );
   const rejectOption = options ? options.find((o) => !isAllowKind(o.kind)) ?? null : null;
 
   useEffect(() => {
@@ -187,7 +157,7 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
   return (
     <div className="relative flex-1 flex flex-col min-h-0">
       {/* Scrollable plan content — bottom padding clears the floating bar */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4 pb-[120px]">
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4 pb-30">
         {bodyText && (
           <div className="text-sm leading-relaxed text-foreground">
             <MarkdownBlock text={bodyText} />
@@ -202,8 +172,8 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
           {acceptOptions.length > 0 && (
             <div className="flex border-b border-border/30">
               {acceptOptions.map((opt, idx) => {
-                const Icon = ACCEPT_ICONS[idx] ?? IconShield;
-                const isBypass = isBypassOption(opt.name);
+                const meta = getAcceptMeta(opt);
+                const isBypass = isBypassOption(opt.optionId);
                 return (
                   <button
                     key={opt.optionId}
@@ -220,13 +190,13 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
                   >
                     <span
                       className={cn(
-                        "flex-shrink-0 transition-colors duration-100 leading-none",
+                        "shrink-0 transition-colors duration-100 leading-none",
                         isBypass
                           ? "text-warning/60 group-hover:text-warning"
                           : "text-muted-foreground group-hover:text-foreground",
                       )}
                     >
-                      <Icon />
+                      <meta.icon size={16} />
                     </span>
                     <span className="flex flex-col gap-0.5 text-left min-w-0">
                       <span className="flex items-center gap-1">
@@ -250,7 +220,7 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
                             : "text-muted-foreground/50 group-hover:text-muted-foreground",
                         )}
                       >
-                        {ACCEPT_DESCRIPTIONS[idx] ?? ""}
+                        {meta.description}
                       </span>
                     </span>
                   </button>
@@ -266,7 +236,7 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
             className="w-full flex items-center justify-center gap-2 px-3.5 py-2 cursor-pointer transition-colors duration-100 border-none bg-transparent font-[inherit] hover:bg-muted/60"
           >
             <span className="text-muted-foreground/40 leading-none transition-colors duration-100">
-              <IconChevronLeft />
+              <ChevronLeft size={13} />
             </span>
             <span className="text-[12px] font-medium text-muted-foreground transition-colors duration-100">
               {rejectOption?.name ?? "Keep planning"}
@@ -280,12 +250,22 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
   );
 }
 
-const ACCEPT_DESCRIPTIONS = [
-  "Approve each tool use",
-  "File ops auto-approved",
-  "All tools, full session",
-  "No safety checks",
-];
+const TOOL_ICON_MAP: Record<string, React.ElementType> = {
+  write_file: Pencil,
+  edit_file: Pencil,
+  create_file: Pencil,
+  execute_command: Terminal,
+  bash: Terminal,
+  shell: Terminal,
+  read_file: Eye,
+  delete_file: Trash2,
+};
+
+function getToolIcon(payload: Record<string, unknown>): React.ElementType {
+  const tool = payload.tool as string | undefined;
+  if (tool && TOOL_ICON_MAP[tool]) return TOOL_ICON_MAP[tool];
+  return Shield;
+}
 
 export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: PermissionPromptProps) {
   const [expanded, setExpanded] = useState(false);
@@ -293,57 +273,34 @@ export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: 
   const title = extractTitle(payload);
   const bodyText = extractBodyText(payload);
   const options = extractOptions(payload);
-  const isPlan = isPlanPermission(payload);
   const isLong = bodyText && bodyText.length > BODY_COLLAPSE_LIMIT;
 
-  const buttons = (
-    <div className={cn("flex flex-wrap gap-2", fullHeight && "mt-2.5 shrink-0")}>
-      {options ? (
-        options.map((opt) => (
-          <Button
-            key={opt.optionId}
-            variant={isAllowKind(opt.kind) ? "accent" : "ghost"}
-            size="sm"
-            onClick={() => onRespond(requestId, opt.optionId)}
-          >
-            {opt.name}
-          </Button>
-        ))
-      ) : (
-        <LegacyButtons requestId={requestId} onRespond={onRespond} />
-      )}
-    </div>
-  );
-
   if (fullHeight) {
+    console.log("[switch_mode] permission payload", payload);
     return <PlanPermissionOverlay requestId={requestId} bodyText={bodyText} options={options} onRespond={onRespond} />;
   }
 
+  const ToolIcon = getToolIcon(payload);
+
   return (
-    <div className="border-t border-border bg-background px-3.5 py-3">
-      <div className="flex items-center gap-2.5 mb-2.5">
-        <div className="w-8 h-8 rounded-md bg-accent/10 border border-accent/30 flex items-center justify-center flex-shrink-0">
-          <Shield className="w-4 h-4 text-accent" />
+    <div className="rounded-[10px] border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent p-3.5 flex flex-col gap-2.5 shadow-[0_2px_8px_oklch(0%_0_0/0.08)]">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0">
+          <ToolIcon className="w-4 h-4 text-accent" />
         </div>
         <div className="text-sm font-semibold text-foreground">{title}</div>
       </div>
 
-      {bodyText && isPlan ? (
-        <div className="mb-2.5 max-h-[60vh] overflow-y-auto custom-scrollbar rounded-md border border-border bg-muted/30 p-3">
-          <div className="text-sm leading-relaxed text-foreground">
-            <MarkdownBlock text={bodyText} />
-          </div>
-        </div>
-      ) : bodyText ? (
-        <div className="mb-2.5">
-          <pre
+      {bodyText && (
+        <div>
+          <div
             className={cn(
-              "text-xs text-muted-foreground whitespace-pre-wrap font-sans",
-              !expanded && isLong && "line-clamp-4",
+              "px-2.5 py-2 bg-background/60 rounded-md border border-border/50 text-xs text-muted-foreground font-mono",
+              !expanded && isLong ? "truncate" : "whitespace-pre-wrap break-words",
             )}
           >
             {bodyText}
-          </pre>
+          </div>
           {isLong && (
             <button
               type="button"
@@ -354,9 +311,24 @@ export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: 
             </button>
           )}
         </div>
-      ) : null}
+      )}
 
-      {buttons}
+      <div className="flex flex-wrap gap-2 justify-end">
+        {options ? (
+          options.map((opt) => (
+            <Button
+              key={opt.optionId}
+              variant={isAllowKind(opt.kind) ? "accent" : "ghost"}
+              size="sm"
+              onClick={() => onRespond(requestId, opt.optionId)}
+            >
+              {opt.name}
+            </Button>
+          ))
+        ) : (
+          <LegacyButtons requestId={requestId} onRespond={onRespond} />
+        )}
+      </div>
     </div>
   );
 }

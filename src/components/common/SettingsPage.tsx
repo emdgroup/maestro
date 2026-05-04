@@ -1,27 +1,26 @@
 import { useEffect, forwardRef, useImperativeHandle } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
-import { Checkbox } from "@/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import {
-  useConfigStore,
-  AVAILABLE_MCP_SERVERS,
-  AVAILABLE_SKILLS,
-  AVAILABLE_MODELS,
-} from "@/store/configStore";
-import type { ProjectConfigRequest } from "@/types/bindings";
-import { Bot, Server, Sparkles } from "lucide-react";
+import { Button } from "@/ui/button";
+import { Bot, RefreshCw } from "lucide-react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
+import {
+  useAgentDiscoveryQuery,
+  useAgentModelsCacheQuery,
+  useRefreshAgentModelsMutation,
+} from "@/services/execution.service";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
   projectId: number;
+  connectionId: number | null;
+  projectPath: string;
 }
 
 interface ProjectSettingsFormData {
-  model_default: string;
-  mcp_servers: Record<string, boolean>;
-  skills: Record<string, boolean>;
+  default_agent: string;
+  default_model: string;
 }
 
 export interface SettingsPageHandle {
@@ -29,274 +28,214 @@ export interface SettingsPageHandle {
   resetToDefaults: () => void;
 }
 
+const CACHE_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
+
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
-  ({ projectId }, ref) => {
-    const {
-      model_default,
-      mcp_allowlist,
-      skills_default,
-      isLoading,
-      error,
-      setState,
-      setLoading,
-      setError,
-    } = useConfigStore();
+  ({ projectId, connectionId, projectPath: _projectPath }, ref) => {
+    const { control, handleSubmit, watch, setValue, reset } =
+      useForm<ProjectSettingsFormData>({
+        defaultValues: { default_agent: "", default_model: "" },
+      });
 
-    const { register, handleSubmit, reset, control } = useForm<ProjectSettingsFormData>({
-      mode: "onChange",
-      defaultValues: {
-        model_default: model_default || AVAILABLE_MODELS[0],
-        mcp_servers: AVAILABLE_MCP_SERVERS.reduce(
-          (acc, server) => {
-            acc[server] = mcp_allowlist?.includes(server) ?? false;
-            return acc;
-          },
-          {} as Record<string, boolean>,
-        ),
-        skills: AVAILABLE_SKILLS.reduce(
-          (acc, skill) => {
-            acc[skill] = skills_default?.includes(skill) ?? false;
-            return acc;
-          },
-          {} as Record<string, boolean>,
-        ),
-      },
-    });
+    const selectedAgent = watch("default_agent");
 
-    // Service hooks for settings
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
+    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId);
+    const { data: modelsCache, isLoading: cacheLoading } = useAgentModelsCacheQuery(
+      projectId,
+      selectedAgent || null,
+    );
+    const refreshMutation = useRefreshAgentModelsMutation();
 
-    // Fetch settings on mount
     useEffect(() => {
-      if (projectSettingsQuery.data) {
-        const response = projectSettingsQuery.data;
-        // Convert arrays to checkbox records
-        const mcp_servers_record = AVAILABLE_MCP_SERVERS.reduce(
-          (acc, server) => {
-            acc[server] = response.mcp_allowlist?.includes(server) ?? false;
-            return acc;
-          },
-          {} as Record<string, boolean>,
-        );
+      if (!projectSettingsQuery.data) return;
+      const { default_agent, default_model } = projectSettingsQuery.data;
+      reset({
+        default_agent: default_agent ?? "",
+        default_model: default_model ?? "",
+      });
+    }, [projectSettingsQuery.data, reset]);
 
-        const skills_record = AVAILABLE_SKILLS.reduce(
-          (acc, skill) => {
-            acc[skill] = response.skills_default?.includes(skill) ?? false;
-            return acc;
-          },
-          {} as Record<string, boolean>,
-        );
+    // When agent changes, clear model selection
+    const handleAgentChange = (value: string | null) => {
+      setValue("default_agent", value ?? "");
+      setValue("default_model", "");
+    };
 
-        setState({
-          model_default: response.model_default,
-          mcp_allowlist: response.mcp_allowlist || [],
-          skills_default: response.skills_default || [],
-        });
-
-        reset({
-          model_default: response.model_default,
-          mcp_servers: mcp_servers_record,
-          skills: skills_record,
-        });
-
-        setLoading(false);
-      }
-
-      if (projectSettingsQuery.isLoading) {
-        setLoading(true);
-      }
-
-      if (projectSettingsQuery.error) {
-        const errorMessage =
-          projectSettingsQuery.error instanceof Error
-            ? projectSettingsQuery.error.message
-            : "Failed to load settings";
-        setError(errorMessage);
-        setLoading(false);
-      }
-    }, [
-      projectSettingsQuery.data,
-      projectSettingsQuery.isLoading,
-      projectSettingsQuery.error,
-      setState,
-      reset,
-      setLoading,
-      setError,
-    ]);
+    const cacheAge = modelsCache?.fetched_at
+      ? Date.now() - Date.parse(modelsCache.fetched_at)
+      : Infinity;
+    const isStale = cacheAge > CACHE_MAX_AGE_MS;
+    const showRefresh = selectedAgent && (!modelsCache || isStale);
+    const availableModels = modelsCache?.models ?? [];
 
     const onSubmit = async (data: ProjectSettingsFormData) => {
-      if (!data.model_default) {
-        setError("Model selection is required");
-        return;
-      }
-
-      setError(null);
-
       try {
-        // Convert checkbox records back to arrays
-        const mcp_allowlist = Object.entries(data.mcp_servers)
-          .filter(([_, enabled]) => enabled)
-          .map(([server]) => server);
-
-        const skills_default = Object.entries(data.skills)
-          .filter(([_, enabled]) => enabled)
-          .map(([skill]) => skill);
-
-        const request: ProjectConfigRequest = {
-          model_default: data.model_default,
-          mcp_allowlist,
-          skills_default,
-        };
-
         await updateProjectSettingsMutation.mutateAsync({
           projectId,
-          config: request,
+          config: {
+            default_agent: data.default_agent || null,
+            default_model: data.default_model || null,
+          },
         });
-
-        setState({
-          model_default: data.model_default,
-          mcp_allowlist,
-          skills_default,
-        });
-
-        // Show success message
-        setError(null);
-        showSuccessToast("Settings saved successfully");
+        showSuccessToast("Settings saved");
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Failed to save settings";
-        setError(errorMessage);
         console.error("Failed to save project settings:", err);
       }
     };
 
-    // Expose save and reset methods to parent via ref
     useImperativeHandle(ref, () => ({
-      save: async () => {
-        await handleSubmit(onSubmit)();
-      },
-      resetToDefaults: () => {
-        // Reset form to defaults
-        reset({
-          model_default: AVAILABLE_MODELS[0],
-          mcp_servers: AVAILABLE_MCP_SERVERS.reduce(
-            (acc, server) => {
-              acc[server] = false;
-              return acc;
-            },
-            {} as Record<string, boolean>,
-          ),
-          skills: AVAILABLE_SKILLS.reduce(
-            (acc, skill) => {
-              acc[skill] = false;
-              return acc;
-            },
-            {} as Record<string, boolean>,
-          ),
-        });
-      },
+      save: async () => { await handleSubmit(onSubmit)(); },
+      resetToDefaults: () => { reset({ default_agent: "", default_model: "" }); },
     }));
+
+    const agents = discovery?.agents ?? [];
+    const isLoading = projectSettingsQuery.isLoading;
 
     return (
       <div className="h-full">
         <div className="max-w-3xl mx-auto p-6">
-          {/* Page Header */}
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Configure model defaults, MCP servers, and skills for this project
+              Configure the default agent and model for new sessions in this project
             </p>
           </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-error/10 border border-error rounded-lg text-error text-sm">
-              {error}
-            </div>
-          )}
 
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
               Loading settings...
             </div>
           ) : (
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-              {/* Model Defaults Section */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Bot className="w-5 h-5 text-muted-foreground" />
-                  Model Defaults
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-muted-foreground" />
+                  Agent &amp; Model
                 </h3>
-                <div className="space-y-3">
-                  <div>
-                    <Label htmlFor="model_default" className="text-sm font-medium mb-2 block">
-                      Claude Model
-                    </Label>
+
+                {/* Default Agent */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Default Agent</Label>
+                  <Controller
+                    name="default_agent"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={handleAgentChange}
+                        disabled={agentsLoading}
+                      >
+                        <SelectTrigger className="w-full bg-muted">
+                          <SelectValue placeholder={agentsLoading ? "Loading agents…" : "None (use session default)"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None (use session default)</SelectItem>
+                          {agents.map((agent) => (
+                            <SelectItem key={agent.id} value={agent.id}>
+                              <div className="flex items-center gap-2">
+                                {agent.icon && (
+                                  <img
+                                    src={agent.icon}
+                                    className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                  />
+                                )}
+                                {agent.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used for new sessions and auto-assigned tasks
+                  </p>
+                </div>
+
+                {/* Default Model */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Default Model</Label>
+                  <div className="flex gap-2">
                     <Controller
-                      name="model_default"
+                      name="default_model"
                       control={control}
-                      rules={{ required: true }}
                       render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-full bg-muted">
-                            <SelectValue placeholder="Select a model" />
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={!selectedAgent || cacheLoading || availableModels.length === 0}
+                        >
+                          <SelectTrigger className="flex-1 bg-muted">
+                            <SelectValue
+                              placeholder={
+                                !selectedAgent
+                                  ? "Select an agent first"
+                                  : cacheLoading
+                                  ? "Loading…"
+                                  : availableModels.length === 0
+                                  ? "No models cached — click Refresh"
+                                  : "Select a model"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            {AVAILABLE_MODELS.map((model) => (
-                              <SelectItem key={model} value={model}>
-                                {model}
+                            <SelectItem value="">Agent default</SelectItem>
+                            {availableModels.map((model) => (
+                              <SelectItem key={model.model_id} value={model.model_id}>
+                                {model.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Default Claude model for new tasks in this project
-                    </p>
+                    {showRefresh && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={refreshMutation.isPending}
+                        onClick={() =>
+                          refreshMutation.mutate({ projectId, agentId: selectedAgent })
+                        }
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+                        />
+                        <span className="ml-1.5">
+                          {refreshMutation.isPending ? "Fetching…" : "Refresh"}
+                        </span>
+                      </Button>
+                    )}
                   </div>
+                  {modelsCache && isStale && (
+                    <p className="text-xs text-yellow-500">
+                      Cache is over 5 days old — refresh to update model list
+                    </p>
+                  )}
+                  {!selectedAgent && (
+                    <p className="text-xs text-muted-foreground">
+                      Select an agent to enable model selection
+                    </p>
+                  )}
+                  {refreshMutation.isError && (
+                    <p className="text-xs text-destructive">
+                      {refreshMutation.error instanceof Error
+                        ? refreshMutation.error.message
+                        : "Failed to fetch models"}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* MCP Servers Section */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Server className="w-5 h-5 text-muted-foreground" />
-                  MCP Servers
-                </h3>
-                <div className="space-y-3 bg-muted/20 p-3 rounded-lg">
-                  {AVAILABLE_MCP_SERVERS.map((server) => (
-                    <div key={server} className="flex items-center gap-3">
-                      <Checkbox id={`mcp-${server}`} {...register(`mcp_servers.${server}`)} />
-                      <Label
-                        htmlFor={`mcp-${server}`}
-                        className="text-sm font-medium cursor-pointer flex-1 m-0"
-                      >
-                        {server}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Skills Section */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-muted-foreground" />
-                  Skills
-                </h3>
-                <div className="space-y-3 bg-muted/20 p-3 rounded-lg">
-                  {AVAILABLE_SKILLS.map((skill) => (
-                    <div key={skill} className="flex items-center gap-3">
-                      <Checkbox id={`skill-${skill}`} {...register(`skills.${skill}`)} />
-                      <Label
-                        htmlFor={`skill-${skill}`}
-                        className="text-sm font-medium cursor-pointer flex-1 m-0"
-                      >
-                        {skill}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={updateProjectSettingsMutation.isPending}>
+                  {updateProjectSettingsMutation.isPending ? "Saving…" : "Save"}
+                </Button>
               </div>
             </form>
           )}
@@ -305,3 +244,5 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     );
   },
 );
+
+SettingsPage.displayName = "SettingsPage";

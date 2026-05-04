@@ -348,40 +348,6 @@ async cleanupZombieWorktrees(projectId: number, repoPath: string) : Promise<Resu
 }
 },
 /**
- * List all executions for a project, enriched with task name and worktree branch.
- * Used by the Agents View sidebar.
- */
-async listExecutionsWithTaskInfo(projectId: number) : Promise<Result<ExecutionWithTask[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_executions_with_task_info", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Delete an execution log and clean up its PTY session if it exists.
- */
-async deleteExecutionLog(executionId: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_execution_log", { executionId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Rename an execution log (update its session_name).
- */
-async renameExecution(executionId: number, sessionName: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("rename_execution", { executionId, sessionName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Spawn an interactive (task-free) PTY session on a specific branch.
  * 
  * This creates an execution log with NULL task_id, finds or creates a worktree for the
@@ -428,42 +394,6 @@ async spawnInteractiveExecution(projectId: number, branchName: string, repoPath:
 async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("drain_ready_queue", { projectId, projectPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get execution logs for a task
- */
-async getExecutionLogs(taskId: number) : Promise<Result<ExecutionLog[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_execution_logs", { taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Retry a paused execution
- * 
- * Resets the execution log status to 'running' so the task can be resumed.
- * The frontend should use spawn_interactive_execution to create a new PTY session.
- */
-async retryExecution(projectId: number, taskId: number, repoPath: string) : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("retry_execution", { projectId, taskId, repoPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Cancel a paused execution
- */
-async cancelExecution(logId: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_execution", { logId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -572,53 +502,15 @@ async detachTerminal(taskId: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Pause a running agent execution by sending SIGSTOP to the process
+ * Close and clean up a PTY session entirely.
+ * 
+ * Cancels the attach reader, kills the child process (local) or drops the write channel
+ * (remote SSH), removes all session state, and emits `sessions-changed` so the frontend
+ * removes it from the list.
  */
-async pauseAgentExecution(taskId: number) : Promise<Result<null, string>> {
+async closePtySession(sessionKey: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("pause_agent_execution", { taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Resume a paused agent execution
- * 
- * Resets the execution log status to 'running' so the task can be resumed.
- * The frontend should use spawn_interactive_execution to create a new PTY session.
- */
-async resumeAgentExecution(taskId: number, projectId: number, repoPath: string) : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("resume_agent_execution", { taskId, projectId, repoPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Append terminal output to an execution log for persistence
- * 
- * Persists streamed PTY output to the database for execution history.
- * Called periodically (via tokio::time::interval) or when accumulating large chunks
- * to avoid excessive database writes.
- * 
- * # Arguments
- * * `state` - Tauri app state with database connection
- * * `task_id` - Task ID being executed
- * * `output` - Terminal output chunk to append
- * 
- * # Returns
- * `Result<(), String>` - Ok if append successful, Err on database error
- * 
- * # Behavior
- * - Appends output to most recent execution log for this task
- * - Uses COALESCE to handle NULL terminal_output gracefully
- * - Only updates logs with status 'running', 'failed', or 'complete'
- */
-async appendTerminalOutput(taskId: number, output: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("append_terminal_output", { taskId, output }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_pty_session", { sessionKey }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -711,11 +603,7 @@ async rejectReview(taskId: number, action: string, instruction: string | null) :
 }
 },
 /**
- * Get project-level configuration (model default, MCP allowlist, skills default)
- * 
- * NOTE: `_project_id` is accepted for API compatibility but currently ignored.
- * Settings are stored globally in the `settings` table, not per-project.
- * Per-project settings via .maestro/settings.json is a future enhancement.
+ * Get project-level configuration from .maestro/settings.json
  */
 async getProjectSettings(projectId: number) : Promise<Result<ProjectConfigResponse, string>> {
     try {
@@ -726,11 +614,7 @@ async getProjectSettings(projectId: number) : Promise<Result<ProjectConfigRespon
 }
 },
 /**
- * Update project-level configuration
- * 
- * NOTE: `_project_id` is accepted for API compatibility but currently ignored.
- * Settings are stored globally in the `settings` table, not per-project.
- * Per-project settings via .maestro/settings.json is a future enhancement.
+ * Update project-level configuration in .maestro/settings.json
  */
 async updateProjectSettings(projectId: number, settings: ProjectConfigRequest) : Promise<Result<null, string>> {
     try {
@@ -971,11 +855,11 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
 /**
  * Launch a new ACP agent session via maestro-server subprocess.
  * 
- * Creates an execution_log row with status='running', execution_mode='acp', and agent_id set,
- * spawns maestro-server with piped stdin/stdout, sends SpawnRequest, and starts a background
- * reader task that emits Tauri events for each session update.
+ * Assigns a session key from the in-memory counter, spawns maestro-server with piped
+ * stdin/stdout, sends SpawnRequest, and starts a background reader task that emits
+ * Tauri events for each session update.
  * 
- * The session is keyed by the returned log_id in AppState.acp_sessions.
+ * The session is keyed by the returned session_key in AppState.acp_sessions.
  * 
  * # Arguments
  * * `app_state` - Tauri app state
@@ -984,8 +868,8 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
  * * `session_name` - Optional display name for the session
  * 
  * # Returns
- * Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
- * cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
+ * Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
+ * cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
  */
 async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connectionId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
     try {
@@ -1026,7 +910,7 @@ async sendAcpPromptStructured(logId: number, contentBlocks: JsonValue) : Promise
  * 
  * # Arguments
  * * `app_state` - Tauri app state
- * * `log_id` - Session key (execution log ID)
+ * * `log_id` - Session key
  * * `request_id` - The permission request ID from the agent's PermissionRequest event
  * # Security
  * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
@@ -1058,7 +942,6 @@ async respondAcpElicitation(logId: number, requestId: string, response: JsonValu
  * 1. Send CancelRequest to maestro-server (best-effort, ignored if session already gone)
  * 2. Remove session from AppState.acp_sessions (drops AcpProcess, which kills subprocess via kill_on_drop)
  * 3. Send cancel signal to the background reader task
- * 4. Update execution_log status to 'cancelled'
  * 
  * # Security
  * T-43-08: cancel_acp_session sends CancelRequest then removes from map (drops Child with
@@ -1066,11 +949,26 @@ async respondAcpElicitation(logId: number, requestId: string, response: JsonValu
  * 
  * # Arguments
  * * `app_state` - Tauri app state
- * * `log_id` - Session key (execution log ID)
+ * * `log_id` - Session key
  */
 async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_acp_session", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Interrupt the current ACP turn without killing the session.
+ * 
+ * Sends InterruptTurn to maestro-server, which forwards a CancelNotification
+ * to the agent. The agent responds with StopReason::Cancelled, keeping the
+ * session alive for subsequent prompts.
+ */
+async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("interrupt_acp_turn", { logId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1084,27 +982,6 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
 async discoverAgents(connectionId: number | null) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connectionId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Read structured output from a completed ACP session for dead session replay.
- * 
- * Returns the accumulated SessionUpdate payloads stored in execution_logs.structured_output.
- * Returns an empty array if the column is NULL (session had no structured output).
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `log_id` - Execution log ID
- * 
- * # Returns
- * Vec<serde_json::Value> — the accumulated payload array from the session
- */
-async getStructuredOutput(logId: number) : Promise<Result<JsonValue[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_structured_output", { logId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1170,6 +1047,103 @@ async readSessionFile(logId: number, relativePath: string) : Promise<Result<stri
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Get all currently active sessions (ACP + PTY) as a flat list.
+ * Used by the Agents sidebar to display live sessions.
+ */
+async getActiveSessions() : Promise<Result<ActiveSessionInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_active_sessions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List ACP sessions available for a given agent via a one-shot maestro-server connection.
+ */
+async listAcpSessions(agentId: string, cwd: string, connectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { agentId, cwd, connectionId, cursor }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
+ * 
+ * Returns the new session_key for this Tauri session.
+ */
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Close an ACP session stored on the agent server (not a live Tauri session).
+ */
+async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectionId: number | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Upload a local file to the remote host via SFTP.
+ * 
+ * Progress events emitted on `sftp://transfer-progress/{transfer_id}` during transfer.
+ */
+async sftpUpload(connectionId: number, localPath: string, remotePath: string, transferId: string) : Promise<Result<FileTransferResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sftp_upload", { connectionId, localPath, remotePath, transferId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Download a remote file to the local filesystem via SFTP.
+ * 
+ * Progress events emitted on `sftp://transfer-progress/{transfer_id}` during transfer.
+ */
+async sftpDownload(connectionId: number, remotePath: string, localPath: string, transferId: string) : Promise<Result<FileTransferResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sftp_download", { connectionId, remotePath, localPath, transferId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get cached models for an agent from the project's .maestro/agent_models_cache.json.
+ * Returns None if no cache entry exists for the agent.
+ */
+async getAgentModelsCache(projectId: number, agentId: string) : Promise<Result<AgentModelsCache | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_agent_models_cache", { projectId, agentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Spawn a one-shot agent session to discover its available models, then cache the result
+ * in the project's .maestro/agent_models_cache.json.
+ */
+async refreshAgentModels(projectId: number, agentId: string) : Promise<Result<AgentModelsCache, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_agent_models", { projectId, agentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1187,10 +1161,15 @@ export type AcpModelInfo = { model_id: string; name: string; description: string
 export type AcpPromptCapabilities = { embedded_context: boolean; image: boolean; audio: boolean }
 export type AcpSessionModelState = { current_model_id: string; available_models: AcpModelInfo[] }
 /**
+ * Active session info — in-memory only, returned by get_active_sessions
+ */
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+/**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
+export type AgentModelsCache = { agent_id: string; models: AcpModelInfo[]; fetched_at: string }
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
@@ -1212,25 +1191,23 @@ export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string }
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
 export type DiscoveredAgent = { id: string; name: string; icon: string }
-export type ErrorEvent = { error_type: string; message: string; suggestions: string[]; detected_at: string }
-export type ExecutionLog = { id: number; task_id: number; output: string; terminal_output: string | null; status: ExecutionStatus; started_at: string; completed_at: string | null; error_event: ErrorEvent | null }
-export type ExecutionStatus = "running" | "complete" | "failed" | "paused" | "cancelled"
-/**
- * View model for the Agents view — execution log enriched with task and worktree info
- */
-export type ExecutionWithTask = { id: number; task_id: number | null; task_name: string | null; session_name: string | null; branch_name: string | null; status: string; started_at: string; completed_at: string | null; terminal_output: string | null; execution_mode: string | null; agent_id: string | null }
+export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Typed response for approve_task_and_merge IPC command
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
-export type ProjectConfigRequest = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
-export type ProjectConfigResponse = { model_default: string; mcp_allowlist: string[]; skills_default: string[] }
+export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
+export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+/**
+ * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
+ */
+export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null }
 /**
  * SSH authentication method configuration
  */
@@ -1271,7 +1248,7 @@ export type WorktreeDiffResult = { diff: string; untracked_files: string[] }
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
-export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; agent_status: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null }
+export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null }
 
 /** tauri-specta globals **/
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 use chrono::Utc;
 use rusqlite::{params, ToSql};
+use serde_json;
 use crate::models::Project;
 use crate::db::{AppState, project_storage};
 use crate::git::remote::shell_quote;
@@ -225,14 +226,7 @@ pub fn open_project(
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-    // Safe to mark orphaned sessions now — we hold the lock so no other instance
-    // is running sessions for this project.
     let now = chrono::Utc::now().to_rfc3339();
-    let _ = conn.execute(
-        "UPDATE execution_logs SET status = 'failed', completed_at = ?1 WHERE status = 'running' AND project_id = ?2",
-        rusqlite::params![now, project_id],
-    );
-
     conn.execute(
         "UPDATE projects SET last_opened = ? WHERE id = ?",
         rusqlite::params![now, project_id],
@@ -504,111 +498,80 @@ pub fn create_project(
     Ok(project)
 }
 
-/// Get project-level configuration (model default, MCP allowlist, skills default)
-///
-/// NOTE: `_project_id` is accepted for API compatibility but currently ignored.
-/// Settings are stored globally in the `settings` table, not per-project.
-/// Per-project settings via .maestro/settings.json is a future enhancement.
+/// Get project-level configuration from .maestro/settings.json
 #[tauri::command]
 #[specta::specta]
-pub fn get_project_settings(
-    app_state: State<Arc<AppState>>,
-    _project_id: i32,
+pub async fn get_project_settings(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
 ) -> Result<crate::models::ProjectConfigResponse, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let (path, connection_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+        ).map_err(|_| format!("Project {} not found", project_id))?
+    };
 
-    // Query settings table for configuration keys
-    let mut stmt = conn
-        .prepare("SELECT key, value FROM settings WHERE key IN ('model_default', 'mcp_allowlist', 'skills_default')")
-        .map_err(|e| e.to_string())?;
-
-    let mut settings_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-
-    let settings_iter = stmt
-        .query_map([], |row| {
-            let key: String = row.get(0)?;
-            let value: String = row.get(1)?;
-            Ok((key, value))
-        })
-        .map_err(|e| e.to_string())?;
-
-    for result in settings_iter {
-        let (key, value) = result.map_err(|e| e.to_string())?;
-        settings_map.insert(key, value);
-    }
-
-    // Extract values with defaults
-    let model_default = settings_map
-        .get("model_default")
-        .cloned()
-        .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
-
-    let mcp_allowlist: Vec<String> = settings_map
-        .get("mcp_allowlist")
-        .and_then(|v| serde_json::from_str(v).ok())
-        .unwrap_or_default();
-
-    let skills_default: Vec<String> = settings_map
-        .get("skills_default")
-        .and_then(|v| serde_json::from_str(v).ok())
-        .unwrap_or_default();
+    let config = if let Some(conn_id) = connection_id {
+        let session = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        let settings_path = format!("{}/.maestro/settings.json", path);
+        match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
+            Ok(output) => serde_json::from_str::<crate::models::ProjectConfig>(&output)
+                .unwrap_or_default(),
+            Err(_) => crate::models::ProjectConfig::default(),
+        }
+    } else {
+        crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default()
+    };
 
     Ok(crate::models::ProjectConfigResponse {
-        model_default,
-        mcp_allowlist,
-        skills_default,
+        default_agent: config.default_agent,
+        default_model: config.default_model,
     })
 }
 
-/// Update project-level configuration
-///
-/// NOTE: `_project_id` is accepted for API compatibility but currently ignored.
-/// Settings are stored globally in the `settings` table, not per-project.
-/// Per-project settings via .maestro/settings.json is a future enhancement.
+/// Update project-level configuration in .maestro/settings.json
 #[tauri::command]
 #[specta::specta]
-pub fn update_project_settings(
-    app_state: State<Arc<AppState>>,
-    _project_id: i32,
+pub async fn update_project_settings(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     settings: crate::models::ProjectConfigRequest,
 ) -> Result<(), String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let (path, connection_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+        ).map_err(|_| format!("Project {} not found", project_id))?
+    };
 
-    // Serialize arrays to JSON
-    let mcp_allowlist_json = serde_json::to_string(&settings.mcp_allowlist)
-        .map_err(|e| format!("Failed to serialize mcp_allowlist: {}", e))?;
+    let config = crate::models::ProjectConfig {
+        default_agent: settings.default_agent,
+        default_model: settings.default_model,
+        updated_at: Utc::now().to_rfc3339(),
+    };
 
-    let skills_default_json = serde_json::to_string(&settings.skills_default)
-        .map_err(|e| format!("Failed to serialize skills_default: {}", e))?;
-
-    let now = Utc::now().to_rfc3339();
-
-    // Use transaction for atomic writes
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("Failed to start transaction: {}", e))?;
-
-    // Upsert each setting
-    tx.execute(
-        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('model_default', ?, ?)",
-        rusqlite::params![&settings.model_default, &now],
-    )
-    .map_err(|e| format!("Failed to update model_default: {}", e))?;
-
-    tx.execute(
-        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('mcp_allowlist', ?, ?)",
-        rusqlite::params![&mcp_allowlist_json, &now],
-    )
-    .map_err(|e| format!("Failed to update mcp_allowlist: {}", e))?;
-
-    tx.execute(
-        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('skills_default', ?, ?)",
-        rusqlite::params![&skills_default_json, &now],
-    )
-    .map_err(|e| format!("Failed to update skills_default: {}", e))?;
-
-    tx.commit()
-        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+    if let Some(conn_id) = connection_id {
+        let session = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        let maestro_dir = format!("{}/.maestro", path);
+        let settings_path = format!("{}/settings.json", maestro_dir);
+        let json = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Serialization failed: {}", e))?;
+        session.execute_command(&format!(
+            "mkdir -p {} && printf '%s' {} > {}",
+            shell_quote(&maestro_dir),
+            shell_quote(&json),
+            shell_quote(&settings_path),
+        )).await.map_err(|e| format!("SSH write failed: {}", e))?;
+    } else {
+        config.save_to_project(&path)?;
+    }
 
     Ok(())
 }

@@ -164,20 +164,15 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ProjectConfigResponse {
-    pub model_default: String,
-    pub mcp_allowlist: Vec<String>,
-    pub skills_default: Vec<String>,
+    pub default_agent: Option<String>,
+    pub default_model: Option<String>,
 }
 
-// TODO: ProjectConfigRequest and ProjectConfigResponse have identical fields.
-// Cannot deduplicate to a type alias because both need #[derive(TS)] / #[specta(export)]
-// for TypeScript binding generation. Consider consolidating if specta adds alias support.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ProjectConfigRequest {
-    pub model_default: String,
-    pub mcp_allowlist: Vec<String>,
-    pub skills_default: Vec<String>,
+    pub default_agent: Option<String>,
+    pub default_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

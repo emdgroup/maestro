@@ -1,12 +1,9 @@
-import { useState, useReducer, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { formatDistanceStrict } from "date-fns";
-import { useAcpActivity, activityReducer } from "./activity/useAcpActivity";
-import { useStructuredOutputQuery, executionQueryKeys } from "@/services/execution.service";
+import { useAcpActivity } from "./activity/useAcpActivity";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
 import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
@@ -19,16 +16,15 @@ import { PermissionPrompt, isAllowKind, isPlanPermission } from "./activity/Perm
 import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
-import { INITIAL_ACTIVITY_STATE } from "./activity/types";
-import type { SessionUpdatePayload, UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
-import type { ExecutionWithTask, AcpPromptCapabilities, JsonValue } from "@/types/bindings";
+import type { UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
+import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 
 interface AgentActivityPanelProps {
-  execution: ExecutionWithTask;
-  isDead?: boolean;
+  sessionKey: number;
   isSelected?: boolean;
+  onUsageChange?: (usage: UsageState | null) => void;
 }
 
 function isRejectOption(payload: Record<string, unknown>, optionId: string): boolean {
@@ -43,9 +39,11 @@ function getOptionName(payload: Record<string, unknown>, optionId: string | null
   return options?.find((o) => o.optionId === optionId)?.name;
 }
 
-export function AgentActivityPanel({ execution, isDead = false, isSelected = false }: AgentActivityPanelProps) {
+export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChange }: AgentActivityPanelProps) {
   const setActivityStatus = useSessionActivityStore((s) => s.setStatus);
   const removeActivityStatus = useSessionActivityStore((s) => s.removeStatus);
+  const onUsageChangeRef = useRef(onUsageChange);
+  onUsageChangeRef.current = onUsageChange;
   const [isProcessing, setIsProcessing] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
@@ -63,61 +61,39 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const userMsgCounterRef = useRef(0);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
   const agentResponseStartRef = useRef<HTMLDivElement>(null);
-  const [showStickyUserMsg, setShowStickyUserMsg] = useState(false);
-  const [agentResponseAbove, setAgentResponseAbove] = useState(false);
-  const queryClient = useQueryClient();
+  const showStickyUserMsg = false;
+  const agentResponseAbove = false;
   const selectedProject = useSelectedProject();
-  const projectId = selectedProject?.id ?? null;
 
   useEffect(() => {
-    if (isDead) return;
-    setActivityStatus(execution.id, "spawning");
-    return () => { removeActivityStatus(execution.id); };
-  }, [isDead, execution.id, setActivityStatus, removeActivityStatus]);
+    setActivityStatus(sessionKey, "spawning");
+    return () => { removeActivityStatus(sessionKey); };
+  }, [sessionKey, setActivityStatus, removeActivityStatus]);
 
-  const [liveState, liveDispatch] = useAcpActivity(isDead ? null : execution.id);
-
-  const { data: storedPayloads } = useStructuredOutputQuery(isDead ? execution.id : null);
-  const [deadState, deadDispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
+  const [liveState, liveDispatch] = useAcpActivity(sessionKey);
 
   useEffect(() => {
-    if (!isDead || !storedPayloads || storedPayloads.length === 0) return;
-    deadDispatch({
-      type: "load_from_db",
-      payloads: storedPayloads as unknown as SessionUpdatePayload[],
-    });
-  }, [isDead, storedPayloads]);
-
-  const state = isDead ? deadState : liveState;
+    if (liveState.isInitializing || !modelsLoaded) return;
+    setActivityStatus(sessionKey, "idle");
+  }, [liveState.isInitializing, modelsLoaded, sessionKey, setActivityStatus]);
 
   useEffect(() => {
-    if (isDead || state.isInitializing || !modelsLoaded) return;
-    setActivityStatus(execution.id, "idle");
-  }, [isDead, state.isInitializing, modelsLoaded, execution.id, setActivityStatus]);
-
-  useEffect(() => {
-    if (isDead) return;
-    const unlisten = listen<string>(`acp://turn-ended/${execution.id}`, () => {
+    const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
       setIsProcessing(false);
-      setActivityStatus(execution.id, "idle");
+      setActivityStatus(sessionKey, "idle");
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id, setActivityStatus]);
+  }, [sessionKey, setActivityStatus]);
 
   useEffect(() => {
-    if (!isDead && state.sessionEnded) {
+    if (liveState.sessionEnded) {
       setIsProcessing(false);
-      removeActivityStatus(execution.id);
-      if (projectId != null) {
-        queryClient.invalidateQueries({
-          queryKey: executionQueryKeys.withTaskInfo(projectId),
-        });
-      }
+      removeActivityStatus(sessionKey);
     }
-  }, [isDead, state.sessionEnded, execution.id, projectId, queryClient, removeActivityStatus]);
+  }, [liveState.sessionEnded, sessionKey, removeActivityStatus]);
 
   const agentItemsCountRef = useRef(0);
-  useLayoutEffect(() => { agentItemsCountRef.current = state.items.length; });
+  useLayoutEffect(() => { agentItemsCountRef.current = liveState.items.length; });
 
   const [liveUserMessages, setLiveUserMessages] = useState<Array<{ item: UserMessageItem; insertAt: number }>>([]);
   const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<Array<{ item: ElicitationSummaryItem; insertAt: number }>>([]);
@@ -129,21 +105,18 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   const [livePermissionResponses, setLivePermissionResponses] = useState<Array<{ item: PermissionResponseItem; insertAt: number }>>([]);
 
   useEffect(() => {
-    if (isDead) return;
     const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
-      `acp://permission-request/${execution.id}`,
+      `acp://permission-request/${sessionKey}`,
       (event) => {
         setPendingPermission({
           requestId: event.payload.request_id,
           payload: event.payload.payload,
         });
-        setActivityStatus(execution.id, "awaiting_input");
+        setActivityStatus(sessionKey, "awaiting_input");
       },
     );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [isDead, execution.id, setActivityStatus]);
+    return () => { unlisten.then((fn) => fn()); };
+  }, [sessionKey, setActivityStatus]);
 
   const [pendingElicitation, setPendingElicitation] = useState<{
     requestId: string;
@@ -151,52 +124,43 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   } | null>(null);
 
   useEffect(() => {
-    if (isDead) return;
     const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
-      `acp://elicitation-request/${execution.id}`,
+      `acp://elicitation-request/${sessionKey}`,
       (event) => {
         setPendingElicitation({ requestId: event.payload.request_id, payload: event.payload.payload });
-        setActivityStatus(execution.id, "awaiting_input");
+        setActivityStatus(sessionKey, "awaiting_input");
       },
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id, setActivityStatus]);
+  }, [sessionKey, setActivityStatus]);
 
-  // Fetch cached capabilities on mount (handles race where capabilities event fires before listener registers).
   useEffect(() => {
-    if (isDead) return;
-    api.getAcpCapabilities(execution.id).then((caps) => {
+    api.getAcpCapabilities(sessionKey).then((caps) => {
       if (caps) setPromptCapabilities(caps);
     }).catch(() => {});
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
   useEffect(() => {
-    if (isDead) return;
     const unlisten = listen<AcpPromptCapabilities>(
-      `acp://session-capabilities/${execution.id}`,
-      (event) => {
-        setPromptCapabilities(event.payload);
-      },
+      `acp://session-capabilities/${sessionKey}`,
+      (event) => { setPromptCapabilities(event.payload); },
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
-  // Fetch cached models on mount (handles race where SpawnOk fires before listener registers).
   useEffect(() => {
-    if (isDead) return;
-    api.getAcpModels(execution.id).then((modelState) => {
+    api.getAcpModels(sessionKey).then((modelState) => {
       if (modelState) {
         setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
         setModelId(modelState.current_model_id);
         setModelsLoaded(true);
       }
     }).catch(() => {});
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
   useEffect(() => {
-    if (isDead) return;
     const unlisten = listen<{ current_model_id: string; available_models: Array<{ model_id: string; name: string }> }>(
-      `acp://session-models/${execution.id}`,
+      `acp://session-models/${sessionKey}`,
       (event) => {
         const { current_model_id, available_models } = event.payload;
         setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
@@ -205,18 +169,16 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       },
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
   useEffect(() => {
-    if (isDead) return;
-    const unlisten = listen<string>(`acp://model-changed/${execution.id}`, (event) => {
+    const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
       setModelId(event.payload);
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
   useEffect(() => {
-    if (isDead) return;
     type SessionUpdatePayloadRaw = {
       sessionUpdate?: string;
       used?: number;
@@ -225,16 +187,20 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       availableCommands?: AvailableCommand[];
     };
     const unlisten = listen<SessionUpdatePayloadRaw>(
-      `acp://session-update/${execution.id}`,
+      `acp://session-update/${sessionKey}`,
       (event) => {
         const p = event.payload;
         if (p.sessionUpdate === "usage_update") {
           if (typeof p.used === "number" && typeof p.size === "number") {
-            setUsageState((prev) => ({
-              used: p.used!,
-              size: p.size!,
-              cost: p.cost ?? prev?.cost ?? null,
-            }));
+            setUsageState((prev) => {
+              const next: UsageState = {
+                used: p.used!,
+                size: p.size!,
+                cost: p.cost ?? prev?.cost ?? null,
+              };
+              onUsageChangeRef.current?.(next);
+              return next;
+            });
           }
         } else if (p.sessionUpdate === "available_commands_update") {
           if (Array.isArray(p.availableCommands)) {
@@ -244,48 +210,48 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       },
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [isDead, execution.id]);
+  }, [sessionKey]);
 
   const handleModelChange = useCallback(async (id: string) => {
     const prev = modelId;
     setModelId(id);
-    try { await api.setAcpModel(execution.id, id); } catch { setModelId(prev); }
-  }, [execution.id, modelId]);
+    try { await api.setAcpModel(sessionKey, id); } catch { setModelId(prev); }
+  }, [sessionKey, modelId]);
 
   const handleElicitationSubmit = useCallback(
     async (requestId: string, values: Record<string, unknown>) => {
       try {
-        await api.respondAcpElicitation(execution.id, requestId, { action: "accept", content: values } as never);
+        await api.respondAcpElicitation(sessionKey, requestId, { action: "accept", content: values } as never);
       } catch { /* best-effort */ }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
         setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, formatElicitationAnswer(values)), insertAt }]);
       }
       setPendingElicitation(null);
-      setActivityStatus(execution.id, "working");
+      setActivityStatus(sessionKey, "working");
     },
-    [execution.id, pendingElicitation, setActivityStatus],
+    [sessionKey, pendingElicitation, setActivityStatus],
   );
 
   const handleElicitationDecline = useCallback(
     async (requestId: string) => {
       try {
-        await api.respondAcpElicitation(execution.id, requestId, { action: "decline" });
+        await api.respondAcpElicitation(sessionKey, requestId, { action: "decline" });
       } catch { /* best-effort */ }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
         setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, "Declined"), insertAt }]);
       }
       setPendingElicitation(null);
-      setActivityStatus(execution.id, "working");
+      setActivityStatus(sessionKey, "working");
     },
-    [execution.id, pendingElicitation, setActivityStatus],
+    [sessionKey, pendingElicitation, setActivityStatus],
   );
 
   const handlePermissionRespond = useCallback(
     async (requestId: string, optionId: string | null) => {
       try {
-        await api.respondAcpPermission(execution.id, requestId, optionId);
+        await api.respondAcpPermission(sessionKey, requestId, optionId);
       } catch {
         // best-effort
       }
@@ -300,14 +266,14 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
         setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt }]);
       }
       setPendingPermission(null);
-      setActivityStatus(execution.id, "working");
+      setActivityStatus(sessionKey, "working");
     },
-    [execution.id, pendingPermission, setActivityStatus],
+    [sessionKey, pendingPermission, setActivityStatus],
   );
 
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
-      if (isDead || isProcessing) return;
+      if (isProcessing) return;
       liveDispatch({ type: "finalize_streaming" });
       const userMsg: UserMessageItem = {
         id: `user-${++userMsgCounterRef.current}`,
@@ -317,48 +283,47 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
       const insertAt = agentItemsCountRef.current;
       setLiveUserMessages((prev) => [...prev, { item: userMsg, insertAt }]);
       setIsProcessing(true);
-      setActivityStatus(execution.id, "working");
+      setActivityStatus(sessionKey, "working");
       try {
         if (contentBlocks) {
-          await api.sendAcpPromptStructured(execution.id, contentBlocks);
+          await api.sendAcpPromptStructured(sessionKey, contentBlocks);
         } else {
-          await api.sendAcpPrompt(execution.id, content);
+          await api.sendAcpPrompt(sessionKey, content);
         }
       } catch {
         setIsProcessing(false);
-        setActivityStatus(execution.id, "idle");
+        setActivityStatus(sessionKey, "idle");
       }
     },
-    [isDead, isProcessing, execution.id, liveDispatch, setActivityStatus],
+    [isProcessing, sessionKey, liveDispatch, setActivityStatus],
   );
 
   const handleCancel = useCallback(async () => {
     try {
-      await api.cancelAcpSession(execution.id);
+      await api.interruptAcpTurn(sessionKey);
     } catch {
-      // best-effort
+      // Write failed (session already gone) — reset UI directly
+      setIsProcessing(false);
+      setActivityStatus(sessionKey, "idle");
     }
-    setIsProcessing(false);
-    setActivityStatus(execution.id, "idle");
-  }, [execution.id, setActivityStatus]);
+  }, [sessionKey, setActivityStatus]);
 
-  // Focus compose bar when this panel becomes selected or finishes initializing
   useEffect(() => {
-    if (!isSelected || isDead || state.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
+    if (liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
+    if (!isSelected) return;
     const timer = setTimeout(() => composeBarRef.current?.focus(), 0);
     return () => clearTimeout(timer);
-  }, [isSelected, isDead, state.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
+  }, [isSelected, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
 
-  // Focus compose bar when app window regains focus
   useEffect(() => {
-    if (!isSelected || isDead || state.sessionEnded) return;
+    if (!isSelected || liveState.sessionEnded) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (!focused || state.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
+      if (!focused || liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
       requestAnimationFrame(() => composeBarRef.current?.focus());
     });
     return () => { unlisten.then((fn) => fn()); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSelected, isDead, state.sessionEnded, state.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
+  }, [isSelected, liveState.sessionEnded, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.deltaY < 0) {
@@ -388,8 +353,8 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
   }, []);
 
   const displayItems = useMemo(
-    () => isDead ? state.items : mergeLiveItems(state.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries),
-    [isDead, state.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries],
+    () => mergeLiveItems(liveState.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries),
+    [liveState.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries],
   );
 
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
@@ -409,9 +374,8 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     return { lastUserMessage, agentResponseStartIdx };
   }, [groupedItems]);
 
-  // Refs are null while the spinner renders; register observer only after init clears.
   useEffect(() => {
-    if (state.isInitializing || !modelsLoaded || isDead) return;
+    if (liveState.isInitializing || !modelsLoaded) return;
     const scrollEl = chatScrollRef.current;
     const contentEl = chatContentRef.current;
     if (!scrollEl || !contentEl) return;
@@ -425,87 +389,23 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     ro.observe(contentEl);
     return () => ro.disconnect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.isInitializing, modelsLoaded, isDead]);
-
-  // Dead session: scroll to bottom once data finishes loading
-  useEffect(() => {
-    if (!isDead || state.isInitializing) return;
-    const el = chatScrollRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
-    atBottomRef.current = true;
-  }, [isDead, state.isInitializing]);
-
-  useEffect(() => {
-    const scrollEl = chatScrollRef.current;
-    const target = lastUserMsgRef.current;
-    if (!scrollEl || !target) {
-      setShowStickyUserMsg(false);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const aboveViewport = !entry.isIntersecting && entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
-        setShowStickyUserMsg(aboveViewport);
-      },
-      { root: scrollEl, threshold: 0 },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [lastUserMessage, groupedItems]);
-
-  useEffect(() => {
-    const scrollEl = chatScrollRef.current;
-    const target = agentResponseStartRef.current;
-    if (!scrollEl || !target) {
-      setAgentResponseAbove(false);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const aboveViewport = !entry.isIntersecting && entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
-        setAgentResponseAbove(aboveViewport);
-      },
-      { root: scrollEl, threshold: 0 },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [agentResponseStartIdx, groupedItems]);
+  }, [liveState.isInitializing, modelsLoaded]);
 
   // 2s: mark session as responsive.
   useEffect(() => {
-    if (isDead || !state.isInitializing) return;
+    if (!liveState.isInitializing) return;
     const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 2000);
     return () => clearTimeout(timer);
-  }, [isDead, state.isInitializing, liveDispatch]);
+  }, [liveState.isInitializing, liveDispatch]);
 
   // 10s: safety valve for agents without model support — unblock UI if models never arrive.
   useEffect(() => {
-    if (isDead || modelsLoaded) return;
+    if (modelsLoaded) return;
     const timer = setTimeout(() => setModelsLoaded(true), 10000);
     return () => clearTimeout(timer);
-  }, [isDead, modelsLoaded]);
+  }, [modelsLoaded]);
 
-  // Session ended banner
-  const sessionEndedBanner =
-    (isDead || state.sessionEnded) && execution.completed_at ? (
-      <div className="h-8 border-b border-border bg-muted/30 flex items-center px-3 text-xs text-muted-foreground shrink-0">
-        {execution.status === "failed"
-          ? "Session ended (interrupted)"
-          : execution.status === "cancelled"
-            ? "Session cancelled"
-            : "Session ended"}
-        {" · "}
-        {new Date(execution.completed_at).toLocaleString()}
-        {" · "}
-        {formatDistanceStrict(
-          new Date(execution.started_at),
-          new Date(execution.completed_at),
-        )}
-      </div>
-    ) : null;
-
-  if (!isDead && (state.isInitializing || !modelsLoaded)) {
+  if (liveState.isInitializing || !modelsLoaded) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -516,20 +416,13 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
     );
   }
 
-  if (isDead && state.isInitializing) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        Loading session data...
-      </div>
-    );
-  }
-
-  const isSessionDead = isDead || state.sessionEnded;
+  const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
     ? { requestId: pendingElicitation.requestId, ...parseElicitationFields(pendingElicitation.payload) }
     : null;
 
   let bottomBar: React.ReactNode = null;
+  let inlinePermission: React.ReactNode = null;
   let planOverlay: React.ReactNode = null;
   if (!isSessionDead) {
     if (elicitationContent) {
@@ -553,12 +446,19 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
           />
         );
       } else {
-        bottomBar = (
-          <PermissionPrompt
-            requestId={pendingPermission.requestId}
-            payload={pendingPermission.payload}
-            onRespond={handlePermissionRespond}
-          />
+        inlinePermission = (
+          <motion.div
+            key={pendingPermission.requestId}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <PermissionPrompt
+              requestId={pendingPermission.requestId}
+              payload={pendingPermission.payload}
+              onRespond={handlePermissionRespond}
+            />
+          </motion.div>
         );
       }
     } else {
@@ -571,7 +471,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             isProcessing={isProcessing}
             commands={availableCommands}
             embeddedContext={promptCapabilities?.embedded_context ?? false}
-            logId={execution?.id ?? null}
+            logId={sessionKey}
             projectPath={selectedProject?.path ?? null}
             models={models}
             modelId={modelId}
@@ -587,8 +487,6 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {sessionEndedBanner}
-
       {/* Activity content area */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Scroll area with FAB overlay */}
@@ -600,9 +498,9 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
             onWheel={handleWheel}
           >
             <div className="sticky top-0 z-10">
-              {state.plan && (
+              {liveState.plan && (
                 <div className="bg-card border-b border-border">
-                  <ActivityPlanPanel entries={state.plan} />
+                  <ActivityPlanPanel entries={liveState.plan} />
                 </div>
               )}
               <AnimatePresence>
@@ -671,6 +569,7 @@ export function AgentActivityPanel({ execution, isDead = false, isSelected = fal
 
                 return element ? <div key={key}>{element}</div> : null;
               })}
+              <AnimatePresence>{inlinePermission}</AnimatePresence>
             </div>
 
             {bottomBar}
@@ -744,8 +643,6 @@ function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
   return result;
 }
 
-// Interleave live user/permission/elicitation items into agent items based on
-// insertion index — i.e., where in agent items each was recorded at send time.
 function mergeLiveItems(
   agentItems: ActivityItem[],
   userMessages: Array<{ item: UserMessageItem; insertAt: number }>,
@@ -782,3 +679,4 @@ function formatElicitationAnswer(values: Record<string, unknown>): string {
   if (parts.length === 0) return "Submitted";
   return parts.map((v) => (Array.isArray(v) ? v.join(", ") : String(v))).join("; ");
 }
+

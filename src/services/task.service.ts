@@ -43,21 +43,6 @@ export function useTasksQuery(projectId: number | null) {
 }
 
 /**
- * Query hook for fetching execution logs for a task
- */
-export function useExecutionLogsQuery(taskId: number | null) {
-  return useQuery({
-    queryKey: taskQueryKeys.logsByTask(taskId!),
-    queryFn: () => api.getExecutionLogs(taskId!),
-    enabled: taskId !== null,
-    staleTime: 10000, // 10 seconds—logs update frequently
-    refetchInterval: 5000, // Poll every 5 seconds for log updates
-    refetchIntervalInBackground: false, // Don't poll when app is in background
-    refetchOnWindowFocus: true,
-  });
-}
-
-/**
  * Query hook for fetching diff for review (always fresh, no cache)
  */
 export function useDiffForReviewQuery(taskId: number | null) {
@@ -115,19 +100,6 @@ export function useUpdateTask() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to update task"),
-  });
-}
-
-/**
- * Mutation hook for canceling task execution
- */
-export function useCancelExecutionMutation() {
-  return useMutation({
-    mutationFn: (logId: number) => api.cancelExecution(logId),
-    onSuccess: () => {
-      toast.success("Execution cancelled");
-    },
-    onError: createErrorToastHandler("Failed to cancel execution"),
   });
 }
 

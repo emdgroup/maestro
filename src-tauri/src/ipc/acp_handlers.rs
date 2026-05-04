@@ -3,11 +3,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
-use chrono::Utc;
+use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::db::AppState;
+use crate::models::worktree::{ActiveSessionInfo, SessionListEntryDto};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -35,10 +36,12 @@ pub struct AcpPromptCapabilities {
 use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
-    PromptRequest, CancelRequest, PermissionResponse,
+    PromptRequest, CancelRequest, InterruptTurnRequest, PermissionResponse,
     ElicitationResponse, SetModelRequest,
     ListAgentsRequest, write_message,
     FileSearchRequest, FileReadRequest,
+    SessionListRequest,
+    SessionCloseRequest,
 };
 use tokio::sync::oneshot;
 
@@ -48,11 +51,11 @@ fn session_id_for(log_id: i32) -> String {
 
 /// Launch a new ACP agent session via maestro-server subprocess.
 ///
-/// Creates an execution_log row with status='running', execution_mode='acp', and agent_id set,
-/// spawns maestro-server with piped stdin/stdout, sends SpawnRequest, and starts a background
-/// reader task that emits Tauri events for each session update.
+/// Assigns a session key from the in-memory counter, spawns maestro-server with piped
+/// stdin/stdout, sends SpawnRequest, and starts a background reader task that emits
+/// Tauri events for each session update.
 ///
-/// The session is keyed by the returned log_id in AppState.acp_sessions.
+/// The session is keyed by the returned session_key in AppState.acp_sessions.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state
@@ -61,8 +64,8 @@ fn session_id_for(log_id: i32) -> String {
 /// * `session_name` - Optional display name for the session
 ///
 /// # Returns
-/// Execution log ID (i32) — used as session key for send_acp_prompt, respond_acp_permission,
-/// cancel_acp_session, and Tauri event subscription (acp://session-update/{log_id}, etc.)
+/// Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
+/// cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
 #[tauri::command]
 #[specta::specta]
 pub async fn spawn_acp_session(
@@ -74,30 +77,22 @@ pub async fn spawn_acp_session(
     connection_id: Option<i32>,
     worktree_branch: Option<String>,
 ) -> Result<i32, String> {
-    let now = Utc::now().to_rfc3339();
+    // Resolve branch_name from worktree path if not provided
+    let branch_name: Option<String> = worktree_branch.or_else(|| {
+        std::path::Path::new(&cwd)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|basename| {
+                let conn = app_state.db.lock().ok()?;
+                conn.query_row(
+                    "SELECT branch_name FROM worktrees WHERE project_id = ?1 AND (path = ?2 OR path LIKE '%/' || ?2) LIMIT 1",
+                    rusqlite::params![project_id, basename],
+                    |row| row.get(0),
+                ).ok()
+            })
+    });
 
-    let log_id: i32 = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let branch_name: Option<String> = worktree_branch.or_else(|| {
-            std::path::Path::new(&cwd)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .and_then(|basename| {
-                    conn.query_row(
-                        "SELECT branch_name FROM worktrees WHERE project_id = ?1 AND (path = ?2 OR path LIKE '%/' || ?2) LIMIT 1",
-                        rusqlite::params![project_id, basename],
-                        |row| row.get(0),
-                    )
-                    .ok()
-                })
-        });
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, project_id, status, execution_mode, agent_id, started_at) VALUES (NULL, ?1, ?2, ?3, 'running', 'acp', ?4, ?5)",
-            rusqlite::params![&branch_name, &session_name, project_id, &agent_id, &now],
-        ).map_err(|e| format!("Failed to create execution log: {}", e))?;
-        conn.last_insert_rowid() as i32
-    };
-
+    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
 
     if let Some(conn_id) = connection_id {
@@ -115,13 +110,22 @@ pub async fn spawn_acp_session(
         crate::acp::spawn_acp_process_remote(
             &agent_id, &cwd, log_id, &session_id, &app_state, &ssh,
             &maestro_path,
+            session_name,
+            None,
+            None,
+            branch_name,
         ).await?;
     } else {
         crate::acp::spawn_acp_process(
             &agent_id, &cwd, log_id, &session_id, &app_state,
+            session_name,
+            None,
+            None,
+            branch_name,
         ).await?;
     }
 
+    app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(log_id)
 }
 
@@ -167,7 +171,7 @@ pub async fn send_acp_prompt_structured(
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state
-/// * `log_id` - Session key (execution log ID)
+/// * `log_id` - Session key
 /// * `request_id` - The permission request ID from the agent's PermissionRequest event
 /// # Security
 /// T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
@@ -207,44 +211,12 @@ pub async fn respond_acp_elicitation(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-/// Read structured output from a completed ACP session for dead session replay.
-///
-/// Returns the accumulated SessionUpdate payloads stored in execution_logs.structured_output.
-/// Returns an empty array if the column is NULL (session had no structured output).
-///
-/// # Arguments
-/// * `app_state` - Tauri app state
-/// * `log_id` - Execution log ID
-///
-/// # Returns
-/// Vec<serde_json::Value> — the accumulated payload array from the session
-#[tauri::command]
-#[specta::specta]
-pub async fn get_structured_output(
-    app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
-) -> Result<Vec<serde_json::Value>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let json: Option<String> = conn.query_row(
-        "SELECT structured_output FROM execution_logs WHERE id = ?1",
-        rusqlite::params![log_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("DB query failed: {}", e))?;
-
-    match json {
-        None => Ok(vec![]),
-        Some(s) => serde_json::from_str::<Vec<serde_json::Value>>(&s)
-            .map_err(|e| format!("Failed to parse structured_output: {}", e)),
-    }
-}
-
 /// Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
 ///
 /// Steps:
 /// 1. Send CancelRequest to maestro-server (best-effort, ignored if session already gone)
 /// 2. Remove session from AppState.acp_sessions (drops AcpProcess, which kills subprocess via kill_on_drop)
 /// 3. Send cancel signal to the background reader task
-/// 4. Update execution_log status to 'cancelled'
 ///
 /// # Security
 /// T-43-08: cancel_acp_session sends CancelRequest then removes from map (drops Child with
@@ -252,7 +224,7 @@ pub async fn get_structured_output(
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state
-/// * `log_id` - Session key (execution log ID)
+/// * `log_id` - Session key
 #[tauri::command]
 #[specta::specta]
 pub async fn cancel_acp_session(
@@ -274,15 +246,26 @@ pub async fn cancel_acp_session(
         }
     }
 
-    // Update execution_log status to 'cancelled'.
-    let now = Utc::now().to_rfc3339();
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let _ = conn.execute(
-        "UPDATE execution_logs SET status = 'cancelled', completed_at = ?1 WHERE id = ?2",
-        rusqlite::params![&now, log_id],
-    );
-
+    app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
+}
+
+/// Interrupt the current ACP turn without killing the session.
+///
+/// Sends InterruptTurn to maestro-server, which forwards a CancelNotification
+/// to the agent. The agent responds with StopReason::Cancelled, keeping the
+/// session alive for subsequent prompts.
+#[tauri::command]
+#[specta::specta]
+pub async fn interrupt_acp_turn(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+) -> Result<(), String> {
+    let session_id = session_id_for(log_id);
+    let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+        session_id,
+    }));
+    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
 /// Send a SetModel request to change the active model for a running ACP session.
@@ -641,79 +624,836 @@ pub async fn read_session_file(
         .map_err(|_| "File read response channel closed".to_string())?
 }
 
+/// Get all currently active sessions (ACP + PTY) as a flat list.
+/// Used by the Agents sidebar to display live sessions.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_active_sessions(
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ActiveSessionInfo>, String> {
+    let mut sessions = Vec::new();
+
+    // ACP sessions
+    {
+        let acp = app_state.acp_sessions.lock().await;
+        for (key, proc) in acp.iter() {
+            let caps = proc.session_capabilities.lock()
+                .map(|c| c.clone())
+                .unwrap_or_default();
+            sessions.push(ActiveSessionInfo {
+                session_key: *key,
+                session_name: proc.session_name.clone(),
+                agent_id: Some(proc.agent_id_meta.clone()),
+                execution_mode: "acp".to_string(),
+                started_at: proc.started_at.clone(),
+                task_id: proc.task_id,
+                task_name: proc.task_name.clone(),
+                branch_name: proc.branch_name.clone(),
+                supports_session_list: caps.supports_session_list,
+                supports_session_load: caps.supports_session_load,
+                supports_session_close: caps.supports_session_close,
+            });
+        }
+    }
+
+    // PTY sessions
+    {
+        let pty_meta = app_state.pty_session_meta.lock().await;
+        for (key, meta) in pty_meta.iter() {
+            sessions.push(ActiveSessionInfo {
+                session_key: *key,
+                session_name: meta.session_name.clone(),
+                agent_id: None,
+                execution_mode: "pty".to_string(),
+                started_at: meta.started_at.clone(),
+                task_id: meta.task_id,
+                task_name: meta.task_name.clone(),
+                branch_name: meta.branch_name.clone(),
+                supports_session_list: false,
+                supports_session_load: false,
+                supports_session_close: false,
+            });
+        }
+    }
+
+    sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+    Ok(sessions)
+}
+
+/// List ACP sessions available for a given agent via a one-shot maestro-server connection.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_acp_sessions(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+    cwd: String,
+    connection_id: Option<i32>,
+    cursor: Option<String>,
+) -> Result<Vec<SessionListEntryDto>, String> {
+    if let Some(conn_id) = connection_id {
+        let maestro_path = {
+            let cache = app_state.agent_discovery_cache.lock().await;
+            cache.get(&Some(conn_id))
+                .and_then(|e| e.maestro_server_path.clone())
+                .ok_or_else(|| format!(
+                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
+                    conn_id
+                ))?
+        };
+        let ssh = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+        query_session_list_remote(&ssh, &maestro_path, &agent_id, &cwd, cursor).await
+    } else {
+        query_session_list_local(&agent_id, &cwd, cursor).await
+    }
+}
+
+/// Close an ACP session stored on the agent server (not a live Tauri session).
+#[tauri::command]
+#[specta::specta]
+pub async fn close_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+    session_id: String,
+    cwd: String,
+    connection_id: Option<i32>,
+) -> Result<(), String> {
+    if let Some(conn_id) = connection_id {
+        let maestro_path = {
+            let cache = app_state.agent_discovery_cache.lock().await;
+            cache.get(&Some(conn_id))
+                .and_then(|e| e.maestro_server_path.clone())
+                .ok_or_else(|| format!(
+                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
+                    conn_id
+                ))?
+        };
+        let ssh = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+        query_session_close_remote(&ssh, &maestro_path, &agent_id, &session_id, &cwd).await
+    } else {
+        query_session_close_local(&agent_id, &session_id, &cwd).await
+    }
+}
+
+/// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
+///
+/// Returns the new session_key for this Tauri session.
+#[tauri::command]
+#[specta::specta]
+pub async fn load_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+    acp_session_id: String,
+    cwd: String,
+    connection_id: Option<i32>,
+    session_name: Option<String>,
+) -> Result<i32, String> {
+    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let maestro_session_id = session_id_for(log_id);
+
+    if let Some(conn_id) = connection_id {
+        let maestro_path = {
+            let cache = app_state.agent_discovery_cache.lock().await;
+            cache.get(&Some(conn_id))
+                .and_then(|e| e.maestro_server_path.clone())
+                .ok_or_else(|| format!(
+                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
+                    conn_id
+                ))?
+        };
+        let ssh = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+        spawn_loaded_acp_session_remote(
+            &agent_id, &cwd, log_id, &acp_session_id, &maestro_session_id,
+            &app_state, &ssh, &maestro_path, session_name,
+        ).await?;
+    } else {
+        spawn_loaded_acp_session(
+            &agent_id, &cwd, log_id, &acp_session_id, &maestro_session_id,
+            &app_state, session_name,
+        ).await?;
+    }
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(log_id)
+}
+
+// ============================================================================
+// One-shot session list/close helpers
+// ============================================================================
+
+async fn query_session_list_local(
+    agent_id: &str,
+    cwd: &str,
+    cursor: Option<String>,
+) -> Result<Vec<SessionListEntryDto>, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let server_path = which::which("maestro-server")
+        .map_err(|e| format!("maestro-server not found: {}", e))?;
+
+    let mut child = tokio::process::Command::new(server_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let mut stdout = child.stdout.take().expect("stdout piped");
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
+        agent_id: agent_id.to_string(),
+        cwd: cwd.to_string(),
+        cursor,
+    }));
+    let mut writer = tokio::io::BufWriter::new(&mut stdin);
+    write_message(&mut writer, &msg)
+        .await
+        .map_err(|e| format!("SessionList local write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    drop(writer);
+    drop(stdin);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        async {
+            use tokio::io::AsyncReadExt;
+            let mut tmp = [0u8; 4096];
+            loop {
+                let n = stdout.read(&mut tmp).await
+                    .map_err(|e| format!("read error: {}", e))?;
+                if n == 0 { break; }
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                    return Ok::<_, String>(Some(rpc_msg));
+                }
+            }
+            Ok(None)
+        },
+    )
+    .await
+    .map_err(|_| "SessionList local timed out after 15s".to_string())??;
+
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok(resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect()),
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid SessionListOk response from local maestro-server".to_string()),
+    }
+}
+
+async fn query_session_list_remote(
+    ssh: &crate::ssh::RemoteSshSession,
+    maestro_server_path: &str,
+    agent_id: &str,
+    cwd: &str,
+    cursor: Option<String>,
+) -> Result<Vec<SessionListEntryDto>, String> {
+    use tokio::io::AsyncWriteExt;
+    use russh::ChannelMsg;
+
+    let channel = ssh.open_exec_channel(maestro_server_path)
+        .await
+        .map_err(|e| format!("SessionList channel open failed: {}", e))?;
+
+    let (mut read_half, write_half) = channel.split();
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
+        agent_id: agent_id.to_string(),
+        cwd: cwd.to_string(),
+        cursor,
+    }));
+    let mut writer = write_half.make_writer();
+    write_message(&mut writer, &msg)
+        .await
+        .map_err(|e| format!("SessionList write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("SessionList flush failed: {}", e))?;
+    drop(writer);
+    drop(write_half);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async move {
+            loop {
+                match read_half.wait().await {
+                    Some(ChannelMsg::Data { data }) => {
+                        buf.extend_from_slice(&data);
+                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                            return Some(rpc_msg);
+                        }
+                    }
+                    Some(ChannelMsg::Eof)
+                    | Some(ChannelMsg::Close)
+                    | Some(ChannelMsg::ExitStatus { .. })
+                    | None => return None,
+                    _ => {}
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|_| "SessionList remote timed out after 30s".to_string())?;
+
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok(resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect()),
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid SessionListOk response from remote maestro-server".to_string()),
+    }
+}
+
+async fn query_session_close_local(
+    agent_id: &str,
+    session_id: &str,
+    cwd: &str,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let server_path = which::which("maestro-server")
+        .map_err(|e| format!("maestro-server not found: {}", e))?;
+
+    let mut child = tokio::process::Command::new(server_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let mut stdout = child.stdout.take().expect("stdout piped");
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
+        agent_id: agent_id.to_string(),
+        session_id: session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    let mut writer = tokio::io::BufWriter::new(&mut stdin);
+    write_message(&mut writer, &msg)
+        .await
+        .map_err(|e| format!("SessionClose local write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    drop(writer);
+    drop(stdin);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        async {
+            use tokio::io::AsyncReadExt;
+            let mut tmp = [0u8; 4096];
+            loop {
+                let n = stdout.read(&mut tmp).await
+                    .map_err(|e| format!("read error: {}", e))?;
+                if n == 0 { break; }
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                    return Ok::<_, String>(Some(rpc_msg));
+                }
+            }
+            Ok(None)
+        },
+    )
+    .await
+    .map_err(|_| "SessionClose local timed out after 15s".to_string())??;
+
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid SessionCloseOk response from local maestro-server".to_string()),
+    }
+}
+
+async fn query_session_close_remote(
+    ssh: &crate::ssh::RemoteSshSession,
+    maestro_server_path: &str,
+    agent_id: &str,
+    session_id: &str,
+    cwd: &str,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    use russh::ChannelMsg;
+
+    let channel = ssh.open_exec_channel(maestro_server_path)
+        .await
+        .map_err(|e| format!("SessionClose channel open failed: {}", e))?;
+
+    let (mut read_half, write_half) = channel.split();
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
+        agent_id: agent_id.to_string(),
+        session_id: session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    let mut writer = write_half.make_writer();
+    write_message(&mut writer, &msg)
+        .await
+        .map_err(|e| format!("SessionClose write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("SessionClose flush failed: {}", e))?;
+    drop(writer);
+    drop(write_half);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async move {
+            loop {
+                match read_half.wait().await {
+                    Some(ChannelMsg::Data { data }) => {
+                        buf.extend_from_slice(&data);
+                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                            return Some(rpc_msg);
+                        }
+                    }
+                    Some(ChannelMsg::Eof)
+                    | Some(ChannelMsg::Close)
+                    | Some(ChannelMsg::ExitStatus { .. })
+                    | None => return None,
+                    _ => {}
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|_| "SessionClose remote timed out after 30s".to_string())?;
+
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid SessionCloseOk response from remote maestro-server".to_string()),
+    }
+}
+
+// ============================================================================
+// Session load (resume existing ACP session)
+// ============================================================================
+
+/// Spawn a new Tauri ACP session that loads/resumes an existing agent-side session.
+/// Uses SessionLoad protocol instead of Spawn.
+async fn spawn_loaded_acp_session(
+    agent_id: &str,
+    cwd: &str,
+    log_id: i32,
+    acp_session_id: &str,
+    _maestro_session_id: &str,
+    app_state: &Arc<crate::db::AppState>,
+    session_name: Option<String>,
+) -> Result<(), String> {
+    use crate::acp::transport::SessionLoadRequest;
+    use std::process::Stdio;
+
+    let server_path = which::which("maestro-server")
+        .map_err(|e| format!("maestro-server not found on PATH: {}", e))?;
+
+    let mut child = tokio::process::Command::new(server_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
+
+    let child_stdin = child.stdin.take().expect("child stdin must be piped");
+    let child_stdout = child.stdout.take().expect("child stdout must be piped");
+    let mut stdin_writer = tokio::io::BufWriter::new(child_stdin);
+
+    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+        agent_id: agent_id.to_string(),
+        session_id: acp_session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    write_message(&mut stdin_writer, &load_req)
+        .await
+        .map_err(|e| format!("write failed: {}", e))?;
+    use tokio::io::AsyncWriteExt;
+    stdin_writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+    let models_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
+    let capabilities_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
+    let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
+
+    let acp_process = crate::acp::AcpProcess {
+        writer: crate::acp::AcpTransportWriter::Local(stdin_writer),
+        child: Some(child),
+        reader_cancel_tx: Some(cancel_tx),
+        models: Arc::clone(&models_cache),
+        prompt_capabilities: Arc::clone(&capabilities_cache),
+        cwd: cwd.to_string(),
+        pending_file_search: Arc::clone(&pending_file_search),
+        pending_file_read: Arc::clone(&pending_file_read),
+        session_name,
+        agent_id_meta: agent_id.to_string(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+        task_id: None,
+        task_name: None,
+        branch_name: None,
+        session_capabilities: Arc::clone(&session_capabilities),
+    };
+
+    app_state.acp_sessions.lock().await.insert(log_id, acp_process);
+
+    crate::acp::manager::spawn_reader_task_pub(
+        child_stdout,
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+        cancel_rx,
+        models_cache,
+        capabilities_cache,
+        pending_file_search,
+        pending_file_read,
+        session_capabilities,
+    );
+
+    Ok(())
+}
+
+async fn spawn_loaded_acp_session_remote(
+    agent_id: &str,
+    cwd: &str,
+    log_id: i32,
+    acp_session_id: &str,
+    _maestro_session_id: &str,
+    app_state: &Arc<crate::db::AppState>,
+    ssh_session: &crate::ssh::RemoteSshSession,
+    maestro_server_path: &str,
+    session_name: Option<String>,
+) -> Result<(), String> {
+    use crate::acp::transport::SessionLoadRequest;
+    use tokio::io::AsyncWriteExt;
+
+    let channel = ssh_session
+        .open_exec_channel(maestro_server_path)
+        .await
+        .map_err(|e| format!("Failed to open remote ACP channel for load: {}", e))?;
+
+    let (read_half, write_half) = channel.split();
+    let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+
+    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+        agent_id: agent_id.to_string(),
+        session_id: acp_session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    let load_bytes = crate::acp::manager::serialize_message_pub(&load_req)?;
+    write_tx.send(load_bytes).await
+        .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
+
+    tokio::spawn(async move {
+        let mut writer = write_half.make_writer();
+        while let Some(bytes) = write_rx.recv().await {
+            if writer.write_all(&bytes).await.is_err() {
+                break;
+            }
+            let _ = writer.flush().await;
+        }
+    });
+
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+    let models_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
+    let capabilities_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
+    let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
+
+    let acp_process = crate::acp::AcpProcess {
+        writer: crate::acp::AcpTransportWriter::RemoteSsh(write_tx),
+        child: None,
+        reader_cancel_tx: Some(cancel_tx),
+        models: Arc::clone(&models_cache),
+        prompt_capabilities: Arc::clone(&capabilities_cache),
+        cwd: cwd.to_string(),
+        pending_file_search: Arc::clone(&pending_file_search),
+        pending_file_read: Arc::clone(&pending_file_read),
+        session_name,
+        agent_id_meta: agent_id.to_string(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+        task_id: None,
+        task_name: None,
+        branch_name: None,
+        session_capabilities: Arc::clone(&session_capabilities),
+    };
+
+    app_state.acp_sessions.lock().await.insert(log_id, acp_process);
+
+    crate::acp::manager::spawn_remote_reader_task_pub(
+        read_half,
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+        cancel_rx,
+        models_cache,
+        capabilities_cache,
+        pending_file_search,
+        pending_file_read,
+        session_capabilities,
+    );
+
+    Ok(())
+}
+
+// ── Agent models cache ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentModelsCache {
+    pub agent_id: String,
+    pub models: Vec<AcpModelInfo>,
+    pub fetched_at: String,
+}
+
+/// Get cached models for an agent from the project's .maestro/agent_models_cache.json.
+/// Returns None if no cache entry exists for the agent.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_agent_models_cache(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    agent_id: String,
+) -> Result<Option<AgentModelsCache>, String> {
+    let (path, connection_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+        ).map_err(|_| format!("Project {} not found", project_id))?
+    };
+
+    let map = if let Some(conn_id) = connection_id {
+        let session = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        let cache_path = format!("{}/.maestro/agent_models_cache.json", path);
+        match session.execute_command(&format!("cat {}", crate::git::remote::shell_quote(&cache_path))).await {
+            Ok(output) => serde_json::from_str::<crate::models::project_config::AgentModelsMap>(&output)
+                .unwrap_or_default(),
+            Err(_) => Default::default(),
+        }
+    } else {
+        crate::models::project_config::load_agent_models_cache(&path).unwrap_or_default()
+    };
+
+    Ok(map.get(&agent_id).map(|entry| AgentModelsCache {
+        agent_id: agent_id.clone(),
+        models: entry.models.iter().map(|m| AcpModelInfo {
+            model_id: m.model_id.clone(),
+            name: m.name.clone(),
+            description: m.description.clone(),
+        }).collect(),
+        fetched_at: entry.fetched_at.clone(),
+    }))
+}
+
+/// Spawn a one-shot agent session to discover its available models, then cache the result
+/// in the project's .maestro/agent_models_cache.json.
+#[tauri::command]
+#[specta::specta]
+pub async fn refresh_agent_models(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    agent_id: String,
+) -> Result<AgentModelsCache, String> {
+    use crate::acp::transport::SpawnRequest;
+
+    let (path, connection_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+        ).map_err(|_| format!("Project {} not found", project_id))?
+    };
+
+    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        agent_id: agent_id.clone(),
+        session_id: "probe-0".to_string(),
+        cwd: path.clone(),
+    }));
+
+    let models = if let Some(conn_id) = connection_id {
+        probe_models_remote(&app_state, conn_id, spawn_req).await?
+    } else {
+        probe_models_local(spawn_req).await?
+    };
+
+    let fetched_at = chrono::Utc::now().to_rfc3339();
+    let entry = crate::models::project_config::AgentModelEntry {
+        models: models.iter().map(|m| crate::models::project_config::ProjectModelInfo {
+            model_id: m.model_id.clone(),
+            name: m.name.clone(),
+            description: m.description.clone(),
+        }).collect(),
+        fetched_at: fetched_at.clone(),
+    };
+
+    // Load existing cache, insert/update, save back
+    if let Some(conn_id) = connection_id {
+        let session = app_state.get_ssh_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        let cache_path_str = format!("{}/.maestro/agent_models_cache.json", path);
+        let maestro_dir = format!("{}/.maestro", path);
+        let mut map: crate::models::project_config::AgentModelsMap = match session
+            .execute_command(&format!("cat {}", crate::git::remote::shell_quote(&cache_path_str)))
+            .await
+        {
+            Ok(output) => serde_json::from_str(&output).unwrap_or_default(),
+            Err(_) => Default::default(),
+        };
+        map.insert(agent_id.clone(), entry);
+        let json = serde_json::to_string_pretty(&map)
+            .map_err(|e| format!("Serialization failed: {}", e))?;
+        session.execute_command(&format!(
+            "mkdir -p {} && printf '%s' {} > {}",
+            crate::git::remote::shell_quote(&maestro_dir),
+            crate::git::remote::shell_quote(&json),
+            crate::git::remote::shell_quote(&cache_path_str),
+        )).await.map_err(|e| format!("SSH write failed: {}", e))?;
+    } else {
+        let mut map = crate::models::project_config::load_agent_models_cache(&path)
+            .unwrap_or_default();
+        map.insert(agent_id.clone(), entry);
+        crate::models::project_config::save_agent_models_cache(&path, &map)?;
+    }
+
+    Ok(AgentModelsCache { agent_id, models, fetched_at })
+}
+
+async fn probe_models_local(spawn_req: MaestroRpcMessage) -> Result<Vec<AcpModelInfo>, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let server_path = which::which("maestro-server")
+        .map_err(|e| format!("maestro-server not found: {}", e))?;
+
+    let mut child = tokio::process::Command::new(server_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let mut stdout = child.stdout.take().expect("stdout piped");
+
+    let mut writer = tokio::io::BufWriter::new(&mut stdin);
+    write_message(&mut writer, &spawn_req)
+        .await
+        .map_err(|e| format!("SpawnRequest write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    drop(writer);
+    drop(stdin);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async {
+            use tokio::io::AsyncReadExt;
+            let mut tmp = [0u8; 4096];
+            loop {
+                let n = stdout.read(&mut tmp).await
+                    .map_err(|e| format!("read error: {}", e))?;
+                if n == 0 { break; }
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                    return Ok::<_, String>(Some(rpc_msg));
+                }
+            }
+            Ok(None)
+        },
+    )
+    .await
+    .map_err(|_| "SpawnRequest local timed out after 30s".to_string())??;
+
+    extract_models_from_spawn_ok(result)
+}
+
+async fn probe_models_remote(
+    app_state: &Arc<crate::db::AppState>,
+    conn_id: i32,
+    spawn_req: MaestroRpcMessage,
+) -> Result<Vec<AcpModelInfo>, String> {
+    use tokio::io::AsyncWriteExt;
+    use russh::ChannelMsg;
+
+    let maestro_path = {
+        let cache = app_state.agent_discovery_cache.lock().await;
+        cache.get(&Some(conn_id))
+            .and_then(|e| e.maestro_server_path.clone())
+            .ok_or_else(|| format!(
+                "maestro-server path not cached for connection {}. Reconnect to refresh.",
+                conn_id
+            ))?
+    };
+
+    let ssh = app_state.get_ssh_session(conn_id).await
+        .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
+
+    let channel = ssh.open_exec_channel(&maestro_path)
+        .await
+        .map_err(|e| format!("Channel open failed: {}", e))?;
+
+    let (mut read_half, write_half) = channel.split();
+    let mut writer = write_half.make_writer();
+    write_message(&mut writer, &spawn_req)
+        .await
+        .map_err(|e| format!("SpawnRequest write failed: {}", e))?;
+    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    drop(writer);
+    drop(write_half);
+
+    let mut buf = Vec::<u8>::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async move {
+            loop {
+                match read_half.wait().await {
+                    Some(ChannelMsg::Data { data }) => {
+                        buf.extend_from_slice(&data);
+                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
+                            return Some(rpc_msg);
+                        }
+                    }
+                    Some(ChannelMsg::Eof)
+                    | Some(ChannelMsg::Close)
+                    | Some(ChannelMsg::ExitStatus { .. })
+                    | None => return None,
+                    _ => {}
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|_| "SpawnRequest remote timed out after 30s".to_string())?;
+
+    extract_models_from_spawn_ok(result)
+}
+
+fn extract_models_from_spawn_ok(result: Option<MaestroRpcMessage>) -> Result<Vec<AcpModelInfo>, String> {
+    match result {
+        Some(MaestroRpcMessage::Response(ServerResponse::SpawnOk(resp))) => {
+            Ok(resp.models.map(|m| m.available_models.into_iter().map(|mi| AcpModelInfo {
+                model_id: mi.model_id,
+                name: mi.name,
+                description: mi.description,
+            }).collect()).unwrap_or_default())
+        }
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
+        _ => Err("No valid SpawnOk response from maestro-server".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use rusqlite::Connection;
-    use crate::db::schema::initialize_schema;
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, PromptRequest, PermissionResponse};
     use super::session_id_for;
-
-    /// PERSIST-02: spawn_acp_session INSERT writes execution_mode='acp' and agent_id.
-    /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
-    #[test]
-    fn test_spawn_acp_session_creates_log() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-
-        let session_name = "test-session";
-        let agent_id = "claude-code";
-        let now = "2026-04-20T00:00:00Z";
-
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, ?1, 'running', 'acp', ?2, ?3)",
-            rusqlite::params![session_name, agent_id, now],
-        ).unwrap();
-
-        let log_id = conn.last_insert_rowid();
-
-        let (mode, stored_agent_id, status): (String, Option<String>, String) = conn
-            .query_row(
-                "SELECT execution_mode, agent_id, status FROM execution_logs WHERE id = ?1",
-                [log_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .unwrap();
-
-        assert_eq!(mode, "acp", "execution_mode must be 'acp'");
-        assert_eq!(stored_agent_id, Some("claude-code".to_string()), "agent_id must be set");
-        assert_eq!(status, "running", "initial status must be 'running'");
-    }
-
-    /// PERSIST-05: cancel_acp_session UPDATE sets status='cancelled' and completed_at.
-    /// Tests the exact SQL the handler uses, against an in-memory v11 schema.
-    #[test]
-    fn test_cancel_acp_session_updates_status() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-
-        // Create an execution_log row first (simulates spawn).
-        let now = "2026-04-20T00:00:00Z";
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'test', 'running', 'acp', 'claude-code', ?1)",
-            rusqlite::params![now],
-        ).unwrap();
-        let log_id = conn.last_insert_rowid();
-
-        // Execute the same UPDATE that cancel_acp_session uses.
-        let cancel_time = "2026-04-20T00:01:00Z";
-        let rows_updated = conn.execute(
-            "UPDATE execution_logs SET status = 'cancelled', completed_at = ?1 WHERE id = ?2",
-            rusqlite::params![cancel_time, log_id],
-        ).unwrap();
-
-        assert_eq!(rows_updated, 1, "exactly one row should be updated");
-
-        let (status, completed_at): (String, Option<String>) = conn
-            .query_row(
-                "SELECT status, completed_at FROM execution_logs WHERE id = ?1",
-                [log_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-
-        assert_eq!(status, "cancelled", "status must be 'cancelled' after cancel");
-        assert_eq!(completed_at, Some("2026-04-20T00:01:00Z".to_string()), "completed_at must be set");
-    }
 
     /// PERSIST-03: send_acp_prompt constructs a PromptRequest with correct session_id and content.
     /// Verifies the exact JSON shape that write_to_acp_session will frame and send to maestro-server.
@@ -772,77 +1512,4 @@ mod tests {
         assert_eq!(allow_msg, back);
     }
 
-    /// PERSIST-06: structured_output flush SQL writes JSON array to the correct column.
-    /// Tests the exact UPDATE statement used in spawn_reader_task's periodic and final flush.
-    #[test]
-    fn test_structured_output_flush_sql() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-
-        let now = "2026-04-21T00:00:00Z";
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'flush-test', 'running', 'acp', 'test-agent', ?1)",
-            rusqlite::params![now],
-        ).unwrap();
-        let log_id = conn.last_insert_rowid();
-
-        // Simulate what spawn_reader_task's flush branch does
-        let updates = serde_json::json!([
-            {"seq": 1, "text": "chunk-one"},
-            {"seq": 2, "text": "chunk-two"},
-            {"seq": 3, "text": "chunk-three"}
-        ]);
-        let json = serde_json::to_string(&updates).unwrap();
-
-        let rows = conn.execute(
-            "UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
-            rusqlite::params![&json, log_id],
-        ).unwrap();
-        assert_eq!(rows, 1, "exactly one row must be updated");
-
-        let stored: Option<String> = conn.query_row(
-            "SELECT structured_output FROM execution_logs WHERE id = ?1",
-            [log_id],
-            |row| row.get(0),
-        ).unwrap();
-
-        let stored_str = stored.expect("structured_output must not be NULL after flush");
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(&stored_str).unwrap();
-        assert_eq!(parsed.len(), 3, "all 3 updates must be stored");
-        assert_eq!(parsed[0]["seq"], 1);
-        assert_eq!(parsed[2]["text"], "chunk-three");
-    }
-
-    /// PERSIST-06 (overwrite semantics): second flush overwrites first — no .clear() means
-    /// the array always grows and the DB column always holds the full accumulated list.
-    #[test]
-    fn test_structured_output_flush_overwrites_accumulates() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-
-        let now = "2026-04-21T00:00:00Z";
-        conn.execute(
-            "INSERT INTO execution_logs (task_id, branch_name, session_name, status, execution_mode, agent_id, started_at) VALUES (NULL, NULL, 'overwrite-test', 'running', 'acp', 'test-agent', ?1)",
-            rusqlite::params![now],
-        ).unwrap();
-        let log_id = conn.last_insert_rowid();
-
-        // First flush: 2 items
-        let first = serde_json::to_string(&serde_json::json!([{"seq":1},{"seq":2}])).unwrap();
-        conn.execute("UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
-            rusqlite::params![&first, log_id]).unwrap();
-
-        // Second flush: 4 items (accumulation — no clear between ticks)
-        let second = serde_json::to_string(&serde_json::json!([{"seq":1},{"seq":2},{"seq":3},{"seq":4}])).unwrap();
-        conn.execute("UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
-            rusqlite::params![&second, log_id]).unwrap();
-
-        let stored: String = conn.query_row(
-            "SELECT structured_output FROM execution_logs WHERE id = ?1",
-            [log_id], |row| row.get::<_, String>(0),
-        ).unwrap();
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(&stored).unwrap();
-        assert_eq!(parsed.len(), 4, "second flush must overwrite with full accumulated array");
-        assert_eq!(parsed[3]["seq"], 4);
-    }
 }

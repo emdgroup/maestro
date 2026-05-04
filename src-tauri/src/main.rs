@@ -49,27 +49,7 @@ fn main() {
             // Release project lock so other instances can open this project immediately.
             app_state.release_active_project_lock();
 
-            let mut snapshots: Vec<(i32, String)> = Vec::new();
-            if let Ok(sessions) = app_state.ssh_pty_sessions.try_lock() {
-                for (log_id, handle) in sessions.iter() {
-                    if let Ok(hist) = handle.history.try_lock() {
-                        if !hist.is_empty() {
-                            snapshots.push((*log_id, hist.clone()));
-                        }
-                    }
-                }
-            }
-
-            if !snapshots.is_empty() {
-                if let Ok(conn) = app_state.db.lock() {
-                    for (log_id, snapshot) in &snapshots {
-                        let _ = conn.execute(
-                            "UPDATE execution_logs SET terminal_output = ?1 WHERE id = ?2",
-                            rusqlite::params![snapshot, log_id],
-                        );
-                    }
-                }
-            }
+            // SSH PTY session history is in-memory only; no DB flush needed.
         }
     });
 }

@@ -44,19 +44,15 @@ pub async fn list_worktrees_with_status(
         created_at: String,
         base_branch: Option<String>,
         task_name: Option<String>,
-        agent_status: Option<String>,
     }
 
     let db_rows: Vec<DbWorktreeRow> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at, w.base_branch,
-                    t.name AS task_name,
-                    el.status AS agent_status
+                    t.name AS task_name
              FROM worktrees w
              LEFT JOIN tasks t ON t.id = w.task_id
-             LEFT JOIN execution_logs el ON el.task_id = w.task_id
-                 AND el.id = (SELECT id FROM execution_logs WHERE task_id = w.task_id ORDER BY started_at DESC LIMIT 1)
              WHERE w.project_id = ?"
         ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
@@ -71,7 +67,6 @@ pub async fn list_worktrees_with_status(
                     created_at: row.get(5)?,
                     base_branch: row.get(6)?,
                     task_name: row.get(7)?,
-                    agent_status: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Failed to query worktrees: {}", e))?
@@ -146,7 +141,6 @@ pub async fn list_worktrees_with_status(
                 git_status,
                 created_at: Some(db_row.created_at.clone()),
                 task_name: db_row.task_name.clone(),
-                agent_status: db_row.agent_status.clone(),
                 is_zombie,
                 is_orphan: false,
                 diff_stat,
@@ -165,7 +159,6 @@ pub async fn list_worktrees_with_status(
                 git_status,
                 created_at: None,
                 task_name: None,
-                agent_status: None,
                 is_zombie: false,
                 is_orphan: true,
                 diff_stat,
@@ -434,11 +427,7 @@ pub async fn cleanup_zombie_worktrees(
                  FROM worktrees w
                  LEFT JOIN tasks t ON t.id = w.task_id
                  WHERE w.project_id = ?1
-                   AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))
-                   AND NOT EXISTS (
-                       SELECT 1 FROM execution_logs el
-                       WHERE el.task_id = w.task_id AND el.status = 'running'
-                   )"
+                   AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))"
             ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
             let rows: Vec<(i32, String, String, String)> = stmt.query_map(rusqlite::params![project_id], |row| {

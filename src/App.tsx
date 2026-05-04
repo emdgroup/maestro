@@ -8,7 +8,7 @@ import type { Task } from "@/types/bindings";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
-import { useExecutionsWithTaskInfoQuery } from "@/services/execution.service";
+import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
 import { DisconnectBackdrop } from "@/components/common/DisconnectBackdrop";
 import {
@@ -74,8 +74,8 @@ function App() {
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
 
   // Running agent count for header badge
-  const { data: executions = [] } = useExecutionsWithTaskInfoQuery(currentProject?.id);
-  const runningAgentCount = executions.filter((e) => e.status === "running").length;
+  const { data: sessions = [] } = useActiveSessionsQuery();
+  const runningAgentCount = sessions.length;
 
   // SSH connection health monitoring — only active for SSH projects
   const {
@@ -242,7 +242,12 @@ function App() {
                   className="absolute inset-0 overflow-auto custom-scrollbar"
                 >
                   <Suspense fallback={fallback}>
-                    <SettingsView ref={settingsPageRef} projectId={currentProject.id} />
+                    <SettingsView
+                      ref={settingsPageRef}
+                      projectId={currentProject.id}
+                      connectionId={currentProject.connection_id}
+                      projectPath={currentProject.path}
+                    />
                   </Suspense>
                 </motion.div>
               )}

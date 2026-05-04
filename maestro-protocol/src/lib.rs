@@ -22,12 +22,16 @@ pub enum ServerRequest {
     Spawn(SpawnRequest),
     Prompt(PromptRequest),
     Cancel(CancelRequest),
+    InterruptTurn(InterruptTurnRequest),
     PermitResponse(PermissionResponse),
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
     SetModel(SetModelRequest),
     FileSearch(FileSearchRequest),
     FileRead(FileReadRequest),
+    SessionList(SessionListRequest),
+    SessionLoad(SessionLoadRequest),
+    SessionClose(SessionCloseRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -64,6 +68,11 @@ pub struct CancelRequest {
     pub session_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct InterruptTurnRequest {
+    pub session_id: String,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -80,6 +89,9 @@ pub enum ServerResponse {
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
     TurnEnded(TurnEnded),
+    SessionListOk(SessionListOkResponse),
+    SessionLoadOk(SessionLoadOkResponse),
+    SessionCloseOk,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -144,6 +156,55 @@ pub struct FileReadResponse {
     pub content: String,
 }
 
+// --- Session management types ---
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionListRequest {
+    pub agent_id: String,
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionLoadRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub cwd: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionCloseRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub cwd: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionListEntry {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionListOkResponse {
+    pub sessions: Vec<SessionListEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionLoadOkResponse {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<SessionModelState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnResponse {
     pub session_id: String,
@@ -151,6 +212,12 @@ pub struct SpawnResponse {
     pub models: Option<SessionModelState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
+    #[serde(default)]
+    pub supports_session_list: bool,
+    #[serde(default)]
+    pub supports_session_load: bool,
+    #[serde(default)]
+    pub supports_session_close: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -327,11 +394,24 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_interrupt_turn_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+            session_id: "sess-1".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
     fn roundtrip_spawn_ok_response() {
         let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
             models: None,
             prompt_capabilities: None,
+            supports_session_list: false,
+            supports_session_load: false,
+            supports_session_close: false,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -362,6 +442,9 @@ mod tests {
                     },
                 ],
             }),
+            supports_session_list: false,
+            supports_session_load: false,
+            supports_session_close: false,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -570,6 +653,9 @@ mod tests {
             session_id: "sess-1".to_string(),
             models: None,
             prompt_capabilities: None,
+            supports_session_list: false,
+            supports_session_load: false,
+            supports_session_close: false,
         }));
         let req_json = serde_json::to_string(&req).unwrap();
         let resp_json = serde_json::to_string(&resp).unwrap();

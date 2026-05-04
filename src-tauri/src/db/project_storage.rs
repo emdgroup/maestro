@@ -41,7 +41,7 @@ pub fn load_project_config(project_path: &str) -> Result<ProjectConfig, String> 
             // Check if the error is due to file not found
             if e.contains("No such file") || e.contains("not found") {
                 // New project - return default configuration
-                Ok(ProjectConfig::new_default())
+                Ok(ProjectConfig::default())
             } else {
                 // Actual JSON parse error or other issue
                 Err(e)

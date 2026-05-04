@@ -62,55 +62,16 @@ export const useBoardStore = create<BoardState>()(
       );
     },
 
-    pauseExecution: async (taskId: number) => {
-      try {
-        set((state) => {
-          state.pausingTaskIds.add(taskId);
-        });
-
-        await api.pauseAgentExecution(taskId);
-
-        // Backend updates database directly. TaskCard will reload execution log.
-      } catch (error) {
-        console.error("Pause execution failed:", error);
-        throw error;
-      } finally {
-        set((state) => {
-          state.pausingTaskIds.delete(taskId);
-        });
-      }
+    pauseExecution: async (_taskId: number) => {
+      throw new Error("pauseExecution removed: use ACP cancel instead");
     },
 
-    resumeExecution: async (projectId: number, taskId: number, repoPath: string) => {
-      try {
-        // Call executionService to resume agent (reuses same config, creates new execution log)
-        const executionLogId = await api.resumeAgentExecution(taskId, projectId, repoPath);
-
-        // Update task status to InProgress
-        set((state) => {
-          const task = state.tasks.find((t) => t.id === taskId);
-          if (task) {
-            task.status = "InProgress";
-          }
-        });
-
-        return executionLogId;
-      } catch (error) {
-        console.error("Resume execution failed:", error);
-        throw error;
-      }
+    resumeExecution: async (_projectId: number, _taskId: number, _repoPath: string) => {
+      throw new Error("resumeExecution removed: spawn a new session instead");
     },
 
     abortExecution: async (_projectId: number, taskId: number) => {
       try {
-        // Call cancelExecution handler if available
-        // TODO: cancel_execution expects logId, not taskId - this needs to fetch the log first
-        try {
-          await api.cancelExecution(taskId);
-        } catch (err) {
-          console.warn("cancelExecution handler not available, marking task manually", err);
-        }
-
         // Update task status to Cancelled
         set((state) => {
           const task = state.tasks.find((t) => t.id === taskId);

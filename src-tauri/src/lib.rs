@@ -9,7 +9,7 @@ pub mod acp;
 pub mod project_lock;
 
 pub use db::{init_db, AppState, get_git_connection, get_project_with_git_conn};
-pub use models::{Project, Task, Worktree, ExecutionLog, ErrorEvent, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ExecutionWithTask, ExecutionStatus, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
+pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 // IPC command functions are accessed via crate::ipc:: prefix in create_builder()
 // No glob re-export needed; ssh_handlers uses super::project_handlers for internal imports
@@ -51,21 +51,13 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::create_worktree,
             crate::ipc::delete_worktree,
             crate::ipc::cleanup_zombie_worktrees,
-            crate::ipc::list_executions_with_task_info,
-            crate::ipc::delete_execution_log,
-            crate::ipc::rename_execution,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,
-            crate::ipc::get_execution_logs,
-            crate::ipc::retry_execution,
-            crate::ipc::cancel_execution,
             crate::ipc::attach_terminal,
             crate::ipc::send_terminal_input,
             crate::ipc::resize_terminal,
             crate::ipc::detach_terminal,
-            crate::ipc::pause_agent_execution,
-            crate::ipc::resume_agent_execution,
-            crate::ipc::append_terminal_output,
+            crate::ipc::close_pty_session,
             crate::ipc::get_diff_for_review,
             crate::ipc::save_task_review,
             crate::ipc::request_changes,
@@ -102,13 +94,21 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::respond_acp_permission,
             crate::ipc::respond_acp_elicitation,
             crate::ipc::cancel_acp_session,
+            crate::ipc::interrupt_acp_turn,
             crate::ipc::discover_agents,
-            crate::ipc::get_structured_output,
             crate::ipc::set_acp_model,
             crate::ipc::get_acp_models,
             crate::ipc::get_acp_capabilities,
             crate::ipc::search_session_files,
-            crate::ipc::read_session_file
+            crate::ipc::read_session_file,
+            crate::ipc::get_active_sessions,
+            crate::ipc::list_acp_sessions,
+            crate::ipc::load_acp_session,
+            crate::ipc::close_acp_session,
+            crate::ipc::sftp_upload,
+            crate::ipc::sftp_download,
+            crate::ipc::get_agent_models_cache,
+            crate::ipc::refresh_agent_models
         ])
 }
 

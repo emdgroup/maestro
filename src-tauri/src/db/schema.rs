@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
-pub const SCHEMA_V12: &str = r#"
+pub const SCHEMA_V13: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -74,24 +74,6 @@ CREATE TABLE IF NOT EXISTS worktrees (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
--- Execution logs table: stores command execution logs
-CREATE TABLE IF NOT EXISTS execution_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-    branch_name TEXT,
-    session_name TEXT,
-    output TEXT,
-    terminal_output TEXT,
-    status TEXT NOT NULL DEFAULT 'running',
-    error_event TEXT,
-    execution_mode TEXT NOT NULL DEFAULT 'pty',
-    agent_id TEXT,
-    structured_output TEXT,
-    started_at TEXT NOT NULL,
-    completed_at TEXT
-);
-
 -- Settings table: stores application settings
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -149,8 +131,6 @@ CREATE TABLE IF NOT EXISTS ssh_connections (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last_used_at DESC);
-CREATE INDEX IF NOT EXISTS idx_execution_logs_task_id ON execution_logs(task_id, started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_execution_logs_project_id ON execution_logs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_worktrees_project_id ON worktrees(project_id);
 CREATE INDEX IF NOT EXISTS idx_worktrees_task_id ON worktrees(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
@@ -177,7 +157,6 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 DROP TABLE IF EXISTS task_reviews;
                 DROP TABLE IF EXISTS task_instructions;
                 DROP TABLE IF EXISTS task_relationships;
-                DROP TABLE IF EXISTS execution_logs;
                 DROP TABLE IF EXISTS worktrees;
                 DROP TABLE IF EXISTS tasks;
                 DROP TABLE IF EXISTS known_hosts;
@@ -187,7 +166,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V12)?;
+        conn.execute_batch(SCHEMA_V13)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -220,7 +199,6 @@ mod tests {
         assert!(tables.contains(&"projects".to_string()));
         assert!(tables.contains(&"tasks".to_string()));
         assert!(tables.contains(&"worktrees".to_string()));
-        assert!(tables.contains(&"execution_logs".to_string()));
         assert!(tables.contains(&"settings".to_string()));
         assert!(tables.contains(&"task_reviews".to_string()));
         assert!(tables.contains(&"review_comments".to_string()));
@@ -228,6 +206,7 @@ mod tests {
         assert!(tables.contains(&"task_instructions".to_string()));
         assert!(tables.contains(&"known_hosts".to_string()));
         assert!(tables.contains(&"ssh_connections".to_string()));
+        assert!(!tables.contains(&"execution_logs".to_string()), "execution_logs removed in V13");
 
         // Verify foreign keys are enabled
         let fk_enabled: u32 = conn
@@ -240,7 +219,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 12);
+        assert_eq!(version, 13);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -257,19 +236,5 @@ mod tests {
         assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
         assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
         assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");
-
-        // Verify execution_logs table has new v11 columns
-        let exec_columns: Vec<String> = conn
-            .prepare("PRAGMA table_info(execution_logs)")
-            .unwrap()
-            .query_map([], |row| row.get::<_, String>(1))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-
-        assert!(exec_columns.contains(&"execution_mode".to_string()), "execution_mode column should exist");
-        assert!(exec_columns.contains(&"agent_id".to_string()), "agent_id column should exist");
-        assert!(exec_columns.contains(&"structured_output".to_string()), "structured_output column should exist");
-        assert!(exec_columns.contains(&"project_id".to_string()), "project_id column should exist");
     }
 }

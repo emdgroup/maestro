@@ -3,7 +3,7 @@
 pub use maestro_protocol::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
     SpawnRequest, SpawnResponse,
-    PromptRequest, CancelRequest,
+    PromptRequest, CancelRequest, InterruptTurnRequest,
     SessionUpdate, PermissionRequest, PermissionResponse,
     ElicitationRequest, ElicitationResponse,
     TerminalOutput, ErrorResponse,
@@ -13,6 +13,9 @@ pub use maestro_protocol::{
     PromptCapabilitiesInfo,
     FileSearchRequest, FileSearchResponse, FileReadRequest, FileReadResponse,
     TurnEnded,
+    SessionListRequest, SessionListOkResponse, SessionListEntry,
+    SessionLoadRequest, SessionLoadOkResponse,
+    SessionCloseRequest,
     write_message, read_message,
     MSG_LEN_SIZE, MAX_MESSAGE_SIZE,
 };

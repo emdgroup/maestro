@@ -1,18 +1,19 @@
 import { useState, useEffect } from "react";
 import { generateSessionName } from "@/lib/generateSessionName";
-import { AgentMonitor, STATUS_FILTERS, STATUS_LABEL } from "@/components/execution/AgentMonitor";
-import type { StatusFilter } from "@/components/execution/AgentMonitor";
+import { AgentMonitor } from "@/components/execution/AgentMonitor";
+import { SessionHistoryPanel } from "@/components/execution/SessionHistoryPanel";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
 import {
-  useExecutionsWithTaskInfoQuery,
+  useActiveSessionsQuery,
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
-  useDeleteExecutionMutation,
-  useRenameExecutionMutation,
   useAgentDiscoveryQuery,
+  useAgentModelsCacheQuery,
+  useCancelActiveSessionMutation,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
-import type { WorktreeWithStatus } from "@/types/bindings";
+import { useProjectSettings } from "@/services/project.service";
+import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import {
@@ -25,9 +26,8 @@ import {
 } from "@/ui/dialog";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
-import { SearchIcon } from "lucide-react";
+import { Clock, SearchIcon } from "lucide-react";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -36,28 +36,31 @@ interface AgentsViewProps {
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connectionId }) => {
-  const { data: executions = [] } = useExecutionsWithTaskInfoQuery(projectId);
+  const { data: sessions = [] } = useActiveSessionsQuery();
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
-  const [selectedExecutionId, setSelectedExecutionId] = useState<number | null>(null);
+  const [selectedSessionKey, setSelectedSessionKey] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
+  const [showHistory, setShowHistory] = useState(false);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [sessionName, setSessionName] = useState("");
-  // "terminal" or an agent id from registry
   const [sessionType, setSessionType] = useState<string>("terminal");
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
+  const { data: projectSettings } = useProjectSettings(projectId ?? 0);
   const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(
     connectionId ?? null,
-    showSpawnDialog || !!connectionId,
   );
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
-  const deleteMutation = useDeleteExecutionMutation();
-  const renameMutation = useRenameExecutionMutation();
+  const cancelMutation = useCancelActiveSessionMutation();
+  const acpAgentId = sessionType !== "terminal" ? sessionType : null;
+  const { data: modelsCache } = useAgentModelsCacheQuery(projectId ?? 0, acpAgentId);
+
+  const lastAcpAgentId = [...sessions].reverse().find((s) => s.execution_mode === "acp")?.agent_id ?? null;
 
   const visibleAgents = discovery?.agents ?? [];
   const agentIcons: Record<string, string> = Object.fromEntries(
@@ -65,22 +68,37 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   );
 
   useEffect(() => {
-    if (pendingAgentId && executions.length > 0) {
-      const match = executions.find((e) => String(e.task_id) === pendingAgentId);
+    if (pendingAgentId && sessions.length > 0) {
+      const match = sessions.find((s) => String(s.task_id) === pendingAgentId);
       if (match) {
-        setSelectedExecutionId(match.id);
+        setSelectedSessionKey(match.session_key);
         clearPendingAgent();
       }
-    } else if (selectedExecutionId == null && executions.length > 0) {
-      const running = executions.find((e) => e.status === "running");
-      if (running) setSelectedExecutionId(running.id);
+    } else if (selectedSessionKey == null && sessions.length > 0) {
+      setSelectedSessionKey(sessions[0].session_key);
     }
-  }, [executions, pendingAgentId, clearPendingAgent, selectedExecutionId]);
+  }, [sessions, pendingAgentId, clearPendingAgent, selectedSessionKey]);
+
+  function handleCloseSession(session: ActiveSessionInfo) {
+    cancelMutation.mutate(
+      { sessionKey: session.session_key, executionMode: session.execution_mode },
+      {
+        onSuccess: () => {
+          if (selectedSessionKey === session.session_key) setSelectedSessionKey(null);
+        },
+      },
+    );
+  }
 
   function openSpawnDialog() {
     setSelectedWorktree(worktrees[0] ?? null);
     setSessionName("");
-    setSessionType("terminal");
+
+    const defaultAgent = projectSettings?.default_agent;
+    const agentExists = defaultAgent && visibleAgents.some((a) => a.id === defaultAgent);
+    setSessionType(agentExists ? defaultAgent : "terminal");
+    setSelectedModel(agentExists && projectSettings?.default_model ? projectSettings.default_model : "");
+
     setShowSpawnDialog(true);
   }
 
@@ -96,9 +114,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           worktreeId: selectedWorktree.id,
         },
         {
-          onSuccess: (logId) => {
+          onSuccess: (sessionKey) => {
             setShowSpawnDialog(false);
-            setSelectedExecutionId(logId);
+            setSelectedSessionKey(sessionKey);
           },
         },
       );
@@ -113,9 +131,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           worktreeBranch: selectedWorktree.branch_name,
         },
         {
-          onSuccess: (logId) => {
+          onSuccess: async (sessionKey) => {
+            if (selectedModel) {
+              try { await import("@/lib").then(({ api }) => api.setAcpModel(sessionKey, selectedModel)); } catch { /* ignore */ }
+            }
             setShowSpawnDialog(false);
-            setSelectedExecutionId(logId);
+            setSelectedSessionKey(sessionKey);
           },
         },
       );
@@ -134,89 +155,42 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               type="text"
               placeholder="Search sessions..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
               className="h-8 w-48 text-sm"
             />
             <InputGroupAddon align="inline-start">
               <SearchIcon className="text-muted-foreground" />
             </InputGroupAddon>
           </InputGroup>
-          <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className="text-xs px-3"
-              >
-                {STATUS_LABEL[f] ?? f}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        </div>
+        <div className="flex items-center gap-2">
+          {(discovery?.agents?.length ?? 0) > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              <Clock className="w-3.5 h-3.5 mr-1" />
+              History
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Agent monitor */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 relative">
         <AgentMonitor
-          executions={executions}
-          selectedExecutionId={selectedExecutionId}
-          onSelect={setSelectedExecutionId}
+          sessions={sessions}
+          selectedSessionKey={selectedSessionKey}
+          onSelect={setSelectedSessionKey}
           search={search}
-          statusFilter={statusFilter}
           onSpawn={openSpawnDialog}
-          onDelete={(executionId) => {
-            deleteMutation.mutate({ executionId });
-            if (selectedExecutionId === executionId) setSelectedExecutionId(null);
-          }}
-          onRename={(executionId, newName) => {
-            renameMutation.mutate({ executionId, sessionName: newName });
-          }}
           agentIcons={agentIcons}
-          onReconnect={(execution) => {
-            if (execution.branch_name && projectId != null && repoPath != null) {
-              spawnMutation.mutate(
-                {
-                  projectId,
-                  branchName: execution.branch_name,
-                  repoPath,
-                  sessionName: execution.session_name ?? null,
-                  worktreeId: null,
-                },
-                {
-                  onSuccess: (logId) => {
-                    setSelectedExecutionId(logId);
-                    deleteMutation.mutate({ executionId: execution.id });
-                  },
-                },
-              );
-            }
-          }}
-          onRestart={(execution) => {
-            if (!execution.agent_id || projectId == null) return;
-            const worktree = worktrees.find((wt) => wt.branch_name === execution.branch_name);
-            if (!worktree) return;
-            spawnAcpMutation.mutate(
-              {
-                agentId: execution.agent_id,
-                cwd: worktree.path,
-                sessionName: execution.session_name ?? null,
-                projectId,
-                connectionId: connectionId ?? null,
-                worktreeBranch: worktree.branch_name,
-              },
-              {
-                onSuccess: (logId) => {
-                  setSelectedExecutionId(logId);
-                  deleteMutation.mutate({ executionId: execution.id });
-                },
-              },
-            );
-          }}
-          onOpenTerminal={(execution) => {
+          onClose={handleCloseSession}
+          onOpenTerminal={(session) => {
             if (projectId == null || repoPath == null) return;
-            const worktree = worktrees.find((wt) => wt.branch_name === execution.branch_name);
+            const worktree = worktrees.find((wt) => wt.branch_name === session.branch_name);
             if (!worktree) return;
             spawnMutation.mutate(
               {
@@ -226,13 +200,23 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 sessionName: null,
                 worktreeId: worktree.id,
               },
-              { onSuccess: (logId) => setSelectedExecutionId(logId) },
+              { onSuccess: (key) => setSelectedSessionKey(key) },
             );
           }}
         />
+        {showHistory && visibleAgents.length > 0 && (
+          <SessionHistoryPanel
+            agents={visibleAgents}
+            defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
+            repoPath={repoPath ?? ""}
+            connectionId={connectionId ?? null}
+            onClose={() => setShowHistory(false)}
+            onSessionLoaded={(key) => { setSelectedSessionKey(key); setShowHistory(false); }}
+          />
+        )}
       </div>
 
-      {/* New Session dialog — Terminal or ACP agent */}
+      {/* New Session dialog */}
       <Dialog open={showSpawnDialog} onOpenChange={setShowSpawnDialog}>
         <DialogContent>
           <DialogHeader>
@@ -242,10 +226,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Session type: Terminal or agent from registry */}
             <div className="space-y-2">
               <Label htmlFor="spawn-type">Type</Label>
-              <Select value={sessionType} onValueChange={(v) => v && setSessionType(v)}>
+              <Select value={sessionType} onValueChange={(v) => { if (v) { setSessionType(v); setSelectedModel(""); } }}>
                 <SelectTrigger id="spawn-type">
                   <SelectValue />
                 </SelectTrigger>
@@ -282,7 +265,25 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               </Select>
             </div>
 
-            {/* Worktree */}
+            {sessionType !== "terminal" && (
+              <div className="space-y-2">
+                <Label htmlFor="spawn-model">Model (optional)</Label>
+                <Select value={selectedModel} onValueChange={(v) => setSelectedModel(v ?? "")}>
+                  <SelectTrigger id="spawn-model">
+                    <SelectValue placeholder="Agent default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Agent default</SelectItem>
+                    {(modelsCache?.models ?? []).map((m) => (
+                      <SelectItem key={m.model_id} value={m.model_id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="spawn-worktree">Worktree</Label>
               <Select
@@ -299,16 +300,12 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                       {wt.path === repoPath && (
                         <span className="ml-2 text-xs text-muted-foreground">main</span>
                       )}
-                      {wt.agent_status === "running" && (
-                        <span className="ml-2 text-xs text-green-500">running</span>
-                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Session name */}
             <div className="space-y-2">
               <Label htmlFor="spawn-session-name">Session name (optional)</Label>
               <Input

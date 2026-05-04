@@ -6,6 +6,7 @@ pub enum SessionCommand {
     Prompt(String),
     PromptStructured(Vec<serde_json::Value>),
     SetModel(String),
+    CancelTurn,
 }
 
 pub struct TerminalHandle {

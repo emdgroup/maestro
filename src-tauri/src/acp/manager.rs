@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
-use tokio::time::{interval, Duration};
 use tauri::Emitter;
 use russh::ChannelMsg;
 use crate::acp::transport::{
@@ -23,9 +22,17 @@ pub enum AcpTransportWriter {
     RemoteSsh(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
+/// Cached session capabilities reported by the agent on SpawnOk.
+#[derive(Default, Clone)]
+pub struct SessionCapabilitiesCache {
+    pub supports_session_list: bool,
+    pub supports_session_load: bool,
+    pub supports_session_close: bool,
+}
+
 /// A live ACP session — local subprocess or remote SSH exec channel.
 ///
-/// Stored in `AppState.acp_sessions` keyed by execution log ID.
+/// Stored in `AppState.acp_sessions` keyed by session key.
 /// Dropping this struct cleanly shuts down the session:
 /// - Local: `child` drops with `kill_on_drop(true)`, killing maestro-server.
 /// - Remote: `writer` channel closes, writer task exits, SSH channel closes.
@@ -47,9 +54,22 @@ pub struct AcpProcess {
     pub pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     /// Pending file read response channel. One request at a time.
     pub pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    // Session metadata
+    pub session_name: Option<String>,
+    pub agent_id_meta: String,
+    pub started_at: String,
+    pub task_id: Option<i32>,
+    pub task_name: Option<String>,
+    pub branch_name: Option<String>,
+    /// Session capabilities (supports_session_list/load/close), updated on SpawnOk.
+    pub session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
 }
 
 /// Serialize a MaestroRpcMessage into a length-prefixed frame (4-byte LE length + JSON body).
+pub(crate) fn serialize_message_pub(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
+    serialize_message(msg)
+}
+
 fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
     let json_bytes = serde_json::to_vec(msg)
         .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
@@ -88,6 +108,10 @@ pub async fn spawn_acp_process(
     log_id: i32,
     session_id: &str,
     app_state: &Arc<crate::db::AppState>,
+    session_name: Option<String>,
+    task_id: Option<i32>,
+    task_name: Option<String>,
+    branch_name: Option<String>,
 ) -> Result<(), String> {
     use std::process::Stdio;
 
@@ -119,6 +143,7 @@ pub async fn spawn_acp_process(
     let capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
 
     let acp_process = AcpProcess {
         writer: AcpTransportWriter::Local(stdin_writer),
@@ -129,6 +154,13 @@ pub async fn spawn_acp_process(
         cwd: cwd.to_string(),
         pending_file_search: Arc::clone(&pending_file_search),
         pending_file_read: Arc::clone(&pending_file_read),
+        session_name,
+        agent_id_meta: agent_id.to_string(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+        task_id,
+        task_name,
+        branch_name,
+        session_capabilities: Arc::clone(&session_capabilities),
     };
 
     app_state.acp_sessions.lock().await.insert(log_id, acp_process);
@@ -143,6 +175,7 @@ pub async fn spawn_acp_process(
         capabilities_cache,
         pending_file_search,
         pending_file_read,
+        session_capabilities,
     );
 
     Ok(())
@@ -164,6 +197,10 @@ pub async fn spawn_acp_process_remote(
     app_state: &Arc<crate::db::AppState>,
     ssh_session: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
+    session_name: Option<String>,
+    task_id: Option<i32>,
+    task_name: Option<String>,
+    branch_name: Option<String>,
 ) -> Result<(), String> {
     // Open a new exec channel using the absolute maestro-server path (resolved at connect time).
     let channel = ssh_session
@@ -203,6 +240,7 @@ pub async fn spawn_acp_process_remote(
     let capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
+    let session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
 
     let acp_process = AcpProcess {
         writer: AcpTransportWriter::RemoteSsh(write_tx),
@@ -213,6 +251,13 @@ pub async fn spawn_acp_process_remote(
         cwd: cwd.to_string(),
         pending_file_search: Arc::clone(&pending_file_search),
         pending_file_read: Arc::clone(&pending_file_read),
+        session_name,
+        agent_id_meta: agent_id.to_string(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+        task_id,
+        task_name,
+        branch_name,
+        session_capabilities: Arc::clone(&session_capabilities),
     };
 
     app_state.acp_sessions.lock().await.insert(log_id, acp_process);
@@ -227,6 +272,7 @@ pub async fn spawn_acp_process_remote(
         capabilities_cache,
         pending_file_search,
         pending_file_read,
+        session_capabilities,
     );
 
     Ok(())
@@ -234,6 +280,21 @@ pub async fn spawn_acp_process_remote(
 
 /// Background task that reads responses from maestro-server stdout and emits
 /// typed Tauri events. Local variant — reads from child process stdout.
+pub(crate) fn spawn_reader_task_pub(
+    child_stdout: tokio::process::ChildStdout,
+    log_id: i32,
+    app_handle: tauri::AppHandle,
+    app_state: Arc<crate::db::AppState>,
+    cancel_rx: oneshot::Receiver<()>,
+    models_cache: Arc<std::sync::Mutex<Option<SessionModelState>>>,
+    capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
+    pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
+    pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
+) {
+    spawn_reader_task(child_stdout, log_id, app_handle, app_state, cancel_rx, models_cache, capabilities_cache, pending_file_search, pending_file_read, session_capabilities);
+}
+
 fn spawn_reader_task(
     child_stdout: tokio::process::ChildStdout,
     log_id: i32,
@@ -244,13 +305,11 @@ fn spawn_reader_task(
     capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
     pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
 ) {
     tokio::spawn(async move {
         let mut stdout_reader = BufReader::new(child_stdout);
         let mut cancel_rx = cancel_rx;
-        let mut flush_interval = interval(Duration::from_secs(10));
-        let mut structured_updates: Vec<serde_json::Value> = Vec::new();
-        let mut last_flushed_len: usize = 0;
 
         loop {
             tokio::select! {
@@ -258,30 +317,38 @@ fn spawn_reader_task(
 
                 _ = &mut cancel_rx => break,
 
-                _ = flush_interval.tick() => {
-                    if structured_updates.len() > last_flushed_len {
-                        flush_structured_updates(&app_state, log_id, &mut structured_updates);
-                        last_flushed_len = structured_updates.len();
-                    }
-                }
-
                 result = read_message(&mut stdout_reader) => {
                     match result {
-                        Ok(msg) => handle_server_message(msg, log_id, &app_handle, &mut structured_updates, &models_cache, &capabilities_cache, &pending_file_search, &pending_file_read),
+                        Ok(msg) => handle_server_message(msg, log_id, &app_handle, &models_cache, &capabilities_cache, &pending_file_search, &pending_file_read, &session_capabilities),
                         Err(_) => break,
                     }
                 }
             }
         }
 
-        flush_structured_updates(&app_state, log_id, &mut structured_updates);
         app_state.acp_sessions.lock().await.remove(&log_id);
+        app_state.app_handle.emit("sessions-changed", ()).ok();
         let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
     });
 }
 
 /// Background task that reads framed responses from a remote maestro-server via SSH channel
 /// and emits typed Tauri events. Accumulates SSH Data chunks into a frame buffer.
+pub(crate) fn spawn_remote_reader_task_pub(
+    read_half: russh::ChannelReadHalf,
+    log_id: i32,
+    app_handle: tauri::AppHandle,
+    app_state: Arc<crate::db::AppState>,
+    cancel_rx: oneshot::Receiver<()>,
+    models_cache: Arc<std::sync::Mutex<Option<SessionModelState>>>,
+    capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
+    pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
+    pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
+) {
+    spawn_remote_reader_task(read_half, log_id, app_handle, app_state, cancel_rx, models_cache, capabilities_cache, pending_file_search, pending_file_read, session_capabilities);
+}
+
 fn spawn_remote_reader_task(
     mut read_half: russh::ChannelReadHalf,
     log_id: i32,
@@ -292,12 +359,10 @@ fn spawn_remote_reader_task(
     capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
     pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
 ) {
     tokio::spawn(async move {
         let mut cancel_rx = cancel_rx;
-        let mut flush_interval = interval(Duration::from_secs(10));
-        let mut structured_updates: Vec<serde_json::Value> = Vec::new();
-        let mut last_flushed_len: usize = 0;
         let mut msg_buf: Vec<u8> = Vec::new();
 
         loop {
@@ -306,19 +371,12 @@ fn spawn_remote_reader_task(
 
                 _ = &mut cancel_rx => break,
 
-                _ = flush_interval.tick() => {
-                    if structured_updates.len() > last_flushed_len {
-                        flush_structured_updates(&app_state, log_id, &mut structured_updates);
-                        last_flushed_len = structured_updates.len();
-                    }
-                }
-
                 channel_msg = read_half.wait() => {
                     match channel_msg {
                         Some(ChannelMsg::Data { data }) => {
                             msg_buf.extend_from_slice(&data);
                             while let Some(rpc_msg) = try_parse_acp_frame(&mut msg_buf) {
-                                handle_server_message(rpc_msg, log_id, &app_handle, &mut structured_updates, &models_cache, &capabilities_cache, &pending_file_search, &pending_file_read);
+                                handle_server_message(rpc_msg, log_id, &app_handle, &models_cache, &capabilities_cache, &pending_file_search, &pending_file_read, &session_capabilities);
                             }
                         }
                         Some(ChannelMsg::ExtendedData { data, .. }) => {
@@ -335,26 +393,25 @@ fn spawn_remote_reader_task(
             }
         }
 
-        flush_structured_updates(&app_state, log_id, &mut structured_updates);
         app_state.acp_sessions.lock().await.remove(&log_id);
+        app_state.app_handle.emit("sessions-changed", ()).ok();
         let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
     });
 }
 
-/// Emit Tauri events and accumulate structured updates for a parsed server response.
+/// Emit Tauri events for a parsed server response.
 fn handle_server_message(
     msg: MaestroRpcMessage,
     log_id: i32,
     app_handle: &tauri::AppHandle,
-    structured_updates: &mut Vec<serde_json::Value>,
     models_cache: &Arc<std::sync::Mutex<Option<SessionModelState>>>,
     capabilities_cache: &Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
     pending_file_search: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     pending_file_read: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    session_capabilities: &Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
 ) {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
-            structured_updates.push(upd.payload.clone());
             let _ = app_handle.emit(&format!("acp://session-update/{}", log_id), &upd.payload);
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
@@ -378,6 +435,11 @@ fn handle_server_message(
                     *cache = Some(caps.clone());
                 }
                 let _ = app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
+            }
+            if let Ok(mut caps) = session_capabilities.lock() {
+                caps.supports_session_list = spawn_ok.supports_session_list;
+                caps.supports_session_load = spawn_ok.supports_session_load;
+                caps.supports_session_close = spawn_ok.supports_session_close;
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(ok)) => {
@@ -425,24 +487,6 @@ fn handle_server_message(
         _ => {
             // Ignore Request variants arriving on stdout — wrong direction.
         }
-    }
-}
-
-/// Write accumulated structured updates to the DB. Clears the vec on success.
-fn flush_structured_updates(
-    app_state: &Arc<crate::db::AppState>,
-    log_id: i32,
-    structured_updates: &mut Vec<serde_json::Value>,
-) {
-    if structured_updates.is_empty() {
-        return;
-    }
-    let json = serde_json::to_string(&structured_updates).unwrap_or_default();
-    if let Ok(conn) = app_state.db.lock() {
-        let _ = conn.execute(
-            "UPDATE execution_logs SET structured_output = ?1 WHERE id = ?2",
-            rusqlite::params![&json, log_id],
-        );
     }
 }
 

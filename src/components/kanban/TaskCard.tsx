@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { Task } from "@/types/bindings";
 import { useBoardStore } from "@/store/boardStore";
-import { useExecutionLogsQuery, useUpdateTask } from "@/services/task.service";
+import { useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
@@ -24,31 +24,6 @@ function getStatusDotColor(status: string): string {
   }
 }
 
-/// Format elapsed time from a start timestamp to human-readable string
-/// Returns format: "Xm Ys", "Xs", or "Xh Ym"
-function formatElapsedTime(startedAt?: string): string {
-  if (!startedAt) return "0s";
-
-  try {
-    const startTime = new Date(startedAt).getTime();
-    const now = Date.now();
-    const diffMs = now - startTime;
-
-    if (diffMs < 0) return "0s";
-    if (diffMs < 1000) return `${Math.floor(diffMs / 100) * 100}ms`;
-
-    const seconds = Math.floor(diffMs / 1000);
-    if (seconds < 60) return `${seconds}s`;
-
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`;
-  } catch {
-    return "0s";
-  }
-}
 
 interface TaskCardProps {
   task: Task;
@@ -67,23 +42,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const { projectId, projectPath, onTaskClick } = useKanban();
 
   const [isExecuting, setIsExecuting] = useState(false);
-  const [isPauseLoading, setIsPauseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useBoardStore();
   const updateTask = useUpdateTask();
-
-  // Load latest execution logs using TanStack Query
-  const { data: logs = [] } = useExecutionLogsQuery(task.status === "InProgress" ? task.id : null);
-
-  const executionLog = logs.length > 0 ? logs[0] : null;
-
-  // Calculate elapsed time as a computed value (no polling)
-  const elapsedTime = useMemo(() => {
-    if (task.status === "InProgress" && executionLog?.started_at) {
-      return formatElapsedTime(executionLog.started_at);
-    }
-    return "0s";
-  }, [task.status, executionLog?.started_at]);
 
   const handleExecute = async () => {
     setIsExecuting(true);
@@ -146,30 +107,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     }
   };
 
-  const handlePause = async () => {
-    setIsPauseLoading(true);
-    try {
-      await store.pauseExecution(task.id);
-      toast.success(`Task paused: ${task.name}`);
-    } catch (error) {
-      toast.error(`Failed to pause: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsPauseLoading(false);
-    }
-  };
-
-  const handleResume = async () => {
-    setIsPauseLoading(true);
-    try {
-      await store.resumeExecution(task.project_id, task.id, projectPath);
-      toast.success(`Task resumed: ${task.name}`);
-    } catch (error) {
-      toast.error(`Failed to resume: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsPauseLoading(false);
-    }
-  };
-
   const handleBackToBacklog = () => {
     updateTask.mutate(
       { taskId: task.id, updates: { status: "Backlog" } },
@@ -191,30 +128,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       }}
       onMouseLeave={() => setMenuOpen(false)}
     >
-      {/* Status badge with elapsed time */}
-      {task.status === "InProgress" && executionLog && (
-        <div
-          className={`mt-2 inline-block px-2 py-1 text-xs font-medium rounded ${
-            executionLog.status === "running"
-              ? "bg-warning/20 text-warning animate-pulse"
-              : executionLog.status === "failed"
-                ? "bg-error/20 text-error"
-                : executionLog.status === "complete"
-                  ? "bg-success/20 text-success"
-                  : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {executionLog.status === "running" && (
-            <>
-              <span>⟳ </span>
-              <span>{elapsedTime}</span>
-            </>
-          )}
-          {executionLog.status === "failed" && <span>Failed</span>}
-          {executionLog.status === "complete" && <span>✓ Done</span>}
-        </div>
-      )}
-
       <div className="flex justify-between items-start gap-2">
         <div
           className="flex items-center gap-2 flex-1 cursor-pointer"
@@ -294,38 +207,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         >
           Archive
         </button>
-      )}
-      {task.status === "InProgress" && executionLog && (
-        <div className="mt-2 flex gap-2 flex-wrap">
-          {executionLog.status === "running" && (
-            <button
-              onClick={handlePause}
-              disabled={isPauseLoading}
-              className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
-                isPauseLoading
-                  ? "bg-muted text-muted-foreground cursor-not-allowed"
-                  : "bg-warning text-warning-foreground hover:shadow-md"
-              }`}
-              title="Pause execution without terminating process"
-            >
-              {isPauseLoading ? "⏳" : "⏸️ Pause"}
-            </button>
-          )}
-          {executionLog.status === "paused" && (
-            <button
-              onClick={handleResume}
-              disabled={isPauseLoading}
-              className={`flex-1 min-w-20 px-2 py-1 text-xs font-semibold rounded transition-all duration-200 ${
-                isPauseLoading
-                  ? "bg-muted text-muted-foreground cursor-not-allowed"
-                  : "bg-success text-success-foreground hover:shadow-md"
-              }`}
-              title="Resume paused execution"
-            >
-              {isPauseLoading ? "⏳" : "▶️ Resume"}
-            </button>
-          )}
-        </div>
       )}
     </div>
   );
