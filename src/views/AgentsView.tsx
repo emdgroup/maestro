@@ -188,6 +188,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           onSpawn={openSpawnDialog}
           agentIcons={agentIcons}
           onClose={handleCloseSession}
+          projectId={projectId}
           onOpenTerminal={(session) => {
             if (projectId == null || repoPath == null) return;
             const worktree = worktrees.find((wt) => wt.branch_name === session.branch_name);
@@ -210,6 +211,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
             repoPath={repoPath ?? ""}
             connectionId={connectionId ?? null}
+            projectId={projectId ?? 0}
             onClose={() => setShowHistory(false)}
             onSessionLoaded={(key) => { setSelectedSessionKey(key); setShowHistory(false); }}
           />

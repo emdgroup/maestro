@@ -62,10 +62,10 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
   const ringRef = useRef<SVGCircleElement>(null);
   const lensRef = useRef<HTMLSpanElement>(null);
 
-  // Spring state
+  // Spring state — initialized with current ratio so the mount effect needs no ratio dep
   const animRef = useRef({
-    current: 0,
-    target: 0,
+    current: ratio,
+    target: ratio,
     velocity: 0,
     raf: null as number | null,
     lastTs: null as number | null,
@@ -132,10 +132,8 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
 
     tickRef.current = tick;
 
-    // Snap to initial ratio without animation
-    anim.current = ratio;
-    anim.target = ratio;
-    applyFrame(ratio);
+    // animRef was initialized with the initial ratio — snap DOM to match without animation
+    applyFrame(anim.current);
 
     return () => {
       if (anim.raf !== null) {
@@ -143,7 +141,6 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
         anim.raf = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Kick spring toward new ratio whenever usage changes

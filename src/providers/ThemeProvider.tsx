@@ -42,7 +42,6 @@ async function loadSystemAccentColor(): Promise<void> {
 
     // Get system accent color from settings service
     const rgb = await api.getSystemAccentColor();
-    console.log("[Theme] System accent color (RGB):", rgb);
 
     // Convert RGB to oklch to extract hue
     const rgbColor = { mode: "rgb" as const, r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255 };
@@ -66,17 +65,8 @@ async function loadSystemAccentColor(): Promise<void> {
 
     document.documentElement.style.setProperty("--accent", accentColor);
     document.documentElement.style.setProperty("--accent-foreground", accentForeground);
-
-    console.log(
-      "[Theme] Accent color set to:",
-      accentColor,
-      "| hue:",
-      hue,
-      "| foreground:",
-      accentForeground,
-    );
   } catch (err) {
-    console.error("[Theme] Failed to load system accent color, using fallback:", err);
+    console.error("Failed to load system accent color, using fallback:", err);
 
     // Fallback to hardcoded blue if system color fetch fails
     const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

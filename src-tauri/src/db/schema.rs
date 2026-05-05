@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
-pub const SCHEMA_V13: &str = r#"
+pub const SCHEMA_V14: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS ssh_connections (
     updated_at TEXT NOT NULL
 );
 
+-- Session aliases: user-defined display names for ACP sessions (client-local, not sent to agent)
+CREATE TABLE IF NOT EXISTS session_aliases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    agent_id TEXT NOT NULL,
+    acp_session_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(project_id, agent_id, acp_session_id),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
@@ -134,6 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_ssh_connections_last_used ON ssh_connections(last
 CREATE INDEX IF NOT EXISTS idx_worktrees_project_id ON worktrees(project_id);
 CREATE INDEX IF NOT EXISTS idx_worktrees_task_id ON worktrees(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_session_aliases_lookup ON session_aliases(project_id, agent_id);
 "#;
 
 pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
@@ -153,6 +166,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             // Drop all tables to recreate with new schema (no production data to preserve)
             conn.execute_batch(r#"
                 PRAGMA foreign_keys = OFF;
+                DROP TABLE IF EXISTS session_aliases;
                 DROP TABLE IF EXISTS review_comments;
                 DROP TABLE IF EXISTS task_reviews;
                 DROP TABLE IF EXISTS task_instructions;
@@ -166,7 +180,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V13)?;
+        conn.execute_batch(SCHEMA_V14)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -206,6 +220,7 @@ mod tests {
         assert!(tables.contains(&"task_instructions".to_string()));
         assert!(tables.contains(&"known_hosts".to_string()));
         assert!(tables.contains(&"ssh_connections".to_string()));
+        assert!(tables.contains(&"session_aliases".to_string()));
         assert!(!tables.contains(&"execution_logs".to_string()), "execution_logs removed in V13");
 
         // Verify foreign keys are enabled
@@ -219,7 +234,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 13);
+        assert_eq!(version, 14);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

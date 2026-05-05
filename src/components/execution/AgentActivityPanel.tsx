@@ -1,9 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAcpActivity } from "./activity/useAcpActivity";
+import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
+import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
 import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
@@ -11,13 +12,13 @@ import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
 import { ComposeBar } from "./activity/ComposeBar";
-import type { ComposeBarHandle, PermissionMode, ModelOption } from "./activity/ComposeBar";
+import type { ComposeBarHandle, PermissionMode } from "./activity/ComposeBar";
 import { PermissionPrompt, isAllowKind, isPlanPermission } from "./activity/PermissionPrompt";
 import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
-import type { UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState, AvailableCommand } from "./activity/types";
-import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
+import type { UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState } from "./activity/types";
+import type { JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 
@@ -44,19 +45,9 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
   const removeActivityStatus = useSessionActivityStore((s) => s.removeStatus);
   const onUsageChangeRef = useRef(onUsageChange);
   onUsageChangeRef.current = onUsageChange;
+
   const [isProcessing, setIsProcessing] = useState(false);
-  const chatScrollRef = useRef<HTMLDivElement>(null);
-  const chatContentRef = useRef<HTMLDivElement>(null);
-  const [showScrollFab, setShowScrollFab] = useState(false);
-  const [hasUnread, setHasUnread] = useState(false);
-  const atBottomRef = useRef(true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [modelId, setModelId] = useState<string>("");
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [usageState, setUsageState] = useState<UsageState | null>(null);
-  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
-  const [promptCapabilities, setPromptCapabilities] = useState<AcpPromptCapabilities | null>(null);
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const userMsgCounterRef = useRef(0);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
@@ -72,18 +63,27 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   const [liveState, liveDispatch] = useAcpActivity(sessionKey);
 
+  const {
+    models,
+    modelId,
+    modelsLoaded,
+    usageState,
+    availableCommands,
+    promptCapabilities,
+    pendingPermission,
+    setPendingPermission,
+    pendingElicitation,
+    setPendingElicitation,
+  } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef);
+
+  const isReady = !liveState.isInitializing && modelsLoaded;
+  const { chatScrollRef, chatContentRef, showScrollFab, hasUnread, handleWheel, handleChatScroll, scrollToBottom } =
+    useAcpScrollBehavior(isReady);
+
   useEffect(() => {
     if (liveState.isInitializing || !modelsLoaded) return;
     setActivityStatus(sessionKey, "idle");
   }, [liveState.isInitializing, modelsLoaded, sessionKey, setActivityStatus]);
-
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
-      setIsProcessing(false);
-      setActivityStatus(sessionKey, "idle");
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey, setActivityStatus]);
 
   useEffect(() => {
     if (liveState.sessionEnded) {
@@ -97,125 +97,11 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   const [liveUserMessages, setLiveUserMessages] = useState<Array<{ item: UserMessageItem; insertAt: number }>>([]);
   const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<Array<{ item: ElicitationSummaryItem; insertAt: number }>>([]);
-
-  const [pendingPermission, setPendingPermission] = useState<{
-    requestId: string;
-    payload: Record<string, unknown>;
-  } | null>(null);
   const [livePermissionResponses, setLivePermissionResponses] = useState<Array<{ item: PermissionResponseItem; insertAt: number }>>([]);
-
-  useEffect(() => {
-    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
-      `acp://permission-request/${sessionKey}`,
-      (event) => {
-        setPendingPermission({
-          requestId: event.payload.request_id,
-          payload: event.payload.payload,
-        });
-        setActivityStatus(sessionKey, "awaiting_input");
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey, setActivityStatus]);
-
-  const [pendingElicitation, setPendingElicitation] = useState<{
-    requestId: string;
-    payload: Record<string, unknown>;
-  } | null>(null);
-
-  useEffect(() => {
-    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
-      `acp://elicitation-request/${sessionKey}`,
-      (event) => {
-        setPendingElicitation({ requestId: event.payload.request_id, payload: event.payload.payload });
-        setActivityStatus(sessionKey, "awaiting_input");
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey, setActivityStatus]);
-
-  useEffect(() => {
-    api.getAcpCapabilities(sessionKey).then((caps) => {
-      if (caps) setPromptCapabilities(caps);
-    }).catch(() => {});
-  }, [sessionKey]);
-
-  useEffect(() => {
-    const unlisten = listen<AcpPromptCapabilities>(
-      `acp://session-capabilities/${sessionKey}`,
-      (event) => { setPromptCapabilities(event.payload); },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey]);
-
-  useEffect(() => {
-    api.getAcpModels(sessionKey).then((modelState) => {
-      if (modelState) {
-        setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(modelState.current_model_id);
-        setModelsLoaded(true);
-      }
-    }).catch(() => {});
-  }, [sessionKey]);
-
-  useEffect(() => {
-    const unlisten = listen<{ current_model_id: string; available_models: Array<{ model_id: string; name: string }> }>(
-      `acp://session-models/${sessionKey}`,
-      (event) => {
-        const { current_model_id, available_models } = event.payload;
-        setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(current_model_id);
-        setModelsLoaded(true);
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey]);
-
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
-      setModelId(event.payload);
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey]);
-
-  useEffect(() => {
-    type SessionUpdatePayloadRaw = {
-      sessionUpdate?: string;
-      used?: number;
-      size?: number;
-      cost?: { amount: number; currency: string };
-      availableCommands?: AvailableCommand[];
-    };
-    const unlisten = listen<SessionUpdatePayloadRaw>(
-      `acp://session-update/${sessionKey}`,
-      (event) => {
-        const p = event.payload;
-        if (p.sessionUpdate === "usage_update") {
-          if (typeof p.used === "number" && typeof p.size === "number") {
-            setUsageState((prev) => {
-              const next: UsageState = {
-                used: p.used!,
-                size: p.size!,
-                cost: p.cost ?? prev?.cost ?? null,
-              };
-              onUsageChangeRef.current?.(next);
-              return next;
-            });
-          }
-        } else if (p.sessionUpdate === "available_commands_update") {
-          if (Array.isArray(p.availableCommands)) {
-            setAvailableCommands(p.availableCommands);
-          }
-        }
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [sessionKey]);
 
   const handleModelChange = useCallback(async (id: string) => {
     const prev = modelId;
-    setModelId(id);
-    try { await api.setAcpModel(sessionKey, id); } catch { setModelId(prev); }
+    try { await api.setAcpModel(sessionKey, id); } catch { await api.setAcpModel(sessionKey, prev).catch(console.error); }
   }, [sessionKey, modelId]);
 
   const handleElicitationSubmit = useCallback(
@@ -230,7 +116,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
       setPendingElicitation(null);
       setActivityStatus(sessionKey, "working");
     },
-    [sessionKey, pendingElicitation, setActivityStatus],
+    [sessionKey, pendingElicitation, setPendingElicitation, setActivityStatus],
   );
 
   const handleElicitationDecline = useCallback(
@@ -245,7 +131,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
       setPendingElicitation(null);
       setActivityStatus(sessionKey, "working");
     },
-    [sessionKey, pendingElicitation, setActivityStatus],
+    [sessionKey, pendingElicitation, setPendingElicitation, setActivityStatus],
   );
 
   const handlePermissionRespond = useCallback(
@@ -268,7 +154,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
       setPendingPermission(null);
       setActivityStatus(sessionKey, "working");
     },
-    [sessionKey, pendingPermission, setActivityStatus],
+    [sessionKey, pendingPermission, setPendingPermission, setActivityStatus],
   );
 
   const handleSend = useCallback(
@@ -308,6 +194,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
     }
   }, [sessionKey, setActivityStatus]);
 
+  // Focus compose bar when panel becomes selected and is ready
   useEffect(() => {
     if (liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
     if (!isSelected) return;
@@ -315,6 +202,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
     return () => clearTimeout(timer);
   }, [isSelected, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
 
+  // Re-focus compose bar when window regains focus
   useEffect(() => {
     if (!isSelected || liveState.sessionEnded) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
@@ -322,35 +210,14 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
       requestAnimationFrame(() => composeBarRef.current?.focus());
     });
     return () => { unlisten.then((fn) => fn()); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSelected, liveState.sessionEnded, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.deltaY < 0) {
-      const el = chatScrollRef.current;
-      if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 80) return;
-      atBottomRef.current = false;
-      setShowScrollFab(true);
-    }
-  }, []);
-
-  const handleChatScroll = useCallback(() => {
-    const el = chatScrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (atBottom) {
-      atBottomRef.current = true;
-      setShowScrollFab(false);
-      setHasUnread(false);
-    }
-  }, []);
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior });
-    atBottomRef.current = true;
-    setShowScrollFab(false);
-    setHasUnread(false);
-  }, []);
+  // 2s: mark session as responsive
+  useEffect(() => {
+    if (!liveState.isInitializing) return;
+    const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 2000);
+    return () => clearTimeout(timer);
+  }, [liveState.isInitializing, liveDispatch]);
 
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries),
@@ -373,37 +240,6 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
     const agentResponseStartIdx = lastUserMessageIdx >= 0 ? lastUserMessageIdx + 1 : -1;
     return { lastUserMessage, agentResponseStartIdx };
   }, [groupedItems]);
-
-  useEffect(() => {
-    if (liveState.isInitializing || !modelsLoaded) return;
-    const scrollEl = chatScrollRef.current;
-    const contentEl = chatContentRef.current;
-    if (!scrollEl || !contentEl) return;
-    const ro = new ResizeObserver(() => {
-      if (atBottomRef.current) {
-        scrollEl.scrollTop = scrollEl.scrollHeight;
-      } else {
-        setHasUnread(true);
-      }
-    });
-    ro.observe(contentEl);
-    return () => ro.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveState.isInitializing, modelsLoaded]);
-
-  // 2s: mark session as responsive.
-  useEffect(() => {
-    if (!liveState.isInitializing) return;
-    const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 2000);
-    return () => clearTimeout(timer);
-  }, [liveState.isInitializing, liveDispatch]);
-
-  // 10s: safety valve for agents without model support — unblock UI if models never arrive.
-  useEffect(() => {
-    if (modelsLoaded) return;
-    const timer = setTimeout(() => setModelsLoaded(true), 10000);
-    return () => clearTimeout(timer);
-  }, [modelsLoaded]);
 
   if (liveState.isInitializing || !modelsLoaded) {
     return (
@@ -487,9 +323,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Activity content area */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Scroll area with FAB overlay */}
         <div className="flex-1 relative min-h-0 overflow-hidden">
           <div
             className="absolute inset-0 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar"
@@ -679,4 +513,3 @@ function formatElicitationAnswer(values: Record<string, unknown>): string {
   if (parts.length === 0) return "Submitted";
   return parts.map((v) => (Array.isArray(v) ? v.join(", ") : String(v))).join("; ");
 }
-

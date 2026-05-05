@@ -4,6 +4,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
+pub const PROTOCOL_VERSION: u32 = 1;
 
 // --- Top-level envelope ---
 
@@ -17,8 +18,19 @@ pub enum MaestroRpcMessage {
 // --- Client -> Server ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct HandshakeRequest {
+    pub protocol_version: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct HandshakeResponse {
+    pub protocol_version: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerRequest {
+    Handshake(HandshakeRequest),
     Spawn(SpawnRequest),
     Prompt(PromptRequest),
     Cancel(CancelRequest),
@@ -78,6 +90,7 @@ pub struct InterruptTurnRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerResponse {
+    HandshakeOk(HandshakeResponse),
     SpawnOk(SpawnResponse),
     Error(ErrorResponse),
     SessionUpdate(SessionUpdate),
@@ -169,7 +182,12 @@ pub struct SessionListRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SessionLoadRequest {
     pub agent_id: String,
+    /// Maestro routing key for this session (e.g. "session-{log_id}"). Used by
+    /// maestro-server to key the session in its internal map so all subsequent
+    /// Prompt/Permission/etc. requests (which use the same routing key) find it.
     pub session_id: String,
+    /// The agent's real session ID to restore (e.g. a claude-code conversation ID).
+    pub resume_session_id: String,
     pub cwd: String,
 }
 
@@ -208,6 +226,8 @@ pub struct SessionLoadOkResponse {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnResponse {
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModelState>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -361,6 +381,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn roundtrip_handshake() {
+        let req = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+            protocol_version: PROTOCOL_VERSION,
+        }));
+        let json = serde_json::to_string(&req).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(req, back);
+
+        let resp = MaestroRpcMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
+            protocol_version: PROTOCOL_VERSION,
+        }));
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
     fn roundtrip_spawn_request() {
         let msg = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
             agent_id: "claude-acp".to_string(),
@@ -407,6 +444,7 @@ mod tests {
     fn roundtrip_spawn_ok_response() {
         let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
+            acp_session_id: None,
             models: None,
             prompt_capabilities: None,
             supports_session_list: false,
@@ -422,6 +460,7 @@ mod tests {
     fn roundtrip_spawn_ok_with_models() {
         let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
+            acp_session_id: Some("native-uuid-123".to_string()),
             prompt_capabilities: Some(PromptCapabilitiesInfo {
                 embedded_context: true,
                 image: false,
@@ -651,6 +690,7 @@ mod tests {
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
+            acp_session_id: None,
             models: None,
             prompt_capabilities: None,
             supports_session_list: false,

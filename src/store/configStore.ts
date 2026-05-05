@@ -21,7 +21,6 @@ export interface ConfigState {
   setError: (error: string | null) => void;
   clearError: () => void;
   resetConfig: () => void;
-  clearConfig: () => void;
 }
 
 function applyReset(state: ConfigState) {
@@ -62,6 +61,5 @@ export const useConfigStore = create<ConfigState>()(
       set((state) => { state.error = null; }),
 
     resetConfig: () => set(applyReset),
-    clearConfig: () => set(applyReset),
   })),
 );

@@ -39,10 +39,12 @@ pub async fn drain_ready_queue(
         return Ok(vec![]);
     }
 
-    // Count running ACP sessions that have a task_id (proxy for running executions)
     let running_count: i32 = {
         let acp = app_state.acp_sessions.lock().await;
-        acp.values().filter(|p| p.task_id.is_some()).count() as i32
+        let acp_count = acp.values().filter(|p| p.task_id.is_some()).count();
+        let pty_meta = app_state.pty_session_meta.lock().await;
+        let pty_count = pty_meta.values().filter(|m| m.task_id.is_some()).count();
+        (acp_count + pty_count) as i32
     };
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 

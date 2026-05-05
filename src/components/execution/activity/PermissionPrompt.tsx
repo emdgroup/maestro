@@ -276,7 +276,6 @@ export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: 
   const isLong = bodyText && bodyText.length > BODY_COLLAPSE_LIMIT;
 
   if (fullHeight) {
-    console.log("[switch_mode] permission payload", payload);
     return <PlanPermissionOverlay requestId={requestId} bodyText={bodyText} options={options} onRespond={onRespond} />;
   }
 

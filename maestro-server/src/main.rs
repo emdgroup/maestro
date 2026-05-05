@@ -33,10 +33,10 @@ use acp::schema::{
 };
 use maestro_protocol::{
     read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, FileReadRequest, FileReadResponse,
-    FileSearchRequest, FileSearchResponse, ListAgentsResponse, MaestroRpcMessage,
+    FileSearchRequest, FileSearchResponse, HandshakeResponse, ListAgentsResponse, MaestroRpcMessage,
     ModelInfo as ProtocolModelInfo, PermissionRequest as MaestroPermissionRequest,
-    ElicitationRequest as MaestroElicitationRequest, PromptCapabilitiesInfo, ServerRequest,
-    ServerResponse, SessionListEntry, SessionListOkResponse, SessionLoadOkResponse,
+    ElicitationRequest as MaestroElicitationRequest, PromptCapabilitiesInfo, PROTOCOL_VERSION,
+    ServerRequest, ServerResponse, SessionListEntry, SessionListOkResponse, SessionLoadOkResponse,
     SessionModelState as ProtocolSessionModelState, SessionUpdate,
     SetModelOkResponse, SpawnResponse, TerminalOutput, TurnEnded,
 };
@@ -256,6 +256,7 @@ struct SpawnResult {
     supports_session_list: bool,
     supports_session_load: bool,
     supports_session_close: bool,
+    acp_session_id: String,
 }
 
 async fn spawn_acp_session(
@@ -300,7 +301,7 @@ async fn spawn_acp_session(
 
     // 4. Channels: commands into the connection task, readiness signal out
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let (ready_tx, ready_rx) = oneshot::channel::<Result<(Option<ProtocolSessionModelState>, PromptCapabilitiesInfo, bool, bool, bool), String>>();
+    let (ready_tx, ready_rx) = oneshot::channel::<Result<(Option<ProtocolSessionModelState>, PromptCapabilitiesInfo, bool, bool, bool, String), String>>();
 
     // 5. Clone state for builder callbacks
     let pp = Arc::clone(&pending_permissions);
@@ -614,7 +615,8 @@ async fn spawn_acp_session(
                     }
                 };
 
-                let _ = ready_tx.send(Ok((models, prompt_caps, supports_list, supports_load, supports_close)));
+                let acp_native_session_id = session.session_id().to_string();
+                let _ = ready_tx.send(Ok((models, prompt_caps, supports_list, supports_load, supports_close, acp_native_session_id)));
 
                 // Process commands from the stdin event loop
                 while let Some(cmd) = cmd_rx.recv().await {
@@ -705,7 +707,7 @@ async fn spawn_acp_session(
 
     // Wait for the connection task to signal readiness
     match ready_rx.await {
-        Ok(Ok((models, prompt_caps, supports_list, supports_load, supports_close))) => Some(SpawnResult {
+        Ok(Ok((models, prompt_caps, supports_list, supports_load, supports_close, native_session_id))) => Some(SpawnResult {
             session: ActiveSession {
                 cmd_tx,
                 pending_permissions,
@@ -717,6 +719,7 @@ async fn spawn_acp_session(
             supports_session_list: supports_list,
             supports_session_load: supports_load,
             supports_session_close: supports_close,
+            acp_session_id: native_session_id,
         }),
         Ok(Err(e)) => {
             let _ = send_response(
@@ -1486,6 +1489,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap_or_else(|_| registry::parse_backup_registry());
 
+    // Validate the protocol version handshake before entering the main dispatch loop.
+    let first_msg = match read_message(&mut stdin).await {
+        Ok(msg) => msg,
+        Err(_) => return Ok(()),
+    };
+    match first_msg {
+        MaestroRpcMessage::Request(ServerRequest::Handshake(req)) => {
+            if req.protocol_version != PROTOCOL_VERSION {
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: format!(
+                            "protocol version mismatch: server={}, client={}",
+                            PROTOCOL_VERSION, req.protocol_version
+                        ),
+                    })),
+                )
+                .await;
+                return Ok(());
+            }
+            let _ = send_response(
+                &stdout,
+                &MaestroRpcMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
+                    protocol_version: PROTOCOL_VERSION,
+                })),
+            )
+            .await;
+        }
+        _ => {
+            let _ = send_response(
+                &stdout,
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message: "expected Handshake as first message".to_string(),
+                })),
+            )
+            .await;
+            return Ok(());
+        }
+    }
+
     loop {
         let msg = match read_message(&mut stdin).await {
             Ok(msg) => msg,
@@ -1567,6 +1610,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(result) => {
                         let response = SpawnResponse {
                             session_id: req.session_id.clone(),
+                            acp_session_id: Some(result.acp_session_id),
                             models: result.models,
                             prompt_capabilities: Some(result.prompt_capabilities),
                             supports_session_list: result.supports_session_list,
@@ -1793,25 +1837,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                 };
-                let maestro_sid = format!("loaded-{}", req.session_id);
                 match load_acp_session(
                     &spawn_cmd,
                     &spawn_args_owned,
                     &spawn_env,
                     &req.cwd,
+                    req.resume_session_id.clone(),
                     req.session_id.clone(),
-                    maestro_sid.clone(),
                     Arc::clone(&stdout),
                 )
                 .await
                 {
                     Some((session, models, prompt_caps)) => {
-                        sessions.insert(maestro_sid.clone(), session);
+                        sessions.insert(req.session_id.clone(), session);
                         let _ = send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
                                 SessionLoadOkResponse {
-                                    session_id: maestro_sid,
+                                    session_id: req.session_id.clone(),
                                     models,
                                     prompt_capabilities: Some(prompt_caps),
                                 },
@@ -1862,6 +1905,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await;
                     }
                 }
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: "unexpected Handshake after initialization".to_string(),
+                    })),
+                )
+                .await;
             }
 
             MaestroRpcMessage::Response(_) => {}

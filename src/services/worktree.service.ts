@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib";
+import { api, createErrorToastHandler } from "@/lib";
 import { toast } from "sonner";
 import type { DiffTarget } from "@/types/bindings";
 
@@ -68,9 +68,7 @@ export function useDeleteWorktreeMutation() {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
       toast.success("Worktree deleted");
     },
-    onError: (error) => {
-      toast.error(`Failed to delete worktree: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to delete worktree"),
   });
 }
 
@@ -88,11 +86,9 @@ export function useCleanupZombieWorktreesMutation() {
     onSuccess: (deletedCount) => {
       if (deletedCount > 0) {
         queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
-        console.log(`[DEBUG] cleanup_zombie_worktrees: removed ${deletedCount} zombie worktrees`);
       }
     },
-    onError: (error) => {
-      console.error("[DEBUG] cleanup_zombie_worktrees failed:", error);
+    onError: () => {
       // Silent: no toast — zombie cleanup is background housekeeping
     },
   });
@@ -118,9 +114,7 @@ export function useStageWorktreeFilesMutation() {
     }) => {
       return await api.stageWorktreeFiles(projectId, worktreePath, filePaths, patch);
     },
-    onError: (error) => {
-      toast.error(`Failed to stage files: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to stage files"),
   });
 }
 
@@ -146,9 +140,7 @@ export function useCommitWorktreeMutation() {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
       toast.success("Changes committed");
     },
-    onError: (error) => {
-      toast.error(`Commit failed: ${error}`);
-    },
+    onError: createErrorToastHandler("Commit failed"),
   });
 }
 
@@ -177,9 +169,7 @@ export function useDiscardWorktreeChangesMutation() {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
       toast.success("Changes discarded");
     },
-    onError: (error) => {
-      toast.error(`Failed to discard changes: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to discard changes"),
   });
 }
 
@@ -208,9 +198,7 @@ export function useShelveWorktreeChangesMutation() {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
       toast.success("Changes shelved");
     },
-    onError: (error) => {
-      toast.error(`Failed to shelve changes: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to shelve changes"),
   });
 }
 
@@ -231,9 +219,7 @@ export function useDeleteUntrackedFilesMutation() {
     }) => {
       return await api.deleteUntrackedFiles(projectId, worktreePath, filePaths);
     },
-    onError: (error) => {
-      toast.error(`Failed to delete files: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to delete files"),
   });
 }
 
@@ -265,8 +251,6 @@ export function useCreateWorktreeMutation() {
       queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
       toast.success("Worktree created");
     },
-    onError: (error) => {
-      toast.error(`Failed to create worktree: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to create worktree"),
   });
 }

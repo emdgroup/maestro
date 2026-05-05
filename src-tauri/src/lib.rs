@@ -1,10 +1,11 @@
 pub mod db;
+pub mod error;
 pub mod models;
 pub mod ipc;
 pub mod process;
 pub mod ssh;
 pub mod git;
-pub mod websocket;
+pub mod streaming;
 pub mod acp;
 pub mod project_lock;
 
@@ -105,6 +106,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_acp_sessions,
             crate::ipc::load_acp_session,
             crate::ipc::close_acp_session,
+            crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
             crate::ipc::sftp_download,
             crate::ipc::get_agent_models_cache,

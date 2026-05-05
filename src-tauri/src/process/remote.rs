@@ -72,7 +72,7 @@ pub async fn spawn_remote_agent_execution(
 
 /// Poll a remote log file and forward new bytes to a callback until the process exits.
 ///
-/// Shared by both stream_remote_output and websocket::streaming::attach_remote_stream_listener.
+/// Shared by both stream_remote_output and streaming::attach_remote_stream_listener.
 pub async fn poll_remote_log(
     ssh_session: &Arc<RemoteSshSession>,
     remote_pid: u32,

@@ -1,31 +1,33 @@
 import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 import type { Project } from "@/types/bindings";
 import { api } from "@/lib";
 
 interface ProjectStore {
   selectedProject: Project | null;
-  actions: {
-    setSelectedProject: (project: Project) => void;
-    clearSelectedProject: () => void;
-  };
+  setSelectedProject: (project: Project) => void;
+  clearSelectedProject: () => void;
 }
 
-/**
- * Zustand store for managing the currently selected project.
- *
- * This is app-wide state that persists across component unmounts.
- * Used to eliminate callback prop drilling for project selection.
- */
-const useStore = create<ProjectStore>((set) => ({
-  selectedProject: null,
-  actions: {
-    setSelectedProject: (project) => set({ selectedProject: project }),
+const useStore = create<ProjectStore>()(
+  immer((set) => ({
+    selectedProject: null,
+    setSelectedProject: (project) =>
+      set((state) => {
+        state.selectedProject = project;
+      }),
     clearSelectedProject: () => {
       void api.releaseActiveProjectLock();
-      set({ selectedProject: null });
+      set((state) => {
+        state.selectedProject = null;
+      });
     },
-  },
-}));
+  })),
+);
 
 export const useSelectedProject = () => useStore((state) => state.selectedProject);
-export const useSelectedProjectActions = () => useStore((state) => state.actions);
+export const useSelectedProjectActions = () =>
+  useStore((state) => ({
+    setSelectedProject: state.setSelectedProject,
+    clearSelectedProject: state.clearSelectedProject,
+  }));

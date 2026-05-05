@@ -38,10 +38,11 @@ use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
     PromptRequest, CancelRequest, InterruptTurnRequest, PermissionResponse,
     ElicitationResponse, SetModelRequest,
-    ListAgentsRequest, write_message,
+    ListAgentsRequest,
     FileSearchRequest, FileReadRequest,
     SessionListRequest,
     SessionCloseRequest,
+    write_message,
 };
 use tokio::sync::oneshot;
 
@@ -392,56 +393,9 @@ pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: O
     }
 }
 
-/// Spawn a one-shot local maestro-server, send ListAgents, read response.
 async fn query_list_agents_local() -> Result<Vec<DiscoveredAgent>, String> {
-    use tokio::io::AsyncWriteExt;
-
-    let server_path = which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
-
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    let mut stdout = child.stdout.take().expect("stdout piped");
-
     let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let mut writer = tokio::io::BufWriter::new(&mut stdin);
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("ListAgents local write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    drop(writer);
-    drop(stdin);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        async {
-            use tokio::io::AsyncReadExt;
-            let mut tmp = [0u8; 4096];
-            loop {
-                let n = stdout.read(&mut tmp).await
-                    .map_err(|e| format!("read error: {}", e))?;
-                if n == 0 {
-                    break;
-                }
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                    return Ok::<_, String>(Some(rpc_msg));
-                }
-            }
-            Ok(None)
-        },
-    )
-    .await
-    .map_err(|_| "ListAgents local timed out after 15s".to_string())??;
-
+    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
             Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
@@ -451,54 +405,12 @@ async fn query_list_agents_local() -> Result<Vec<DiscoveredAgent>, String> {
     }
 }
 
-/// Open a one-shot exec channel to maestro-server, send ListAgents, return discovered agents.
 async fn query_list_agents_remote(
     ssh: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
 ) -> Result<Vec<DiscoveredAgent>, String> {
-    use tokio::io::AsyncWriteExt;
-    use russh::ChannelMsg;
-    use crate::acp::transport::{MaestroRpcMessage, ServerRequest, ListAgentsRequest, ServerResponse, write_message};
-
-    let channel = ssh.open_exec_channel(maestro_server_path)
-        .await
-        .map_err(|e| format!("ListAgents channel open failed: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-
     let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let mut writer = write_half.make_writer();
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("ListAgents write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("ListAgents flush failed: {}", e))?;
-    drop(writer);
-    drop(write_half);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async move {
-            loop {
-                match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        buf.extend_from_slice(&data);
-                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                            return Some(rpc_msg);
-                        }
-                    }
-                    Some(ChannelMsg::Eof)
-                    | Some(ChannelMsg::Close)
-                    | Some(ChannelMsg::ExitStatus { .. })
-                    | None => return None,
-                    _ => {}
-                }
-            }
-        },
-    )
-    .await
-    .map_err(|_| "ListAgents timed out after 30s".to_string())?;
-
+    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
             Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
@@ -640,6 +552,7 @@ pub async fn get_active_sessions(
             let caps = proc.session_capabilities.lock()
                 .map(|c| c.clone())
                 .unwrap_or_default();
+            let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
             sessions.push(ActiveSessionInfo {
                 session_key: *key,
                 session_name: proc.session_name.clone(),
@@ -649,6 +562,7 @@ pub async fn get_active_sessions(
                 task_id: proc.task_id,
                 task_name: proc.task_name.clone(),
                 branch_name: proc.branch_name.clone(),
+                acp_session_id: native_id,
                 supports_session_list: caps.supports_session_list,
                 supports_session_load: caps.supports_session_load,
                 supports_session_close: caps.supports_session_close,
@@ -669,6 +583,7 @@ pub async fn get_active_sessions(
                 task_id: meta.task_id,
                 task_name: meta.task_name.clone(),
                 branch_name: meta.branch_name.clone(),
+                acp_session_id: None,
                 supports_session_list: false,
                 supports_session_load: false,
                 supports_session_close: false,
@@ -681,16 +596,19 @@ pub async fn get_active_sessions(
 }
 
 /// List ACP sessions available for a given agent via a one-shot maestro-server connection.
+/// Applies user-defined aliases over agent-provided titles. When the full list is returned
+/// (no next page), prunes stale aliases for sessions the agent no longer knows about.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_acp_sessions(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     agent_id: String,
     cwd: String,
     connection_id: Option<i32>,
     cursor: Option<String>,
 ) -> Result<Vec<SessionListEntryDto>, String> {
-    if let Some(conn_id) = connection_id {
+    let (mut entries, next_cursor) = if let Some(conn_id) = connection_id {
         let maestro_path = {
             let cache = app_state.agent_discovery_cache.lock().await;
             cache.get(&Some(conn_id))
@@ -702,10 +620,105 @@ pub async fn list_acp_sessions(
         };
         let ssh = app_state.get_ssh_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-        query_session_list_remote(&ssh, &maestro_path, &agent_id, &cwd, cursor).await
+        query_session_list_remote(&ssh, &maestro_path, &agent_id, &cwd, cursor).await?
     } else {
-        query_session_list_local(&agent_id, &cwd, cursor).await
+        query_session_list_local(&agent_id, &cwd, cursor).await?
+    };
+
+    let aliases = {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT acp_session_id, display_name FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2"
+        ).map_err(|e| format!("DB prepare failed: {}", e))?;
+        let map: std::collections::HashMap<String, String> = stmt
+            .query_map(rusqlite::params![project_id, agent_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("DB query failed: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        map
+    };
+
+    // Overlay aliases over agent-provided titles
+    for entry in &mut entries {
+        if let Some(alias) = aliases.get(&entry.session_id) {
+            entry.title = Some(alias.clone());
+        }
     }
+
+    // Prune stale aliases only when we have the complete list (no pagination)
+    if next_cursor.is_none() && !aliases.is_empty() {
+        let known_ids: Vec<String> = entries.iter().map(|e| e.session_id.clone()).collect();
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        if !known_ids.is_empty() {
+            let placeholders = (0..known_ids.len())
+                .map(|i| format!("?{}", i + 3))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "DELETE FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2 AND acp_session_id NOT IN ({})",
+                placeholders
+            );
+            let mut params: Vec<rusqlite::types::Value> = vec![
+                rusqlite::types::Value::Integer(project_id as i64),
+                rusqlite::types::Value::Text(agent_id.clone()),
+            ];
+            for id in &known_ids {
+                params.push(rusqlite::types::Value::Text(id.clone()));
+            }
+            conn.execute(&sql, rusqlite::params_from_iter(params))
+                .map_err(|e| format!("Prune aliases failed: {}", e))?;
+        } else {
+            // No sessions at all — remove all aliases for this agent
+            conn.execute(
+                "DELETE FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2",
+                rusqlite::params![project_id, agent_id],
+            ).map_err(|e| format!("Prune aliases failed: {}", e))?;
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Rename an ACP session by storing a user-defined display name in the local DB.
+/// Only creates a DB entry on explicit rename — not on session creation.
+/// Also updates the in-memory session_name if the session is currently active.
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    agent_id: String,
+    acp_session_id: String,
+    display_name: String,
+) -> Result<(), String> {
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO session_aliases (project_id, agent_id, acp_session_id, display_name)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project_id, agent_id, acp_session_id) DO UPDATE SET display_name = excluded.display_name",
+            rusqlite::params![project_id, agent_id, acp_session_id, display_name],
+        ).map_err(|e| format!("Upsert alias failed: {}", e))?;
+    }
+
+    // Update in-memory name if this session is currently active.
+    {
+        let mut sessions = app_state.acp_sessions.lock().await;
+        for proc in sessions.values_mut() {
+            let matches = proc.acp_session_id.lock()
+                .map(|g| g.as_deref() == Some(&acp_session_id))
+                .unwrap_or(false);
+            if matches {
+                proc.session_name = Some(display_name.clone());
+                break;
+            }
+        }
+    }
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(())
 }
 
 /// Close an ACP session stored on the agent server (not a live Tauri session).
@@ -750,7 +763,6 @@ pub async fn load_acp_session(
     session_name: Option<String>,
 ) -> Result<i32, String> {
     let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let maestro_session_id = session_id_for(log_id);
 
     if let Some(conn_id) = connection_id {
         let maestro_path = {
@@ -765,12 +777,12 @@ pub async fn load_acp_session(
         let ssh = app_state.get_ssh_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         spawn_loaded_acp_session_remote(
-            &agent_id, &cwd, log_id, &acp_session_id, &maestro_session_id,
+            &agent_id, &cwd, log_id, &acp_session_id,
             &app_state, &ssh, &maestro_path, session_name,
         ).await?;
     } else {
         spawn_loaded_acp_session(
-            &agent_id, &cwd, log_id, &acp_session_id, &maestro_session_id,
+            &agent_id, &cwd, log_id, &acp_session_id,
             &app_state, session_name,
         ).await?;
     }
@@ -787,59 +799,18 @@ async fn query_session_list_local(
     agent_id: &str,
     cwd: &str,
     cursor: Option<String>,
-) -> Result<Vec<SessionListEntryDto>, String> {
-    use tokio::io::AsyncWriteExt;
-
-    let server_path = which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
-
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    let mut stdout = child.stdout.take().expect("stdout piped");
-
+) -> Result<(Vec<SessionListEntryDto>, Option<String>), String> {
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
         agent_id: agent_id.to_string(),
         cwd: cwd.to_string(),
         cursor,
     }));
-    let mut writer = tokio::io::BufWriter::new(&mut stdin);
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("SessionList local write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    drop(writer);
-    drop(stdin);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        async {
-            use tokio::io::AsyncReadExt;
-            let mut tmp = [0u8; 4096];
-            loop {
-                let n = stdout.read(&mut tmp).await
-                    .map_err(|e| format!("read error: {}", e))?;
-                if n == 0 { break; }
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                    return Ok::<_, String>(Some(rpc_msg));
-                }
-            }
-            Ok(None)
-        },
-    )
-    .await
-    .map_err(|_| "SessionList local timed out after 15s".to_string())??;
-
+    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
     match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok(resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect()),
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok((
+            resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect(),
+            resp.next_cursor,
+        )),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
         _ => Err("No valid SessionListOk response from local maestro-server".to_string()),
     }
@@ -851,55 +822,18 @@ async fn query_session_list_remote(
     agent_id: &str,
     cwd: &str,
     cursor: Option<String>,
-) -> Result<Vec<SessionListEntryDto>, String> {
-    use tokio::io::AsyncWriteExt;
-    use russh::ChannelMsg;
-
-    let channel = ssh.open_exec_channel(maestro_server_path)
-        .await
-        .map_err(|e| format!("SessionList channel open failed: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-
+) -> Result<(Vec<SessionListEntryDto>, Option<String>), String> {
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
         agent_id: agent_id.to_string(),
         cwd: cwd.to_string(),
         cursor,
     }));
-    let mut writer = write_half.make_writer();
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("SessionList write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("SessionList flush failed: {}", e))?;
-    drop(writer);
-    drop(write_half);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async move {
-            loop {
-                match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        buf.extend_from_slice(&data);
-                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                            return Some(rpc_msg);
-                        }
-                    }
-                    Some(ChannelMsg::Eof)
-                    | Some(ChannelMsg::Close)
-                    | Some(ChannelMsg::ExitStatus { .. })
-                    | None => return None,
-                    _ => {}
-                }
-            }
-        },
-    )
-    .await
-    .map_err(|_| "SessionList remote timed out after 30s".to_string())?;
-
+    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
     match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok(resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect()),
+        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok((
+            resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect(),
+            resp.next_cursor,
+        )),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
         _ => Err("No valid SessionListOk response from remote maestro-server".to_string()),
     }
@@ -910,56 +844,12 @@ async fn query_session_close_local(
     session_id: &str,
     cwd: &str,
 ) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-
-    let server_path = which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn local maestro-server: {}", e))?;
-
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    let mut stdout = child.stdout.take().expect("stdout piped");
-
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
     }));
-    let mut writer = tokio::io::BufWriter::new(&mut stdin);
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("SessionClose local write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    drop(writer);
-    drop(stdin);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        async {
-            use tokio::io::AsyncReadExt;
-            let mut tmp = [0u8; 4096];
-            loop {
-                let n = stdout.read(&mut tmp).await
-                    .map_err(|e| format!("read error: {}", e))?;
-                if n == 0 { break; }
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                    return Ok::<_, String>(Some(rpc_msg));
-                }
-            }
-            Ok(None)
-        },
-    )
-    .await
-    .map_err(|_| "SessionClose local timed out after 15s".to_string())??;
-
+    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
@@ -974,52 +864,12 @@ async fn query_session_close_remote(
     session_id: &str,
     cwd: &str,
 ) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-    use russh::ChannelMsg;
-
-    let channel = ssh.open_exec_channel(maestro_server_path)
-        .await
-        .map_err(|e| format!("SessionClose channel open failed: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
     }));
-    let mut writer = write_half.make_writer();
-    write_message(&mut writer, &msg)
-        .await
-        .map_err(|e| format!("SessionClose write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("SessionClose flush failed: {}", e))?;
-    drop(writer);
-    drop(write_half);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async move {
-            loop {
-                match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        buf.extend_from_slice(&data);
-                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                            return Some(rpc_msg);
-                        }
-                    }
-                    Some(ChannelMsg::Eof)
-                    | Some(ChannelMsg::Close)
-                    | Some(ChannelMsg::ExitStatus { .. })
-                    | None => return None,
-                    _ => {}
-                }
-            }
-        },
-    )
-    .await
-    .map_err(|_| "SessionClose remote timed out after 30s".to_string())?;
-
+    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
@@ -1038,7 +888,6 @@ async fn spawn_loaded_acp_session(
     cwd: &str,
     log_id: i32,
     acp_session_id: &str,
-    _maestro_session_id: &str,
     app_state: &Arc<crate::db::AppState>,
     session_name: Option<String>,
 ) -> Result<(), String> {
@@ -1062,7 +911,8 @@ async fn spawn_loaded_acp_session(
 
     let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: agent_id.to_string(),
-        session_id: acp_session_id.to_string(),
+        session_id: session_id_for(log_id),
+        resume_session_id: acp_session_id.to_string(),
         cwd: cwd.to_string(),
     }));
     write_message(&mut stdin_writer, &load_req)
@@ -1078,6 +928,7 @@ async fn spawn_loaded_acp_session(
     let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
+    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
 
     let acp_process = crate::acp::AcpProcess {
         writer: crate::acp::AcpTransportWriter::Local(stdin_writer),
@@ -1094,12 +945,13 @@ async fn spawn_loaded_acp_session(
         task_id: None,
         task_name: None,
         branch_name: None,
+        acp_session_id: Arc::clone(&acp_session_id_cache),
         session_capabilities: Arc::clone(&session_capabilities),
     };
 
     app_state.acp_sessions.lock().await.insert(log_id, acp_process);
 
-    crate::acp::manager::spawn_reader_task_pub(
+    crate::acp::manager::spawn_reader_task(
         child_stdout,
         log_id,
         app_state.app_handle.clone(),
@@ -1110,6 +962,7 @@ async fn spawn_loaded_acp_session(
         pending_file_search,
         pending_file_read,
         session_capabilities,
+        acp_session_id_cache,
     );
 
     Ok(())
@@ -1120,7 +973,6 @@ async fn spawn_loaded_acp_session_remote(
     cwd: &str,
     log_id: i32,
     acp_session_id: &str,
-    _maestro_session_id: &str,
     app_state: &Arc<crate::db::AppState>,
     ssh_session: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
@@ -1139,10 +991,11 @@ async fn spawn_loaded_acp_session_remote(
 
     let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: agent_id.to_string(),
-        session_id: acp_session_id.to_string(),
+        session_id: session_id_for(log_id),
+        resume_session_id: acp_session_id.to_string(),
         cwd: cwd.to_string(),
     }));
-    let load_bytes = crate::acp::manager::serialize_message_pub(&load_req)?;
+    let load_bytes = crate::acp::manager::serialize_message(&load_req)?;
     write_tx.send(load_bytes).await
         .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
 
@@ -1163,6 +1016,7 @@ async fn spawn_loaded_acp_session_remote(
     let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
+    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
 
     let acp_process = crate::acp::AcpProcess {
         writer: crate::acp::AcpTransportWriter::RemoteSsh(write_tx),
@@ -1179,12 +1033,13 @@ async fn spawn_loaded_acp_session_remote(
         task_id: None,
         task_name: None,
         branch_name: None,
+        acp_session_id: Arc::clone(&acp_session_id_cache),
         session_capabilities: Arc::clone(&session_capabilities),
     };
 
     app_state.acp_sessions.lock().await.insert(log_id, acp_process);
 
-    crate::acp::manager::spawn_remote_reader_task_pub(
+    crate::acp::manager::spawn_remote_reader_task(
         read_half,
         log_id,
         app_state.app_handle.clone(),
@@ -1195,6 +1050,7 @@ async fn spawn_loaded_acp_session_remote(
         pending_file_search,
         pending_file_read,
         session_capabilities,
+        acp_session_id_cache,
     );
 
     Ok(())
@@ -1327,51 +1183,7 @@ pub async fn refresh_agent_models(
 }
 
 async fn probe_models_local(spawn_req: MaestroRpcMessage) -> Result<Vec<AcpModelInfo>, String> {
-    use tokio::io::AsyncWriteExt;
-
-    let server_path = which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
-
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    let mut stdout = child.stdout.take().expect("stdout piped");
-
-    let mut writer = tokio::io::BufWriter::new(&mut stdin);
-    write_message(&mut writer, &spawn_req)
-        .await
-        .map_err(|e| format!("SpawnRequest write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    drop(writer);
-    drop(stdin);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            use tokio::io::AsyncReadExt;
-            let mut tmp = [0u8; 4096];
-            loop {
-                let n = stdout.read(&mut tmp).await
-                    .map_err(|e| format!("read error: {}", e))?;
-                if n == 0 { break; }
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                    return Ok::<_, String>(Some(rpc_msg));
-                }
-            }
-            Ok(None)
-        },
-    )
-    .await
-    .map_err(|_| "SpawnRequest local timed out after 30s".to_string())??;
-
+    let result = crate::acp::rpc::one_shot_rpc_local(&spawn_req, 30).await?;
     extract_models_from_spawn_ok(result)
 }
 
@@ -1380,9 +1192,6 @@ async fn probe_models_remote(
     conn_id: i32,
     spawn_req: MaestroRpcMessage,
 ) -> Result<Vec<AcpModelInfo>, String> {
-    use tokio::io::AsyncWriteExt;
-    use russh::ChannelMsg;
-
     let maestro_path = {
         let cache = app_state.agent_discovery_cache.lock().await;
         cache.get(&Some(conn_id))
@@ -1392,47 +1201,9 @@ async fn probe_models_remote(
                 conn_id
             ))?
     };
-
     let ssh = app_state.get_ssh_session(conn_id).await
         .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
-
-    let channel = ssh.open_exec_channel(&maestro_path)
-        .await
-        .map_err(|e| format!("Channel open failed: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-    let mut writer = write_half.make_writer();
-    write_message(&mut writer, &spawn_req)
-        .await
-        .map_err(|e| format!("SpawnRequest write failed: {}", e))?;
-    writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    drop(writer);
-    drop(write_half);
-
-    let mut buf = Vec::<u8>::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async move {
-            loop {
-                match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        buf.extend_from_slice(&data);
-                        if let Some(rpc_msg) = crate::acp::manager::try_parse_acp_frame(&mut buf) {
-                            return Some(rpc_msg);
-                        }
-                    }
-                    Some(ChannelMsg::Eof)
-                    | Some(ChannelMsg::Close)
-                    | Some(ChannelMsg::ExitStatus { .. })
-                    | None => return None,
-                    _ => {}
-                }
-            }
-        },
-    )
-    .await
-    .map_err(|_| "SpawnRequest remote timed out after 30s".to_string())?;
-
+    let result = crate::acp::rpc::one_shot_rpc_remote(&ssh, &maestro_path, &spawn_req, 30).await?;
     extract_models_from_spawn_ok(result)
 }
 

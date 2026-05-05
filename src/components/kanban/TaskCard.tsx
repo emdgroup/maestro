@@ -1,11 +1,10 @@
 import React, { useState } from "react";
 import { Task } from "@/types/bindings";
-import { useBoardStore } from "@/store/boardStore";
 import { useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { toast } from "sonner";
 import { TaskContextMenu } from "@/components/task/TaskContextMenu";
-import { api } from "@/lib";
+import { useExecuteTask } from "@/hooks/useExecuteTask";
 
 /// Get status dot color based on task status
 function getStatusDotColor(status: string): string {
@@ -41,52 +40,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   // Get context from KanbanProvider
   const { projectId, projectPath, onTaskClick } = useKanban();
 
-  const [isExecuting, setIsExecuting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const store = useBoardStore();
   const updateTask = useUpdateTask();
-
-  const handleExecute = async () => {
-    setIsExecuting(true);
-    try {
-      const worktrees = await api.listWorktreesWithStatus(projectId, projectPath);
-      const existingWorktree = worktrees.find((w) => w.task_id === task.id);
-
-      let worktreeId: number;
-      let branchName: string;
-
-      if (existingWorktree && existingWorktree.id != null) {
-        // Resume: use existing worktree
-        worktreeId = existingWorktree.id;
-        branchName = existingWorktree.branch_name;
-      } else {
-        // First execution: create new worktree + branch from base_branch
-        const slug = task.name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
-          .slice(0, 50);
-        const newBranchName = `${task.id}-${slug}`;
-        const worktree = await api.createWorktree(
-          projectId,
-          task.id,
-          task.base_branch,
-          newBranchName,
-          projectPath,
-        );
-        worktreeId = worktree.id;
-        branchName = worktree.branch_name;
-      }
-
-      await api.spawnInteractiveExecution(projectId, branchName, projectPath, task.name, worktreeId, task.id, task.description);
-      store.updateTaskStatus(task.id, "InProgress");
-      toast.success(`Session started for "${task.name}"`);
-    } catch (error) {
-      toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsExecuting(false);
-    }
-  };
+  const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
 
   const getStatusLabel = (status: string) => {
     switch (status) {
@@ -112,7 +68,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       { taskId: task.id, updates: { status: "Backlog" } },
       {
         onSuccess: () => {
-          store.updateTaskStatus(task.id, "Backlog");
           toast.success(`"${task.name}" moved back to Backlog`);
         },
       },
@@ -170,7 +125,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       {task.status === "Ready" && (
         <div className="mt-2 flex gap-2">
           <button
-            onClick={handleExecute}
+            onClick={() => handleExecute(task)}
             disabled={isExecuting}
             className={`flex-1 px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
               isExecuting

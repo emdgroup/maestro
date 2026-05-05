@@ -63,6 +63,7 @@ pub struct ActiveSessionInfo {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
     pub branch_name: Option<String>,
+    pub acp_session_id: Option<String>,
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,

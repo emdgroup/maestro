@@ -64,13 +64,10 @@ export function AppHeader({
     // Trigger queue drain when enabling auto mode
     if (next && currentProject) {
       try {
-        const taskIds = await invoke<number[]>("drain_ready_queue", {
+        await invoke<number[]>("drain_ready_queue", {
           projectId: currentProject.id,
           projectPath: currentProject.path,
         });
-        if (taskIds.length > 0) {
-          console.log("[auto-mode] drain_ready_queue returned task IDs to start:", taskIds);
-        }
       } catch (err) {
         console.error("[auto-mode] drain_ready_queue failed:", err);
       }

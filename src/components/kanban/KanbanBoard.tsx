@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
@@ -27,36 +27,22 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
 };
 
 export const KanbanBoard = () => {
-  // Get project context from KanbanProvider
   const { projectId } = useKanban();
 
-  const {
-    loadTasks,
-    getTasksByStatus,
-    getTasks,
-    activeTerminalTaskId,
-    isTerminalOpen,
-    closeTerminal,
-  } = useBoardStore();
+  const { activeTerminalTaskId, isTerminalOpen, closeTerminal } = useBoardStore();
 
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
   const [selectedTaskForSettings, setSelectedTaskForSettings] = useState<Task | null>(null);
 
-  // Replace manual polling with TanStack Query
   const { data: tasks, isLoading } = useTasksQuery(projectId);
-
-  // Load tasks into store when query returns data
-  useEffect(() => {
-    if (tasks) {
-      loadTasks(tasks);
-    }
-  }, [tasks, loadTasks]);
 
   if (isLoading) {
     return <div className="kanban-board">Loading tasks...</div>;
   }
+
+  const taskList = tasks ?? [];
 
   return (
     <div className="h-full flex flex-col">
@@ -66,7 +52,7 @@ export const KanbanBoard = () => {
             key={status}
             columnId={status}
             columnTitle={COLUMN_TITLES[status]}
-            tasks={getTasksByStatus(status)}
+            tasks={taskList.filter((t) => t.status === status)}
             status={status}
             onReviewClick={(taskId, taskName) => {
               setSelectedTaskId(taskId);
@@ -101,7 +87,7 @@ export const KanbanBoard = () => {
         <ExecutionTerminal
           taskId={activeTerminalTaskId}
           taskName={
-            getTasks().find((t) => t.id === activeTerminalTaskId)?.name ||
+            taskList.find((t) => t.id === activeTerminalTaskId)?.name ||
             `Task ${activeTerminalTaskId}`
           }
           isActive={true}

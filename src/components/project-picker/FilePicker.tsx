@@ -36,6 +36,7 @@ export function FilePicker({
 
   // Custom hooks handle all business logic
   const keyboard = useKeyboardNavigation();
+  const { setSelectedIndex: resetKeyboardIndex } = keyboard;
   const initialization = useFilePickerInitialization(isLocal, connection);
   const navigation = usePathNavigation(isLocal, initialization.drives);
   const { data: directories = [], isLoading: directoriesLoading } = useListDirectories(
@@ -55,18 +56,12 @@ export function FilePicker({
     ? directories
     : directories.filter((dir) => !dir.startsWith("."));
 
-  // Single effect to load directories when path changes
+  // Single effect to reset keyboard selection when path changes
   useEffect(() => {
     if (initialization.isInitialized && navigation.currentPath) {
-      keyboard.setSelectedIndex(-1);
+      resetKeyboardIndex(-1);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    navigation.currentPath,
-    initialization.isInitialized,
-    // loader.loadDirectories is stable, but we omit to avoid any potential re-render loops
-    // keyboard.setSelectedIndex is stable from useState
-  ]);
+  }, [navigation.currentPath, initialization.isInitialized, resetKeyboardIndex]);
 
   // Keyboard navigation effect
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { Plus, Terminal, X } from "lucide-react";
 import { cn } from "@/lib";
 import { Badge } from "@/ui/badge";
@@ -9,6 +9,7 @@ import type { ActiveSessionInfo } from "@/types/bindings";
 import { useSessionActivityStore, type SessionActivityStatus } from "@/store/sessionActivityStore";
 import type { UsageState } from "./activity/types";
 import { humanizeTokenCount } from "@/lib";
+import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
   spawning: "bg-muted-foreground/60 animate-pulse",
@@ -43,6 +44,7 @@ interface AgentMonitorProps {
   onOpenTerminal?: (session: ActiveSessionInfo) => void;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
+  projectId?: number;
 }
 
 export function AgentMonitor({
@@ -54,9 +56,14 @@ export function AgentMonitor({
   onOpenTerminal,
   onClose,
   agentIcons,
+  projectId,
 }: AgentMonitorProps) {
   const activityStatuses = useSessionActivityStore((s) => s.statuses);
   const [sessionUsages, setSessionUsages] = useState<Map<number, UsageState>>(new Map());
+  const [renamingKey, setRenamingKey] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameMutation = useRenameAcpSessionMutation();
 
   const handleUsageChange = useCallback((sessionKey: number, usage: UsageState | null) => {
     setSessionUsages((prev) => {
@@ -69,6 +76,26 @@ export function AgentMonitor({
       return next;
     });
   }, []);
+
+  const startRename = useCallback((session: ActiveSessionInfo, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingKey(session.session_key);
+    setRenameValue(session.session_name ?? session.task_name ?? session.branch_name ?? "");
+    setTimeout(() => renameInputRef.current?.select(), 0);
+  }, []);
+
+  const commitRename = useCallback((session: ActiveSessionInfo) => {
+    const trimmed = renameValue.trim();
+    if (trimmed && projectId != null && session.agent_id && session.acp_session_id) {
+      renameMutation.mutate({
+        projectId,
+        agentId: session.agent_id,
+        acpSessionId: session.acp_session_id,
+        displayName: trimmed,
+      });
+    }
+    setRenamingKey(null);
+  }, [renameValue, projectId, renameMutation]);
 
   const filteredSessions = useMemo(() => {
     return sessions.filter(
@@ -130,7 +157,7 @@ export function AgentMonitor({
                     <span
                       className={cn(
                         "inline-block w-2 h-2 rounded-full shrink-0",
-                        getStatusDot(session, activityStatuses.get(session.session_key)),
+                        getStatusDot(session, activityStatuses[session.session_key]),
                       )}
                     />
                     <span className="text-sm font-medium truncate">
@@ -170,18 +197,42 @@ export function AgentMonitor({
                   {selectedSession.execution_mode === "acp" && selectedSession.agent_id && agentIcons?.[selectedSession.agent_id] && (
                     <AgentIcon src={agentIcons[selectedSession.agent_id]} className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert" />
                   )}
-                  <h3 className="text-sm font-semibold truncate">
-                    {selectedSession.session_name ??
-                      selectedSession.task_name ??
-                      selectedSession.branch_name ??
-                      "Interactive session"}
-                  </h3>
+                  {renamingKey === selectedSession.session_key ? (
+                    <input
+                      ref={renameInputRef}
+                      className="text-sm font-semibold bg-transparent border-b border-border outline-none w-40"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(selectedSession);
+                        if (e.key === "Escape") setRenamingKey(null);
+                      }}
+                      onBlur={() => commitRename(selectedSession)}
+                    />
+                  ) : (
+                    <h3
+                      className={cn(
+                        "text-sm font-semibold truncate",
+                        selectedSession.execution_mode === "acp" && selectedSession.acp_session_id && "cursor-text",
+                      )}
+                      onDoubleClick={
+                        selectedSession.execution_mode === "acp" && selectedSession.acp_session_id
+                          ? (e) => startRename(selectedSession, e)
+                          : undefined
+                      }
+                    >
+                      {selectedSession.session_name ??
+                        selectedSession.task_name ??
+                        selectedSession.branch_name ??
+                        "Interactive session"}
+                    </h3>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span
                     className={cn(
                       "inline-block w-2 h-2 rounded-full shrink-0",
-                      getStatusDot(selectedSession, activityStatuses.get(selectedSession.session_key)),
+                      getStatusDot(selectedSession, activityStatuses[selectedSession.session_key]),
                     )}
                   />
                   <span className="text-xs text-muted-foreground">Running</span>

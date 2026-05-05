@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { X, AlignJustify, Columns2, List, FolderTree, Check, Minus, RotateCcw, Archive } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { DiffModeEnum } from "@git-diff-view/react";
@@ -22,6 +22,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/ui/select";
 import { DiffViewer } from "@/components/execution/DiffViewer";
 import { FileTree } from "@/components/execution/FileTree";
+import { useStagingState } from "@/components/execution/useStagingState";
 import {
   useWorktreeDiffQuery,
   useStageWorktreeFilesMutation,
@@ -43,12 +44,7 @@ interface WorktreeDiffPanelProps {
 export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiffPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [viewMode, setViewMode] = useState<"uncommitted" | "untracked">("uncommitted");
-  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
-  const [fileSearch, setFileSearch] = useState("");
-  const [stagedFiles, setStagedFiles] = useState<Set<string>>(new Set());
-  const [stagedHunks, setStagedHunks] = useState<Map<string, Set<number>>>(new Map());
-  const [commitMessage, setCommitMessage] = useState("");
 
   const worktreePath = worktree?.path ?? null;
 
@@ -68,15 +64,25 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const deleteMutation = useDeleteUntrackedFilesMutation();
   const [shelvePopoverOpen, setShelvePopoverOpen] = useState(false);
 
-  const defaultShelveName = worktree
-    ? `wip-${worktree.branch_name.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-")}-${new Date().toISOString().split("T")[0]}`
-    : "";
-  const [shelveName, setShelveName] = useState(defaultShelveName);
-
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
     return parseDiffString(diffString);
   }, [diffString]);
+
+  const {
+    stagedFiles,
+    setStagedFiles,
+    stagedHunks,
+    setStagedHunks,
+    commitMessage,
+    setCommitMessage,
+    shelveName,
+    setShelveName,
+    selectedFileIndex,
+    setSelectedFileIndex,
+    fileSearch,
+    setFileSearch,
+  } = useStagingState(worktreePath, viewMode, worktree, diffFiles);
 
   const filteredDiffFiles = useMemo(() => {
     if (!fileSearch.trim()) return diffFiles;
@@ -289,43 +295,6 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
       // error toast handled by mutation
     }
   }
-
-  // When the selected worktree changes, clear the file selection, search, and staging state
-  // so we don't briefly show the previous worktree's file header.
-  useEffect(() => {
-    setSelectedFileIndex(null);
-    setFileSearch("");
-    setStagedFiles(new Set());
-    setStagedHunks(new Map());
-    setCommitMessage("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worktreePath]);
-
-  // Clear staging state when switching between uncommitted/untracked modes
-  useEffect(() => {
-    setStagedFiles(new Set());
-    setStagedHunks(new Map());
-    setSelectedFileIndex(null);
-    setCommitMessage("");
-  }, [viewMode]);
-
-  // Update auto-generated shelve name when worktree changes
-  useEffect(() => {
-    if (worktree) {
-      setShelveName(
-        `wip-${worktree.branch_name.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-")}-${new Date().toISOString().split("T")[0]}`,
-      );
-    }
-  }, [worktree]);
-
-  // Auto-select the first file once diff data loads for the current worktree.
-  // Only fires when selectedFileIndex is null (i.e. we haven't picked one yet),
-  // so a background refetch does not bounce the user back to file 0 mid-navigation.
-  useEffect(() => {
-    if (diffFiles.length > 0) {
-      setSelectedFileIndex((prev) => (prev === null ? 0 : prev));
-    }
-  }, [diffFiles]);
 
   const selectedFile = selectedFileIndex !== null ? (diffFiles[selectedFileIndex] ?? null) : null;
   const forceUnified = selectedFile?.status === "A" || selectedFile?.status === "D";

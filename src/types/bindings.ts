@@ -1062,10 +1062,12 @@ async getActiveSessions() : Promise<Result<ActiveSessionInfo[], string>> {
 },
 /**
  * List ACP sessions available for a given agent via a one-shot maestro-server connection.
+ * Applies user-defined aliases over agent-provided titles. When the full list is returned
+ * (no next page), prunes stale aliases for sessions the agent no longer knows about.
  */
-async listAcpSessions(agentId: string, cwd: string, connectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
+async listAcpSessions(projectId: number, agentId: string, cwd: string, connectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { agentId, cwd, connectionId, cursor }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connectionId, cursor }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1090,6 +1092,19 @@ async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connect
 async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectionId: number | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Rename an ACP session by storing a user-defined display name in the local DB.
+ * Only creates a DB entry on explicit rename — not on session creation.
+ * Also updates the in-memory session_name if the session is currently active.
+ */
+async renameAcpSession(projectId: number, agentId: string, acpSessionId: string, displayName: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_acp_session", { projectId, agentId, acpSessionId, displayName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1163,7 +1178,7 @@ export type AcpSessionModelState = { current_model_id: string; available_models:
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
 /**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useBoardStore } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
@@ -20,14 +20,7 @@ const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
 export function BoardView() {
   const { projectId } = useKanban();
 
-  const {
-    loadTasks,
-    getTasksByStatus,
-    getTasks,
-    activeTerminalTaskId,
-    isTerminalOpen,
-    closeTerminal,
-  } = useBoardStore();
+  const { activeTerminalTaskId, isTerminalOpen, closeTerminal } = useBoardStore();
 
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -37,43 +30,37 @@ export function BoardView() {
   const { data: tasks, isLoading } = useTasksQuery(projectId);
   const archiveTask = useArchiveTaskMutation();
 
-  useEffect(() => {
-    if (tasks) {
-      loadTasks(tasks);
-    }
-  }, [tasks, loadTasks]);
-
   if (isLoading) {
     return <div className="kanban-board">Loading tasks...</div>;
   }
 
-  const getFilteredTasksByStatus = (status: TaskStatus): Task[] => {
-    const statusTasks = getTasksByStatus(status);
-    if (status === "Done") {
-      return statusTasks.filter((t) => !t.archived_at);
-    }
-    return statusTasks;
-  };
+  const taskList = tasks ?? [];
 
   return (
     <div className="h-full flex flex-col">
       <div className="grid grid-cols-4 p-4 bg-background flex-1">
-        {BOARD_STATUSES.map((status) => (
-          <KanbanColumn
-            key={status}
-            columnId={status}
-            columnTitle={COLUMN_TITLES[status]!}
-            tasks={getFilteredTasksByStatus(status)}
-            status={status}
-            onReviewClick={(taskId, taskName) => {
-              setSelectedTaskId(taskId);
-              setSelectedTaskName(taskName);
-              setReviewModalOpen(true);
-            }}
-            onSettingsClick={(task) => setSelectedTaskForSettings(task)}
-            onArchiveClick={(taskId) => archiveTask.mutate(taskId)}
-          />
-        ))}
+        {BOARD_STATUSES.map((status) => {
+          const columnTasks =
+            status === "Done"
+              ? taskList.filter((t) => t.status === status && !t.archived_at)
+              : taskList.filter((t) => t.status === status);
+          return (
+            <KanbanColumn
+              key={status}
+              columnId={status}
+              columnTitle={COLUMN_TITLES[status]!}
+              tasks={columnTasks}
+              status={status}
+              onReviewClick={(taskId, taskName) => {
+                setSelectedTaskId(taskId);
+                setSelectedTaskName(taskName);
+                setReviewModalOpen(true);
+              }}
+              onSettingsClick={(task) => setSelectedTaskForSettings(task)}
+              onArchiveClick={(taskId) => archiveTask.mutate(taskId)}
+            />
+          );
+        })}
       </div>
 
       {reviewModalOpen && selectedTaskId && (
@@ -102,7 +89,7 @@ export function BoardView() {
         <ExecutionTerminal
           taskId={activeTerminalTaskId}
           taskName={
-            getTasks().find((t) => t.id === activeTerminalTaskId)?.name ||
+            taskList.find((t) => t.id === activeTerminalTaskId)?.name ||
             `Task ${activeTerminalTaskId}`
           }
           isActive={true}

@@ -2,13 +2,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import tsconfigPaths from "vite-tsconfig-paths";
-
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [tsconfigPaths(), react(), tailwindcss()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    tsconfigPaths: true,
+  },
   test: {
     include: ["./src/**/*.{test,spec}.{ts,tsx}"],
     environment: "happy-dom",

@@ -45,6 +45,7 @@
     "framer-motion": "^12.38.0",
     "immer": "^10.2.0",
     "input-otp": "^1.4.2",
+    "katex": "^0.16.45",
     "lucide-react": "^1.14.0",
     "mermaid": "^11.14.0",
     "next-themes": "^0.4.6",
@@ -88,7 +89,6 @@
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
-    "vite-tsconfig-paths": "7.0.0-alpha.1",
     "vitest": "^4.1.5"
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"

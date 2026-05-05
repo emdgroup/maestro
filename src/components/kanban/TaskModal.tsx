@@ -15,10 +15,9 @@ interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
-  onTaskCreated: (task: Task) => void;
 }
 
-export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskModalProps) {
+export function TaskModal({ isOpen, onClose, projectId }: TaskModalProps) {
   const [error, setError] = useState<string | null>(null);
   const { mutate: createTask, isPending: isLoading } = useCreateTaskMutation();
 
@@ -30,8 +29,7 @@ export function TaskModal({ isOpen, onClose, projectId, onTaskCreated }: TaskMod
         ...data,
       },
       {
-        onSuccess: (newTask) => {
-          onTaskCreated(newTask);
+        onSuccess: () => {
           onClose();
         },
         onError: (err) => {

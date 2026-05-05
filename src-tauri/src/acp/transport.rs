@@ -2,6 +2,7 @@
 
 pub use maestro_protocol::{
     MaestroRpcMessage, ServerRequest, ServerResponse,
+    HandshakeRequest, HandshakeResponse, PROTOCOL_VERSION,
     SpawnRequest, SpawnResponse,
     PromptRequest, CancelRequest, InterruptTurnRequest,
     SessionUpdate, PermissionRequest, PermissionResponse,

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api } from "@/lib";
+import { api, createErrorToastHandler } from "@/lib";
 import { toast } from "sonner";
 import { SshAuthMethod } from "@/types/bindings";
 
@@ -57,9 +57,7 @@ export function useCreateSshConnection() {
       connectionString: string;
       authMethod: SshAuthMethod;
     }) => api.saveSshConnection(connectionString, authMethod),
-    onError: (error) => {
-      toast.error(`Failed to create SSH connection: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to create SSH connection"),
   });
 }
 
@@ -101,9 +99,7 @@ export function useConnectSshWithCreds() {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection successful");
     },
-    onError: (error) => {
-      toast.error(`Failed to connect: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to connect"),
   });
 }
 
@@ -120,9 +116,7 @@ export function useConnectSshWithAgent() {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection successful");
     },
-    onError: (error) => {
-      toast.error(`Failed to connect via agent: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to connect via agent"),
   });
 }
 
@@ -148,9 +142,7 @@ export function useConnectSshWithKey() {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("SSH connection successful");
     },
-    onError: (error) => {
-      toast.error(`Failed to connect: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to connect"),
   });
 }
 
@@ -169,9 +161,7 @@ export function useUpdateSshConnection() {
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       toast.success("Connection renamed");
     },
-    onError: (error) => {
-      toast.error(`Failed to rename connection: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to rename connection"),
   });
 }
 
@@ -187,9 +177,7 @@ export function useDeleteSshConnection() {
       // Invalidate the SSH connections list to refetch without deleted connection
       void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
     },
-    onError: (error) => {
-      toast.error(`Failed to delete connection: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to delete connection"),
   });
 }
 
@@ -202,9 +190,7 @@ export function useForgetSavedPassword() {
     onSuccess: () => {
       toast.success("Password forgotten successfully");
     },
-    onError: (error) => {
-      toast.error(`Failed to forget password: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to forget password"),
   });
 }
 

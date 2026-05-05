@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Plus } from "lucide-react";
-import { useBoardStore } from "@/store/boardStore";
 import { useTasksQuery, useDeleteTaskMutation, useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { Button } from "@/ui/button";
@@ -28,7 +27,6 @@ interface BacklogViewProps {
 
 export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
   const { projectId } = useKanban();
-  const { loadTasks } = useBoardStore();
 
   const { data: tasks, isLoading } = useTasksQuery(projectId);
   const deleteMutation = useDeleteTaskMutation();
@@ -37,12 +35,6 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<"create" | "edit">("create");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
-  useEffect(() => {
-    if (tasks) {
-      loadTasks(tasks);
-    }
-  }, [tasks, loadTasks]);
 
   if (isLoading) {
     return (

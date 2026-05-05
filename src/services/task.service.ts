@@ -221,7 +221,7 @@ export function useArchiveTaskMutation() {
   return useMutation({
     mutationFn: (taskId: number) => api.archiveTask(taskId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
       toast.success("Task archived");
     },
     onError: createErrorToastHandler("Failed to archive task"),

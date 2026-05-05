@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api } from "@/lib";
-import { toast } from "sonner";
+import { api, createErrorToastHandler } from "@/lib";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 
 export const executionQueryKeys = {
@@ -46,12 +45,13 @@ export function useSessionListQuery(
   agentId: string | null,
   cwd: string | null,
   connectionId: number | null,
+  projectId: number | null,
   enabled: boolean = true,
 ) {
   return useQuery({
     queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connectionId),
-    queryFn: () => api.listAcpSessions(agentId!, cwd!, connectionId, null),
-    enabled: enabled && agentId != null && cwd != null,
+    queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connectionId, null),
+    enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
   });
 }
@@ -80,9 +80,7 @@ export function useLoadAcpSessionMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
-    onError: (error) => {
-      toast.error(`Failed to load session: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to load session"),
   });
 }
 
@@ -104,9 +102,7 @@ export function useCloseStoredAcpSessionMutation() {
     }) => {
       return await api.closeAcpSession(agentId, sessionId, cwd, connectionId);
     },
-    onError: (error) => {
-      toast.error(`Failed to close session: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to close session"),
   });
 }
 
@@ -143,9 +139,7 @@ export function useSpawnInteractiveExecutionMutation() {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
-    onError: (error) => {
-      toast.error(`Failed to spawn interactive session: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to spawn interactive session"),
   });
 }
 
@@ -217,9 +211,37 @@ export function useSpawnAcpSessionMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
-    onError: (error) => {
-      toast.error(`Failed to spawn ACP session: ${error}`);
+    onError: createErrorToastHandler("Failed to spawn ACP session"),
+  });
+}
+
+/**
+ * Rename an ACP session — stores a user-defined display name in the local DB.
+ * Overlays agent-provided title in the history list.
+ */
+export function useRenameAcpSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      agentId,
+      acpSessionId,
+      displayName,
+    }: {
+      projectId: number;
+      agentId: string;
+      acpSessionId: string;
+      displayName: string;
+    }) => {
+      return await api.renameAcpSession(projectId, agentId, acpSessionId, displayName);
     },
+    onSuccess: (_data, { agentId }) => {
+      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
+      });
+    },
+    onError: createErrorToastHandler("Failed to rename session"),
   });
 }
 
@@ -245,9 +267,7 @@ export function useCancelActiveSessionMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
-    onError: (error) => {
-      toast.error(`Failed to close session: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to close session"),
   });
 }
 
@@ -262,9 +282,7 @@ export function useAttachTerminalMutation() {
     }) => {
       return await api.attachTerminal(taskId, outputChannel, null);
     },
-    onError: (error) => {
-      toast.error(`Failed to attach terminal: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to attach terminal"),
   });
 }
 
@@ -273,9 +291,7 @@ export function useDetachTerminalMutation() {
     mutationFn: async ({ taskId }: { taskId: number }) => {
       return await api.detachTerminal(taskId);
     },
-    onError: (error) => {
-      toast.error(`Failed to detach terminal: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to detach terminal"),
   });
 }
 
@@ -284,9 +300,7 @@ export function useSendTerminalInputMutation() {
     mutationFn: async ({ taskId, input }: { taskId: number; input: string }) => {
       return await api.sendTerminalInput(taskId, input);
     },
-    onError: (error) => {
-      toast.error(`Failed to send terminal input: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to send terminal input"),
   });
 }
 
@@ -295,8 +309,6 @@ export function useResizeTerminalMutation() {
     mutationFn: async ({ taskId, cols, rows }: { taskId: number; cols: number; rows: number }) => {
       return await api.resizeTerminal(taskId, cols, rows);
     },
-    onError: (error) => {
-      toast.error(`Failed to resize terminal: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to resize terminal"),
   });
 }

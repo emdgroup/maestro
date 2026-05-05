@@ -45,7 +45,6 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
   const detachTerminal = useCallback(async () => {
     try {
       await api.detachTerminal(taskId);
-      console.log(`[ExecutionTerminal] Detached from task ${taskId}`);
     } catch (err) {
       console.error("Detach terminal error:", err);
     }
@@ -73,7 +72,6 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         // Call executionService to attach terminal with the channel
         await api.attachTerminal(taskId, channel, null);
 
-        console.log(`[ExecutionTerminal] Attached to task ${taskId}`);
         setLoading(false);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

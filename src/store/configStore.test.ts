@@ -105,9 +105,9 @@ describe("configStore – resetConfig / clearConfig", () => {
     expect(s.error).toBeNull();
   });
 
-  it("clearConfig has same effect as resetConfig", () => {
+  it("resetConfig clears all fields including default_agent", () => {
     useConfigStore.getState().setDefaultAgent("claude-code");
-    useConfigStore.getState().clearConfig();
+    useConfigStore.getState().resetConfig();
     expect(useConfigStore.getState().default_agent).toBeNull();
   });
 });

@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
-import { useBoardStore } from "@/store/boardStore";
 import type { Task } from "@/types/bindings";
+import { useTasksQuery } from "@/services/task.service";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
@@ -59,7 +59,6 @@ function App() {
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
   const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
-  const { addTask } = useBoardStore();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
 
   // Query hooks for settings
@@ -93,10 +92,10 @@ function App() {
 
   // Consume pendingTaskId from store to open TaskDetail sheet
   const pendingTaskId = usePendingTaskId();
-  const tasks = useBoardStore((s) => s.tasks);
+  const { data: tasks } = useTasksQuery(currentProject?.id ?? null);
 
   useEffect(() => {
-    if (pendingTaskId) {
+    if (pendingTaskId && tasks) {
       const task = tasks.find((t) => String(t.id) === pendingTaskId) ?? null;
       setSelectedTask(task);
       clearPendingTask();
@@ -110,20 +109,14 @@ function App() {
         repoPath: currentProject.path,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject?.id]);
+  }, [currentProject?.id, cleanupZombiesMutation]);
 
-  // Log settings errors (if any)
   useEffect(() => {
     if (settingsError) {
-      console.error("[DEBUG] App.tsx: Failed to load settings:", settingsError);
+      console.error("Failed to load settings:", settingsError);
       toast.error("Failed to load settings");
     }
   }, [settingsError]);
-
-  function handleTaskCreated(newTask: Task) {
-    addTask(newTask);
-  }
 
   function handleImportConfigSaved() {
     // Settings saved, can now enable sync button
@@ -259,7 +252,6 @@ function App() {
                 isOpen={showNewTaskModal}
                 onClose={() => setShowNewTaskModal(false)}
                 projectId={currentProject.id}
-                onTaskCreated={handleTaskCreated}
               />
               <TaskDetail
                 task={selectedTask}
