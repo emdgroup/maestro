@@ -55,54 +55,91 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// Application state containing the database connection, PTY sessions, and SSH sessions
-pub struct AppState {
-    pub db: Mutex<Connection>,
-    pub app_handle: AppHandle,
-    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
-    /// Remote interactive PTY sessions keyed by session key
-    pub ssh_pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
-    pub ssh_sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
-    pub ssh_passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>,
-    /// Per-session cancel flag for local PTY attach reader tasks.
-    /// When detach_terminal is called, the flag is set to true, causing
-    /// the spawn_blocking reader to exit cleanly before a new attach starts.
-    pub pty_attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
+pub struct SshState {
+    pub sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
+    pub passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>,
+    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
+}
+
+impl SshState {
+    pub async fn get_session(&self, connection_id: i32) -> Option<RemoteSshSession> {
+        self.sessions.lock().await.get(&connection_id).cloned()
+    }
+
+    pub async fn set_session(&self, connection_id: i32, session: RemoteSshSession) {
+        self.sessions.lock().await.insert(connection_id, session);
+    }
+
+    pub async fn remove_session(&self, connection_id: i32) {
+        self.sessions.lock().await.remove(&connection_id);
+    }
+
+    pub async fn get_password(&self, connection_id: i32) -> Option<Zeroizing<String>> {
+        self.passwords.lock().await.get(&connection_id).cloned()
+    }
+
+    pub async fn set_password(&self, connection_id: i32, password: String) {
+        self.passwords.lock().await.insert(connection_id, Zeroizing::new(password));
+    }
+}
+
+pub struct AcpState {
     /// Live ACP sessions keyed by session key (monotonic counter).
     /// No inner Arc/Mutex needed — only IPC commands write to stdin (under outer lock)
     /// and the reader task owns stdout independently.
-    pub acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
+    pub sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
     /// Per-connection agent discovery cache (5-minute TTL).
     /// Key: None = local maestro-server, Some(id) = remote SSH connection.
-    pub agent_discovery_cache: tokio::sync::Mutex<HashMap<Option<i32>, AgentDiscoveryCacheEntry>>,
+    pub discovery_cache: tokio::sync::Mutex<HashMap<Option<i32>, AgentDiscoveryCacheEntry>>,
+}
+
+pub struct PtyState {
+    pub sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    /// Per-session cancel flag for local PTY attach reader tasks.
+    /// When detach_terminal is called, the flag is set to true, causing
+    /// the spawn_blocking reader to exit cleanly before a new attach starts.
+    pub attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
+    /// In-memory metadata for active PTY sessions, keyed by session key.
+    pub session_meta: tokio::sync::Mutex<HashMap<i32, crate::models::worktree::PtySessionMeta>>,
+    /// Monotonic counter for assigning session keys.
+    pub session_counter: std::sync::atomic::AtomicI32,
+}
+
+pub struct AppState {
+    pub db: Mutex<Connection>,
+    pub app_handle: AppHandle,
+    pub ssh: SshState,
+    pub acp: AcpState,
+    pub pty: PtyState,
     /// App data directory used for project lock files.
     pub app_data_dir: PathBuf,
     /// Active project lock: the project ID and the open File whose flock holds the lock.
     /// Dropping the File releases the lock (including on crash/kill-9).
     pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
-    /// Monotonic counter for assigning session keys (replaces execution_logs autoincrement).
-    pub session_counter: std::sync::atomic::AtomicI32,
-    /// In-memory metadata for active PTY sessions, keyed by session key.
-    pub pty_session_meta: tokio::sync::Mutex<HashMap<i32, crate::models::worktree::PtySessionMeta>>,
 }
 
 impl AppState {
-    /// Create a new AppState with a database connection and Tauri app handle
     pub fn new(db: Connection, app_handle: AppHandle, app_data_dir: PathBuf) -> Self {
         AppState {
             db: Mutex::new(db),
             app_handle,
-            pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
-            ssh_pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
-            ssh_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            ssh_passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            pty_attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
-            acp_sessions: tokio::sync::Mutex::new(HashMap::new()),
-            agent_discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
+            ssh: SshState {
+                sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                passwords: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                pty_sessions: tokio::sync::Mutex::new(HashMap::new()),
+            },
+            acp: AcpState {
+                sessions: tokio::sync::Mutex::new(HashMap::new()),
+                discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
+            },
+            pty: PtyState {
+                sessions: tokio::sync::Mutex::new(HashMap::new()),
+                attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
+                session_meta: tokio::sync::Mutex::new(HashMap::new()),
+                session_counter: std::sync::atomic::AtomicI32::new(1),
+            },
             app_data_dir,
             active_project_lock: Mutex::new(None),
-            session_counter: std::sync::atomic::AtomicI32::new(1),
-            pty_session_meta: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -132,34 +169,8 @@ impl AppState {
     /// Release the active project lock held by this instance.
     pub fn release_active_project_lock(&self) {
         if let Ok(mut current) = self.active_project_lock.lock() {
-            // Dropping the (id, File) tuple releases the flock automatically
             *current = None;
         }
-    }
-
-    /// Get an SSH session for a connection if it exists
-    pub async fn get_ssh_session(&self, connection_id: i32) -> Option<RemoteSshSession> {
-        self.ssh_sessions.lock().await.get(&connection_id).cloned()
-    }
-
-    /// Store an SSH session for a connection
-    pub async fn set_ssh_session(&self, connection_id: i32, session: RemoteSshSession) {
-        self.ssh_sessions.lock().await.insert(connection_id, session);
-    }
-
-    /// Remove an SSH session for a connection
-    pub async fn remove_ssh_session(&self, connection_id: i32) {
-        self.ssh_sessions.lock().await.remove(&connection_id);
-    }
-
-    /// Get an SSH session password for a connection if it exists
-    pub async fn get_ssh_password(&self, connection_id: i32) -> Option<Zeroizing<String>> {
-        self.ssh_passwords.lock().await.get(&connection_id).cloned()
-    }
-
-    /// Store an SSH session password for a connection
-    pub async fn set_ssh_password(&self, connection_id: i32, password: String) {
-        self.ssh_passwords.lock().await.insert(connection_id, Zeroizing::new(password));
     }
 }
 
@@ -174,7 +185,7 @@ pub async fn get_git_connection(
     if project.is_remote() {
         let conn_id = project.connection_id
             .ok_or("Remote project has no connection_id")?;
-        let ssh_session = app_state.get_ssh_session(conn_id).await
+        let ssh_session = app_state.ssh.get_session(conn_id).await
             .ok_or("SSH session not initialized for remote project")?;
 
         Ok(GitConnection::Remote {

@@ -27,14 +27,16 @@ const baseSession = {
 };
 
 const defaultProps = {
-  sessions: [] as typeof baseSession[],
+  sessions: [] as (typeof baseSession)[],
   selectedSessionKey: null,
   onSelect: vi.fn(),
   search: "",
 };
 
 function renderMonitor(props: Parameters<typeof AgentMonitor>[0]) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={qc}>
       <AgentMonitor {...props} />

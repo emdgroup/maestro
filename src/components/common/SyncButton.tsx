@@ -1,4 +1,6 @@
 import { useSyncGithubIssues, useSyncJiraIssues } from "@/services/project.service";
+import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 
 interface SyncButtonProps {
   projectId: number;
@@ -48,20 +50,15 @@ export function SyncButton({ projectId, provider, onSyncComplete }: SyncButtonPr
   }
 
   return (
-    <button
-      className="btn-sync"
-      onClick={handleSync}
-      disabled={isLoading}
-      title={`Sync from ${provider}`}
-    >
+    <Button onClick={handleSync} disabled={isLoading} title={`Sync from ${provider}`}>
       {isLoading ? (
         <>
-          <span className="spinner"></span>
+          <Spinner />
           Syncing...
         </>
       ) : (
         `Sync from ${provider}`
       )}
-    </button>
+    </Button>
   );
 }

@@ -109,7 +109,8 @@ function App() {
         repoPath: currentProject.path,
       });
     }
-  }, [currentProject?.id, cleanupZombiesMutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id]);
 
   useEffect(() => {
     if (settingsError) {
@@ -119,8 +120,27 @@ function App() {
   }, [settingsError]);
 
   function handleImportConfigSaved() {
-    // Settings saved, can now enable sync button
     setShowImportSettings(false);
+  }
+
+  if (settingsLoading) {
+    return (
+      <div className="app">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (settingsError) {
+    return (
+      <div className="app">
+        <p>Error loading settings: {settingsError.message}</p>
+      </div>
+    );
+  }
+
+  if (!currentProject) {
+    return <ProjectPickerView />;
   }
 
   const fallback = (
@@ -130,154 +150,143 @@ function App() {
   );
 
   return (
-    <>
-      {settingsLoading ? (
-        <div className="app">
-          <p>Loading...</p>
-        </div>
-      ) : settingsError ? (
-        <div className="app">
-          <p>Error loading settings: {settingsError.message}</p>
-        </div>
-      ) : !currentProject ? (
-        <ProjectPickerView />
-      ) : (
-        <div className="app flex flex-col h-screen bg-background">
-          <AppHeader
-            currentProject={currentProject}
-            activeView={activeTab}
-            onViewChange={setActiveTab}
-            onProjectChange={setSelectedProject}
-            onBackToPicker={clearSelectedProject}
-            agentCount={runningAgentCount}
-          />
-          <main className="flex-1 overflow-hidden relative">
-            <AnimatePresence initial={false} custom={slideDirection}>
-              {activeTab === "kanban" && (
-                <motion.div
-                  key="kanban"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    duration: PAGE_TRANSITION_DURATION,
-                    ease: PAGE_TRANSITION_EASING,
-                  }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
+    <div className="app flex flex-col h-screen bg-background">
+      <AppHeader
+        currentProject={currentProject}
+        activeView={activeTab}
+        onViewChange={setActiveTab}
+        onProjectChange={setSelectedProject}
+        onBackToPicker={clearSelectedProject}
+        agentCount={runningAgentCount}
+      />
+      <main className="flex-1 overflow-hidden relative">
+        <AnimatePresence initial={false} custom={slideDirection}>
+          {activeTab === "kanban" && (
+            <motion.div
+              key="kanban"
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                duration: PAGE_TRANSITION_DURATION,
+                ease: PAGE_TRANSITION_EASING,
+              }}
+              className="absolute inset-0 overflow-auto custom-scrollbar"
+            >
+              <Suspense fallback={fallback}>
+                <KanbanProvider
+                  projectId={currentProject.id}
+                  projectPath={currentProject.path}
+                  onTaskClick={setSelectedTask}
+                  onAddTask={() => setShowNewTaskModal(true)}
                 >
-                  <Suspense fallback={fallback}>
-                    <KanbanProvider
-                      projectId={currentProject.id}
-                      projectPath={currentProject.path}
-                      onTaskClick={setSelectedTask}
-                      onAddTask={() => setShowNewTaskModal(true)}
-                    >
-                      <KanbanView />
-                    </KanbanProvider>
-                  </Suspense>
-                </motion.div>
-              )}
-
-              {activeTab === "agents" && (
-                <motion.div
-                  key="agents"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    duration: PAGE_TRANSITION_DURATION,
-                    ease: PAGE_TRANSITION_EASING,
-                  }}
-                  className="absolute inset-0 overflow-hidden"
-                >
-                  <Suspense fallback={fallback}>
-                    <AgentsView projectId={currentProject.id} repoPath={currentProject.path} connectionId={currentProject.connection_id} />
-                  </Suspense>
-                </motion.div>
-              )}
-
-              {activeTab === "worktrees" && (
-                <motion.div
-                  key="worktrees"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    duration: PAGE_TRANSITION_DURATION,
-                    ease: PAGE_TRANSITION_EASING,
-                  }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <Suspense fallback={fallback}>
-                    <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
-                  </Suspense>
-                </motion.div>
-              )}
-
-              {activeTab === "settings" && (
-                <motion.div
-                  key="settings"
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    duration: PAGE_TRANSITION_DURATION,
-                    ease: PAGE_TRANSITION_EASING,
-                  }}
-                  className="absolute inset-0 overflow-auto custom-scrollbar"
-                >
-                  <Suspense fallback={fallback}>
-                    <SettingsView
-                      ref={settingsPageRef}
-                      projectId={currentProject.id}
-                      connectionId={currentProject.connection_id}
-                      projectPath={currentProject.path}
-                    />
-                  </Suspense>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Modals and Overlays - lazy loaded for performance */}
-            <Suspense fallback={null}>
-              <TaskModal
-                isOpen={showNewTaskModal}
-                onClose={() => setShowNewTaskModal(false)}
-                projectId={currentProject.id}
-              />
-              <TaskDetail
-                task={selectedTask}
-                projectPath={currentProject.path}
-                onClose={() => setSelectedTask(null)}
-              />
-              <ImportSettings
-                isOpen={showImportSettings}
-                onClose={() => setShowImportSettings(false)}
-                onConfigSaved={handleImportConfigSaved}
-              />
-            </Suspense>
-          </main>
-
-          {/* SSH connection loss overlay — blocks interaction during reconnect */}
-          {connectionHealth !== "connected" && (
-            <DisconnectBackdrop
-              state={connectionHealth}
-              attempt={reconnectAttempt}
-              maxAttempts={reconnectMaxAttempts}
-              onLeaveConnection={handleLeaveConnection}
-            />
+                  <KanbanView />
+                </KanbanProvider>
+              </Suspense>
+            </motion.div>
           )}
-        </div>
+
+          {activeTab === "agents" && (
+            <motion.div
+              key="agents"
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                duration: PAGE_TRANSITION_DURATION,
+                ease: PAGE_TRANSITION_EASING,
+              }}
+              className="absolute inset-0 overflow-hidden"
+            >
+              <Suspense fallback={fallback}>
+                <AgentsView
+                  projectId={currentProject.id}
+                  repoPath={currentProject.path}
+                  connectionId={currentProject.connection_id}
+                />
+              </Suspense>
+            </motion.div>
+          )}
+
+          {activeTab === "worktrees" && (
+            <motion.div
+              key="worktrees"
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                duration: PAGE_TRANSITION_DURATION,
+                ease: PAGE_TRANSITION_EASING,
+              }}
+              className="absolute inset-0 overflow-auto custom-scrollbar"
+            >
+              <Suspense fallback={fallback}>
+                <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
+              </Suspense>
+            </motion.div>
+          )}
+
+          {activeTab === "settings" && (
+            <motion.div
+              key="settings"
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                duration: PAGE_TRANSITION_DURATION,
+                ease: PAGE_TRANSITION_EASING,
+              }}
+              className="absolute inset-0 overflow-auto custom-scrollbar"
+            >
+              <Suspense fallback={fallback}>
+                <SettingsView
+                  ref={settingsPageRef}
+                  projectId={currentProject.id}
+                  connectionId={currentProject.connection_id}
+                />
+              </Suspense>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Modals and Overlays - lazy loaded for performance */}
+        <Suspense fallback={null}>
+          <TaskModal
+            isOpen={showNewTaskModal}
+            onClose={() => setShowNewTaskModal(false)}
+            projectId={currentProject.id}
+          />
+          <TaskDetail
+            task={selectedTask}
+            projectPath={currentProject.path}
+            onClose={() => setSelectedTask(null)}
+          />
+          <ImportSettings
+            isOpen={showImportSettings}
+            onClose={() => setShowImportSettings(false)}
+            onConfigSaved={handleImportConfigSaved}
+          />
+        </Suspense>
+      </main>
+
+      {/* SSH connection loss overlay — blocks interaction during reconnect */}
+      {connectionHealth !== "connected" && (
+        <DisconnectBackdrop
+          state={connectionHealth}
+          attempt={reconnectAttempt}
+          maxAttempts={reconnectMaxAttempts}
+          onLeaveConnection={handleLeaveConnection}
+        />
       )}
-    </>
+    </div>
   );
 }
 

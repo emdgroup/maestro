@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { DiffView, DiffModeEnum } from "@git-diff-view/react";
-import { getDiffHighlighter, type DiffHighlighterInstance } from "@/utils/helpers/shiki-highlighter";
+import {
+  getDiffHighlighter,
+  type DiffHighlighterInstance,
+} from "@/utils/helpers/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -46,14 +49,14 @@ const DiffPlaceholder = ({
   </div>
 );
 
-export const DiffViewer: React.FC<DiffViewerProps> = ({
+export function DiffViewer({
   diffFile,
   loading,
   error,
   diffViewMode,
   hunkSelection,
   onHunkToggle,
-}) => {
+}: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
   const { theme, systemTheme } = useTheme();
@@ -113,7 +116,9 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                     <Check className="size-3" />
                   </CheckboxPrimitive.Indicator>
                 </CheckboxPrimitive.Root>
-                <span className="font-mono text-xs text-blue-700 dark:text-blue-300 truncate">{header}</span>
+                <span className="font-mono text-xs text-blue-700 dark:text-blue-300 truncate">
+                  {header}
+                </span>
               </div>
             );
           })}
@@ -130,4 +135,4 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       </div>
     </div>
   );
-};
+}

@@ -140,7 +140,7 @@ async fn collect_stale_project_ids(
 
         // ── SSH: check via active session ────────────────────────────────────
         Some(conn_id) => {
-            let session = match app_state.get_ssh_session(conn_id).await {
+            let session = match app_state.ssh.get_session(conn_id).await {
                 Some(s) => s,
                 None => {
                     return vec![];
@@ -301,7 +301,7 @@ pub async fn git_init_project(
     match connection_id {
         Some(conn_id) => {
             let session = app_state
-                .get_ssh_session(conn_id)
+                .ssh.get_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
             // No-op if already a git repo
@@ -356,7 +356,7 @@ pub async fn clone_project(
     match connection_id {
         Some(conn_id) => {
             let session = app_state
-                .get_ssh_session(conn_id)
+                .ssh.get_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
             let output = session
@@ -406,7 +406,7 @@ pub async fn create_new_project(
     match connection_id {
         Some(conn_id) => {
             let session = app_state
-                .get_ssh_session(conn_id)
+                .ssh.get_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
             // Step 1: Check existence
@@ -515,7 +515,7 @@ pub async fn get_project_settings(
     };
 
     let config = if let Some(conn_id) = connection_id {
-        let session = app_state.get_ssh_session(conn_id).await
+        let session = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
         let settings_path = format!("{}/.maestro/settings.json", path);
         match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
@@ -557,7 +557,7 @@ pub async fn update_project_settings(
     };
 
     if let Some(conn_id) = connection_id {
-        let session = app_state.get_ssh_session(conn_id).await
+        let session = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
         let maestro_dir = format!("{}/.maestro", path);
         let settings_path = format!("{}/settings.json", maestro_dir);
@@ -574,4 +574,67 @@ pub async fn update_project_settings(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use crate::db::schema::initialize_schema;
+
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn
+    }
+
+    fn insert_project(conn: &Connection, name: &str, path: &str, connection_id: Option<i32>) {
+        conn.execute(
+            "INSERT INTO projects (name, path, created_at, updated_at, connection_id) \
+             VALUES (?, ?, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', ?)",
+            rusqlite::params![name, path, connection_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fetch_projects_empty_returns_empty_vec() {
+        let conn = test_db();
+        let result = fetch_projects_from_db(&conn, None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn fetch_projects_returns_local_projects() {
+        let conn = test_db();
+        insert_project(&conn, "My Project", "/home/user/my-project", None);
+        let projects = fetch_projects_from_db(&conn, None).unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "My Project");
+        assert_eq!(projects[0].path, "/home/user/my-project");
+    }
+
+    #[test]
+    fn fetch_projects_filters_by_connection_id() {
+        let conn = test_db();
+        // Insert one SSH connection row so FK is satisfied
+        conn.execute(
+            "INSERT INTO ssh_connections (connection_string, username, host, port, auth_method, last_used_at, created_at, updated_at) \
+             VALUES ('user@host:22', 'user', 'host', 22, 'password', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let ssh_conn_id = conn.last_insert_rowid() as i32;
+
+        insert_project(&conn, "Local Project", "/local/path", None);
+        insert_project(&conn, "Remote Project", "/remote/path", Some(ssh_conn_id));
+
+        let local = fetch_projects_from_db(&conn, None).unwrap();
+        assert_eq!(local.len(), 1);
+        assert_eq!(local[0].name, "Local Project");
+
+        let remote = fetch_projects_from_db(&conn, Some(ssh_conn_id)).unwrap();
+        assert_eq!(remote.len(), 1);
+        assert_eq!(remote[0].name, "Remote Project");
+    }
 }

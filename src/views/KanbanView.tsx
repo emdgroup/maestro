@@ -9,7 +9,7 @@ import { Input } from "@/ui/input";
 import type { TaskPriority } from "@/types/bindings";
 import { useActiveSubView, useNavigationActions } from "@/store/navigationStore";
 import type { SubView } from "@/store/navigationStore";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 
 type ArchiveFilter = "all" | "Done" | "Cancelled";
 type BacklogPriorityFilter = "All" | TaskPriority;

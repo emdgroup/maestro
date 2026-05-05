@@ -5,7 +5,7 @@ import type { Task } from "@/types/bindings";
 import { useCreateTaskMutation, useUpdateTask } from "@/services/task.service";
 import type { TaskFormData } from "@/components/task/TaskForm";
 
-interface BacklogTaskPanelProps {
+interface BacklogTaskSheetProps {
   onClose: () => void;
   mode: "create" | "edit";
   task?: Task | null;
@@ -29,7 +29,7 @@ export function BacklogTaskSheet({
   task,
   projectId,
   onSuccess,
-}: BacklogTaskPanelProps) {
+}: BacklogTaskSheetProps) {
   const [error, setError] = useState<string | null>(null);
   const { mutate: createTask, isPending: isCreating } = useCreateTaskMutation();
   const { mutate: updateTask, isPending: isUpdating } = useUpdateTask();

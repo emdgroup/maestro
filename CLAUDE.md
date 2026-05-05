@@ -56,14 +56,14 @@ cargo check           # Check compilation without building
 
 This is a hard rule, not a suggestion. The graph has 1600+ indexed nodes with structural relationships — it finds callers, dependents, and test coverage in one call that would take 5+ Grep/Glob calls to reconstruct.
 
-| Task | Use this tool |
-|------|---------------|
-| Find a function/class | `semantic_search_nodes` |
+| Task                    | Use this tool                           |
+| ----------------------- | --------------------------------------- |
+| Find a function/class   | `semantic_search_nodes`                 |
 | Trace callers / callees | `query_graph` (callers_of / callees_of) |
-| Understand blast radius | `get_impact_radius` |
-| Code review | `detect_changes` → `get_review_context` |
-| Architecture overview | `get_architecture_overview` |
-| Find tests for a symbol | `query_graph` pattern="tests_for" |
+| Understand blast radius | `get_impact_radius`                     |
+| Code review             | `detect_changes` → `get_review_context` |
+| Architecture overview   | `get_architecture_overview`             |
+| Find tests for a symbol | `query_graph` pattern="tests_for"       |
 
 Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e.g. searching for a specific string literal, reading a full file for context).
 
@@ -80,6 +80,7 @@ Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e
 ### Code Structure
 
 **Frontend (`src/`):**
+
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
 - `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/)
 - `services/` — IPC service layer wrapping `invoke()` calls (task.service, worktree.service, etc.)
@@ -89,6 +90,7 @@ Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e
 - `utils/` — hooks/, helpers/, constants/
 
 **Rust backend (`src-tauri/src/`):**
+
 - `ipc/` — Tauri command handlers by domain
 - `models/` — Data models with ts-rs derive
 - `db/` — SQLite schema, storage, migrations
@@ -193,25 +195,24 @@ When modifying Rust models:
 - ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
 - Schema migration drops all tables on version mismatch (no data preservation strategy)
 
-
 # Rust coding guidelines
 
-* Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.
-* Do not write organizational or comments that summarize the code. Comments should only be written in order to explain "why" the code is written in some way in the case there is a reason that is tricky / non-obvious.
-* Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
-* Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.
-* Be careful with operations like indexing which may panic if the indexes are out of bounds.
-* Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:
+- Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.
+- Do not write organizational or comments that summarize the code. Comments should only be written in order to explain "why" the code is written in some way in the case there is a reason that is tricky / non-obvious.
+- Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
+- Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.
+- Be careful with operations like indexing which may panic if the indexes are out of bounds.
+- Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:
   - Propagate errors with `?` when the calling function should handle them
   - Use `.log_err()` or similar when you need to ignore errors but want visibility
   - Use explicit error handling with `match` or `if let Err(...)` when you need custom logic
   - Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead
-* When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
-* For new modules, prefer flat files (`src/some_module.rs`) over `src/some_module/mod.rs`. Existing `mod.rs` files in `ipc/`, `models/`, `db/` are legacy — don't refactor them, but don't add new ones.
-* When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
-* Avoid creative additions unless explicitly requested
-* Use full words for variable names (no abbreviations like "q" for "queue")
-* Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
+- When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
+- For new modules, prefer flat files (`src/some_module.rs`) over `src/some_module/mod.rs`. Existing `mod.rs` files in `ipc/`, `models/`, `db/` are legacy — don't refactor them, but don't add new ones.
+- When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
+- Avoid creative additions unless explicitly requested
+- Use full words for variable names (no abbreviations like "q" for "queue")
+- Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
   Example:
   ```rust
   executor.spawn({

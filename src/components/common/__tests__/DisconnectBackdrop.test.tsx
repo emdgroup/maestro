@@ -16,12 +16,7 @@ describe("DisconnectBackdrop", () => {
 
   it("renders reconnecting state with attempt counter", () => {
     render(
-      <DisconnectBackdrop
-        {...defaultProps}
-        state="reconnecting"
-        attempt={2}
-        maxAttempts={5}
-      />,
+      <DisconnectBackdrop {...defaultProps} state="reconnecting" attempt={2} maxAttempts={5} />,
     );
     expect(screen.getByText(/Reconnecting.*2\/5/)).toBeInTheDocument();
   });
@@ -42,9 +37,7 @@ describe("DisconnectBackdrop", () => {
   });
 
   it("shows leave connection button in lost and reconnecting states", () => {
-    const { rerender } = render(
-      <DisconnectBackdrop {...defaultProps} state="lost" />,
-    );
+    const { rerender } = render(<DisconnectBackdrop {...defaultProps} state="lost" />);
     expect(screen.getByRole("button", { name: /leave connection/i })).toBeInTheDocument();
 
     rerender(<DisconnectBackdrop {...defaultProps} state="reconnecting" />);

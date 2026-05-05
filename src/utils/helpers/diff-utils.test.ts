@@ -1,37 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDiffString, extractFileNames, computeFileStats, extractHunkPatch, countHunks } from "./diff-utils";
-
-describe("extractFileNames", () => {
-  it("returns empty array for empty string", () => {
-    expect(extractFileNames("")).toEqual([]);
-  });
-
-  it("extracts single file name", () => {
-    const diff = "diff --git a/src/foo.ts b/src/foo.ts\nindex abc..def 100644";
-    expect(extractFileNames(diff)).toEqual(["src/foo.ts"]);
-  });
-
-  it("extracts multiple file names", () => {
-    const diff = [
-      "diff --git a/src/a.ts b/src/a.ts",
-      "diff --git a/src/b.tsx b/src/b.tsx",
-      "diff --git a/README.md b/README.md",
-    ].join("\n");
-    expect(extractFileNames(diff)).toEqual(["src/a.ts", "src/b.tsx", "README.md"]);
-  });
-
-  it("deduplicates repeated file entries", () => {
-    const diff = ["diff --git a/src/a.ts b/src/a.ts", "diff --git a/src/a.ts b/src/a.ts"].join(
-      "\n",
-    );
-    expect(extractFileNames(diff)).toEqual(["src/a.ts"]);
-  });
-
-  it("ignores non-diff lines", () => {
-    const diff = "index abc..def 100644\n--- a/src/a.ts\n+++ b/src/a.ts";
-    expect(extractFileNames(diff)).toEqual([]);
-  });
-});
+import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "./diff-utils";
 
 describe("parseDiffString", () => {
   it("returns empty array for empty string", () => {
@@ -208,12 +176,7 @@ describe("parseDiffString status detection", () => {
   });
 
   it("defaults to 'M' when no mode line present", () => {
-    const diff = [
-      "diff --git a/file.ts b/file.ts",
-      "@@ -1 +1 @@",
-      "-old",
-      "+new",
-    ].join("\n");
+    const diff = ["diff --git a/file.ts b/file.ts", "@@ -1 +1 @@", "-old", "+new"].join("\n");
     const result = parseDiffString(diff);
     expect(result[0].status).toBe("M");
   });
@@ -236,13 +199,7 @@ describe("computeFileStats", () => {
   });
 
   it("ignores +++ and --- header lines if present", () => {
-    const hunks = [
-      "--- a/file.ts",
-      "+++ b/file.ts",
-      "@@ -1 +1 @@",
-      "-old",
-      "+new",
-    ];
+    const hunks = ["--- a/file.ts", "+++ b/file.ts", "@@ -1 +1 @@", "-old", "+new"];
     expect(computeFileStats(hunks)).toEqual({ insertions: 1, deletions: 1 });
   });
 

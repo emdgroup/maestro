@@ -1,6 +1,7 @@
 import { Button } from "@/ui/button";
 import { Lock, X } from "lucide-react";
-import { getFolderName, cn } from "@/lib";
+import { getFolderName } from "@/lib/path-utils";
+import { cn } from "@/lib/ui-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
 import React from "react";
 

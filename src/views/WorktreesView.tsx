@@ -1,41 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown, Group, LayoutGrid, Plus, SearchIcon } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
-import { Label } from "@/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { Checkbox } from "@/ui/checkbox";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { usePendingWorktreeId, useNavigationActions } from "@/store/navigationStore";
-import {
-  useWorktreesQuery,
-  useDeleteWorktreeMutation,
-  useCreateWorktreeMutation,
-} from "@/services/worktree.service";
-import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
+import { useWorktreesQuery } from "@/services/worktree.service";
 import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
 import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
+import { DeleteWorktreeDialog } from "@/components/execution/DeleteWorktreeDialog";
+import { CreateWorktreeDialog } from "@/components/execution/CreateWorktreeDialog";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
@@ -55,31 +29,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();
-  const queryClient = useQueryClient();
 
   const [selectedWorktreePath, setSelectedWorktreePath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
-
-  // Delete dialog state
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
-  const [deleteBranch, setDeleteBranch] = useState(true);
-
-  // Create dialog state
+  const [worktreeToDelete, setWorktreeToDelete] = useState<WorktreeWithStatus | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [baseBranch, setOriginBranch] = useState("");
-  const [newBranchName, setNewBranchName] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  const deleteMutation = useDeleteWorktreeMutation();
-  const createMutation = useCreateWorktreeMutation();
-
-  const { data: branchData } = useProjectBranchesQuery(projectId ?? 0);
-  const branches = branchData?.[0] ?? [];
-  const currentBranch = branchData?.[1] ?? "main";
 
   // Deep-link: pendingWorktreeId overrides selection on first mount
   useEffect(() => {
@@ -133,11 +90,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     setCollapsedGroups(Object.fromEntries(groupKeys.map((k) => [k, anyExpanded])));
   };
 
-  const pendingDeleteWorktree = worktrees.find((w) => w.path === pendingDeletePath) ?? null;
   const selectedWorktree = worktrees.find((w) => w.path === selectedWorktreePath) ?? null;
-
-  // A branch is local-only when ahead_behind is null (no upstream tracking branch)
-  const isBranchLocalOnly = pendingDeleteWorktree?.ahead_behind == null;
 
   return (
     <div className="flex flex-col h-full">
@@ -206,15 +159,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                   variant="outline"
                   size="sm"
                   className="h-8 text-xs"
-                  onClick={() => {
-                    void queryClient.invalidateQueries({
-                      queryKey: [...taskQueryKeys.all, "branches", projectId],
-                    });
-                    setOriginBranch(currentBranch);
-                    setNewBranchName("");
-                    setCreateError(null);
-                    setShowCreateDialog(true);
-                  }}
+                  onClick={() => setShowCreateDialog(true)}
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" />
                   New Worktree
@@ -230,9 +175,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               onToggleGroup={toggleGroup}
               onSelectWorktree={setSelectedWorktreePath}
               onDeleteWorktree={(path) => {
-                setPendingDeletePath(path);
-                setDeleteBranch(true);
-                setShowDeleteDialog(true);
+                const wt = worktrees.find((w) => w.path === path);
+                setWorktreeToDelete(wt ?? null);
               }}
               repoPath={repoPath ?? ""}
               emptyMessage={
@@ -252,147 +196,19 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
         </div>
       </div>
 
-      {/* Delete confirmation dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the worktree directory
-              {pendingDeleteWorktree?.id != null && " and its database record"}.
-              {pendingDeleteWorktree && (
-                <>
-                  {" "}
-                  Branch:{" "}
-                  <span className="font-mono font-medium">
-                    {pendingDeleteWorktree.branch_name}
-                  </span>
-                </>
-              )}
-              {pendingDeleteWorktree && isBranchLocalOnly && (
-                <label className="flex items-center gap-2 mt-3 cursor-pointer">
-                  <Checkbox
-                    checked={deleteBranch}
-                    onCheckedChange={(checked) => setDeleteBranch(checked === true)}
-                  />
-                  <span className="text-sm text-foreground select-none">
-                    Also delete branch{" "}
-                    <span className="font-mono">{pendingDeleteWorktree.branch_name}</span>
-                  </span>
-                </label>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setPendingDeletePath(null);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowDeleteDialog(false);
-                if (pendingDeletePath != null && pendingDeleteWorktree != null) {
-                  deleteMutation.mutate(
-                    {
-                      projectId: projectId ?? 0,
-                      worktreePath: pendingDeletePath,
-                      branchName: pendingDeleteWorktree.branch_name,
-                      worktreeId: pendingDeleteWorktree.id ?? null,
-                      deleteBranch: isBranchLocalOnly && deleteBranch,
-                    },
-                    {
-                      onSuccess: () => {
-                        setSelectedWorktreePath(null);
-                        setPendingDeletePath(null);
-                      },
-                    },
-                  );
-                }
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Create Worktree dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Worktree</DialogTitle>
-            <DialogDescription>
-              Check out a branch in a new git worktree. Optionally create a new branch from it.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="base-branch">Base branch</Label>
-              <Select value={baseBranch} onValueChange={(v) => setOriginBranch(v ?? "")}>
-                <SelectTrigger id="base-branch">
-                  <SelectValue placeholder="Select a branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-branch-name">New branch name (optional)</Label>
-              <Input
-                id="new-branch-name"
-                placeholder="feature/my-branch"
-                value={newBranchName}
-                onChange={(e) => setNewBranchName(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to check out the base branch directly.
-              </p>
-            </div>
-            {createError && <p className="text-sm text-destructive">{createError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!baseBranch || createMutation.isPending}
-              onClick={() => {
-                setCreateError(null);
-                createMutation.mutate(
-                  {
-                    projectId: projectId ?? 0,
-                    taskId: null,
-                    baseBranch,
-                    newBranchName: newBranchName.trim() || null,
-                    repoPath: repoPath ?? "",
-                  },
-                  {
-                    onSuccess: () => {
-                      setShowCreateDialog(false);
-                      setOriginBranch("");
-                      setNewBranchName("");
-                      setCreateError(null);
-                    },
-                    onError: (error) => {
-                      setCreateError(String(error));
-                    },
-                  },
-                );
-              }}
-            >
-              {createMutation.isPending ? "Creating..." : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteWorktreeDialog
+        key={worktreeToDelete?.path}
+        worktree={worktreeToDelete}
+        projectId={projectId ?? 0}
+        onClose={() => setWorktreeToDelete(null)}
+        onSuccess={() => setSelectedWorktreePath(null)}
+      />
+      <CreateWorktreeDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        projectId={projectId ?? 0}
+        repoPath={repoPath ?? ""}
+      />
     </div>
   );
 };

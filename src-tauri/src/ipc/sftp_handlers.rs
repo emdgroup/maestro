@@ -27,7 +27,7 @@ pub async fn sftp_upload(
     transfer_id: String,
 ) -> Result<FileTransferResult, String> {
     let session = app_state
-        .get_ssh_session(connection_id)
+        .ssh.get_session(connection_id)
         .await
         .ok_or_else(|| format!("No active SSH session for connection {}", connection_id))?;
 
@@ -65,7 +65,7 @@ pub async fn sftp_download(
     transfer_id: String,
 ) -> Result<FileTransferResult, String> {
     let session = app_state
-        .get_ssh_session(connection_id)
+        .ssh.get_session(connection_id)
         .await
         .ok_or_else(|| format!("No active SSH session for connection {}", connection_id))?;
 

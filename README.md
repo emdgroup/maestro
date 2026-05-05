@@ -19,16 +19,16 @@ Desktop app for orchestrating autonomous AI coding agents. Queue tasks on a Kanb
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui |
-| State | Zustand + Immer, TanStack Query |
-| Terminal | xterm.js |
-| Desktop | Tauri 2 (Rust) |
-| Database | SQLite (rusqlite) |
-| SSH | russh |
+| Layer    | Technology                                               |
+| -------- | -------------------------------------------------------- |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui    |
+| State    | Zustand + Immer, TanStack Query                          |
+| Terminal | xterm.js                                                 |
+| Desktop  | Tauri 2 (Rust)                                           |
+| Database | SQLite (rusqlite)                                        |
+| SSH      | russh                                                    |
 | Protocol | ACP (Agent Client Protocol) via `maestro-server` sidecar |
-| Type gen | ts-rs + tauri-specta |
+| Type gen | ts-rs + tauri-specta                                     |
 
 ## Prerequisites
 

@@ -1,7 +1,8 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { useAcpActivity } from "./activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
@@ -13,14 +14,27 @@ import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
 import { ComposeBar } from "./activity/ComposeBar";
 import type { ComposeBarHandle, PermissionMode } from "./activity/ComposeBar";
-import { PermissionPrompt, isAllowKind, isPlanPermission } from "./activity/PermissionPrompt";
+import { PermissionPrompt, isPlanPermission, extractBodyText } from "./activity/PermissionPrompt";
 import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
-import type { UserMessageItem, PermissionResponseItem, ElicitationSummaryItem, ToolCallItem, ActivityItem, UsageState } from "./activity/types";
+import type {
+  UserMessageItem,
+  PermissionResponseItem,
+  ElicitationSummaryItem,
+  UsageState,
+} from "./activity/types";
+import {
+  isRejectOption,
+  getOptionName,
+  groupToolCalls,
+  mergeLiveItems,
+  makeElicitationSummary,
+  formatElicitationAnswer,
+} from "./activity/utils";
 import type { JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
-import { useSessionActivityStore } from "@/store/sessionActivityStore";
+import { useSessionActivityActions } from "@/store/sessionActivityStore";
 
 interface AgentActivityPanelProps {
   sessionKey: number;
@@ -28,28 +42,19 @@ interface AgentActivityPanelProps {
   onUsageChange?: (usage: UsageState | null) => void;
 }
 
-function isRejectOption(payload: Record<string, unknown>, optionId: string): boolean {
-  const options = payload.options as Array<{ optionId: string; kind: string }> | undefined;
-  const opt = options?.find((o) => o.optionId === optionId);
-  return !opt || !isAllowKind(opt.kind);
-}
-
-function getOptionName(payload: Record<string, unknown>, optionId: string | null): string | undefined {
-  if (!optionId) return undefined;
-  const options = payload.options as Array<{ optionId: string; name: string }> | undefined;
-  return options?.find((o) => o.optionId === optionId)?.name;
-}
-
-export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChange }: AgentActivityPanelProps) {
-  const setActivityStatus = useSessionActivityStore((s) => s.setStatus);
-  const removeActivityStatus = useSessionActivityStore((s) => s.removeStatus);
+export function AgentActivityPanel({
+  sessionKey,
+  isSelected = false,
+  onUsageChange,
+}: AgentActivityPanelProps) {
+  const { setStatus: setActivityStatus, removeStatus: removeActivityStatus } =
+    useSessionActivityActions();
   const onUsageChangeRef = useRef(onUsageChange);
   onUsageChangeRef.current = onUsageChange;
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
   const composeBarRef = useRef<ComposeBarHandle>(null);
-  const userMsgCounterRef = useRef(0);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
   const agentResponseStartRef = useRef<HTMLDivElement>(null);
   const showStickyUserMsg = false;
@@ -58,8 +63,19 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   useEffect(() => {
     setActivityStatus(sessionKey, "spawning");
-    return () => { removeActivityStatus(sessionKey); };
+    return () => {
+      removeActivityStatus(sessionKey);
+    };
   }, [sessionKey, setActivityStatus, removeActivityStatus]);
+
+  useEffect(() => {
+    const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
+      setIsProcessing(false);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [sessionKey]);
 
   const [liveState, liveDispatch] = useAcpActivity(sessionKey);
 
@@ -77,8 +93,15 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
   } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef);
 
   const isReady = !liveState.isInitializing && modelsLoaded;
-  const { chatScrollRef, chatContentRef, showScrollFab, hasUnread, handleWheel, handleChatScroll, scrollToBottom } =
-    useAcpScrollBehavior(isReady);
+  const {
+    chatScrollRef,
+    chatContentRef,
+    showScrollFab,
+    hasUnread,
+    handleWheel,
+    handleChatScroll,
+    scrollToBottom,
+  } = useAcpScrollBehavior(isReady);
 
   useEffect(() => {
     if (liveState.isInitializing || !modelsLoaded) return;
@@ -93,25 +116,50 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
   }, [liveState.sessionEnded, sessionKey, removeActivityStatus]);
 
   const agentItemsCountRef = useRef(0);
-  useLayoutEffect(() => { agentItemsCountRef.current = liveState.items.length; });
+  agentItemsCountRef.current = liveState.items.length;
 
-  const [liveUserMessages, setLiveUserMessages] = useState<Array<{ item: UserMessageItem; insertAt: number }>>([]);
-  const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<Array<{ item: ElicitationSummaryItem; insertAt: number }>>([]);
-  const [livePermissionResponses, setLivePermissionResponses] = useState<Array<{ item: PermissionResponseItem; insertAt: number }>>([]);
+  const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<
+    Array<{ item: ElicitationSummaryItem; insertAt: number }>
+  >([]);
+  const [livePermissionResponses, setLivePermissionResponses] = useState<
+    Array<{ item: PermissionResponseItem; insertAt: number }>
+  >([]);
 
-  const handleModelChange = useCallback(async (id: string) => {
-    const prev = modelId;
-    try { await api.setAcpModel(sessionKey, id); } catch { await api.setAcpModel(sessionKey, prev).catch(console.error); }
-  }, [sessionKey, modelId]);
+  const handleModelChange = useCallback(
+    async (id: string) => {
+      const prev = modelId;
+      try {
+        await api.setAcpModel(sessionKey, id);
+      } catch {
+        await api.setAcpModel(sessionKey, prev).catch(console.error);
+      }
+    },
+    [sessionKey, modelId],
+  );
 
   const handleElicitationSubmit = useCallback(
     async (requestId: string, values: Record<string, unknown>) => {
       try {
-        await api.respondAcpElicitation(sessionKey, requestId, { action: "accept", content: values } as never);
-      } catch { /* best-effort */ }
+        await api.respondAcpElicitation(sessionKey, requestId, {
+          action: "accept",
+          content: values,
+        } as never);
+      } catch {
+        /* best-effort */
+      }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
-        setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, formatElicitationAnswer(values)), insertAt }]);
+        setLiveElicitationSummaries((prev) => [
+          ...prev,
+          {
+            item: makeElicitationSummary(
+              requestId,
+              pendingElicitation.payload,
+              formatElicitationAnswer(values),
+            ),
+            insertAt,
+          },
+        ]);
       }
       setPendingElicitation(null);
       setActivityStatus(sessionKey, "working");
@@ -123,10 +171,18 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
     async (requestId: string) => {
       try {
         await api.respondAcpElicitation(sessionKey, requestId, { action: "decline" });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
-        setLiveElicitationSummaries((prev) => [...prev, { item: makeElicitationSummary(requestId, pendingElicitation.payload, "Declined"), insertAt }]);
+        setLiveElicitationSummaries((prev) => [
+          ...prev,
+          {
+            item: makeElicitationSummary(requestId, pendingElicitation.payload, "Declined"),
+            insertAt,
+          },
+        ]);
       }
       setPendingElicitation(null);
       setActivityStatus(sessionKey, "working");
@@ -145,7 +201,9 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
         const isRejection = !optionId || isRejectOption(pendingPermission.payload, optionId);
         const responseItem: PermissionResponseItem = {
           id: `perm-${requestId}`,
-          optionName: getOptionName(pendingPermission.payload, optionId) ?? (isRejection ? "Permission denied" : "Allowed"),
+          optionName:
+            getOptionName(pendingPermission.payload, optionId) ??
+            (isRejection ? "Permission denied" : "Allowed"),
           isRejection,
         };
         const insertAt = agentItemsCountRef.current;
@@ -157,17 +215,22 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
     [sessionKey, pendingPermission, setPendingPermission, setActivityStatus],
   );
 
+  useEffect(() => {
+    if (!pendingPermission || !isPlanPermission(pendingPermission.payload)) return;
+    if (extractBodyText(pendingPermission.payload) !== null) return;
+    const options = pendingPermission.payload.options as
+      | Array<{ optionId: string; kind: string }>
+      | undefined;
+    const allowOpt = options?.find((o) => o.kind === "allow_once" || o.kind === "allow_always");
+    if (allowOpt) {
+      handlePermissionRespond(pendingPermission.requestId, allowOpt.optionId);
+    }
+  }, [pendingPermission, handlePermissionRespond]);
+
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
       liveDispatch({ type: "finalize_streaming" });
-      const userMsg: UserMessageItem = {
-        id: `user-${++userMsgCounterRef.current}`,
-        content: contentBlocks ? JSON.stringify(contentBlocks) : content,
-        sentAt: Date.now(),
-      };
-      const insertAt = agentItemsCountRef.current;
-      setLiveUserMessages((prev) => [...prev, { item: userMsg, insertAt }]);
       setIsProcessing(true);
       setActivityStatus(sessionKey, "working");
       try {
@@ -196,7 +259,8 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   // Focus compose bar when panel becomes selected and is ready
   useEffect(() => {
-    if (liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
+    if (liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation)
+      return;
     if (!isSelected) return;
     const timer = setTimeout(() => composeBarRef.current?.focus(), 0);
     return () => clearTimeout(timer);
@@ -206,11 +270,27 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
   useEffect(() => {
     if (!isSelected || liveState.sessionEnded) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (!focused || liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation) return;
+      if (
+        !focused ||
+        liveState.isInitializing ||
+        !modelsLoaded ||
+        pendingPermission ||
+        pendingElicitation
+      )
+        return;
       requestAnimationFrame(() => composeBarRef.current?.focus());
     });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [isSelected, liveState.sessionEnded, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [
+    isSelected,
+    liveState.sessionEnded,
+    liveState.isInitializing,
+    modelsLoaded,
+    pendingPermission,
+    pendingElicitation,
+  ]);
 
   // 2s: mark session as responsive
   useEffect(() => {
@@ -220,8 +300,8 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
   }, [liveState.isInitializing, liveDispatch]);
 
   const displayItems = useMemo(
-    () => mergeLiveItems(liveState.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries),
-    [liveState.items, liveUserMessages, livePermissionResponses, liveElicitationSummaries],
+    () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
+    [liveState.items, livePermissionResponses, liveElicitationSummaries],
   );
 
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
@@ -254,7 +334,10 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
 
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
-    ? { requestId: pendingElicitation.requestId, ...parseElicitationFields(pendingElicitation.payload) }
+    ? {
+        requestId: pendingElicitation.requestId,
+        ...parseElicitationFields(pendingElicitation.payload),
+      }
     : null;
 
   let bottomBar: React.ReactNode = null;
@@ -272,7 +355,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
         />
       );
     } else if (pendingPermission) {
-      if (isPlanPermission(pendingPermission.payload)) {
+      if (isPlanPermission(pendingPermission.payload) && extractBodyText(pendingPermission.payload) !== null) {
         planOverlay = (
           <PermissionPrompt
             requestId={pendingPermission.requestId}
@@ -346,7 +429,9 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.15 }}
                     className="bg-muted/80 backdrop-blur-sm border-b border-border/50 cursor-pointer"
-                    onClick={() => lastUserMsgRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    onClick={() =>
+                      lastUserMsgRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
                   >
                     <div className="flex items-center gap-2 px-3 py-1.5">
                       <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-[10px] font-semibold text-muted-foreground border border-border/50">
@@ -390,7 +475,10 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
                   }
                 }
 
-                const isLastUserMsg = gi.type === "solo" && gi.item.type === "userMessage" && gi.item.item === lastUserMessage;
+                const isLastUserMsg =
+                  gi.type === "solo" &&
+                  gi.item.type === "userMessage" &&
+                  gi.item.item === lastUserMessage;
                 const isAgentResponseStart = idx === agentResponseStartIdx;
 
                 if (isLastUserMsg || isAgentResponseStart) {
@@ -410,9 +498,7 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
           </div>
 
           {planOverlay && (
-            <div className="absolute inset-0 z-30 flex flex-col bg-background">
-              {planOverlay}
-            </div>
+            <div className="absolute inset-0 z-30 flex flex-col bg-background">{planOverlay}</div>
           )}
 
           <AnimatePresence>
@@ -424,7 +510,12 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={{ duration: 0.15 }}
-                onClick={() => agentResponseStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                onClick={() =>
+                  agentResponseStartRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  })
+                }
                 className="absolute bottom-14 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors bg-card/60 border-border/30 hover:bg-muted/60"
                 aria-label="Scroll to start of response"
               >
@@ -443,7 +534,9 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
                 className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/60 border-accent/40 hover:bg-accent/70" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
                 aria-label="Scroll to bottom"
               >
-                <ChevronDown className={`w-4 h-4 ${hasUnread ? "text-accent-foreground" : "text-muted-foreground"}`} />
+                <ChevronDown
+                  className={`w-4 h-4 ${hasUnread ? "text-accent-foreground" : "text-muted-foreground"}`}
+                />
               </motion.button>
             )}
           </AnimatePresence>
@@ -451,65 +544,4 @@ export function AgentActivityPanel({ sessionKey, isSelected = false, onUsageChan
       </div>
     </div>
   );
-}
-
-type GroupedDisplayItem =
-  | { type: "solo"; item: ActivityItem }
-  | { type: "toolGroup"; items: ToolCallItem[] };
-
-function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
-  const result: GroupedDisplayItem[] = [];
-  let i = 0;
-  while (i < items.length) {
-    const item = items[i];
-    if (item.type === "toolCall") {
-      const group: ToolCallItem[] = [item.item];
-      while (i + 1 < items.length && items[i + 1].type === "toolCall") {
-        i++;
-        group.push((items[i] as { type: "toolCall"; item: ToolCallItem }).item);
-      }
-      result.push({ type: "toolGroup", items: group });
-    } else {
-      result.push({ type: "solo", item });
-    }
-    i++;
-  }
-  return result;
-}
-
-function mergeLiveItems(
-  agentItems: ActivityItem[],
-  userMessages: Array<{ item: UserMessageItem; insertAt: number }>,
-  permissionResponses: Array<{ item: PermissionResponseItem; insertAt: number }>,
-  elicitationSummaries: Array<{ item: ElicitationSummaryItem; insertAt: number }>,
-): ActivityItem[] {
-  if (userMessages.length === 0 && permissionResponses.length === 0 && elicitationSummaries.length === 0) return agentItems;
-
-  type Slot = { insertAt: number; ai: ActivityItem };
-  const slots: Slot[] = [
-    ...userMessages.map(({ item, insertAt }) => ({ insertAt, ai: { type: "userMessage" as const, item } })),
-    ...permissionResponses.map(({ item, insertAt }) => ({ insertAt, ai: { type: "permissionResponse" as const, item } })),
-    ...elicitationSummaries.map(({ item, insertAt }) => ({ insertAt, ai: { type: "elicitationSummary" as const, item } })),
-  ].sort((a, b) => a.insertAt - b.insertAt);
-
-  const result: ActivityItem[] = [];
-  let si = 0;
-  for (let i = 0; i <= agentItems.length; i++) {
-    while (si < slots.length && slots[si].insertAt <= i) {
-      result.push(slots[si].ai);
-      si++;
-    }
-    if (i < agentItems.length) result.push(agentItems[i]);
-  }
-  return result;
-}
-
-function makeElicitationSummary(requestId: string, payload: Record<string, unknown>, answer: string): ElicitationSummaryItem {
-  return { id: `elicit-${requestId}`, question: String(payload.message ?? "Elicitation"), answer };
-}
-
-function formatElicitationAnswer(values: Record<string, unknown>): string {
-  const parts = Object.values(values).filter((v) => v !== null && v !== undefined && v !== "");
-  if (parts.length === 0) return "Submitted";
-  return parts.map((v) => (Array.isArray(v) ? v.join(", ") : String(v))).join("; ");
 }

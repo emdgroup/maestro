@@ -83,7 +83,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
                       <SvgBlock key={i} code={seg.content} />
                     ) : (
                       <MarkdownBlock key={i} text={seg.content} />
-                    )
+                    ),
                   )
                 ) : (
                   <MarkdownBlock text={completedText} />
@@ -97,7 +97,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
                 <SvgBlock key={i} code={seg.content} />
               ) : (
                 <MarkdownBlock key={i} text={seg.content} />
-              )
+              ),
             )
           ) : (
             <MarkdownBlock text={message.text} />

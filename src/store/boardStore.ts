@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { api } from "@/lib";
+import { useShallow } from "zustand/react/shallow";
+import { api } from "@/lib/tauri-utils";
 
 export interface BoardState {
   activeTerminalTaskId: number | null;
@@ -38,3 +39,13 @@ export const useBoardStore = create<BoardState>()(
     },
   })),
 );
+
+export const useActiveTerminalTaskId = () => useBoardStore((s) => s.activeTerminalTaskId);
+export const useIsTerminalOpen = () => useBoardStore((s) => s.isTerminalOpen);
+export const useBoardActions = () =>
+  useBoardStore(
+    useShallow((s) => ({
+      openTerminal: s.openTerminal,
+      closeTerminal: s.closeTerminal,
+    })),
+  );

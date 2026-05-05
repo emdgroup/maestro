@@ -915,7 +915,7 @@ async fn cleanup_pty_sessions_for_connection(
     let mut log_ids_to_cleanup: Vec<i32> = Vec::new();
 
     {
-        let sessions = app_state.ssh_pty_sessions.lock().await;
+        let sessions = app_state.ssh.pty_sessions.lock().await;
         for (log_id, handle) in sessions.iter() {
             log_ids_to_cleanup.push(*log_id);
             // Signal reader task to stop
@@ -930,7 +930,7 @@ async fn cleanup_pty_sessions_for_connection(
 
     // Remove handles from the sessions map
     {
-        let mut sessions = app_state.ssh_pty_sessions.lock().await;
+        let mut sessions = app_state.ssh.pty_sessions.lock().await;
         for log_id in &log_ids_to_cleanup {
             sessions.remove(log_id);
         }
@@ -938,7 +938,7 @@ async fn cleanup_pty_sessions_for_connection(
 
     // Remove PTY metadata entries
     {
-        let mut meta = app_state.pty_session_meta.lock().await;
+        let mut meta = app_state.pty.session_meta.lock().await;
         for log_id in &log_ids_to_cleanup {
             meta.remove(log_id);
         }
@@ -971,7 +971,7 @@ pub fn spawn_heartbeat_task(
 
             // Stop if connection was removed from the session map (user disconnected or deleted)
             {
-                let sessions = app_state.ssh_sessions.lock().await;
+                let sessions = app_state.ssh.sessions.lock().await;
                 if !sessions.contains_key(&connection_id) {
                     break;
                 }
@@ -1025,7 +1025,7 @@ pub fn spawn_heartbeat_task(
 
                         // Check if removed while we were sleeping
                         {
-                            let sessions = app_state.ssh_sessions.lock().await;
+                            let sessions = app_state.ssh.sessions.lock().await;
                             if !sessions.contains_key(&connection_id) {
                                 return;
                             }

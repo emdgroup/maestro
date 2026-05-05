@@ -1,8 +1,19 @@
 import { useState, useMemo } from "react";
-import { X, AlignJustify, Columns2, List, FolderTree, Check, Minus, RotateCcw, Archive } from "lucide-react";
+import {
+  X,
+  AlignJustify,
+  Columns2,
+  List,
+  FolderTree,
+  Check,
+  Minus,
+  RotateCcw,
+  Archive,
+} from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { cn, parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib";
+import { cn } from "@/lib/ui-utils";
+import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
@@ -90,8 +101,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     return diffFiles.filter((f) => f.fileName.toLowerCase().includes(q));
   }, [diffFiles, fileSearch]);
 
-  const hasAnyStaged =
-    stagedFiles.size > 0 || [...stagedHunks.values()].some((s) => s.size > 0);
+  const hasAnyStaged = stagedFiles.size > 0 || [...stagedHunks.values()].some((s) => s.size > 0);
 
   function getFileCheckState(fileName: string): "checked" | "unchecked" | "indeterminate" {
     if (stagedFiles.has(fileName)) return "checked";
@@ -345,7 +355,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                       : !hasAnyStaged || discardMutation.isPending
                   }
                   className="h-8 w-8 p-0"
-                  title={viewMode === "untracked" ? "Delete selected files" : "Revert selected changes"}
+                  title={
+                    viewMode === "untracked" ? "Delete selected files" : "Revert selected changes"
+                  }
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
@@ -415,8 +427,14 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           <div className="pointer-events-auto flex items-center gap-1.5 font-mono text-sm font-semibold">
             <span className="truncate max-w-48">{worktree.branch_name}</span>
             <span>-</span>
-            <Select value={viewMode} onValueChange={(v) => setViewMode(v as "uncommitted" | "untracked")}>
-              <SelectTrigger size="sm" className="h-auto border-none shadow-none bg-transparent font-mono text-sm font-semibold p-0 gap-1 focus:ring-0">
+            <Select
+              value={viewMode}
+              onValueChange={(v) => setViewMode(v as "uncommitted" | "untracked")}
+            >
+              <SelectTrigger
+                size="sm"
+                className="h-auto border-none shadow-none bg-transparent font-mono text-sm font-semibold p-0 gap-1 focus:ring-0"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -431,7 +449,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         <div className="ml-auto flex items-center gap-2 z-10">
           <ToggleGroup
             value={[
-              forceUnified || viewMode === "untracked" || effectiveDiffViewMode !== DiffModeEnum.SplitGitHub
+              forceUnified ||
+              viewMode === "untracked" ||
+              effectiveDiffViewMode !== DiffModeEnum.SplitGitHub
                 ? "unified"
                 : "split",
             ]}
@@ -452,7 +472,10 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
               size="sm"
               variant="outline"
               disabled={forceUnified || viewMode === "untracked"}
-              className={cn("size-8 p-0", (forceUnified || viewMode === "untracked") && "opacity-30 cursor-not-allowed")}
+              className={cn(
+                "size-8 p-0",
+                (forceUnified || viewMode === "untracked") && "opacity-30 cursor-not-allowed",
+              )}
             >
               <Columns2 className="size-3.5" />
             </ToggleGroupItem>
@@ -472,7 +495,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
               diffLoading ? (
                 <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
               ) : untrackedFiles.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-8 text-center">No untracked files</div>
+                <div className="text-xs text-muted-foreground py-8 text-center">
+                  No untracked files
+                </div>
               ) : (
                 untrackedFiles.map((filePath, index) => {
                   const basename = filePath.split("/").pop() ?? filePath;
@@ -512,7 +537,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                           </CheckboxPrimitive.Root>
                         </span>
                         <span className="text-xs font-medium shrink-0 text-success">?</span>
-                        <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
+                        <span className="text-xs font-mono truncate flex-1 min-w-0">
+                          {basename}
+                        </span>
                       </div>
                     </div>
                   );
@@ -591,56 +618,56 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           </div>
 
           {/* Bottom action area */}
-          {viewMode === "untracked" ? (
-            stagedFiles.size > 0 && (
-              <div className="border-t border-border p-2 shrink-0">
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={stageMutation.isPending}
-                  onClick={async () => {
-                    if (!projectId || !worktreePath) return;
-                    try {
-                      await stageMutation.mutateAsync({
-                        projectId,
-                        worktreePath,
-                        filePaths: [...stagedFiles],
-                        patch: null,
-                      });
-                      setStagedFiles(new Set());
-                    } catch {
-                      // error toast handled by mutation
+          {viewMode === "untracked"
+            ? stagedFiles.size > 0 && (
+                <div className="border-t border-border p-2 shrink-0">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={stageMutation.isPending}
+                    onClick={async () => {
+                      if (!projectId || !worktreePath) return;
+                      try {
+                        await stageMutation.mutateAsync({
+                          projectId,
+                          worktreePath,
+                          filePaths: [...stagedFiles],
+                          patch: null,
+                        });
+                        setStagedFiles(new Set());
+                      } catch {
+                        // error toast handled by mutation
+                      }
+                    }}
+                  >
+                    {stageMutation.isPending ? "Staging..." : "Stage Selected"}
+                  </Button>
+                </div>
+              )
+            : /* Commit area — visible only when files staged */
+              hasAnyStaged && (
+                <div className="border-t border-border p-2 shrink-0 flex flex-col gap-2">
+                  <Textarea
+                    placeholder="Commit message..."
+                    value={commitMessage}
+                    onChange={(e) => setCommitMessage(e.target.value)}
+                    className="text-xs min-h-15 resize-none"
+                    rows={3}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={
+                      !commitMessage.trim() || commitMutation.isPending || stageMutation.isPending
                     }
-                  }}
-                >
-                  {stageMutation.isPending ? "Staging..." : "Stage Selected"}
-                </Button>
-              </div>
-            )
-          ) : (
-            /* Commit area — visible only when files staged */
-            hasAnyStaged && (
-              <div className="border-t border-border p-2 shrink-0 flex flex-col gap-2">
-                <Textarea
-                  placeholder="Commit message..."
-                  value={commitMessage}
-                  onChange={(e) => setCommitMessage(e.target.value)}
-                  className="text-xs min-h-15 resize-none"
-                  rows={3}
-                />
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={
-                    !commitMessage.trim() || commitMutation.isPending || stageMutation.isPending
-                  }
-                  onClick={handleCommit}
-                >
-                  {commitMutation.isPending || stageMutation.isPending ? "Committing..." : "Commit"}
-                </Button>
-              </div>
-            )
-          )}
+                    onClick={handleCommit}
+                  >
+                    {commitMutation.isPending || stageMutation.isPending
+                      ? "Committing..."
+                      : "Commit"}
+                  </Button>
+                </div>
+              )}
         </div>
 
         {/* Right diff body */}
@@ -655,7 +682,8 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           )}
 
           {/* Per-file header bar (uncommitted mode only) */}
-          {viewMode === "uncommitted" && selectedFile &&
+          {viewMode === "uncommitted" &&
+            selectedFile &&
             (() => {
               const stats = computeFileStats(selectedFile.hunks);
               const status = selectedFile.status ?? "M";

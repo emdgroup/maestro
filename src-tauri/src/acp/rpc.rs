@@ -41,6 +41,8 @@ async fn read_next_frame_remote(
                     return Some(rpc_msg);
                 }
             }
+            Some(ChannelMsg::ExtendedData { .. })
+            | Some(ChannelMsg::WindowAdjusted { .. }) => {}
             Some(ChannelMsg::Eof)
             | Some(ChannelMsg::Close)
             | Some(ChannelMsg::ExitStatus { .. })

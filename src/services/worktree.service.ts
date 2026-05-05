@@ -1,13 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createErrorToastHandler } from "@/lib";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 import type { DiffTarget } from "@/types/bindings";
 
 export const worktreeQueryKeys = {
-  all: ["worktrees"] as const,
-  list: (projectId: number) => [...worktreeQueryKeys.all, "list", projectId] as const,
+  base: ["worktrees"] as const,
+  list: (projectId: number) => [...worktreeQueryKeys.base, "list", projectId] as const,
   diff: (worktreePath: string, diffTarget: DiffTarget) =>
-    [...worktreeQueryKeys.all, "diff", worktreePath, diffTarget] as const,
+    [...worktreeQueryKeys.base, "diff", worktreePath, diffTarget] as const,
 };
 
 /**
@@ -62,10 +63,16 @@ export function useDeleteWorktreeMutation() {
       worktreeId: number | null;
       deleteBranch: boolean;
     }) => {
-      return await api.deleteWorktree(projectId, worktreePath, branchName, worktreeId, deleteBranch);
+      return await api.deleteWorktree(
+        projectId,
+        worktreePath,
+        branchName,
+        worktreeId,
+        deleteBranch,
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Worktree deleted");
     },
     onError: createErrorToastHandler("Failed to delete worktree"),
@@ -85,7 +92,7 @@ export function useCleanupZombieWorktreesMutation() {
     },
     onSuccess: (deletedCount) => {
       if (deletedCount > 0) {
-        queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+        void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       }
     },
     onError: () => {
@@ -137,7 +144,7 @@ export function useCommitWorktreeMutation() {
       return await api.commitWorktree(projectId, worktreePath, message);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Changes committed");
     },
     onError: createErrorToastHandler("Commit failed"),
@@ -166,7 +173,7 @@ export function useDiscardWorktreeChangesMutation() {
       return await api.discardWorktreeChanges(projectId, worktreePath, filePaths, patch);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Changes discarded");
     },
     onError: createErrorToastHandler("Failed to discard changes"),
@@ -195,7 +202,7 @@ export function useShelveWorktreeChangesMutation() {
       return await api.shelveWorktreeChanges(projectId, worktreePath, stashName, filePaths);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Changes shelved");
     },
     onError: createErrorToastHandler("Failed to shelve changes"),
@@ -248,7 +255,7 @@ export function useCreateWorktreeMutation() {
       return await api.createWorktree(projectId, taskId, baseBranch, newBranchName, repoPath);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Worktree created");
     },
     onError: createErrorToastHandler("Failed to create worktree"),

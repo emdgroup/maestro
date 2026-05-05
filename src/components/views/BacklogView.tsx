@@ -5,19 +5,13 @@ import { useKanban } from "@/contexts/KanbanContext";
 import { Button } from "@/ui/button";
 import { BacklogTaskSheet } from "@/components/kanban/BacklogTaskSheet";
 import type { Task, TaskPriority } from "@/types/bindings";
+import { PRIORITY_BADGE_CLASSES } from "@/utils/constants/priority";
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
   Urgent: 0,
   High: 1,
   Medium: 2,
   Low: 3,
-};
-
-const PRIORITY_BADGE_CLASSES: Record<TaskPriority, string> = {
-  Urgent: "bg-destructive/15 text-destructive border border-destructive/30",
-  High: "bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800",
-  Medium: "bg-accent/15 text-accent-foreground border border-accent/30",
-  Low: "bg-muted text-muted-foreground border border-border",
 };
 
 interface BacklogViewProps {

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createErrorToastHandler } from "@/lib";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
 import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction } from "@/types/bindings";
@@ -9,17 +10,17 @@ import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction } from 
  * Ensures consistent cache invalidation across components
  */
 export const taskQueryKeys = {
-  all: ["tasks"] as const,
-  lists: () => [...taskQueryKeys.all, "list"] as const,
+  base: ["tasks"] as const,
+  lists: () => [...taskQueryKeys.base, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
-  details: () => [...taskQueryKeys.all, "detail"] as const,
+  details: () => [...taskQueryKeys.base, "detail"] as const,
   detail: (taskId: number) => [...taskQueryKeys.details(), taskId] as const,
-  logs: () => [...taskQueryKeys.all, "logs"] as const,
+  logs: () => [...taskQueryKeys.base, "logs"] as const,
   logsByTask: (taskId: number) => [...taskQueryKeys.logs(), { taskId }] as const,
-  settings: () => [...taskQueryKeys.all, "settings"] as const,
+  settings: () => [...taskQueryKeys.base, "settings"] as const,
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
-  relationships: (taskId: number) => [...taskQueryKeys.all, "relationships", taskId] as const,
-  instructions: (taskId: number) => [...taskQueryKeys.all, "instructions", taskId] as const,
+  relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
+  instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
 };
 
 /**
@@ -314,7 +315,7 @@ export function useTaskInstructionsQuery(taskId: number | null) {
  */
 export function useProjectBranchesQuery(projectId: number | null) {
   return useQuery({
-    queryKey: [...taskQueryKeys.all, "branches", projectId],
+    queryKey: [...taskQueryKeys.base, "branches", projectId],
     queryFn: () => api.listProjectBranches(projectId!),
     enabled: projectId !== null,
     staleTime: 60000, // 1 minute — branches don't change that often

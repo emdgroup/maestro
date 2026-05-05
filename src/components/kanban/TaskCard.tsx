@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Task } from "@/types/bindings";
 import { useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
@@ -23,7 +23,6 @@ function getStatusDotColor(status: string): string {
   }
 }
 
-
 interface TaskCardProps {
   task: Task;
   onReviewClick?: (taskId: number, taskName: string) => void;
@@ -31,12 +30,7 @@ interface TaskCardProps {
   onArchiveClick?: (taskId: number) => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({
-  task,
-  onReviewClick,
-  onSettingsClick,
-  onArchiveClick,
-}) => {
+export function TaskCard({ task, onReviewClick, onSettingsClick, onArchiveClick }: TaskCardProps) {
   // Get context from KanbanProvider
   const { projectId, projectPath, onTaskClick } = useKanban();
 
@@ -165,4 +159,4 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       )}
     </div>
   );
-};
+}

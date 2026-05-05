@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
 
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 
 function Slider({
   className,

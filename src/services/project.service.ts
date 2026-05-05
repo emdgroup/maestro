@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ProjectConfigRequest } from "@/types/bindings";
+import type { ProjectConfigRequest, JsonValue } from "@/types/bindings";
 import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
@@ -14,14 +15,14 @@ import { localConnectionId } from "@/contexts/ConnectionContext";
  * Ensures consistent cache invalidation across components
  */
 export const projectQueryKeys = {
-  baseKey: ["projects"] as const,
-  list: () => [...projectQueryKeys.baseKey, "list"] as const,
+  base: ["projects"] as const,
+  list: () => [...projectQueryKeys.base, "list"] as const,
   listByConnection: (connectionId: number | string) =>
     [...projectQueryKeys.list(), connectionId] as const,
-  details: (id: number) => [...projectQueryKeys.baseKey, "details", id] as const,
-  settings: () => [...projectQueryKeys.baseKey, "settings"] as const,
+  details: (id: number) => [...projectQueryKeys.base, "details", id] as const,
+  settings: () => [...projectQueryKeys.base, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
-  locks: (ids: number[]) => [...projectQueryKeys.baseKey, "locks", ids] as const,
+  locks: (ids: number[]) => [...projectQueryKeys.base, "locks", ids] as const,
 };
 
 /**
@@ -96,11 +97,7 @@ export function useCreateProject() {
         queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
       });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to create project: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to create project"),
   });
 }
 
@@ -118,11 +115,7 @@ export function useRemoveProject(connectionId: number | string | null | undefine
         queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
       });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to remove project: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to remove project"),
   });
 }
 
@@ -140,11 +133,7 @@ export function useUpdateProjectSettings() {
         queryKey: projectQueryKeys.settingsDetail(projectId),
       });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to update project settings: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to update project settings"),
   });
 }
 
@@ -155,23 +144,14 @@ export function useSaveImportConfig() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      importConfig,
-    }: {
-      projectId: number;
-      importConfig: Record<string, unknown>;
-    }) => api.saveImportConfig(projectId, "jira", JSON.parse(importConfig.toString())),
+    mutationFn: ({ projectId, importConfig }: { projectId: number; importConfig: JsonValue }) =>
+      api.saveImportConfig(projectId, "jira", importConfig),
     onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(projectId),
       });
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to save import config: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to save import config"),
   });
 }
 
@@ -185,11 +165,7 @@ export function useGitInitProject() {
       api.gitInitProject(path, connectionId),
     // No cache invalidation needed — this is a pre-step before createProject
     // No toast on success — this is a silent auto-init
-    onError: (error) => {
-      toast.error(
-        `Failed to initialize git: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to initialize git"),
   });
 }
 
@@ -215,9 +191,7 @@ export function useCloneProject() {
       });
       toast.success("Project cloned successfully");
     },
-    onError: (error) => {
-      toast.error(`Clone failed: ${error instanceof Error ? error.message : String(error)}`);
-    },
+    onError: createErrorToastHandler("Clone failed"),
   });
 }
 
@@ -271,11 +245,7 @@ export function useSyncGithubIssues() {
     onSuccess: (data) => {
       toast.success(`Synced ${data.imported_count} issues from GitHub`);
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to sync GitHub issues: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to sync GitHub issues"),
   });
 }
 
@@ -300,10 +270,6 @@ export function useSyncJiraIssues() {
     onSuccess: (data) => {
       toast.success(`Synced ${data.imported_count} issues from Jira`);
     },
-    onError: (error) => {
-      toast.error(
-        `Failed to sync Jira issues: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
+    onError: createErrorToastHandler("Failed to sync Jira issues"),
   });
 }

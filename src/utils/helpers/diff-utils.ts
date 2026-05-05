@@ -193,23 +193,3 @@ export function countHunks(hunkContent: string): number {
   if (!hunkContent) return 0;
   return (hunkContent.match(/^@@/gm) ?? []).length;
 }
-
-/**
- * Extract file name from diff output
- * Handles: "diff --git a/path/file b/path/file"
- */
-export function extractFileNames(diffString: string): string[] {
-  const fileNames = new Set<string>();
-  const lines = diffString.split("\n");
-
-  for (const line of lines) {
-    if (line.startsWith("diff --git")) {
-      const match = line.match(/diff --git a\/(.*) b\/(.*)/);
-      if (match) {
-        fileNames.add(match[2]);
-      }
-    }
-  }
-
-  return Array.from(fileNames);
-}

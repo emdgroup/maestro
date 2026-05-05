@@ -15,11 +15,7 @@ export function ProjectPicker() {
 
       <div className="max-w-3xl w-full">
         <div className="text-center mb-8">
-          <img
-            src="/maestro-logo.png"
-            alt="Maestro logo"
-            className="w-20 h-20 mx-auto mb-4"
-          />
+          <img src="/maestro-logo.png" alt="Maestro logo" className="w-20 h-20 mx-auto mb-4" />
           <h1 className="text-3xl font-semibold mb-3">Maestro</h1>
           <h3 className="text-base text-muted-foreground">An agent orchestrator tool.</h3>
         </div>

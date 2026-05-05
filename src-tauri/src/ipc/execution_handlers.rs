@@ -40,9 +40,9 @@ pub async fn drain_ready_queue(
     }
 
     let running_count: i32 = {
-        let acp = app_state.acp_sessions.lock().await;
+        let acp = app_state.acp.sessions.lock().await;
         let acp_count = acp.values().filter(|p| p.task_id.is_some()).count();
-        let pty_meta = app_state.pty_session_meta.lock().await;
+        let pty_meta = app_state.pty.session_meta.lock().await;
         let pty_count = pty_meta.values().filter(|m| m.task_id.is_some()).count();
         (acp_count + pty_count) as i32
     };
@@ -109,7 +109,7 @@ pub async fn attach_terminal(
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
-        let sessions = app_state.ssh_pty_sessions.lock().await;
+        let sessions = app_state.ssh.pty_sessions.lock().await;
         sessions.get(&task_id).cloned()
     };
 
@@ -126,7 +126,7 @@ pub async fn attach_terminal(
         // spawns a new reader that fights the old one over the single-slot Notify, causing
         // every other keystroke to be consumed by the stale reader and lost to the UI.
         {
-            let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+            let mut cancel_map = app_state.pty.attach_cancel.lock().await;
             if let Some(old_flag) = cancel_map.remove(&task_id) {
                 old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
             }
@@ -137,7 +137,7 @@ pub async fn attach_terminal(
         // Register cancel flag for the new reader.
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+            let mut cancel_map = app_state.pty.attach_cancel.lock().await;
             cancel_map.insert(task_id, Arc::clone(&cancel_flag));
         }
 
@@ -258,7 +258,7 @@ pub async fn attach_terminal(
 
     // Get local PTY session from AppState
     let session = {
-        let sessions = app_state.pty_sessions.lock().await;
+        let sessions = app_state.pty.sessions.lock().await;
         sessions.get(&task_id).cloned()
     };
 
@@ -272,7 +272,7 @@ pub async fn attach_terminal(
 
     // Cancel any existing reader for this task (handles re-attach without explicit detach)
     {
-        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        let mut cancel_map = app_state.pty.attach_cancel.lock().await;
         if let Some(old_flag) = cancel_map.remove(&task_id) {
             old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -281,7 +281,7 @@ pub async fn attach_terminal(
     // Create cancel flag for the new reader task
     let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
-        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        let mut cancel_map = app_state.pty.attach_cancel.lock().await;
         cancel_map.insert(task_id, Arc::clone(&cancel_flag));
     }
 
@@ -404,7 +404,7 @@ pub async fn send_terminal_input(
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
-        let sessions = app_state.ssh_pty_sessions.lock().await;
+        let sessions = app_state.ssh.pty_sessions.lock().await;
         sessions.get(&task_id).cloned()
     };
 
@@ -417,7 +417,7 @@ pub async fn send_terminal_input(
         return Ok(());
     }
 
-    let sessions = app_state.pty_sessions.lock().await;
+    let sessions = app_state.pty.sessions.lock().await;
     let session = sessions
         .get(&task_id)
         .ok_or_else(|| format!("No PTY session for task {}", task_id))?
@@ -452,7 +452,7 @@ pub async fn resize_terminal(
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
-        let sessions = app_state.ssh_pty_sessions.lock().await;
+        let sessions = app_state.ssh.pty_sessions.lock().await;
         sessions.get(&task_id).cloned()
     };
 
@@ -464,7 +464,7 @@ pub async fn resize_terminal(
         return Ok(());
     }
 
-    let sessions = app_state.pty_sessions.lock().await;
+    let sessions = app_state.pty.sessions.lock().await;
     let session = sessions
         .get(&task_id)
         .ok_or_else(|| format!("No PTY session for task {}", task_id))?
@@ -486,7 +486,7 @@ pub async fn detach_terminal(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+    let mut cancel_map = app_state.pty.attach_cancel.lock().await;
     if let Some(flag) = cancel_map.remove(&task_id) {
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
     }
@@ -506,20 +506,20 @@ pub async fn close_pty_session(
 ) -> Result<(), String> {
     // Cancel any active attach reader
     {
-        let mut cancel_map = app_state.pty_attach_cancel.lock().await;
+        let mut cancel_map = app_state.pty.attach_cancel.lock().await;
         if let Some(flag) = cancel_map.remove(&session_key) {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     // Remove local PTY session (dropping PtySession kills the child process)
-    app_state.pty_sessions.lock().await.remove(&session_key);
+    app_state.pty.sessions.lock().await.remove(&session_key);
 
     // Remove remote SSH PTY session (dropping SshPtyHandle closes the write channel)
-    app_state.ssh_pty_sessions.lock().await.remove(&session_key);
+    app_state.ssh.pty_sessions.lock().await.remove(&session_key);
 
     // Remove session metadata so get_active_sessions no longer lists it
-    app_state.pty_session_meta.lock().await.remove(&session_key);
+    app_state.pty.session_meta.lock().await.remove(&session_key);
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
@@ -625,7 +625,7 @@ pub async fn spawn_interactive_execution(
 
     // Step 2: Assign session key and optionally update task status.
     let now = chrono::Utc::now().to_rfc3339();
-    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     if let Some(tid) = task_id {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -641,7 +641,7 @@ pub async fn spawn_interactive_execution(
             .connection_id
             .ok_or("Remote project has no connection_id")?;
         let ssh_session = app_state
-            .get_ssh_session(conn_id)
+            .ssh.get_session(conn_id)
             .await
             .ok_or("SSH session not active — connect to the remote host first")?;
 
@@ -658,7 +658,7 @@ pub async fn spawn_interactive_execution(
             .await
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
-        app_state.ssh_pty_sessions.lock().await.insert(log_id, pty_handle);
+        app_state.ssh.pty_sessions.lock().await.insert(log_id, pty_handle);
     } else {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let pty_session = crate::process::spawn_agent_cli_pty(
@@ -670,7 +670,7 @@ pub async fn spawn_interactive_execution(
         .await?;
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
-        let mut sessions = app_state_arc.pty_sessions.lock().await;
+        let mut sessions = app_state_arc.pty.sessions.lock().await;
         sessions.insert(
             log_id,
             Arc::new(tokio::sync::Mutex::new(pty_session)),
@@ -689,7 +689,7 @@ pub async fn spawn_interactive_execution(
             branch_name: Some(branch_name.clone()),
             cwd: worktree_abs_path.clone(),
         };
-        app_state.pty_session_meta.lock().await.insert(log_id, meta);
+        app_state.pty.session_meta.lock().await.insert(log_id, meta);
     }
     app_state.app_handle.emit("sessions-changed", ()).ok();
 

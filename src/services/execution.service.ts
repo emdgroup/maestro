@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, createErrorToastHandler } from "@/lib";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
+import { taskQueryKeys } from "@/services/task.service";
 
 export const executionQueryKeys = {
   activeSessions: ["activeSessions"] as const,
   sessionList: (agentId: string, cwd: string, connectionId: number | null) =>
     ["sessionList", agentId, cwd, connectionId] as const,
+  agentDiscovery: (connectionId: number | null) => ["agentDiscovery", connectionId] as const,
   agentModelsCache: (projectId: number, agentId: string) =>
     ["agentModelsCache", projectId, agentId] as const,
 };
@@ -22,7 +25,7 @@ export function useActiveSessionsQuery() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen("sessions-changed", () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     }).then((fn) => {
       unlisten = fn;
     });
@@ -78,7 +81,7 @@ export function useLoadAcpSessionMutation() {
       return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
     onError: createErrorToastHandler("Failed to load session"),
   });
@@ -131,13 +134,18 @@ export function useSpawnInteractiveExecutionMutation() {
       taskDescription?: string | null;
     }) => {
       return await api.spawnInteractiveExecution(
-        projectId, branchName, repoPath, sessionName,
-        worktreeId ?? null, taskId ?? null, taskDescription ?? null
+        projectId,
+        branchName,
+        repoPath,
+        sessionName,
+        worktreeId ?? null,
+        taskId ?? null,
+        taskDescription ?? null,
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to spawn interactive session"),
   });
@@ -149,12 +157,9 @@ export function useSpawnInteractiveExecutionMutation() {
  * connectionId = number → remote SSH connection
  * 5-minute staleTime mirrors backend TTL.
  */
-export function useAgentDiscoveryQuery(
-  connectionId: number | null,
-  enabled: boolean = true,
-) {
+export function useAgentDiscoveryQuery(connectionId: number | null, enabled: boolean = true) {
   return useQuery({
-    queryKey: ["agentDiscovery", connectionId],
+    queryKey: executionQueryKeys.agentDiscovery(connectionId),
     queryFn: () => api.discoverAgents(connectionId),
     enabled,
     staleTime: 5 * 60 * 1000,
@@ -206,10 +211,17 @@ export function useSpawnAcpSessionMutation() {
       connectionId: number | null;
       worktreeBranch?: string | null;
     }) => {
-      return await api.spawnAcpSession(agentId, cwd, sessionName, projectId, connectionId, worktreeBranch ?? null);
+      return await api.spawnAcpSession(
+        agentId,
+        cwd,
+        sessionName,
+        projectId,
+        connectionId,
+        worktreeBranch ?? null,
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
     onError: createErrorToastHandler("Failed to spawn ACP session"),
   });
@@ -236,13 +248,21 @@ export function useRenameAcpSessionMutation() {
       return await api.renameAcpSession(projectId, agentId, acpSessionId, displayName);
     },
     onSuccess: (_data, { agentId }) => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
       });
     },
     onError: createErrorToastHandler("Failed to rename session"),
   });
+}
+
+/**
+ * Flush buffered replay events for a loaded session.
+ * Called after event listeners are registered to avoid the subscribe/emit race.
+ */
+export async function drainAcpReplay(logId: number): Promise<void> {
+  await api.drainAcpReplay(logId);
 }
 
 /**
@@ -265,7 +285,7 @@ export function useCancelActiveSessionMutation() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
     },
     onError: createErrorToastHandler("Failed to close session"),
   });

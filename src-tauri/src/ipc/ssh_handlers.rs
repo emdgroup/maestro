@@ -16,7 +16,7 @@ async fn finalize_ssh_connection(
     session: RemoteSshSession,
     auth_method_update: Option<&SshAuthMethod>,
 ) -> Result<(), String> {
-    app_state.set_ssh_session(connection_id, session).await;
+    app_state.ssh.set_session(connection_id, session).await;
 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -162,7 +162,7 @@ pub async fn connect_ssh_without_credentials(
     connection_id: i32,
 ) -> Result<i32, String> {
     // Check if session already exists and is still alive
-    if let Some(existing_session) = app_state.get_ssh_session(connection_id).await {
+    if let Some(existing_session) = app_state.ssh.get_session(connection_id).await {
         if existing_session.is_connected().await {
             // Reuse live session — update last_used_at
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -175,7 +175,7 @@ pub async fn connect_ssh_without_credentials(
             return Ok(connection_id);
         }
         // Session is dead — remove it and fall through to fresh auth
-        app_state.remove_ssh_session(connection_id).await;
+        app_state.ssh.remove_session(connection_id).await;
     }
 
     // No existing session, proceed with fresh authentication
@@ -189,7 +189,7 @@ pub async fn connect_ssh_without_credentials(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
-    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+    if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
             s,
             app_state.app_handle.clone(),
@@ -220,7 +220,7 @@ pub async fn connect_ssh_with_password(
         PasswordManager::store_password(&connection.host, &connection.username, password.clone())
             .map_err(|e| format!("Failed to save password: {}", e))?;
     } else {
-        app_state.set_ssh_password(connection_id, password.clone()).await;
+        app_state.ssh.set_password(connection_id, password.clone()).await;
     };
 
     connection.auth_method = SshAuthMethod::Password { save_password };
@@ -231,7 +231,7 @@ pub async fn connect_ssh_with_password(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+    if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
             s,
             app_state.app_handle.clone(),
@@ -261,7 +261,7 @@ pub async fn connect_ssh_with_agent(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+    if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
             s,
             app_state.app_handle.clone(),
@@ -309,7 +309,7 @@ pub async fn connect_ssh_with_key(
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
 
-    if let Some(s) = app_state.get_ssh_session(connection_id).await {
+    if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
             s,
             app_state.app_handle.clone(),
@@ -330,7 +330,7 @@ pub async fn list_remote_directories(
     path: String,
 ) -> Result<Vec<String>, String> {
     // Get SSH session from AppState
-    let session = app_state.get_ssh_session(connection_id)
+    let session = app_state.ssh.get_session(connection_id)
         .await
         .ok_or("No active SSH session found. Please connect first.")?;
 
@@ -439,7 +439,7 @@ pub async fn get_ssh_connection_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<ConnectionStatus, String> {
     // Active session alive → connected
-    if let Some(s) = state.get_ssh_session(connection_id).await {
+    if let Some(s) = state.ssh.get_session(connection_id).await {
         if s.is_connected().await {
             return Ok(ConnectionStatus { connection_id, connected: true, disconnected_reason: None });
         }

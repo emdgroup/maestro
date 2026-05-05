@@ -3,7 +3,7 @@ pub mod schema;
 pub mod settings;
 pub mod project_storage;
 
-pub use connection::{init_db, AppState, get_git_connection, get_project_with_git_conn};
+pub use connection::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
 pub use schema::initialize_schema;
 pub use settings::{load_settings, save_settings};
 pub use project_storage::{

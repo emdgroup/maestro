@@ -1,4 +1,3 @@
-import React from "react";
 import { Task } from "@/types/bindings";
 
 interface TaskContextMenuProps {
@@ -8,12 +7,7 @@ interface TaskContextMenuProps {
   onEditSettings: (task: Task) => void;
 }
 
-export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
-  task,
-  isOpen,
-  onClose,
-  onEditSettings,
-}) => {
+export function TaskContextMenu({ task, isOpen, onClose, onEditSettings }: TaskContextMenuProps) {
   if (!isOpen) {
     return null;
   }
@@ -30,4 +24,4 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
       </div>
     </div>
   );
-};
+}

@@ -1,17 +1,11 @@
 import { useTasksQuery } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import type { Task, TaskStatus } from "@/types/bindings";
+import { PRIORITY_BADGE_CLASSES } from "@/utils/constants/priority";
 
 const STATUS_BADGE_CLASSES: Partial<Record<TaskStatus, string>> = {
   Done: "bg-green-100 text-green-700 border border-green-300 dark:bg-green-950 dark:text-green-300 dark:border-green-800",
   Cancelled: "bg-destructive/15 text-destructive border border-destructive/30",
-};
-
-const PRIORITY_BADGE_CLASSES: Record<string, string> = {
-  Urgent: "bg-destructive/15 text-destructive border border-destructive/30",
-  High: "bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800",
-  Medium: "bg-accent/15 text-accent-foreground border border-accent/30",
-  Low: "bg-muted text-muted-foreground border border-border",
 };
 
 function formatDate(dateStr: string | null | undefined): string {

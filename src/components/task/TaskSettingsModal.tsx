@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS, AVAILABLE_MODELS } from "@/store/configStore";
 import type { Task, TaskConfigRequest } from "@/types/bindings";
 import { X } from "lucide-react";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 
 interface TaskSettingsModalProps {
   isOpen: boolean;

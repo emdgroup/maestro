@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Shield, Pencil, Terminal, Eye, Trash2, ShieldCheck, ShieldEllipsis, ShieldAlert, ShieldOff, ChevronLeft } from "lucide-react";
+import {
+  Shield,
+  Pencil,
+  Terminal,
+  Eye,
+  Trash2,
+  ShieldCheck,
+  ShieldEllipsis,
+  ShieldAlert,
+  ShieldOff,
+  ChevronLeft,
+} from "lucide-react";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 
 interface PermissionOption {
@@ -46,7 +57,7 @@ function extractTitle(payload: Record<string, unknown>): string {
   return map[tool] ?? tool;
 }
 
-function extractBodyText(payload: Record<string, unknown>): string | null {
+export function extractBodyText(payload: Record<string, unknown>): string | null {
   const toolCall = payload.toolCall as Record<string, unknown> | undefined;
   const content = toolCall?.content as Array<Record<string, unknown>> | undefined;
   if (!content) return null;
@@ -129,15 +140,22 @@ interface PlanPermissionOverlayProps {
   onRespond: (requestId: string, optionId: string | null) => void;
 }
 
-function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: PlanPermissionOverlayProps) {
+function PlanPermissionOverlay({
+  requestId,
+  bodyText,
+  options,
+  onRespond,
+}: PlanPermissionOverlayProps) {
   const acceptOptions = useMemo(
     () =>
       options
-        ? options.filter((o) => isAllowKind(o.kind)).sort((a, b) => getAcceptMeta(a).order - getAcceptMeta(b).order)
+        ? options
+            .filter((o) => isAllowKind(o.kind))
+            .sort((a, b) => getAcceptMeta(a).order - getAcceptMeta(b).order)
         : [],
     [options],
   );
-  const rejectOption = options ? options.find((o) => !isAllowKind(o.kind)) ?? null : null;
+  const rejectOption = options ? (options.find((o) => !isAllowKind(o.kind)) ?? null) : null;
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -183,9 +201,7 @@ function PlanPermissionOverlay({ requestId, bodyText, options, onRespond }: Plan
                       "group flex-1 flex flex-row items-center justify-center gap-[9px] px-2.5 py-[11px]",
                       "cursor-pointer transition-colors duration-100 border-none bg-transparent font-[inherit]",
                       idx > 0 && "border-l border-border/30",
-                      isBypass
-                        ? "bg-warning/12 hover:bg-warning/20"
-                        : "hover:bg-muted/60",
+                      isBypass ? "bg-warning/12 hover:bg-warning/20" : "hover:bg-muted/60",
                     )}
                   >
                     <span
@@ -267,7 +283,12 @@ function getToolIcon(payload: Record<string, unknown>): React.ElementType {
   return Shield;
 }
 
-export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: PermissionPromptProps) {
+export function PermissionPrompt({
+  requestId,
+  payload,
+  onRespond,
+  fullHeight,
+}: PermissionPromptProps) {
   const [expanded, setExpanded] = useState(false);
 
   const title = extractTitle(payload);
@@ -276,7 +297,14 @@ export function PermissionPrompt({ requestId, payload, onRespond, fullHeight }: 
   const isLong = bodyText && bodyText.length > BODY_COLLAPSE_LIMIT;
 
   if (fullHeight) {
-    return <PlanPermissionOverlay requestId={requestId} bodyText={bodyText} options={options} onRespond={onRespond} />;
+    return (
+      <PlanPermissionOverlay
+        requestId={requestId}
+        bodyText={bodyText}
+        options={options}
+        onRespond={onRespond}
+      />
+    );
   }
 
   const ToolIcon = getToolIcon(payload);

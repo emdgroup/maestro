@@ -1,5 +1,6 @@
 import { useEffect, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { drainAcpReplay } from "@/services/execution.service";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import type {
   SessionUpdatePayload,
@@ -16,28 +17,25 @@ export type ActivityAction =
   | { type: "session_ended" }
   | { type: "turn_ended" }
   | { type: "finalize_streaming" }
-  | { type: "set_initialized" }
-  | { type: "load_from_db"; payloads: SessionUpdatePayload[] };
+  | { type: "set_initialized" };
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
     case "event":
       return processEvent(state, action.payload);
     case "session_ended":
-      return { ...state, items: finalizeLastStreaming(state.items), sessionEnded: true, endReason: "completed" };
+      return {
+        ...state,
+        items: finalizeLastStreaming(state.items),
+        sessionEnded: true,
+        endReason: "completed",
+      };
     case "turn_ended":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "set_initialized":
       return { ...state, isInitializing: false };
-    case "load_from_db": {
-      let s = { ...INITIAL_ACTIVITY_STATE, isInitializing: false, sessionEnded: true };
-      for (const p of action.payloads) {
-        s = processEvent(s, p);
-      }
-      return { ...s, sessionEnded: true };
-    }
     default:
       return state;
   }
@@ -58,7 +56,10 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
           text: payload.content.text,
           isStreaming: true,
         };
-        newState.items = [...finalizeLastStreaming(newState.items), { type: "thinking", item: thought }];
+        newState.items = [
+          ...finalizeLastStreaming(newState.items),
+          { type: "thinking", item: thought },
+        ];
       }
       return newState;
     }
@@ -92,7 +93,11 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
-      return { ...newState, items: [...items, { type: "toolCall", item: tc }], toolCallMap: newMap };
+      return {
+        ...newState,
+        items: [...items, { type: "toolCall", item: tc }],
+        toolCallMap: newMap,
+      };
     }
 
     case "tool_call_update": {
@@ -128,6 +133,21 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
       return { ...newState, items: [...newState.items, { type: "userMessage", item: userMsg }] };
     }
 
+    case "user_message_chunk": {
+      const items = finalizeLastStreaming(newState.items);
+      const lastItem = items[items.length - 1];
+      if (lastItem && lastItem.type === "userMessage") {
+        const updated = { ...lastItem.item, content: lastItem.item.content + payload.content.text };
+        return { ...newState, items: [...items.slice(0, -1), { type: "userMessage", item: updated }] };
+      }
+      const userMsg: UserMessageItem = {
+        id: `user-${crypto.randomUUID()}`,
+        content: payload.content.text,
+        sentAt: Date.now(),
+      };
+      return { ...newState, items: [...items, { type: "userMessage", item: userMsg }] };
+    }
+
     default:
       return newState;
   }
@@ -140,12 +160,17 @@ function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
     return [...items.slice(0, -1), { type: "message", item: { ...last.item, isStreaming: false } }];
   }
   if (last.type === "thinking" && last.item.isStreaming) {
-    return [...items.slice(0, -1), { type: "thinking", item: { ...last.item, isStreaming: false } }];
+    return [
+      ...items.slice(0, -1),
+      { type: "thinking", item: { ...last.item, isStreaming: false } },
+    ];
   }
   return items;
 }
 
-export function useAcpActivity(logId: number | null): [ActivityState, React.Dispatch<ActivityAction>] {
+export function useAcpActivity(
+  logId: number | null,
+): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
 
   useEffect(() => {
@@ -154,9 +179,6 @@ export function useAcpActivity(logId: number | null): [ActivityState, React.Disp
     const unlisteners = Promise.all([
       listen<unknown>(`acp://session-update/${logId}`, (event) => {
         const payload = event.payload as SessionUpdatePayload;
-        // user_message echoes are for dead-session persistence only; live session
-        // tracks user messages via liveUserMessages in AgentActivityPanel
-        if (payload.sessionUpdate === "user_message") return;
         dispatch({ type: "event", payload });
       }),
       listen<null>(`acp://session-ended/${logId}`, () => {
@@ -165,7 +187,10 @@ export function useAcpActivity(logId: number | null): [ActivityState, React.Disp
       listen<string>(`acp://turn-ended/${logId}`, () => {
         dispatch({ type: "turn_ended" });
       }),
-    ]);
+    ]).then((listeners) => {
+      drainAcpReplay(logId).catch(console.error);
+      return listeners;
+    });
 
     return () => {
       unlisteners.then(([u1, u2, u3]) => {

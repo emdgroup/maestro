@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Composer Bar — v6</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: #1a1a1a;
+        color: #eee;
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+      }
+      h2 {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #999;
+        margin-bottom: 1.5rem;
+      }
+      h3 {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #777;
+        margin: 2.5rem 0 0.75rem;
+      }
+      p.notes {
+        font-size: 0.78rem;
+        color: #888;
+        margin-bottom: 1rem;
+        line-height: 1.5;
+        max-width: 720px;
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .sim {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #333;
+        display: flex;
+        flex-direction: column;
+      }
+      .sim-label {
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        padding: 5px 10px;
+        text-align: center;
+      }
+      .sim-chat {
+        flex: 1;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 6px;
+        min-height: 100px;
+      }
+      .bubble {
+        font-size: 0.78rem;
+        padding: 0.4rem 0.65rem;
+        border-radius: 0.65rem;
+        max-width: 82%;
+        line-height: 1.4;
+      }
+
+      /* ── Themes ── */
+      .light {
+        --bg: oklch(98% 0.015 70);
+        --fg: oklch(45% 0.01 250);
+        --muted: oklch(94% 0.015 70);
+        --muted-fg: oklch(55% 0.01 250);
+        --border: oklch(86% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+        --accent-fg: oklch(100% 0 0);
+        --destructive: oklch(50% 0.2 25);
+        --glass-bg: oklch(98% 0.015 70 / 0.6);
+        --glass-border: oklch(0% 0 0 / 0.06);
+        --card: oklch(99.5% 0.01 70);
+      }
+      .dark {
+        --bg: oklch(25% 0.01 250);
+        --fg: oklch(90% 0.01 250);
+        --muted: oklch(40% 0.01 250);
+        --muted-fg: oklch(70% 0.01 250);
+        --border: oklch(45% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+        --accent-fg: oklch(25% 0.01 250);
+        --destructive: oklch(70% 0.2 25);
+        --glass-bg: oklch(25% 0.01 250 / 0.55);
+        --glass-border: oklch(100% 0 0 / 0.06);
+        --card: oklch(32% 0.01 250);
+      }
+
+      .light .sim-label {
+        background: oklch(95% 0.01 70);
+        color: #999;
+      }
+      .dark .sim-label {
+        background: oklch(20% 0.01 250);
+        color: oklch(55% 0.01 250);
+      }
+      .light .sim-chat {
+        background: var(--bg);
+      }
+      .dark .sim-chat {
+        background: var(--bg);
+      }
+      .light .bubble.user {
+        background: var(--accent);
+        color: white;
+        align-self: flex-end;
+      }
+      .light .bubble.ai {
+        background: oklch(94% 0.01 250);
+        color: oklch(35% 0.01 250);
+        align-self: flex-start;
+      }
+      .dark .bubble.user {
+        background: oklch(55% 0.18 250);
+        color: white;
+        align-self: flex-end;
+      }
+      .dark .bubble.ai {
+        background: oklch(35% 0.015 250);
+        color: oklch(85% 0.01 250);
+        align-self: flex-start;
+      }
+
+      /* ═════ COMPOSE BAR ═════ */
+      .compose {
+        padding: 0.5rem 0.625rem 0.625rem;
+        background: var(--bg);
+      }
+      .compose-capsule {
+        background: transparent;
+        border-radius: 1.25rem;
+        overflow: visible;
+      }
+
+      .compose-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0.5rem 0.875rem 0;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 0.68rem;
+        font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace;
+        padding: 2px 7px;
+        border-radius: 6px;
+        background: oklch(from var(--accent) l c h / 0.08);
+        border: 1px solid oklch(from var(--accent) l c h / 0.12);
+        color: var(--accent);
+      }
+      .pill .pill-x {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: inherit;
+        opacity: 0.4;
+        padding: 0;
+        display: flex;
+      }
+      .pill .pill-x:hover {
+        opacity: 1;
+      }
+
+      .compose-main {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.5rem;
+        padding: 0.5rem 0.5rem 0.25rem 0.875rem;
+      }
+      .compose-main textarea {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 0.84rem;
+        color: var(--fg);
+        resize: none;
+        min-height: 22px;
+        max-height: 140px;
+        line-height: 1.5;
+        font-family: inherit;
+        padding: 0.25rem 0;
+      }
+      .compose-main textarea::placeholder {
+        color: var(--muted-fg);
+      }
+
+      .compose-main .send-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: none;
+        background: var(--accent);
+        color: var(--accent-fg);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition:
+          opacity 0.15s,
+          transform 0.1s;
+      }
+      .compose-main .send-btn:hover {
+        opacity: 0.9;
+        transform: scale(1.05);
+      }
+      .compose-main .send-btn:disabled {
+        opacity: 0.2;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .compose-main .stop-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1.5px solid oklch(from var(--destructive) l c h / 0.4);
+        background: oklch(from var(--destructive) l c h / 0.08);
+        color: var(--destructive);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .compose-main .stop-btn:hover {
+        background: oklch(from var(--destructive) l c h / 0.15);
+      }
+
+      .compose-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.125rem 0.75rem 0.5rem;
+        font-size: 0.65rem;
+        color: var(--muted-fg);
+      }
+
+      .ghost-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px 4px 3px 6px;
+        border-radius: 6px;
+        background: transparent;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+        font-size: 0.64rem;
+        font-family: inherit;
+        color: var(--muted-fg);
+        white-space: nowrap;
+      }
+      .ghost-select:hover {
+        background: oklch(from var(--muted) l c h / 0.5);
+        border-color: var(--border);
+      }
+      .ghost-select .chevron {
+        width: 10px;
+        height: 10px;
+        opacity: 0.4;
+        transition: opacity 0.15s;
+      }
+      .ghost-select:hover .chevron {
+        opacity: 0.8;
+      }
+
+      /* ═════ LIQUID FILL CONTEXT INDICATOR ═════ */
+      .ctx-liquid {
+        display: inline-flex;
+        align-items: center;
+        cursor: help;
+        position: relative;
+      }
+      .ctx-liquid .circle-wrap {
+        width: 14px;
+        height: 14px;
+        position: relative;
+        transform-origin: center;
+      }
+      .ctx-liquid .circle-wrap svg {
+        width: 14px;
+        height: 14px;
+        display: block;
+      }
+      .ctx-liquid .ctx-tooltip {
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: oklch(20% 0.01 250);
+        color: oklch(85% 0.01 250);
+        font-size: 0.6rem;
+        padding: 3px 7px;
+        border-radius: 5px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        margin-bottom: 4px;
+        box-shadow: 0 2px 6px oklch(0% 0 0 / 0.3);
+      }
+      .light .ctx-liquid .ctx-tooltip {
+        background: oklch(30% 0.01 250);
+        color: oklch(92% 0.01 250);
+      }
+      .ctx-liquid:hover .ctx-tooltip {
+        opacity: 1;
+      }
+
+      /* Breathing pulse — scale + opacity, no harsh filter */
+      @keyframes ctx-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.18);
+          opacity: 0.75;
+        }
+      }
+      .ctx-liquid.warning .circle-wrap {
+        animation: ctx-pulse 2s ease-in-out infinite;
+        transform-origin: center;
+      }
+      .ctx-liquid.critical .circle-wrap {
+        animation: ctx-pulse 1.4s ease-in-out infinite;
+        transform-origin: center;
+      }
+
+      .icon-xs {
+        width: 11px;
+        height: 11px;
+      }
+      .icon-send {
+        width: 15px;
+        height: 15px;
+      }
+      .icon-stop {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* ═════ SCROLL DEMOS ═════ */
+      .scroll-demo {
+        width: 100%;
+        max-width: 520px;
+        height: 440px;
+        border-radius: 12px;
+        border: 1px solid #333;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .scroll-demo-header {
+        padding: 8px 12px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
+        color: var(--muted-fg);
+        flex-shrink: 0;
+      }
+      .scroll-demo-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+      }
+      .scroll-demo-messages {
+        flex: 1;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .compose-sticky {
+        position: sticky;
+        bottom: 0;
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ═══════════════════════════════════════════════
+     SCROLL DEMO — GLASS BLUR BUBBLE
+     ═══════════════════════════════════════════════ -->
+
+    <h3>Scroll behavior — Glass blur bubble (interactive)</h3>
+    <p class="notes">
+      No background pane. Compose bubble itself has <code>backdrop-filter: blur(20px)</code>. Scroll
+      to see messages smear behind it ↕
+    </p>
+
+    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 2rem">
+      <!-- Dark scroll demo -->
+      <div style="flex: 1; min-width: 340px">
+        <h4 style="font-size: 0.72rem; color: #ccc; margin-bottom: 0.75rem">Dark theme</h4>
+        <div class="scroll-demo dark" style="height: 420px">
+          <div class="scroll-demo-header">Glass blur bubble — scroll me ↕</div>
+          <div class="scroll-demo-body">
+            <div class="scroll-demo-messages">
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Welcome! Project loaded. 47 files indexed.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Review the auth module
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Found a race condition in token refresh on line 47.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Fix the race condition
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Done — wrapped in mutex guard with retry mechanism.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Run tests
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                All 23 tests pass. No regressions.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Update JWT library
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Updated to 9.3.0. Algorithm enum migrated.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Run tests again
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                All pass. Ready for next task.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Commit everything
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Committed: "fix: resolve token refresh race, upgrade JWT 9.3.0"
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(55% 0.18 250); color: white"
+              >
+                Now review the database layer
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(35% 0.015 250);
+                  color: oklch(85% 0.01 250);
+                "
+              >
+                Scanning db/ — found N+1 query and missing index.
+              </div>
+            </div>
+            <div class="compose-sticky" style="padding: 0.5rem 0.5rem 0.625rem">
+              <div
+                style="
+                  background: var(--glass-bg);
+                  backdrop-filter: blur(20px);
+                  -webkit-backdrop-filter: blur(20px);
+                  border-radius: 1.25rem;
+                  border: 1px solid var(--glass-border);
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: flex-end;
+                    gap: 0.5rem;
+                    padding: 0.5rem 0.5rem 0.25rem 0.875rem;
+                  "
+                >
+                  <textarea
+                    rows="1"
+                    placeholder="Message… (@ files, / commands)"
+                    style="
+                      flex: 1;
+                      border: none;
+                      outline: none;
+                      background: transparent;
+                      font-size: 0.8rem;
+                      color: var(--fg);
+                      resize: none;
+                      min-height: 22px;
+                      font-family: inherit;
+                      padding: 0.2rem 0;
+                    "
+                  ></textarea>
+                  <button
+                    style="
+                      width: 32px;
+                      height: 32px;
+                      border-radius: 50%;
+                      border: none;
+                      background: var(--accent);
+                      color: var(--accent-fg);
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      opacity: 0.2;
+                    "
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 0.375rem;
+                    padding: 0 0.75rem 0.5rem;
+                    font-size: 0.62rem;
+                    color: var(--muted-fg);
+                  "
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 20 20"
+                    style="cursor: help; flex-shrink: 0"
+                  >
+                    <defs>
+                      <clipPath id="cs1"><circle cx="10" cy="10" r="7.5" /></clipPath>
+                    </defs>
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="8.5"
+                      fill="none"
+                      stroke="var(--border)"
+                      stroke-width="1.5"
+                    />
+                    <g clip-path="url(#cs1)">
+                      <path
+                        d="M0 9 Q4 7.8 10 9 Q16 10.2 20 9 L20 20 L0 20 Z"
+                        fill="oklch(65% 0.15 145)"
+                      />
+                      <path
+                        d="M0 9 Q4 7.8 10 9 Q16 10.2 20 9"
+                        stroke="white"
+                        stroke-width="0.7"
+                        fill="none"
+                        opacity="0.35"
+                      />
+                    </g>
+                  </svg>
+                  <span
+                    style="
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 2px;
+                      padding: 2px 4px 2px 5px;
+                      border-radius: 5px;
+                      cursor: pointer;
+                    "
+                    >sonnet-4
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      style="opacity: 0.4"
+                    >
+                      <path d="M6 9l6 6 6-6" /></svg
+                  ></span>
+                  <span
+                    style="
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 2px;
+                      padding: 2px 4px 2px 5px;
+                      border-radius: 5px;
+                      cursor: pointer;
+                    "
+                    >Auto-edit
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      style="opacity: 0.4"
+                    >
+                      <path d="M6 9l6 6 6-6" /></svg
+                  ></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Light scroll demo -->
+      <div style="flex: 1; min-width: 340px">
+        <h4 style="font-size: 0.72rem; color: #ccc; margin-bottom: 0.75rem">Light theme</h4>
+        <div class="scroll-demo light" style="height: 420px">
+          <div class="scroll-demo-header">Glass blur bubble — scroll me ↕</div>
+          <div class="scroll-demo-body">
+            <div class="scroll-demo-messages">
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Welcome! Project loaded. 47 files indexed.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Review the auth module
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Found a race condition in token refresh on line 47.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Fix the race condition
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Done — wrapped in mutex guard with retry mechanism.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Run tests
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                All 23 tests pass. No regressions.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Update JWT library
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Updated to 9.3.0. Algorithm enum migrated.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Run tests again
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                All pass. Ready for next task.
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Commit everything
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Committed: "fix: resolve token refresh race, upgrade JWT 9.3.0"
+              </div>
+              <div
+                class="bubble user"
+                style="align-self: flex-end; background: oklch(50% 0.15 250); color: white"
+              >
+                Now review the database layer
+              </div>
+              <div
+                class="bubble ai"
+                style="
+                  align-self: flex-start;
+                  background: oklch(94% 0.01 250);
+                  color: oklch(35% 0.01 250);
+                "
+              >
+                Scanning db/ — found N+1 query and missing index.
+              </div>
+            </div>
+            <div class="compose-sticky" style="padding: 0.5rem 0.5rem 0.625rem">
+              <div
+                style="
+                  background: var(--glass-bg);
+                  backdrop-filter: blur(20px);
+                  -webkit-backdrop-filter: blur(20px);
+                  border-radius: 1.25rem;
+                  border: 1px solid var(--glass-border);
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: flex-end;
+                    gap: 0.5rem;
+                    padding: 0.5rem 0.5rem 0.25rem 0.875rem;
+                  "
+                >
+                  <textarea
+                    rows="1"
+                    placeholder="Message… (@ files, / commands)"
+                    style="
+                      flex: 1;
+                      border: none;
+                      outline: none;
+                      background: transparent;
+                      font-size: 0.8rem;
+                      color: var(--fg);
+                      resize: none;
+                      min-height: 22px;
+                      font-family: inherit;
+                      padding: 0.2rem 0;
+                    "
+                  ></textarea>
+                  <button
+                    style="
+                      width: 32px;
+                      height: 32px;
+                      border-radius: 50%;
+                      border: none;
+                      background: var(--accent);
+                      color: var(--accent-fg);
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      opacity: 0.2;
+                    "
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 0.375rem;
+                    padding: 0 0.75rem 0.5rem;
+                    font-size: 0.62rem;
+                    color: var(--muted-fg);
+                  "
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 20 20"
+                    style="cursor: help; flex-shrink: 0"
+                  >
+                    <defs>
+                      <clipPath id="cs2"><circle cx="10" cy="10" r="7.5" /></clipPath>
+                    </defs>
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="8.5"
+                      fill="none"
+                      stroke="var(--border)"
+                      stroke-width="1.5"
+                    />
+                    <g clip-path="url(#cs2)">
+                      <path
+                        d="M0 9 Q4 7.8 10 9 Q16 10.2 20 9 L20 20 L0 20 Z"
+                        fill="oklch(50% 0.18 145)"
+                      />
+                      <path
+                        d="M0 9 Q4 7.8 10 9 Q16 10.2 20 9"
+                        stroke="white"
+                        stroke-width="0.7"
+                        fill="none"
+                        opacity="0.4"
+                      />
+                    </g>
+                  </svg>
+                  <span
+                    style="
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 2px;
+                      padding: 2px 4px 2px 5px;
+                      border-radius: 5px;
+                      cursor: pointer;
+                    "
+                    >sonnet-4
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      style="opacity: 0.4"
+                    >
+                      <path d="M6 9l6 6 6-6" /></svg
+                  ></span>
+                  <span
+                    style="
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 2px;
+                      padding: 2px 4px 2px 5px;
+                      border-radius: 5px;
+                      cursor: pointer;
+                    "
+                    >Auto-edit
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      style="opacity: 0.4"
+                    >
+                      <path d="M6 9l6 6 6-6" /></svg
+                  ></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

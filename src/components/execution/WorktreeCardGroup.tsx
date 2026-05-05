@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 
 interface WorktreeCardGroupProps {
   groupKey: string;
@@ -36,9 +36,7 @@ export function WorktreeCardGroup({
       </button>
 
       {/* Card grid */}
-      {!isCollapsed && (
-        <div className="flex flex-wrap gap-3 px-2 pb-3">{children}</div>
-      )}
+      {!isCollapsed && <div className="flex flex-wrap gap-3 px-2 pb-3">{children}</div>}
     </div>
   );
 }

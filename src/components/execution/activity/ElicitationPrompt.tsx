@@ -21,7 +21,13 @@ interface ElicitationPromptProps {
   onDecline: (requestId: string) => void;
 }
 
-export function ElicitationPrompt({ requestId, message, fields, onSubmit, onDecline }: ElicitationPromptProps) {
+export function ElicitationPrompt({
+  requestId,
+  message,
+  fields,
+  onSubmit,
+  onDecline,
+}: ElicitationPromptProps) {
   const [values, setValues] = useState<Record<string, unknown>>({});
 
   const set = (key: string, value: unknown) => setValues((prev) => ({ ...prev, [key]: value }));
@@ -42,7 +48,10 @@ export function ElicitationPrompt({ requestId, message, fields, onSubmit, onDecl
           const label = field.title ?? field.key;
           if (field.type === "boolean") {
             return (
-              <label key={field.key} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+              <label
+                key={field.key}
+                className="flex items-center gap-2 text-sm text-foreground cursor-pointer"
+              >
                 <input
                   type="checkbox"
                   checked={Boolean(values[field.key])}
@@ -53,14 +62,28 @@ export function ElicitationPrompt({ requestId, message, fields, onSubmit, onDecl
               </label>
             );
           }
-          if ((field.type === "string" && field.oneOf) || (field.type === "string" && field.enumValues)) {
-            const options = field.oneOf ?? field.enumValues?.map((v) => ({ const: v, title: v })) ?? [];
+          if (
+            (field.type === "string" && field.oneOf) ||
+            (field.type === "string" && field.enumValues)
+          ) {
+            const options =
+              field.oneOf ?? field.enumValues?.map((v) => ({ const: v, title: v })) ?? [];
             return (
               <div key={field.key} className="space-y-1">
                 {label && <div className="text-xs text-muted-foreground">{label}</div>}
                 {options.map((opt) => (
-                  <label key={opt.const} className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${values[field.key] === opt.const ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}>
-                    <input type="radio" name={field.key} value={opt.const} checked={values[field.key] === opt.const} onChange={() => set(field.key, opt.const)} className="sr-only" />
+                  <label
+                    key={opt.const}
+                    className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${values[field.key] === opt.const ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}
+                  >
+                    <input
+                      type="radio"
+                      name={field.key}
+                      value={opt.const}
+                      checked={values[field.key] === opt.const}
+                      onChange={() => set(field.key, opt.const)}
+                      className="sr-only"
+                    />
                     {opt.title}
                   </label>
                 ))}
@@ -68,15 +91,28 @@ export function ElicitationPrompt({ requestId, message, fields, onSubmit, onDecl
             );
           }
           if (field.type === "array") {
-            const options = field.items?.anyOf ?? field.items?.enum?.map((v) => ({ const: v, title: v })) ?? [];
+            const options =
+              field.items?.anyOf ?? field.items?.enum?.map((v) => ({ const: v, title: v })) ?? [];
             const selected = (values[field.key] as string[]) ?? [];
-            const toggle = (v: string) => set(field.key, selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+            const toggle = (v: string) =>
+              set(
+                field.key,
+                selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v],
+              );
             return (
               <div key={field.key} className="space-y-1">
                 {label && <div className="text-xs text-muted-foreground">{label}</div>}
                 {options.map((opt) => (
-                  <label key={opt.const} className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${selected.includes(opt.const) ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}>
-                    <input type="checkbox" checked={selected.includes(opt.const)} onChange={() => toggle(opt.const)} className="sr-only" />
+                  <label
+                    key={opt.const}
+                    className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${selected.includes(opt.const) ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(opt.const)}
+                      onChange={() => toggle(opt.const)}
+                      className="sr-only"
+                    />
                     {opt.title}
                   </label>
                 ))}
@@ -108,7 +144,10 @@ export function ElicitationPrompt({ requestId, message, fields, onSubmit, onDecl
   );
 }
 
-export function parseElicitationFields(payload: Record<string, unknown>): { message: string; fields: ElicitationField[] } {
+export function parseElicitationFields(payload: Record<string, unknown>): {
+  message: string;
+  fields: ElicitationField[];
+} {
   const message = (payload.message as string) ?? "Please provide information";
   const schema = payload.requestedSchema as Record<string, unknown> | undefined;
   const properties = (schema?.properties as Record<string, Record<string, unknown>>) ?? {};

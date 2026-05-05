@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { DiffFileWithName } from "@/types/review";
 
 interface FileTreeNode {
@@ -94,9 +94,7 @@ function getFolderCheckState(
 ): "checked" | "unchecked" | "indeterminate" {
   const descendants = getDescendantFiles(node);
   if (descendants.length === 0) return "unchecked";
-  const checkedCount = descendants.filter(
-    (f) => checkedFiles.get(f) === "checked",
-  ).length;
+  const checkedCount = descendants.filter((f) => checkedFiles.get(f) === "checked").length;
   if (checkedCount === 0) return "unchecked";
   if (checkedCount === descendants.length) return "checked";
   return "indeterminate";
@@ -202,7 +200,9 @@ const FileNode: React.FC<{
   const status = node.fileStatus ?? "M";
   const statusColor =
     status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
-  const checkState = node.fileName ? (checkedFiles?.get(node.fileName) ?? "unchecked") : "unchecked";
+  const checkState = node.fileName
+    ? (checkedFiles?.get(node.fileName) ?? "unchecked")
+    : "unchecked";
 
   return (
     <div

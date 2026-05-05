@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
 import type { AppSettings } from "@/types/bindings";
@@ -14,9 +15,9 @@ import type { AppSettings } from "@/types/bindings";
  * Settings are global app state with stable query keys
  */
 const settingsQueryKeys = {
-  all: ["settings"] as const,
-  lists: () => [...settingsQueryKeys.all, "list"] as const,
-  accentColor: () => [...settingsQueryKeys.all, "accentColor"] as const,
+  base: ["settings"] as const,
+  lists: () => [...settingsQueryKeys.base, "list"] as const,
+  accentColor: () => [...settingsQueryKeys.base, "accentColor"] as const,
 };
 
 /**
@@ -58,8 +59,6 @@ export function useSaveSettings() {
       // Invalidate settings list so it refetches with updated values
       void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.lists() });
     },
-    onError: (error) => {
-      toast.error(`Failed to save settings: ${error}`);
-    },
+    onError: createErrorToastHandler("Failed to save settings"),
   });
 }

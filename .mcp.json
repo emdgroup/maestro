@@ -2,17 +2,11 @@
   "mcpServers": {
     "chrome-devtools": {
       "command": "npx",
-      "args": [
-        "-y",
-        "chrome-devtools-mcp@latest"
-      ]
+      "args": ["-y", "chrome-devtools-mcp@latest"]
     },
     "code-review-graph": {
       "command": "uvx",
-      "args": [
-        "code-review-graph",
-        "serve"
-      ],
+      "args": ["code-review-graph", "serve"],
       "type": "stdio"
     }
   }

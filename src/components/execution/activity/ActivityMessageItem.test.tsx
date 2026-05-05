@@ -4,7 +4,9 @@ import { describe, it, expect, vi } from "vitest";
 // Mock Tauri and heavy deps before importing component
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("@/lib/shiki-highlighter", () => ({
-  getDiffHighlighter: vi.fn().mockResolvedValue({ codeToHtml: vi.fn().mockReturnValue("<code>mock</code>") }),
+  getDiffHighlighter: vi
+    .fn()
+    .mockResolvedValue({ codeToHtml: vi.fn().mockReturnValue("<code>mock</code>") }),
 }));
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 vi.mock("katex/dist/katex.min.css", () => ({}));
@@ -85,7 +87,9 @@ describe("table sorting", () => {
 
     fireEvent.click(screen.getByText("Score", { selector: "th span" }));
 
-    const cells = screen.getAllByRole("cell").filter(c => ["70", "80", "95"].includes(c.textContent ?? ""));
+    const cells = screen
+      .getAllByRole("cell")
+      .filter((c) => ["70", "80", "95"].includes(c.textContent ?? ""));
     expect(cells[0].textContent).toBe("70");
     expect(cells[1].textContent).toBe("80");
     expect(cells[2].textContent).toBe("95");
@@ -105,7 +109,9 @@ describe("table sorting", () => {
     fireEvent.click(scoreHeader);
     fireEvent.click(scoreHeader);
 
-    const cells = screen.getAllByRole("cell").filter(c => ["70", "80", "95"].includes(c.textContent ?? ""));
+    const cells = screen
+      .getAllByRole("cell")
+      .filter((c) => ["70", "80", "95"].includes(c.textContent ?? ""));
     expect(cells[0].textContent).toBe("95");
     expect(cells[1].textContent).toBe("80");
     expect(cells[2].textContent).toBe("70");

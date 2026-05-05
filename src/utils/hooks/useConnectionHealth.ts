@@ -1,11 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-export type ConnectionHealthState =
-  | "connected"
-  | "lost"
-  | "reconnecting"
-  | "failed";
+export type ConnectionHealthState = "connected" | "lost" | "reconnecting" | "failed";
 
 interface ReconnectingPayload {
   connection_id: number;
@@ -32,9 +28,7 @@ interface ConnectionHealth {
  * Only active when connectionId is non-null (SSH projects).
  * Returns { state, attempt, maxAttempts, dismiss }.
  */
-export function useConnectionHealth(
-  connectionId: number | null,
-): ConnectionHealth {
+export function useConnectionHealth(connectionId: number | null): ConnectionHealth {
   const [state, setState] = useState<ConnectionHealthState>("connected");
   const [attempt, setAttempt] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState(5);

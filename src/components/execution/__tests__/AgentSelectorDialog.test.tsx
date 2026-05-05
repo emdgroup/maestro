@@ -37,9 +37,7 @@ import { useWorktreesQuery } from "@/services/worktree.service";
 import { AgentsView } from "@/views/AgentsView";
 import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 
-const mockAgents: DiscoveredAgent[] = [
-  { id: "claude-code", name: "Claude Code", icon: "" },
-];
+const mockAgents: DiscoveredAgent[] = [{ id: "claude-code", name: "Claude Code", icon: "" }];
 
 const mockWorktrees: WorktreeWithStatus[] = [
   {
@@ -60,7 +58,9 @@ const mockWorktrees: WorktreeWithStatus[] = [
 ];
 
 function renderView(connectionId?: number | null) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={qc}>
       <AgentsView projectId={1} repoPath="/tmp/repo" connectionId={connectionId} />
@@ -76,9 +76,18 @@ beforeEach(() => {
     data: { maestro_server_available: true, agents: mockAgents, error: null },
     isLoading: false,
   });
-  (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
-  (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
-  (useCancelActiveSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: vi.fn(), isPending: false });
+  (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
+  (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
+  (useCancelActiveSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
 });
 
 describe("New Session dialog — agent type selector", () => {
@@ -105,7 +114,10 @@ describe("New Session dialog — agent type selector", () => {
 describe("spawn flow", () => {
   it("calls spawnInteractive for Terminal type", async () => {
     const mockMutate = vi.fn();
-    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({ mutate: mockMutate, isPending: false });
+    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
 
     const user = userEvent.setup();
     renderView();

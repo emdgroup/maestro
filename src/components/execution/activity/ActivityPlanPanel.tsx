@@ -28,9 +28,7 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
   const inProgress = entries.filter((e) => e.status === "in_progress");
   const pending = entries.filter((e) => e.status === "pending");
 
-  const visibleItems = expanded
-    ? entries
-    : [...inProgress, ...pending.slice(0, UPCOMING_VISIBLE)];
+  const visibleItems = expanded ? entries : [...inProgress, ...pending.slice(0, UPCOMING_VISIBLE)];
 
   const hiddenCount = total - visibleItems.length;
   const offset = CIRCUMFERENCE * (1 - pct / 100);
@@ -41,13 +39,20 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
         <span className="text-xs font-semibold text-foreground">Plan</span>
         <svg width="40" height="40" viewBox="0 0 40 40" aria-label={`${pct}% complete`}>
           <circle
-            cx="20" cy="20" r={CIRCLE_RADIUS}
-            fill="none" stroke="currentColor"
-            className="text-muted/40" strokeWidth="3"
+            cx="20"
+            cy="20"
+            r={CIRCLE_RADIUS}
+            fill="none"
+            stroke="currentColor"
+            className="text-muted/40"
+            strokeWidth="3"
           />
           <circle
-            cx="20" cy="20" r={CIRCLE_RADIUS}
-            fill="none" stroke="currentColor"
+            cx="20"
+            cy="20"
+            r={CIRCLE_RADIUS}
+            fill="none"
+            stroke="currentColor"
             className="text-accent"
             strokeWidth="3"
             strokeDasharray={CIRCUMFERENCE}
@@ -56,8 +61,10 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
             transform="rotate(-90 20 20)"
           />
           <text
-            x="20" y="20"
-            textAnchor="middle" dominantBaseline="central"
+            x="20"
+            y="20"
+            textAnchor="middle"
+            dominantBaseline="central"
             className="fill-foreground"
             style={{ fontSize: "9px", fontWeight: 600 }}
           >

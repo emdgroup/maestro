@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, createErrorToastHandler } from "@/lib";
+import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 import { SshAuthMethod } from "@/types/bindings";
 
@@ -10,17 +11,16 @@ import { SshAuthMethod } from "@/types/bindings";
  * Ensures consistent cache invalidation across components
  */
 export const connectionQueryKeys = {
-  baseKey: ["ssh-connections"] as const,
-  list: () => [...connectionQueryKeys.baseKey, "list"] as const,
+  base: ["ssh-connections"] as const,
+  list: () => [...connectionQueryKeys.base, "list"] as const,
   details: (connectionId: number | string) =>
-    [...connectionQueryKeys.baseKey, "detail", connectionId] as const,
-  fileBrowser: () => [...connectionQueryKeys.baseKey, "file-browser"] as const,
+    [...connectionQueryKeys.base, "detail", connectionId] as const,
+  fileBrowser: () => [...connectionQueryKeys.base, "file-browser"] as const,
   dirs: (connectionId: number | null | undefined, path: string) =>
     [...connectionQueryKeys.fileBrowser(), connectionId ?? "local", path] as const,
   defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
-  status: (connectionId: number) =>
-    [...connectionQueryKeys.baseKey, "status", connectionId] as const,
+  status: (connectionId: number) => [...connectionQueryKeys.base, "status", connectionId] as const,
 };
 
 /**
@@ -245,7 +245,11 @@ export function useSshConnectionStatus(connectionId: number) {
       listen<number>("ssh-reconnected", (e) => invalidate(e.payload)),
     ]);
     return () => {
-      void unsub.then(([a, b, c]) => { a(); b(); c(); });
+      void unsub.then(([a, b, c]) => {
+        a();
+        b();
+        c();
+      });
     };
   }, [connectionId, queryClient]);
 

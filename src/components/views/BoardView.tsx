@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useBoardStore } from "@/store/boardStore";
+import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
 import { ReviewModal } from "@/components/common/ReviewModal";
@@ -20,7 +20,9 @@ const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
 export function BoardView() {
   const { projectId } = useKanban();
 
-  const { activeTerminalTaskId, isTerminalOpen, closeTerminal } = useBoardStore();
+  const activeTerminalTaskId = useActiveTerminalTaskId();
+  const isTerminalOpen = useIsTerminalOpen();
+  const { closeTerminal } = useBoardActions();
 
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -47,7 +49,6 @@ export function BoardView() {
           return (
             <KanbanColumn
               key={status}
-              columnId={status}
               columnTitle={COLUMN_TITLES[status]!}
               tasks={columnTasks}
               status={status}

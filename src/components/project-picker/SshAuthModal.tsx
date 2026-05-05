@@ -12,16 +12,13 @@ import {
   FileKey,
   Lock,
 } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/ui/field";
+import { Checkbox } from "@/ui/checkbox";
+import { Label } from "@/ui/label";
+import { Input } from "@/ui/input";
+import { Button } from "@/ui/button";
 import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Checkbox,
-  Label,
-  Input,
-  Button,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -29,11 +26,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-  ButtonGroup,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui";
+} from "@/ui/dialog";
+import { ButtonGroup } from "@/ui/button-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 
 // ---------------------------------------------------------------------------
 // Types

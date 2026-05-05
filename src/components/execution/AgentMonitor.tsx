@@ -1,14 +1,14 @@
 import { useMemo, useState, useCallback, useRef } from "react";
 import { Plus, Terminal, X } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
 import type { ActiveSessionInfo } from "@/types/bindings";
-import { useSessionActivityStore, type SessionActivityStatus } from "@/store/sessionActivityStore";
+import { useActivityStatuses, type SessionActivityStatus } from "@/store/sessionActivityStore";
 import type { UsageState } from "./activity/types";
-import { humanizeTokenCount } from "@/lib";
+import { humanizeTokenCount } from "@/lib/format-utils";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
@@ -18,7 +18,10 @@ const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
   awaiting_input: "bg-warning",
 };
 
-function getStatusDot(session: ActiveSessionInfo, activityStatus: SessionActivityStatus | undefined): string {
+function getStatusDot(
+  session: ActiveSessionInfo,
+  activityStatus: SessionActivityStatus | undefined,
+): string {
   if (session.execution_mode === "acp") {
     return ACTIVITY_DOT[activityStatus ?? "working"];
   }
@@ -30,7 +33,9 @@ function AgentIcon({ src, className }: { src: string; className: string }) {
     <img
       src={src}
       className={className}
-      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+      onError={(e) => {
+        (e.currentTarget as HTMLImageElement).style.display = "none";
+      }}
     />
   );
 }
@@ -58,7 +63,7 @@ export function AgentMonitor({
   agentIcons,
   projectId,
 }: AgentMonitorProps) {
-  const activityStatuses = useSessionActivityStore((s) => s.statuses);
+  const activityStatuses = useActivityStatuses();
   const [sessionUsages, setSessionUsages] = useState<Map<number, UsageState>>(new Map());
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -84,24 +89,29 @@ export function AgentMonitor({
     setTimeout(() => renameInputRef.current?.select(), 0);
   }, []);
 
-  const commitRename = useCallback((session: ActiveSessionInfo) => {
-    const trimmed = renameValue.trim();
-    if (trimmed && projectId != null && session.agent_id && session.acp_session_id) {
-      renameMutation.mutate({
-        projectId,
-        agentId: session.agent_id,
-        acpSessionId: session.acp_session_id,
-        displayName: trimmed,
-      });
-    }
-    setRenamingKey(null);
-  }, [renameValue, projectId, renameMutation]);
+  const commitRename = useCallback(
+    (session: ActiveSessionInfo) => {
+      const trimmed = renameValue.trim();
+      if (trimmed && projectId != null && session.agent_id && session.acp_session_id) {
+        renameMutation.mutate({
+          projectId,
+          agentId: session.agent_id,
+          acpSessionId: session.acp_session_id,
+          displayName: trimmed,
+        });
+      }
+      setRenamingKey(null);
+    },
+    [renameValue, projectId, renameMutation],
+  );
 
   const filteredSessions = useMemo(() => {
     return sessions.filter(
       (s) =>
         search.trim() === "" ||
-        (s.session_name ?? s.task_name ?? s.branch_name ?? "Interactive").toLowerCase().includes(search.toLowerCase()),
+        (s.session_name ?? s.task_name ?? s.branch_name ?? "Interactive")
+          .toLowerCase()
+          .includes(search.toLowerCase()),
     );
   }, [sessions, search]);
 
@@ -131,9 +141,7 @@ export function AgentMonitor({
         )}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredSessions.length === 0 && (
-            <div className="text-xs text-muted-foreground py-8 text-center">
-              No active sessions
-            </div>
+            <div className="text-xs text-muted-foreground py-8 text-center">No active sessions</div>
           )}
           {grouped.map(([branchName, sessionList]) => (
             <div key={branchName || "_none"}>
@@ -161,16 +169,30 @@ export function AgentMonitor({
                       )}
                     />
                     <span className="text-sm font-medium truncate">
-                      {session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session"}
+                      {session.session_name ??
+                        session.task_name ??
+                        session.branch_name ??
+                        "Interactive session"}
                     </span>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1">
-                      {session.execution_mode === "acp" && session.agent_id && agentIcons?.[session.agent_id] && (
-                        <AgentIcon src={agentIcons[session.agent_id]} className="w-3 h-3 rounded-sm brightness-0 dark:invert" />
-                      )}
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1"
+                    >
+                      {session.execution_mode === "acp" &&
+                        session.agent_id &&
+                        agentIcons?.[session.agent_id] && (
+                          <AgentIcon
+                            src={agentIcons[session.agent_id]}
+                            className="w-3 h-3 rounded-sm brightness-0 dark:invert"
+                          />
+                        )}
                       {session.execution_mode === "acp"
-                        ? (session.agent_id
-                            ? session.agent_id.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
-                            : "ACP")
+                        ? session.agent_id
+                          ? session.agent_id
+                              .split(/[-_]/)
+                              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                              .join(" ")
+                          : "ACP"
                         : "Terminal"}
                     </Badge>
                   </div>
@@ -194,9 +216,14 @@ export function AgentMonitor({
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  {selectedSession.execution_mode === "acp" && selectedSession.agent_id && agentIcons?.[selectedSession.agent_id] && (
-                    <AgentIcon src={agentIcons[selectedSession.agent_id]} className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert" />
-                  )}
+                  {selectedSession.execution_mode === "acp" &&
+                    selectedSession.agent_id &&
+                    agentIcons?.[selectedSession.agent_id] && (
+                      <AgentIcon
+                        src={agentIcons[selectedSession.agent_id]}
+                        className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                      />
+                    )}
                   {renamingKey === selectedSession.session_key ? (
                     <input
                       ref={renameInputRef}
@@ -213,7 +240,9 @@ export function AgentMonitor({
                     <h3
                       className={cn(
                         "text-sm font-semibold truncate",
-                        selectedSession.execution_mode === "acp" && selectedSession.acp_session_id && "cursor-text",
+                        selectedSession.execution_mode === "acp" &&
+                          selectedSession.acp_session_id &&
+                          "cursor-text",
                       )}
                       onDoubleClick={
                         selectedSession.execution_mode === "acp" && selectedSession.acp_session_id
@@ -291,7 +320,10 @@ export function AgentMonitor({
           .map((s) => (
             <div
               key={s.session_key}
-              className={cn("flex-1 flex flex-col min-h-0", s.session_key !== selectedSessionKey && "hidden")}
+              className={cn(
+                "flex-1 flex flex-col min-h-0",
+                s.session_key !== selectedSessionKey && "hidden",
+              )}
             >
               <AgentActivityPanel
                 sessionKey={s.session_key}
@@ -302,7 +334,10 @@ export function AgentMonitor({
           ))}
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
-          <TerminalComponent key={selectedSession.session_key} taskId={selectedSession.session_key} />
+          <TerminalComponent
+            key={selectedSession.session_key}
+            taskId={selectedSession.session_key}
+          />
         )}
         {!selectedSession && (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">

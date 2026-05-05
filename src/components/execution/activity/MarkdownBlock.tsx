@@ -1,4 +1,18 @@
-import { useState, useEffect, useRef, useId, useCallback, useMemo, memo, createContext, useContext, Children, isValidElement, type ReactNode, type ReactElement } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useId,
+  useCallback,
+  useMemo,
+  memo,
+  createContext,
+  useContext,
+  Children,
+  isValidElement,
+  type ReactNode,
+  type ReactElement,
+} from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkMark } from "remark-mark-highlight";
@@ -32,24 +46,97 @@ const sanitizeSchema = {
 };
 
 const SVG_ALLOWED_ELEMENTS = new Set([
-  "svg", "g", "defs", "path", "rect", "circle", "ellipse", "line",
-  "polyline", "polygon", "text", "tspan", "lineargradient", "radialgradient",
-  "stop", "clippath", "mask", "use", "symbol", "marker", "pattern",
-  "filter", "fegaussianblur", "feoffset", "femerge", "femergenode",
-  "animate", "animatetransform",
+  "svg",
+  "g",
+  "defs",
+  "path",
+  "rect",
+  "circle",
+  "ellipse",
+  "line",
+  "polyline",
+  "polygon",
+  "text",
+  "tspan",
+  "lineargradient",
+  "radialgradient",
+  "stop",
+  "clippath",
+  "mask",
+  "use",
+  "symbol",
+  "marker",
+  "pattern",
+  "filter",
+  "fegaussianblur",
+  "feoffset",
+  "femerge",
+  "femergenode",
+  "animate",
+  "animatetransform",
 ]);
 
 const SVG_ALLOWED_ATTRS = new Set([
-  "viewbox", "width", "height", "xmlns", "fill", "stroke", "stroke-width",
-  "d", "cx", "cy", "r", "rx", "ry", "x", "x1", "x2", "y", "y1", "y2",
-  "points", "transform", "opacity", "font-size", "font-family", "text-anchor",
-  "style", "offset", "stop-color", "stop-opacity", "stroke-linecap",
-  "stroke-linejoin", "id", "class", "gradientunits", "dx", "dy",
-  "dominant-baseline", "fill-opacity", "stroke-opacity", "stroke-dasharray",
+  "viewbox",
+  "width",
+  "height",
+  "xmlns",
+  "fill",
+  "stroke",
+  "stroke-width",
+  "d",
+  "cx",
+  "cy",
+  "r",
+  "rx",
+  "ry",
+  "x",
+  "x1",
+  "x2",
+  "y",
+  "y1",
+  "y2",
+  "points",
+  "transform",
+  "opacity",
+  "font-size",
+  "font-family",
+  "text-anchor",
+  "style",
+  "offset",
+  "stop-color",
+  "stop-opacity",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "id",
+  "class",
+  "gradientunits",
+  "dx",
+  "dy",
+  "dominant-baseline",
+  "fill-opacity",
+  "stroke-opacity",
+  "stroke-dasharray",
   "stroke-dashoffset",
-  "attributename", "attributetype", "from", "to", "by", "values", "dur",
-  "begin", "end", "repeatcount", "repeatdur", "fill", "calcmode", "keytimes",
-  "keysplines", "keypoints", "additive", "accumulate", "type",
+  "attributename",
+  "attributetype",
+  "from",
+  "to",
+  "by",
+  "values",
+  "dur",
+  "begin",
+  "end",
+  "repeatcount",
+  "repeatdur",
+  "fill",
+  "calcmode",
+  "keytimes",
+  "keysplines",
+  "keypoints",
+  "additive",
+  "accumulate",
+  "type",
 ]);
 
 export function sanitizeSvg(raw: string): string {
@@ -87,7 +174,8 @@ export function sanitizeSvg(raw: string): string {
 export function extractText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(extractText).join("");
-  if (isValidElement(node)) return extractText((node as ReactElement<{ children?: ReactNode }>).props.children);
+  if (isValidElement(node))
+    return extractText((node as ReactElement<{ children?: ReactNode }>).props.children);
   return "";
 }
 
@@ -98,7 +186,10 @@ function compareValues(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-interface TableSort { col: number | null; asc: boolean; }
+interface TableSort {
+  col: number | null;
+  asc: boolean;
+}
 interface TableSortContextValue {
   sort: TableSort;
   onSort: (col: number) => void;
@@ -152,7 +243,9 @@ function InteractiveTbody({ children }: { children: ReactNode }) {
   const sorted = [...rows].sort((a, b) => {
     const getText = (row: ReactNode) => {
       if (!isValidElement(row)) return "";
-      const cells = Children.toArray((row as ReactElement<{ children?: ReactNode }>).props.children);
+      const cells = Children.toArray(
+        (row as ReactElement<{ children?: ReactNode }>).props.children,
+      );
       return extractText(cells[col]);
     };
     const cmp = compareValues(getText(a), getText(b));
@@ -161,7 +254,13 @@ function InteractiveTbody({ children }: { children: ReactNode }) {
   return <tbody>{sorted}</tbody>;
 }
 
-export const HighlightedCode = memo(function HighlightedCode({ code, lang }: { code: string; lang: string }) {
+export const HighlightedCode = memo(function HighlightedCode({
+  code,
+  lang,
+}: {
+  code: string;
+  lang: string;
+}) {
   const [html, setHtml] = useState<string | null>(null);
   const { theme, systemTheme } = useTheme();
   const isDark = (theme === "system" ? systemTheme : theme) === "dark";
@@ -333,7 +432,12 @@ export function splitSvgBlocks(text: string): Segment[] {
 export function useCopyToClipboard(text: string) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
   const copy = useCallback(() => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -343,7 +447,13 @@ export function useCopyToClipboard(text: string) {
   return { copied, copy };
 }
 
-export const CodeBlockWrapper = memo(function CodeBlockWrapper({ code, lang }: { code: string; lang: string }) {
+export const CodeBlockWrapper = memo(function CodeBlockWrapper({
+  code,
+  lang,
+}: {
+  code: string;
+  lang: string;
+}) {
   const { copied, copy: handleCopy } = useCopyToClipboard(code);
 
   return (
@@ -368,10 +478,18 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({ code, lang }: {
 
 export const MARKDOWN_PLUGINS = {
   remark: [remarkGfm, remarkMath, remarkMark] as Parameters<typeof Markdown>[0]["remarkPlugins"],
-  rehype: [rehypeKatex, rehypeRaw, rehypeSlug, [rehypeSanitize, sanitizeSchema]] as Parameters<typeof Markdown>[0]["rehypePlugins"],
+  rehype: [rehypeKatex, rehypeRaw, rehypeSlug, [rehypeSanitize, sanitizeSchema]] as Parameters<
+    typeof Markdown
+  >[0]["rehypePlugins"],
 };
 
-function MarkdownCodeComponent({ children, className }: { children?: ReactNode; className?: string }) {
+function MarkdownCodeComponent({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
   const match = /language-([\w-]+)/.exec(className ?? "");
   const lang = match ? match[1] : "";
   const rawCode = String(children).replace(/\n$/, "");
@@ -382,11 +500,7 @@ function MarkdownCodeComponent({ children, className }: { children?: ReactNode; 
     if (lang === "mermaid") return <MermaidBlock code={rawCode} />;
     return <CodeBlockWrapper code={rawCode} lang={lang} />;
   }
-  return (
-    <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
-      {children}
-    </code>
-  );
+  return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
 }
 
 function MarkdownAnchorComponent({ href, children }: { href?: string; children?: ReactNode }) {
@@ -397,7 +511,9 @@ function MarkdownAnchorComponent({ href, children }: { href?: string; children?:
         e.preventDefault();
         if (!href) return;
         if (href.startsWith("#")) {
-          document.getElementById(href.slice(1))?.scrollIntoView({ behavior: "smooth", block: "start" });
+          document
+            .getElementById(href.slice(1))
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
           openUrl(href);
         }
@@ -426,27 +542,65 @@ export const MarkdownBlock = memo(function MarkdownBlock({ text }: { text: strin
 
 export const MARKDOWN_COMPONENTS = {
   code: MarkdownCodeComponent,
-  h1: ({ children, id }: { children?: ReactNode; id?: string }) => <h1 id={id} className="text-xl font-bold mt-4 mb-2">{children}</h1>,
-  h2: ({ children, id }: { children?: ReactNode; id?: string }) => <h2 id={id} className="text-lg font-bold mt-3 mb-1.5">{children}</h2>,
-  h3: ({ children, id }: { children?: ReactNode; id?: string }) => <h3 id={id} className="text-base font-semibold mt-2.5 mb-1">{children}</h3>,
-  h4: ({ children, id }: { children?: ReactNode; id?: string }) => <h4 id={id} className="text-sm font-semibold mt-2 mb-1">{children}</h4>,
-  h5: ({ children, id }: { children?: ReactNode; id?: string }) => <h5 id={id} className="text-sm font-medium mt-1.5 mb-0.5">{children}</h5>,
-  h6: ({ children, id }: { children?: ReactNode; id?: string }) => <h6 id={id} className="text-xs font-medium mt-1.5 mb-0.5 text-muted-foreground">{children}</h6>,
+  h1: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h1 id={id} className="text-xl font-bold mt-4 mb-2">
+      {children}
+    </h1>
+  ),
+  h2: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h2 id={id} className="text-lg font-bold mt-3 mb-1.5">
+      {children}
+    </h2>
+  ),
+  h3: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h3 id={id} className="text-base font-semibold mt-2.5 mb-1">
+      {children}
+    </h3>
+  ),
+  h4: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h4 id={id} className="text-sm font-semibold mt-2 mb-1">
+      {children}
+    </h4>
+  ),
+  h5: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h5 id={id} className="text-sm font-medium mt-1.5 mb-0.5">
+      {children}
+    </h5>
+  ),
+  h6: ({ children, id }: { children?: ReactNode; id?: string }) => (
+    <h6 id={id} className="text-xs font-medium mt-1.5 mb-0.5 text-muted-foreground">
+      {children}
+    </h6>
+  ),
   pre: ({ children }: { children?: ReactNode }) => <>{children}</>,
   p: ({ children }: { children?: ReactNode }) => <p className="mb-2 last:mb-0">{children}</p>,
-  ul: ({ children }: { children?: ReactNode }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
-  ol: ({ children }: { children?: ReactNode }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+  ul: ({ children }: { children?: ReactNode }) => (
+    <ul className="list-disc pl-5 mb-2">{children}</ul>
+  ),
+  ol: ({ children }: { children?: ReactNode }) => (
+    <ol className="list-decimal pl-5 mb-2">{children}</ol>
+  ),
   li: ({ children }: { children?: ReactNode }) => <li className="mb-0.5">{children}</li>,
-  strong: ({ children }: { children?: ReactNode }) => <strong className="font-semibold">{children}</strong>,
-  mark: ({ children }: { children?: ReactNode }) => <mark className="bg-yellow-200/60 dark:bg-yellow-500/30 rounded px-0.5">{children}</mark>,
+  strong: ({ children }: { children?: ReactNode }) => (
+    <strong className="font-semibold">{children}</strong>
+  ),
+  mark: ({ children }: { children?: ReactNode }) => (
+    <mark className="bg-yellow-200/60 dark:bg-yellow-500/30 rounded px-0.5">{children}</mark>
+  ),
   a: MarkdownAnchorComponent,
   img: ({ src, alt }: { src?: string; alt?: string }) => (
     <img src={src} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
   ),
-  table: ({ children }: { children?: ReactNode }) => <InteractiveTable>{children}</InteractiveTable>,
-  thead: ({ children }: { children?: ReactNode }) => <thead className="bg-muted/60">{children}</thead>,
+  table: ({ children }: { children?: ReactNode }) => (
+    <InteractiveTable>{children}</InteractiveTable>
+  ),
+  thead: ({ children }: { children?: ReactNode }) => (
+    <thead className="bg-muted/60">{children}</thead>
+  ),
   th: ({ children }: { children?: ReactNode }) => <InteractiveTh>{children}</InteractiveTh>,
-  tbody: ({ children }: { children?: ReactNode }) => <InteractiveTbody>{children}</InteractiveTbody>,
+  tbody: ({ children }: { children?: ReactNode }) => (
+    <InteractiveTbody>{children}</InteractiveTbody>
+  ),
   td: ({ children }: { children?: ReactNode }) => (
     <td className="border border-border px-2.5 py-1 text-foreground/80">{children}</td>
   ),

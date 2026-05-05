@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useId } from "react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
+import { humanizeTokenCount } from "@/lib/format-utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
 import type { UsageState } from "./types";
@@ -38,6 +39,41 @@ const LENS_GLOW: Record<FillState, string> = {
     "inset 0 0 0 1.5px rgba(255,255,255,0.14), inset 0 1.5px 3px 0 rgba(255,255,255,0.2), inset 0 -1.5px 3px 0 rgba(0,0,0,0.3), 0 0 12px 2px rgba(99,102,241,0.08), 0 0 1px 0 rgba(255,255,255,0.08)",
 };
 
+const TIPS: Record<FillState, { icon: string; text: string }> = {
+  normal: { icon: "✓", text: "Plenty of room. Agent has full context for complex reasoning." },
+  amber: { icon: "→", text: "Filling up. Consider compacting if task will run longer." },
+  warning: { icon: "⚠", text: "Running low. Agent may lose early context soon. Compact recommended." },
+  critical: { icon: "⚡", text: "Near limit. Agent will auto-compact soon. Compact now to stay in control." },
+};
+
+const TIP_STYLE: Record<FillState, string> = {
+  normal: "bg-success/8 border border-success/15",
+  amber: "bg-warning/8 border border-warning/15",
+  warning: "bg-warning/12 border border-warning/20",
+  critical: "bg-destructive/10 border border-destructive/20",
+};
+
+const DOT_COLOR: Record<FillState, string> = {
+  normal: "bg-success",
+  amber: "bg-warning",
+  warning: "bg-warning",
+  critical: "bg-destructive shadow-[0_0_6px_var(--color-destructive)]",
+};
+
+const PCT_COLOR: Record<FillState, string> = {
+  normal: "text-success",
+  amber: "text-warning",
+  warning: "text-warning",
+  critical: "text-destructive",
+};
+
+const PROGRESS_COLOR: Record<FillState, string> = {
+  normal: "bg-success",
+  amber: "bg-warning",
+  warning: "bg-warning",
+  critical: "bg-destructive",
+};
+
 function stateFor(r: number): FillState {
   if (r >= 0.85) return "critical";
   if (r >= 0.75) return "warning";
@@ -52,7 +88,13 @@ const WAVE_FILL =
 const WAVE_LINE =
   "M-20 0 Q-16 -1.1 -10 0 Q-4 1.1 0 0 Q4 -1.1 10 0 Q16 1.1 20 0 Q24 -1.1 30 0 Q36 1.1 40 0";
 
-export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState; onCompact?: () => void }) {
+export function LiquidContextIndicator({
+  usage,
+  onCompact,
+}: {
+  usage: UsageState;
+  onCompact?: () => void;
+}) {
   const clipId = useId();
   const ratio = Math.min(1, Math.max(0, usage.size > 0 ? usage.used / usage.size : 0));
 
@@ -76,6 +118,12 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
 
   // React state only for discrete pulse threshold changes (≤4 transitions total per session)
   const [pulseStyle, setPulseStyle] = useState<React.CSSProperties | undefined>(undefined);
+  const [fillState, setFillState] = useState<FillState>(() => stateFor(ratio));
+
+  const [open, setOpen] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether hover opened the popover so mouse-leave can close it
+  const openedByHoverRef = useRef(false);
 
   // Setup: define applyFrame + tick once after mount, snap to initial ratio
   useEffect(() => {
@@ -106,6 +154,7 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
               ? { animation: "ctx-pulse 2s ease-in-out infinite" }
               : undefined,
         );
+        setFillState(state);
         anim.prevState = state;
       }
     }
@@ -155,89 +204,173 @@ export function LiquidContextIndicator({ usage, onCompact }: { usage: UsageState
     }
   }, [ratio]);
 
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  function handleMouseEnter() {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      hoverTimerRef.current = null;
+      openedByHoverRef.current = true;
+      setOpen(true);
+    }, 1000);
+  }
+
+  function handleMouseLeave() {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    if (openedByHoverRef.current) {
+      openedByHoverRef.current = false;
+      setOpen(false);
+    }
+  }
+
+  function handleOpenChange(newOpen: boolean) {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    openedByHoverRef.current = false;
+    setOpen(newOpen);
+  }
+
   const pct = Math.round(ratio * 100);
 
   return (
-    <Popover>
-      <PopoverTrigger className="inline-flex items-center">
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger
+        className="inline-flex items-center"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
         <span className="relative w-4 h-4 origin-center cursor-pointer" style={pulseStyle}>
-            <svg viewBox="0 0 20 20" className="w-full h-full block">
-              <defs>
-                <clipPath id={clipId}>
-                  <circle cx="10" cy="10" r="7.5" />
-                </clipPath>
-              </defs>
-              {/* Ring — stroke controlled by applyFrame via .style */}
-              <circle
-                ref={ringRef}
-                cx="10"
-                cy="10"
-                r="8.5"
-                fill="none"
-                strokeWidth="1.5"
-                style={{ stroke: "var(--border)", strokeOpacity: 1 }}
-              />
-              {/* clip-path on static wrapper — never moves (CSS transform + clip-path on same element is unreliable) */}
-              <g clipPath={`url(#${clipId})`}>
-                {/* wave-group transform ATTRIBUTE (not CSS) set by JS — positions fill level */}
-                <g ref={waveGroupRef} transform="translate(0,20)">
-                  <path ref={fillPathRef} d={WAVE_FILL} style={{ fill: "var(--success)" }}>
-                    <animateTransform
-                      attributeName="transform"
-                      type="translate"
-                      from="0,0"
-                      to="-20,0"
-                      dur="3.2s"
-                      repeatCount="indefinite"
-                    />
-                  </path>
-                  <path d={WAVE_LINE} fill="none" stroke="white" strokeWidth="0.7" opacity="0.35">
-                    <animateTransform
-                      attributeName="transform"
-                      type="translate"
-                      from="0,0"
-                      to="-20,0"
-                      dur="3.2s"
-                      repeatCount="indefinite"
-                    />
-                  </path>
-                </g>
-              </g>
-            </svg>
-            {/* Glass lens overlay */}
-            <span
-              ref={lensRef}
-              className={cn(
-                "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3.75 rounded-full pointer-events-none",
-                "backdrop-blur-[0.4px] backdrop-brightness-[1.18] backdrop-saturate-[1.35]",
-                "before:absolute before:-inset-px before:rounded-full",
-                "before:[background:conic-gradient(from_200deg,rgba(99,102,241,0.15),rgba(168,85,247,0.1),rgba(236,72,153,0.08),rgba(251,191,36,0.05),rgba(34,197,94,0.08),rgba(59,130,246,0.1),rgba(99,102,241,0.15))]",
-                "before:[mask:radial-gradient(circle,transparent_60%,black_62%,black_100%)]",
-                "after:absolute after:w-[30%] after:h-[16%] after:top-[16%] after:left-[22%] after:rounded-full after:bg-white/[0.28] after:blur-[2px]",
-              )}
-              style={{
-                background:
-                  "radial-gradient(ellipse 60% 40% at 35% 25%, rgba(255,255,255,0.2) 0%, transparent 70%), radial-gradient(circle at 50% 50%, rgba(99,102,241,0.05) 0%, rgba(99,102,241,0.02) 60%, transparent 100%)",
-                boxShadow: LENS_GLOW.normal,
-              }}
+          <svg viewBox="0 0 20 20" className="w-full h-full block">
+            <defs>
+              <clipPath id={clipId}>
+                <circle cx="10" cy="10" r="7.5" />
+              </clipPath>
+            </defs>
+            {/* Ring — stroke controlled by applyFrame via .style */}
+            <circle
+              ref={ringRef}
+              cx="10"
+              cy="10"
+              r="8.5"
+              fill="none"
+              strokeWidth="1.5"
+              style={{ stroke: "var(--border)", strokeOpacity: 1 }}
             />
+            {/* clip-path on static wrapper — never moves (CSS transform + clip-path on same element is unreliable) */}
+            <g clipPath={`url(#${clipId})`}>
+              {/* wave-group transform ATTRIBUTE (not CSS) set by JS — positions fill level */}
+              <g ref={waveGroupRef} transform="translate(0,20)">
+                <path ref={fillPathRef} d={WAVE_FILL} style={{ fill: "var(--success)" }}>
+                  <animateTransform
+                    attributeName="transform"
+                    type="translate"
+                    from="0,0"
+                    to="-20,0"
+                    dur="3.2s"
+                    repeatCount="indefinite"
+                  />
+                </path>
+                <path d={WAVE_LINE} fill="none" stroke="white" strokeWidth="0.7" opacity="0.35">
+                  <animateTransform
+                    attributeName="transform"
+                    type="translate"
+                    from="0,0"
+                    to="-20,0"
+                    dur="3.2s"
+                    repeatCount="indefinite"
+                  />
+                </path>
+              </g>
+            </g>
+          </svg>
+          {/* Glass lens overlay */}
+          <span
+            ref={lensRef}
+            className={cn(
+              "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3.75 rounded-full pointer-events-none",
+              "backdrop-blur-[0.4px] backdrop-brightness-[1.18] backdrop-saturate-[1.35]",
+              "before:absolute before:-inset-px before:rounded-full",
+              "before:[background:conic-gradient(from_200deg,rgba(99,102,241,0.15),rgba(168,85,247,0.1),rgba(236,72,153,0.08),rgba(251,191,36,0.05),rgba(34,197,94,0.08),rgba(59,130,246,0.1),rgba(99,102,241,0.15))]",
+              "before:[mask:radial-gradient(circle,transparent_60%,black_62%,black_100%)]",
+              "after:absolute after:w-[30%] after:h-[16%] after:top-[16%] after:left-[22%] after:rounded-full after:bg-white/[0.28] after:blur-[2px]",
+            )}
+            style={{
+              background:
+                "radial-gradient(ellipse 60% 40% at 35% 25%, rgba(255,255,255,0.2) 0%, transparent 70%), radial-gradient(circle at 50% 50%, rgba(99,102,241,0.05) 0%, rgba(99,102,241,0.02) 60%, transparent 100%)",
+              boxShadow: LENS_GLOW.normal,
+            }}
+          />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        className={cn(
+          "w-64 p-3.5 flex flex-col gap-3",
+          "backdrop-blur-[4px] bg-popover/60 border-border/30",
+          "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
+        )}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold flex items-center gap-1.5">
+            <span className={cn("w-1.5 h-1.5 rounded-full inline-block", DOT_COLOR[fillState])} />
+            Context Window
           </span>
-        </PopoverTrigger>
-        <PopoverContent side="top" className="w-48 p-3 flex flex-col gap-2">
-          <div className="text-xs text-muted-foreground">
-            Context{usage.size > 1 ? `: ${pct}%` : ""}
+          <span className={cn("text-lg font-bold tabular-nums tracking-tight", PCT_COLOR[fillState])}>
+            {usage.size > 1 ? `${pct}%` : "—"}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        {usage.size > 1 && (
+          <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
+            <div
+              className={cn("h-full rounded-full transition-all duration-300", PROGRESS_COLOR[fillState])}
+              style={{ width: `${pct}%` }}
+            />
           </div>
-          {onCompact && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs w-full"
-              onClick={onCompact}
-            >
-              Compact
-            </Button>
+        )}
+
+        {/* Token info */}
+        {usage.size > 1 && (
+          <div className="flex justify-between text-[11px] text-muted-foreground">
+            <span>{humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens</span>
+            {usage.cost && (
+              <span>${usage.cost.amount.toFixed(2)}</span>
+            )}
+          </div>
+        )}
+
+        {/* Contextual tip */}
+        <div className={cn("flex gap-2 px-2.5 py-2 rounded-md text-[11px] leading-relaxed", TIP_STYLE[fillState])}>
+          <span className="flex-shrink-0 mt-px">{TIPS[fillState].icon}</span>
+          <span>{TIPS[fillState].text}</span>
+        </div>
+
+        <div className="h-px bg-border/50" />
+
+        {/* Compact button — always visible */}
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-7 text-xs w-full",
+            fillState === "critical" && "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 font-semibold",
           )}
-        </PopoverContent>
-      </Popover>
+          onClick={() => onCompact?.()}
+        >
+          {fillState === "critical" ? "Compact now" : "Compact context"}
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

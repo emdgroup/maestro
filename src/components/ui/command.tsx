@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
 
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { InputGroup, InputGroupAddon } from "@/ui/input-group";
 import { SearchIcon, CheckIcon } from "lucide-react";

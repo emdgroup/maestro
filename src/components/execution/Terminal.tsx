@@ -3,7 +3,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 import { getTerminalTheme } from "@/utils/helpers/terminalTheme";
 import "@xterm/xterm/css/xterm.css";
 
@@ -86,7 +86,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       //     sequences as raw text when the user clicks in the terminal.
       //   - Clear screen and home cursor so the first visible frame is blank.
       // History replay will re-enable mouse tracking if the remote session set it up.
-      terminal.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[2J\x1b[H');
+      terminal.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[2J\x1b[H");
       tryAttach();
     });
 
@@ -114,11 +114,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
   return (
     <div className="pt-2 pl-2 h-full w-full">
-      <div
-        ref={terminalRef}
-        className="w-full h-full overflow-hidden"
-      />
+      <div ref={terminalRef} className="w-full h-full overflow-hidden" />
     </div>
-
   );
 }

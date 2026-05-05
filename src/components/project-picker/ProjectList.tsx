@@ -3,7 +3,7 @@ import { ProjectListItem } from "@/components/project-picker/ProjectListItem";
 import { ProjectsListLayout } from "@/components/project-picker/ProjectsListLayout";
 import { CloneProjectDialog } from "@/components/project-picker/CloneProjectDialog";
 import { CreateProjectDialog } from "@/components/project-picker/CreateProjectDialog";
-import { useProjectPickerNavigation } from "@/utils/hooks";
+import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import {
   useRecentProjects,
   useProjectLocks,
@@ -12,7 +12,7 @@ import {
   useGitInitProject,
 } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder } from "lucide-react";
 import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";

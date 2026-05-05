@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 function parseDiffStat(
@@ -80,13 +80,9 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
         )}
         {aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0) && (
           <span className="font-mono">
-            {aheadBehind.ahead > 0 && (
-              <span className="text-success">↑{aheadBehind.ahead}</span>
-            )}
+            {aheadBehind.ahead > 0 && <span className="text-success">↑{aheadBehind.ahead}</span>}
             {aheadBehind.ahead > 0 && aheadBehind.behind > 0 && " "}
-            {aheadBehind.behind > 0 && (
-              <span className="text-warning">↓{aheadBehind.behind}</span>
-            )}
+            {aheadBehind.behind > 0 && <span className="text-warning">↓{aheadBehind.behind}</span>}
           </span>
         )}
       </div>

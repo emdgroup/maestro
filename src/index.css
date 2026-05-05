@@ -219,12 +219,21 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% center; mask-position: 200% center; -webkit-mask-position: 200% center; }
-  100% { background-position: -200% center; mask-position: -200% center; -webkit-mask-position: -200% center; }
+  0% {
+    background-position: 200% center;
+    mask-position: 200% center;
+    -webkit-mask-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+    mask-position: -200% center;
+    -webkit-mask-position: -200% center;
+  }
 }
 
 .shimmer-thinking-text {
-  background: linear-gradient(90deg,
+  background: linear-gradient(
+    90deg,
     oklch(from var(--muted-foreground) calc(l * 0.5) c h) 25%,
     oklch(from var(--muted-foreground) calc(l * 1.4) c h) 50%,
     oklch(from var(--muted-foreground) calc(l * 0.5) c h) 75%
@@ -237,35 +246,72 @@
 }
 
 .shimmer-thinking-icon {
-  mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 25%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.3) 75%);
+  mask-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.3) 25%,
+    rgba(0, 0, 0, 1) 50%,
+    rgba(0, 0, 0, 0.3) 75%
+  );
   mask-size: 200%;
-  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 25%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.3) 75%);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.3) 25%,
+    rgba(0, 0, 0, 1) 50%,
+    rgba(0, 0, 0, 0.3) 75%
+  );
   -webkit-mask-size: 200%;
   animation: shimmer 1.5s infinite;
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 @keyframes typing-dot {
-  0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
-  30% { opacity: 1; transform: scale(1); }
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes ctx-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.18); opacity: 0.75; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.75;
+  }
 }
 
 @keyframes arc-spin-cw {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes glow-ring {
-  0%, 100% { box-shadow: 0 0 0 0px color-mix(in oklch, var(--success) 30%, transparent); }
-  50% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 30%, transparent); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0px color-mix(in oklch, var(--success) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 30%, transparent);
+  }
 }
 
 @utility animate-glow {

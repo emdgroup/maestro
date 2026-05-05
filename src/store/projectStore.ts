@@ -2,15 +2,15 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types/bindings";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 
-interface ProjectStore {
+interface ProjectState {
   selectedProject: Project | null;
   setSelectedProject: (project: Project) => void;
   clearSelectedProject: () => void;
 }
 
-const useStore = create<ProjectStore>()(
+const useStore = create<ProjectState>()(
   immer((set) => ({
     selectedProject: null,
     setSelectedProject: (project) =>
@@ -18,7 +18,7 @@ const useStore = create<ProjectStore>()(
         state.selectedProject = project;
       }),
     clearSelectedProject: () => {
-      void api.releaseActiveProjectLock();
+      void api.releaseActiveProjectLock().catch(console.error);
       set((state) => {
         state.selectedProject = null;
       });

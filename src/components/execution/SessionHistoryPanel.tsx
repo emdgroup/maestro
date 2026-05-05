@@ -1,9 +1,13 @@
 import { useState, useRef, useCallback } from "react";
 import { X, RotateCcw, Pencil, Check } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { useSessionListQuery, useLoadAcpSessionMutation, useRenameAcpSessionMutation } from "@/services/execution.service";
+import {
+  useSessionListQuery,
+  useLoadAcpSessionMutation,
+  useRenameAcpSessionMutation,
+} from "@/services/execution.service";
 import type { DiscoveredAgent } from "@/types/bindings";
 
 interface SessionHistoryPanelProps {
@@ -32,34 +36,39 @@ export function SessionHistoryPanel({
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: sessions = [], isLoading, isError } = useSessionListQuery(
-    selectedAgentId,
-    repoPath,
-    connectionId,
-    projectId,
-  );
+  const {
+    data: sessions = [],
+    isLoading,
+    isError,
+  } = useSessionListQuery(selectedAgentId, repoPath, connectionId, projectId);
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
 
-  const startRename = useCallback((sessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRenamingId(sessionId);
-    setRenameValue(currentTitle ?? "");
-    setTimeout(() => renameInputRef.current?.select(), 0);
-  }, []);
+  const startRename = useCallback(
+    (sessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setRenamingId(sessionId);
+      setRenameValue(currentTitle ?? "");
+      setTimeout(() => renameInputRef.current?.select(), 0);
+    },
+    [],
+  );
 
-  const commitRename = useCallback((sessionId: string) => {
-    const trimmed = renameValue.trim();
-    if (trimmed && selectedAgentId) {
-      renameMutation.mutate({
-        projectId,
-        agentId: selectedAgentId,
-        acpSessionId: sessionId,
-        displayName: trimmed,
-      });
-    }
-    setRenamingId(null);
-  }, [renameValue, selectedAgentId, projectId, renameMutation]);
+  const commitRename = useCallback(
+    (sessionId: string) => {
+      const trimmed = renameValue.trim();
+      if (trimmed && selectedAgentId) {
+        renameMutation.mutate({
+          projectId,
+          agentId: selectedAgentId,
+          acpSessionId: sessionId,
+          displayName: trimmed,
+        });
+      }
+      setRenamingId(null);
+    },
+    [renameValue, selectedAgentId, projectId, renameMutation],
+  );
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-card border-l border-border">
@@ -84,7 +93,9 @@ export function SessionHistoryPanel({
                       <img
                         src={agent.icon}
                         className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
                       />
                     )}
                     {agent.name}
@@ -123,7 +134,12 @@ export function SessionHistoryPanel({
                   onBlur={() => commitRename(entry.session_id)}
                   autoFocus
                 />
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" onClick={() => commitRename(entry.session_id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 shrink-0"
+                  onClick={() => commitRename(entry.session_id)}
+                >
                   <Check className="w-3 h-3" />
                 </Button>
               </div>
@@ -133,8 +149,19 @@ export function SessionHistoryPanel({
                 onClick={() => {
                   if (!selectedAgentId) return;
                   loadMutation.mutate(
-                    { agentId: selectedAgentId, sessionId: entry.session_id, cwd: repoPath, connectionId, sessionName: entry.title },
-                    { onSuccess: (sessionKey) => { onSessionLoaded(sessionKey); onClose(); } },
+                    {
+                      agentId: selectedAgentId,
+                      sessionId: entry.session_id,
+                      cwd: repoPath,
+                      connectionId,
+                      sessionName: entry.title,
+                    },
+                    {
+                      onSuccess: (sessionKey) => {
+                        onSessionLoaded(sessionKey);
+                        onClose();
+                      },
+                    },
                   );
                 }}
                 className={cn(
@@ -145,9 +172,7 @@ export function SessionHistoryPanel({
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <RotateCcw className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="text-sm truncate">
-                      {entry.title ?? entry.session_id}
-                    </span>
+                    <span className="text-sm truncate">{entry.title ?? entry.session_id}</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {entry.updated_at && (

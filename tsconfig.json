@@ -24,11 +24,8 @@
     /* Path aliases - imported from shared config */
     "paths": {
       "@/*": ["./src/*"],
-      "@/hooks": ["./src/utils/hooks"],
       "@/hooks/*": ["./src/utils/hooks/*"],
-      "@/lib": ["./src/utils/helpers"],
       "@/lib/*": ["./src/utils/helpers/*"],
-      "@/ui": ["./src/components/ui/*"],
       "@/ui/*": ["./src/components/ui/*"]
     }
   },

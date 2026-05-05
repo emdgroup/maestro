@@ -1,6 +1,20 @@
 import { useState, useEffect, useRef, Component } from "react";
 import type { ReactNode } from "react";
-import { FileText, Terminal, Box, ChevronDown, ChevronRight, Pencil, Search, Loader2, Trash2, Globe, Brain, ArrowRightLeft, Settings2 } from "lucide-react";
+import {
+  FileText,
+  Terminal,
+  Box,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Search,
+  Loader2,
+  Trash2,
+  Globe,
+  Brain,
+  ArrowRightLeft,
+  Settings2,
+} from "lucide-react";
 import type { ToolCallItem, ToolCallContent } from "./types";
 
 const KIND_ICON: Record<string, React.ElementType> = {
@@ -116,7 +130,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   };
 
   return (
-    <div className={`rounded-lg border overflow-hidden ${isError ? "border-destructive/40" : "border-border"}`}>
+    <div
+      className={`rounded-lg border overflow-hidden ${isError ? "border-destructive/40" : "border-border"}`}
+    >
       <button
         type="button"
         onClick={() => {
@@ -128,7 +144,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
         <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
         <span className="text-xs font-medium text-foreground/80">{label}</span>
         {subtitle && (
-          <span className="text-[11px] font-mono text-muted-foreground/60 truncate">{subtitle}</span>
+          <span className="text-[11px] font-mono text-muted-foreground/60 truncate">
+            {subtitle}
+          </span>
         )}
         <span
           className={`ml-auto flex items-center gap-1 text-[10px] font-medium shrink-0 ${
@@ -216,7 +234,9 @@ function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
       );
     }
     case "diff": {
-      const newText = (content as { type: "diff"; path: string; oldText: string | null; newText?: string }).newText;
+      const newText = (
+        content as { type: "diff"; path: string; oldText: string | null; newText?: string }
+      ).newText;
       if (newText == null) return null;
       return <InlineDiffBlock path={content.path} oldText={content.oldText} newText={newText} />;
     }
@@ -252,13 +272,11 @@ function parseDiffLines(oldText: string | null, newText: string): DiffLineItem[]
     result = lines
       .filter((l, i) => !(i === lines.length - 1 && l === ""))
       .map((line) => ({
-        type: (
-          line.startsWith("+") && !line.startsWith("+++")
-            ? "add"
-            : line.startsWith("-") && !line.startsWith("---")
-              ? "del"
-              : "ctx"
-        ) as DiffLineItem["type"],
+        type: (line.startsWith("+") && !line.startsWith("+++")
+          ? "add"
+          : line.startsWith("-") && !line.startsWith("---")
+            ? "del"
+            : "ctx") as DiffLineItem["type"],
         text: line,
       }));
   } else if (oldText == null) {
@@ -268,7 +286,9 @@ function parseDiffLines(oldText: string | null, newText: string): DiffLineItem[]
   } else {
     result = [
       ...oldText.split("\n").map((line) => ({ type: "del" as const, text: `-${line}` })),
-      ...lines.filter((l, i) => !(i === lines.length - 1 && l === "")).map((line) => ({ type: "add" as const, text: `+${line}` })),
+      ...lines
+        .filter((l, i) => !(i === lines.length - 1 && l === ""))
+        .map((line) => ({ type: "add" as const, text: `+${line}` })),
     ];
   }
 

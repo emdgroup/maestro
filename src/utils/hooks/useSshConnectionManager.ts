@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { SshConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
@@ -51,14 +51,17 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     subtitle: "Browse local filesystem",
   });
 
-  const buildConnection = (sshConn: SshConnection) => ({
-    type: "ssh" as const,
-    id: sshConn.id,
-    displayName: sshConn.display_name || sshConn.connection_string,
-    subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
-    metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
-    sshConnection: sshConn,
-  });
+  const buildConnection = useCallback(
+    (sshConn: SshConnection): Connection => ({
+      type: "ssh" as const,
+      id: sshConn.id,
+      displayName: sshConn.display_name || sshConn.connection_string,
+      subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
+      metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
+      sshConnection: sshConn,
+    }),
+    [],
+  );
 
   useEffect(() => {
     setConnections([local.current, ...sshConnections.map(buildConnection)]);

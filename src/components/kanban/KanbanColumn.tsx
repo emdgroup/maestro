@@ -1,10 +1,8 @@
-import React from "react";
 import { Task, TaskStatus } from "@/types/bindings";
 import { TaskCard } from "./TaskCard";
 import { Badge } from "@/ui/badge";
 
 interface KanbanColumnProps {
-  columnId: string;
   columnTitle: string;
   tasks: Task[];
   status: TaskStatus;
@@ -37,14 +35,14 @@ const getBadgeColor = (status: TaskStatus): string => {
   return colors[status] || "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 };
 
-export const KanbanColumn: React.FC<KanbanColumnProps> = ({
+export function KanbanColumn({
   columnTitle,
   tasks,
   status,
   onReviewClick,
   onSettingsClick,
   onArchiveClick,
-}) => {
+}: KanbanColumnProps) {
   const borderColor = getColumnBorderColor(status);
   const badgeColor = getBadgeColor(status);
 
@@ -69,4 +67,4 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       </div>
     </div>
   );
-};
+}

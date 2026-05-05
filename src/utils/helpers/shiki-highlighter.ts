@@ -73,17 +73,26 @@ async function buildHighlighter() {
     name: "shiki" as const,
     type: "class" as const,
 
-    get maxLineToIgnoreSyntax() { return _maxLine; },
-    setMaxLineToIgnoreSyntax(v: number) { _maxLine = v; },
+    get maxLineToIgnoreSyntax() {
+      return _maxLine;
+    },
+    setMaxLineToIgnoreSyntax(v: number) {
+      _maxLine = v;
+    },
 
-    get ignoreSyntaxHighlightList() { return _ignoreList; },
+    get ignoreSyntaxHighlightList() {
+      return _ignoreList;
+    },
     setIgnoreSyntaxHighlightList(v: (string | RegExp)[]) {
       _ignoreList.length = 0;
       _ignoreList.push(...v);
     },
 
     getAST(raw: string, fileName?: string, lang?: string) {
-      if (fileName && _ignoreList.some((p) => p instanceof RegExp ? p.test(fileName) : fileName === p)) {
+      if (
+        fileName &&
+        _ignoreList.some((p) => (p instanceof RegExp ? p.test(fileName) : fileName === p))
+      ) {
         return undefined;
       }
       try {

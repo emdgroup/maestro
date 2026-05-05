@@ -31,19 +31,11 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
   onClose,
 }) => {
   const [mergeStrategy, setMergeStrategy] = useState<MergeStrategy>("CommitAndMerge");
-
-  // Backlog rejection state
   const [backlogComment, setBacklogComment] = useState("");
-
-  // Resume with instructions state
   const [resumeInstruction, setResumeInstruction] = useState("");
-
-  // Cancel confirmation state
   const [cancelConfirmPending, setCancelConfirmPending] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
 
-  // Mutation hooks
   const { mutate: saveReview, isPending: isSavingReview } = useSaveTaskReviewMutation();
   const { mutate: approveAndMerge, isPending: isApproving } = useApproveTaskAndMergeMutation();
   const { mutate: rejectReview, isPending: isRejecting } = useRejectReviewMutation();
@@ -52,8 +44,6 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
 
   const handleApprove = () => {
     setError(null);
-
-    // Save review feedback then trigger merge
     saveReview(
       {
         taskId,
@@ -129,11 +119,11 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
   };
 
   return (
-    <div className="approval-form">
+    <div className="flex flex-col gap-4 overflow-y-auto border-t px-6 py-4">
       {/* Accept section */}
-      <div className="approval-form-section">
-        <h3 className="approval-form-heading">Accept</h3>
-        <div className="approval-form-radio-group">
+      <div className="flex flex-col gap-3 border-b pb-4">
+        <h3 className="text-sm font-medium">Accept</h3>
+        <div className="flex flex-col gap-2">
           {(Object.keys(MERGE_STRATEGY_LABELS) as MergeStrategy[]).map((strategy) => (
             <div key={strategy} className="flex items-center space-x-2">
               <input
@@ -152,22 +142,18 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
             </div>
           ))}
         </div>
-        <Button
-          onClick={handleApprove}
-          disabled={loading}
-          className="approval-form-approve-btn mt-3"
-        >
+        <Button onClick={handleApprove} disabled={loading} className="mt-3">
           {isApproving || isSavingReview ? "Approving..." : "Approve"}
         </Button>
       </div>
 
       {/* Reject section */}
-      <div className="approval-form-section">
-        <h3 className="approval-form-heading">Reject</h3>
+      <div className="flex flex-col gap-3">
+        <h3 className="text-sm font-medium">Reject</h3>
 
         {/* Send to Backlog */}
-        <div className="approval-form-reject-action">
-          <Label htmlFor="backlog-comment" className="approval-form-reject-label">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="backlog-comment" className="text-sm font-medium">
             Send to Backlog
           </Label>
           <Textarea
@@ -177,21 +163,20 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
             onChange={(e) => setBacklogComment(e.target.value)}
             disabled={loading}
             rows={2}
-            className="approval-form-textarea"
           />
           <Button
             onClick={handleSendToBacklog}
             disabled={loading}
             variant="outline"
-            className="approval-form-reject-btn mt-1"
+            className="mt-1"
           >
             {isRejecting ? "Sending..." : "Send to Backlog"}
           </Button>
         </div>
 
         {/* Resume with Instructions */}
-        <div className="approval-form-reject-action mt-4">
-          <Label htmlFor="resume-instruction" className="approval-form-reject-label">
+        <div className="mt-4 flex flex-col gap-1.5">
+          <Label htmlFor="resume-instruction" className="text-sm font-medium">
             Resume with Instructions
           </Label>
           <Textarea
@@ -201,26 +186,20 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
             onChange={(e) => setResumeInstruction(e.target.value)}
             disabled={loading}
             rows={3}
-            className="approval-form-textarea"
           />
           <Button
             onClick={handleResumeWithInstructions}
             disabled={loading || !resumeInstruction.trim()}
             variant="outline"
-            className="approval-form-reject-btn mt-1"
+            className="mt-1"
           >
             {isRejecting ? "Sending..." : "Resume with Instructions"}
           </Button>
         </div>
 
         {/* Cancel Task */}
-        <div className="approval-form-reject-action mt-4">
-          <Button
-            onClick={handleCancelTask}
-            disabled={loading}
-            variant="outline"
-            className="approval-form-cancel-btn"
-          >
+        <div className="mt-4 flex flex-col gap-1.5">
+          <Button onClick={handleCancelTask} disabled={loading} variant="outline">
             {cancelConfirmPending
               ? "Confirm Cancel Task"
               : isRejecting
@@ -228,24 +207,24 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
                 : "Cancel Task"}
           </Button>
           {cancelConfirmPending && (
-            <p className="approval-form-cancel-confirm-text mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               Click again to confirm. This action cannot be undone.
             </p>
           )}
         </div>
       </div>
 
-      {/* Per-file comments (kept for reference, collapsed by default) */}
+      {/* Per-file comments */}
       {diffFiles.length > 0 && (
-        <div className="approval-form-section">
-          <details className="approval-form-details">
-            <summary className="approval-form-summary">
+        <div className="flex flex-col gap-3 border-t pt-4">
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">
               Files in this review ({diffFiles.length})
             </summary>
-            <div className="approval-form-per-file">
+            <div className="mt-2 flex flex-col gap-1">
               {diffFiles.map((file) => (
-                <div key={file.fileName} className="approval-form-file-comment">
-                  <span className="approval-form-file-name">{file.fileName}</span>
+                <div key={file.fileName} className="flex items-center">
+                  <span className="font-mono text-xs text-muted-foreground">{file.fileName}</span>
                 </div>
               ))}
             </div>
@@ -253,9 +232,13 @@ export const ApprovalForm: React.FC<ApprovalFormProps> = ({
         </div>
       )}
 
-      {error && <div className="approval-form-error">{error}</div>}
+      {error && (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
-      <div className="approval-form-actions">
+      <div className="flex justify-end border-t pt-4">
         <Button onClick={onClose} disabled={loading} variant="outline">
           Back
         </Button>

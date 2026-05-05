@@ -15,7 +15,6 @@ import { showSuccessToast } from "./ErrorToast";
 interface SettingsPageProps {
   projectId: number;
   connectionId: number | null;
-  projectPath: string;
 }
 
 interface ProjectSettingsFormData {
@@ -31,11 +30,10 @@ export interface SettingsPageHandle {
 const CACHE_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
-  ({ projectId, connectionId, projectPath: _projectPath }, ref) => {
-    const { control, handleSubmit, watch, setValue, reset } =
-      useForm<ProjectSettingsFormData>({
-        defaultValues: { default_agent: "", default_model: "" },
-      });
+  ({ projectId, connectionId }, ref) => {
+    const { control, handleSubmit, watch, setValue, reset } = useForm<ProjectSettingsFormData>({
+      defaultValues: { default_agent: "", default_model: "" },
+    });
 
     const selectedAgent = watch("default_agent");
 
@@ -86,8 +84,12 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     };
 
     useImperativeHandle(ref, () => ({
-      save: async () => { await handleSubmit(onSubmit)(); },
-      resetToDefaults: () => { reset({ default_agent: "", default_model: "" }); },
+      save: async () => {
+        await handleSubmit(onSubmit)();
+      },
+      resetToDefaults: () => {
+        reset({ default_agent: "", default_model: "" });
+      },
     }));
 
     const agents = discovery?.agents ?? [];
@@ -128,7 +130,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         disabled={agentsLoading}
                       >
                         <SelectTrigger className="w-full bg-muted">
-                          <SelectValue placeholder={agentsLoading ? "Loading agents…" : "None (use session default)"} />
+                          <SelectValue
+                            placeholder={
+                              agentsLoading ? "Loading agents…" : "None (use session default)"
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="">None (use session default)</SelectItem>
@@ -139,7 +145,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                   <img
                                     src={agent.icon}
                                     className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
-                                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                                    }}
                                   />
                                 )}
                                 {agent.name}
@@ -174,10 +182,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                 !selectedAgent
                                   ? "Select an agent first"
                                   : cacheLoading
-                                  ? "Loading…"
-                                  : availableModels.length === 0
-                                  ? "No models cached — click Refresh"
-                                  : "Select a model"
+                                    ? "Loading…"
+                                    : availableModels.length === 0
+                                      ? "No models cached — click Refresh"
+                                      : "Select a model"
                               }
                             />
                           </SelectTrigger>

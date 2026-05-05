@@ -25,11 +25,8 @@ pub fn get_tasks(
     Ok(tasks)
 }
 
-/// Create a new task with validation
-#[tauri::command]
-#[specta::specta]
-pub fn create_task(
-    app_state: State<Arc<AppState>>,
+fn create_task_impl(
+    conn: &rusqlite::Connection,
     project_id: i32,
     name: String,
     description: String,
@@ -50,7 +47,6 @@ pub fn create_task(
         return Err("Acceptance criteria must be at least 10 characters".to_string());
     }
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let skills_json = serde_json::to_string(&skills)
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
@@ -66,6 +62,22 @@ pub fn create_task(
     let query = format!("{} WHERE id = ?", TASK_SELECT);
     conn.query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())
+}
+
+/// Create a new task with validation
+#[tauri::command]
+#[specta::specta]
+pub fn create_task(
+    app_state: State<Arc<AppState>>,
+    project_id: i32,
+    name: String,
+    description: String,
+    acceptance_criteria: String,
+    skills: Vec<String>,
+    base_branch: String,
+) -> Result<Task, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    create_task_impl(&conn, project_id, name, description, acceptance_criteria, skills, base_branch)
 }
 
 /// Update a task's status or other fields
@@ -364,4 +376,107 @@ pub async fn list_project_branches(
     let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
 
     Ok((branches, current_branch))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use crate::db::schema::initialize_schema;
+
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn
+    }
+
+    fn insert_project(conn: &Connection) -> i32 {
+        conn.execute(
+            "INSERT INTO projects (name, path, created_at, updated_at) \
+             VALUES ('Test Project', '/tmp/test-project', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.last_insert_rowid() as i32
+    }
+
+    #[test]
+    fn create_task_rejects_short_name() {
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let err = create_task_impl(
+            &conn, project_id, "ab".to_string(),
+            "valid description here".to_string(),
+            "valid criteria here".to_string(),
+            vec![], "main".to_string(),
+        )
+        .unwrap_err();
+        assert!(err.contains("Name must be 3-255 characters"), "got: {err}");
+    }
+
+    #[test]
+    fn create_task_rejects_short_description() {
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let err = create_task_impl(
+            &conn, project_id, "Valid Name".to_string(),
+            "too short".to_string(),
+            "valid criteria here".to_string(),
+            vec![], "main".to_string(),
+        )
+        .unwrap_err();
+        assert!(err.contains("Description must be at least 10 characters"), "got: {err}");
+    }
+
+    #[test]
+    fn create_task_rejects_short_criteria() {
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let err = create_task_impl(
+            &conn, project_id, "Valid Name".to_string(),
+            "valid description here".to_string(),
+            "too short".to_string(),
+            vec![], "main".to_string(),
+        )
+        .unwrap_err();
+        assert!(err.contains("Acceptance criteria must be at least 10 characters"), "got: {err}");
+    }
+
+    #[test]
+    fn create_task_succeeds_with_valid_inputs() {
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let task = create_task_impl(
+            &conn, project_id,
+            "Valid Task Name".to_string(),
+            "This is a valid description.".to_string(),
+            "Task must do something useful.".to_string(),
+            vec!["rust".to_string()], "main".to_string(),
+        )
+        .unwrap();
+        assert_eq!(task.name, "Valid Task Name");
+        assert_eq!(task.project_id, project_id);
+        assert!(matches!(task.status, crate::models::TaskStatus::Backlog));
+    }
+
+    #[test]
+    fn delete_task_removes_task() {
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let task = create_task_impl(
+            &conn, project_id,
+            "Task to Delete".to_string(),
+            "This task will be deleted.".to_string(),
+            "Acceptance criteria here.".to_string(),
+            vec![], "main".to_string(),
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM tasks WHERE id = ?", [task.id]).unwrap();
+
+        let count: i32 = conn
+            .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?", [task.id], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
 }

@@ -62,6 +62,11 @@ export type UserMessagePayload = {
   sentAt: number;
 };
 
+export type UserMessageChunkPayload = {
+  sessionUpdate: "user_message_chunk";
+  content: { type: "text"; text: string };
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -69,6 +74,7 @@ export type SessionUpdatePayload =
   | ToolCallUpdate
   | PlanUpdate
   | UserMessagePayload
+  | UserMessageChunkPayload
   | UsageUpdatePayload;
 
 // Accumulated state for rendering

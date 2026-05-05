@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Channel } from "@tauri-apps/api/core";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 
 interface ExecutionTerminalProps {
   taskId: number;

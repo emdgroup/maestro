@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
-import { useSessionActivityStore } from "@/store/sessionActivityStore";
+import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import type { AvailableCommand, UsageState } from "./types";
 import type { AcpPromptCapabilities } from "@/types/bindings";
 
@@ -15,16 +15,20 @@ export type AcpSessionLifecycleResult = {
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
   pendingPermission: { requestId: string; payload: Record<string, unknown> } | null;
-  setPendingPermission: React.Dispatch<React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>>;
+  setPendingPermission: React.Dispatch<
+    React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>
+  >;
   pendingElicitation: { requestId: string; payload: Record<string, unknown> } | null;
-  setPendingElicitation: React.Dispatch<React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>>;
+  setPendingElicitation: React.Dispatch<
+    React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>
+  >;
 };
 
 export function useAcpSessionLifecycle(
   sessionKey: number,
   onUsageChangeRef: React.MutableRefObject<((usage: UsageState | null) => void) | undefined>,
 ): AcpSessionLifecycleResult {
-  const setActivityStatus = useSessionActivityStore((s) => s.setStatus);
+  const { setStatus: setActivityStatus } = useSessionActivityActions();
 
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string>("");
@@ -46,7 +50,9 @@ export function useAcpSessionLifecycle(
     const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
       setActivityStatus(sessionKey, "idle");
     });
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey, setActivityStatus]);
 
   // permission-request
@@ -61,7 +67,9 @@ export function useAcpSessionLifecycle(
         setActivityStatus(sessionKey, "awaiting_input");
       },
     );
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey, setActivityStatus]);
 
   // elicitation-request
@@ -69,52 +77,69 @@ export function useAcpSessionLifecycle(
     const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
       `acp://elicitation-request/${sessionKey}`,
       (event) => {
-        setPendingElicitation({ requestId: event.payload.request_id, payload: event.payload.payload });
+        setPendingElicitation({
+          requestId: event.payload.request_id,
+          payload: event.payload.payload,
+        });
         setActivityStatus(sessionKey, "awaiting_input");
       },
     );
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey, setActivityStatus]);
 
   // initial fetch: capabilities (events arrive anyway, this just hydrates faster)
   useEffect(() => {
-    api.getAcpCapabilities(sessionKey).then((caps) => {
-      if (caps) setPromptCapabilities(caps);
-    }).catch(console.error);
+    api
+      .getAcpCapabilities(sessionKey)
+      .then((caps) => {
+        if (caps) setPromptCapabilities(caps);
+      })
+      .catch(console.error);
   }, [sessionKey]);
 
   // session-capabilities event
   useEffect(() => {
     const unlisten = listen<AcpPromptCapabilities>(
       `acp://session-capabilities/${sessionKey}`,
-      (event) => { setPromptCapabilities(event.payload); },
+      (event) => {
+        setPromptCapabilities(event.payload);
+      },
     );
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey]);
 
   // initial fetch: models
   useEffect(() => {
-    api.getAcpModels(sessionKey).then((modelState) => {
-      if (modelState) {
-        setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(modelState.current_model_id);
-        setModelsLoaded(true);
-      }
-    }).catch(console.error);
+    api
+      .getAcpModels(sessionKey)
+      .then((modelState) => {
+        if (modelState) {
+          setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
+          setModelId(modelState.current_model_id);
+          setModelsLoaded(true);
+        }
+      })
+      .catch(console.error);
   }, [sessionKey]);
 
   // session-models event
   useEffect(() => {
-    const unlisten = listen<{ current_model_id: string; available_models: Array<{ model_id: string; name: string }> }>(
-      `acp://session-models/${sessionKey}`,
-      (event) => {
-        const { current_model_id, available_models } = event.payload;
-        setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(current_model_id);
-        setModelsLoaded(true);
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
+    const unlisten = listen<{
+      current_model_id: string;
+      available_models: Array<{ model_id: string; name: string }>;
+    }>(`acp://session-models/${sessionKey}`, (event) => {
+      const { current_model_id, available_models } = event.payload;
+      setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
+      setModelId(current_model_id);
+      setModelsLoaded(true);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey]);
 
   // model-changed event
@@ -122,7 +147,9 @@ export function useAcpSessionLifecycle(
     const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
       setModelId(event.payload);
     });
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey]);
 
   // session-update event (usage + available commands)
@@ -157,7 +184,9 @@ export function useAcpSessionLifecycle(
         }
       },
     );
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [sessionKey, onUsageChangeRef]);
 
   // 10s safety valve: unblock UI if models never arrive

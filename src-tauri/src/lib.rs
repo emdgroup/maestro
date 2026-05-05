@@ -9,7 +9,7 @@ pub mod streaming;
 pub mod acp;
 pub mod project_lock;
 
-pub use db::{init_db, AppState, get_git_connection, get_project_with_git_conn};
+pub use db::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 // IPC command functions are accessed via crate::ipc:: prefix in create_builder()
@@ -105,6 +105,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_active_sessions,
             crate::ipc::list_acp_sessions,
             crate::ipc::load_acp_session,
+            crate::ipc::drain_acp_replay,
             crate::ipc::close_acp_session,
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,

@@ -29,7 +29,9 @@ export function WorktreeCardGrid({
     if (flatWorktrees.length === 0) {
       return (
         <div className="flex-1 flex items-center justify-center">
-          <span className="text-sm text-muted-foreground">{emptyMessage ?? "No worktrees yet"}</span>
+          <span className="text-sm text-muted-foreground">
+            {emptyMessage ?? "No worktrees yet"}
+          </span>
         </div>
       );
     }

@@ -1075,12 +1075,18 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 },
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
- * 
- * Returns the new session_key for this Tauri session.
  */
 async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async drainAcpReplay(logId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("drain_acp_replay", { logId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

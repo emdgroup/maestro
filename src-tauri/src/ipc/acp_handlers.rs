@@ -42,6 +42,7 @@ use crate::acp::transport::{
     FileSearchRequest, FileReadRequest,
     SessionListRequest,
     SessionCloseRequest,
+    HandshakeRequest, PROTOCOL_VERSION,
     write_message,
 };
 use tokio::sync::oneshot;
@@ -93,12 +94,12 @@ pub async fn spawn_acp_session(
             })
     });
 
-    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
 
     if let Some(conn_id) = connection_id {
         let maestro_path = {
-            let cache = app_state.agent_discovery_cache.lock().await;
+            let cache = app_state.acp.discovery_cache.lock().await;
             cache.get(&Some(conn_id))
                 .and_then(|e| e.maestro_server_path.clone())
                 .ok_or_else(|| format!(
@@ -106,7 +107,7 @@ pub async fn spawn_acp_session(
                     conn_id
                 ))?
         };
-        let ssh = app_state.get_ssh_session(conn_id).await
+        let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         crate::acp::spawn_acp_process_remote(
             &agent_id, &cwd, log_id, &session_id, &app_state, &ssh,
@@ -238,7 +239,7 @@ pub async fn cancel_acp_session(
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
     // Remove from acp_sessions — this drops AcpProcess which drops Child (kill_on_drop).
-    let removed = app_state.acp_sessions.lock().await.remove(&log_id);
+    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
 
     // If the session had a cancel token, send it to stop the reader task.
     if let Some(mut session) = removed {
@@ -294,7 +295,7 @@ pub async fn get_acp_models(
     log_id: i32,
 ) -> Result<Option<AcpSessionModelState>, String> {
     let models_arc = {
-        let sessions = app_state.acp_sessions.lock().await;
+        let sessions = app_state.acp.sessions.lock().await;
         sessions.get(&log_id).map(|s| Arc::clone(&s.models))
     };
     let Some(models_arc) = models_arc else {
@@ -323,7 +324,7 @@ pub async fn get_acp_capabilities(
     log_id: i32,
 ) -> Result<Option<AcpPromptCapabilities>, String> {
     let capabilities_arc = {
-        let sessions = app_state.acp_sessions.lock().await;
+        let sessions = app_state.acp.sessions.lock().await;
         sessions.get(&log_id).map(|s| Arc::clone(&s.prompt_capabilities))
     };
     let Some(capabilities_arc) = capabilities_arc else {
@@ -347,7 +348,7 @@ pub async fn get_acp_capabilities(
 pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: Option<i32>) {
     match connection_id {
         Some(conn_id) => {
-            let Some(ssh) = app_state.get_ssh_session(conn_id).await else {
+            let Some(ssh) = app_state.ssh.get_session(conn_id).await else {
                 return;
             };
             let maestro_path = ssh
@@ -369,7 +370,7 @@ pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: O
                 maestro_server_path: maestro_path,
                 fetched_at: std::time::Instant::now(),
             };
-            app_state.agent_discovery_cache.lock().await.insert(Some(conn_id), entry);
+            app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), entry);
         }
         None => {
             let maestro_path = which::which("maestro-server").ok()
@@ -388,7 +389,7 @@ pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: O
                 maestro_server_path: None,
                 fetched_at: std::time::Instant::now(),
             };
-            app_state.agent_discovery_cache.lock().await.insert(None, entry);
+            app_state.acp.discovery_cache.lock().await.insert(None, entry);
         }
     }
 }
@@ -430,7 +431,7 @@ pub async fn discover_agents(
     connection_id: Option<i32>,
 ) -> Result<AgentDiscoveryResult, String> {
     {
-        let cache = app_state.agent_discovery_cache.lock().await;
+        let cache = app_state.acp.discovery_cache.lock().await;
         if let Some(entry) = cache.get(&connection_id) {
             if entry.fetched_at.elapsed() < Duration::from_secs(300) {
                 return Ok(entry.result.clone());
@@ -441,7 +442,7 @@ pub async fn discover_agents(
     let arc = Arc::clone(app_state.inner());
     prefetch_agent_discovery(arc, connection_id).await;
 
-    app_state.agent_discovery_cache.lock().await
+    app_state.acp.discovery_cache.lock().await
         .get(&connection_id)
         .map(|e| e.result.clone())
         .ok_or_else(|| match connection_id {
@@ -462,7 +463,7 @@ pub async fn search_session_files(
     limit: Option<u32>,
 ) -> Result<Vec<String>, String> {
     let (cwd, pending_search) = {
-        let sessions = app_state.acp_sessions.lock().await;
+        let sessions = app_state.acp.sessions.lock().await;
         let session = sessions
             .get(&log_id)
             .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
@@ -505,7 +506,7 @@ pub async fn read_session_file(
     relative_path: String,
 ) -> Result<String, String> {
     let (cwd, pending_read) = {
-        let sessions = app_state.acp_sessions.lock().await;
+        let sessions = app_state.acp.sessions.lock().await;
         let session = sessions
             .get(&log_id)
             .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
@@ -547,7 +548,7 @@ pub async fn get_active_sessions(
 
     // ACP sessions
     {
-        let acp = app_state.acp_sessions.lock().await;
+        let acp = app_state.acp.sessions.lock().await;
         for (key, proc) in acp.iter() {
             let caps = proc.session_capabilities.lock()
                 .map(|c| c.clone())
@@ -572,7 +573,7 @@ pub async fn get_active_sessions(
 
     // PTY sessions
     {
-        let pty_meta = app_state.pty_session_meta.lock().await;
+        let pty_meta = app_state.pty.session_meta.lock().await;
         for (key, meta) in pty_meta.iter() {
             sessions.push(ActiveSessionInfo {
                 session_key: *key,
@@ -610,7 +611,7 @@ pub async fn list_acp_sessions(
 ) -> Result<Vec<SessionListEntryDto>, String> {
     let (mut entries, next_cursor) = if let Some(conn_id) = connection_id {
         let maestro_path = {
-            let cache = app_state.agent_discovery_cache.lock().await;
+            let cache = app_state.acp.discovery_cache.lock().await;
             cache.get(&Some(conn_id))
                 .and_then(|e| e.maestro_server_path.clone())
                 .ok_or_else(|| format!(
@@ -618,7 +619,7 @@ pub async fn list_acp_sessions(
                     conn_id
                 ))?
         };
-        let ssh = app_state.get_ssh_session(conn_id).await
+        let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         query_session_list_remote(&ssh, &maestro_path, &agent_id, &cwd, cursor).await?
     } else {
@@ -705,7 +706,7 @@ pub async fn rename_acp_session(
 
     // Update in-memory name if this session is currently active.
     {
-        let mut sessions = app_state.acp_sessions.lock().await;
+        let mut sessions = app_state.acp.sessions.lock().await;
         for proc in sessions.values_mut() {
             let matches = proc.acp_session_id.lock()
                 .map(|g| g.as_deref() == Some(&acp_session_id))
@@ -733,7 +734,7 @@ pub async fn close_acp_session(
 ) -> Result<(), String> {
     if let Some(conn_id) = connection_id {
         let maestro_path = {
-            let cache = app_state.agent_discovery_cache.lock().await;
+            let cache = app_state.acp.discovery_cache.lock().await;
             cache.get(&Some(conn_id))
                 .and_then(|e| e.maestro_server_path.clone())
                 .ok_or_else(|| format!(
@@ -741,7 +742,7 @@ pub async fn close_acp_session(
                     conn_id
                 ))?
         };
-        let ssh = app_state.get_ssh_session(conn_id).await
+        let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         query_session_close_remote(&ssh, &maestro_path, &agent_id, &session_id, &cwd).await
     } else {
@@ -750,8 +751,6 @@ pub async fn close_acp_session(
 }
 
 /// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
-///
-/// Returns the new session_key for this Tauri session.
 #[tauri::command]
 #[specta::specta]
 pub async fn load_acp_session(
@@ -762,11 +761,11 @@ pub async fn load_acp_session(
     connection_id: Option<i32>,
     session_name: Option<String>,
 ) -> Result<i32, String> {
-    let log_id = app_state.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     if let Some(conn_id) = connection_id {
         let maestro_path = {
-            let cache = app_state.agent_discovery_cache.lock().await;
+            let cache = app_state.acp.discovery_cache.lock().await;
             cache.get(&Some(conn_id))
                 .and_then(|e| e.maestro_server_path.clone())
                 .ok_or_else(|| format!(
@@ -774,7 +773,7 @@ pub async fn load_acp_session(
                     conn_id
                 ))?
         };
-        let ssh = app_state.get_ssh_session(conn_id).await
+        let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
         spawn_loaded_acp_session_remote(
             &agent_id, &cwd, log_id, &acp_session_id,
@@ -906,8 +905,18 @@ async fn spawn_loaded_acp_session(
         .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
 
     let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
+    let mut child_stdout = child.stdout.take().expect("child stdout must be piped");
     let mut stdin_writer = tokio::io::BufWriter::new(child_stdin);
+
+    use tokio::io::AsyncWriteExt;
+    let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+        protocol_version: PROTOCOL_VERSION,
+    }));
+    write_message(&mut stdin_writer, &handshake)
+        .await
+        .map_err(|e| format!("write failed: {}", e))?;
+    stdin_writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
+    crate::acp::manager::perform_handshake_local(&mut child_stdout).await?;
 
     let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: agent_id.to_string(),
@@ -918,7 +927,6 @@ async fn spawn_loaded_acp_session(
     write_message(&mut stdin_writer, &load_req)
         .await
         .map_err(|e| format!("write failed: {}", e))?;
-    use tokio::io::AsyncWriteExt;
     stdin_writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
 
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
@@ -929,6 +937,7 @@ async fn spawn_loaded_acp_session(
     let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
     let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
+    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(Some(Vec::new())));
 
     let acp_process = crate::acp::AcpProcess {
         writer: crate::acp::AcpTransportWriter::Local(stdin_writer),
@@ -947,9 +956,10 @@ async fn spawn_loaded_acp_session(
         branch_name: None,
         acp_session_id: Arc::clone(&acp_session_id_cache),
         session_capabilities: Arc::clone(&session_capabilities),
+        replay_buffer: Arc::clone(&replay_buffer),
     };
 
-    app_state.acp_sessions.lock().await.insert(log_id, acp_process);
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
 
     crate::acp::manager::spawn_reader_task(
         child_stdout,
@@ -963,6 +973,7 @@ async fn spawn_loaded_acp_session(
         pending_file_read,
         session_capabilities,
         acp_session_id_cache,
+        replay_buffer,
     );
 
     Ok(())
@@ -979,14 +990,27 @@ async fn spawn_loaded_acp_session_remote(
     session_name: Option<String>,
 ) -> Result<(), String> {
     use crate::acp::transport::SessionLoadRequest;
-    use tokio::io::AsyncWriteExt;
 
     let channel = ssh_session
         .open_exec_channel(maestro_server_path)
         .await
         .map_err(|e| format!("Failed to open remote ACP channel for load: {}", e))?;
 
-    let (read_half, write_half) = channel.split();
+    let (mut read_half, write_half) = channel.split();
+
+    {
+        use tokio::io::AsyncWriteExt;
+        let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+            protocol_version: PROTOCOL_VERSION,
+        }));
+        let mut writer = write_half.make_writer();
+        write_message(&mut writer, &handshake)
+            .await
+            .map_err(|e| format!("remote handshake write failed: {}", e))?;
+        writer.flush().await.map_err(|e| format!("remote handshake flush failed: {}", e))?;
+    }
+    crate::acp::manager::perform_handshake_remote(&mut read_half).await?;
+
     let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
 
     let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
@@ -1000,6 +1024,7 @@ async fn spawn_loaded_acp_session_remote(
         .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
 
     tokio::spawn(async move {
+        use tokio::io::AsyncWriteExt;
         let mut writer = write_half.make_writer();
         while let Some(bytes) = write_rx.recv().await {
             if writer.write_all(&bytes).await.is_err() {
@@ -1017,6 +1042,7 @@ async fn spawn_loaded_acp_session_remote(
     let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
     let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
     let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
+    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(Some(Vec::new())));
 
     let acp_process = crate::acp::AcpProcess {
         writer: crate::acp::AcpTransportWriter::RemoteSsh(write_tx),
@@ -1035,9 +1061,10 @@ async fn spawn_loaded_acp_session_remote(
         branch_name: None,
         acp_session_id: Arc::clone(&acp_session_id_cache),
         session_capabilities: Arc::clone(&session_capabilities),
+        replay_buffer: Arc::clone(&replay_buffer),
     };
 
-    app_state.acp_sessions.lock().await.insert(log_id, acp_process);
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
 
     crate::acp::manager::spawn_remote_reader_task(
         read_half,
@@ -1051,6 +1078,7 @@ async fn spawn_loaded_acp_session_remote(
         pending_file_read,
         session_capabilities,
         acp_session_id_cache,
+        replay_buffer,
     );
 
     Ok(())
@@ -1064,6 +1092,33 @@ pub struct AgentModelsCache {
     pub agent_id: String,
     pub models: Vec<AcpModelInfo>,
     pub fetched_at: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn drain_acp_replay(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+) -> Result<(), String> {
+    let replay_arc = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions
+            .get(&log_id)
+            .map(|s| Arc::clone(&s.replay_buffer))
+    };
+    let Some(replay_arc) = replay_arc else {
+        return Ok(());
+    };
+    let buffered = {
+        let mut buf = replay_arc
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        buf.take().unwrap_or_default()
+    };
+    for payload in buffered {
+        let _ = app_state.app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
+    }
+    Ok(())
 }
 
 /// Get cached models for an agent from the project's .maestro/agent_models_cache.json.
@@ -1085,7 +1140,7 @@ pub async fn get_agent_models_cache(
     };
 
     let map = if let Some(conn_id) = connection_id {
-        let session = app_state.get_ssh_session(conn_id).await
+        let session = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
         let cache_path = format!("{}/.maestro/agent_models_cache.json", path);
         match session.execute_command(&format!("cat {}", crate::git::remote::shell_quote(&cache_path))).await {
@@ -1152,7 +1207,7 @@ pub async fn refresh_agent_models(
 
     // Load existing cache, insert/update, save back
     if let Some(conn_id) = connection_id {
-        let session = app_state.get_ssh_session(conn_id).await
+        let session = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
         let cache_path_str = format!("{}/.maestro/agent_models_cache.json", path);
         let maestro_dir = format!("{}/.maestro", path);
@@ -1193,7 +1248,7 @@ async fn probe_models_remote(
     spawn_req: MaestroRpcMessage,
 ) -> Result<Vec<AcpModelInfo>, String> {
     let maestro_path = {
-        let cache = app_state.agent_discovery_cache.lock().await;
+        let cache = app_state.acp.discovery_cache.lock().await;
         cache.get(&Some(conn_id))
             .and_then(|e| e.maestro_server_path.clone())
             .ok_or_else(|| format!(
@@ -1201,7 +1256,7 @@ async fn probe_models_remote(
                 conn_id
             ))?
     };
-    let ssh = app_state.get_ssh_session(conn_id).await
+    let ssh = app_state.ssh.get_session(conn_id).await
         .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
     let result = crate::acp::rpc::one_shot_rpc_remote(&ssh, &maestro_path, &spawn_req, 30).await?;
     extract_models_from_spawn_ok(result)

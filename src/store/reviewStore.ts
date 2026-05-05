@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import { useShallow } from "zustand/react/shallow";
 import { DiffFileWithName } from "@/types/review";
 
 export interface ReviewState {
   currentTaskId: number | null;
   diffData: DiffFileWithName[];
   selectedFile: string | null;
-  loading: boolean;
+  isLoading: boolean;
   error: string | null;
 
   openReview: (taskId: number) => void;
@@ -22,13 +23,13 @@ export const useReviewStore = create<ReviewState>()(
     currentTaskId: null,
     diffData: [],
     selectedFile: null,
-    loading: false,
+    isLoading: false,
     error: null,
 
     openReview: (taskId: number) =>
       set((state) => {
         state.currentTaskId = taskId;
-        state.loading = true;
+        state.isLoading = true;
         state.error = null;
       }),
 
@@ -37,7 +38,7 @@ export const useReviewStore = create<ReviewState>()(
         state.currentTaskId = null;
         state.diffData = [];
         state.selectedFile = null;
-        state.loading = false;
+        state.isLoading = false;
         state.error = null;
       }),
 
@@ -49,7 +50,7 @@ export const useReviewStore = create<ReviewState>()(
     setDiffData: (files: DiffFileWithName[]) =>
       set((state) => {
         state.diffData = files;
-        state.loading = false;
+        state.isLoading = false;
         if (files.length > 0 && !state.selectedFile) {
           state.selectedFile = files[0].fileName;
         }
@@ -58,12 +59,29 @@ export const useReviewStore = create<ReviewState>()(
     setError: (msg: string | null) =>
       set((state) => {
         state.error = msg;
-        state.loading = false;
+        state.isLoading = false;
       }),
 
     setLoading: (loading: boolean) =>
       set((state) => {
-        state.loading = loading;
+        state.isLoading = loading;
       }),
   })),
 );
+
+export const useReviewCurrentTaskId = () => useReviewStore((s) => s.currentTaskId);
+export const useReviewDiffData = () => useReviewStore((s) => s.diffData);
+export const useReviewSelectedFile = () => useReviewStore((s) => s.selectedFile);
+export const useReviewIsLoading = () => useReviewStore((s) => s.isLoading);
+export const useReviewError = () => useReviewStore((s) => s.error);
+export const useReviewActions = () =>
+  useReviewStore(
+    useShallow((s) => ({
+      openReview: s.openReview,
+      closeReview: s.closeReview,
+      selectFile: s.selectFile,
+      setDiffData: s.setDiffData,
+      setError: s.setError,
+      setLoading: s.setLoading,
+    })),
+  );

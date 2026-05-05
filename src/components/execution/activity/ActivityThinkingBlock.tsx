@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib";
+import { cn } from "@/lib/ui-utils";
 import type { ThinkingItem } from "./types";
 
 interface ActivityThinkingBlockProps {
@@ -34,20 +34,19 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
         onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/60 transition-colors"
       >
-        {expanded ? (
-          <ChevronDown className="w-3 h-3" />
-        ) : (
-          <ChevronRight className="w-3 h-3" />
-        )}
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <Brain className="w-3 h-3" />
         <span>Thought{expanded ? "" : " (click to expand)"}</span>
       </button>
       {expanded && (
-        <p className={cn("text-xs text-muted-foreground/70 leading-relaxed mt-1.5 whitespace-pre-wrap")}>
+        <p
+          className={cn(
+            "text-xs text-muted-foreground/70 leading-relaxed mt-1.5 whitespace-pre-wrap",
+          )}
+        >
           {thinking.text}
         </p>
       )}
     </div>
   );
 }
-

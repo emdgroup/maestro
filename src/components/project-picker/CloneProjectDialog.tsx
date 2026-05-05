@@ -13,7 +13,7 @@ import { Label } from "@/ui/label";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCloneProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { api } from "@/lib";
+import { api } from "@/lib/tauri-utils";
 import type { SshConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
