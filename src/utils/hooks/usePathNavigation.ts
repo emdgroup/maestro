@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const DRIVES_ROOT = "<<DRIVES>>";
 
@@ -12,32 +12,29 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
     drivesRef.current = drives;
   }, [drives]);
 
-  const navigateToDirectory = useCallback(
-    (dirName: string) => {
-      // Handle drive selection on Windows
-      if (currentPath === DRIVES_ROOT) {
-        setCurrentPath(dirName);
-        return;
-      }
+  const navigateToDirectory = (dirName: string) => {
+    // Handle drive selection on Windows
+    if (currentPath === DRIVES_ROOT) {
+      setCurrentPath(dirName);
+      return;
+    }
 
-      // Handle normal directory navigation
-      let newPath: string;
+    // Handle normal directory navigation
+    let newPath: string;
 
-      // Check if current path is a drive root (e.g., "C:/")
-      if (/^[A-Z]:\/$/i.test(currentPath)) {
-        newPath = `${currentPath}${dirName}`;
-      } else if (currentPath === "/") {
-        newPath = `/${dirName}`;
-      } else {
-        newPath = `${currentPath}/${dirName}`;
-      }
+    // Check if current path is a drive root (e.g., "C:/")
+    if (/^[A-Z]:\/$/i.test(currentPath)) {
+      newPath = `${currentPath}${dirName}`;
+    } else if (currentPath === "/") {
+      newPath = `/${dirName}`;
+    } else {
+      newPath = `${currentPath}/${dirName}`;
+    }
 
-      setCurrentPath(newPath);
-    },
-    [currentPath],
-  );
+    setCurrentPath(newPath);
+  };
 
-  const navigateToParent = useCallback(() => {
+  const navigateToParent = () => {
     // Special case: at drives root, can't go up
     if (currentPath === DRIVES_ROOT) {
       return;
@@ -68,35 +65,32 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
         setCurrentPath(newPath);
       }
     }
-  }, [isLocal, currentPath]);
+  };
 
-  const navigateToBreadcrumb = useCallback(
-    (index: number) => {
-      if (index === -1) {
-        // Root click - on Windows with drives, go to drives root
-        if (isLocal && drivesRef.current.length > 0) {
-          setCurrentPath(DRIVES_ROOT);
-        } else {
-          setCurrentPath("/");
-        }
-        return;
-      }
-
-      const parts = currentPath.split("/").filter(Boolean);
-      const selectedPart = parts.slice(0, index + 1);
-
-      // Check if we're clicking on a drive letter
-      if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
-        setCurrentPath(`${selectedPart[0]}/`);
+  const navigateToBreadcrumb = (index: number) => {
+    if (index === -1) {
+      // Root click - on Windows with drives, go to drives root
+      if (isLocal && drivesRef.current.length > 0) {
+        setCurrentPath(DRIVES_ROOT);
       } else {
-        // Check if first part is a Windows drive letter
-        const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
-        const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
-        setCurrentPath(newPath);
+        setCurrentPath("/");
       }
-    },
-    [isLocal, currentPath],
-  );
+      return;
+    }
+
+    const parts = currentPath.split("/").filter(Boolean);
+    const selectedPart = parts.slice(0, index + 1);
+
+    // Check if we're clicking on a drive letter
+    if (selectedPart.length === 1 && /^[A-Z]:$/i.test(selectedPart[0])) {
+      setCurrentPath(`${selectedPart[0]}/`);
+    } else {
+      // Check if first part is a Windows drive letter
+      const isWindowsPath = /^[A-Z]:$/i.test(selectedPart[0]);
+      const newPath = isWindowsPath ? selectedPart.join("/") : "/" + selectedPart.join("/");
+      setCurrentPath(newPath);
+    }
+  };
 
   // Parse path into breadcrumb parts
   const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);

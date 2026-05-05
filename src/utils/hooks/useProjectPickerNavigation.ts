@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { Connection, useConnectionContext } from "@/contexts/ConnectionContext";
 
 /**
@@ -20,22 +20,13 @@ export function useProjectPickerNavigation() {
     }
   }, [activeConnection, setView]);
 
-  /**
-   * Navigate to projects view for the given connection
-   */
-  const navigateToProjects = useCallback(
-    (connection: Connection) => {
-      setActiveConnection(connection);
-    },
-    [setActiveConnection],
-  );
+  const navigateToProjects = (connection: Connection) => {
+    setActiveConnection(connection);
+  };
 
-  /**
-   * Navigate back to connections list and clear active connection
-   */
-  const navigateToConnections = useCallback(() => {
+  const navigateToConnections = () => {
     setActiveConnection(null);
-  }, [setActiveConnection]);
+  };
 
   return {
     navigateToProjects,

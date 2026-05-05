@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 
 export type ConnectionHealthState =
   | "connected"
@@ -39,10 +39,10 @@ export function useConnectionHealth(
   const [attempt, setAttempt] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState(5);
 
-  const dismiss = useCallback(() => {
+  const dismiss = () => {
     setState("connected");
     setAttempt(0);
-  }, []);
+  };
 
   useEffect(() => {
     if (connectionId == null) {

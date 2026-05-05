@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useGetDefaultFilePickerPath, useListDrives } from "@/services/connection.service";
 import type { SshConnection } from "@/types/bindings";
 
@@ -21,20 +21,13 @@ export function useFilePickerInitialization(
   const getDefaultPathQuery = useGetDefaultFilePickerPath();
   const listDrivesQuery = useListDrives();
 
-  // Derive initial path from query results - no state needed
-  const initialPath = useMemo(() => {
-    if (isLocal) {
-      return getDefaultPathQuery.data || "/";
-    } else if (connection) {
-      return `/home/${connection.username}`;
-    }
-    return "";
-  }, [isLocal, connection, getDefaultPathQuery.data]);
+  const initialPath = isLocal
+    ? (getDefaultPathQuery.data ?? "/")
+    : connection
+      ? `/home/${connection.username}`
+      : "";
 
-  // Derive drives from query - no state needed
-  const drives = useMemo(() => {
-    return isLocal && listDrivesQuery.data ? listDrivesQuery.data : [];
-  }, [isLocal, listDrivesQuery.data]);
+  const drives = isLocal && listDrivesQuery.data ? listDrivesQuery.data : [];
 
   // Initialization is complete when queries have finished loading
   const isInitialized = !getDefaultPathQuery.isLoading && !listDrivesQuery.isLoading;

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import { useShallow } from "zustand/react/shallow";
 
 export type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 export type SubView = "backlog" | "board" | "archive";
@@ -114,10 +115,12 @@ export const usePendingAgentId = () => useNavigationStore((s) => s.pendingAgentI
 export const usePendingWorktreeId = () => useNavigationStore((s) => s.pendingWorktreeId);
 export const useNavigate = () => useNavigationStore((s) => s.navigate);
 export const useNavigationActions = () =>
-  useNavigationStore((s) => ({
-    setActiveTab: s.setActiveTab,
-    setActiveSubView: s.setActiveSubView,
-    clearPendingTask: s.clearPendingTask,
-    clearPendingAgent: s.clearPendingAgent,
-    clearPendingWorktree: s.clearPendingWorktree,
-  }));
+  useNavigationStore(
+    useShallow((s) => ({
+      setActiveTab: s.setActiveTab,
+      setActiveSubView: s.setActiveSubView,
+      clearPendingTask: s.clearPendingTask,
+      clearPendingAgent: s.clearPendingAgent,
+      clearPendingWorktree: s.clearPendingWorktree,
+    })),
+  );

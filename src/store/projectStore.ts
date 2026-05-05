@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types/bindings";
 import { api } from "@/lib";
 
@@ -27,7 +28,9 @@ const useStore = create<ProjectStore>()(
 
 export const useSelectedProject = () => useStore((state) => state.selectedProject);
 export const useSelectedProjectActions = () =>
-  useStore((state) => ({
-    setSelectedProject: state.setSelectedProject,
-    clearSelectedProject: state.clearSelectedProject,
-  }));
+  useStore(
+    useShallow((state) => ({
+      setSelectedProject: state.setSelectedProject,
+      clearSelectedProject: state.clearSelectedProject,
+    })),
+  );

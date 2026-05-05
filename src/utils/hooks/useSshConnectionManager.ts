@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { SshConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
@@ -51,182 +51,137 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     subtitle: "Browse local filesystem",
   });
 
-  const buildConnection = useCallback(
-    (sshConn: SshConnection) => ({
-      type: "ssh" as const,
-      id: sshConn.id,
-      displayName: sshConn.display_name || sshConn.connection_string,
-      subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
-      metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
-      sshConnection: sshConn,
-    }),
-    [],
-  );
+  const buildConnection = (sshConn: SshConnection) => ({
+    type: "ssh" as const,
+    id: sshConn.id,
+    displayName: sshConn.display_name || sshConn.connection_string,
+    subtitle: sshConn.display_name ? sshConn.connection_string : undefined,
+    metadata: `Last used: ${new Date(sshConn.last_used_at).toLocaleDateString()}`,
+    sshConnection: sshConn,
+  });
 
   useEffect(() => {
     setConnections([local.current, ...sshConnections.map(buildConnection)]);
   }, [sshConnections, buildConnection]);
 
-  /**
-   * Unique SSH key file paths used across all saved connections.
-   * Deduplicated by path; hasSavedPassphrase=true wins when the same path appears multiple times.
-   */
-  const savedKeyFiles = useMemo(() => {
-    const keyMap = new Map<string, boolean>();
-    for (const conn of sshConnections) {
-      const method = conn.auth_method;
-      if (typeof method === "object" && "KeyFile" in method) {
-        const { path, save_passphrase } = method.KeyFile;
-        keyMap.set(path, (keyMap.get(path) ?? false) || save_passphrase);
-      }
+  const keyMap = new Map<string, boolean>();
+  for (const conn of sshConnections) {
+    const method = conn.auth_method;
+    if (typeof method === "object" && "KeyFile" in method) {
+      const { path, save_passphrase } = method.KeyFile;
+      keyMap.set(path, (keyMap.get(path) ?? false) || save_passphrase);
     }
-    return Array.from(keyMap.entries()).map(([path, hasSavedPassphrase]) => ({
-      path,
-      hasSavedPassphrase,
-    }));
-  }, [sshConnections]);
+  }
+  const savedKeyFiles = Array.from(keyMap.entries()).map(([path, hasSavedPassphrase]) => ({
+    path,
+    hasSavedPassphrase,
+  }));
 
-  /**
-   * Helper to fetch a connection by ID and construct Connection object
-   * Refetches from server to ensure data is fresh, then returns the specific connection
-   */
-  const getConnectionById = useCallback(
-    async (id: number): Promise<Connection | null> => {
-      try {
-        // Refetch to ensure we have the latest data (TanStack Query will update cache)
-        const { data } = await refetchConnections();
+  const getConnectionById = async (id: number): Promise<Connection | null> => {
+    try {
+      // Refetch to ensure we have the latest data (TanStack Query will update cache)
+      const { data } = await refetchConnections();
 
-        const sshConn = data?.find((conn) => conn.id === id);
-        return sshConn ? buildConnection(sshConn) : null;
-      } catch (error) {
-        console.error("Failed to get connection:", error);
-        return null;
-      }
-    },
-    [refetchConnections, buildConnection],
-  );
+      const sshConn = data?.find((conn) => conn.id === id);
+      return sshConn ? buildConnection(sshConn) : null;
+    } catch (error) {
+      console.error("Failed to get connection:", error);
+      return null;
+    }
+  };
 
-  const initiateConnection = useCallback(
-    async (connId: number) => {
-      setLoading(true);
-      setConnectionId(connId);
-      connectSsh(
-        { connectionId: connId },
-        {
-          onSuccess: async () => {
-            const connection = await getConnectionById(connId);
-            if (connection) {
-              onConnectionSuccess(connection);
-            }
-          },
-          onError: () => setShowAuthModal(true),
-          onSettled: () => setLoading(false),
-        },
-      );
-    },
-    [onConnectionSuccess, getConnectionById, connectSsh],
-  );
-
-  const handleConnection = useCallback(
-    async (connection: Connection) => {
-      setIsNewConnection(false);
-      setUsername(connection.sshConnection?.username ?? "");
-      if (connection.type === "local") {
-        onConnectionSuccess(local.current);
-      } else if (connection.sshConnection) {
-        await initiateConnection(connection.sshConnection.id);
-      }
-    },
-    [onConnectionSuccess, initiateConnection],
-  );
-
-  /**
-   * Handle new SSH connection creation
-   * Saves connection string to database and attempts authentication
-   */
-  const handleNewConnection = useCallback(
-    async (connectionString: string) => {
-      setLoading(true);
-      setIsNewConnection(true);
-      setUsername(connectionString.split("@")[0]);
-      createSshConnection(
-        {
-          connectionString,
-          authMethod: "Agent", // Default to Agent auth
-        },
-        {
-          onSuccess: async (connectionIdResult) => {
-            await initiateConnection(connectionIdResult);
-          },
-          onSettled: () => setLoading(false),
-        },
-      );
-    },
-    [initiateConnection, createSshConnection],
-  );
-
-  /**
-   * Handle SSH auth modal submission (password, key-file, or agent)
-   */
-  const handleAuthSubmit = useCallback(
-    async (auth: AuthSubmission) => {
-      if (connectionId === null) return;
-      const options = {
+  const initiateConnection = async (connId: number) => {
+    setLoading(true);
+    setConnectionId(connId);
+    connectSsh(
+      { connectionId: connId },
+      {
         onSuccess: async () => {
-          const connection = await getConnectionById(connectionId);
-          if (connection) onConnectionSuccess(connection);
-          setShowAuthModal(false);
+          const connection = await getConnectionById(connId);
+          if (connection) {
+            onConnectionSuccess(connection);
+          }
         },
-        onSettled: () => {
-          setLoading(false);
+        onError: () => setShowAuthModal(true),
+        onSettled: () => setLoading(false),
+      },
+    );
+  };
+
+  const handleConnection = async (connection: Connection) => {
+    setIsNewConnection(false);
+    setUsername(connection.sshConnection?.username ?? "");
+    if (connection.type === "local") {
+      onConnectionSuccess(local.current);
+    } else if (connection.sshConnection) {
+      await initiateConnection(connection.sshConnection.id);
+    }
+  };
+
+  const handleNewConnection = async (connectionString: string) => {
+    setLoading(true);
+    setIsNewConnection(true);
+    setUsername(connectionString.split("@")[0]);
+    createSshConnection(
+      {
+        connectionString,
+        authMethod: "Agent", // Default to Agent auth
+      },
+      {
+        onSuccess: async (connectionIdResult) => {
+          await initiateConnection(connectionIdResult);
         },
-      };
+        onSettled: () => setLoading(false),
+      },
+    );
+  };
 
-      setLoading(true);
+  const handleAuthSubmit = async (auth: AuthSubmission) => {
+    if (connectionId === null) return;
+    const options = {
+      onSuccess: async () => {
+        const connection = await getConnectionById(connectionId);
+        if (connection) onConnectionSuccess(connection);
+        setShowAuthModal(false);
+      },
+      onSettled: () => {
+        setLoading(false);
+      },
+    };
 
-      if (auth.method === "password") {
-        connectSshWithCreds(
-          {
-            connectionId,
-            password: auth.password,
-            savePassword: auth.savePassword,
-          },
-          { ...options },
-        );
-      } else if (auth.method === "key-file") {
-        connectSshWithKey(
-          {
-            connectionId,
-            keyPath: auth.keyPath,
-            passphrase: auth.passphrase,
-            savePassphrase: auth.savePassphrase,
-          },
-          { ...options },
-        );
-      } else {
-        // agent — use dedicated agent auth handler
-        connectSshWithAgent({ connectionId }, { ...options });
-      }
-    },
-    [
-      connectionId,
-      onConnectionSuccess,
-      getConnectionById,
-      connectSshWithCreds,
-      connectSshWithKey,
-      connectSshWithAgent,
-    ],
-  );
+    setLoading(true);
 
-  /**
-   * Handle auth modal cancellation
-   */
-  const handleAuthCancel = useCallback(() => {
+    if (auth.method === "password") {
+      connectSshWithCreds(
+        {
+          connectionId,
+          password: auth.password,
+          savePassword: auth.savePassword,
+        },
+        { ...options },
+      );
+    } else if (auth.method === "key-file") {
+      connectSshWithKey(
+        {
+          connectionId,
+          keyPath: auth.keyPath,
+          passphrase: auth.passphrase,
+          savePassphrase: auth.savePassphrase,
+        },
+        { ...options },
+      );
+    } else {
+      // agent — use dedicated agent auth handler
+      connectSshWithAgent({ connectionId }, { ...options });
+    }
+  };
+
+  const handleAuthCancel = () => {
     if (isNewConnection && !!connectionId) {
       void deleteSshConnection(connectionId);
     }
     setShowAuthModal(false);
-  }, [isNewConnection, connectionId, deleteSshConnection]);
+  };
 
   return {
     username,
