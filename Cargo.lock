@@ -3105,6 +3105,7 @@ name = "maestro-server"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "agent-client-protocol-schema",
  "agent-client-protocol-tokio",
  "futures",
  "ignore",

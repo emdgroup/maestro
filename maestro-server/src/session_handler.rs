@@ -13,6 +13,10 @@ use acp::schema::{
     SetSessionModelRequest, StopReason, TerminalExitStatus, TerminalOutputRequest,
     TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
+use agent_client_protocol_schema::{
+    CreateElicitationRequest, CreateElicitationResponse, ElicitationCapabilities,
+    ElicitationFormCapabilities,
+};
 use maestro_protocol::{
     ElicitationRequest as MaestroElicitationRequest, ErrorResponse, MaestroRpcMessage,
     ModelInfo as ProtocolModelInfo, PermissionRequest as MaestroPermissionRequest,
@@ -382,6 +386,10 @@ pub(crate) async fn spawn_acp_session(
                         let elicit_counter = elicit_counter.clone();
                         async move {
                             if request.method() == "elicitation/create" {
+                                let elicitation: CreateElicitationRequest =
+                                    serde_json::from_value(request.params().clone()).map_err(
+                                        |e| acp::Error::new(-32602, format!("invalid elicitation request: {e}")),
+                                    )?;
                                 let request_id = format!("elicit-{}", elicit_counter.fetch_add(1, Ordering::Relaxed) + 1);
                                 let (tx, rx) = oneshot::channel::<serde_json::Value>();
                                 pe.lock().await.insert(request_id.clone(), tx);
@@ -390,6 +398,7 @@ pub(crate) async fn spawn_acp_session(
                                     ServerResponse::ElicitationRequest(MaestroElicitationRequest {
                                         session_id: sid,
                                         request_id,
+                                        message: elicitation.message,
                                         payload,
                                     }),
                                 );
@@ -399,6 +408,10 @@ pub(crate) async fn spawn_acp_session(
                                 let response = rx.await.map_err(|_| {
                                     acp::Error::new(-32603, "elicitation channel closed")
                                 })?;
+                                let _validated: CreateElicitationResponse =
+                                    serde_json::from_value(response.clone()).map_err(|e| {
+                                        acp::Error::new(-32603, format!("invalid elicitation response: {e}"))
+                                    })?;
                                 responder.respond(response)
                             } else {
                                 responder.respond_with_error(
@@ -417,7 +430,14 @@ pub(crate) async fn spawn_acp_session(
                     .send_request(
                         InitializeRequest::new(ProtocolVersion::V1)
                             .client_info(Implementation::new("maestro-server", "0.1.0"))
-                            .client_capabilities(ClientCapabilities::new().terminal(true)),
+                            .client_capabilities(
+                                ClientCapabilities::new()
+                                    .terminal(true)
+                                    .elicitation(
+                                        ElicitationCapabilities::new()
+                                            .form(ElicitationFormCapabilities::new()),
+                                    ),
+                            ),
                     )
                     .block_task()
                     .await;
@@ -839,6 +859,10 @@ pub(crate) async fn load_acp_session(
                         let elicit_counter = elicit_counter.clone();
                         async move {
                             if request.method() == "elicitation/create" {
+                                let elicitation: CreateElicitationRequest =
+                                    serde_json::from_value(request.params().clone()).map_err(
+                                        |e| acp::Error::new(-32602, format!("invalid elicitation request: {e}")),
+                                    )?;
                                 let request_id = format!("elicit-{}", elicit_counter.fetch_add(1, Ordering::Relaxed) + 1);
                                 let (tx, rx) = oneshot::channel::<serde_json::Value>();
                                 pe.lock().await.insert(request_id.clone(), tx);
@@ -847,6 +871,7 @@ pub(crate) async fn load_acp_session(
                                     ServerResponse::ElicitationRequest(MaestroElicitationRequest {
                                         session_id: sid,
                                         request_id,
+                                        message: elicitation.message,
                                         payload,
                                     }),
                                 );
@@ -856,6 +881,10 @@ pub(crate) async fn load_acp_session(
                                 let response = rx.await.map_err(|_| {
                                     acp::Error::new(-32603, "elicitation channel closed")
                                 })?;
+                                let _validated: CreateElicitationResponse =
+                                    serde_json::from_value(response.clone()).map_err(|e| {
+                                        acp::Error::new(-32603, format!("invalid elicitation response: {e}"))
+                                    })?;
                                 responder.respond(response)
                             } else {
                                 responder.respond_with_error(
@@ -872,7 +901,14 @@ pub(crate) async fn load_acp_session(
                     .send_request(
                         InitializeRequest::new(ProtocolVersion::V1)
                             .client_info(Implementation::new("maestro-server", "0.1.0"))
-                            .client_capabilities(ClientCapabilities::new().terminal(true)),
+                            .client_capabilities(
+                                ClientCapabilities::new()
+                                    .terminal(true)
+                                    .elicitation(
+                                        ElicitationCapabilities::new()
+                                            .form(ElicitationFormCapabilities::new()),
+                                    ),
+                            ),
                     )
                     .block_task()
                     .await;

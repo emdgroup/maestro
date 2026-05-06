@@ -269,6 +269,7 @@ pub struct PermissionResponse {
 pub struct ElicitationRequest {
     pub session_id: String,
     pub request_id: String,
+    pub message: String,
     pub payload: serde_json::Value,
 }
 

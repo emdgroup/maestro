@@ -18,9 +18,9 @@ export type AcpSessionLifecycleResult = {
   setPendingPermission: React.Dispatch<
     React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>
   >;
-  pendingElicitation: { requestId: string; payload: Record<string, unknown> } | null;
+  pendingElicitation: { requestId: string; message: string; payload: Record<string, unknown> } | null;
   setPendingElicitation: React.Dispatch<
-    React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>
+    React.SetStateAction<{ requestId: string; message: string; payload: Record<string, unknown> } | null>
   >;
 };
 
@@ -42,6 +42,7 @@ export function useAcpSessionLifecycle(
   } | null>(null);
   const [pendingElicitation, setPendingElicitation] = useState<{
     requestId: string;
+    message: string;
     payload: Record<string, unknown>;
   } | null>(null);
 
@@ -74,11 +75,12 @@ export function useAcpSessionLifecycle(
 
   // elicitation-request
   useEffect(() => {
-    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
+    const unlisten = listen<{ request_id: string; message: string; payload: Record<string, unknown> }>(
       `acp://elicitation-request/${sessionKey}`,
       (event) => {
         setPendingElicitation({
           requestId: event.payload.request_id,
+          message: event.payload.message,
           payload: event.payload.payload,
         });
         setActivityStatus(sessionKey, "awaiting_input");

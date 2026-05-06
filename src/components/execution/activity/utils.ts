@@ -78,10 +78,10 @@ export function mergeLiveItems(
 
 export function makeElicitationSummary(
   requestId: string,
-  payload: Record<string, unknown>,
+  message: string,
   answer: string,
 ): ElicitationSummaryItem {
-  return { id: `elicit-${requestId}`, question: String(payload.message ?? "Elicitation"), answer };
+  return { id: `elicit-${requestId}`, question: message, answer };
 }
 
 export function formatElicitationAnswer(values: Record<string, unknown>): string {

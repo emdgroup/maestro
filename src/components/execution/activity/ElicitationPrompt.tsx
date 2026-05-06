@@ -144,14 +144,10 @@ export function ElicitationPrompt({
   );
 }
 
-export function parseElicitationFields(payload: Record<string, unknown>): {
-  message: string;
-  fields: ElicitationField[];
-} {
-  const message = (payload.message as string) ?? "Please provide information";
+export function parseElicitationFields(payload: Record<string, unknown>): ElicitationField[] {
   const schema = payload.requestedSchema as Record<string, unknown> | undefined;
   const properties = (schema?.properties as Record<string, Record<string, unknown>>) ?? {};
-  const fields: ElicitationField[] = Object.entries(properties).map(([key, prop]) => ({
+  return Object.entries(properties).map(([key, prop]) => ({
     key,
     type: (prop.type as ElicitationField["type"]) ?? "string",
     title: prop.title as string | undefined,
@@ -160,5 +156,4 @@ export function parseElicitationFields(payload: Record<string, unknown>): {
     oneOf: prop.oneOf as { const: string; title: string }[] | undefined,
     items: prop.items as ElicitationField["items"],
   }));
-  return { message, fields };
 }

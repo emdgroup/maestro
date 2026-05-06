@@ -154,7 +154,7 @@ export function AgentActivityPanel({
           {
             item: makeElicitationSummary(
               requestId,
-              pendingElicitation.payload,
+              pendingElicitation.message,
               formatElicitationAnswer(values),
             ),
             insertAt,
@@ -179,7 +179,7 @@ export function AgentActivityPanel({
         setLiveElicitationSummaries((prev) => [
           ...prev,
           {
-            item: makeElicitationSummary(requestId, pendingElicitation.payload, "Declined"),
+            item: makeElicitationSummary(requestId, pendingElicitation.message, "Declined"),
             insertAt,
           },
         ]);
@@ -336,7 +336,8 @@ export function AgentActivityPanel({
   const elicitationContent = pendingElicitation
     ? {
         requestId: pendingElicitation.requestId,
-        ...parseElicitationFields(pendingElicitation.payload),
+        message: pendingElicitation.message,
+        fields: parseElicitationFields(pendingElicitation.payload),
       }
     : null;
 

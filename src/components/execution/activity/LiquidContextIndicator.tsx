@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId } from "react";
 import { cn } from "@/lib/ui-utils";
 import { humanizeTokenCount } from "@/lib/format-utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
 import type { UsageState } from "./types";
 
@@ -225,6 +225,23 @@ export function LiquidContextIndicator({
       hoverTimerRef.current = null;
     }
     if (openedByHoverRef.current) {
+      hoverTimerRef.current = setTimeout(() => {
+        hoverTimerRef.current = null;
+        openedByHoverRef.current = false;
+        setOpen(false);
+      }, 150);
+    }
+  }
+
+  function handlePopoverMouseEnter() {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }
+
+  function handlePopoverMouseLeave() {
+    if (openedByHoverRef.current) {
       openedByHoverRef.current = false;
       setOpen(false);
     }
@@ -313,12 +330,16 @@ export function LiquidContextIndicator({
       </PopoverTrigger>
       <PopoverContent
         side="top"
+        collisionPadding={16}
+        onMouseEnter={handlePopoverMouseEnter}
+        onMouseLeave={handlePopoverMouseLeave}
         className={cn(
           "w-64 p-3.5 flex flex-col gap-3",
           "backdrop-blur-[4px] bg-popover/60 border-border/30",
           "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
         )}
       >
+        <PopoverArrow className="fill-popover/60 drop-shadow-[0_-1px_0_rgba(255,255,255,0.12)]" />
         {/* Header */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold flex items-center gap-1.5">
@@ -326,29 +347,25 @@ export function LiquidContextIndicator({
             Context Window
           </span>
           <span className={cn("text-lg font-bold tabular-nums tracking-tight", PCT_COLOR[fillState])}>
-            {usage.size > 1 ? `${pct}%` : "—"}
+            {pct}%
           </span>
         </div>
 
         {/* Progress bar */}
-        {usage.size > 1 && (
-          <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
-            <div
-              className={cn("h-full rounded-full transition-all duration-300", PROGRESS_COLOR[fillState])}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        )}
+        <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-all duration-300", PROGRESS_COLOR[fillState])}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
 
         {/* Token info */}
-        {usage.size > 1 && (
-          <div className="flex justify-between text-[11px] text-muted-foreground">
-            <span>{humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens</span>
-            {usage.cost && (
-              <span>${usage.cost.amount.toFixed(2)}</span>
-            )}
-          </div>
-        )}
+        <div className="flex justify-between text-[11px] text-muted-foreground">
+          <span>{humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens</span>
+          {usage.cost && (
+            <span>${usage.cost.amount.toFixed(2)}</span>
+          )}
+        </div>
 
         {/* Contextual tip */}
         <div className={cn("flex gap-2 px-2.5 py-2 rounded-md text-[11px] leading-relaxed", TIP_STYLE[fillState])}>
