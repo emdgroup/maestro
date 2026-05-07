@@ -49,13 +49,15 @@ export function useSystemAccentColorQuery() {
  * Mutation hook for saving application settings
  * Invalidates settings cache after successful save
  */
-export function useSaveSettings() {
+export function useSaveSettings({ successToast = true } : { successToast: boolean }) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (settings: AppSettings) => api.saveSettings(settings),
     onSuccess: () => {
-      toast.success("Settings saved");
+      if (successToast) {
+        toast.success("Settings saved");
+      }
       // Invalidate settings list so it refetches with updated values
       void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.lists() });
     },

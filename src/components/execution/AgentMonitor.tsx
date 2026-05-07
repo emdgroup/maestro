@@ -1,14 +1,14 @@
 import { useMemo, useState, useCallback, useRef } from "react";
-import { Plus, Terminal, X } from "lucide-react";
+import { Plus, Terminal, X, FileText, FileDiff } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/Terminal";
 import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
+import { WorkingFilesPanel } from "@/components/execution/activity/WorkingFilesPanel";
+import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import type { ActiveSessionInfo } from "@/types/bindings";
 import { useActivityStatuses, type SessionActivityStatus } from "@/store/sessionActivityStore";
-import type { UsageState } from "./activity/types";
-import { humanizeTokenCount } from "@/lib/format-utils";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
@@ -64,23 +64,40 @@ export function AgentMonitor({
   projectId,
 }: AgentMonitorProps) {
   const activityStatuses = useActivityStatuses();
-  const [sessionUsages, setSessionUsages] = useState<Map<number, UsageState>>(new Map());
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameMutation = useRenameAcpSessionMutation();
+  const [openPanel, setOpenPanel] = useState<"working-files" | "review-changes" | null>(null);
+  const [sessionWorkingFiles, setSessionWorkingFiles] = useState<Map<number, string[]>>(new Map());
+  const [sessionChangedFiles, setSessionChangedFiles] = useState<Map<number, string[]>>(new Map());
 
-  const handleUsageChange = useCallback((sessionKey: number, usage: UsageState | null) => {
-    setSessionUsages((prev) => {
+  const handleWorkingFilesChange = useCallback((sessionKey: number, files: string[]) => {
+    setSessionWorkingFiles((prev) => {
+      const existing = prev.get(sessionKey);
+      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i])) return prev;
       const next = new Map(prev);
-      if (usage === null) {
-        next.delete(sessionKey);
-      } else {
-        next.set(sessionKey, usage);
-      }
+      next.set(sessionKey, files);
       return next;
     });
   }, []);
+
+  const handleSessionChangedFilesChange = useCallback((sessionKey: number, files: string[]) => {
+    setSessionChangedFiles((prev) => {
+      const existing = prev.get(sessionKey);
+      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i])) return prev;
+      const next = new Map(prev);
+      next.set(sessionKey, files);
+      return next;
+    });
+  }, []);
+
+  const prevSelectedKeyRef = useRef(selectedSessionKey);
+  if (prevSelectedKeyRef.current !== selectedSessionKey) {
+    prevSelectedKeyRef.current = selectedSessionKey;
+    if (openPanel !== null) setOpenPanel(null);
+  }
+
 
   const startRename = useCallback((session: ActiveSessionInfo, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -210,7 +227,7 @@ export function AgentMonitor({
       </div>
 
       {/* Content pane */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {selectedSession && (
           <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
             <div className="flex items-center justify-between">
@@ -273,21 +290,34 @@ export function AgentMonitor({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {(() => {
-                  const usage = sessionUsages.get(selectedSession.session_key);
-                  if (!usage || usage.size <= 1) return null;
-                  return (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-                      <span>{humanizeTokenCount(usage.used)}</span>
-                      {usage.cost !== null && (
-                        <span>
-                          {usage.cost.amount.toFixed(usage.cost.amount < 0.01 ? 4 : 2)}{" "}
-                          {usage.cost.currency}
+                {selectedSession.execution_mode === "acp" && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0}
+                      onClick={() => setOpenPanel("working-files")}
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-1" />
+                      Working Files
+                      {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) > 0 && (
+                        <span className="ml-1.5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground leading-4">
+                          {sessionWorkingFiles.get(selectedSession.session_key)!.length}
                         </span>
                       )}
-                    </div>
-                  );
-                })()}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setOpenPanel("review-changes")}
+                    >
+                      <FileDiff className="w-3.5 h-3.5 mr-1" />
+                      Review Changes
+                    </Button>
+                  </>
+                )}
                 {selectedSession.execution_mode === "acp" && onOpenTerminal && (
                   <Button
                     variant="outline"
@@ -299,6 +329,7 @@ export function AgentMonitor({
                     Terminal
                   </Button>
                 )}
+                <div className="w-px h-4 bg-border shrink-0" />
                 {onClose && (
                   <Button
                     variant="ghost"
@@ -328,10 +359,27 @@ export function AgentMonitor({
               <AgentActivityPanel
                 sessionKey={s.session_key}
                 isSelected={s.session_key === selectedSessionKey}
-                onUsageChange={(usage) => handleUsageChange(s.session_key, usage)}
+                onWorkingFilesChange={handleWorkingFilesChange}
+                onSessionChangedFilesChange={handleSessionChangedFilesChange}
+                onOpenPanel={s.session_key === selectedSessionKey ? setOpenPanel : undefined}
               />
             </div>
           ))}
+
+        {selectedSessionKey != null && openPanel === "working-files" && (
+          <WorkingFilesPanel
+            sessionKey={selectedSessionKey}
+            files={sessionWorkingFiles.get(selectedSessionKey) ?? []}
+            onClose={() => setOpenPanel(null)}
+          />
+        )}
+        {selectedSessionKey != null && openPanel === "review-changes" && (
+          <ReviewChangesPanel
+            sessionKey={selectedSessionKey}
+            sessionChangedFiles={sessionChangedFiles.get(selectedSessionKey) ?? []}
+            onClose={() => setOpenPanel(null)}
+          />
+        )}
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
           <TerminalComponent

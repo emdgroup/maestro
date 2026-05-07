@@ -46,6 +46,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         connectionId: connection?.id ?? null,
       });
       const project = await api.openProject(created.id);
+      api.primeProjectServer(created.id).catch(() => {});
       setSelectedProject(project);
       // Reset form and close
       setUrl("");

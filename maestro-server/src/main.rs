@@ -22,17 +22,44 @@ use std::sync::Arc;
 
 use maestro_protocol::{
     read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
-    HandshakeResponse, ListAgentsResponse, MaestroRpcMessage, PROTOCOL_VERSION, ServerRequest,
-    ServerResponse, SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse,
+    HandshakeResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
+    PROTOCOL_VERSION, ServerRequest, ServerResponse, SessionListOkResponse, SessionLoadOkResponse,
+    SessionUpdate, SpawnResponse,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use file_ops::{handle_file_read, handle_file_search};
 use session_handler::{
-    ensure_agent_cache, load_acp_session, run_session_close, run_session_list, spawn_acp_session,
+    create_session_on_connection, ensure_agent_cache, load_acp_session,
+    load_session_on_connection, pre_initialize_agent, run_session_close, run_session_list,
+    session_close_on_connection, session_list_on_connection, spawn_acp_session,
 };
-use sessions::{SessionCommand, SessionMap};
+use sessions::{AgentConnectionMap, SessionCommand, SessionMap};
+
+const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+async fn resolve_agent_spawn_params(
+    agent_id: &str,
+    agent_cache: &mut Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)>,
+    registry: &AcpRegistry,
+    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
+    let agents = ensure_agent_cache(agent_cache, CACHE_TTL, registry).await;
+    match agents.iter().find(|a| a.id == agent_id) {
+        Some(a) => Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone())),
+        None => {
+            let _ = send_response(
+                stdout,
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message: format!("Unknown agent: {}", agent_id),
+                })),
+            )
+            .await;
+            None
+        }
+    }
+}
 
 /// Send a MaestroRpcMessage to stdout, flushing after every write.
 pub(crate) async fn send_response(
@@ -47,14 +74,26 @@ pub(crate) async fn send_response(
     Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    if std::env::args().any(|a| a == "--protocol-version") {
+        println!("{}", PROTOCOL_VERSION);
+        return;
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build tokio runtime")
+        .block_on(async_main())
+        .expect("maestro-server fatal error");
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let stdout: Arc<Mutex<tokio::io::Stdout>> = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut stdin = tokio::io::stdin();
     let mut sessions: SessionMap = HashMap::new();
+    let mut agent_connections: AgentConnectionMap = HashMap::new();
     let mut agent_cache: Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)> =
         None;
-    const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
     let registry: AcpRegistry = tokio::task::spawn_blocking(registry::load_registry)
         .await
@@ -149,56 +188,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
-                let agents_with_spawn =
-                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
-                let (spawn_cmd, spawn_args_owned, spawn_env) = match agents_with_spawn
-                    .iter()
-                    .find(|a| a.id == req.agent_id)
-                {
-                    Some(a) => (a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()),
-                    None => {
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!("Unknown agent: {}", req.agent_id),
-                            })),
-                        )
-                        .await;
-                        continue;
-                    }
+                let used_fast_path = agent_connections.contains_key(&req.agent_id);
+                let result = if used_fast_path {
+                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                    create_session_on_connection(
+                        conn,
+                        req.session_id.clone(),
+                        &req.cwd,
+                        Arc::clone(&stdout),
+                    )
+                    .await
+                } else {
+                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
+                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                    else { continue; };
+                    spawn_acp_session(
+                        &spawn_cmd,
+                        &spawn_args_owned,
+                        &spawn_env,
+                        &req.cwd,
+                        req.session_id.clone(),
+                        Arc::clone(&stdout),
+                    )
+                    .await
                 };
 
-                match spawn_acp_session(
-                    &spawn_cmd,
-                    &spawn_args_owned,
-                    &spawn_env,
-                    &req.cwd,
-                    req.session_id.clone(),
-                    Arc::clone(&stdout),
-                )
-                .await
-                {
-                    Some(result) => {
-                        let response = SpawnResponse {
-                            session_id: req.session_id.clone(),
-                            acp_session_id: Some(result.acp_session_id),
-                            models: result.models,
-                            prompt_capabilities: Some(result.prompt_capabilities),
-                            supports_session_list: result.supports_session_list,
-                            supports_session_load: result.supports_session_load,
-                            supports_session_close: result.supports_session_close,
-                        };
-                        sessions.insert(req.session_id, result.session);
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
-                        )
-                        .await;
-                    }
-                    None => {
-                        // Error already sent by spawn_acp_session
-                    }
+                if used_fast_path && result.is_none() {
+                    agent_connections.remove(&req.agent_id);
                 }
+
+                if let Some(result) = result {
+                    let response = SpawnResponse {
+                        session_id: req.session_id.clone(),
+                        acp_session_id: Some(result.acp_session_id),
+                        models: result.models,
+                        modes: result.modes,
+                        prompt_capabilities: Some(result.prompt_capabilities),
+                        supports_session_list: result.supports_session_list,
+                        supports_session_load: result.supports_session_load,
+                        supports_session_close: result.supports_session_close,
+                    };
+                    sessions.insert(req.session_id, result.session);
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
+                    )
+                    .await;
+                }
+                // None: error already sent by spawn function
             }
 
             MaestroRpcMessage::Request(ServerRequest::Prompt(req)) => {
@@ -320,6 +357,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            MaestroRpcMessage::Request(ServerRequest::SetMode(set_mode_req)) => {
+                if let Some(session) = sessions.get(&set_mode_req.session_id) {
+                    if session
+                        .cmd_tx
+                        .send(SessionCommand::SetMode(set_mode_req.mode_id))
+                        .await
+                        .is_err()
+                    {
+                        let _ = send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!(
+                                    "session {} connection closed",
+                                    set_mode_req.session_id
+                                ),
+                            })),
+                        )
+                        .await;
+                    }
+                } else {
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: format!("unknown session: {}", set_mode_req.session_id),
+                        })),
+                    )
+                    .await;
+                }
+            }
+
             MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
                 let result = tokio::task::spawn_blocking(move || handle_file_search(req))
                     .await
@@ -349,25 +416,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
-                let agents_with_spawn =
-                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
-                let (spawn_cmd, spawn_args_owned, spawn_env) = match agents_with_spawn
-                    .iter()
-                    .find(|a| a.id == req.agent_id)
-                {
-                    Some(a) => (a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()),
-                    None => {
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!("Unknown agent: {}", req.agent_id),
-                            })),
-                        )
-                        .await;
-                        continue;
-                    }
+                let used_fast_path = agent_connections.contains_key(&req.agent_id);
+                let list_result = if used_fast_path {
+                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                    session_list_on_connection(conn, &req.cwd, req.cursor).await
+                } else {
+                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
+                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                    else { continue; };
+                    run_session_list(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.cursor).await
                 };
-                match run_session_list(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.cursor).await {
+                if used_fast_path && list_result.is_err() {
+                    agent_connections.remove(&req.agent_id);
+                }
+                match list_result {
                     Ok((sessions_list, next_cursor)) => {
                         let _ = send_response(
                             &stdout,
@@ -390,75 +452,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {
-                let agents_with_spawn =
-                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
-                let (spawn_cmd, spawn_args_owned, spawn_env) = match agents_with_spawn
-                    .iter()
-                    .find(|a| a.id == req.agent_id)
-                {
-                    Some(a) => (a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()),
-                    None => {
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!("Unknown agent: {}", req.agent_id),
-                            })),
-                        )
-                        .await;
-                        continue;
-                    }
+                let used_fast_path = agent_connections.contains_key(&req.agent_id);
+                let result = if used_fast_path {
+                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                    load_session_on_connection(
+                        conn,
+                        req.session_id.clone(),
+                        req.resume_session_id.clone(),
+                        &req.cwd,
+                        Arc::clone(&stdout),
+                    )
+                    .await
+                } else {
+                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
+                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                    else { continue; };
+                    load_acp_session(
+                        &spawn_cmd,
+                        &spawn_args_owned,
+                        &spawn_env,
+                        &req.cwd,
+                        req.resume_session_id.clone(),
+                        req.session_id.clone(),
+                        Arc::clone(&stdout),
+                    )
+                    .await
                 };
-                match load_acp_session(
-                    &spawn_cmd,
-                    &spawn_args_owned,
-                    &spawn_env,
-                    &req.cwd,
-                    req.resume_session_id.clone(),
-                    req.session_id.clone(),
-                    Arc::clone(&stdout),
-                )
-                .await
-                {
-                    Some((session, models, prompt_caps)) => {
-                        sessions.insert(req.session_id.clone(), session);
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
-                                SessionLoadOkResponse {
-                                    session_id: req.session_id.clone(),
-                                    models,
-                                    prompt_capabilities: Some(prompt_caps),
-                                },
-                            )),
-                        )
-                        .await;
-                    }
-                    None => {
-                        // Error already sent by load_acp_session
-                    }
+
+                if used_fast_path && result.is_none() {
+                    agent_connections.remove(&req.agent_id);
+                }
+
+                if let Some((session, models, modes, prompt_caps)) = result {
+                    sessions.insert(req.session_id.clone(), session);
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
+                            SessionLoadOkResponse {
+                                session_id: req.session_id.clone(),
+                                models,
+                                modes,
+                                prompt_capabilities: Some(prompt_caps),
+                            },
+                        )),
+                    )
+                    .await;
                 }
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionClose(req)) => {
-                let agents_with_spawn =
-                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
-                let (spawn_cmd, spawn_args_owned, spawn_env) = match agents_with_spawn
-                    .iter()
-                    .find(|a| a.id == req.agent_id)
-                {
-                    Some(a) => (a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()),
-                    None => {
-                        let _ = send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!("Unknown agent: {}", req.agent_id),
-                            })),
-                        )
-                        .await;
-                        continue;
-                    }
+                let used_fast_path = agent_connections.contains_key(&req.agent_id);
+                let close_result = if used_fast_path {
+                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                    session_close_on_connection(conn, req.session_id).await
+                } else {
+                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
+                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                    else { continue; };
+                    run_session_close(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.session_id).await
                 };
-                match run_session_close(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.session_id).await {
+                if used_fast_path && close_result.is_err() {
+                    agent_connections.remove(&req.agent_id);
+                }
+                match close_result {
                     Ok(()) => {
                         let _ = send_response(
                             &stdout,
@@ -486,6 +542,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     })),
                 )
                 .await;
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::PreInitialize(req)) => {
+                let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
+                    resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                else { continue; };
+                match pre_initialize_agent(
+                    &spawn_cmd,
+                    &spawn_args_owned,
+                    &spawn_env,
+                    &req.cwd,
+                    Arc::clone(&stdout),
+                )
+                .await
+                {
+                    Some(conn) => {
+                        // Create a warm session to obtain models/modes immediately.
+                        let warm_result = create_session_on_connection(
+                            &conn,
+                            "prewarmed".to_string(),
+                            &req.cwd,
+                            Arc::clone(&stdout),
+                        )
+                        .await;
+                        let (models, modes) = match &warm_result {
+                            Some(r) => (r.models.clone(), r.modes.clone()),
+                            None => (None, None),
+                        };
+                        if let Some(result) = warm_result {
+                            sessions.insert("prewarmed".to_string(), result.session);
+                        }
+
+                        let response = PreInitializeResponse {
+                            agent_id: req.agent_id.clone(),
+                            prompt_capabilities: conn.capabilities.prompt_capabilities.clone(),
+                            supports_session_list: conn.capabilities.supports_session_list,
+                            supports_session_load: conn.capabilities.supports_session_load,
+                            supports_session_close: conn.capabilities.supports_session_close,
+                            models,
+                            modes,
+                        };
+                        agent_connections.insert(req.agent_id, conn);
+                        let _ = send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(
+                                response,
+                            )),
+                        )
+                        .await;
+                    }
+                    None => {
+                        // Error already sent by pre_initialize_agent
+                    }
+                }
             }
 
             MaestroRpcMessage::Response(_) => {}

@@ -1,3 +1,9 @@
+export function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
 export function humanizeTokenCount(count: number): string {
   if (count < 1000) return String(count);
   if (count < 10_000) {

@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 use crate::project_lock;
 
-use crate::acp::AcpProcess;
+use crate::acp::{AcpProcess, ProjectServer, RemoteProjectServer, AgentCacheMap};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
@@ -91,6 +91,15 @@ pub struct AcpState {
     /// Per-connection agent discovery cache (5-minute TTL).
     /// Key: None = local maestro-server, Some(id) = remote SSH connection.
     pub discovery_cache: tokio::sync::Mutex<HashMap<Option<i32>, AgentDiscoveryCacheEntry>>,
+    /// One long-lived maestro-server process per open project (local projects only).
+    /// Sessions for the project share this process instead of spawning their own.
+    pub project_servers: tokio::sync::Mutex<HashMap<i32, ProjectServer>>,
+    /// One long-lived maestro-server process per open remote project (SSH).
+    /// Same concept as `project_servers` but over SSH exec channel.
+    pub remote_project_servers: tokio::sync::Mutex<HashMap<i32, RemoteProjectServer>>,
+    /// Agent-level models/modes/capabilities cache. Populated from PreInitialize warm
+    /// session and updated on every SpawnOk/SessionLoadOk. Keyed by (project_id, agent_id).
+    pub agent_cache: tokio::sync::Mutex<AgentCacheMap>,
 }
 
 pub struct PtyState {
@@ -131,6 +140,9 @@ impl AppState {
             acp: AcpState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),
                 discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
+                project_servers: tokio::sync::Mutex::new(HashMap::new()),
+                remote_project_servers: tokio::sync::Mutex::new(HashMap::new()),
+                agent_cache: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

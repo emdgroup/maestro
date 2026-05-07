@@ -23,6 +23,7 @@ import {
   PAGE_TRANSITION_EASING,
 } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
+import { cn } from "@/lib/ui-utils";
 import { toast } from "sonner";
 import "./App.css";
 
@@ -160,6 +161,16 @@ function App() {
         agentCount={runningAgentCount}
       />
       <main className="flex-1 overflow-hidden relative">
+        {/* AgentsView always mounted — session state survives tab navigation */}
+        <div className={cn("absolute inset-0 overflow-hidden", activeTab !== "agents" && "hidden")}>
+          <Suspense fallback={fallback}>
+            <AgentsView
+              projectId={currentProject.id}
+              repoPath={currentProject.path}
+              connectionId={currentProject.connection_id}
+            />
+          </Suspense>
+        </div>
         <AnimatePresence initial={false} custom={slideDirection}>
           {activeTab === "kanban" && (
             <motion.div
@@ -184,30 +195,6 @@ function App() {
                 >
                   <KanbanView />
                 </KanbanProvider>
-              </Suspense>
-            </motion.div>
-          )}
-
-          {activeTab === "agents" && (
-            <motion.div
-              key="agents"
-              custom={slideDirection}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                duration: PAGE_TRANSITION_DURATION,
-                ease: PAGE_TRANSITION_EASING,
-              }}
-              className="absolute inset-0 overflow-hidden"
-            >
-              <Suspense fallback={fallback}>
-                <AgentsView
-                  projectId={currentProject.id}
-                  repoPath={currentProject.path}
-                  connectionId={currentProject.connection_id}
-                />
               </Suspense>
             </motion.div>
           )}

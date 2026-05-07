@@ -6,11 +6,14 @@ import type { AvailableCommand, UsageState } from "./types";
 import type { AcpPromptCapabilities } from "@/types/bindings";
 
 export type ModelOption = { id: string; label: string };
+export type ModeOption = { id: string; label: string };
 
 export type AcpSessionLifecycleResult = {
   models: ModelOption[];
   modelId: string;
   modelsLoaded: boolean;
+  modes: ModeOption[];
+  modeId: string;
   usageState: UsageState | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
@@ -33,6 +36,8 @@ export function useAcpSessionLifecycle(
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string>("");
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modes, setModes] = useState<ModeOption[]>([]);
+  const [modeId, setModeId] = useState<string>("");
   const [usageState, setUsageState] = useState<UsageState | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
   const [promptCapabilities, setPromptCapabilities] = useState<AcpPromptCapabilities | null>(null);
@@ -91,56 +96,59 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, setActivityStatus]);
 
-  // initial fetch: capabilities (events arrive anyway, this just hydrates faster)
+  // capabilities: listen first, then fetch to close the race window
   useEffect(() => {
-    api
-      .getAcpCapabilities(sessionKey)
-      .then((caps) => {
-        if (caps) setPromptCapabilities(caps);
-      })
-      .catch(console.error);
-  }, [sessionKey]);
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
 
-  // session-capabilities event
-  useEffect(() => {
-    const unlisten = listen<AcpPromptCapabilities>(
-      `acp://session-capabilities/${sessionKey}`,
-      (event) => {
-        setPromptCapabilities(event.payload);
-      },
-    );
+    (async () => {
+      const unlistenFn = await listen<AcpPromptCapabilities>(
+        `acp://session-capabilities/${sessionKey}`,
+        (event) => {
+          if (!cancelled) setPromptCapabilities(event.payload);
+        },
+      );
+      if (cancelled) { unlistenFn(); return; }
+      unlisten = unlistenFn;
+      const caps = await api.getAcpCapabilities(sessionKey);
+      if (!cancelled && caps) setPromptCapabilities(caps);
+    })();
+
     return () => {
-      unlisten.then((fn) => fn());
+      cancelled = true;
+      unlisten?.();
     };
   }, [sessionKey]);
 
-  // initial fetch: models
+  // models: listen first, then fetch to close the race window
   useEffect(() => {
-    api
-      .getAcpModels(sessionKey)
-      .then((modelState) => {
-        if (modelState) {
-          setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
-          setModelId(modelState.current_model_id);
-          setModelsLoaded(true);
-        }
-      })
-      .catch(console.error);
-  }, [sessionKey]);
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
 
-  // session-models event
-  useEffect(() => {
-    const unlisten = listen<{
-      current_model_id: string;
-      available_models: Array<{ model_id: string; name: string }>;
-    }>(`acp://session-models/${sessionKey}`, (event) => {
-      const { current_model_id, available_models } = event.payload;
-      setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
-      setModelId(current_model_id);
-      setModelsLoaded(true);
-    });
+    (async () => {
+      const unlistenFn = await listen<{
+        current_model_id: string;
+        available_models: Array<{ model_id: string; name: string }>;
+      }>(`acp://session-models/${sessionKey}`, (event) => {
+        if (cancelled) return;
+        const { current_model_id, available_models } = event.payload;
+        setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
+        setModelId(current_model_id);
+        setModelsLoaded(true);
+      });
+      if (cancelled) { unlistenFn(); return; }
+      unlisten = unlistenFn;
+      const modelState = await api.getAcpModels(sessionKey);
+      if (!cancelled && modelState) {
+        setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
+        setModelId(modelState.current_model_id);
+        setModelsLoaded(true);
+      }
+    })();
+
     return () => {
-      unlisten.then((fn) => fn());
+      cancelled = true;
+      unlisten?.();
     };
   }, [sessionKey]);
 
@@ -148,6 +156,46 @@ export function useAcpSessionLifecycle(
   useEffect(() => {
     const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
       setModelId(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [sessionKey]);
+
+  // modes: listen first, then fetch to close the race window
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+
+    (async () => {
+      const unlistenFn = await listen<{
+        current_mode_id: string;
+        available_modes: Array<{ mode_id: string; name: string }>;
+      }>(`acp://session-modes/${sessionKey}`, (event) => {
+        if (cancelled) return;
+        const { current_mode_id, available_modes } = event.payload;
+        setModes(available_modes.map((m) => ({ id: m.mode_id, label: m.name })));
+        setModeId(current_mode_id);
+      });
+      if (cancelled) { unlistenFn(); return; }
+      unlisten = unlistenFn;
+      const modeState = await api.getAcpModes(sessionKey);
+      if (!cancelled && modeState) {
+        setModes(modeState.available_modes.map((m) => ({ id: m.mode_id, label: m.name })));
+        setModeId(modeState.current_mode_id);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [sessionKey]);
+
+  // mode-changed event
+  useEffect(() => {
+    const unlisten = listen<string>(`acp://mode-changed/${sessionKey}`, (event) => {
+      setModeId(event.payload);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -191,10 +239,10 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, onUsageChangeRef]);
 
-  // 10s safety valve: unblock UI if models never arrive
+  // 3s safety valve: unblock UI if session fails to deliver models (crash, etc.)
   useEffect(() => {
     if (modelsLoaded) return;
-    const timer = setTimeout(() => setModelsLoaded(true), 10000);
+    const timer = setTimeout(() => setModelsLoaded(true), 3000);
     return () => clearTimeout(timer);
   }, [modelsLoaded]);
 
@@ -202,6 +250,8 @@ export function useAcpSessionLifecycle(
     models,
     modelId,
     modelsLoaded,
+    modes,
+    modeId,
     usageState,
     availableCommands,
     promptCapabilities,

@@ -39,11 +39,13 @@ pub enum ServerRequest {
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
     SetModel(SetModelRequest),
+    SetMode(SetModeRequest),
     FileSearch(FileSearchRequest),
     FileRead(FileReadRequest),
     SessionList(SessionListRequest),
     SessionLoad(SessionLoadRequest),
     SessionClose(SessionCloseRequest),
+    PreInitialize(PreInitializeRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -85,6 +87,12 @@ pub struct InterruptTurnRequest {
     pub session_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreInitializeRequest {
+    pub agent_id: String,
+    pub cwd: String,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -99,12 +107,15 @@ pub enum ServerResponse {
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
     SetModelOk(SetModelOkResponse),
+    SetModeOk(SetModeOkResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
     TurnEnded(TurnEnded),
     SessionListOk(SessionListOkResponse),
     SessionLoadOk(SessionLoadOkResponse),
     SessionCloseOk,
+    PreInitializeOk(PreInitializeResponse),
+    AgentConnectionLost(AgentConnectionLost),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -137,6 +148,32 @@ pub struct SetModelRequest {
 pub struct SetModelOkResponse {
     pub session_id: String,
     pub model_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ModeInfo {
+    pub mode_id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SessionModeState {
+    pub current_mode_id: String,
+    pub available_modes: Vec<ModeInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetModeRequest {
+    pub session_id: String,
+    pub mode_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetModeOkResponse {
+    pub session_id: String,
+    pub mode_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -220,6 +257,8 @@ pub struct SessionLoadOkResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModelState>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub modes: Option<SessionModeState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
 }
 
@@ -231,6 +270,8 @@ pub struct SpawnResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModelState>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub modes: Option<SessionModeState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
     #[serde(default)]
     pub supports_session_list: bool,
@@ -238,6 +279,30 @@ pub struct SpawnResponse {
     pub supports_session_load: bool,
     #[serde(default)]
     pub supports_session_close: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreInitializeResponse {
+    pub agent_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
+    #[serde(default)]
+    pub supports_session_list: bool,
+    #[serde(default)]
+    pub supports_session_load: bool,
+    #[serde(default)]
+    pub supports_session_close: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<SessionModelState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modes: Option<SessionModeState>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AgentConnectionLost {
+    pub agent_id: String,
+    pub reason: String,
+    pub affected_session_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -447,6 +512,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             acp_session_id: None,
             models: None,
+            modes: None,
             prompt_capabilities: None,
             supports_session_list: false,
             supports_session_load: false,
@@ -467,6 +533,7 @@ mod tests {
                 image: false,
                 audio: false,
             }),
+            modes: None,
             models: Some(SessionModelState {
                 current_model_id: "claude-sonnet-4-6".to_string(),
                 available_models: vec![
@@ -681,6 +748,59 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_set_mode_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+            session_id: "sess-1".to_string(),
+            mode_id: "plan".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_set_mode_ok_response() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::SetModeOk(SetModeOkResponse {
+            session_id: "sess-1".to_string(),
+            mode_id: "plan".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_spawn_ok_with_modes() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+            session_id: "sess-1".to_string(),
+            acp_session_id: None,
+            models: None,
+            modes: Some(SessionModeState {
+                current_mode_id: "default".to_string(),
+                available_modes: vec![
+                    ModeInfo {
+                        mode_id: "default".to_string(),
+                        name: "Ask before edits".to_string(),
+                        description: None,
+                    },
+                    ModeInfo {
+                        mode_id: "acceptEdits".to_string(),
+                        name: "Edit automatically".to_string(),
+                        description: Some("File ops auto-approved".to_string()),
+                    },
+                ],
+            }),
+            prompt_capabilities: None,
+            supports_session_list: false,
+            supports_session_load: false,
+            supports_session_close: false,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
     fn request_and_response_are_distinguishable() {
         // Verify that a Spawn request and a SpawnOk response both containing session_id
         // are correctly distinguished by the "direction" tag
@@ -693,6 +813,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             acp_session_id: None,
             models: None,
+            modes: None,
             prompt_capabilities: None,
             supports_session_list: false,
             supports_session_load: false,
@@ -707,5 +828,48 @@ mod tests {
         let resp_back: MaestroRpcMessage = serde_json::from_str(&resp_json).unwrap();
         assert!(matches!(req_back, MaestroRpcMessage::Request(_)));
         assert!(matches!(resp_back, MaestroRpcMessage::Response(_)));
+    }
+
+    #[test]
+    fn roundtrip_pre_initialize_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
+            agent_id: "claude-acp".to_string(),
+            cwd: "/home/user/project".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_pre_initialize_ok() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
+            agent_id: "claude-acp".to_string(),
+            prompt_capabilities: Some(PromptCapabilitiesInfo {
+                embedded_context: true,
+                image: false,
+                audio: false,
+            }),
+            supports_session_list: true,
+            supports_session_load: true,
+            supports_session_close: false,
+            models: None,
+            modes: None,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_agent_connection_lost() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
+            agent_id: "claude-acp".to_string(),
+            reason: "agent process exited unexpectedly".to_string(),
+            affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
     }
 }

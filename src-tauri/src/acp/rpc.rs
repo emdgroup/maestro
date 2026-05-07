@@ -63,8 +63,7 @@ pub async fn one_shot_rpc_local(
 ) -> Result<Option<MaestroRpcMessage>, String> {
     use tokio::io::{AsyncWriteExt, BufWriter};
 
-    let server_path = which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))?;
+    let server_path = crate::acp::resolve::resolve_server_path_standalone()?;
 
     let mut child = tokio::process::Command::new(server_path)
         .stdin(std::process::Stdio::piped())

@@ -11,6 +11,11 @@ export type AgentThoughtChunk = {
   content: { type: "text"; text: string };
 };
 
+export type ToolCallLocation = {
+  path: string;
+  line?: number;
+};
+
 export type ToolCallCreated = {
   sessionUpdate: "tool_call";
   toolCallId: string;
@@ -18,6 +23,7 @@ export type ToolCallCreated = {
   kind: string;
   status?: "pending" | "in_progress" | "completed" | "error";
   content?: ToolCallContent[];
+  locations?: ToolCallLocation[];
 };
 
 export type ToolCallContent =
@@ -30,6 +36,7 @@ export type ToolCallUpdate = {
   toolCallId: string;
   status?: "pending" | "in_progress" | "completed" | "failed" | "error";
   content?: ToolCallContent[];
+  locations?: ToolCallLocation[];
 };
 
 export type PlanEntry = {
@@ -104,6 +111,7 @@ export type ToolCallItem = {
   kind: string;
   status: "pending" | "in_progress" | "completed" | "error";
   content: ToolCallContent[];
+  locations: ToolCallLocation[];
 };
 
 export type PermissionResponseItem = {

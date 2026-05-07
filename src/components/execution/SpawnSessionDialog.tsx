@@ -17,7 +17,7 @@ import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
-  useAgentModelsCacheQuery,
+  useCachedAgentModelsQuery,
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
@@ -52,7 +52,7 @@ export function SpawnSessionDialog({
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
   const acpAgentId = sessionType !== "terminal" ? sessionType : null;
-  const { data: modelsCache } = useAgentModelsCacheQuery(projectId, acpAgentId);
+  const { data: modelsCache } = useCachedAgentModelsQuery(projectId, acpAgentId);
   const visibleAgents = discovery?.agents ?? [];
 
   useEffect(() => {
@@ -98,13 +98,9 @@ export function SpawnSessionDialog({
           worktreeBranch: selectedWorktree.branch_name,
         },
         {
-          onSuccess: async (sessionKey) => {
+          onSuccess: (sessionKey) => {
             if (selectedModel) {
-              try {
-                await api.setAcpModel(sessionKey, selectedModel);
-              } catch {
-                /* ignore */
-              }
+              api.setAcpModel(sessionKey, selectedModel).catch(() => {});
             }
             onOpenChange(false);
             onSuccess(sessionKey);

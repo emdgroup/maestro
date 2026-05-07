@@ -217,6 +217,9 @@ pub async fn get_worktree_diff(
             let range = format!("origin/{}..HEAD", branch);
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
         }
+        DiffTarget::Commit(sha) => {
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &sha]).await?
+        }
     };
 
     let untracked_output = crate::git::run_git_in_dir(

@@ -576,6 +576,80 @@ pub async fn update_project_settings(
     Ok(())
 }
 
+/// Pre-warm the shared maestro-server process for a project and optionally
+/// pre-initialize the default agent so the first session spawn is near-instant.
+///
+/// The frontend should call this fire-and-forget after a successful `open_project`.
+/// Failures are benign — subsequent session spawns fall back to the cold path.
+///
+/// Only applies to local (non-SSH) projects.
+#[tauri::command]
+#[specta::specta]
+pub async fn prime_project_server(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<(), String> {
+    let (project_path, connection_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+        )
+        .map_err(|_| format!("Project {} not found", project_id))?
+    };
+
+    if let Some(conn_id) = connection_id {
+        // Run discovery inline so maestro_server_path is always populated,
+        // regardless of whether the frontend's useAgentDiscoveryQuery has fired yet.
+        crate::ipc::acp_handlers::prefetch_agent_discovery(Arc::clone(&*app_state), Some(conn_id)).await;
+
+        let maestro_path = {
+            let cache = app_state.acp.discovery_cache.lock().await;
+            cache.get(&Some(conn_id))
+                .and_then(|e| e.maestro_server_path.clone())
+                .ok_or_else(|| format!(
+                    "maestro-server path not cached for connection {}. Run agent discovery first.",
+                    conn_id
+                ))?
+        };
+        let ssh = app_state.ssh.get_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
+
+        crate::acp::spawn_remote_project_server(project_id, &app_state, &ssh, &maestro_path).await?;
+
+        let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
+            .ok()
+            .and_then(|c| c.default_agent);
+        if let Some(agent_id) = default_agent {
+            crate::acp::pre_initialize_via_remote_project_server(
+                project_id,
+                &agent_id,
+                &project_path,
+                &app_state,
+            )
+            .await?;
+        }
+    } else {
+        crate::acp::spawn_project_server(project_id, &app_state).await?;
+
+        let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
+            .ok()
+            .and_then(|c| c.default_agent);
+        if let Some(agent_id) = default_agent {
+            crate::acp::pre_initialize_via_project_server(
+                project_id,
+                &agent_id,
+                &project_path,
+                &app_state,
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

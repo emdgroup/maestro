@@ -1,4 +1,5 @@
 import type { UserMessageItem } from "./types";
+import { MarkdownBlock } from "./MarkdownBlock";
 
 interface ActivityUserMessageProps {
   message: UserMessageItem;
@@ -51,10 +52,10 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
         M
       </div>
       <div className="flex-1 min-w-0">
-        <div className="bg-card border border-border rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
+        <div className="bg-card border border-border rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words">
           {parsed.blocks.map((block, i) =>
             block.type === "text" ? (
-              <span key={i}>{block.text}</span>
+              <MarkdownBlock key={i} text={block.text} />
             ) : (
               <span
                 key={i}

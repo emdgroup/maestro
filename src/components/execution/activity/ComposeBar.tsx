@@ -14,15 +14,15 @@ import { api } from "@/lib/tauri-utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import type { JsonValue } from "@/types/bindings";
 import type { AvailableCommand, UsageState } from "./types";
+import type { ModeOption } from "./useAcpSessionLifecycle";
 import type { MentionEntry } from "./MentionEntry";
 import { LiquidContextIndicator } from "./LiquidContextIndicator";
-
-export type PermissionMode = "ask" | "auto" | "plan";
 
 export interface ModelOption {
   id: string;
   label: string;
 }
+
 
 interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
@@ -34,10 +34,11 @@ interface ComposeBarProps {
   projectPath?: string | null;
   models: ModelOption[];
   modelId: string;
-  permissionMode: PermissionMode;
+  modes: ModeOption[];
+  modeId: string;
   usageState: UsageState | null;
   onModelChange: (id: string) => void;
-  onPermissionModeChange: (mode: PermissionMode) => void;
+  onModeChange: (id: string) => void;
 }
 
 export interface ComposeBarHandle {
@@ -85,10 +86,11 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     projectPath,
     models,
     modelId,
-    permissionMode,
+    modes,
+    modeId,
     usageState,
     onModelChange,
-    onPermissionModeChange,
+    onModeChange,
   },
   ref,
 ) {
@@ -300,11 +302,11 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab" && e.shiftKey) {
+    if (e.key === "Tab" && e.shiftKey && modes.length > 0) {
       e.preventDefault();
-      const modes: PermissionMode[] = ["ask", "auto", "plan"];
-      const idx = modes.indexOf(permissionMode);
-      onPermissionModeChange(modes[(idx + 1) % modes.length]);
+      const idx = modes.findIndex((m) => m.id === modeId);
+      const next = (Math.max(idx, 0) + 1) % modes.length;
+      onModeChange(modes[next].id);
       return;
     }
 
@@ -632,26 +634,24 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                 </SelectContent>
               </Select>
             )}
-            <Select
-              value={permissionMode}
-              onValueChange={(v) => v && onPermissionModeChange(v as PermissionMode)}
-              disabled={isProcessing}
-            >
-              <SelectTrigger className="h-auto data-[size=default]:h-auto py-0.5 pl-1.5 pr-1 text-[11px] w-auto border-transparent bg-transparent shadow-none text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors [&_svg]:size-3 disabled:opacity-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectItem value="ask" className="text-xs">
-                  Ask before edits
-                </SelectItem>
-                <SelectItem value="auto" className="text-xs">
-                  Edit automatically
-                </SelectItem>
-                <SelectItem value="plan" className="text-xs">
-                  Plan mode
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            {modes.length > 0 && (
+              <Select
+                value={modeId}
+                onValueChange={(v) => v && onModeChange(v)}
+                disabled={isProcessing}
+              >
+                <SelectTrigger className="h-auto data-[size=default]:h-auto py-0.5 pl-1.5 pr-1 text-[11px] w-auto border-transparent bg-transparent shadow-none text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors [&_svg]:size-3 disabled:opacity-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {modes.map((m) => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
       </div>

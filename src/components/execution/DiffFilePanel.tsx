@@ -1,0 +1,220 @@
+import { Check, Minus } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
+import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
+import { Textarea } from "@/ui/textarea";
+import { FileTree } from "@/components/execution/FileTree";
+
+export interface DiffFile {
+  fileName: string;
+  hunks: string[];
+  status?: "A" | "M" | "D";
+}
+
+interface DiffFilePanelProps {
+  viewMode: "uncommitted" | "untracked";
+  fileListMode: "flat" | "tree";
+  diffLoading: boolean;
+  diffFiles: DiffFile[];
+  filteredDiffFiles: DiffFile[];
+  untrackedFiles: string[];
+  selectedFileIndex: number | null;
+  onFileIndexChange: (index: number) => void;
+  stagedFiles: Set<string>;
+  getFileCheckState: (fileName: string) => "checked" | "unchecked" | "indeterminate";
+  onFileToggle: (fileName: string) => void;
+  onFolderToggle: (fileNames: string[]) => void;
+  onToggleUntrackedFile: (filePath: string) => void;
+  onTreeFileSelect: (fileName: string) => void;
+  hasAnyStaged: boolean;
+  commitMessage: string;
+  onCommitMessageChange: (message: string) => void;
+  onCommit: () => void;
+  isCommitting: boolean;
+  isStaging: boolean;
+  onStageUntracked: () => Promise<void>;
+}
+
+export function DiffFilePanel({
+  viewMode,
+  fileListMode,
+  diffLoading,
+  diffFiles,
+  filteredDiffFiles,
+  untrackedFiles,
+  selectedFileIndex,
+  onFileIndexChange,
+  stagedFiles,
+  getFileCheckState,
+  onFileToggle,
+  onFolderToggle,
+  onToggleUntrackedFile,
+  onTreeFileSelect,
+  hasAnyStaged,
+  commitMessage,
+  onCommitMessageChange,
+  onCommit,
+  isCommitting,
+  isStaging,
+  onStageUntracked,
+}: DiffFilePanelProps) {
+  return (
+    <div className="w-64 shrink-0 flex flex-col border-r border-border">
+      <div className="flex-1 overflow-y-auto">
+        {viewMode === "untracked" ? (
+          diffLoading ? (
+            <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
+          ) : untrackedFiles.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-8 text-center">
+              No untracked files
+            </div>
+          ) : (
+            untrackedFiles.map((filePath, index) => {
+              const basename = filePath.split("/").pop() ?? filePath;
+              const isChecked = stagedFiles.has(filePath);
+              return (
+                <div
+                  key={filePath}
+                  onClick={() => onFileIndexChange(index)}
+                  className={cn(
+                    "px-2 py-2 cursor-pointer border-l-2 transition-colors",
+                    index === selectedFileIndex
+                      ? "border-ring bg-muted/20"
+                      : "border-transparent hover:bg-muted/10",
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleUntrackedFile(filePath);
+                      }}
+                      className="shrink-0"
+                    >
+                      <CheckboxPrimitive.Root
+                        checked={isChecked}
+                        className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                        tabIndex={-1}
+                      >
+                        <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                          <Check className="size-3.5" />
+                        </CheckboxPrimitive.Indicator>
+                      </CheckboxPrimitive.Root>
+                    </span>
+                    <span className="text-xs font-medium shrink-0 text-success">?</span>
+                    <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
+                  </div>
+                </div>
+              );
+            })
+          )
+        ) : diffLoading ? (
+          <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
+        ) : diffFiles.length === 0 ? (
+          <div className="text-xs text-muted-foreground py-8 text-center" />
+        ) : fileListMode === "tree" ? (
+          <FileTree
+            files={filteredDiffFiles}
+            selectedFile={
+              selectedFileIndex !== null ? (diffFiles[selectedFileIndex]?.fileName ?? null) : null
+            }
+            onSelectFile={onTreeFileSelect}
+            checkedFiles={
+              new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
+            }
+            onToggleFile={onFileToggle}
+            onToggleFolder={onFolderToggle}
+          />
+        ) : (
+          filteredDiffFiles.map((file) => {
+            const realIndex = diffFiles.findIndex((f) => f.fileName === file.fileName);
+            const basename = file.fileName.split("/").pop() ?? file.fileName;
+            const status = file.status ?? "M";
+            const statusColor =
+              status === "A"
+                ? "text-success"
+                : status === "D"
+                  ? "text-destructive"
+                  : "text-muted-foreground";
+            const checkState = getFileCheckState(file.fileName);
+            return (
+              <div
+                key={file.fileName}
+                onClick={() => onFileIndexChange(realIndex)}
+                className={cn(
+                  "px-2 py-2 cursor-pointer border-l-2 transition-colors",
+                  realIndex === selectedFileIndex
+                    ? "border-ring bg-muted/20"
+                    : "border-transparent hover:bg-muted/10",
+                )}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFileToggle(file.fileName);
+                    }}
+                    className="shrink-0"
+                  >
+                    <CheckboxPrimitive.Root
+                      checked={checkState === "checked"}
+                      indeterminate={checkState === "indeterminate"}
+                      className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                      tabIndex={-1}
+                    >
+                      <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                        {checkState === "indeterminate" ? (
+                          <Minus className="size-3.5" />
+                        ) : (
+                          <Check className="size-3.5" />
+                        )}
+                      </CheckboxPrimitive.Indicator>
+                    </CheckboxPrimitive.Root>
+                  </span>
+                  <span className={cn("text-xs font-medium shrink-0", statusColor)}>{status}</span>
+                  <span className="text-xs font-mono truncate flex-1 min-w-0">
+                    {basename}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Bottom action area */}
+      {viewMode === "untracked"
+        ? stagedFiles.size > 0 && (
+            <div className="border-t border-border p-2 shrink-0">
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={isStaging}
+                onClick={onStageUntracked}
+              >
+                {isStaging ? "Staging..." : "Stage Selected"}
+              </Button>
+            </div>
+          )
+        : hasAnyStaged && (
+            <div className="border-t border-border p-2 shrink-0 flex flex-col gap-2">
+              <Textarea
+                placeholder="Commit message..."
+                value={commitMessage}
+                onChange={(e) => onCommitMessageChange(e.target.value)}
+                className="text-xs min-h-15 resize-none"
+                rows={3}
+              />
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={!commitMessage.trim() || isCommitting || isStaging}
+                onClick={onCommit}
+              >
+                {isCommitting || isStaging ? "Committing..." : "Commit"}
+              </Button>
+            </div>
+          )}
+    </div>
+  );
+}

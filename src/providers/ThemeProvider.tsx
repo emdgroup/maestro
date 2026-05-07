@@ -71,7 +71,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
   const [isReady, setIsReady] = useState(false);
   const settingsQuery = useSettings();
-  const saveSettings = useSaveSettings();
+  const saveSettings = useSaveSettings({successToast: false});
 
   useEffect(() => {
     if (settingsQuery.data == null || isReady) return;

@@ -11,8 +11,6 @@ export const executionQueryKeys = {
   sessionList: (agentId: string, cwd: string, connectionId: number | null) =>
     ["sessionList", agentId, cwd, connectionId] as const,
   agentDiscovery: (connectionId: number | null) => ["agentDiscovery", connectionId] as const,
-  agentModelsCache: (projectId: number, agentId: string) =>
-    ["agentModelsCache", projectId, agentId] as const,
 };
 
 /**
@@ -71,14 +69,16 @@ export function useLoadAcpSessionMutation() {
       cwd,
       connectionId,
       sessionName,
+      projectId,
     }: {
       agentId: string;
       sessionId: string;
       cwd: string;
       connectionId: number | null;
       sessionName?: string | null;
+      projectId?: number | null;
     }) => {
-      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null);
+      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null, projectId ?? null);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
@@ -167,26 +167,15 @@ export function useAgentDiscoveryQuery(connectionId: number | null, enabled: boo
   });
 }
 
-/** Cached model list for an agent in a given project (.maestro/agent_models_cache.json). */
-export function useAgentModelsCacheQuery(projectId: number, agentId: string | null) {
+
+/** Cached model list for an agent from in-memory AgentCache. Available after first SpawnOk. */
+export function useCachedAgentModelsQuery(projectId: number, agentId: string | null) {
   return useQuery({
-    queryKey: executionQueryKeys.agentModelsCache(projectId, agentId ?? ""),
-    queryFn: () => api.getAgentModelsCache(projectId, agentId!),
+    queryKey: ["cachedAgentModels", projectId, agentId] as const,
+    queryFn: () => api.getCachedAgentModels(projectId, agentId!),
     enabled: agentId != null,
     staleTime: Infinity,
     gcTime: Infinity,
-  });
-}
-
-/** Spawn a one-shot probe session to fetch and cache models for an agent. */
-export function useRefreshAgentModelsMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, agentId }: { projectId: number; agentId: string }) =>
-      api.refreshAgentModels(projectId, agentId),
-    onSuccess: (data, { projectId, agentId }) => {
-      queryClient.setQueryData(executionQueryKeys.agentModelsCache(projectId, agentId), data);
-    },
   });
 }
 

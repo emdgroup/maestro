@@ -5,12 +5,14 @@ use specta::Type;
 ///
 /// - Head: `git diff HEAD` (uncommitted changes vs last commit)
 /// - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
+/// - Commit(sha): `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type", content = "branch")]
 #[specta(export)]
 pub enum DiffTarget {
     Head,
     Branch(String),
+    Commit(String),
 }
 
 /// Return type for get_worktree_diff. Bundles the unified diff string with the

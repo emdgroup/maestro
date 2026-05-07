@@ -3,12 +3,11 @@ import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
-import { Bot, RefreshCw } from "lucide-react";
+import { Bot } from "lucide-react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import {
   useAgentDiscoveryQuery,
-  useAgentModelsCacheQuery,
-  useRefreshAgentModelsMutation,
+  useCachedAgentModelsQuery,
 } from "@/services/execution.service";
 import { showSuccessToast } from "./ErrorToast";
 
@@ -27,7 +26,6 @@ export interface SettingsPageHandle {
   resetToDefaults: () => void;
 }
 
-const CACHE_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
   ({ projectId, connectionId }, ref) => {
@@ -40,11 +38,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
     const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId);
-    const { data: modelsCache, isLoading: cacheLoading } = useAgentModelsCacheQuery(
+    const { data: modelsCache, isLoading: cacheLoading } = useCachedAgentModelsQuery(
       projectId,
       selectedAgent || null,
     );
-    const refreshMutation = useRefreshAgentModelsMutation();
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
@@ -61,11 +58,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       setValue("default_model", "");
     };
 
-    const cacheAge = modelsCache?.fetched_at
-      ? Date.now() - Date.parse(modelsCache.fetched_at)
-      : Infinity;
-    const isStale = cacheAge > CACHE_MAX_AGE_MS;
-    const showRefresh = selectedAgent && (!modelsCache || isStale);
     const availableModels = modelsCache?.models ?? [];
 
     const onSubmit = async (data: ProjectSettingsFormData) => {
@@ -184,7 +176,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                   : cacheLoading
                                     ? "Loading…"
                                     : availableModels.length === 0
-                                      ? "No models cached — click Refresh"
+                                      ? "No models cached yet"
                                       : "Select a model"
                               }
                             />
@@ -200,41 +192,15 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </Select>
                       )}
                     />
-                    {showRefresh && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        disabled={refreshMutation.isPending}
-                        onClick={() =>
-                          refreshMutation.mutate({ projectId, agentId: selectedAgent })
-                        }
-                      >
-                        <RefreshCw
-                          className={`w-3.5 h-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
-                        />
-                        <span className="ml-1.5">
-                          {refreshMutation.isPending ? "Fetching…" : "Refresh"}
-                        </span>
-                      </Button>
-                    )}
                   </div>
-                  {modelsCache && isStale && (
-                    <p className="text-xs text-yellow-500">
-                      Cache is over 5 days old — refresh to update model list
-                    </p>
-                  )}
                   {!selectedAgent && (
                     <p className="text-xs text-muted-foreground">
                       Select an agent to enable model selection
                     </p>
                   )}
-                  {refreshMutation.isError && (
-                    <p className="text-xs text-destructive">
-                      {refreshMutation.error instanceof Error
-                        ? refreshMutation.error.message
-                        : "Failed to fetch models"}
+                  {selectedAgent && availableModels.length === 0 && !cacheLoading && (
+                    <p className="text-xs text-muted-foreground">
+                      Spawn a session with this agent to populate the model list
                     </p>
                   )}
                 </div>

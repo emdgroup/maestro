@@ -11,9 +11,10 @@ import { ActivityMessageItem } from "./activity/ActivityMessageItem";
 import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
+import { ActivityFileCard } from "./activity/ActivityFileCard";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
 import { ComposeBar } from "./activity/ComposeBar";
-import type { ComposeBarHandle, PermissionMode } from "./activity/ComposeBar";
+import type { ComposeBarHandle } from "./activity/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "./activity/PermissionPrompt";
 import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
@@ -40,12 +41,25 @@ interface AgentActivityPanelProps {
   sessionKey: number;
   isSelected?: boolean;
   onUsageChange?: (usage: UsageState | null) => void;
+  onWorkingFilesChange?: (sessionKey: number, files: string[]) => void;
+  onSessionChangedFilesChange?: (sessionKey: number, files: string[]) => void;
+  onOpenPanel?: (panel: "working-files" | "review-changes") => void;
 }
+
+function isWorkingFile(path: string): boolean {
+  // ACP agents send absolute paths; match .hidden-dir/*.md anywhere in path
+  return /\/\.[^/]+\/.*\.md$/.test(path) || /^\.[^/]+\/.*\.md$/.test(path);
+}
+
+const WRITE_KINDS = new Set(["edit", "delete", "move", "write_file", "edit_file", "create_file"]);
 
 export function AgentActivityPanel({
   sessionKey,
   isSelected = false,
   onUsageChange,
+  onWorkingFilesChange,
+  onSessionChangedFilesChange,
+  onOpenPanel,
 }: AgentActivityPanelProps) {
   const { setStatus: setActivityStatus, removeStatus: removeActivityStatus } =
     useSessionActivityActions();
@@ -53,7 +67,6 @@ export function AgentActivityPanel({
   onUsageChangeRef.current = onUsageChange;
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
   const agentResponseStartRef = useRef<HTMLDivElement>(null);
@@ -82,7 +95,8 @@ export function AgentActivityPanel({
   const {
     models,
     modelId,
-    modelsLoaded,
+    modes,
+    modeId,
     usageState,
     availableCommands,
     promptCapabilities,
@@ -92,7 +106,7 @@ export function AgentActivityPanel({
     setPendingElicitation,
   } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef);
 
-  const isReady = !liveState.isInitializing && modelsLoaded;
+  const isReady = !liveState.isInitializing;
   const {
     chatScrollRef,
     chatContentRef,
@@ -104,9 +118,9 @@ export function AgentActivityPanel({
   } = useAcpScrollBehavior(isReady);
 
   useEffect(() => {
-    if (liveState.isInitializing || !modelsLoaded) return;
+    if (liveState.isInitializing) return;
     setActivityStatus(sessionKey, "idle");
-  }, [liveState.isInitializing, modelsLoaded, sessionKey, setActivityStatus]);
+  }, [liveState.isInitializing, sessionKey, setActivityStatus]);
 
   useEffect(() => {
     if (liveState.sessionEnded) {
@@ -117,6 +131,38 @@ export function AgentActivityPanel({
 
   const agentItemsCountRef = useRef(0);
   agentItemsCountRef.current = liveState.items.length;
+
+  const { workingFiles, sessionChangedFiles } = useMemo(() => {
+    const working = new Set<string>();
+    const changed = new Set<string>();
+    for (const item of liveState.items) {
+      if (item.type !== "toolCall") continue;
+      const tc = item.item;
+      for (const c of tc.content) {
+        if (c.type === "diff") {
+          changed.add(c.path);
+          if (isWorkingFile(c.path)) working.add(c.path);
+        }
+      }
+      if (WRITE_KINDS.has(tc.kind)) {
+        for (const loc of tc.locations) {
+          changed.add(loc.path);
+          if (isWorkingFile(loc.path)) working.add(loc.path);
+        }
+      }
+    }
+    return { workingFiles: [...working], sessionChangedFiles: [...changed] };
+  }, [liveState.items]);
+
+  const onWorkingFilesChangeRef = useRef(onWorkingFilesChange);
+  onWorkingFilesChangeRef.current = onWorkingFilesChange;
+  const onSessionChangedFilesChangeRef = useRef(onSessionChangedFilesChange);
+  onSessionChangedFilesChangeRef.current = onSessionChangedFilesChange;
+
+  useEffect(() => {
+    onWorkingFilesChangeRef.current?.(sessionKey, workingFiles);
+    onSessionChangedFilesChangeRef.current?.(sessionKey, sessionChangedFiles);
+  }, [sessionKey, workingFiles, sessionChangedFiles]);
 
   const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<
     Array<{ item: ElicitationSummaryItem; insertAt: number }>
@@ -135,6 +181,13 @@ export function AgentActivityPanel({
       }
     },
     [sessionKey, modelId],
+  );
+
+  const handleModeChange = useCallback(
+    async (id: string) => {
+      await api.setAcpMode(sessionKey, id).catch(console.error);
+    },
+    [sessionKey],
   );
 
   const handleElicitationSubmit = useCallback(
@@ -259,12 +312,12 @@ export function AgentActivityPanel({
 
   // Focus compose bar when panel becomes selected and is ready
   useEffect(() => {
-    if (liveState.isInitializing || !modelsLoaded || pendingPermission || pendingElicitation)
+    if (liveState.isInitializing || pendingPermission || pendingElicitation)
       return;
     if (!isSelected) return;
     const timer = setTimeout(() => composeBarRef.current?.focus(), 0);
     return () => clearTimeout(timer);
-  }, [isSelected, liveState.isInitializing, modelsLoaded, pendingPermission, pendingElicitation]);
+  }, [isSelected, liveState.isInitializing, pendingPermission, pendingElicitation]);
 
   // Re-focus compose bar when window regains focus
   useEffect(() => {
@@ -273,7 +326,6 @@ export function AgentActivityPanel({
       if (
         !focused ||
         liveState.isInitializing ||
-        !modelsLoaded ||
         pendingPermission ||
         pendingElicitation
       )
@@ -287,15 +339,14 @@ export function AgentActivityPanel({
     isSelected,
     liveState.sessionEnded,
     liveState.isInitializing,
-    modelsLoaded,
     pendingPermission,
     pendingElicitation,
   ]);
 
-  // 2s: mark session as responsive
+  // 300ms: mark session as responsive
   useEffect(() => {
     if (!liveState.isInitializing) return;
-    const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 2000);
+    const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 300);
     return () => clearTimeout(timer);
   }, [liveState.isInitializing, liveDispatch]);
 
@@ -321,7 +372,7 @@ export function AgentActivityPanel({
     return { lastUserMessage, agentResponseStartIdx };
   }, [groupedItems]);
 
-  if (liveState.isInitializing || !modelsLoaded) {
+  if (liveState.isInitializing) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -395,10 +446,11 @@ export function AgentActivityPanel({
             projectPath={selectedProject?.path ?? null}
             models={models}
             modelId={modelId}
-            permissionMode={permissionMode}
+            modes={modes}
+            modeId={modeId}
             usageState={usageState}
             onModelChange={handleModelChange}
-            onPermissionModeChange={setPermissionMode}
+            onModeChange={handleModeChange}
           />
         </div>
       );
@@ -455,7 +507,51 @@ export function AgentActivityPanel({
 
                 if (gi.type === "toolGroup") {
                   key = `tg-${idx}-${gi.items[0].toolCallId}`;
-                  element = <ActivityToolCallGroup items={gi.items} />;
+                  const groupDone = gi.items.every(
+                    (i) => i.status === "completed" || i.status === "error",
+                  );
+                  const groupWorkingFiles: string[] = [];
+                  const groupChangedFiles: string[] = [];
+                  if (groupDone) {
+                    for (const tc of gi.items) {
+                      for (const c of tc.content) {
+                        if (c.type === "diff") {
+                          if (isWorkingFile(c.path)) groupWorkingFiles.push(c.path);
+                          else groupChangedFiles.push(c.path);
+                        }
+                      }
+                      if (WRITE_KINDS.has(tc.kind)) {
+                        for (const loc of tc.locations) {
+                          if (isWorkingFile(loc.path)) groupWorkingFiles.push(loc.path);
+                          else groupChangedFiles.push(loc.path);
+                        }
+                      }
+                    }
+                  }
+                  const uniqueWorkingFiles = [...new Set(groupWorkingFiles)];
+                  const uniqueChangedFiles = [...new Set(groupChangedFiles)];
+                  const groupSealed =
+                    groupDone &&
+                    (idx < groupedItems.length - 1 || liveState.sessionEnded);
+                  element = (
+                    <div className="space-y-3">
+                      <ActivityToolCallGroup items={gi.items} />
+                      {groupSealed && uniqueWorkingFiles.length > 0 && (
+                        <ActivityFileCard
+                          variant="working-files"
+                          fileNames={uniqueWorkingFiles}
+                          onClick={() => onOpenPanel?.("working-files")}
+                        />
+                      )}
+                      {groupSealed && uniqueChangedFiles.length > 0 && (
+                        <ActivityFileCard
+                          variant="review-changes"
+                          fileNames={uniqueChangedFiles}
+                          onClick={() => onOpenPanel?.("review-changes")}
+                        />
+                      )}
+                    </div>
+                  );
                 } else {
                   const item = gi.item;
                   if (item.type === "message") {

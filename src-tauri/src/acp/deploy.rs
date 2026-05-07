@@ -1,0 +1,121 @@
+use tauri::{AppHandle, Emitter, Manager};
+
+const REMOTE_INSTALL_DIR: &str = ".maestro/bin";
+const REMOTE_BINARY_NAME: &str = "maestro-server";
+const REMOTE_TARGET: &str = "x86_64-unknown-linux-gnu";
+
+#[derive(Clone, serde::Serialize)]
+pub struct DeployStatus {
+    pub connection_id: i32,
+    pub status: String,
+    pub message: Option<String>,
+}
+
+pub struct DeployResult {
+    pub path: String,
+    pub deployed: bool,
+}
+
+/// Ensure maestro-server exists on remote with the correct protocol version.
+/// Deploys via SFTP if missing or outdated. Returns the absolute path to use for spawning.
+pub async fn ensure_remote_server(
+    ssh: &crate::ssh::RemoteSshSession,
+    app_handle: &AppHandle,
+    connection_id: i32,
+) -> Result<DeployResult, String> {
+    emit_status(app_handle, connection_id, "checking", None);
+
+    let arch = ssh
+        .execute_command("uname -m")
+        .await
+        .map_err(|e| format!("Failed to detect remote arch: {}", e))?;
+    if arch.trim() != "x86_64" {
+        return Err(format!("Unsupported remote architecture: {}", arch.trim()));
+    }
+
+    let remote_path = format!("$HOME/{}/{}", REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME);
+    let version_check = ssh
+        .execute_command(&format!(
+            "{} --protocol-version 2>/dev/null || echo MISSING",
+            remote_path
+        ))
+        .await
+        .unwrap_or_else(|_| "MISSING".to_string());
+
+    let remote_version = version_check.trim();
+    let local_version = maestro_protocol::PROTOCOL_VERSION.to_string();
+
+    if remote_version == local_version {
+        // Resolve to absolute path for the caller
+        let home = ssh
+            .execute_command("echo $HOME")
+            .await
+            .map_err(|e| format!("Failed to get remote HOME: {}", e))?;
+        let abs_path = format!(
+            "{}/{}/{}",
+            home.trim(),
+            REMOTE_INSTALL_DIR,
+            REMOTE_BINARY_NAME
+        );
+        emit_status(app_handle, connection_id, "up-to-date", None);
+        return Ok(DeployResult {
+            path: abs_path,
+            deployed: false,
+        });
+    }
+
+    emit_status(app_handle, connection_id, "deploying", None);
+
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Cannot resolve resource dir: {}", e))?;
+    let local_binary = resource_dir
+        .join("remote")
+        .join(format!("maestro-server-{}", REMOTE_TARGET));
+
+    if !local_binary.exists() {
+        return Err(format!(
+            "Remote binary not bundled: {}",
+            local_binary.display()
+        ));
+    }
+
+    let home = ssh
+        .execute_command("echo $HOME")
+        .await
+        .map_err(|e| format!("Failed to get remote HOME: {}", e))?;
+    let abs_dir = format!("{}/{}", home.trim(), REMOTE_INSTALL_DIR);
+    let abs_remote_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
+
+    ssh.execute_command(&format!("mkdir -p {}", abs_dir))
+        .await
+        .map_err(|e| format!("Failed to create remote dir: {}", e))?;
+
+    let transfer_id = format!("deploy-maestro-server-{}", connection_id);
+    crate::ssh::sftp::upload_file(ssh, &local_binary, &abs_remote_path, &transfer_id, app_handle)
+        .await
+        .map_err(|e| format!("SFTP upload failed: {}", e))?;
+
+    ssh.execute_command(&format!("chmod +x {}", abs_remote_path))
+        .await
+        .map_err(|e| format!("chmod failed: {}", e))?;
+
+    emit_status(app_handle, connection_id, "deployed", None);
+
+    Ok(DeployResult {
+        path: abs_remote_path,
+        deployed: true,
+    })
+}
+
+fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message: Option<String>) {
+    let _ = app_handle.emit(
+        "maestro-server://deploy-status",
+        DeployStatus {
+            connection_id,
+            status: status.to_string(),
+            message,
+        },
+    );
+}

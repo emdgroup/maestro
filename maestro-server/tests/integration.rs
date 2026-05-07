@@ -22,8 +22,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use maestro_protocol::{
-    MaestroRpcMessage, ServerRequest, ServerResponse,
+    HandshakeRequest, MaestroRpcMessage, ServerRequest, ServerResponse,
     SpawnRequest, PromptRequest, CancelRequest, PermissionResponse, ListAgentsRequest,
+    PROTOCOL_VERSION,
 };
 
 fn server_binary() -> PathBuf {
@@ -66,6 +67,22 @@ fn spawn_server() -> std::process::Child {
         .expect("spawn maestro-server")
 }
 
+/// Perform the protocol handshake that the server requires before any other requests.
+fn do_handshake(stdin: &mut impl Write, stdout: &mut impl Read) {
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+            protocol_version: PROTOCOL_VERSION,
+        })),
+    );
+    let resp = read_msg(stdout);
+    assert!(
+        matches!(resp, MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))),
+        "expected HandshakeOk, got: {}",
+        serde_json::to_string(&resp).unwrap()
+    );
+}
+
 /// SpawnRequest with a nonexistent agent_id must return ServerResponse::Error.
 /// Proves protocol framing works end-to-end and the Spawn handler rejects gracefully.
 #[test]
@@ -73,6 +90,7 @@ fn test_spawn_unknown_agent_returns_error() {
     let mut child = spawn_server();
     let stdin = child.stdin.as_mut().unwrap();
     let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
 
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
         agent_id: "nonexistent-acp-agent-xyz-12345".to_string(),
@@ -108,6 +126,7 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     let mut child = spawn_server();
     let stdin = child.stdin.as_mut().unwrap();
     let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
 
     // Step 1: failed spawn — consume Error
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
@@ -153,6 +172,8 @@ fn test_permit_response_unknown_session_produces_no_output() {
 
     {
         let stdin = child.stdin.as_mut().unwrap();
+        let stdout = child.stdout.as_mut().unwrap();
+        do_handshake(stdin, stdout);
         write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: "session-never".to_string(),
             request_id: "perm-001".to_string(),
@@ -181,6 +202,8 @@ fn test_cancel_unknown_session_produces_no_output() {
 
     {
         let stdin = child.stdin.as_mut().unwrap();
+        let stdout = child.stdout.as_mut().unwrap();
+        do_handshake(stdin, stdout);
         write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
             session_id: "session-ghost".to_string(),
         })));
@@ -206,6 +229,7 @@ fn test_protocol_framing_large_prompt_payload() {
     let mut child = spawn_server();
     let stdin = child.stdin.as_mut().unwrap();
     let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
 
     // Consume spawn error first
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
@@ -251,6 +275,7 @@ fn test_list_agents_returns_ok_response() {
     let mut child = spawn_server();
     let stdin = child.stdin.as_mut().unwrap();
     let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
 
     write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})));
 

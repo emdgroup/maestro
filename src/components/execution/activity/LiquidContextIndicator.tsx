@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId } from "react";
 import { cn } from "@/lib/ui-utils";
 import { humanizeTokenCount } from "@/lib/format-utils";
-import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
 import type { UsageState } from "./types";
 
@@ -330,6 +330,8 @@ export function LiquidContextIndicator({
       </PopoverTrigger>
       <PopoverContent
         side="top"
+        align="start"
+        sideOffset={8}
         collisionPadding={16}
         onMouseEnter={handlePopoverMouseEnter}
         onMouseLeave={handlePopoverMouseLeave}
@@ -339,7 +341,6 @@ export function LiquidContextIndicator({
           "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
         )}
       >
-        <PopoverArrow className="fill-popover/60 drop-shadow-[0_-1px_0_rgba(255,255,255,0.12)]" />
         {/* Header */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold flex items-center gap-1.5">

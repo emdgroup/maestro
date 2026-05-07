@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "maestro-server", "maestro-protocol"]
+members = ["src-tauri", "maestro-server", "maestro-protocol", "xtask"]
 resolver = "2"
 
 [profile.release]

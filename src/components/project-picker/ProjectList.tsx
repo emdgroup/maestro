@@ -64,6 +64,7 @@ export function ProjectList() {
       });
       // Acquire project lock via open_project (create_project does not lock)
       const project = await api.openProject(created.id);
+      api.primeProjectServer(created.id).catch(() => {});
       setSelectedProject(project);
       setShowFilePickerModal(false);
     } catch (error) {
@@ -82,6 +83,9 @@ export function ProjectList() {
     setProjectLoading(true);
     try {
       const project = await api.openProject(projectId);
+      // Fire-and-forget: warm the shared maestro-server and pre-initialize the
+      // default agent so the first session spawn is near-instant.
+      api.primeProjectServer(projectId).catch(() => {});
       setSelectedProject(project);
     } catch (error) {
       const msg = String(error);

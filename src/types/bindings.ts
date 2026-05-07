@@ -625,6 +625,23 @@ async updateProjectSettings(projectId: number, settings: ProjectConfigRequest) :
 }
 },
 /**
+ * Pre-warm the shared maestro-server process for a project and optionally
+ * pre-initialize the default agent so the first session spawn is near-instant.
+ * 
+ * The frontend should call this fire-and-forget after a successful `open_project`.
+ * Failures are benign — subsequent session spawns fall back to the cold path.
+ * 
+ * Only applies to local (non-SSH) projects.
+ */
+async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prime_project_server", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Update task-level configuration overrides
  */
 async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
@@ -1011,6 +1028,29 @@ async getAcpModels(logId: number) : Promise<Result<AcpSessionModelState | null, 
 }
 },
 /**
+ * Send a SetMode request to change the active mode for a running ACP session.
+ */
+async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_mode", { logId, modeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get cached mode state for a running ACP session.
+ * Returns None if the session hasn't reported modes yet or session not found.
+ */
+async getAcpModes(logId: number) : Promise<Result<AcpSessionModeState | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_acp_modes", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get cached prompt capabilities for a running ACP session.
  * Returns None if the session hasn't reported capabilities yet or session not found.
  */
@@ -1049,6 +1089,17 @@ async readSessionFile(logId: number, relativePath: string) : Promise<Result<stri
 }
 },
 /**
+ * Return metadata for a running ACP session needed to scope a session diff.
+ */
+async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_acp_session_meta", { sessionKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get all currently active sessions (ACP + PTY) as a flat list.
  * Used by the Agents sidebar to display live sessions.
  */
@@ -1076,9 +1127,9 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
  */
-async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null) : Promise<Result<number, string>> {
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null, projectId: number | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName, projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1143,24 +1194,12 @@ async sftpDownload(connectionId: number, remotePath: string, localPath: string, 
 }
 },
 /**
- * Get cached models for an agent from the project's .maestro/agent_models_cache.json.
- * Returns None if no cache entry exists for the agent.
+ * Get cached models for an agent from the in-memory AgentCache.
+ * Returns None if no session has been spawned for this agent yet.
  */
-async getAgentModelsCache(projectId: number, agentId: string) : Promise<Result<AgentModelsCache | null, string>> {
+async getCachedAgentModels(projectId: number, agentId: string) : Promise<Result<AgentModelsCache | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_agent_models_cache", { projectId, agentId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Spawn a one-shot agent session to discover its available models, then cache the result
- * in the project's .maestro/agent_models_cache.json.
- */
-async refreshAgentModels(projectId: number, agentId: string) : Promise<Result<AgentModelsCache, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("refresh_agent_models", { projectId, agentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_cached_agent_models", { projectId, agentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1178,8 +1217,11 @@ async refreshAgentModels(projectId: number, agentId: string) : Promise<Result<Ag
 
 /** user-defined types **/
 
+export type AcpModeInfo = { mode_id: string; name: string; description: string | null }
 export type AcpModelInfo = { model_id: string; name: string; description: string | null }
 export type AcpPromptCapabilities = { embedded_context: boolean; image: boolean; audio: boolean }
+export type AcpSessionMeta = { cwd: string; project_id: number | null; session_start_sha: string | null }
+export type AcpSessionModeState = { current_mode_id: string; available_modes: AcpModeInfo[] }
 export type AcpSessionModelState = { current_model_id: string; available_models: AcpModelInfo[] }
 /**
  * Active session info — in-memory only, returned by get_active_sessions
@@ -1205,8 +1247,9 @@ export type ConnectionStatus = { connection_id: number; connected: boolean; disc
  * 
  * - Head: `git diff HEAD` (uncommitted changes vs last commit)
  * - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
+ * - Commit(sha): `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
  */
-export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string }
+export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } | { type: "Commit"; branch: string }
 /**
  * Agent discovered by maestro-server's CDN registry check.
  * Returned by the `discover_agents` IPC command for both local and remote connections.

@@ -155,6 +155,7 @@ export function SessionHistoryPanel({
                       cwd: repoPath,
                       connectionId,
                       sessionName: entry.title,
+                      projectId,
                     },
                     {
                       onSuccess: (sessionKey) => {

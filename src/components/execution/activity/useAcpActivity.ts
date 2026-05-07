@@ -90,6 +90,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         kind: payload.kind,
         status: payload.status ?? "pending",
         content: payload.content ?? [],
+        locations: payload.locations ?? [],
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
@@ -108,6 +109,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         const updated = { ...existing };
         if (payload.status) updated.status = payload.status === "failed" ? "error" : payload.status;
         if (payload.content) updated.content = payload.content;
+        if (payload.locations) updated.locations = payload.locations;
         newMap.set(payload.toolCallId, updated);
         const updatedItems = items.map((i) =>
           i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
