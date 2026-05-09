@@ -332,6 +332,10 @@ impl RemoteSshSession {
         }
     }
 
+    pub fn connection_id(&self) -> i32 {
+        self.ssh_connection.id
+    }
+
     /// Establish SSH connection with authentication
     pub async fn connect(&self, password: Option<String>) -> Result<(), SshError> {
         *self.state.lock().await = SshConnectionState::Connecting;

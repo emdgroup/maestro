@@ -317,3 +317,16 @@
 @utility animate-glow {
   animation: glow-ring 2.5s ease-in-out infinite;
 }
+
+@keyframes rail-comet {
+  0% {
+    left: -60%;
+  }
+  100% {
+    left: 110%;
+  }
+}
+
+@utility animate-rail-comet {
+  animation: rail-comet 1.6s ease-in infinite;
+}

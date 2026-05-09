@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
 import type { PlanEntry } from "./types";
 import { formatElapsed } from "@/lib/format-utils";
 
 interface ActivityPlanPanelProps {
   entries: PlanEntry[];
+  title?: string | null;
 }
 
 const PRIORITY_LABEL: Record<PlanEntry["priority"], string> = {
@@ -19,7 +19,6 @@ const PRIORITY_CLASS: Record<PlanEntry["priority"], string> = {
   low: "text-muted-foreground/40 border-border/30",
 };
 
-
 function PriorityBadge({ priority }: { priority: PlanEntry["priority"] }) {
   return (
     <span
@@ -30,7 +29,7 @@ function PriorityBadge({ priority }: { priority: PlanEntry["priority"] }) {
   );
 }
 
-export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
+export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -51,6 +50,8 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
 
   if (total === 0 || completedCount === total) return null;
 
+  const planLabel = title ? `Plan: ${title}` : "Plan";
+
   if (expanded) {
     return (
       <div className="px-3.5 pt-2.5 pb-2">
@@ -59,8 +60,7 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
           onClick={() => setExpanded(false)}
           className="w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted/40 transition-colors text-left mb-2"
         >
-          <span className="flex-1 text-[11px] text-muted-foreground">Plan</span>
-          <ChevronDown className="w-3 h-3 text-muted-foreground rotate-180 flex-shrink-0" />
+          <span className="flex-1 text-[11px] text-muted-foreground">{planLabel}</span>
         </button>
 
         <div className="max-h-[280px] overflow-y-auto">
@@ -123,8 +123,12 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
   }
 
   return (
-    <div className="px-3.5 pt-2.5 pb-2">
-      <div className="text-[11px] text-muted-foreground mb-2">Plan</div>
+    <button
+      type="button"
+      onClick={() => setExpanded(true)}
+      className="w-full px-3.5 pt-2.5 pb-2 text-left hover:bg-muted/30 transition-colors"
+    >
+      <div className="text-[11px] text-muted-foreground mb-2">{planLabel}</div>
 
       {inProgressEntry && (
         <div className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-accent/[0.06] border border-accent/15">
@@ -143,27 +147,22 @@ export function ActivityPlanPanel({ entries }: ActivityPlanPanelProps) {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/40 transition-colors"
-      >
-        <div className="flex items-center gap-0.5 flex-1">
-          {entries.map((entry, i) => (
+      <div className="flex items-center gap-0.5 px-2 py-1.5">
+        {entries.map((entry, i) =>
+          entry.status === "in_progress" ? (
+            <div key={i} className="flex-1 h-[3px] rounded-sm relative overflow-hidden bg-accent/20">
+              <div className="absolute inset-y-0 w-[60%] rounded-r-sm animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
+            </div>
+          ) : (
             <div
               key={i}
               className={`flex-1 h-[3px] rounded-sm ${
-                entry.status === "completed"
-                  ? "bg-success"
-                  : entry.status === "in_progress"
-                    ? "bg-accent animate-pulse"
-                    : "bg-muted"
+                entry.status === "completed" ? "bg-success" : "bg-muted"
               }`}
             />
-          ))}
-        </div>
-        <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-      </button>
-    </div>
+          ),
+        )}
+      </div>
+    </button>
   );
 }

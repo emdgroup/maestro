@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useAcpActivity } from "./activity/useAcpActivity";
@@ -8,7 +8,7 @@ import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
-import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
+import { ActivityUserMessage } from "./activity/ActivityUserMessage";
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityFileCard } from "./activity/ActivityFileCard";
@@ -20,7 +20,6 @@ import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
 import type {
-  UserMessageItem,
   PermissionResponseItem,
   ElicitationSummaryItem,
   UsageState,
@@ -29,10 +28,12 @@ import {
   isRejectOption,
   getOptionName,
   groupToolCalls,
+  groupIntoAgentSections,
   mergeLiveItems,
   makeElicitationSummary,
   formatElicitationAnswer,
 } from "./activity/utils";
+import { AgentResponseSection } from "./activity/AgentResponseSection";
 import type { JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
@@ -68,10 +69,6 @@ export function AgentActivityPanel({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const composeBarRef = useRef<ComposeBarHandle>(null);
-  const lastUserMsgRef = useRef<HTMLDivElement>(null);
-  const agentResponseStartRef = useRef<HTMLDivElement>(null);
-  const showStickyUserMsg = false;
-  const agentResponseAbove = false;
   const selectedProject = useSelectedProject();
 
   useEffect(() => {
@@ -357,20 +354,7 @@ export function AgentActivityPanel({
 
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
 
-  const { lastUserMessage, agentResponseStartIdx } = useMemo(() => {
-    let lastUserMessage: UserMessageItem | null = null;
-    let lastUserMessageIdx = -1;
-    for (let i = groupedItems.length - 1; i >= 0; i--) {
-      const gi = groupedItems[i];
-      if (gi.type === "solo" && gi.item.type === "userMessage") {
-        lastUserMessage = gi.item.item;
-        lastUserMessageIdx = i;
-        break;
-      }
-    }
-    const agentResponseStartIdx = lastUserMessageIdx >= 0 ? lastUserMessageIdx + 1 : -1;
-    return { lastUserMessage, agentResponseStartIdx };
-  }, [groupedItems]);
+  const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
 
   if (liveState.isInitializing) {
     return (
@@ -459,6 +443,11 @@ export function AgentActivityPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {liveState.plan && (
+        <div className="flex-shrink-0 bg-card border-b border-border">
+          <ActivityPlanPanel entries={liveState.plan} title={liveState.planTitle} />
+        </div>
+      )}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="flex-1 relative min-h-0 overflow-hidden">
           <div
@@ -467,126 +456,88 @@ export function AgentActivityPanel({
             onScroll={handleChatScroll}
             onWheel={handleWheel}
           >
-            <div className="sticky top-0 z-10">
-              {liveState.plan && (
-                <div className="bg-card border-b border-border">
-                  <ActivityPlanPanel entries={liveState.plan} />
-                </div>
-              )}
-              <AnimatePresence>
-                {showStickyUserMsg && lastUserMessage && (
-                  <motion.div
-                    key="sticky-user-msg"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.15 }}
-                    className="bg-muted/80 backdrop-blur-sm border-b border-border/50 cursor-pointer"
-                    onClick={() =>
-                      lastUserMsgRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                    }
-                  >
-                    <div className="flex items-center gap-2 px-3 py-1.5">
-                      <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-[10px] font-semibold text-muted-foreground border border-border/50">
-                        M
-                      </div>
-                      <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">
-                        {parseUserContent(lastUserMessage.content).text}
-                      </span>
-                      <ChevronUp className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
             <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
-              {groupedItems.map((gi, idx) => {
-                let element: React.ReactNode = null;
-                let key: string = `gi-${idx}`;
+              {agentSections.map((section) => {
+                if (section.type === "standalone") {
+                  const gi = section.item;
+                  if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+                  return <ActivityUserMessage key={gi.item.item.id} message={gi.item.item} />;
+                }
 
-                if (gi.type === "toolGroup") {
-                  key = `tg-${idx}-${gi.items[0].toolCallId}`;
-                  const groupDone = gi.items.every(
-                    (i) => i.status === "completed" || i.status === "error",
-                  );
-                  const groupWorkingFiles: string[] = [];
-                  const groupChangedFiles: string[] = [];
-                  if (groupDone) {
-                    for (const tc of gi.items) {
-                      for (const c of tc.content) {
-                        if (c.type === "diff") {
-                          if (isWorkingFile(c.path)) groupWorkingFiles.push(c.path);
-                          else groupChangedFiles.push(c.path);
+                const { items, showConnector } = section;
+                const firstItem = items[0];
+                const sectionKey =
+                  firstItem.type === "toolGroup"
+                    ? `tg-${firstItem.items[0].toolCallId}`
+                    : firstItem.item.type === "toolCall"
+                      ? firstItem.item.item.toolCallId
+                      : firstItem.item.item.id;
+
+                const children = items.map((gi) => {
+                  if (gi.type === "toolGroup") {
+                    const groupDone = gi.items.every(
+                      (i) => i.status === "completed" || i.status === "error",
+                    );
+                    const groupWorkingFiles: string[] = [];
+                    const groupChangedFiles: string[] = [];
+                    if (groupDone) {
+                      for (const tc of gi.items) {
+                        for (const c of tc.content) {
+                          if (c.type === "diff") {
+                            if (isWorkingFile(c.path)) groupWorkingFiles.push(c.path);
+                            else groupChangedFiles.push(c.path);
+                          }
                         }
-                      }
-                      if (WRITE_KINDS.has(tc.kind)) {
-                        for (const loc of tc.locations) {
-                          if (isWorkingFile(loc.path)) groupWorkingFiles.push(loc.path);
-                          else groupChangedFiles.push(loc.path);
+                        if (WRITE_KINDS.has(tc.kind)) {
+                          for (const loc of tc.locations) {
+                            if (isWorkingFile(loc.path)) groupWorkingFiles.push(loc.path);
+                            else groupChangedFiles.push(loc.path);
+                          }
                         }
                       }
                     }
+                    const uniqueWorkingFiles = [...new Set(groupWorkingFiles)];
+                    const uniqueChangedFiles = [...new Set(groupChangedFiles)];
+                    const groupKey = `tg-${gi.items[0].toolCallId}`;
+                    return (
+                      <div key={groupKey} className="space-y-3">
+                        <ActivityToolCallGroup items={gi.items} />
+                        {groupDone && uniqueWorkingFiles.length > 0 && (
+                          <ActivityFileCard
+                            variant="working-files"
+                            fileNames={uniqueWorkingFiles}
+                            onClick={() => onOpenPanel?.("working-files")}
+                          />
+                        )}
+                        {groupDone && uniqueChangedFiles.length > 0 && (
+                          <ActivityFileCard
+                            variant="review-changes"
+                            fileNames={uniqueChangedFiles}
+                            onClick={() => onOpenPanel?.("review-changes")}
+                          />
+                        )}
+                      </div>
+                    );
                   }
-                  const uniqueWorkingFiles = [...new Set(groupWorkingFiles)];
-                  const uniqueChangedFiles = [...new Set(groupChangedFiles)];
-                  const groupSealed =
-                    groupDone &&
-                    (idx < groupedItems.length - 1 || liveState.sessionEnded);
-                  element = (
-                    <div className="space-y-3">
-                      <ActivityToolCallGroup items={gi.items} />
-                      {groupSealed && uniqueWorkingFiles.length > 0 && (
-                        <ActivityFileCard
-                          variant="working-files"
-                          fileNames={uniqueWorkingFiles}
-                          onClick={() => onOpenPanel?.("working-files")}
-                        />
-                      )}
-                      {groupSealed && uniqueChangedFiles.length > 0 && (
-                        <ActivityFileCard
-                          variant="review-changes"
-                          fileNames={uniqueChangedFiles}
-                          onClick={() => onOpenPanel?.("review-changes")}
-                        />
-                      )}
-                    </div>
-                  );
-                } else {
+
                   const item = gi.item;
                   if (item.type === "message") {
-                    key = item.item.id;
-                    element = <ActivityMessageItem message={item.item} />;
+                    return <ActivityMessageItem key={item.item.id} message={item.item} />;
                   } else if (item.type === "thinking") {
-                    key = item.item.id;
-                    element = <ActivityThinkingBlock thinking={item.item} />;
-                  } else if (item.type === "userMessage") {
-                    key = item.item.id;
-                    element = <ActivityUserMessage message={item.item} />;
+                    return <ActivityThinkingBlock key={item.item.id} thinking={item.item} />;
                   } else if (item.type === "permissionResponse") {
-                    key = item.item.id;
-                    element = <PermissionResponseCard item={item.item} />;
+                    return <PermissionResponseCard key={item.item.id} item={item.item} />;
                   } else if (item.type === "elicitationSummary") {
-                    key = item.item.id;
-                    element = <ActivityElicitationSummary item={item.item} />;
+                    return <ActivityElicitationSummary key={item.item.id} item={item.item} />;
                   }
-                }
+                  return null;
+                });
 
-                const isLastUserMsg =
-                  gi.type === "solo" &&
-                  gi.item.type === "userMessage" &&
-                  gi.item.item === lastUserMessage;
-                const isAgentResponseStart = idx === agentResponseStartIdx;
-
-                if (isLastUserMsg || isAgentResponseStart) {
-                  return (
-                    <div key={key} ref={isLastUserMsg ? lastUserMsgRef : agentResponseStartRef}>
-                      {element}
-                    </div>
-                  );
-                }
-
-                return element ? <div key={key}>{element}</div> : null;
+                return (
+                  <AgentResponseSection key={sectionKey} showConnector={showConnector}>
+                    {children}
+                  </AgentResponseSection>
+                );
               })}
               <AnimatePresence>{inlinePermission}</AnimatePresence>
             </div>
@@ -599,26 +550,6 @@ export function AgentActivityPanel({
           )}
 
           <AnimatePresence>
-            {showScrollFab && agentResponseAbove && (
-              <motion.button
-                key="scroll-response-top"
-                type="button"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ duration: 0.15 }}
-                onClick={() =>
-                  agentResponseStartRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  })
-                }
-                className="absolute bottom-14 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors bg-card/60 border-border/30 hover:bg-muted/60"
-                aria-label="Scroll to start of response"
-              >
-                <ChevronUp className="w-4 h-4 text-muted-foreground" />
-              </motion.button>
-            )}
             {showScrollFab && (
               <motion.button
                 key="scroll-fab"

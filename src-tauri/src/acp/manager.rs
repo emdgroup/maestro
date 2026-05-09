@@ -10,11 +10,12 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 use russh::ChannelMsg;
 use crate::acp::transport::{
-    HandshakeRequest, MaestroRpcMessage, PROTOCOL_VERSION, ServerRequest, ServerResponse,
-    SpawnRequest, SessionModelState, SessionModeState, PromptCapabilitiesInfo, read_message,
-    write_message, FileSearchResponse, FileReadResponse,
-    PreInitializeRequest, PreInitializeResponse,
+    HandshakeRequest, ListAgentsRequest, MaestroRpcMessage, PROTOCOL_VERSION, ServerRequest,
+    ServerResponse, SpawnRequest, SessionModelState, SessionModeState, PromptCapabilitiesInfo,
+    read_message, write_message, FileSearchResponse, FileReadResponse,
+    PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
 };
+
 
 /// Write transport for a live ACP session.
 /// Local sessions write to the child process stdin.
@@ -30,29 +31,25 @@ pub enum AcpTransportWriter {
 
 /// A long-lived maestro-server process shared across all sessions in one project.
 ///
-/// Created on project open (or lazily on first session spawn). All sessions for
-/// the project write through `writer_tx`; the single shared reader task routes
-/// responses back to individual `AcpProcess` instances by extracting `log_id`
-/// from the `session_id` field in each response.
+/// Used for both local (subprocess) and remote (SSH exec channel) projects.
+/// All sessions for the project write through `writer_tx`; the single shared
+/// reader task routes responses back to individual `AcpProcess` instances.
 pub struct ProjectServer {
-    /// The child process. `kill_on_drop(true)` ensures cleanup when dropped.
-    pub child: Child,
-    /// Channel to the writer task (framed bytes → child stdin). Cloned into each
-    /// session's `AcpTransportWriter::SharedServer`.
+    /// Local subprocess only. `kill_on_drop(true)` ensures cleanup when dropped.
+    /// `None` for remote (SSH exec channel) project servers.
+    pub child: Option<Child>,
+    /// Channel to the writer task (framed bytes → child stdin / SSH channel).
+    /// Cloned into each session's `AcpTransportWriter::SharedServer`.
     pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     /// Pending `PreInitialize` oneshot channels keyed by `agent_id`. The shared
     /// reader delivers `PreInitializeOk` / error responses here.
     pub pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-}
-
-/// Remote equivalent of `ProjectServer` — a long-lived maestro-server running
-/// on a remote host via SSH exec channel, shared across all sessions for one
-/// remote project.
-pub struct RemoteProjectServer {
-    pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-    pub pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
+    /// Pending `ListAgents` oneshot. At most one in-flight at a time.
+    pub pending_list_agents: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
+    /// SSH connection_id for remote project servers; `None` for local.
+    pub connection_id: Option<i32>,
 }
 
 /// Cached session capabilities reported by the agent on SpawnOk.
@@ -73,6 +70,12 @@ pub struct AgentCache {
 }
 
 pub type AgentCacheMap = HashMap<(i32, String), AgentCache>;
+
+/// Describes where to open a new maestro-server connection: local subprocess or remote SSH channel.
+pub enum TransportTarget<'a> {
+    Local,
+    Remote { ssh: &'a crate::ssh::RemoteSshSession, server_path: &'a str },
+}
 
 /// A live ACP session — local subprocess or remote SSH exec channel.
 ///
@@ -121,6 +124,26 @@ pub struct AcpProcess {
     pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
 }
 
+/// Parameters for constructing an `AcpProcess`. Separates the plain data fields
+/// from the Arc-wrapped caches, which `AcpProcess::create` allocates uniformly.
+pub struct AcpProcessParams {
+    pub writer: AcpTransportWriter,
+    pub child: Option<Child>,
+    pub cancel_tx: Option<oneshot::Sender<()>>,
+    pub cwd: String,
+    pub session_name: Option<String>,
+    pub agent_id: String,
+    pub project_id: Option<i32>,
+    pub task_id: Option<i32>,
+    pub task_name: Option<String>,
+    pub branch_name: Option<String>,
+    pub session_start_sha: Option<String>,
+    /// Pre-existing ACP session ID (for load sessions). `None` for fresh spawns.
+    pub initial_acp_session_id: Option<String>,
+    /// Whether to initialise the replay buffer (`Some(vec)`) for load sessions.
+    pub enable_replay_buffer: bool,
+}
+
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
     let json_bytes = serde_json::to_vec(msg)
         .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
@@ -131,76 +154,47 @@ pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, Stri
     Ok(frame)
 }
 
-/// Read one framed response from `child_stdout` and verify it is HandshakeOk.
-/// Returns an error if the response is not HandshakeOk, indicates a version
-/// mismatch, or does not arrive within 10 seconds.
-pub(crate) async fn perform_handshake_local(child_stdout: &mut tokio::process::ChildStdout) -> Result<(), String> {
-    use tokio::io::AsyncReadExt;
-
-    let mut buf = Vec::<u8>::new();
-    let hs_resp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        async {
-            let mut tmp = [0u8; 4096];
-            loop {
-                let n = child_stdout
-                    .read(&mut tmp)
-                    .await
-                    .map_err(|e| format!("handshake read: {}", e))?;
-                if n == 0 {
-                    return Err::<MaestroRpcMessage, String>("EOF before HandshakeOk".to_string());
-                }
-                buf.extend_from_slice(&tmp[..n]);
-                if let Some(rpc_msg) = try_parse_acp_frame(&mut buf) {
-                    return Ok(rpc_msg);
-                }
-            }
-        },
-    )
-    .await
-    .map_err(|_| "maestro-server handshake timed out".to_string())??;
-
-    match hs_resp {
-        MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_)) => Ok(()),
-        MaestroRpcMessage::Response(ServerResponse::Error(error)) => {
-            Err(format!("maestro-server handshake rejected: {}", error.message))
-        }
-        _ => Err("maestro-server did not respond with HandshakeOk".to_string()),
-    }
+/// Read source abstraction used for both local (subprocess stdout) and remote (SSH channel)
+/// ACP sessions. Encapsulates the per-transport framing differences so the handshake and
+/// reader task can share a single implementation.
+pub(crate) enum AcpReadSource {
+    Local { reader: BufReader<tokio::process::ChildStdout> },
+    Remote { read_half: russh::ChannelReadHalf, msg_buf: Vec<u8> },
 }
 
-/// Read one framed response from a remote SSH channel read half and verify it is HandshakeOk.
-pub(crate) async fn perform_handshake_remote(read_half: &mut russh::ChannelReadHalf) -> Result<(), String> {
-    use russh::ChannelMsg;
-
-    let mut buf = Vec::<u8>::new();
-    let hs_resp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        async {
-            loop {
+impl AcpReadSource {
+    pub(crate) async fn next_message(&mut self) -> Option<MaestroRpcMessage> {
+        match self {
+            AcpReadSource::Local { reader } => read_message(reader).await.ok(),
+            AcpReadSource::Remote { read_half, msg_buf } => loop {
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
-                        buf.extend_from_slice(&data);
-                        if let Some(rpc_msg) = try_parse_acp_frame(&mut buf) {
-                            return Some(rpc_msg);
+                        msg_buf.extend_from_slice(&data);
+                        if let Some(msg) = try_parse_acp_frame(msg_buf) {
+                            return Some(msg);
                         }
                     }
-                    // Ignore stderr output and SSH flow-control/informational messages.
                     Some(ChannelMsg::ExtendedData { .. })
                     | Some(ChannelMsg::WindowAdjusted { .. }) => {}
-                    // Channel closed or process exited before sending HandshakeOk.
                     Some(ChannelMsg::Eof)
                     | Some(ChannelMsg::Close)
                     | Some(ChannelMsg::ExitStatus { .. })
                     | None => return None,
-                    // Ignore any other SSH control messages.
                     _ => {}
                 }
-            }
-        },
+            },
+        }
+    }
+}
+
+/// Read one framed response and verify it is HandshakeOk. Times out after 10 seconds.
+pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), String> {
+    let hs_resp = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        source.next_message(),
     )
     .await
-    .map_err(|_| "remote maestro-server handshake timed out".to_string())?;
+    .map_err(|_| "maestro-server handshake timed out".to_string())?;
 
     match hs_resp {
         Some(MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))) => Ok(()),
@@ -225,217 +219,57 @@ pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage
     Some(msg)
 }
 
-/// Spawn a new ACP session as a local process.
-///
-/// Fast path: if a `ProjectServer` is already running for `project_id`, the
-/// `SpawnRequest` is written to its shared writer and no new child is spawned.
-/// The shared reader task routes subsequent responses to this session.
-///
-/// Cold path: spawn a new dedicated maestro-server subprocess (legacy behaviour),
-/// used when no project server is running or `project_id` is `None`.
-pub async fn spawn_acp_process(
-    agent_id: &str,
-    cwd: &str,
-    log_id: i32,
-    session_id: &str,
+/// Spawn a local maestro-server subprocess and perform handshake.
+/// Returns (stdin_writer, read_source, child) ready for the caller to use.
+async fn open_local_transport(
     app_state: &Arc<crate::db::AppState>,
-    session_name: Option<String>,
-    task_id: Option<i32>,
-    task_name: Option<String>,
-    branch_name: Option<String>,
-    project_id: Option<i32>,
-    session_start_sha: Option<String>,
-) -> Result<(), String> {
-    // Fast path: if a ProjectServer is already running for this project, write the
-    // SpawnRequest to its shared writer and register a lightweight AcpProcess that
-    // routes through the shared reader task — no new subprocess needed.
-    if let Some(pid) = project_id {
-        let writer_tx = {
-            let servers = app_state.acp.project_servers.lock().await;
-            servers.get(&pid).map(|s| s.writer_tx.clone())
-        };
-        if let Some(writer_tx) = writer_tx {
-            let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-                agent_id: agent_id.to_string(),
-                session_id: session_id.to_string(),
-                cwd: cwd.to_string(),
-            }));
-            let bytes = serialize_message(&spawn_req)?;
-            writer_tx
-                .send(bytes)
-                .await
-                .map_err(|_| "Project server writer channel closed".to_string())?;
-
-            let acp_process = AcpProcess {
-                writer: AcpTransportWriter::SharedServer(writer_tx),
-                child: None,
-                reader_cancel_tx: None,
-                models: Arc::new(std::sync::Mutex::new(None)),
-                modes: Arc::new(std::sync::Mutex::new(None)),
-                prompt_capabilities: Arc::new(std::sync::Mutex::new(None)),
-                cwd: cwd.to_string(),
-                pending_file_search: Arc::new(std::sync::Mutex::new(None)),
-                pending_file_read: Arc::new(std::sync::Mutex::new(None)),
-                session_name,
-                agent_id_meta: agent_id.to_string(),
-                project_id,
-                started_at: chrono::Utc::now().to_rfc3339(),
-                task_id,
-                task_name,
-                branch_name,
-                session_start_sha,
-                acp_session_id: Arc::new(std::sync::Mutex::new(None)),
-                session_capabilities: Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default())),
-                replay_buffer: Arc::new(std::sync::Mutex::new(None)),
-            };
-            // Emit cached models/modes/capabilities immediately so the frontend
-            // doesn't have to wait for SpawnOk from the agent.
-            if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.to_string())) {
-                if let Some(models) = &cache.models {
-                    if let Ok(mut m) = acp_process.models.lock() {
-                        *m = Some(models.clone());
-                    }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
-                }
-                if let Some(modes) = &cache.modes {
-                    if let Ok(mut m) = acp_process.modes.lock() {
-                        *m = Some(modes.clone());
-                    }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
-                }
-                if let Some(caps) = &cache.prompt_capabilities {
-                    if let Ok(mut c) = acp_process.prompt_capabilities.lock() {
-                        *c = Some(caps.clone());
-                    }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-                }
-            }
-
-            app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-            return Ok(());
-        }
-    }
-
-    // Cold path: spawn a dedicated maestro-server subprocess for this session.
+) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
-
     let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
+
+    let stderr = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/maestro-debug.log")
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::inherit());
 
     let mut child = tokio::process::Command::new(server_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(stderr)
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
 
     let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let mut child_stdout = child.stdout.take().expect("child stdout must be piped");
+    let child_stdout = child.stdout.take().expect("child stdout must be piped");
     let mut stdin_writer = BufWriter::new(child_stdin);
 
     let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
     }));
     write_to_acp_session_raw(&mut stdin_writer, &handshake).await?;
-    perform_handshake_local(&mut child_stdout).await?;
 
-    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
+    let mut source = AcpReadSource::Local { reader: BufReader::new(child_stdout) };
+    perform_handshake(&mut source).await?;
 
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-
-    let models_cache: Arc<std::sync::Mutex<Option<SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
-    let modes_cache: Arc<std::sync::Mutex<Option<SessionModeState>>> = Arc::new(std::sync::Mutex::new(None));
-    let capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
-    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
-
-    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(None));
-
-    let reader_session_name = session_name.clone();
-    let acp_process = AcpProcess {
-        writer: AcpTransportWriter::Local(stdin_writer),
-        child: Some(child),
-        reader_cancel_tx: Some(cancel_tx),
-        models: Arc::clone(&models_cache),
-        modes: Arc::clone(&modes_cache),
-        prompt_capabilities: Arc::clone(&capabilities_cache),
-        cwd: cwd.to_string(),
-        pending_file_search: Arc::clone(&pending_file_search),
-        pending_file_read: Arc::clone(&pending_file_read),
-        session_name,
-        agent_id_meta: agent_id.to_string(),
-        project_id,
-        started_at: chrono::Utc::now().to_rfc3339(),
-        task_id,
-        task_name,
-        branch_name,
-        session_start_sha,
-        acp_session_id: Arc::clone(&acp_session_id_cache),
-        session_capabilities: Arc::clone(&session_capabilities),
-        replay_buffer: Arc::clone(&replay_buffer),
-    };
-
-    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-
-    spawn_reader_task(child_stdout, cancel_rx, ReaderTaskContext {
-        log_id,
-        app_handle: app_state.app_handle.clone(),
-        app_state: Arc::clone(app_state),
-        models_cache,
-        modes_cache,
-        capabilities_cache,
-        pending_file_search,
-        pending_file_read,
-        session_capabilities,
-        acp_session_id_cache,
-        replay_buffer,
-        session_name: reader_session_name,
-        agent_id: agent_id.to_string(),
-        project_id,
-    });
-
-    Ok(())
+    Ok((stdin_writer, source, child))
 }
 
-/// Spawn maestro-server on a remote host via SSH exec channel for a new ACP session.
-///
-/// Steps:
-/// 1. Verify maestro-server is on the remote PATH
-/// 2. Open an SSH exec channel and run `maestro-server`
-/// 3. Send the initial `SpawnRequest` via the channel stdin
-/// 4. Spawn a writer task (mpsc → channel stdin) and a reader task (channel stdout → Tauri events)
-/// 5. Insert the `AcpProcess` into `app_state.acp.sessions`
-pub async fn spawn_acp_process_remote(
-    agent_id: &str,
-    cwd: &str,
-    log_id: i32,
-    session_id: &str,
-    app_state: &Arc<crate::db::AppState>,
+/// Open an SSH exec channel to a remote maestro-server, perform handshake, and spawn
+/// a writer task. Returns (mpsc_sender, read_source) ready for the caller to use.
+async fn open_remote_transport(
     ssh_session: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
-    session_name: Option<String>,
-    task_id: Option<i32>,
-    task_name: Option<String>,
-    branch_name: Option<String>,
-    project_id: Option<i32>,
-    session_start_sha: Option<String>,
-) -> Result<(), String> {
-    // Open a new exec channel using the absolute maestro-server path (resolved at connect time).
+) -> Result<(tokio::sync::mpsc::Sender<Vec<u8>>, AcpReadSource), String> {
     let channel = ssh_session
         .open_exec_channel(maestro_server_path)
         .await
-        .map_err(|e| format!("Failed to open remote ACP channel: {}", e))?;
+        .map_err(|e| format!("Failed to open remote maestro-server channel: {}", e))?;
 
-    let (mut read_half, write_half) = channel.split();
+    let (read_half, write_half) = channel.split();
 
-    // Protocol handshake — write directly to the channel before starting tasks.
     {
         use tokio::io::AsyncWriteExt;
         let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
@@ -447,23 +281,13 @@ pub async fn spawn_acp_process_remote(
             .map_err(|e| format!("remote handshake write failed: {}", e))?;
         writer.flush().await.map_err(|e| format!("remote handshake flush failed: {}", e))?;
     }
-    perform_handshake_remote(&mut read_half).await?;
 
-    // Set up mpsc channel: AcpProcess holds the sender, writer task owns the receiver.
+    let mut source = AcpReadSource::Remote { read_half, msg_buf: Vec::new() };
+    perform_handshake(&mut source).await?;
+
     let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
-
-    // Send initial SpawnRequest before starting tasks.
-    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let spawn_bytes = serialize_message(&spawn_req)?;
-    write_tx.send(spawn_bytes).await
-        .map_err(|_| "Failed to queue SpawnRequest for remote channel".to_string())?;
-
-    // Writer task: owns write_half, drains the mpsc receiver, writes framed bytes.
     tokio::spawn(async move {
+        use tokio::io::AsyncWriteExt;
         let mut writer = write_half.make_writer();
         while let Some(bytes) = write_rx.recv().await {
             if writer.write_all(&bytes).await.is_err() {
@@ -473,65 +297,236 @@ pub async fn spawn_acp_process_remote(
         }
     });
 
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    Ok((write_tx, source))
+}
 
-    let models_cache: Arc<std::sync::Mutex<Option<SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
-    let modes_cache: Arc<std::sync::Mutex<Option<SessionModeState>>> = Arc::new(std::sync::Mutex::new(None));
-    let capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
-    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
-
-    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(None));
-
-    let reader_session_name = session_name.clone();
-    let acp_process = AcpProcess {
-        writer: AcpTransportWriter::RemoteSsh(write_tx),
-        child: None,
-        reader_cancel_tx: Some(cancel_tx),
-        models: Arc::clone(&models_cache),
-        modes: Arc::clone(&modes_cache),
-        prompt_capabilities: Arc::clone(&capabilities_cache),
+/// Spawn a new ACP session as a local process.
+///
+/// Fast path: if a `ProjectServer` is already running for `project_id`, the
+/// `SpawnRequest` is written to its shared writer and no new child is spawned.
+/// The shared reader task routes subsequent responses to this session.
+///
+/// Cold path: spawn a new dedicated maestro-server subprocess (legacy behaviour),
+/// used when no project server is running or `project_id` is `None`.
+/// Route a new spawn through a running `ProjectServer` if one exists for `project_id`.
+///
+/// Returns `true` if the session was registered via the shared server (fast path),
+/// `false` if no project server is running (caller should fall through to cold path).
+pub async fn try_spawn_via_project_server(
+    project_id: Option<i32>,
+    agent_id: &str,
+    cwd: &str,
+    session_id: &str,
+    session_name: Option<String>,
+    task_id: Option<i32>,
+    task_name: Option<String>,
+    branch_name: Option<String>,
+    session_start_sha: Option<String>,
+    log_id: i32,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<bool, String> {
+    let pid = match project_id {
+        Some(p) => p,
+        None => return Ok(false),
+    };
+    let writer_tx = {
+        let servers = app_state.acp.project_servers.lock().await;
+        match servers.get(&pid) {
+            Some(s) => s.writer_tx.clone(),
+            None => return Ok(false),
+        }
+    };
+    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        agent_id: agent_id.to_string(),
+        session_id: session_id.to_string(),
         cwd: cwd.to_string(),
-        pending_file_search: Arc::clone(&pending_file_search),
-        pending_file_read: Arc::clone(&pending_file_read),
-        session_name,
-        agent_id_meta: agent_id.to_string(),
-        project_id,
-        started_at: chrono::Utc::now().to_rfc3339(),
-        task_id,
-        task_name,
-        branch_name,
-        session_start_sha,
-        acp_session_id: Arc::clone(&acp_session_id_cache),
-        session_capabilities: Arc::clone(&session_capabilities),
-        replay_buffer: Arc::clone(&replay_buffer),
+    }));
+    let bytes = serialize_message(&spawn_req)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Project server writer channel closed".to_string())?;
+
+    let (acp_process, _ctx) = AcpProcess::create(
+        AcpProcessParams {
+            writer: AcpTransportWriter::SharedServer(writer_tx),
+            child: None,
+            cancel_tx: None,
+            cwd: cwd.to_string(),
+            session_name,
+            agent_id: agent_id.to_string(),
+            project_id,
+            task_id,
+            task_name,
+            branch_name,
+            session_start_sha,
+            initial_acp_session_id: None,
+            enable_replay_buffer: false,
+        },
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+    );
+    emit_cached_capabilities(&acp_process, pid, agent_id, log_id, app_state).await;
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
+    Ok(true)
+}
+
+/// Emit cached models/modes/capabilities for a session immediately after creation.
+pub async fn emit_cached_capabilities(
+    acp_process: &AcpProcess,
+    project_id: i32,
+    agent_id: &str,
+    log_id: i32,
+    app_state: &Arc<crate::db::AppState>,
+) {
+    if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(project_id, agent_id.to_string())) {
+        if let Some(models) = &cache.models {
+            if let Ok(mut m) = acp_process.models.lock() { *m = Some(models.clone()); }
+            let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
+        }
+        if let Some(modes) = &cache.modes {
+            if let Ok(mut m) = acp_process.modes.lock() { *m = Some(modes.clone()); }
+            let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
+        }
+        if let Some(caps) = &cache.prompt_capabilities {
+            if let Ok(mut c) = acp_process.prompt_capabilities.lock() { *c = Some(caps.clone()); }
+            let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
+        }
+    }
+}
+
+/// Cold path: spawn a dedicated maestro-server and start a new ACP session.
+/// Uses `TransportTarget` to abstract over local subprocess vs remote SSH channel.
+pub async fn spawn_acp_session_cold(
+    target: TransportTarget<'_>,
+    agent_id: &str,
+    cwd: &str,
+    log_id: i32,
+    session_id: &str,
+    app_state: &Arc<crate::db::AppState>,
+    session_name: Option<String>,
+    task_id: Option<i32>,
+    task_name: Option<String>,
+    branch_name: Option<String>,
+    project_id: Option<i32>,
+    session_start_sha: Option<String>,
+) -> Result<(), String> {
+    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        agent_id: agent_id.to_string(),
+        session_id: session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+
+    let (writer, source, child) = match target {
+        TransportTarget::Local => {
+            let (mut stdin_writer, source, child) = open_local_transport(app_state).await?;
+            write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
+            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
+        }
+        TransportTarget::Remote { ssh, server_path } => {
+            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
+            let bytes = serialize_message(&spawn_req)?;
+            write_tx
+                .send(bytes)
+                .await
+                .map_err(|_| "Failed to queue SpawnRequest for remote channel".to_string())?;
+            (AcpTransportWriter::RemoteSsh(write_tx), source, None)
+        }
     };
 
-    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-
-    spawn_remote_reader_task(read_half, cancel_rx, ReaderTaskContext {
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    let (acp_process, ctx) = AcpProcess::create(
+        AcpProcessParams {
+            writer,
+            child,
+            cancel_tx: Some(cancel_tx),
+            cwd: cwd.to_string(),
+            session_name,
+            agent_id: agent_id.to_string(),
+            project_id,
+            task_id,
+            task_name,
+            branch_name,
+            session_start_sha,
+            initial_acp_session_id: None,
+            enable_replay_buffer: false,
+        },
         log_id,
-        app_handle: app_state.app_handle.clone(),
-        app_state: Arc::clone(app_state),
-        models_cache,
-        modes_cache,
-        capabilities_cache,
-        pending_file_search,
-        pending_file_read,
-        session_capabilities,
-        acp_session_id_cache,
-        replay_buffer,
-        session_name: reader_session_name,
-        agent_id: agent_id.to_string(),
-        project_id,
-    });
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+    );
+
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
+    spawn_reader_task(source, cancel_rx, ctx);
 
     Ok(())
 }
 
-pub(crate) struct ReaderTaskContext {
+/// Cold path: spawn a dedicated maestro-server and resume an existing ACP session.
+/// Uses `TransportTarget` to abstract over local subprocess vs remote SSH channel.
+pub async fn load_acp_session_cold(
+    target: TransportTarget<'_>,
+    agent_id: &str,
+    cwd: &str,
+    log_id: i32,
+    acp_session_id: &str,
+    app_state: &Arc<crate::db::AppState>,
+    session_name: Option<String>,
+) -> Result<(), String> {
+    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+        agent_id: agent_id.to_string(),
+        session_id: format!("session-{}", log_id),
+        resume_session_id: acp_session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+
+    let (writer, source, child) = match target {
+        TransportTarget::Local => {
+            let (mut stdin_writer, source, child) = open_local_transport(app_state).await?;
+            write_to_acp_session_raw(&mut stdin_writer, &load_req).await?;
+            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
+        }
+        TransportTarget::Remote { ssh, server_path } => {
+            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
+            let bytes = serialize_message(&load_req)?;
+            write_tx
+                .send(bytes)
+                .await
+                .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
+            (AcpTransportWriter::RemoteSsh(write_tx), source, None)
+        }
+    };
+
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    let (acp_process, ctx) = AcpProcess::create(
+        AcpProcessParams {
+            writer,
+            child,
+            cancel_tx: Some(cancel_tx),
+            cwd: cwd.to_string(),
+            session_name,
+            agent_id: agent_id.to_string(),
+            project_id: None,
+            task_id: None,
+            task_name: None,
+            branch_name: None,
+            session_start_sha: None,
+            initial_acp_session_id: Some(acp_session_id.to_string()),
+            enable_replay_buffer: true,
+        },
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+    );
+
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
+    spawn_reader_task(source, cancel_rx, ctx);
+
+    Ok(())
+}
+
+pub struct ReaderTaskContext {
     pub log_id: i32,
     pub app_handle: tauri::AppHandle,
     pub app_state: Arc<crate::db::AppState>,
@@ -548,8 +543,67 @@ pub(crate) struct ReaderTaskContext {
     pub project_id: Option<i32>,
 }
 
+impl AcpProcess {
+    pub fn create(
+        params: AcpProcessParams,
+        log_id: i32,
+        app_handle: tauri::AppHandle,
+        app_state: Arc<crate::db::AppState>,
+    ) -> (Self, ReaderTaskContext) {
+        let models = Arc::new(std::sync::Mutex::new(None));
+        let modes = Arc::new(std::sync::Mutex::new(None));
+        let prompt_capabilities = Arc::new(std::sync::Mutex::new(None));
+        let pending_file_search = Arc::new(std::sync::Mutex::new(None));
+        let pending_file_read = Arc::new(std::sync::Mutex::new(None));
+        let session_capabilities = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
+        let acp_session_id = Arc::new(std::sync::Mutex::new(params.initial_acp_session_id));
+        let replay_buffer = Arc::new(std::sync::Mutex::new(
+            if params.enable_replay_buffer { Some(Vec::new()) } else { None },
+        ));
+        let ctx = ReaderTaskContext {
+            log_id,
+            app_handle,
+            app_state,
+            models_cache: Arc::clone(&models),
+            modes_cache: Arc::clone(&modes),
+            capabilities_cache: Arc::clone(&prompt_capabilities),
+            pending_file_search: Arc::clone(&pending_file_search),
+            pending_file_read: Arc::clone(&pending_file_read),
+            session_capabilities: Arc::clone(&session_capabilities),
+            acp_session_id_cache: Arc::clone(&acp_session_id),
+            replay_buffer: Arc::clone(&replay_buffer),
+            session_name: params.session_name.clone(),
+            agent_id: params.agent_id.clone(),
+            project_id: params.project_id,
+        };
+        let process = Self {
+            writer: params.writer,
+            child: params.child,
+            reader_cancel_tx: params.cancel_tx,
+            models,
+            modes,
+            prompt_capabilities,
+            cwd: params.cwd,
+            pending_file_search,
+            pending_file_read,
+            session_name: params.session_name,
+            agent_id_meta: params.agent_id,
+            project_id: params.project_id,
+            started_at: chrono::Utc::now().to_rfc3339(),
+            task_id: params.task_id,
+            task_name: params.task_name,
+            branch_name: params.branch_name,
+            session_start_sha: params.session_start_sha,
+            acp_session_id,
+            session_capabilities,
+            replay_buffer,
+        };
+        (process, ctx)
+    }
+}
+
 pub(crate) fn spawn_reader_task(
-    child_stdout: tokio::process::ChildStdout,
+    source: AcpReadSource,
     cancel_rx: oneshot::Receiver<()>,
     ctx: ReaderTaskContext,
 ) {
@@ -561,16 +615,16 @@ pub(crate) fn spawn_reader_task(
         session_name, agent_id, project_id,
     } = ctx;
     tokio::spawn(async move {
-        let mut stdout_reader = BufReader::new(child_stdout);
+        let mut source = source;
         let mut cancel_rx = cancel_rx;
 
         loop {
             let msg = tokio::select! {
                 biased;
                 _ = &mut cancel_rx => break,
-                result = read_message(&mut stdout_reader) => match result {
-                    Ok(msg) => msg,
-                    Err(_) => break,
+                result = source.next_message() => match result {
+                    Some(msg) => msg,
+                    None => break,
                 },
             };
             if let Some(pid) = project_id {
@@ -580,65 +634,6 @@ pub(crate) fn spawn_reader_task(
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
-                    }
-                }
-            }
-        }
-
-        app_state.acp.sessions.lock().await.remove(&log_id);
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-        let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
-    });
-}
-
-pub(crate) fn spawn_remote_reader_task(
-    mut read_half: russh::ChannelReadHalf,
-    cancel_rx: oneshot::Receiver<()>,
-    ctx: ReaderTaskContext,
-) {
-    let ReaderTaskContext {
-        log_id, app_handle, app_state,
-        models_cache, modes_cache, capabilities_cache,
-        pending_file_search, pending_file_read, session_capabilities,
-        acp_session_id_cache, replay_buffer,
-        session_name, agent_id, project_id,
-    } = ctx;
-    tokio::spawn(async move {
-        let mut cancel_rx = cancel_rx;
-        let mut msg_buf: Vec<u8> = Vec::new();
-
-        loop {
-            tokio::select! {
-                biased;
-
-                _ = &mut cancel_rx => break,
-
-                channel_msg = read_half.wait() => {
-                    match channel_msg {
-                        Some(ChannelMsg::Data { data }) => {
-                            msg_buf.extend_from_slice(&data);
-                            while let Some(rpc_msg) = try_parse_acp_frame(&mut msg_buf) {
-                                if let Some(pid) = project_id {
-                                    update_agent_cache_from_response(&rpc_msg, pid, &app_state).await;
-                                }
-                                if let Some(native_id) = handle_server_message(rpc_msg, log_id, &app_handle, &models_cache, &modes_cache, &capabilities_cache, &pending_file_search, &pending_file_read, &session_capabilities, &acp_session_id_cache, &replay_buffer) {
-                                    if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
-                                        if let Ok(conn) = app_state.db.lock() {
-                                            let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Some(ChannelMsg::ExtendedData { data, .. }) => {
-                            // stderr from maestro-server — ignore in normal flow
-                            drop(data);
-                        }
-                        Some(ChannelMsg::Eof)
-                        | Some(ChannelMsg::Close)
-                        | Some(ChannelMsg::ExitStatus { .. }) => break,
-                        None => break,
-                        _ => {}
                     }
                 }
             }
@@ -926,19 +921,25 @@ async fn update_agent_cache_from_response(
     };
 
     if let Some(agent_id) = agent_id {
-        let mut cache_map = app_state.acp.agent_cache.lock().await;
-        let entry = cache_map
-            .entry((project_id, agent_id))
-            .or_insert_with(AgentCache::default);
-        if let Some(m) = models {
-            entry.models = Some(m.clone());
+        {
+            let mut cache_map = app_state.acp.agent_cache.lock().await;
+            let entry = cache_map
+                .entry((project_id, agent_id.clone()))
+                .or_insert_with(AgentCache::default);
+            if let Some(m) = models {
+                entry.models = Some(m.clone());
+            }
+            if let Some(m) = modes {
+                entry.modes = Some(m.clone());
+            }
+            if let Some(c) = caps {
+                entry.prompt_capabilities = Some(c.clone());
+            }
         }
-        if let Some(m) = modes {
-            entry.modes = Some(m.clone());
-        }
-        if let Some(c) = caps {
-            entry.prompt_capabilities = Some(c.clone());
-        }
+        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+            "project_id": project_id,
+            "agent_id": agent_id,
+        })).ok();
     }
 }
 
@@ -951,6 +952,8 @@ async fn handle_shared_server_message(
     app_state: &Arc<crate::db::AppState>,
     pre_init_pending: &Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
+    pending_list_agents: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
 ) {
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
@@ -993,6 +996,18 @@ async fn handle_shared_server_message(
 
     // Sessionless messages.
     match msg {
+        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp)) => {
+            let agents = resp.agents.into_iter().map(|a| crate::acp::registry::DiscoveredAgent {
+                id: a.id,
+                name: a.name,
+                icon: a.icon,
+            }).collect();
+            if let Ok(mut guard) = pending_list_agents.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(agents));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
             let tx = pre_init_pending
                 .lock()
@@ -1067,6 +1082,15 @@ async fn handle_shared_server_message(
                 }
             }
             if !resolved {
+                // Try pending ListAgents.
+                if let Ok(mut guard) = pending_list_agents.lock() {
+                    if let Some(tx) = guard.take() {
+                        let _ = tx.send(Err(err.message.clone()));
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
                 // Try pending PreInitialize.
                 let pre_init_tx = pre_init_pending.lock().ok().and_then(|mut map| {
                     let key = map.keys().next().cloned()?;
@@ -1098,27 +1122,25 @@ async fn handle_shared_server_message(
 }
 
 fn spawn_shared_reader_task(
-    child_stdout: tokio::process::ChildStdout,
+    source: AcpReadSource,
     project_id: i32,
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::db::AppState>,
     pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
+    pending_list_agents: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
 ) {
     tokio::spawn(async move {
-        let mut stdout_reader = BufReader::new(child_stdout);
-        loop {
-            // Consume the Result (non-Send error) before the next await point.
-            let msg = match read_message(&mut stdout_reader).await {
-                Ok(msg) => msg,
-                Err(_) => break,
-            };
+        let mut source = source;
+        while let Some(msg) = source.next_message().await {
             handle_shared_server_message(
                 msg,
                 project_id,
                 &app_handle,
                 &app_state,
                 &pre_init_pending,
+                &pending_list_agents,
             )
             .await;
         }
@@ -1147,13 +1169,58 @@ fn spawn_shared_reader_task(
     });
 }
 
-/// Spawn and handshake a single maestro-server process to be shared across all
-/// sessions for `project_id`. Idempotent — returns `Ok(())` if already running.
-pub async fn spawn_project_server(
+/// Find a project_id whose project server was spawned for the given SSH connection_id.
+pub async fn find_project_server_for_connection(
+    connection_id: i32,
+    app_state: &Arc<crate::db::AppState>,
+) -> Option<i32> {
+    let servers = app_state.acp.project_servers.lock().await;
+    servers
+        .iter()
+        .find(|(_, s)| s.connection_id == Some(connection_id))
+        .map(|(project_id, _)| *project_id)
+}
+
+/// Send `ListAgents` through the running project server and return the result.
+/// Much faster than `one_shot_rpc` — reuses the existing process and registry cache.
+pub async fn query_list_agents_via_project_server(
     project_id: i32,
     app_state: &Arc<crate::db::AppState>,
+) -> Result<Vec<crate::acp::registry::DiscoveredAgent>, String> {
+    let (writer_tx, pending_list_agents) = {
+        let servers = app_state.acp.project_servers.lock().await;
+        let server = servers
+            .get(&project_id)
+            .ok_or_else(|| format!("No project server for project {}", project_id))?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_list_agents))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    *pending_list_agents
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))? = Some(tx);
+
+    let req = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
+    let bytes = serialize_message(&req)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Project server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "ListAgents via project server timed out after 15s".to_string())?
+        .map_err(|_| "ListAgents response channel dropped".to_string())?
+}
+
+/// Spawn a long-lived maestro-server shared across all sessions for `project_id`.
+/// Idempotent — returns `Ok(())` if already running.
+/// Uses `TransportTarget` to handle both local subprocess and remote SSH exec channel.
+pub async fn spawn_project_server(
+    project_id: i32,
+    target: TransportTarget<'_>,
+    app_state: &Arc<crate::db::AppState>,
 ) -> Result<(), String> {
-    // Fast-exit if already running.
     {
         let servers = app_state.acp.project_servers.lock().await;
         if servers.contains_key(&project_id) {
@@ -1161,64 +1228,58 @@ pub async fn spawn_project_server(
         }
     }
 
-    use std::process::Stdio;
-    let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn project maestro-server: {}", e))?;
-
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let mut child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let mut stdin_writer = BufWriter::new(child_stdin);
-
-    let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
-        protocol_version: PROTOCOL_VERSION,
-    }));
-    write_to_acp_session_raw(&mut stdin_writer, &handshake).await?;
-    perform_handshake_local(&mut child_stdout).await?;
-
-    // Writer task: drains mpsc → child stdin.
-    let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
-    tokio::spawn(async move {
-        while let Some(bytes) = write_rx.recv().await {
-            if stdin_writer.write_all(&bytes).await.is_err() {
-                break;
-            }
-            let _ = stdin_writer.flush().await;
+    let (write_tx, source, child, connection_id) = match target {
+        TransportTarget::Local => {
+            let (mut stdin_writer, source, child) = open_local_transport(app_state).await?;
+            let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+            tokio::spawn(async move {
+                while let Some(bytes) = write_rx.recv().await {
+                    if stdin_writer.write_all(&bytes).await.is_err() {
+                        break;
+                    }
+                    let _ = stdin_writer.flush().await;
+                }
+            });
+            (write_tx, source, Some(child), None)
         }
-    });
+        TransportTarget::Remote { ssh, server_path } => {
+            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
+            (write_tx, source, None, Some(ssh.connection_id()))
+        }
+    };
 
     let pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
+    let pending_list_agents: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+
     let project_server = ProjectServer {
         child,
         writer_tx: write_tx,
         pre_init_pending: Arc::clone(&pre_init_pending),
+        pending_list_agents: Arc::clone(&pending_list_agents),
+        connection_id,
     };
 
     // Re-check under lock to avoid double-spawn race.
     {
         let mut servers = app_state.acp.project_servers.lock().await;
         if servers.contains_key(&project_id) {
-            // Lost race — the child we spawned will be killed when `project_server` drops.
             return Ok(());
         }
         servers.insert(project_id, project_server);
     }
 
     spawn_shared_reader_task(
-        child_stdout,
+        source,
         project_id,
         app_state.app_handle.clone(),
         Arc::clone(app_state),
         pre_init_pending,
+        pending_list_agents,
     );
 
     Ok(())
@@ -1275,193 +1336,13 @@ pub async fn pre_initialize_via_project_server(
             .lock()
             .await
             .insert((project_id, agent_id.to_string()), cache_entry);
+        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+            "project_id": project_id,
+            "agent_id": agent_id,
+        })).ok();
     }
 
     Ok(response)
 }
 
-/// Spawn a long-lived maestro-server on a remote host via SSH exec channel,
-/// shared across all sessions for `project_id`. Idempotent.
-pub async fn spawn_remote_project_server(
-    project_id: i32,
-    app_state: &Arc<crate::db::AppState>,
-    ssh: &crate::ssh::RemoteSshSession,
-    maestro_server_path: &str,
-) -> Result<(), String> {
-    {
-        let servers = app_state.acp.remote_project_servers.lock().await;
-        if servers.contains_key(&project_id) {
-            return Ok(());
-        }
-    }
 
-    let channel = ssh
-        .open_exec_channel(maestro_server_path)
-        .await
-        .map_err(|e| format!("Failed to open remote project server channel: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-
-    {
-        use tokio::io::AsyncWriteExt;
-        let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
-            protocol_version: PROTOCOL_VERSION,
-        }));
-        let mut writer = write_half.make_writer();
-        write_message(&mut writer, &handshake)
-            .await
-            .map_err(|e| format!("remote project server handshake write failed: {}", e))?;
-        writer.flush().await.map_err(|e| format!("remote project server handshake flush failed: {}", e))?;
-    }
-    perform_handshake_remote(&mut read_half).await?;
-
-    let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
-
-    tokio::spawn(async move {
-        let mut writer = write_half.make_writer();
-        while let Some(bytes) = write_rx.recv().await {
-            if writer.write_all(&bytes).await.is_err() {
-                break;
-            }
-            let _ = writer.flush().await;
-        }
-    });
-
-    let pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
-
-    let server = RemoteProjectServer {
-        writer_tx: write_tx,
-        pre_init_pending: Arc::clone(&pre_init_pending),
-    };
-
-    {
-        let mut servers = app_state.acp.remote_project_servers.lock().await;
-        if servers.contains_key(&project_id) {
-            return Ok(());
-        }
-        servers.insert(project_id, server);
-    }
-
-    spawn_shared_remote_reader_task(
-        read_half,
-        project_id,
-        app_state.app_handle.clone(),
-        Arc::clone(app_state),
-        pre_init_pending,
-    );
-
-    Ok(())
-}
-
-/// Send a `PreInitialize` request on a remote project's shared maestro-server.
-pub async fn pre_initialize_via_remote_project_server(
-    project_id: i32,
-    agent_id: &str,
-    cwd: &str,
-    app_state: &Arc<crate::db::AppState>,
-) -> Result<PreInitializeResponse, String> {
-    let (writer_tx, pre_init_pending) = {
-        let servers = app_state.acp.remote_project_servers.lock().await;
-        let server = servers
-            .get(&project_id)
-            .ok_or_else(|| format!("No remote project server for project {}", project_id))?;
-        (server.writer_tx.clone(), Arc::clone(&server.pre_init_pending))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    pre_init_pending
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?
-        .insert(agent_id.to_string(), tx);
-
-    let req = MaestroRpcMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
-        agent_id: agent_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Remote project server writer channel closed".to_string())?;
-
-    let response = tokio::time::timeout(std::time::Duration::from_secs(60), rx)
-        .await
-        .map_err(|_| format!("PreInitialize timed out for agent {}", agent_id))?
-        .map_err(|_| "PreInitialize response channel dropped".to_string())??;
-
-    if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
-        let cache_entry = AgentCache {
-            models: response.models.clone(),
-            modes: response.modes.clone(),
-            prompt_capabilities: response.prompt_capabilities.clone(),
-        };
-        app_state
-            .acp
-            .agent_cache
-            .lock()
-            .await
-            .insert((project_id, agent_id.to_string()), cache_entry);
-    }
-
-    Ok(response)
-}
-
-fn spawn_shared_remote_reader_task(
-    mut read_half: russh::ChannelReadHalf,
-    project_id: i32,
-    app_handle: tauri::AppHandle,
-    app_state: Arc<crate::db::AppState>,
-    pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-) {
-    tokio::spawn(async move {
-        let mut msg_buf: Vec<u8> = Vec::new();
-        loop {
-            match read_half.wait().await {
-                Some(ChannelMsg::Data { data }) => {
-                    msg_buf.extend_from_slice(&data);
-                    while let Some(rpc_msg) = try_parse_acp_frame(&mut msg_buf) {
-                        handle_shared_server_message(
-                            rpc_msg,
-                            project_id,
-                            &app_handle,
-                            &app_state,
-                            &pre_init_pending,
-                        )
-                        .await;
-                    }
-                }
-                Some(ChannelMsg::ExtendedData { .. })
-                | Some(ChannelMsg::WindowAdjusted { .. }) => {}
-                Some(ChannelMsg::Eof)
-                | Some(ChannelMsg::Close)
-                | Some(ChannelMsg::ExitStatus { .. })
-                | None => break,
-                _ => {}
-            }
-        }
-
-        app_state.acp.remote_project_servers.lock().await.remove(&project_id);
-
-        let to_remove: Vec<i32> = {
-            let sessions = app_state.acp.sessions.lock().await;
-            sessions
-                .iter()
-                .filter(|(_, s)| s.project_id == Some(project_id))
-                .map(|(id, _)| *id)
-                .collect()
-        };
-        {
-            let mut sessions = app_state.acp.sessions.lock().await;
-            for log_id in &to_remove {
-                sessions.remove(log_id);
-            }
-        }
-        for log_id in to_remove {
-            let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
-        }
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-    });
-}

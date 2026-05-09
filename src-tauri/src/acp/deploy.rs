@@ -25,38 +25,29 @@ pub async fn ensure_remote_server(
 ) -> Result<DeployResult, String> {
     emit_status(app_handle, connection_id, "checking", None);
 
-    let arch = ssh
-        .execute_command("uname -m")
-        .await
-        .map_err(|e| format!("Failed to detect remote arch: {}", e))?;
-    if arch.trim() != "x86_64" {
-        return Err(format!("Unsupported remote architecture: {}", arch.trim()));
-    }
-
-    let remote_path = format!("$HOME/{}/{}", REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME);
-    let version_check = ssh
+    // Single SSH command combining arch check, version check, and HOME resolution.
+    let probe = ssh
         .execute_command(&format!(
-            "{} --protocol-version 2>/dev/null || echo MISSING",
-            remote_path
+            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$(~/.{}/{} --protocol-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
+            REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
         ))
         .await
-        .unwrap_or_else(|_| "MISSING".to_string());
+        .map_err(|e| format!("Failed to probe remote host: {}", e))?;
 
-    let remote_version = version_check.trim();
+    let parts: Vec<&str> = probe.trim().splitn(3, "|||").collect();
+    if parts.len() != 3 {
+        return Err(format!("Unexpected probe output: {}", probe.trim()));
+    }
+    let (arch, remote_version, home) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
+
+    if arch != "x86_64" {
+        return Err(format!("Unsupported remote architecture: {}", arch));
+    }
+
     let local_version = maestro_protocol::PROTOCOL_VERSION.to_string();
 
     if remote_version == local_version {
-        // Resolve to absolute path for the caller
-        let home = ssh
-            .execute_command("echo $HOME")
-            .await
-            .map_err(|e| format!("Failed to get remote HOME: {}", e))?;
-        let abs_path = format!(
-            "{}/{}/{}",
-            home.trim(),
-            REMOTE_INSTALL_DIR,
-            REMOTE_BINARY_NAME
-        );
+        let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME);
         emit_status(app_handle, connection_id, "up-to-date", None);
         return Ok(DeployResult {
             path: abs_path,
@@ -80,12 +71,7 @@ pub async fn ensure_remote_server(
             local_binary.display()
         ));
     }
-
-    let home = ssh
-        .execute_command("echo $HOME")
-        .await
-        .map_err(|e| format!("Failed to get remote HOME: {}", e))?;
-    let abs_dir = format!("{}/{}", home.trim(), REMOTE_INSTALL_DIR);
+    let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_remote_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 
     ssh.execute_command(&format!("mkdir -p {}", abs_dir))

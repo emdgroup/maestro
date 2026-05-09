@@ -52,12 +52,26 @@ async fn read_next_frame_remote(
     }
 }
 
+/// Unified entry point: local when `ssh_ctx` is `None`, remote otherwise.
+///
+/// `ssh_ctx` = `Some((&session, maestro_server_path))` for SSH exec, `None` for local subprocess.
+pub async fn one_shot_rpc(
+    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
+    request: &MaestroRpcMessage,
+    timeout_secs: u64,
+) -> Result<Option<MaestroRpcMessage>, String> {
+    match ssh_ctx {
+        None => one_shot_rpc_local(request, timeout_secs).await,
+        Some((ssh, path)) => one_shot_rpc_remote(ssh, path, request, timeout_secs).await,
+    }
+}
+
 /// Spawn a local maestro-server, perform protocol handshake, send `request`,
 /// return the first framed response.
 ///
 /// The subprocess is killed on drop (`kill_on_drop(true)`). Fails if maestro-server
 /// is not on PATH, if the handshake fails, or if no response arrives within `timeout_secs`.
-pub async fn one_shot_rpc_local(
+async fn one_shot_rpc_local(
     request: &MaestroRpcMessage,
     timeout_secs: u64,
 ) -> Result<Option<MaestroRpcMessage>, String> {
@@ -123,7 +137,7 @@ pub async fn one_shot_rpc_local(
 ///
 /// Fails if the channel cannot be opened, if the handshake fails, or if no response
 /// arrives within `timeout_secs`.
-pub async fn one_shot_rpc_remote(
+async fn one_shot_rpc_remote(
     ssh: &crate::ssh::RemoteSshSession,
     maestro_server_path: &str,
     request: &MaestroRpcMessage,

@@ -1,62 +1,41 @@
-# Plan: Fix Inline Activity Card Style (Option G — Permission-Prompt Style)
+# Plan: Fix Inline Activity Cards Not Appearing
 
 ## Context
 
-Inline activity cards already exist (`ActivityFileCard.tsx`) but currently use Option A style (plain bordered card with chevron). User chose **Option G** (permission-prompt accent style) with A/E's compact layout and a primary "Open" button. Also need to fix the gap issue (Fragment → wrapper div).
+After a recent change to only display inline file cards when the tool call group is "Done" (to avoid flickering), the cards never appear during active sessions. The condition `groupSealed` at line 499-500 of `AgentActivityPanel.tsx` is too strict:
+
+```typescript
+const groupSealed = groupDone && (!isLastInSection || liveState.sessionEnded);
+```
+
+This means the **last** tool group in a section (which is always the most recent one) never shows its cards until the session ends or a subsequent message/thinking item arrives. The "Working Files" header button still works because it's driven by `sessionWorkingFiles` state computed from all items, not per-group gating.
 
 ---
 
-## What to Change
+## Root Cause
 
-### 1. Restyle `ActivityFileCard.tsx`
+`!isLastInSection` checks `giIdx === items.length - 1`. The most recent tool group is always last in its section, so `groupSealed` stays false indefinitely during an active session.
 
-Replace current bordered-card look with permission-prompt style:
-- **Border**: `border-accent/30` with `rounded-[10px]`
-- **Background**: `bg-gradient-to-br from-accent/10 to-transparent`
-- **Shadow**: `shadow-[0_2px_8px_oklch(0%_0_0/0.08)]`
-- **Hover**: `hover:border-accent/50 hover:from-accent/15`
-- **Icon box**: Keep same 28px rounded box but use `bg-accent/10 border border-accent/30` styling (accent-tinted rather than variant-colored)
-- **Layout**: Same as A/E — single row with icon box + text + "Open" button right-aligned
-- **Button**: Replace `ChevronRight` with a primary `<Button variant="default" size="sm">Open</Button>` (shadcn primary button)
+---
 
-Target markup:
-```tsx
-<button type="button" onClick={onClick}
-  className={cn(
-    "w-full text-left rounded-[10px] overflow-hidden",
-    "border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent",
-    "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
-    "hover:border-accent/50 hover:from-accent/15 transition-colors",
-  )}
->
-  <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-    <div className={cn(
-      "w-7 h-7 rounded-[7px] flex items-center justify-center shrink-0",
-      "bg-accent/10 border border-accent/30"
-    )}>
-      <Icon className="w-3.5 h-3.5 text-accent" />
-    </div>
-    <div className="flex-1 min-w-0">
-      <div className="text-xs font-medium text-foreground/85">{title}</div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">{subtitle}</div>
-    </div>
-    <span className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-accent text-accent-foreground shrink-0">
-      Open
-    </span>
-  </div>
-  {basenames.length > 0 && (
-    <div className="flex gap-1 flex-wrap px-3.5 pb-2.5">
-      {basenames.map(...)}
-    </div>
-  )}
-</button>
+## Fix
+
+**Replace `groupSealed` with `groupDone`.**
+
+Line 499-500 in `src/components/execution/AgentActivityPanel.tsx`:
+
+```typescript
+// BEFORE:
+const groupSealed = groupDone && (!isLastInSection || liveState.sessionEnded);
+
+// AFTER: just use groupDone directly
 ```
 
-The "Open" button is a static `<span>` styled as primary (bg-accent text-accent-foreground) — whole card is the click target so no nested button needed.
+Then lines 505 and 512 change from `groupSealed &&` to `groupDone &&`.
 
-### 2. Fix Gap Between Tool Group and Cards
+**Why this is safe**: Tool groups form from consecutive tool call items (`groupToolCalls` in utils.ts). If a new pending tool call arrives, it extends the group and `groupDone` flips back to false (since the new item's status won't be "completed"). So cards only show when the group is truly quiescent — no flickering risk.
 
-In `AgentActivityPanel.tsx` render loop, the cards currently render inside a React Fragment (`<>...</>`) which doesn't participate in parent `space-y-3`. Replace with `<div className="space-y-3">`.
+Also remove the now-unused `isLastInSection` variable.
 
 ---
 
@@ -64,15 +43,13 @@ In `AgentActivityPanel.tsx` render loop, the cards currently render inside a Rea
 
 | File | Change |
 |------|--------|
-| `src/components/execution/activity/ActivityFileCard.tsx` | Restyle to accent gradient + primary "Open" button |
-| `src/components/execution/AgentActivityPanel.tsx` | Replace `<>...</>` with `<div className="space-y-3">` around tool group + cards |
+| `src/components/execution/AgentActivityPanel.tsx` | Remove `groupSealed` / `isLastInSection`, use `groupDone` directly for card visibility |
 
 ---
 
 ## Verification
 
 1. `pnpm tsc --noEmit` — 0 errors
-2. Cards show accent border + gradient matching PermissionPrompt style
-3. "Open" button appears right-aligned, primary colored (bg-accent)
-4. Gap between tool call group and cards renders correctly (space-y-3)
-5. Hover state: border intensifies, gradient deepens slightly
+2. Start agent session, trigger tool calls that modify files
+3. Inline "Files Changed" card appears after tool group completes (without waiting for session end)
+4. If agent immediately starts another tool call, cards hide until new group completes (no flicker)

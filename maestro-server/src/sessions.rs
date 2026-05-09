@@ -63,6 +63,12 @@ impl SessionRouter {
         self.routes.read().await.get(acp_session_id).cloned()
     }
 
+    pub async fn unregister(&self, acp_session_id: &str) {
+        if let Some(maestro_id) = self.routes.write().await.remove(acp_session_id) {
+            self.state.write().await.remove(&maestro_id);
+        }
+    }
+
     /// Returns `(maestro_session_id, state)` for a given ACP session ID.
     pub async fn get_session(
         &self,

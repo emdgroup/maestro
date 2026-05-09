@@ -10,6 +10,55 @@ export type GroupedDisplayItem =
   | { type: "solo"; item: ActivityItem }
   | { type: "toolGroup"; items: ToolCallItem[] };
 
+export type AgentSectionItem =
+  | { type: "agentSection"; items: GroupedDisplayItem[]; showConnector: boolean }
+  | { type: "standalone"; item: GroupedDisplayItem };
+
+export function groupIntoAgentSections(items: GroupedDisplayItem[]): AgentSectionItem[] {
+  const sections: AgentSectionItem[] = [];
+  let currentSection: GroupedDisplayItem[] | null = null;
+
+  for (const gi of items) {
+    const isMessage = gi.type === "solo" && gi.item.type === "message";
+    const isUserMessage = gi.type === "solo" && gi.item.type === "userMessage";
+
+    if (isUserMessage) {
+      if (currentSection) {
+        sections.push({ type: "agentSection", items: currentSection, showConnector: false });
+        currentSection = null;
+      }
+      sections.push({ type: "standalone", item: gi });
+    } else if (isMessage) {
+      if (currentSection) {
+        sections.push({ type: "agentSection", items: currentSection, showConnector: false });
+      }
+      currentSection = [gi];
+    } else {
+      if (currentSection) {
+        currentSection.push(gi);
+      } else {
+        // Start a new section rather than a standalone — thinking blocks and tool
+        // calls that precede the first agent message in a turn would otherwise be
+        // filtered out by the renderer's standalone guard.
+        currentSection = [gi];
+      }
+    }
+  }
+
+  if (currentSection) {
+    sections.push({ type: "agentSection", items: currentSection, showConnector: false });
+  }
+
+  for (let i = 0; i < sections.length - 1; i++) {
+    const s = sections[i];
+    if (s.type === "agentSection" && sections[i + 1].type === "agentSection") {
+      s.showConnector = true;
+    }
+  }
+
+  return sections;
+}
+
 export function isRejectOption(payload: Record<string, unknown>, optionId: string): boolean {
   const options = payload.options as Array<{ optionId: string; kind: string }> | undefined;
   const opt = options?.find((o) => o.optionId === optionId);
@@ -34,7 +83,8 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
       const group: ToolCallItem[] = [item.item];
       while (i + 1 < items.length && items[i + 1].type === "toolCall") {
         i++;
-        group.push((items[i] as { type: "toolCall"; item: ToolCallItem }).item);
+        const next = items[i];
+        if (next.type === "toolCall") group.push(next.item);
       }
       result.push({ type: "toolGroup", items: group });
     } else {

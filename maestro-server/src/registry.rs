@@ -126,7 +126,12 @@ fn write_cache_file(path: &std::path::Path, registry: &AcpRegistry) {
 }
 
 fn fetch_from_cdn() -> Result<AcpRegistry, String> {
-    ureq::get(REGISTRY_URL)
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    agent
+        .get(REGISTRY_URL)
         .call()
         .map_err(|e| format!("Registry CDN unreachable: {e}"))?
         .body_mut()

@@ -1102,6 +1102,23 @@ pub(crate) async fn load_session_on_connection(
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo)> {
     let cx = conn.connection.clone();
+
+    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
+    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let session_state = Arc::new(SharedSessionState {
+        pending_permissions: Arc::clone(&pending_permissions),
+        pending_elicitations: Arc::clone(&pending_elicitations),
+    });
+
+    // Register the route before sending the request so that history notifications
+    // emitted during session/load are routed correctly instead of being dropped.
+    conn.router
+        .register(resume_session_id.clone(), maestro_session_id.clone(), session_state)
+        .await;
+
     let load_req = LoadSessionRequest::new(
         resume_session_id.clone(),
         std::path::PathBuf::from(cwd),
@@ -1109,6 +1126,7 @@ pub(crate) async fn load_session_on_connection(
     let load_response = match cx.send_request(load_req).block_task().await {
         Ok(r) => r,
         Err(e) => {
+            conn.router.unregister(&resume_session_id).await;
             let _ = send_response(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -1123,20 +1141,6 @@ pub(crate) async fn load_session_on_connection(
     let models = convert_acp_models(load_response.models.as_ref());
     let modes = convert_acp_modes(load_response.modes.as_ref());
     let session_id = acp::schema::SessionId::new(resume_session_id.clone());
-
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let session_state = Arc::new(SharedSessionState {
-        pending_permissions: Arc::clone(&pending_permissions),
-        pending_elicitations: Arc::clone(&pending_elicitations),
-    });
-
-    conn.router
-        .register(resume_session_id, maestro_session_id.clone(), session_state)
-        .await;
 
     let prompt_capabilities = conn
         .capabilities

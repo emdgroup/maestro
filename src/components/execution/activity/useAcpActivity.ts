@@ -123,7 +123,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
 
     case "plan": {
       const items = finalizeLastStreaming(newState.items);
-      return { ...newState, items, plan: payload.entries };
+      return { ...newState, items, plan: payload.entries, planTitle: payload.title ?? null };
     }
 
     case "user_message": {

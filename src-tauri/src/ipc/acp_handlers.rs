@@ -42,13 +42,81 @@ use crate::acp::transport::{
     FileSearchRequest, FileReadRequest,
     SessionListRequest,
     SessionCloseRequest,
-    HandshakeRequest, PROTOCOL_VERSION,
-    write_message,
 };
 use tokio::sync::oneshot;
 
 fn session_id_for(log_id: i32) -> String {
     format!("session-{}", log_id)
+}
+
+/// Resolve SSH session + maestro-server path for a remote connection.
+/// Errors with user-readable messages if either is missing.
+async fn resolve_remote_context(
+    app_state: &AppState,
+    conn_id: i32,
+) -> Result<(crate::ssh::RemoteSshSession, String), String> {
+    let maestro_path = app_state
+        .acp
+        .discovery_cache
+        .lock()
+        .await
+        .get(&Some(conn_id))
+        .and_then(|e| e.maestro_server_path.clone())
+        .ok_or_else(|| {
+            format!("maestro-server path not cached for connection {conn_id}. Reconnect to refresh.")
+        })?;
+    let ssh = app_state
+        .ssh
+        .get_session(conn_id)
+        .await
+        .ok_or_else(|| format!("No active SSH session for connection_id {conn_id}. Connect first."))?;
+    Ok((ssh, maestro_path))
+}
+
+/// Read a cached field from a live ACP session and map it to a DTO.
+/// Returns None if the session is not found or the field has not been populated yet.
+async fn get_session_cache<T, U>(
+    app_state: &AppState,
+    log_id: i32,
+    field: impl Fn(&crate::acp::AcpProcess) -> &Arc<std::sync::Mutex<Option<T>>>,
+    map: impl FnOnce(T) -> U,
+) -> Result<Option<U>, String>
+where
+    T: Clone,
+{
+    let arc = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).map(|s| Arc::clone(field(s)))
+    };
+    let Some(arc) = arc else { return Ok(None) };
+    let cloned = arc.lock().map_err(|e| format!("Lock poisoned: {e}"))?.clone();
+    Ok(cloned.map(map))
+}
+
+/// Send a request to a session and await a oneshot response with a 15-second timeout.
+/// Used for file search and file read operations.
+async fn session_file_rpc<T>(
+    app_state: &AppState,
+    log_id: i32,
+    pending_field: impl Fn(&crate::acp::AcpProcess) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
+    build_request: impl FnOnce(&str) -> MaestroRpcMessage,
+) -> Result<T, String> {
+    let (cwd, pending) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let s = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+        (s.cwd.clone(), Arc::clone(pending_field(s)))
+    };
+    let (tx, rx) = oneshot::channel();
+    {
+        *pending.lock().map_err(|_| "pending channel lock poisoned".to_string())? = Some(tx);
+    }
+    crate::acp::write_to_acp_session(app_state, log_id, &build_request(&cwd)).await?;
+    tokio::time::timeout(Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "File operation timed out".to_string())?
+        .map_err(|_| "File operation response channel closed".to_string())?
 }
 
 /// Launch a new ACP agent session via maestro-server subprocess.
@@ -97,78 +165,36 @@ pub async fn spawn_acp_session(
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
 
-    if let Some(conn_id) = connection_id {
-        // Fast path: if a RemoteProjectServer is running, route through shared server.
-        let writer_tx = {
-            let servers = app_state.acp.remote_project_servers.lock().await;
-            servers.get(&project_id).map(|s| s.writer_tx.clone())
+    // Compute SHA and (for remote) acquire SSH session — both fast and cold paths need these.
+    let (session_start_sha, ssh_opt) = if let Some(conn_id) = connection_id {
+        let ssh = app_state.ssh.get_session(conn_id).await
+            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+        let git_conn = crate::models::GitConnection::Remote {
+            ssh: std::sync::Arc::new(ssh.clone()),
+            remote_path: cwd.clone(),
         };
-        if let Some(writer_tx) = writer_tx {
-            use crate::acp::transport::SpawnRequest as SpawnReq;
-            let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnReq {
-                agent_id: agent_id.clone(),
-                session_id: session_id.clone(),
-                cwd: cwd.clone(),
-            }));
-            let bytes = crate::acp::manager::serialize_message(&spawn_req)?;
-            writer_tx
-                .send(bytes)
-                .await
-                .map_err(|_| "Remote project server writer channel closed".to_string())?;
+        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
+            .await.ok().map(|s| s.trim().to_string());
+        (sha, Some((conn_id, ssh)))
+    } else {
+        let git_conn = crate::models::GitConnection::Local { path: cwd.clone() };
+        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
+            .await.ok().map(|s| s.trim().to_string());
+        (sha, None)
+    };
 
-            let git_conn = crate::models::GitConnection::Remote {
-                ssh: std::sync::Arc::new(
-                    app_state.ssh.get_session(conn_id).await
-                        .ok_or_else(|| format!("No SSH session for connection_id {}", conn_id))?
-                ),
-                remote_path: cwd.clone(),
-            };
-            let session_start_sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-                .await
-                .ok()
-                .map(|s| s.trim().to_string());
+    // Fast path: if a ProjectServer is running, route through shared server.
+    if crate::acp::try_spawn_via_project_server(
+        Some(project_id), &agent_id, &cwd, &session_id, session_name.clone(),
+        None, None, branch_name.clone(), session_start_sha.clone(), log_id, &app_state,
+    ).await? {
+        app_state.app_handle.emit("sessions-changed", ()).ok();
+        return Ok(log_id);
+    }
 
-            let acp_process = crate::acp::AcpProcess {
-                writer: crate::acp::AcpTransportWriter::SharedServer(writer_tx),
-                child: None,
-                reader_cancel_tx: None,
-                models: Arc::new(std::sync::Mutex::new(None)),
-                modes: Arc::new(std::sync::Mutex::new(None)),
-                prompt_capabilities: Arc::new(std::sync::Mutex::new(None)),
-                cwd: cwd.clone(),
-                pending_file_search: Arc::new(std::sync::Mutex::new(None)),
-                pending_file_read: Arc::new(std::sync::Mutex::new(None)),
-                session_name,
-                agent_id_meta: agent_id.clone(),
-                project_id: Some(project_id),
-                started_at: chrono::Utc::now().to_rfc3339(),
-                task_id: None,
-                task_name: None,
-                branch_name,
-                session_start_sha,
-                acp_session_id: Arc::new(std::sync::Mutex::new(None)),
-                session_capabilities: Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default())),
-                replay_buffer: Arc::new(std::sync::Mutex::new(None)),
-            };
-
-            if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(project_id, agent_id.clone())) {
-                if let Some(models) = &cache.models {
-                    if let Ok(mut m) = acp_process.models.lock() { *m = Some(models.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
-                }
-                if let Some(modes) = &cache.modes {
-                    if let Ok(mut m) = acp_process.modes.lock() { *m = Some(modes.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
-                }
-                if let Some(caps) = &cache.prompt_capabilities {
-                    if let Ok(mut c) = acp_process.prompt_capabilities.lock() { *c = Some(caps.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-                }
-            }
-
-            app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-        } else {
-            // Cold path fallback: spawn dedicated maestro-server subprocess over SSH.
+    // Cold path: spawn dedicated maestro-server subprocess.
+    match ssh_opt {
+        Some((conn_id, ssh)) => {
             let maestro_path = {
                 let cache = app_state.acp.discovery_cache.lock().await;
                 cache.get(&Some(conn_id))
@@ -178,42 +204,19 @@ pub async fn spawn_acp_session(
                         conn_id
                     ))?
             };
-            let ssh = app_state.ssh.get_session(conn_id).await
-                .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-            let git_conn = crate::models::GitConnection::Remote {
-                ssh: std::sync::Arc::new(ssh.clone()),
-                remote_path: cwd.clone(),
-            };
-            let session_start_sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-                .await
-                .ok()
-                .map(|s| s.trim().to_string());
-            crate::acp::spawn_acp_process_remote(
-                &agent_id, &cwd, log_id, &session_id, &app_state, &ssh,
-                &maestro_path,
-                session_name,
-                None,
-                None,
-                branch_name,
-                Some(project_id),
-                session_start_sha,
+            crate::acp::spawn_acp_session_cold(
+                crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
+                &agent_id, &cwd, log_id, &session_id, &app_state,
+                session_name, None, None, branch_name, Some(project_id), session_start_sha,
             ).await?;
         }
-    } else {
-        let git_conn = crate::models::GitConnection::Local { path: cwd.clone() };
-        let session_start_sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-            .await
-            .ok()
-            .map(|s| s.trim().to_string());
-        crate::acp::spawn_acp_process(
-            &agent_id, &cwd, log_id, &session_id, &app_state,
-            session_name,
-            None,
-            None,
-            branch_name,
-            Some(project_id),
-            session_start_sha,
-        ).await?;
+        None => {
+            crate::acp::spawn_acp_session_cold(
+                crate::acp::TransportTarget::Local,
+                &agent_id, &cwd, log_id, &session_id, &app_state,
+                session_name, None, None, branch_name, Some(project_id), session_start_sha,
+            ).await?;
+        }
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -383,25 +386,14 @@ pub async fn get_acp_models(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
 ) -> Result<Option<AcpSessionModelState>, String> {
-    let models_arc = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| Arc::clone(&s.models))
-    };
-    let Some(models_arc) = models_arc else {
-        return Ok(None);
-    };
-    let cloned = models_arc
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?
-        .clone();
-    Ok(cloned.map(|m| AcpSessionModelState {
+    get_session_cache(&app_state, log_id, |s| &s.models, |m| AcpSessionModelState {
         current_model_id: m.current_model_id,
         available_models: m.available_models.into_iter().map(|mi| AcpModelInfo {
             model_id: mi.model_id,
             name: mi.name,
             description: mi.description,
         }).collect(),
-    }))
+    }).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -443,25 +435,14 @@ pub async fn get_acp_modes(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
 ) -> Result<Option<AcpSessionModeState>, String> {
-    let modes_arc = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| Arc::clone(&s.modes))
-    };
-    let Some(modes_arc) = modes_arc else {
-        return Ok(None);
-    };
-    let cloned = modes_arc
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?
-        .clone();
-    Ok(cloned.map(|m| AcpSessionModeState {
+    get_session_cache(&app_state, log_id, |s| &s.modes, |m| AcpSessionModeState {
         current_mode_id: m.current_mode_id,
         available_modes: m.available_modes.into_iter().map(|mi| AcpModeInfo {
             mode_id: mi.mode_id,
             name: mi.name,
             description: mi.description,
         }).collect(),
-    }))
+    }).await
 }
 
 /// Get cached prompt capabilities for a running ACP session.
@@ -472,44 +453,66 @@ pub async fn get_acp_capabilities(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
 ) -> Result<Option<AcpPromptCapabilities>, String> {
-    let capabilities_arc = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| Arc::clone(&s.prompt_capabilities))
-    };
-    let Some(capabilities_arc) = capabilities_arc else {
-        return Ok(None);
-    };
-    let cloned = capabilities_arc
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?
-        .clone();
-    Ok(cloned.map(|c| AcpPromptCapabilities {
+    get_session_cache(&app_state, log_id, |s| &s.prompt_capabilities, |c| AcpPromptCapabilities {
         embedded_context: c.embedded_context,
         image: c.image,
         audio: c.audio,
-    }))
+    }).await
 }
 
 /// Run agent discovery and store result in the AppState cache.
 /// Fire-and-forget safe: returns silently on errors (result stored with error field set).
 /// Called at SSH connect time (connection_id = Some) and on-demand from `discover_agents` IPC.
 /// For local discovery (connection_id = None), called on first `discover_agents` query.
-pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: Option<i32>) {
+/// `known_maestro_path`: skip `ensure_remote_server` when caller already has the path.
+pub async fn prefetch_agent_discovery(
+    app_state: Arc<AppState>,
+    connection_id: Option<i32>,
+    known_maestro_path: Option<String>,
+) {
     match connection_id {
         Some(conn_id) => {
+            // Fast path: route through already-running project server — no new process spawn,
+            // no CDN fetch, no handshake roundtrips.
+            if let Some(project_id) =
+                crate::acp::manager::find_project_server_for_connection(conn_id, &app_state).await
+            {
+                let maestro_path = known_maestro_path.or_else(|| {
+                    let cache = app_state.acp.discovery_cache.try_lock().ok();
+                    cache.and_then(|c| c.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone()))
+                });
+                let result =
+                    crate::acp::manager::query_list_agents_via_project_server(project_id, &app_state)
+                        .await;
+                let maestro_server_available = result.is_ok();
+                let (agents, error) = match result {
+                    Ok(a) => (a, None),
+                    Err(e) => (Vec::new(), Some(e)),
+                };
+                let entry = AgentDiscoveryCacheEntry {
+                    result: AgentDiscoveryResult { maestro_server_available, agents, error },
+                    maestro_server_path: maestro_path,
+                    fetched_at: std::time::Instant::now(),
+                };
+                app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), entry);
+                return;
+            }
+
+            // Slow path: no project server running yet — spawn one-shot maestro-server.
             let Some(ssh) = app_state.ssh.get_session(conn_id).await else {
                 return;
             };
-            let deploy_result = crate::acp::deploy::ensure_remote_server(
-                &ssh,
-                &app_state.app_handle,
-                conn_id,
-            )
-            .await;
-            let maestro_path = deploy_result.ok().map(|r| r.path);
+            let maestro_path = if let Some(p) = known_maestro_path {
+                Some(p)
+            } else {
+                crate::acp::deploy::ensure_remote_server(&ssh, &app_state.app_handle, conn_id)
+                    .await
+                    .ok()
+                    .map(|r| r.path)
+            };
             let maestro_server_available = maestro_path.is_some();
             let (agents, error) = match &maestro_path {
-                Some(path) => match query_list_agents_remote(&ssh, path).await {
+                Some(path) => match query_list_agents(Some((&ssh, path))).await {
                     Ok(a) => (a, None),
                     Err(e) => (Vec::new(), Some(e)),
                 },
@@ -527,7 +530,7 @@ pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: O
                 .map(|p| p.to_string_lossy().to_string());
             let maestro_server_available = maestro_path.is_some();
             let (agents, error) = if maestro_server_available {
-                match query_list_agents_local().await {
+                match query_list_agents(None).await {
                     Ok(a) => (a, None),
                     Err(e) => (Vec::new(), Some(e)),
                 }
@@ -544,24 +547,12 @@ pub async fn prefetch_agent_discovery(app_state: Arc<AppState>, connection_id: O
     }
 }
 
-async fn query_list_agents_local() -> Result<Vec<DiscoveredAgent>, String> {
-    let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
-            Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
-        }
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid ListAgentsOk response from local maestro-server".to_string()),
-    }
-}
-
-async fn query_list_agents_remote(
-    ssh: &crate::ssh::RemoteSshSession,
-    maestro_server_path: &str,
+async fn query_list_agents(
+    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
 ) -> Result<Vec<DiscoveredAgent>, String> {
+    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
     let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
+    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
             Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
@@ -590,7 +581,7 @@ pub async fn discover_agents(
     }
 
     let arc = Arc::clone(app_state.inner());
-    prefetch_agent_discovery(arc, connection_id).await;
+    prefetch_agent_discovery(arc, connection_id, None).await;
 
     app_state.acp.discovery_cache.lock().await
         .get(&connection_id)
@@ -612,37 +603,14 @@ pub async fn search_session_files(
     query: String,
     limit: Option<u32>,
 ) -> Result<Vec<String>, String> {
-    let (cwd, pending_search) = {
-        let sessions = app_state.acp.sessions.lock().await;
-        let session = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
-        (session.cwd.clone(), Arc::clone(&session.pending_file_search))
-    };
-
-    let (tx, rx) = oneshot::channel::<Result<Vec<String>, String>>();
-    {
-        let mut guard = pending_search
-            .lock()
-            .map_err(|_| "pending_file_search lock poisoned".to_string())?;
-        *guard = Some(tx);
-    }
-
-    crate::acp::write_to_acp_session(
-        &app_state,
-        log_id,
-        &MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
-            cwd,
+    session_file_rpc(&app_state, log_id, |s| &s.pending_file_search, |cwd| {
+        MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+            cwd: cwd.to_string(),
             query,
             limit,
-        })),
-    )
-    .await?;
-
-    tokio::time::timeout(Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "File search timed out".to_string())?
-        .map_err(|_| "File search response channel closed".to_string())?
+        }))
+    })
+    .await
 }
 
 /// Read a file from the project via the active maestro-server session.
@@ -655,36 +623,13 @@ pub async fn read_session_file(
     log_id: i32,
     relative_path: String,
 ) -> Result<String, String> {
-    let (cwd, pending_read) = {
-        let sessions = app_state.acp.sessions.lock().await;
-        let session = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
-        (session.cwd.clone(), Arc::clone(&session.pending_file_read))
-    };
-
-    let (tx, rx) = oneshot::channel::<Result<String, String>>();
-    {
-        let mut guard = pending_read
-            .lock()
-            .map_err(|_| "pending_file_read lock poisoned".to_string())?;
-        *guard = Some(tx);
-    }
-
-    crate::acp::write_to_acp_session(
-        &app_state,
-        log_id,
-        &MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
-            cwd,
+    session_file_rpc(&app_state, log_id, |s| &s.pending_file_read, |cwd| {
+        MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+            cwd: cwd.to_string(),
             relative_path,
-        })),
-    )
-    .await?;
-
-    tokio::time::timeout(Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "File read timed out".to_string())?
-        .map_err(|_| "File read response channel closed".to_string())?
+        }))
+    })
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -786,20 +731,10 @@ pub async fn list_acp_sessions(
     cursor: Option<String>,
 ) -> Result<Vec<SessionListEntryDto>, String> {
     let (mut entries, next_cursor) = if let Some(conn_id) = connection_id {
-        let maestro_path = {
-            let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&Some(conn_id))
-                .and_then(|e| e.maestro_server_path.clone())
-                .ok_or_else(|| format!(
-                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
-                    conn_id
-                ))?
-        };
-        let ssh = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-        query_session_list_remote(&ssh, &maestro_path, &agent_id, &cwd, cursor).await?
+        let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
+        query_session_list(Some((&ssh, &maestro_path)), &agent_id, &cwd, cursor).await?
     } else {
-        query_session_list_local(&agent_id, &cwd, cursor).await?
+        query_session_list(None, &agent_id, &cwd, cursor).await?
     };
 
     let aliases = {
@@ -905,21 +840,68 @@ pub async fn close_acp_session(
     connection_id: Option<i32>,
 ) -> Result<(), String> {
     if let Some(conn_id) = connection_id {
-        let maestro_path = {
-            let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&Some(conn_id))
-                .and_then(|e| e.maestro_server_path.clone())
-                .ok_or_else(|| format!(
-                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
-                    conn_id
-                ))?
-        };
-        let ssh = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-        query_session_close_remote(&ssh, &maestro_path, &agent_id, &session_id, &cwd).await
+        let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
+        query_session_close(Some((&ssh, &maestro_path)), &agent_id, &session_id, &cwd).await
     } else {
-        query_session_close_local(&agent_id, &session_id, &cwd).await
+        query_session_close(None, &agent_id, &session_id, &cwd).await
     }
+}
+
+async fn try_session_load_via_project_server(
+    project_id: Option<i32>,
+    agent_id: &str,
+    acp_session_id: &str,
+    cwd: &str,
+    session_name: Option<String>,
+    log_id: i32,
+    app_state: &Arc<AppState>,
+) -> Result<bool, String> {
+    use crate::acp::transport::SessionLoadRequest;
+    let pid = match project_id { Some(p) => p, None => return Ok(false) };
+    let writer_tx = {
+        let servers = app_state.acp.project_servers.lock().await;
+        match servers.get(&pid) { Some(s) => s.writer_tx.clone(), None => return Ok(false) }
+    };
+    let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+        agent_id: agent_id.to_string(),
+        session_id: session_id_for(log_id),
+        resume_session_id: acp_session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    let bytes = crate::acp::manager::serialize_message(&load_msg)?;
+
+    // Register session BEFORE sending request so the shared reader can route
+    // SessionUpdate messages into the replay buffer immediately.
+    // Sending first risks the server replying before the session is in the map,
+    // causing the shared reader to drop all history events silently.
+    let (acp_process, _ctx) = crate::acp::AcpProcess::create(
+        crate::acp::AcpProcessParams {
+            writer: crate::acp::AcpTransportWriter::SharedServer(writer_tx.clone()),
+            child: None,
+            cancel_tx: None,
+            cwd: cwd.to_string(),
+            session_name,
+            agent_id: agent_id.to_string(),
+            project_id: Some(pid),
+            task_id: None,
+            task_name: None,
+            branch_name: None,
+            session_start_sha: None,
+            initial_acp_session_id: Some(acp_session_id.to_string()),
+            enable_replay_buffer: true,
+        },
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+    );
+    crate::acp::manager::emit_cached_capabilities(&acp_process, pid, agent_id, log_id, app_state).await;
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
+
+    if writer_tx.send(bytes).await.is_err() {
+        app_state.acp.sessions.lock().await.remove(&log_id);
+        return Err("Project server writer channel closed".to_string());
+    }
+    Ok(true)
 }
 
 /// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
@@ -936,166 +918,29 @@ pub async fn load_acp_session(
 ) -> Result<i32, String> {
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    if let Some(conn_id) = connection_id {
-        // Fast path: route through shared RemoteProjectServer if running.
-        let remote_writer_tx = if let Some(pid) = project_id {
-            let servers = app_state.acp.remote_project_servers.lock().await;
-            servers.get(&pid).map(|s| s.writer_tx.clone())
-        } else {
-            None
-        };
+    // Fast path: if a ProjectServer is running, route through shared server.
+    if try_session_load_via_project_server(
+        project_id, &agent_id, &acp_session_id, &cwd, session_name.clone(), log_id, &app_state,
+    ).await? {
+        app_state.app_handle.emit("sessions-changed", ()).ok();
+        return Ok(log_id);
+    }
 
-        if let Some(writer_tx) = remote_writer_tx {
-            use crate::acp::transport::SessionLoadRequest;
-            let pid = project_id.unwrap();
-            let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
-                agent_id: agent_id.clone(),
-                session_id: session_id_for(log_id),
-                resume_session_id: acp_session_id.clone(),
-                cwd: cwd.clone(),
-            }));
-            let bytes = crate::acp::manager::serialize_message(&load_msg)?;
-            writer_tx
-                .send(bytes)
-                .await
-                .map_err(|_| "Remote project server writer channel closed".to_string())?;
-
-            let acp_process = crate::acp::AcpProcess {
-                writer: crate::acp::AcpTransportWriter::SharedServer(writer_tx.clone()),
-                child: None,
-                reader_cancel_tx: None,
-                models: Arc::new(std::sync::Mutex::new(None)),
-                modes: Arc::new(std::sync::Mutex::new(None)),
-                prompt_capabilities: Arc::new(std::sync::Mutex::new(None)),
-                cwd: cwd.clone(),
-                pending_file_search: Arc::new(std::sync::Mutex::new(None)),
-                pending_file_read: Arc::new(std::sync::Mutex::new(None)),
-                session_name,
-                agent_id_meta: agent_id.clone(),
-                project_id: Some(pid),
-                started_at: chrono::Utc::now().to_rfc3339(),
-                task_id: None,
-                task_name: None,
-                branch_name: None,
-                session_start_sha: None,
-                acp_session_id: Arc::new(std::sync::Mutex::new(Some(acp_session_id.clone()))),
-                session_capabilities: Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default())),
-                replay_buffer: Arc::new(std::sync::Mutex::new(Some(Vec::new()))),
-            };
-
-            if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.clone())) {
-                if let Some(models) = &cache.models {
-                    if let Ok(mut m) = acp_process.models.lock() { *m = Some(models.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
-                }
-                if let Some(modes) = &cache.modes {
-                    if let Ok(mut m) = acp_process.modes.lock() { *m = Some(modes.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
-                }
-                if let Some(caps) = &cache.prompt_capabilities {
-                    if let Ok(mut c) = acp_process.prompt_capabilities.lock() { *c = Some(caps.clone()); }
-                    let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-                }
-            }
-
-            app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-            app_state.app_handle.emit("sessions-changed", ()).ok();
-            return Ok(log_id);
+    // Cold path: spawn dedicated maestro-server subprocess.
+    match connection_id {
+        Some(conn_id) => {
+            let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
+            crate::acp::load_acp_session_cold(
+                crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
+                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name,
+            ).await?;
         }
-
-        // Cold path fallback: spawn dedicated subprocess over SSH.
-        let maestro_path = {
-            let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&Some(conn_id))
-                .and_then(|e| e.maestro_server_path.clone())
-                .ok_or_else(|| format!(
-                    "maestro-server path not cached for connection {}. Reconnect to refresh.",
-                    conn_id
-                ))?
-        };
-        let ssh = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-        spawn_loaded_acp_session_remote(
-            &agent_id, &cwd, log_id, &acp_session_id,
-            &app_state, &ssh, &maestro_path, session_name,
-        ).await?;
-    } else {
-        // Fast path: route through shared ProjectServer if running.
-        if let Some(pid) = project_id {
-            let writer_tx = {
-                let servers = app_state.acp.project_servers.lock().await;
-                servers.get(&pid).map(|s| s.writer_tx.clone())
-            };
-            if let Some(writer_tx) = writer_tx {
-                use crate::acp::transport::SessionLoadRequest;
-                let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
-                    agent_id: agent_id.clone(),
-                    session_id: session_id_for(log_id),
-                    resume_session_id: acp_session_id.clone(),
-                    cwd: cwd.clone(),
-                }));
-                let bytes = crate::acp::manager::serialize_message(&load_msg)?;
-                writer_tx
-                    .send(bytes)
-                    .await
-                    .map_err(|_| "Project server writer channel closed".to_string())?;
-
-                let acp_process = crate::acp::AcpProcess {
-                    writer: crate::acp::AcpTransportWriter::SharedServer(writer_tx.clone()),
-                    child: None,
-                    reader_cancel_tx: None,
-                    models: Arc::new(std::sync::Mutex::new(None)),
-                    modes: Arc::new(std::sync::Mutex::new(None)),
-                    prompt_capabilities: Arc::new(std::sync::Mutex::new(None)),
-                    cwd: cwd.clone(),
-                    pending_file_search: Arc::new(std::sync::Mutex::new(None)),
-                    pending_file_read: Arc::new(std::sync::Mutex::new(None)),
-                    session_name,
-                    agent_id_meta: agent_id.clone(),
-                    project_id: Some(pid),
-                    started_at: chrono::Utc::now().to_rfc3339(),
-                    task_id: None,
-                    task_name: None,
-                    branch_name: None,
-                    session_start_sha: None,
-                    acp_session_id: Arc::new(std::sync::Mutex::new(Some(acp_session_id.clone()))),
-                    session_capabilities: Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default())),
-                    replay_buffer: Arc::new(std::sync::Mutex::new(Some(Vec::new()))),
-                };
-
-                // Emit cached models/modes immediately.
-                if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.clone())) {
-                    if let Some(models) = &cache.models {
-                        if let Ok(mut m) = acp_process.models.lock() {
-                            *m = Some(models.clone());
-                        }
-                        let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
-                    }
-                    if let Some(modes) = &cache.modes {
-                        if let Ok(mut m) = acp_process.modes.lock() {
-                            *m = Some(modes.clone());
-                        }
-                        let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
-                    }
-                    if let Some(caps) = &cache.prompt_capabilities {
-                        if let Ok(mut c) = acp_process.prompt_capabilities.lock() {
-                            *c = Some(caps.clone());
-                        }
-                        let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-                    }
-                }
-
-                app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-                app_state.app_handle.emit("sessions-changed", ()).ok();
-                return Ok(log_id);
-            }
+        None => {
+            crate::acp::load_acp_session_cold(
+                crate::acp::TransportTarget::Local,
+                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name,
+            ).await?;
         }
-
-        // Cold path fallback: spawn dedicated maestro-server subprocess.
-        spawn_loaded_acp_session(
-            &agent_id, &cwd, log_id, &acp_session_id,
-            &app_state, session_name,
-        ).await?;
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -1106,308 +951,49 @@ pub async fn load_acp_session(
 // One-shot session list/close helpers
 // ============================================================================
 
-async fn query_session_list_local(
+async fn query_session_list(
+    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
     agent_id: &str,
     cwd: &str,
     cursor: Option<String>,
 ) -> Result<(Vec<SessionListEntryDto>, Option<String>), String> {
+    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
         agent_id: agent_id.to_string(),
         cwd: cwd.to_string(),
         cursor,
     }));
-    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
+    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok((
             resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect(),
             resp.next_cursor,
         )),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionListOk response from local maestro-server".to_string()),
+        _ => Err("No valid SessionListOk response from maestro-server".to_string()),
     }
 }
 
-async fn query_session_list_remote(
-    ssh: &crate::ssh::RemoteSshSession,
-    maestro_server_path: &str,
-    agent_id: &str,
-    cwd: &str,
-    cursor: Option<String>,
-) -> Result<(Vec<SessionListEntryDto>, Option<String>), String> {
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
-        agent_id: agent_id.to_string(),
-        cwd: cwd.to_string(),
-        cursor,
-    }));
-    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok((
-            resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect(),
-            resp.next_cursor,
-        )),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionListOk response from remote maestro-server".to_string()),
-    }
-}
-
-async fn query_session_close_local(
+async fn query_session_close(
+    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
     agent_id: &str,
     session_id: &str,
     cwd: &str,
 ) -> Result<(), String> {
+    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
     let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
         agent_id: agent_id.to_string(),
         session_id: session_id.to_string(),
         cwd: cwd.to_string(),
     }));
-    let result = crate::acp::rpc::one_shot_rpc_local(&msg, 15).await?;
+    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
     match result {
         Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
         Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionCloseOk response from local maestro-server".to_string()),
+        _ => Err("No valid SessionCloseOk response from maestro-server".to_string()),
     }
 }
 
-async fn query_session_close_remote(
-    ssh: &crate::ssh::RemoteSshSession,
-    maestro_server_path: &str,
-    agent_id: &str,
-    session_id: &str,
-    cwd: &str,
-) -> Result<(), String> {
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let result = crate::acp::rpc::one_shot_rpc_remote(ssh, maestro_server_path, &msg, 30).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionCloseOk response from remote maestro-server".to_string()),
-    }
-}
-
-// ============================================================================
-// Session load (resume existing ACP session)
-// ============================================================================
-
-/// Spawn a new Tauri ACP session that loads/resumes an existing agent-side session.
-/// Uses SessionLoad protocol instead of Spawn.
-async fn spawn_loaded_acp_session(
-    agent_id: &str,
-    cwd: &str,
-    log_id: i32,
-    acp_session_id: &str,
-    app_state: &Arc<crate::db::AppState>,
-    session_name: Option<String>,
-) -> Result<(), String> {
-    use crate::acp::transport::SessionLoadRequest;
-    use std::process::Stdio;
-
-    let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
-
-    let mut child = tokio::process::Command::new(server_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
-
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let mut child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let mut stdin_writer = tokio::io::BufWriter::new(child_stdin);
-
-    use tokio::io::AsyncWriteExt;
-    let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
-        protocol_version: PROTOCOL_VERSION,
-    }));
-    write_message(&mut stdin_writer, &handshake)
-        .await
-        .map_err(|e| format!("write failed: {}", e))?;
-    stdin_writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-    crate::acp::manager::perform_handshake_local(&mut child_stdout).await?;
-
-    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id_for(log_id),
-        resume_session_id: acp_session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    write_message(&mut stdin_writer, &load_req)
-        .await
-        .map_err(|e| format!("write failed: {}", e))?;
-    stdin_writer.flush().await.map_err(|e| format!("flush failed: {}", e))?;
-
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
-
-    let models_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
-    let modes_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModeState>>> = Arc::new(std::sync::Mutex::new(None));
-    let capabilities_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
-    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
-    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(Some(Vec::new())));
-
-    let reader_session_name = session_name.clone();
-    let acp_process = crate::acp::AcpProcess {
-        writer: crate::acp::AcpTransportWriter::Local(stdin_writer),
-        child: Some(child),
-        reader_cancel_tx: Some(cancel_tx),
-        models: Arc::clone(&models_cache),
-        modes: Arc::clone(&modes_cache),
-        prompt_capabilities: Arc::clone(&capabilities_cache),
-        cwd: cwd.to_string(),
-        pending_file_search: Arc::clone(&pending_file_search),
-        pending_file_read: Arc::clone(&pending_file_read),
-        session_name,
-        agent_id_meta: agent_id.to_string(),
-        project_id: None,
-        started_at: chrono::Utc::now().to_rfc3339(),
-        task_id: None,
-        task_name: None,
-        branch_name: None,
-        session_start_sha: None,
-        acp_session_id: Arc::clone(&acp_session_id_cache),
-        session_capabilities: Arc::clone(&session_capabilities),
-        replay_buffer: Arc::clone(&replay_buffer),
-    };
-
-    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-
-    crate::acp::manager::spawn_reader_task(child_stdout, cancel_rx, crate::acp::manager::ReaderTaskContext {
-        log_id,
-        app_handle: app_state.app_handle.clone(),
-        app_state: Arc::clone(app_state),
-        models_cache,
-        modes_cache,
-        capabilities_cache,
-        pending_file_search,
-        pending_file_read,
-        session_capabilities,
-        acp_session_id_cache,
-        replay_buffer,
-        session_name: reader_session_name,
-        agent_id: agent_id.to_string(),
-        project_id: None,
-    });
-
-    Ok(())
-}
-
-async fn spawn_loaded_acp_session_remote(
-    agent_id: &str,
-    cwd: &str,
-    log_id: i32,
-    acp_session_id: &str,
-    app_state: &Arc<crate::db::AppState>,
-    ssh_session: &crate::ssh::RemoteSshSession,
-    maestro_server_path: &str,
-    session_name: Option<String>,
-) -> Result<(), String> {
-    use crate::acp::transport::SessionLoadRequest;
-
-    let channel = ssh_session
-        .open_exec_channel(maestro_server_path)
-        .await
-        .map_err(|e| format!("Failed to open remote ACP channel for load: {}", e))?;
-
-    let (mut read_half, write_half) = channel.split();
-
-    {
-        use tokio::io::AsyncWriteExt;
-        let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
-            protocol_version: PROTOCOL_VERSION,
-        }));
-        let mut writer = write_half.make_writer();
-        write_message(&mut writer, &handshake)
-            .await
-            .map_err(|e| format!("remote handshake write failed: {}", e))?;
-        writer.flush().await.map_err(|e| format!("remote handshake flush failed: {}", e))?;
-    }
-    crate::acp::manager::perform_handshake_remote(&mut read_half).await?;
-
-    let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
-
-    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id_for(log_id),
-        resume_session_id: acp_session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let load_bytes = crate::acp::manager::serialize_message(&load_req)?;
-    write_tx.send(load_bytes).await
-        .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
-
-    tokio::spawn(async move {
-        use tokio::io::AsyncWriteExt;
-        let mut writer = write_half.make_writer();
-        while let Some(bytes) = write_rx.recv().await {
-            if writer.write_all(&bytes).await.is_err() {
-                break;
-            }
-            let _ = writer.flush().await;
-        }
-    });
-
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
-
-    let models_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModelState>>> = Arc::new(std::sync::Mutex::new(None));
-    let modes_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::SessionModeState>>> = Arc::new(std::sync::Mutex::new(None));
-    let capabilities_cache: Arc<std::sync::Mutex<Option<crate::acp::transport::PromptCapabilitiesInfo>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_search: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<String>, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let pending_file_read: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<String, String>>>>> = Arc::new(std::sync::Mutex::new(None));
-    let session_capabilities: Arc<std::sync::Mutex<crate::acp::SessionCapabilitiesCache>> = Arc::new(std::sync::Mutex::new(crate::acp::SessionCapabilitiesCache::default()));
-    let acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(Some(acp_session_id.to_string())));
-    let replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>> = Arc::new(std::sync::Mutex::new(Some(Vec::new())));
-
-    let reader_session_name = session_name.clone();
-    let acp_process = crate::acp::AcpProcess {
-        writer: crate::acp::AcpTransportWriter::RemoteSsh(write_tx),
-        child: None,
-        reader_cancel_tx: Some(cancel_tx),
-        models: Arc::clone(&models_cache),
-        modes: Arc::clone(&modes_cache),
-        prompt_capabilities: Arc::clone(&capabilities_cache),
-        cwd: cwd.to_string(),
-        pending_file_search: Arc::clone(&pending_file_search),
-        pending_file_read: Arc::clone(&pending_file_read),
-        session_name,
-        agent_id_meta: agent_id.to_string(),
-        project_id: None,
-        started_at: chrono::Utc::now().to_rfc3339(),
-        task_id: None,
-        task_name: None,
-        branch_name: None,
-        session_start_sha: None,
-        acp_session_id: Arc::clone(&acp_session_id_cache),
-        session_capabilities: Arc::clone(&session_capabilities),
-        replay_buffer: Arc::clone(&replay_buffer),
-    };
-
-    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-
-    crate::acp::manager::spawn_remote_reader_task(read_half, cancel_rx, crate::acp::manager::ReaderTaskContext {
-        log_id,
-        app_handle: app_state.app_handle.clone(),
-        app_state: Arc::clone(app_state),
-        models_cache,
-        modes_cache,
-        capabilities_cache,
-        pending_file_search,
-        pending_file_read,
-        session_capabilities,
-        acp_session_id_cache,
-        replay_buffer,
-        session_name: reader_session_name,
-        agent_id: agent_id.to_string(),
-        project_id: None,
-    });
-
-    Ok(())
-}
 
 // ── Agent models cache ────────────────────────────────────────────────────────
 

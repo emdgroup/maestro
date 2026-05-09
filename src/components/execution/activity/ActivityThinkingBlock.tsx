@@ -15,7 +15,7 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
 
   if (thinking.isStreaming) {
     return (
-      <div className="ml-9 border-l-2 border-dashed border-border pl-3 py-1.5 opacity-65">
+      <div className="border-l-2 border-dashed border-border pl-3 py-1.5 opacity-65">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Brain className="w-3 h-3 shimmer-thinking-icon" />
           <span className="shimmer-thinking-text">Thinking</span>
@@ -28,7 +28,7 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
   }
 
   return (
-    <div className="ml-9 border-l-2 border-dashed border-border pl-3 py-1 opacity-60">
+    <div className="border-l-2 border-dashed border-border pl-3 py-1 opacity-60">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}

@@ -170,11 +170,25 @@ export function useAgentDiscoveryQuery(connectionId: number | null, enabled: boo
 
 /** Cached model list for an agent from in-memory AgentCache. Available after first SpawnOk. */
 export function useCachedAgentModelsQuery(projectId: number, agentId: string | null) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ project_id: number; agent_id: string }>("agent-cache-updated", (event) => {
+      if (event.payload.project_id === projectId && event.payload.agent_id === agentId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["cachedAgentModels", projectId, agentId],
+        });
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [queryClient, projectId, agentId]);
+
   return useQuery({
     queryKey: ["cachedAgentModels", projectId, agentId] as const,
     queryFn: () => api.getCachedAgentModels(projectId, agentId!),
     enabled: agentId != null,
-    staleTime: Infinity,
+    staleTime: 5_000,
     gcTime: Infinity,
   });
 }

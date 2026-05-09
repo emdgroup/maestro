@@ -1,123 +1,168 @@
-# Fix: Agent Cache Not Working + Modes Never Loading
+# Fix: Remote First Spawn 6s Delay for Models/Modes
 
 ## Context
 
-Changes A-D from previous plan were implemented (ProjectServer, RemoteProjectServer, AgentCache, fast paths). Testing reveals the caching architecture IS in place but has 3 specific bugs preventing it from working at runtime.
+Remote project first session shows 6s delay for mode/model dropdowns despite waiting 30s+ after project open. Local is instant. Second remote session is instant. This means `agent_cache` is empty at first spawn time — pre-warm fails silently.
 
-**Local behavior:**
-- First spawn: models arrive after 3-5s (from SpawnOk), modes NEVER load
-- Second+ spawn: models instant (cache works!), modes still never load
+## How It Works (When Working)
 
-**Remote behavior:**
-- All spawns: 5-10s for everything — fast path never fires
+1. Project opens → `prime_project_server` fires (fire-and-forget)
+2. Pre-warm: spawn shared server → PreInitialize agent → `agent_cache` populated
+3. User spawns session → `spawn_acp_session` checks `agent_cache` → emits `acp://session-models` immediately
+4. Frontend's `useAcpSessionLifecycle` gets models via `api.getAcpModels()` → instant dropdowns
 
-## Root Causes
+When cache is empty (pre-warm failed), step 3 has nothing to emit. Frontend waits for SpawnOk (~6s for remote agent startup).
 
-### 1. Modes never load (protocol gap — NOT fixable on our side)
+## Root Cause
 
-Claude Code returns `modes: None` in `NewSessionResponse`. ACP schema: `pub modes: Option<SessionModeState>` with `#[serde(default)]`. Only delivery mechanisms: `NewSessionResponse.modes` or `LoadSessionResponse.modes`. `CurrentModeUpdate` notification only carries `currentModeId`, not available list.
+**`prime_project_server` remote branch runs `prefetch_agent_discovery` which spawns a one-shot maestro-server just to list agents. This is unnecessary for pre-warm and adds 5-15s+ of latency, potentially causing the total chain to exceed the time the user waits.**
 
-**Conclusion**: Mode selector will remain empty until Claude Code populates this field. No Maestro-side fix.
+The one-shot maestro-server runs `load_registry()` on startup which calls `fetch_from_cdn()` — a **blocking HTTP request with no timeout** (`ureq::get` without `.timeout()`). If the remote machine's CDN cache is stale (>24h) and CDN is slow/unreachable, this can block for 30-120s. The one-shot RPC has a 30s timeout → times out → error propagates → pre-warm aborts.
 
-### 2. Remote fast path never fires (timing race)
+Even without CDN issues, the one-shot adds unnecessary SSH overhead (channel open, process spawn, handshake, ListAgents response, kill). Meanwhile the local pre-warm path skips all of this — no discovery needed.
 
-`prime_project_server` for remote needs `discovery_cache[Some(conn_id)].maestro_server_path`. Discovery runs asynchronously from frontend (`useAgentDiscoveryQuery`). Priming fires immediately after `openProject` → discovery hasn't populated cache yet → fails silently → `remote_project_servers` never gets entry → every remote spawn uses cold path.
+Remote pre-warm chain (current):
+1. `prefetch_agent_discovery` — ensure_remote_server (2 SSH cmds) + one-shot maestro-server (CDN + ListAgents) = **5-30s**
+2. Get `maestro_path` from cache
+3. `spawn_remote_project_server` — SSH channel + handshake = 2-5s
+4. SSH cat settings.json = 1-2s
+5. `pre_initialize_via_remote_project_server` — agent spawn + ACP init + NewSession = 5-15s
+Total: **13-52s** (vs local: 3-10s)
 
-### 3. Cold-path readers never update agent_cache
+## Fix 1 (PRIMARY): Eliminate one-shot in `prime_project_server`
 
-`spawn_reader_task` (manager.rs:576) and `spawn_remote_reader_task` (manager.rs:596) call `handle_server_message` directly — never call `update_agent_cache_from_response`. Only the shared reader (`handle_shared_server_message`) updates cache. When remote always uses cold path (Issue 2) → cache never populated → no instant subsequent spawns.
+Replace `prefetch_agent_discovery` call with a cache check + direct `ensure_remote_server`. We only need the maestro-server path, NOT the agent list.
 
----
+**File: `src-tauri/src/ipc/project_handlers.rs` (lines 604-615)**
 
-## Fixes (scoped to making existing implementation work)
-
-### Fix 1: Cold-path readers must update agent_cache
-
-**Problem**: `spawn_reader_task` (manager.rs:576) and `spawn_remote_reader_task` (manager.rs:596) call `handle_server_message` but never call `update_agent_cache_from_response`. Only the shared reader (`handle_shared_server_message`) updates cache. When remote always uses cold path (Fix 2 not yet applied), cache never populates.
-
-**Files**: `src-tauri/src/acp/manager.rs`
-
-**Change**: In both `spawn_reader_task` and `spawn_remote_reader_task`, after calling `handle_server_message`, call `update_agent_cache_from_response` with the same message. Pattern:
-
+Before:
 ```rust
-// In the reader loop, after deserializing `msg`:
-update_agent_cache_from_response(&msg, project_id, &agent_id, &app_state).await;
-handle_server_message(/* existing args */).await;
+crate::ipc::acp_handlers::prefetch_agent_discovery(Arc::clone(&*app_state), Some(conn_id)).await;
+let maestro_path = {
+    let cache = app_state.acp.discovery_cache.lock().await;
+    cache.get(&Some(conn_id))
+        .and_then(|e| e.maestro_server_path.clone())
+        .ok_or_else(|| format!("maestro-server path not cached for connection {}...", conn_id))?
+};
 ```
 
-This ensures even cold-path sessions populate the agent_cache, making subsequent spawns instant regardless of which path created the first session.
-
----
-
-### Fix 2: Remote prime_project_server — run discovery inline
-
-**Problem**: `prime_project_server` (project_handlers.rs:602-628) for remote requires `discovery_cache[Some(conn_id)].maestro_server_path`. Discovery is async from frontend. Priming fires immediately after openProject before discovery completes → fails silently → `remote_project_servers` never gets entry.
-
-**Files**: `src-tauri/src/ipc/project_handlers.rs`, `src-tauri/src/ipc/acp_handlers.rs`
-
-**Change**: Extract the discovery logic from `discover_agents` into a reusable `discover_agents_impl(project_id, connection_id, project_path, app_state)` function. Call it inline at the top of `prime_project_server`'s remote branch before reading `discovery_cache`:
-
+After:
 ```rust
-// In prime_project_server, remote branch:
-// Ensure discovery has run (populates maestro_server_path in cache)
-discover_agents_impl(project_id, Some(conn_id), &project_path, &app_state).await?;
-// Now safe to read discovery_cache
-let cache = app_state.acp.discovery_cache.lock().await;
-let maestro_path = cache.get(&Some(conn_id))
-    .and_then(|e| e.maestro_server_path.as_deref())
-    .ok_or("maestro-server path not found after discovery")?;
+let maestro_path = {
+    let cache = app_state.acp.discovery_cache.lock().await;
+    cache.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone())
+};
+let maestro_path = match maestro_path {
+    Some(p) => p,
+    None => {
+        let deploy = crate::acp::deploy::ensure_remote_server(
+            &ssh, &app_state.app_handle, conn_id
+        ).await?;
+        deploy.path
+    }
+};
 ```
 
-This eliminates the race — priming waits for discovery to complete before attempting to spawn the RemoteProjectServer.
+This:
+- Reuses cached path from frontend's `discover_agents` call (if already ran)
+- Falls back to `ensure_remote_server` (just 2 SSH commands: `uname -m` + `--protocol-version`)
+- Skips the entire one-shot maestro-server process (CDN fetch + ListAgents)
+- Saves 5-30s from the pre-warm chain
 
----
+Note: must move the `ssh` binding BEFORE this block (currently at line 616-617).
 
-### Fix 3: Remove file-based agents_model_cache.json system
+## Fix 2: Add CDN timeout in maestro-server
 
-**Problem**: `useAgentModelsCacheQuery` and `useRefreshAgentModelsMutation` in `execution.service.ts` use a file-based JSON cache (`get_agent_models_cache` / `refresh_agent_models` IPC commands). This is now replaced by the in-memory `AgentCache`.
+**File: `maestro-server/src/registry.rs` (line 129)**
 
-**Files**:
-- `src/services/execution.service.ts` — remove `useAgentModelsCacheQuery`, `useRefreshAgentModelsMutation`
-- `src-tauri/src/ipc/acp_handlers.rs` — remove `get_agent_models_cache`, `refresh_agent_models` IPC commands
-- `src-tauri/src/lib.rs` — remove from command registration
-- Frontend consumers (SpawnSessionDialog) — switch to reading from `AgentCache` via new IPC `get_cached_agent_models(project_id, agent_id)`
+Before:
+```rust
+fn fetch_from_cdn() -> Result<AcpRegistry, String> {
+    ureq::get(REGISTRY_URL)
+        .call()
+```
 
-**New IPC**: `get_cached_agent_models(project_id: i32, agent_id: String) -> Option<SessionModelState>` — reads from `app_state.acp.agent_cache`.
+After:
+```rust
+fn fetch_from_cdn() -> Result<AcpRegistry, String> {
+    ureq::get(REGISTRY_URL)
+        .timeout(std::time::Duration::from_secs(5))
+        .call()
+```
 
----
+Prevents indefinite blocking when CDN is unreachable from remote. 5s is generous for a JSON download.
 
-### Fix 4 (no-op): Modes — protocol limitation
+## Fix 3: Emit `"agent-cache-updated"` event
 
-Modes never load because Claude Code returns `modes: None` in `NewSessionResponse`. No `SessionUpdate` variant carries the full mode list. **No code change.** Document as known limitation. Mode selector remains hidden (`modes.length > 0` guard in ComposeBar.tsx:637).
+When `agent_cache` is populated (from pre-warm OR from SpawnOk), emit event so frontend components can react. This helps `useCachedAgentModelsQuery` (used by SpawnSessionDialog and SettingsPage).
 
----
+**File: `src-tauri/src/acp/manager.rs`** — 3 locations:
 
-## Critical Files
+1. After `agent_cache.insert()` in `pre_initialize_via_project_server` (line ~1277)
+2. After `agent_cache.insert()` in `pre_initialize_via_remote_project_server` (line ~1405)
+3. After cache update in `update_agent_cache_from_response` (line ~942)
+
+```rust
+app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+    "project_id": project_id,
+    "agent_id": agent_id,
+})).ok();
+```
+
+## Fix 4: Frontend cache query improvements
+
+**File: `src/services/execution.service.ts`** — `useCachedAgentModelsQuery`
+
+- Add `useEffect` listening to `"agent-cache-updated"` event → invalidate matching query
+- Reduce `staleTime` from `Infinity` to `5_000` (cheap IPC, just reads HashMap)
+
+```typescript
+export function useCachedAgentModelsQuery(projectId: number, agentId: string | null) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ project_id: number; agent_id: string }>("agent-cache-updated", (event) => {
+      if (event.payload.project_id === projectId && event.payload.agent_id === agentId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["cachedAgentModels", projectId, agentId],
+        });
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [queryClient, projectId, agentId]);
+
+  return useQuery({
+    queryKey: ["cachedAgentModels", projectId, agentId] as const,
+    queryFn: () => api.getCachedAgentModels(projectId, agentId!),
+    enabled: agentId != null,
+    staleTime: 5_000,
+    gcTime: Infinity,
+  });
+}
+```
+
+## Files
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/acp/manager.rs` | Fix 1: add `update_agent_cache_from_response` to cold-path readers |
-| `src-tauri/src/ipc/project_handlers.rs` | Fix 2: inline discovery before remote prime |
-| `src-tauri/src/ipc/acp_handlers.rs` | Fix 2: extract `discover_agents_impl`; Fix 3: remove file cache IPCs, add `get_cached_agent_models` |
-| `src/services/execution.service.ts` | Fix 3: remove `useAgentModelsCacheQuery`, `useRefreshAgentModelsMutation` |
-| `src-tauri/src/lib.rs` | Fix 3: update command registration |
+| `src-tauri/src/ipc/project_handlers.rs` | Replace `prefetch_agent_discovery` with cache check + `ensure_remote_server` fallback |
+| `maestro-server/src/registry.rs` | Add 5s timeout to `ureq` CDN fetch |
+| `src-tauri/src/acp/manager.rs` | Emit `"agent-cache-updated"` in 3 locations |
+| `src/services/execution.service.ts` | Event listener + reduce staleTime in `useCachedAgentModelsQuery` |
 
 ## Expected Result
 
 | Scenario | Before | After |
 |----------|--------|-------|
-| Local first spawn | 3-5s for models | 3-5s (unchanged — needs SpawnOk) |
-| Local subsequent spawns | 3-5s | **Instant** (cache populated by Fix 1 or shared reader) |
-| Remote first spawn | 5-10s | 5-10s (unchanged — needs SpawnOk via new RemoteProjectServer) |
-| Remote subsequent spawns | 5-10s | **Instant** (cache populated by Fix 1) |
-| Remote fast path | Never fires | **Fires** (Fix 2 eliminates race) |
-| Modes | Never load | Never load (protocol gap) |
+| Remote first spawn (wait 30s) | 6s delay | **Instant** (pre-warm completes in ~10-20s without one-shot overhead) |
+| Remote first spawn (dialog opened early) | 6s delay | **Instant** if pre-warm done; SpawnSessionDialog models appear via event if still running |
+| CDN unreachable from remote | Pre-warm hangs 30s+ → fails | Fails fast (5s timeout) → falls back to backup registry |
 
 ## Verification
 
-1. `cargo check` — compilation passes
-2. `cargo test` — Rust tests pass
-3. `pnpm test --run` — frontend tests pass
-4. **Local**: spawn → wait 3-5s → models load → spawn again → **instant**
-5. **Remote**: open remote project → spawn → confirm fast path fires (no new SSH channel per session) → spawn again → **instant**
-6. Verify no `agents_model_cache.json` references remain in codebase
+1. `cargo check` — passes
+2. `cargo test` — passes
+3. `pnpm test --run` — passes
+4. **Remote test**: open project → wait 15s → spawn first session → mode/model dropdowns should appear immediately (not 6s)
+5. **Remote cold test**: open project → immediately spawn → may still take 6s (pre-warm incomplete) → but second session is instant

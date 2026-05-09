@@ -600,29 +600,43 @@ pub async fn prime_project_server(
     };
 
     if let Some(conn_id) = connection_id {
-        // Run discovery inline so maestro_server_path is always populated,
-        // regardless of whether the frontend's useAgentDiscoveryQuery has fired yet.
-        crate::ipc::acp_handlers::prefetch_agent_discovery(Arc::clone(&*app_state), Some(conn_id)).await;
-
-        let maestro_path = {
-            let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&Some(conn_id))
-                .and_then(|e| e.maestro_server_path.clone())
-                .ok_or_else(|| format!(
-                    "maestro-server path not cached for connection {}. Run agent discovery first.",
-                    conn_id
-                ))?
-        };
         let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
 
-        crate::acp::spawn_remote_project_server(project_id, &app_state, &ssh, &maestro_path).await?;
+        let cached_path = {
+            let cache = app_state.acp.discovery_cache.lock().await;
+            cache.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone())
+        };
+        let maestro_path = match cached_path {
+            Some(p) => p,
+            None => {
+                let deploy = crate::acp::deploy::ensure_remote_server(
+                    &ssh, &app_state.app_handle, conn_id,
+                ).await?;
+                deploy.path
+            }
+        };
 
-        let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
-            .ok()
-            .and_then(|c| c.default_agent);
+        crate::acp::spawn_project_server(project_id, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
+
+        // Run discovery and settings read in parallel. Discovery reuses the already-known
+        // maestro_path so ensure_remote_server is not called a second time.
+        let (_, default_agent) = tokio::join!(
+            crate::ipc::acp_handlers::prefetch_agent_discovery(
+                Arc::clone(&*app_state),
+                Some(conn_id),
+                Some(maestro_path.clone()),
+            ),
+            async {
+                let settings_path = format!("{}/.maestro/settings.json", project_path);
+                ssh.execute_command(&format!("cat {}", shell_quote(&settings_path))).await
+                    .ok()
+                    .and_then(|output| serde_json::from_str::<crate::models::ProjectConfig>(&output).ok())
+                    .and_then(|c| c.default_agent)
+            }
+        );
         if let Some(agent_id) = default_agent {
-            crate::acp::pre_initialize_via_remote_project_server(
+            crate::acp::pre_initialize_via_project_server(
                 project_id,
                 &agent_id,
                 &project_path,
@@ -631,7 +645,7 @@ pub async fn prime_project_server(
             .await?;
         }
     } else {
-        crate::acp::spawn_project_server(project_id, &app_state).await?;
+        crate::acp::spawn_project_server(project_id, crate::acp::TransportTarget::Local, &app_state).await?;
 
         let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
             .ok()

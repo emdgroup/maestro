@@ -48,6 +48,7 @@ export type PlanEntry = {
 export type PlanUpdate = {
   sessionUpdate: "plan";
   entries: PlanEntry[];
+  title?: string;
 };
 
 export type UsageUpdatePayload = {
@@ -138,6 +139,7 @@ export type ActivityState = {
   items: ActivityItem[];
   toolCallMap: Map<string, ToolCallItem>;
   plan: PlanEntry[] | null;
+  planTitle: string | null;
   isInitializing: boolean;
   sessionEnded: boolean;
   endReason: "completed" | "failed" | "cancelled" | null;
@@ -152,6 +154,7 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   items: [],
   toolCallMap: new Map(),
   plan: null,
+  planTitle: null,
   isInitializing: true,
   sessionEnded: false,
   endReason: null,
