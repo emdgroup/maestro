@@ -97,6 +97,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::respond_acp_elicitation,
             crate::ipc::cancel_acp_session,
             crate::ipc::interrupt_acp_turn,
+            crate::ipc::preflight_connection,
             crate::ipc::discover_agents,
             crate::ipc::set_acp_model,
             crate::ipc::get_acp_models,

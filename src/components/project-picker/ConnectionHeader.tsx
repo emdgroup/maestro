@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
-import { Server, Pencil, MoreVertical, Trash2, KeyRound } from "lucide-react";
+import { Server, Pencil, MoreVertical, Trash2, KeyRound, AlertTriangle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,6 +102,13 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
     }
   };
 
+  const { preflightResult, preflightStatus } = useConnectionContext();
+  const failedTools =
+    preflightStatus === "failed-ignored"
+      ? (preflightResult?.tool_checks.filter((t) => !t.available) ?? [])
+      : [];
+  const hasMandatoryFail = failedTools.some((t) => t.mandatory);
+
   // Check if connection has a saved password
   const hasSavedPassword =
     connection &&
@@ -127,6 +136,38 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
           <h2 className="text-lg font-semibold truncate flex-1">
             {connection.display_name || connection.connection_string}
           </h2>
+          {failedTools.length > 0 && (
+            <Popover>
+              <PopoverTrigger
+                className="p-1 rounded-md transition-colors cursor-pointer shrink-0"
+                title="Environment warnings"
+              >
+                <AlertTriangle
+                  className={`size-4 ${hasMandatoryFail ? "text-destructive" : "text-amber-400"}`}
+                />
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="end" className="w-64 gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Environment warnings</p>
+                <ul className="flex flex-col gap-1.5">
+                  {failedTools.map((t) => (
+                    <li key={t.tool} className="flex items-start gap-2 text-xs">
+                      <AlertTriangle
+                        className={`size-3 mt-0.5 shrink-0 ${t.mandatory ? "text-destructive" : "text-amber-400"}`}
+                      />
+                      <span>
+                        <span className="font-mono">{t.tool}</span> not found
+                        {t.required_by.length > 0 && (
+                          <span className="text-muted-foreground">
+                            {" "}— agents using this tool will be unavailable
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </PopoverContent>
+            </Popover>
+          )}
           <Button
             variant="ghost"
             size="sm"

@@ -10,6 +10,8 @@ pub struct DiscoveredAgent {
     pub id: String,
     pub name: String,
     pub icon: String,
+    #[serde(default)]
+    pub spawn_deps: Vec<String>,
 }
 
 /// Unified discovery result returned to the frontend via IPC.

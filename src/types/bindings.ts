@@ -992,6 +992,20 @@ async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Validate the environment for a connection and boot the persistent server.
+ * 
+ * Idempotent: if the server is already running the spawn step is skipped and only
+ * agent discovery + tool checks are refreshed. The server process lives until app quit.
+ */
+async preflightConnection(connectionId: number | null) : Promise<Result<PreflightResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Discover available ACP agents via maestro-server.
  * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
  * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
@@ -1112,7 +1126,7 @@ async getActiveSessions() : Promise<Result<ActiveSessionInfo[], string>> {
 }
 },
 /**
- * List ACP sessions available for a given agent via a one-shot maestro-server connection.
+ * List ACP sessions available for a given agent via the persistent connection server.
  * Applies user-defined aliases over agent-provided titles. When the full list is returned
  * (no next page), prunes stale aliases for sessions the agent no longer knows about.
  */
@@ -1254,13 +1268,15 @@ export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } |
  * Agent discovered by maestro-server's CDN registry check.
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
-export type DiscoveredAgent = { id: string; name: string; icon: string }
+export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_deps?: string[] }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Typed response for approve_task_and_merge IPC command
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
+export type PreflightCheck = { ok: boolean; message: string | null }
+export type PreflightResult = { maestro_server: PreflightCheck; agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
@@ -1300,6 +1316,15 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
+export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 
+/**
+ * Agent IDs that require this tool to spawn.
+ */
+required_by: string[]; 
+/**
+ * `true` for `git` — the session cannot function without it.
+ */
+mandatory: boolean }
 /**
  * Worktree record from database (schema v6)
  */

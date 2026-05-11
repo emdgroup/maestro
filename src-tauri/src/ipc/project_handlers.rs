@@ -617,7 +617,7 @@ pub async fn prime_project_server(
             }
         };
 
-        crate::acp::spawn_project_server(project_id, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
+        crate::acp::spawn_connection_server(Some(conn_id), crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
         // Run discovery and settings read in parallel. Discovery reuses the already-known
         // maestro_path so ensure_remote_server is not called a second time.
@@ -636,8 +636,9 @@ pub async fn prime_project_server(
             }
         );
         if let Some(agent_id) = default_agent {
-            crate::acp::pre_initialize_via_project_server(
-                project_id,
+            crate::acp::pre_initialize_via_connection_server(
+                Some(conn_id),
+                Some(project_id),
                 &agent_id,
                 &project_path,
                 &app_state,
@@ -645,14 +646,15 @@ pub async fn prime_project_server(
             .await?;
         }
     } else {
-        crate::acp::spawn_project_server(project_id, crate::acp::TransportTarget::Local, &app_state).await?;
+        crate::acp::spawn_connection_server(None, crate::acp::TransportTarget::Local, &app_state).await?;
 
         let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
             .ok()
             .and_then(|c| c.default_agent);
         if let Some(agent_id) = default_agent {
-            crate::acp::pre_initialize_via_project_server(
-                project_id,
+            crate::acp::pre_initialize_via_connection_server(
+                None,
+                Some(project_id),
                 &agent_id,
                 &project_path,
                 &app_state,

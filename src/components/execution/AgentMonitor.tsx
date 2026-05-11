@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef } from "react";
-import { Plus, Terminal, X, FileText, FileDiff } from "lucide-react";
+import { Plus, Terminal, X, FileText, FileDiff, Pencil } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -254,24 +254,24 @@ export function AgentMonitor({
                       onBlur={() => commitRename(selectedSession)}
                     />
                   ) : (
-                    <h3
-                      className={cn(
-                        "text-sm font-semibold truncate",
-                        selectedSession.execution_mode === "acp" &&
-                          selectedSession.acp_session_id &&
-                          "cursor-text",
-                      )}
-                      onDoubleClick={
-                        selectedSession.execution_mode === "acp" && selectedSession.acp_session_id
-                          ? (e) => startRename(selectedSession, e)
-                          : undefined
-                      }
-                    >
-                      {selectedSession.session_name ??
-                        selectedSession.task_name ??
-                        selectedSession.branch_name ??
-                        "Interactive session"}
-                    </h3>
+                    <div className="group flex items-center gap-1.5">
+                      <h3 className="text-sm font-semibold truncate">
+                        {selectedSession.session_name ??
+                          selectedSession.task_name ??
+                          selectedSession.branch_name ??
+                          "Interactive session"}
+                      </h3>
+                      {selectedSession.execution_mode === "acp" &&
+                        selectedSession.acp_session_id && (
+                          <button
+                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted/40 transition-opacity shrink-0"
+                            onClick={(e) => startRename(selectedSession, e)}
+                            title="Rename session"
+                          >
+                            <Pencil className="w-3 h-3 text-muted-foreground" />
+                          </button>
+                        )}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">

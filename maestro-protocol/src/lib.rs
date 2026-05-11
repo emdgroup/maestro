@@ -46,6 +46,7 @@ pub enum ServerRequest {
     SessionLoad(SessionLoadRequest),
     SessionClose(SessionCloseRequest),
     PreInitialize(PreInitializeRequest),
+    CheckTools(CheckToolsRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -63,6 +64,27 @@ pub struct DiscoveredAgent {
     pub id: String,
     pub name: String,
     pub icon: String,
+    /// Tools required to spawn this agent (e.g. ["npx"], ["uvx"]). Empty for binary agents.
+    #[serde(default)]
+    pub spawn_deps: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CheckToolsRequest {
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCheckResult {
+    pub tool: String,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CheckToolsResponse {
+    pub results: Vec<ToolCheckResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -116,6 +138,7 @@ pub enum ServerResponse {
     SessionCloseOk,
     PreInitializeOk(PreInitializeResponse),
     AgentConnectionLost(AgentConnectionLost),
+    CheckToolsOk(CheckToolsResponse),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

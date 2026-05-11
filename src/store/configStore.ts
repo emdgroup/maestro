@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
+import type { ToolCheckEntry } from "@/types/bindings";
 
 // These constants are used by TaskSettingsModal for per-task overrides.
 // They remain hardcoded until task-level model/MCP discovery is implemented.
@@ -17,6 +18,8 @@ export interface ConfigState {
   default_model: string | null;
   isLoading: boolean;
   error: string | null;
+  // keyed by String(connectionId ?? "local")
+  preflightToolChecks: Record<string, ToolCheckEntry[]>;
 
   // Actions
   setState: (
@@ -28,6 +31,11 @@ export interface ConfigState {
   setError: (error: string | null) => void;
   clearError: () => void;
   resetConfig: () => void;
+  setPreflightToolChecks: (connectionId: number | null, toolChecks: ToolCheckEntry[]) => void;
+}
+
+function connectionKey(connectionId: number | null): string {
+  return connectionId === null ? "local" : String(connectionId);
 }
 
 function applyReset(state: ConfigState) {
@@ -43,6 +51,7 @@ export const useConfigStore = create<ConfigState>()(
     default_model: null,
     isLoading: false,
     error: null,
+    preflightToolChecks: {},
 
     setState: (config) =>
       set((state) => {
@@ -78,6 +87,11 @@ export const useConfigStore = create<ConfigState>()(
       }),
 
     resetConfig: () => set(applyReset),
+
+    setPreflightToolChecks: (connectionId, toolChecks) =>
+      set((state) => {
+        state.preflightToolChecks[connectionKey(connectionId)] = toolChecks;
+      }),
   })),
 );
 
@@ -95,5 +109,9 @@ export const useConfigActions = () =>
       setError: s.setError,
       clearError: s.clearError,
       resetConfig: s.resetConfig,
+      setPreflightToolChecks: s.setPreflightToolChecks,
     })),
   );
+
+export const usePreflightToolChecks = (connectionId: number | null) =>
+  useConfigStore((s) => s.preflightToolChecks[connectionKey(connectionId)] ?? []);

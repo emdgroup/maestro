@@ -21,6 +21,8 @@ function renderWithContext(view: "connections" | "projects" = "connections") {
   const mockSetView = vi.fn();
   const mockSetActiveConnection = vi.fn();
 
+  const mockStartPreflight = vi.fn();
+
   return {
     ...render(
       <ConnectionContext.Provider
@@ -29,6 +31,13 @@ function renderWithContext(view: "connections" | "projects" = "connections") {
           setView: mockSetView,
           activeConnection: null,
           setActiveConnection: mockSetActiveConnection,
+          preflightResult: null,
+          preflightStatus: "passed",
+          preflightError: null,
+
+          startPreflight: mockStartPreflight,
+          ignoreWarnings: vi.fn(),
+          resetPreflight: vi.fn(),
         }}
       >
         <ProjectPicker />
@@ -125,6 +134,13 @@ describe("ProjectPicker", () => {
             setView: vi.fn(),
             activeConnection: null,
             setActiveConnection: vi.fn(),
+            preflightResult: null,
+            preflightStatus: "passed",
+            preflightError: null,
+  
+            startPreflight: vi.fn(),
+            ignoreWarnings: vi.fn(),
+            resetPreflight: vi.fn(),
           }}
         >
           <ProjectPicker />
@@ -143,6 +159,13 @@ describe("ProjectPicker", () => {
             setView: vi.fn(),
             activeConnection: null,
             setActiveConnection: vi.fn(),
+            preflightResult: null,
+            preflightStatus: "passed",
+            preflightError: null,
+  
+            startPreflight: vi.fn(),
+            ignoreWarnings: vi.fn(),
+            resetPreflight: vi.fn(),
           }}
         >
           <ProjectPicker />
@@ -169,6 +192,13 @@ describe("ProjectPicker", () => {
             setView: vi.fn(),
             activeConnection: null,
             setActiveConnection: vi.fn(),
+            preflightResult: null,
+            preflightStatus: "passed",
+            preflightError: null,
+  
+            startPreflight: vi.fn(),
+            ignoreWarnings: vi.fn(),
+            resetPreflight: vi.fn(),
           }}
         >
           <ProjectPicker />
@@ -184,6 +214,13 @@ describe("ProjectPicker", () => {
               setView: vi.fn(),
               activeConnection: null,
               setActiveConnection: vi.fn(),
+              preflightResult: null,
+              preflightStatus: "passed",
+            preflightError: null,
+  
+            startPreflight: vi.fn(),
+            ignoreWarnings: vi.fn(),
+            resetPreflight: vi.fn(),
             }}
           >
             <ProjectPicker />

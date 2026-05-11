@@ -16,6 +16,7 @@ pub struct DiscoveredAgentWithSpawn {
     pub spawn_cmd: String,
     pub spawn_args: Vec<String>,
     pub spawn_env: std::collections::HashMap<String, String>,
+    pub spawn_deps: Vec<String>,
 }
 
 fn current_platform_key() -> &'static str {
@@ -42,14 +43,17 @@ fn current_platform_key() -> &'static str {
     { return ""; }
 }
 
-fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
+/// Returns (spawn_cmd, spawn_args, spawn_env, spawn_deps).
+/// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npx"] or ["uvx"]).
+/// Binary agents have no external dep so spawn_deps is empty.
+fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>, Vec<String>)> {
     if let Some(npx) = &dist.npx {
         let mut args: Vec<String> = vec!["-y".to_string(), "--".to_string(), npx.package.clone()];
         if let Some(extra) = &npx.args {
             args.extend(extra.iter().cloned());
         }
         let env = npx.env.clone().unwrap_or_default();
-        return Some(("npx".to_string(), args, env));
+        return Some(("npx".to_string(), args, env, vec!["npx".to_string()]));
     }
     let key = current_platform_key();
     if !key.is_empty() {
@@ -59,7 +63,7 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
                 if let Some(extra) = &target.args {
                     args.extend(extra.iter().cloned());
                 }
-                return Some((target.cmd.clone(), args, Default::default()));
+                return Some((target.cmd.clone(), args, Default::default(), vec![]));
             }
         }
     }
@@ -68,7 +72,7 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
         if let Some(extra) = &uvx.args {
             args.extend(extra.iter().cloned());
         }
-        return Some(("uvx".to_string(), args, Default::default()));
+        return Some(("uvx".to_string(), args, Default::default(), vec!["uvx".to_string()]));
     }
     None
 }
@@ -177,7 +181,7 @@ pub fn load_registry() -> AcpRegistry {
 pub async fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> {
     let mut result = Vec::new();
     for entry in &registry.agents {
-        let Some((spawn_cmd, spawn_args, spawn_env)) = resolve_spawn(&entry.distribution) else {
+        let Some((spawn_cmd, spawn_args, spawn_env, spawn_deps)) = resolve_spawn(&entry.distribution) else {
             continue;
         };
         result.push(DiscoveredAgentWithSpawn {
@@ -187,6 +191,7 @@ pub async fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithS
             spawn_cmd,
             spawn_args,
             spawn_env,
+            spawn_deps,
         });
     }
     result

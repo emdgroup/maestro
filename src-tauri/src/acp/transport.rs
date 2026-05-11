@@ -19,6 +19,7 @@ pub use maestro_protocol::{
     SessionListRequest, SessionListOkResponse, SessionListEntry,
     SessionLoadRequest, SessionLoadOkResponse,
     SessionCloseRequest,
+    CheckToolsRequest, CheckToolsResponse, ToolCheckResult,
     PreInitializeRequest, PreInitializeResponse, AgentConnectionLost,
     write_message, read_message,
     MSG_LEN_SIZE, MAX_MESSAGE_SIZE,

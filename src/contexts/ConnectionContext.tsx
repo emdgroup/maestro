@@ -1,9 +1,13 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import type { SshConnection } from "@/types/bindings";
+import { createContext, useCallback, useContext, useState, ReactNode } from "react";
+import type { SshConnection, PreflightResult } from "@/types/bindings";
+import { commands } from "@/types/bindings";
+import { useConfigStore } from "@/store/configStore";
 
 type View = "connections" | "projects";
 
 type ConnectionType = "local" | "ssh";
+
+export type PreflightStatus = "idle" | "checking" | "passed" | "failed" | "failed-ignored";
 
 export interface Connection {
   type: ConnectionType;
@@ -19,6 +23,12 @@ interface ConnectionContextValue {
   setActiveConnection: (connection: Connection | null) => void;
   view: View;
   setView: (view: View) => void;
+  preflightStatus: PreflightStatus;
+  preflightResult: PreflightResult | null;
+  preflightError: string | null;
+  startPreflight: (connection: Connection) => Promise<void>;
+  ignoreWarnings: () => void;
+  resetPreflight: () => void;
 }
 
 export const ConnectionContext = createContext<ConnectionContextValue | null>(null);
@@ -27,27 +37,72 @@ interface ConnectionProviderProps {
   children: ReactNode;
 }
 
-/**
- * Provider for managing the active connection state within the ProjectPicker subtree.
- *
- * This eliminates prop drilling by making activeConnection available to any
- * component within the provider via useConnectionContext hook.
- */
 export function ConnectionProvider({ children }: ConnectionProviderProps) {
   const [activeConnection, setActiveConnection] = useState<Connection | null>(null);
   const [view, setView] = useState<View>("connections");
+  const [preflightStatus, setPreflightStatus] = useState<PreflightStatus>("idle");
+  const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+
+  const startPreflight = useCallback(async (connection: Connection) => {
+    if (preflightStatus === "checking") return;
+
+    const connectionId =
+      connection.type === "ssh" && connection.sshConnection
+        ? connection.sshConnection.id
+        : null;
+
+    setPreflightStatus("checking");
+    setPreflightResult(null);
+    setPreflightError(null);
+
+    const response = await commands.preflightConnection(connectionId);
+    if (response.status === "error") {
+      setPreflightError(response.error as string);
+      setPreflightStatus("failed");
+      return;
+    }
+
+    const result = response.data;
+    useConfigStore.getState().setPreflightToolChecks(connectionId, result.tool_checks);
+    setPreflightResult(result);
+
+    const hasIssues =
+      !result.maestro_server.ok || result.tool_checks.some((t) => !t.available);
+    setPreflightStatus(hasIssues ? "failed" : "passed");
+  }, [preflightStatus]);
+
+  const ignoreWarnings = useCallback(() => {
+    setPreflightStatus("failed-ignored");
+  }, []);
+
+  const resetPreflight = useCallback(() => {
+    setPreflightStatus("idle");
+    setPreflightResult(null);
+    setPreflightError(null);
+    setActiveConnection(null);
+  }, []);
 
   return (
-    <ConnectionContext.Provider value={{ activeConnection, setActiveConnection, view, setView }}>
+    <ConnectionContext.Provider
+      value={{
+        activeConnection,
+        setActiveConnection,
+        view,
+        setView,
+        preflightStatus,
+        preflightResult,
+        preflightError,
+        startPreflight,
+        ignoreWarnings,
+        resetPreflight,
+      }}
+    >
       {children}
     </ConnectionContext.Provider>
   );
 }
 
-/**
- * Hook to access the active connection state.
- * Must be used within a ConnectionProvider.
- */
 export function useConnectionContext() {
   const context = useContext(ConnectionContext);
   if (!context) {

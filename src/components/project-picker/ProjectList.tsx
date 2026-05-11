@@ -3,6 +3,7 @@ import { ProjectListItem } from "@/components/project-picker/ProjectListItem";
 import { ProjectsListLayout } from "@/components/project-picker/ProjectsListLayout";
 import { CloneProjectDialog } from "@/components/project-picker/CloneProjectDialog";
 import { CreateProjectDialog } from "@/components/project-picker/CreateProjectDialog";
+import { PreflightModal } from "@/components/project-picker/PreflightModal";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import {
   useRecentProjects,
@@ -14,21 +15,16 @@ import {
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { Folder } from "lucide-react";
+import { Folder, Loader2 } from "lucide-react";
 import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { useMemo, useState } from "react";
 
-/**
- * Unified component for displaying and managing project lists.
- * Handles both local and remote (SSH) projects.
- *
- */
 export function ProjectList() {
-  const { activeConnection } = useConnectionContext();
+  const { activeConnection, preflightStatus } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const { data: recentProjects = [], isLoading: loading } = useRecentProjects(
+  const { data: recentProjects = [], isLoading: projectsLoading } = useRecentProjects(
     activeConnection?.sshConnection?.id,
   );
   const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
@@ -41,20 +37,13 @@ export function ProjectList() {
   const [projectLoading, setProjectLoading] = useState(false);
   const { setSelectedProject } = useSelectedProjectActions();
 
-  // Initialize service hooks
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
   const { mutateAsync: gitInitProject } = useGitInitProject();
 
-  /**
-   * Handle project selection from FilePicker.
-   * Auto-initializes git silently before creating the project for local paths.
-   */
   const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
     setProjectLoading(true);
     try {
-      // Auto-init git if needed (silently — IPC is a no-op if .git already exists)
-      // Only for local projects (connectionId undefined/null means local)
       if (!connectionId) {
         await gitInitProject({ path: selectedPath, connectionId: null });
       }
@@ -62,7 +51,6 @@ export function ProjectList() {
         path: selectedPath,
         connectionId: connectionId ?? null,
       });
-      // Acquire project lock via open_project (create_project does not lock)
       const project = await api.openProject(created.id);
       api.primeProjectServer(created.id).catch(() => {});
       setSelectedProject(project);
@@ -83,8 +71,6 @@ export function ProjectList() {
     setProjectLoading(true);
     try {
       const project = await api.openProject(projectId);
-      // Fire-and-forget: warm the shared maestro-server and pre-initialize the
-      // default agent so the first session spawn is near-instant.
       api.primeProjectServer(projectId).catch(() => {});
       setSelectedProject(project);
     } catch (error) {
@@ -103,6 +89,11 @@ export function ProjectList() {
     removeProject(projectId);
     toast.success("Project removed from recent list");
   };
+
+  const isChecking = preflightStatus === "checking";
+  const showProjects = preflightStatus === "passed" || preflightStatus === "failed-ignored";
+  const showFailureModal = preflightStatus === "failed";
+  const loading = isChecking || projectsLoading || projectLoading;
 
   return (
     activeConnection && (
@@ -127,25 +118,33 @@ export function ProjectList() {
           onCreateClick={() => setShowCreateDialog(true)}
           loading={loading}
         >
-          {recentProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No recent projects</p>
-          ) : (
-            <ul className="space-y-2">
-              {recentProjects.map((project) => (
-                <ProjectListItem
-                  key={project.id}
-                  path={project.path}
-                  onClick={() => handleProjectClick(project.id)}
-                  onRemove={() => handleRemoveProject(project.id)}
-                  disabled={loading}
-                  locked={lockedSet.has(project.id)}
-                />
-              ))}
-            </ul>
+          {isChecking && (
+            <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Checking environment…</span>
+            </div>
           )}
+          {showProjects &&
+            (recentProjects.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No recent projects</p>
+            ) : (
+              <ul className="space-y-2">
+                {recentProjects.map((project) => (
+                  <ProjectListItem
+                    key={project.id}
+                    path={project.path}
+                    onClick={() => handleProjectClick(project.id)}
+                    onRemove={() => handleRemoveProject(project.id)}
+                    disabled={loading}
+                    locked={lockedSet.has(project.id)}
+                  />
+                ))}
+              </ul>
+            ))}
         </ProjectsListLayout>
 
-        {/* File Picker Modal (Local or Remote) */}
+        {showFailureModal && <PreflightModal />}
+
         <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
           <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
             <FilePicker
@@ -156,14 +155,12 @@ export function ProjectList() {
           </DialogContent>
         </Dialog>
 
-        {/* Clone Project Dialog */}
         <CloneProjectDialog
           open={showCloneDialog}
           onOpenChange={setShowCloneDialog}
           connection={activeConnection?.sshConnection ?? null}
         />
 
-        {/* Create Project Dialog */}
         <CreateProjectDialog
           open={showCreateDialog}
           onOpenChange={setShowCreateDialog}

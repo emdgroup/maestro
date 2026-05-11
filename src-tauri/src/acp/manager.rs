@@ -14,29 +14,31 @@ use crate::acp::transport::{
     ServerResponse, SpawnRequest, SessionModelState, SessionModeState, PromptCapabilitiesInfo,
     read_message, write_message, FileSearchResponse, FileReadResponse,
     PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
+    SessionListOkResponse, SessionCloseRequest,
+    CheckToolsRequest, CheckToolsResponse,
 };
 
 
 /// Write transport for a live ACP session.
 /// Local sessions write to the child process stdin.
 /// Remote sessions send framed bytes to a writer task via mpsc.
-/// Shared-server sessions route to a project-level maestro-server via mpsc.
+/// Shared-server sessions route to a connection-level maestro-server via mpsc.
 pub enum AcpTransportWriter {
     Local(BufWriter<ChildStdin>),
     RemoteSsh(tokio::sync::mpsc::Sender<Vec<u8>>),
-    /// Session shares a project-level maestro-server process. The sender routes
+    /// Session shares a connection-level maestro-server process. The sender routes
     /// to the writer task that owns the child's stdin.
     SharedServer(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
-/// A long-lived maestro-server process shared across all sessions in one project.
+/// A long-lived maestro-server process shared across all sessions for one connection.
 ///
-/// Used for both local (subprocess) and remote (SSH exec channel) projects.
-/// All sessions for the project write through `writer_tx`; the single shared
+/// Keyed by `connection_id`: `None` for local, `Some(id)` for remote SSH.
+/// All sessions for the connection write through `writer_tx`; the single shared
 /// reader task routes responses back to individual `AcpProcess` instances.
-pub struct ProjectServer {
+pub struct ConnectionServer {
     /// Local subprocess only. `kill_on_drop(true)` ensures cleanup when dropped.
-    /// `None` for remote (SSH exec channel) project servers.
+    /// `None` for remote (SSH exec channel) connection servers.
     pub child: Option<Child>,
     /// Channel to the writer task (framed bytes → child stdin / SSH channel).
     /// Cloned into each session's `AcpTransportWriter::SharedServer`.
@@ -48,8 +50,15 @@ pub struct ProjectServer {
     /// Pending `ListAgents` oneshot. At most one in-flight at a time.
     pub pending_list_agents: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
-    /// SSH connection_id for remote project servers; `None` for local.
-    pub connection_id: Option<i32>,
+    /// Pending `SessionList` oneshot. At most one in-flight at a time.
+    pub pending_session_list: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
+    /// Pending `SessionClose` oneshot. At most one in-flight at a time.
+    pub pending_session_close: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>>,
+    /// Pending `CheckTools` oneshot. At most one in-flight at a time.
+    pub pending_check_tools: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
 }
 
 /// Cached session capabilities reported by the agent on SpawnOk.
@@ -108,6 +117,9 @@ pub struct AcpProcess {
     pub session_name: Option<String>,
     pub agent_id_meta: String,
     pub project_id: Option<i32>,
+    /// SSH connection_id for sessions routed through a ConnectionServer.
+    /// `None` for local connections; `Some(id)` for remote SSH connections.
+    pub connection_id: Option<i32>,
     pub started_at: String,
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -134,6 +146,8 @@ pub struct AcpProcessParams {
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
+    /// SSH connection_id for sessions routed through a ConnectionServer.
+    pub connection_id: Option<i32>,
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
     pub branch_name: Option<String>,
@@ -147,6 +161,7 @@ pub struct AcpProcessParams {
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
     let json_bytes = serde_json::to_vec(msg)
         .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
+    eprintln!("[ACP →] {}", String::from_utf8_lossy(&json_bytes));
     let len = json_bytes.len() as u32;
     let mut frame = Vec::with_capacity(4 + json_bytes.len());
     frame.extend_from_slice(&len.to_le_bytes());
@@ -165,12 +180,29 @@ pub(crate) enum AcpReadSource {
 impl AcpReadSource {
     pub(crate) async fn next_message(&mut self) -> Option<MaestroRpcMessage> {
         match self {
-            AcpReadSource::Local { reader } => read_message(reader).await.ok(),
+            AcpReadSource::Local { reader } => {
+                let msg = read_message(reader).await.ok();
+                if let Some(ref m) = msg {
+                    if let Ok(json) = serde_json::to_string(m) {
+                        eprintln!("[ACP ←] {}", json);
+                    }
+                }
+                msg
+            }
             AcpReadSource::Remote { read_half, msg_buf } => loop {
+                if let Some(msg) = try_parse_acp_frame(msg_buf) {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        eprintln!("[ACP ←] {}", json);
+                    }
+                    return Some(msg);
+                }
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
                         msg_buf.extend_from_slice(&data);
                         if let Some(msg) = try_parse_acp_frame(msg_buf) {
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                eprintln!("[ACP ←] {}", json);
+                            }
                             return Some(msg);
                         }
                     }
@@ -300,19 +332,12 @@ async fn open_remote_transport(
     Ok((write_tx, source))
 }
 
-/// Spawn a new ACP session as a local process.
+/// Fast path: route a new session through a running `ConnectionServer`.
 ///
-/// Fast path: if a `ProjectServer` is already running for `project_id`, the
-/// `SpawnRequest` is written to its shared writer and no new child is spawned.
-/// The shared reader task routes subsequent responses to this session.
-///
-/// Cold path: spawn a new dedicated maestro-server subprocess (legacy behaviour),
-/// used when no project server is running or `project_id` is `None`.
-/// Route a new spawn through a running `ProjectServer` if one exists for `project_id`.
-///
-/// Returns `true` if the session was registered via the shared server (fast path),
-/// `false` if no project server is running (caller should fall through to cold path).
-pub async fn try_spawn_via_project_server(
+/// Returns `true` if the session was registered via the shared server,
+/// `false` if no connection server is running (caller should fall through to cold path).
+pub async fn try_spawn_via_connection_server(
+    connection_id: Option<i32>,
     project_id: Option<i32>,
     agent_id: &str,
     cwd: &str,
@@ -325,13 +350,9 @@ pub async fn try_spawn_via_project_server(
     log_id: i32,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<bool, String> {
-    let pid = match project_id {
-        Some(p) => p,
-        None => return Ok(false),
-    };
     let writer_tx = {
-        let servers = app_state.acp.project_servers.lock().await;
-        match servers.get(&pid) {
+        let servers = app_state.acp.connection_servers.lock().await;
+        match servers.get(&connection_id) {
             Some(s) => s.writer_tx.clone(),
             None => return Ok(false),
         }
@@ -345,7 +366,7 @@ pub async fn try_spawn_via_project_server(
     writer_tx
         .send(bytes)
         .await
-        .map_err(|_| "Project server writer channel closed".to_string())?;
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
 
     let (acp_process, _ctx) = AcpProcess::create(
         AcpProcessParams {
@@ -356,6 +377,7 @@ pub async fn try_spawn_via_project_server(
             session_name,
             agent_id: agent_id.to_string(),
             project_id,
+            connection_id,
             task_id,
             task_name,
             branch_name,
@@ -367,7 +389,9 @@ pub async fn try_spawn_via_project_server(
         app_state.app_handle.clone(),
         Arc::clone(app_state),
     );
-    emit_cached_capabilities(&acp_process, pid, agent_id, log_id, app_state).await;
+    if let Some(pid) = project_id {
+        emit_cached_capabilities(&acp_process, Some(pid), agent_id, log_id, app_state).await;
+    }
     app_state.acp.sessions.lock().await.insert(log_id, acp_process);
     Ok(true)
 }
@@ -375,12 +399,13 @@ pub async fn try_spawn_via_project_server(
 /// Emit cached models/modes/capabilities for a session immediately after creation.
 pub async fn emit_cached_capabilities(
     acp_process: &AcpProcess,
-    project_id: i32,
+    project_id: Option<i32>,
     agent_id: &str,
     log_id: i32,
     app_state: &Arc<crate::db::AppState>,
 ) {
-    if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(project_id, agent_id.to_string())) {
+    let pid = match project_id { Some(p) => p, None => return };
+    if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.to_string())) {
         if let Some(models) = &cache.models {
             if let Ok(mut m) = acp_process.models.lock() { *m = Some(models.clone()); }
             let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
@@ -410,6 +435,7 @@ pub async fn spawn_acp_session_cold(
     task_name: Option<String>,
     branch_name: Option<String>,
     project_id: Option<i32>,
+    connection_id: Option<i32>,
     session_start_sha: Option<String>,
 ) -> Result<(), String> {
     let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
@@ -445,6 +471,7 @@ pub async fn spawn_acp_session_cold(
             session_name,
             agent_id: agent_id.to_string(),
             project_id,
+            connection_id,
             task_id,
             task_name,
             branch_name,
@@ -473,6 +500,7 @@ pub async fn load_acp_session_cold(
     acp_session_id: &str,
     app_state: &Arc<crate::db::AppState>,
     session_name: Option<String>,
+    connection_id: Option<i32>,
 ) -> Result<(), String> {
     let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: agent_id.to_string(),
@@ -508,6 +536,7 @@ pub async fn load_acp_session_cold(
             session_name,
             agent_id: agent_id.to_string(),
             project_id: None,
+            connection_id,
             task_id: None,
             task_name: None,
             branch_name: None,
@@ -589,6 +618,7 @@ impl AcpProcess {
             session_name: params.session_name,
             agent_id_meta: params.agent_id,
             project_id: params.project_id,
+            connection_id: params.connection_id,
             started_at: chrono::Utc::now().to_rfc3339(),
             task_id: params.task_id,
             task_name: params.task_name,
@@ -627,8 +657,8 @@ pub(crate) fn spawn_reader_task(
                     None => break,
                 },
             };
-            if let Some(pid) = project_id {
-                update_agent_cache_from_response(&msg, pid, &app_state).await;
+            if project_id.is_some() {
+                update_agent_cache_from_response(&msg, &app_state).await;
             }
             if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &models_cache, &modes_cache, &capabilities_cache, &pending_file_search, &pending_file_read, &session_capabilities, &acp_session_id_cache, &replay_buffer) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
@@ -816,6 +846,9 @@ async fn write_to_acp_session_raw(
     stdin_writer: &mut BufWriter<ChildStdin>,
     msg: &MaestroRpcMessage,
 ) -> Result<(), String> {
+    if let Ok(json) = serde_json::to_string(msg) {
+        eprintln!("[ACP →] {}", json);
+    }
     write_message(stdin_writer, msg)
         .await
         .map_err(|e| format!("write failed: {}", e))?;
@@ -893,10 +926,9 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
 }
 
 /// Update the agent-level cache when SpawnOk or SessionLoadOk arrives with models/modes.
-/// Looks up the agent_id from the AcpProcess metadata to key the cache.
+/// Looks up both agent_id and project_id from the AcpProcess session by log_id.
 async fn update_agent_cache_from_response(
     msg: &MaestroRpcMessage,
-    project_id: i32,
     app_state: &Arc<crate::db::AppState>,
 ) {
     let (models, modes, caps) = match msg {
@@ -913,53 +945,63 @@ async fn update_agent_cache_from_response(
         return;
     }
 
-    let agent_id = if let Some(log_id) = extract_session_log_id(msg) {
+    let (agent_id, project_id) = if let Some(log_id) = extract_session_log_id(msg) {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| s.agent_id_meta.clone())
+        match sessions.get(&log_id) {
+            Some(s) => match s.project_id {
+                Some(pid) => (s.agent_id_meta.clone(), pid),
+                None => return,
+            },
+            None => return,
+        }
     } else {
-        None
+        return;
     };
 
-    if let Some(agent_id) = agent_id {
-        {
-            let mut cache_map = app_state.acp.agent_cache.lock().await;
-            let entry = cache_map
-                .entry((project_id, agent_id.clone()))
-                .or_insert_with(AgentCache::default);
-            if let Some(m) = models {
-                entry.models = Some(m.clone());
-            }
-            if let Some(m) = modes {
-                entry.modes = Some(m.clone());
-            }
-            if let Some(c) = caps {
-                entry.prompt_capabilities = Some(c.clone());
-            }
+    {
+        let mut cache_map = app_state.acp.agent_cache.lock().await;
+        let entry = cache_map
+            .entry((project_id, agent_id.clone()))
+            .or_insert_with(AgentCache::default);
+        if let Some(m) = models {
+            entry.models = Some(m.clone());
         }
-        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
-            "project_id": project_id,
-            "agent_id": agent_id,
-        })).ok();
+        if let Some(m) = modes {
+            entry.modes = Some(m.clone());
+        }
+        if let Some(c) = caps {
+            entry.prompt_capabilities = Some(c.clone());
+        }
     }
+    app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+        "project_id": project_id,
+        "agent_id": agent_id,
+    })).ok();
 }
 
 /// Route a shared-reader message to the correct per-session handler or to
-/// project-level pending channels (PreInitialize, file ops, errors).
+/// connection-level pending channels (PreInitialize, SessionList, SessionClose, etc.).
 async fn handle_shared_server_message(
     msg: MaestroRpcMessage,
-    project_id: i32,
+    connection_id: Option<i32>,
     app_handle: &tauri::AppHandle,
     app_state: &Arc<crate::db::AppState>,
     pre_init_pending: &Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
     pending_list_agents: &Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
+    pending_session_list: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
+    pending_session_close: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>>,
+    pending_check_tools: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
 ) {
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(log_id) = extract_session_log_id(&msg) {
         // Update agent-level cache on SpawnOk/SessionLoadOk before dispatching.
-        update_agent_cache_from_response(&msg, project_id, app_state).await;
+        update_agent_cache_from_response(&msg, app_state).await;
 
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
@@ -1001,10 +1043,32 @@ async fn handle_shared_server_message(
                 id: a.id,
                 name: a.name,
                 icon: a.icon,
+                spawn_deps: a.spawn_deps,
             }).collect();
             if let Ok(mut guard) = pending_list_agents.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(agents));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
+            if let Ok(mut guard) = pending_session_list.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::SessionCloseOk) => {
+            if let Ok(mut guard) = pending_session_close.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
+            if let Ok(mut guard) = pending_check_tools.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
                 }
             }
         }
@@ -1027,9 +1091,9 @@ async fn handle_shared_server_message(
             app_state.app_handle.emit("sessions-changed", ()).ok();
         }
         MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
-            // Deliver to the first project session that has a pending file search.
+            // Deliver to the first connection session that has a pending file search.
             let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions.iter().filter(|(_, s)| s.project_id == Some(project_id)) {
+            for (_, session) in sessions.iter().filter(|(_, s)| s.connection_id == connection_id) {
                 if let Ok(mut guard) = session.pending_file_search.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
@@ -1042,7 +1106,7 @@ async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse { content })) => {
             let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions.iter().filter(|(_, s)| s.project_id == Some(project_id)) {
+            for (_, session) in sessions.iter().filter(|(_, s)| s.connection_id == connection_id) {
                 if let Ok(mut guard) = session.pending_file_read.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
@@ -1054,12 +1118,45 @@ async fn handle_shared_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
-            // Try pending file ops first, then pending PreInitialize, then emit globally.
+            // Try pending session ops first, then file ops, then PreInitialize, then emit globally.
             let mut resolved = false;
-            {
+
+            // Pending SessionList / SessionClose / CheckTools
+            if !resolved {
+                if let Ok(mut guard) = pending_session_list.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending_session_close.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending_check_tools.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+
+            if !resolved {
                 let sessions = app_state.acp.sessions.lock().await;
                 'outer: for (_, session) in
-                    sessions.iter().filter(|(_, s)| s.project_id == Some(project_id))
+                    sessions.iter().filter(|(_, s)| s.connection_id == connection_id)
                 {
                     if let Ok(mut guard) = session.pending_file_search.lock() {
                         if guard.is_some() {
@@ -1099,12 +1196,12 @@ async fn handle_shared_server_message(
                 if let Some(tx) = pre_init_tx {
                     let _ = tx.send(Err(err.message));
                 } else {
-                    // Emit as session-error for all project sessions.
+                    // Emit as session-error for all connection sessions.
                     let log_ids: Vec<i32> = {
                         let sessions = app_state.acp.sessions.lock().await;
                         sessions
                             .iter()
-                            .filter(|(_, s)| s.project_id == Some(project_id))
+                            .filter(|(_, s)| s.connection_id == connection_id)
                             .map(|(id, _)| *id)
                             .collect()
                     };
@@ -1123,36 +1220,45 @@ async fn handle_shared_server_message(
 
 fn spawn_shared_reader_task(
     source: AcpReadSource,
-    project_id: i32,
+    connection_id: Option<i32>,
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::db::AppState>,
     pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
     pending_list_agents: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
+    pending_session_list: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
+    pending_session_close: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>>,
+    pending_check_tools: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
 ) {
     tokio::spawn(async move {
         let mut source = source;
         while let Some(msg) = source.next_message().await {
             handle_shared_server_message(
                 msg,
-                project_id,
+                connection_id,
                 &app_handle,
                 &app_state,
                 &pre_init_pending,
                 &pending_list_agents,
+                &pending_session_list,
+                &pending_session_close,
+                &pending_check_tools,
             )
             .await;
         }
 
-        // Server process died — clean up all shared sessions for this project.
-        app_state.acp.project_servers.lock().await.remove(&project_id);
+        // Server process died — clean up all shared sessions for this connection.
+        app_state.acp.connection_servers.lock().await.remove(&connection_id);
 
         let to_remove: Vec<i32> = {
             let sessions = app_state.acp.sessions.lock().await;
             sessions
                 .iter()
-                .filter(|(_, s)| s.project_id == Some(project_id))
+                .filter(|(_, s)| s.connection_id == connection_id)
                 .map(|(id, _)| *id)
                 .collect()
         };
@@ -1169,66 +1275,174 @@ fn spawn_shared_reader_task(
     });
 }
 
-/// Find a project_id whose project server was spawned for the given SSH connection_id.
-pub async fn find_project_server_for_connection(
-    connection_id: i32,
-    app_state: &Arc<crate::db::AppState>,
-) -> Option<i32> {
-    let servers = app_state.acp.project_servers.lock().await;
-    servers
-        .iter()
-        .find(|(_, s)| s.connection_id == Some(connection_id))
-        .map(|(project_id, _)| *project_id)
-}
-
-/// Send `ListAgents` through the running project server and return the result.
+/// Send `ListAgents` through the running connection server and return the result.
 /// Much faster than `one_shot_rpc` — reuses the existing process and registry cache.
-pub async fn query_list_agents_via_project_server(
-    project_id: i32,
+pub async fn query_list_agents_via_connection_server(
+    connection_id: Option<i32>,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<Vec<crate::acp::registry::DiscoveredAgent>, String> {
     let (writer_tx, pending_list_agents) = {
-        let servers = app_state.acp.project_servers.lock().await;
+        let servers = app_state.acp.connection_servers.lock().await;
         let server = servers
-            .get(&project_id)
-            .ok_or_else(|| format!("No project server for project {}", project_id))?;
+            .get(&connection_id)
+            .ok_or_else(|| format!("No connection server for connection {:?}", connection_id))?;
         (server.writer_tx.clone(), Arc::clone(&server.pending_list_agents))
     };
 
     let (tx, rx) = oneshot::channel();
-    *pending_list_agents
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))? = Some(tx);
+    {
+        let mut guard = pending_list_agents
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("ListAgents already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
 
     let req = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)
         .await
-        .map_err(|_| "Project server writer channel closed".to_string())?;
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
 
     tokio::time::timeout(std::time::Duration::from_secs(15), rx)
         .await
-        .map_err(|_| "ListAgents via project server timed out after 15s".to_string())?
+        .map_err(|_| "ListAgents via connection server timed out after 15s".to_string())?
         .map_err(|_| "ListAgents response channel dropped".to_string())?
 }
 
-/// Spawn a long-lived maestro-server shared across all sessions for `project_id`.
+/// Send `SessionList` through the running connection server and return the result.
+pub async fn query_session_list_via_server(
+    connection_id: Option<i32>,
+    request: crate::acp::transport::SessionListRequest,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<SessionListOkResponse, String> {
+    let (writer_tx, pending_session_list) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers
+            .get(&connection_id)
+            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_session_list))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending_session_list
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("SessionList already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(request));
+    let bytes = serialize_message(&msg)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+        .await
+        .map_err(|_| "SessionList via connection server timed out after 30s".to_string())?
+        .map_err(|_| "SessionList response channel dropped".to_string())?
+}
+
+/// Send `SessionClose` through the running connection server.
+pub async fn query_session_close_via_server(
+    connection_id: Option<i32>,
+    request: SessionCloseRequest,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<(), String> {
+    let (writer_tx, pending_session_close) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers
+            .get(&connection_id)
+            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_session_close))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending_session_close
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("SessionClose already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
+
+    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(request));
+    let bytes = serialize_message(&msg)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+        .await
+        .map_err(|_| "SessionClose via connection server timed out after 30s".to_string())?
+        .map_err(|_| "SessionClose response channel dropped".to_string())?
+}
+
+/// Send `CheckTools` through the running connection server and return the result.
+pub async fn query_check_tools_via_server(
+    connection_id: Option<i32>,
+    tools: Vec<String>,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<CheckToolsResponse, String> {
+    let (writer_tx, pending_check_tools) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers
+            .get(&connection_id)
+            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_check_tools))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending_check_tools
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("CheckTools already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
+
+    let req = MaestroRpcMessage::Request(ServerRequest::CheckTools(CheckToolsRequest { tools }));
+    let bytes = serialize_message(&req)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "CheckTools via connection server timed out after 15s".to_string())?
+        .map_err(|_| "CheckTools response channel dropped".to_string())?
+}
+
+/// Spawn a long-lived maestro-server shared across all sessions for `connection_id`.
 /// Idempotent — returns `Ok(())` if already running.
 /// Uses `TransportTarget` to handle both local subprocess and remote SSH exec channel.
-pub async fn spawn_project_server(
-    project_id: i32,
+pub async fn spawn_connection_server(
+    connection_id: Option<i32>,
     target: TransportTarget<'_>,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<(), String> {
     {
-        let servers = app_state.acp.project_servers.lock().await;
-        if servers.contains_key(&project_id) {
+        let servers = app_state.acp.connection_servers.lock().await;
+        if servers.contains_key(&connection_id) {
             return Ok(());
         }
     }
 
-    let (write_tx, source, child, connection_id) = match target {
+    let (write_tx, source, child) = match target {
         TransportTarget::Local => {
             let (mut stdin_writer, source, child) = open_local_transport(app_state).await?;
             let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
@@ -1240,65 +1454,79 @@ pub async fn spawn_project_server(
                     let _ = stdin_writer.flush().await;
                 }
             });
-            (write_tx, source, Some(child), None)
+            (write_tx, source, Some(child))
         }
         TransportTarget::Remote { ssh, server_path } => {
             let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
-            (write_tx, source, None, Some(ssh.connection_id()))
+            (write_tx, source, None)
         }
     };
 
     let pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
         oneshot::Sender<Result<PreInitializeResponse, String>>>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
-
     let pending_list_agents: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>> =
         Arc::new(std::sync::Mutex::new(None));
+    let pending_session_list: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<SessionListOkResponse, String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let pending_session_close: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let pending_check_tools: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<CheckToolsResponse, String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
 
-    let project_server = ProjectServer {
+    let connection_server = ConnectionServer {
         child,
         writer_tx: write_tx,
         pre_init_pending: Arc::clone(&pre_init_pending),
         pending_list_agents: Arc::clone(&pending_list_agents),
-        connection_id,
+        pending_session_list: Arc::clone(&pending_session_list),
+        pending_session_close: Arc::clone(&pending_session_close),
+        pending_check_tools: Arc::clone(&pending_check_tools),
     };
 
     // Re-check under lock to avoid double-spawn race.
     {
-        let mut servers = app_state.acp.project_servers.lock().await;
-        if servers.contains_key(&project_id) {
+        let mut servers = app_state.acp.connection_servers.lock().await;
+        if servers.contains_key(&connection_id) {
             return Ok(());
         }
-        servers.insert(project_id, project_server);
+        servers.insert(connection_id, connection_server);
     }
 
     spawn_shared_reader_task(
         source,
-        project_id,
+        connection_id,
         app_state.app_handle.clone(),
         Arc::clone(app_state),
         pre_init_pending,
         pending_list_agents,
+        pending_session_list,
+        pending_session_close,
+        pending_check_tools,
     );
 
     Ok(())
 }
 
-/// Send a `PreInitialize` request on the project's shared maestro-server and wait
-/// for the `PreInitializeOk` response (or an error).  The project server must be
-/// running before calling this (use `spawn_project_server` first).
-pub async fn pre_initialize_via_project_server(
-    project_id: i32,
+/// Send a `PreInitialize` request on the connection's shared maestro-server and wait
+/// for the `PreInitializeOk` response (or an error). The connection server must be
+/// running before calling this (use `spawn_connection_server` first).
+pub async fn pre_initialize_via_connection_server(
+    connection_id: Option<i32>,
+    project_id: Option<i32>,
     agent_id: &str,
     cwd: &str,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<PreInitializeResponse, String> {
     let (writer_tx, pre_init_pending) = {
-        let servers = app_state.acp.project_servers.lock().await;
+        let servers = app_state.acp.connection_servers.lock().await;
         let server = servers
-            .get(&project_id)
-            .ok_or_else(|| format!("No project server for project {}", project_id))?;
+            .get(&connection_id)
+            .ok_or_else(|| format!("No connection server for connection {:?}", connection_id))?;
         (server.writer_tx.clone(), Arc::clone(&server.pre_init_pending))
     };
 
@@ -1316,7 +1544,7 @@ pub async fn pre_initialize_via_project_server(
     writer_tx
         .send(bytes)
         .await
-        .map_err(|_| "Project server writer channel closed".to_string())?;
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
 
     let response = tokio::time::timeout(std::time::Duration::from_secs(60), rx)
         .await
@@ -1324,25 +1552,25 @@ pub async fn pre_initialize_via_project_server(
         .map_err(|_| "PreInitialize response channel dropped".to_string())??;
 
     // Populate agent-level cache from the warm session's models/modes/capabilities.
-    if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
-        let cache_entry = AgentCache {
-            models: response.models.clone(),
-            modes: response.modes.clone(),
-            prompt_capabilities: response.prompt_capabilities.clone(),
-        };
-        app_state
-            .acp
-            .agent_cache
-            .lock()
-            .await
-            .insert((project_id, agent_id.to_string()), cache_entry);
-        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
-            "project_id": project_id,
-            "agent_id": agent_id,
-        })).ok();
+    if let Some(pid) = project_id {
+        if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
+            let cache_entry = AgentCache {
+                models: response.models.clone(),
+                modes: response.modes.clone(),
+                prompt_capabilities: response.prompt_capabilities.clone(),
+            };
+            app_state
+                .acp
+                .agent_cache
+                .lock()
+                .await
+                .insert((pid, agent_id.to_string()), cache_entry);
+            app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+                "project_id": pid,
+                "agent_id": agent_id,
+            })).ok();
+        }
     }
 
     Ok(response)
 }
-
-

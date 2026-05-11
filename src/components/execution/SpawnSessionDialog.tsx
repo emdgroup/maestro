@@ -20,6 +20,7 @@ import {
   useCachedAgentModelsQuery,
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
+import { usePreflightToolChecks } from "@/store/configStore";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 interface SpawnSessionDialogProps {
@@ -53,6 +54,8 @@ export function SpawnSessionDialog({
 
   const acpAgentId = sessionType !== "terminal" ? sessionType : null;
   const { data: modelsCache } = useCachedAgentModelsQuery(projectId, acpAgentId);
+  const toolChecks = usePreflightToolChecks(connectionId);
+  const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
 
   useEffect(() => {
@@ -153,22 +156,34 @@ export function SpawnSessionDialog({
                     Discovery error: {discovery.error}
                   </SelectItem>
                 )}
-                {visibleAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    <div className="flex items-center gap-2">
-                      {agent.icon && (
-                        <img
-                          src={agent.icon}
-                          className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      )}
-                      {agent.name}
-                    </div>
-                  </SelectItem>
-                ))}
+                {visibleAgents.map((agent) => {
+                  const missingDeps = (agent.spawn_deps ?? []).filter((dep) => unavailableTools.has(dep));
+                  const disabled = missingDeps.length > 0;
+                  const reason = disabled
+                    ? `Requires ${missingDeps.join(", ")} (not available on this connection)`
+                    : undefined;
+                  return (
+                    <SelectItem
+                      key={agent.id}
+                      value={agent.id}
+                      disabled={disabled}
+                      title={reason}
+                    >
+                      <div className="flex items-center gap-2">
+                        {agent.icon && (
+                          <img
+                            src={agent.icon}
+                            className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        )}
+                        {agent.name}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

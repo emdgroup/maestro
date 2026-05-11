@@ -101,6 +101,12 @@ describe("ProjectList", () => {
             setView: vi.fn(),
             activeConnection: { type: "local", id: 0, displayName: "Local" },
             setActiveConnection: vi.fn(),
+            preflightStatus: "passed",
+            preflightResult: null,
+            preflightError: null,
+            startPreflight: vi.fn(),
+            ignoreWarnings: vi.fn(),
+            resetPreflight: vi.fn(),
           }}
         >
           <ProjectList />

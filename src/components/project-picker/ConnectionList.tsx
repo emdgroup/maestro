@@ -6,6 +6,7 @@ import { SshAuthModal } from "@/components/project-picker/SshAuthModal.tsx";
 import { useSshConnectionManager } from "@/utils/hooks/useSshConnectionManager";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import { useSshConnectionStatus } from "@/services/connection.service";
+import { useConnectionContext } from "@/contexts/ConnectionContext";
 import type { Connection } from "@/contexts/ConnectionContext";
 
 function SshConnectionItem({
@@ -58,6 +59,12 @@ function SshConnectionItem({
 export function ConnectionList() {
   const [connectionString, setConnectionString] = useState("");
   const { navigateToProjects } = useProjectPickerNavigation();
+  const { startPreflight } = useConnectionContext();
+
+  const handleConnectionClick = (connection: Connection) => {
+    navigateToProjects(connection);
+    void startPreflight(connection);
+  };
 
   const {
     username,
@@ -69,7 +76,7 @@ export function ConnectionList() {
     handleConnection,
     handleAuthSubmit,
     handleAuthCancel,
-  } = useSshConnectionManager({ onConnectionSuccess: navigateToProjects });
+  } = useSshConnectionManager({ onConnectionSuccess: handleConnectionClick });
 
   const handleConnect = async () => {
     if (connectionString) {
@@ -169,7 +176,6 @@ export function ConnectionList() {
         </div>
       </div>
 
-      {/* SSH Auth Modal */}
       <SshAuthModal
         open={showAuthModal}
         username={username}

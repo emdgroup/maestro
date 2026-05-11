@@ -35,13 +35,13 @@ pub struct AcpPromptCapabilities {
 
 use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
 use crate::acp::transport::{
-    MaestroRpcMessage, ServerRequest, ServerResponse,
+    MaestroRpcMessage, ServerRequest,
     PromptRequest, CancelRequest, InterruptTurnRequest, PermissionResponse,
     ElicitationResponse, SetModelRequest, SetModeRequest,
-    ListAgentsRequest,
     FileSearchRequest, FileReadRequest,
     SessionListRequest,
     SessionCloseRequest,
+    CheckToolsResponse,
 };
 use tokio::sync::oneshot;
 
@@ -183,9 +183,9 @@ pub async fn spawn_acp_session(
         (sha, None)
     };
 
-    // Fast path: if a ProjectServer is running, route through shared server.
-    if crate::acp::try_spawn_via_project_server(
-        Some(project_id), &agent_id, &cwd, &session_id, session_name.clone(),
+    // Fast path: if a connection server is running, route through shared server.
+    if crate::acp::try_spawn_via_connection_server(
+        connection_id, Some(project_id), &agent_id, &cwd, &session_id, session_name.clone(),
         None, None, branch_name.clone(), session_start_sha.clone(), log_id, &app_state,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -207,14 +207,14 @@ pub async fn spawn_acp_session(
             crate::acp::spawn_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
                 &agent_id, &cwd, log_id, &session_id, &app_state,
-                session_name, None, None, branch_name, Some(project_id), session_start_sha,
+                session_name, None, None, branch_name, Some(project_id), Some(conn_id), session_start_sha,
             ).await?;
         }
         None => {
             crate::acp::spawn_acp_session_cold(
                 crate::acp::TransportTarget::Local,
                 &agent_id, &cwd, log_id, &session_id, &app_state,
-                session_name, None, None, branch_name, Some(project_id), session_start_sha,
+                session_name, None, None, branch_name, Some(project_id), None, session_start_sha,
             ).await?;
         }
     }
@@ -460,6 +460,180 @@ pub async fn get_acp_capabilities(
     }).await
 }
 
+// ── Preflight ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PreflightCheck {
+    pub ok: bool,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ToolCheckEntry {
+    pub tool: String,
+    pub available: bool,
+    pub version: Option<String>,
+    /// Agent IDs that require this tool to spawn.
+    pub required_by: Vec<String>,
+    /// `true` for `git` — the session cannot function without it.
+    pub mandatory: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PreflightResult {
+    pub maestro_server: PreflightCheck,
+    pub agents: Vec<DiscoveredAgent>,
+    pub tool_checks: Vec<ToolCheckEntry>,
+}
+
+/// Validate the environment for a connection and boot the persistent server.
+///
+/// Idempotent: if the server is already running the spawn step is skipped and only
+/// agent discovery + tool checks are refreshed. The server process lives until app quit.
+#[tauri::command]
+#[specta::specta]
+pub async fn preflight_connection(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: Option<i32>,
+) -> Result<PreflightResult, String> {
+    let server_already_running = app_state
+        .acp
+        .connection_servers
+        .lock()
+        .await
+        .contains_key(&connection_id);
+
+    if !server_already_running {
+        match connection_id {
+            Some(conn_id) => {
+                let ssh = app_state
+                    .ssh
+                    .get_session(conn_id)
+                    .await
+                    .ok_or_else(|| {
+                        format!("No active SSH session for connection_id {}. Connect first.", conn_id)
+                    })?;
+                let cached_path = app_state
+                    .acp
+                    .discovery_cache
+                    .lock()
+                    .await
+                    .get(&Some(conn_id))
+                    .and_then(|e| e.maestro_server_path.clone());
+                let maestro_path = match cached_path {
+                    Some(p) => p,
+                    None => {
+                        let deploy = crate::acp::deploy::ensure_remote_server(
+                            &ssh,
+                            &app_state.app_handle,
+                            conn_id,
+                        )
+                        .await
+                        .map_err(|e| format!("Failed to deploy maestro-server: {}", e))?;
+                        let path = deploy.path.clone();
+                        app_state
+                            .acp
+                            .discovery_cache
+                            .lock()
+                            .await
+                            .entry(Some(conn_id))
+                            .or_insert_with(|| AgentDiscoveryCacheEntry {
+                                result: AgentDiscoveryResult {
+                                    maestro_server_available: true,
+                                    agents: Vec::new(),
+                                    error: None,
+                                },
+                                maestro_server_path: None,
+                                fetched_at: std::time::Instant::now(),
+                            })
+                            .maestro_server_path = Some(path.clone());
+                        path
+                    }
+                };
+                crate::acp::spawn_connection_server(
+                    Some(conn_id),
+                    crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
+                    &app_state,
+                )
+                .await
+                .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
+            }
+            None => {
+                crate::acp::resolve::resolve_server_path_standalone()
+                    .map_err(|e| format!("maestro-server not found: {}", e))?;
+                crate::acp::spawn_connection_server(
+                    None,
+                    crate::acp::TransportTarget::Local,
+                    &app_state,
+                )
+                .await
+                .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
+            }
+        }
+    }
+
+    let agents = crate::acp::query_list_agents_via_connection_server(connection_id, &app_state)
+        .await
+        .unwrap_or_default();
+
+    let mut tools_to_check: Vec<String> = agents
+        .iter()
+        .flat_map(|a| a.spawn_deps.iter().cloned())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    if !tools_to_check.iter().any(|t| t == "git") {
+        tools_to_check.push("git".to_string());
+    }
+
+    let tool_results = crate::acp::query_check_tools_via_server(connection_id, tools_to_check, &app_state)
+        .await
+        .unwrap_or_else(|_| CheckToolsResponse { results: Vec::new() });
+
+    let mandatory_tools: std::collections::HashSet<&str> = ["git"].into();
+    let tool_checks: Vec<ToolCheckEntry> = tool_results
+        .results
+        .into_iter()
+        .map(|r| {
+            let required_by: Vec<String> = agents
+                .iter()
+                .filter(|a| a.spawn_deps.contains(&r.tool))
+                .map(|a| a.id.clone())
+                .collect();
+            ToolCheckEntry {
+                mandatory: mandatory_tools.contains(r.tool.as_str()),
+                tool: r.tool,
+                available: r.available,
+                version: r.version,
+                required_by,
+            }
+        })
+        .collect();
+
+    {
+        let mut cache = app_state.acp.discovery_cache.lock().await;
+        let maestro_server_path = cache.get(&connection_id).and_then(|e| e.maestro_server_path.clone());
+        cache.insert(connection_id, AgentDiscoveryCacheEntry {
+            result: AgentDiscoveryResult {
+                maestro_server_available: true,
+                agents: agents.clone(),
+                error: None,
+            },
+            maestro_server_path,
+            fetched_at: std::time::Instant::now(),
+        });
+    }
+
+    Ok(PreflightResult {
+        maestro_server: PreflightCheck { ok: true, message: None },
+        agents,
+        tool_checks,
+    })
+}
+
 /// Run agent discovery and store result in the AppState cache.
 /// Fire-and-forget safe: returns silently on errors (result stored with error field set).
 /// Called at SSH connect time (connection_id = Some) and on-demand from `discover_agents` IPC.
@@ -472,18 +646,14 @@ pub async fn prefetch_agent_discovery(
 ) {
     match connection_id {
         Some(conn_id) => {
-            // Fast path: route through already-running project server — no new process spawn,
-            // no CDN fetch, no handshake roundtrips.
-            if let Some(project_id) =
-                crate::acp::manager::find_project_server_for_connection(conn_id, &app_state).await
-            {
+            // Fast path: route through already-running connection server — no new process spawn.
+            let has_connection_server = app_state.acp.connection_servers.lock().await.contains_key(&Some(conn_id));
+            if has_connection_server {
                 let maestro_path = known_maestro_path.or_else(|| {
                     let cache = app_state.acp.discovery_cache.try_lock().ok();
                     cache.and_then(|c| c.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone()))
                 });
-                let result =
-                    crate::acp::manager::query_list_agents_via_project_server(project_id, &app_state)
-                        .await;
+                let result = crate::acp::query_list_agents_via_connection_server(Some(conn_id), &app_state).await;
                 let maestro_server_available = result.is_ok();
                 let (agents, error) = match result {
                     Ok(a) => (a, None),
@@ -498,7 +668,7 @@ pub async fn prefetch_agent_discovery(
                 return;
             }
 
-            // Slow path: no project server running yet — spawn one-shot maestro-server.
+            // Slow path: no connection server yet — deploy + boot it, then query.
             let Some(ssh) = app_state.ssh.get_session(conn_id).await else {
                 return;
             };
@@ -510,55 +680,52 @@ pub async fn prefetch_agent_discovery(
                     .ok()
                     .map(|r| r.path)
             };
-            let maestro_server_available = maestro_path.is_some();
-            let (agents, error) = match &maestro_path {
-                Some(path) => match query_list_agents(Some((&ssh, path))).await {
-                    Ok(a) => (a, None),
-                    Err(e) => (Vec::new(), Some(e)),
-                },
-                None => (Vec::new(), None),
+            let Some(path) = maestro_path else {
+                app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), AgentDiscoveryCacheEntry {
+                    result: AgentDiscoveryResult { maestro_server_available: false, agents: Vec::new(), error: None },
+                    maestro_server_path: None,
+                    fetched_at: std::time::Instant::now(),
+                });
+                return;
             };
-            let entry = AgentDiscoveryCacheEntry {
+            if crate::acp::spawn_connection_server(
+                Some(conn_id),
+                crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &path },
+                &app_state,
+            ).await.is_err() {
+                return;
+            }
+            let result = crate::acp::query_list_agents_via_connection_server(Some(conn_id), &app_state).await;
+            let maestro_server_available = result.is_ok();
+            let (agents, error) = match result { Ok(a) => (a, None), Err(e) => (Vec::new(), Some(e)) };
+            app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), AgentDiscoveryCacheEntry {
                 result: AgentDiscoveryResult { maestro_server_available, agents, error },
-                maestro_server_path: maestro_path,
+                maestro_server_path: Some(path),
                 fetched_at: std::time::Instant::now(),
-            };
-            app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), entry);
+            });
         }
         None => {
-            let maestro_path = crate::acp::resolve::resolve_server_path_standalone().ok()
-                .map(|p| p.to_string_lossy().to_string());
-            let maestro_server_available = maestro_path.is_some();
-            let (agents, error) = if maestro_server_available {
-                match query_list_agents(None).await {
-                    Ok(a) => (a, None),
-                    Err(e) => (Vec::new(), Some(e)),
-                }
-            } else {
-                (Vec::new(), None)
-            };
-            let entry = AgentDiscoveryCacheEntry {
-                result: AgentDiscoveryResult { maestro_server_available, agents, error },
+            let maestro_server_available = crate::acp::resolve::resolve_server_path_standalone().is_ok();
+            if !maestro_server_available {
+                app_state.acp.discovery_cache.lock().await.insert(None, AgentDiscoveryCacheEntry {
+                    result: AgentDiscoveryResult { maestro_server_available: false, agents: Vec::new(), error: None },
+                    maestro_server_path: None,
+                    fetched_at: std::time::Instant::now(),
+                });
+                return;
+            }
+            if crate::acp::spawn_connection_server(None, crate::acp::TransportTarget::Local, &app_state)
+                .await.is_err() {
+                return;
+            }
+            let result = crate::acp::query_list_agents_via_connection_server(None, &app_state).await;
+            let (agents, error) = match result { Ok(a) => (a, None), Err(e) => (Vec::new(), Some(e)) };
+            app_state.acp.discovery_cache.lock().await.insert(None, AgentDiscoveryCacheEntry {
+                result: AgentDiscoveryResult { maestro_server_available: true, agents, error },
                 maestro_server_path: None,
                 fetched_at: std::time::Instant::now(),
-            };
-            app_state.acp.discovery_cache.lock().await.insert(None, entry);
+            });
         }
-    }
-}
-
-async fn query_list_agents(
-    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
-) -> Result<Vec<DiscoveredAgent>, String> {
-    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
-    let msg = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp))) => {
-            Ok(resp.agents.into_iter().map(|a| DiscoveredAgent { id: a.id, name: a.name, icon: a.icon }).collect())
-        }
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid ListAgentsOk response from maestro-server".to_string()),
     }
 }
 
@@ -717,7 +884,7 @@ pub async fn get_active_sessions(
     Ok(sessions)
 }
 
-/// List ACP sessions available for a given agent via a one-shot maestro-server connection.
+/// List ACP sessions available for a given agent via the persistent connection server.
 /// Applies user-defined aliases over agent-provided titles. When the full list is returned
 /// (no next page), prunes stale aliases for sessions the agent no longer knows about.
 #[tauri::command]
@@ -730,12 +897,20 @@ pub async fn list_acp_sessions(
     connection_id: Option<i32>,
     cursor: Option<String>,
 ) -> Result<Vec<SessionListEntryDto>, String> {
-    let (mut entries, next_cursor) = if let Some(conn_id) = connection_id {
-        let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
-        query_session_list(Some((&ssh, &maestro_path)), &agent_id, &cwd, cursor).await?
-    } else {
-        query_session_list(None, &agent_id, &cwd, cursor).await?
-    };
+    let resp = crate::acp::query_session_list_via_server(
+        connection_id,
+        SessionListRequest { agent_id: agent_id.clone(), cwd: cwd.clone(), cursor },
+        &app_state,
+    )
+    .await?;
+    let (mut entries, next_cursor): (Vec<SessionListEntryDto>, Option<String>) = (
+        resp.sessions.into_iter().map(|e| SessionListEntryDto {
+            session_id: e.session_id,
+            title: e.title,
+            updated_at: e.updated_at,
+        }).collect(),
+        resp.next_cursor,
+    );
 
     let aliases = {
         let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
@@ -839,15 +1014,16 @@ pub async fn close_acp_session(
     cwd: String,
     connection_id: Option<i32>,
 ) -> Result<(), String> {
-    if let Some(conn_id) = connection_id {
-        let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
-        query_session_close(Some((&ssh, &maestro_path)), &agent_id, &session_id, &cwd).await
-    } else {
-        query_session_close(None, &agent_id, &session_id, &cwd).await
-    }
+    crate::acp::query_session_close_via_server(
+        connection_id,
+        SessionCloseRequest { agent_id, session_id, cwd },
+        &app_state,
+    )
+    .await
 }
 
-async fn try_session_load_via_project_server(
+async fn try_session_load_via_connection_server(
+    connection_id: Option<i32>,
     project_id: Option<i32>,
     agent_id: &str,
     acp_session_id: &str,
@@ -857,10 +1033,9 @@ async fn try_session_load_via_project_server(
     app_state: &Arc<AppState>,
 ) -> Result<bool, String> {
     use crate::acp::transport::SessionLoadRequest;
-    let pid = match project_id { Some(p) => p, None => return Ok(false) };
     let writer_tx = {
-        let servers = app_state.acp.project_servers.lock().await;
-        match servers.get(&pid) { Some(s) => s.writer_tx.clone(), None => return Ok(false) }
+        let servers = app_state.acp.connection_servers.lock().await;
+        match servers.get(&connection_id) { Some(s) => s.writer_tx.clone(), None => return Ok(false) }
     };
     let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: agent_id.to_string(),
@@ -882,7 +1057,8 @@ async fn try_session_load_via_project_server(
             cwd: cwd.to_string(),
             session_name,
             agent_id: agent_id.to_string(),
-            project_id: Some(pid),
+            project_id,
+            connection_id,
             task_id: None,
             task_name: None,
             branch_name: None,
@@ -894,12 +1070,12 @@ async fn try_session_load_via_project_server(
         app_state.app_handle.clone(),
         Arc::clone(app_state),
     );
-    crate::acp::manager::emit_cached_capabilities(&acp_process, pid, agent_id, log_id, app_state).await;
+    crate::acp::manager::emit_cached_capabilities(&acp_process, project_id, agent_id, log_id, app_state).await;
     app_state.acp.sessions.lock().await.insert(log_id, acp_process);
 
     if writer_tx.send(bytes).await.is_err() {
         app_state.acp.sessions.lock().await.remove(&log_id);
-        return Err("Project server writer channel closed".to_string());
+        return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
 }
@@ -918,9 +1094,9 @@ pub async fn load_acp_session(
 ) -> Result<i32, String> {
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    // Fast path: if a ProjectServer is running, route through shared server.
-    if try_session_load_via_project_server(
-        project_id, &agent_id, &acp_session_id, &cwd, session_name.clone(), log_id, &app_state,
+    // Fast path: if a connection server is running, route through shared server.
+    if try_session_load_via_connection_server(
+        connection_id, project_id, &agent_id, &acp_session_id, &cwd, session_name.clone(), log_id, &app_state,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
         return Ok(log_id);
@@ -932,13 +1108,13 @@ pub async fn load_acp_session(
             let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
             crate::acp::load_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
-                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name,
+                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name, Some(conn_id),
             ).await?;
         }
         None => {
             crate::acp::load_acp_session_cold(
                 crate::acp::TransportTarget::Local,
-                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name,
+                &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name, None,
             ).await?;
         }
     }
@@ -946,54 +1122,6 @@ pub async fn load_acp_session(
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(log_id)
 }
-
-// ============================================================================
-// One-shot session list/close helpers
-// ============================================================================
-
-async fn query_session_list(
-    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
-    agent_id: &str,
-    cwd: &str,
-    cursor: Option<String>,
-) -> Result<(Vec<SessionListEntryDto>, Option<String>), String> {
-    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(SessionListRequest {
-        agent_id: agent_id.to_string(),
-        cwd: cwd.to_string(),
-        cursor,
-    }));
-    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp))) => Ok((
-            resp.sessions.into_iter().map(|e| SessionListEntryDto { session_id: e.session_id, title: e.title, updated_at: e.updated_at }).collect(),
-            resp.next_cursor,
-        )),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionListOk response from maestro-server".to_string()),
-    }
-}
-
-async fn query_session_close(
-    ssh_ctx: Option<(&crate::ssh::RemoteSshSession, &str)>,
-    agent_id: &str,
-    session_id: &str,
-    cwd: &str,
-) -> Result<(), String> {
-    let timeout = if ssh_ctx.is_some() { 30 } else { 15 };
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(SessionCloseRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let result = crate::acp::rpc::one_shot_rpc(ssh_ctx, &msg, timeout).await?;
-    match result {
-        Some(MaestroRpcMessage::Response(ServerResponse::SessionCloseOk)) => Ok(()),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(e))) => Err(e.message),
-        _ => Err("No valid SessionCloseOk response from maestro-server".to_string()),
-    }
-}
-
 
 // ── Agent models cache ────────────────────────────────────────────────────────
 

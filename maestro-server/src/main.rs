@@ -21,10 +21,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    read_message, AcpRegistry, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
-    HandshakeResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
-    PROTOCOL_VERSION, ServerRequest, ServerResponse, SessionListOkResponse, SessionLoadOkResponse,
-    SessionUpdate, SpawnResponse,
+    read_message, AcpRegistry, CheckToolsResponse, DiscoveredAgent, ErrorResponse,
+    FileReadResponse, FileSearchResponse, HandshakeResponse, ListAgentsResponse,
+    MaestroRpcMessage, PreInitializeResponse, PROTOCOL_VERSION, ServerRequest, ServerResponse,
+    SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse, ToolCheckResult,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -176,6 +176,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         id: a.id.clone(),
                         name: a.name.clone(),
                         icon: a.icon.clone(),
+                        spawn_deps: a.spawn_deps.clone(),
                     })
                     .collect();
                 let _ = send_response(
@@ -598,9 +599,56 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            MaestroRpcMessage::Request(ServerRequest::CheckTools(req)) => {
+                let results = check_tools(req.tools).await;
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(
+                        CheckToolsResponse { results },
+                    )),
+                )
+                .await;
+            }
+
             MaestroRpcMessage::Response(_) => {}
         }
     }
 
     Ok(())
+}
+
+async fn check_tools(tools: Vec<String>) -> Vec<ToolCheckResult> {
+    let handles: Vec<_> = tools
+        .into_iter()
+        .map(|tool| {
+            tokio::spawn(async move {
+                let output = tokio::process::Command::new(&tool)
+                    .arg("--version")
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .output()
+                    .await;
+
+                let (available, version) = match output {
+                    Err(_) => (false, None),
+                    Ok(out) => {
+                        let raw = if out.stdout.is_empty() { out.stderr } else { out.stdout };
+                        let ver = String::from_utf8(raw)
+                            .ok()
+                            .map(|s| s.lines().next().unwrap_or("").trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        (true, ver)
+                    }
+                };
+
+                ToolCheckResult { tool, available, version }
+            })
+        })
+        .collect();
+
+    futures::future::join_all(handles)
+        .await
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect()
 }
