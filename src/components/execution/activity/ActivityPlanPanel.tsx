@@ -39,40 +39,41 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
   const inProgressKey = inProgressEntry?.content ?? null;
 
   useEffect(() => {
-    setElapsedSeconds(0);
-  }, [inProgressKey]);
-
-  useEffect(() => {
     if (!inProgressKey) return;
+    setElapsedSeconds(0);
     const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, [inProgressKey]);
 
   if (total === 0 || completedCount === total) return null;
 
-  const planLabel = title ? `Plan: ${title}` : "Plan";
+  const planLabel = title ?? "Plan";
 
   if (expanded) {
     return (
       <div className="px-3.5 pt-2.5 pb-2">
-        <button
-          type="button"
-          onClick={() => setExpanded(false)}
-          className="w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted/40 transition-colors text-left mb-2"
-        >
+        <div className="flex items-center gap-2 px-2 py-1 mb-2">
           <span className="flex-1 text-[11px] text-muted-foreground">{planLabel}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors px-1"
+            aria-label="Collapse plan"
+          >
+            ✕
+          </button>
+        </div>
 
-        <div className="max-h-[280px] overflow-y-auto">
+        <div className="max-h-70 overflow-y-auto">
           {entries.map((entry, i) => {
             const isLast = i === entries.length - 1;
             const nextStatus = !isLast ? entries[i + 1].status : null;
 
             return (
-              <div key={i} className="flex items-stretch min-h-[26px]">
-                <div className="flex flex-col items-center w-[18px] flex-shrink-0 pt-[3px]">
+              <div key={i} className="flex items-stretch min-h-6.5">
+                <div className="flex flex-col items-center w-4.5 shrink-0 pt-0.75">
                   <div
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    className={`w-2 h-2 rounded-full shrink-0 ${
                       entry.status === "completed"
                         ? "bg-success opacity-70"
                         : entry.status === "in_progress"
@@ -131,8 +132,8 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
       <div className="text-[11px] text-muted-foreground mb-2">{planLabel}</div>
 
       {inProgressEntry && (
-        <div className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-accent/[0.06] border border-accent/15">
-          <div className="w-3.5 h-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin flex-shrink-0" />
+        <div className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-accent/6 border border-accent/15">
+          <div className="w-3.5 h-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-semibold text-foreground leading-snug truncate">
               {inProgressEntry.content}
@@ -150,13 +151,13 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
       <div className="flex items-center gap-0.5 px-2 py-1.5">
         {entries.map((entry, i) =>
           entry.status === "in_progress" ? (
-            <div key={i} className="flex-1 h-[3px] rounded-sm relative overflow-hidden bg-accent/20">
+            <div key={i} className="flex-1 h-0.75 rounded-sm relative overflow-hidden bg-accent/20">
               <div className="absolute inset-y-0 w-[60%] rounded-r-sm animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
             </div>
           ) : (
             <div
               key={i}
-              className={`flex-1 h-[3px] rounded-sm ${
+              className={`flex-1 h-0.75 rounded-sm ${
                 entry.status === "completed" ? "bg-success" : "bg-muted"
               }`}
             />

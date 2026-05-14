@@ -28,7 +28,7 @@ pub async fn ensure_remote_server(
     // Single SSH command combining arch check, version check, and HOME resolution.
     let probe = ssh
         .execute_command(&format!(
-            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$(~/.{}/{} --protocol-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
+            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$($HOME/.{}/{} --protocol-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
             REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
         ))
         .await
@@ -77,6 +77,14 @@ pub async fn ensure_remote_server(
     ssh.execute_command(&format!("mkdir -p {}", abs_dir))
         .await
         .map_err(|e| format!("Failed to create remote dir: {}", e))?;
+
+    // Remove any existing binary before upload. If it's currently running (e.g. an
+    // orphaned connection server), Linux's sftp create would return ETXTBSY. Unlinking
+    // first lets the kernel keep the inode alive for the running process while freeing
+    // the path for the new file.
+    ssh.execute_command(&format!("rm -f {}", abs_remote_path))
+        .await
+        .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
 
     let transfer_id = format!("deploy-maestro-server-{}", connection_id);
     crate::ssh::sftp::upload_file(ssh, &local_binary, &abs_remote_path, &transfer_id, app_handle)

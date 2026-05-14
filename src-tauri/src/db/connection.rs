@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 use crate::project_lock;
 
-use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap};
+use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
@@ -97,6 +97,15 @@ pub struct AcpState {
     /// Agent-level models/modes/capabilities cache. Populated from PreInitialize warm
     /// session and updated on every SpawnOk/SessionLoadOk. Keyed by (project_id, agent_id).
     pub agent_cache: tokio::sync::Mutex<AgentCacheMap>,
+    /// Pre-warmed session pool. Keyed by (project_id, agent_id).
+    /// A pooled session is a fully-spawned AcpProcess hidden from the active sessions list
+    /// until a user creates a session for the same agent — at which point it is claimed
+    /// instantly and the pool is replenished in the background.
+    pub session_pool: tokio::sync::Mutex<HashMap<(i32, String), PooledSession>>,
+    /// Per-connection deploy serialization locks. Prevents concurrent ensure_remote_server
+    /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
+    /// connection from running SFTP uploads simultaneously.
+    pub deploy_locks: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 pub struct PtyState {
@@ -139,6 +148,8 @@ impl AppState {
                 discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
                 connection_servers: tokio::sync::Mutex::new(HashMap::new()),
                 agent_cache: tokio::sync::Mutex::new(HashMap::new()),
+                session_pool: tokio::sync::Mutex::new(HashMap::new()),
+                deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

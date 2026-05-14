@@ -52,7 +52,11 @@ export function ProjectList() {
         connectionId: connectionId ?? null,
       });
       const project = await api.openProject(created.id);
-      api.primeProjectServer(created.id).catch(() => {});
+      try {
+        await api.primeProjectServer(created.id);
+      } catch {
+        // Warmup failure is non-fatal — agent cache won't be pre-populated
+      }
       setSelectedProject(project);
       setShowFilePickerModal(false);
     } catch (error) {
@@ -71,7 +75,11 @@ export function ProjectList() {
     setProjectLoading(true);
     try {
       const project = await api.openProject(projectId);
-      api.primeProjectServer(projectId).catch(() => {});
+      try {
+        await api.primeProjectServer(projectId);
+      } catch {
+        // Warmup failure is non-fatal — agent cache won't be pre-populated
+      }
       setSelectedProject(project);
     } catch (error) {
       const msg = String(error);
@@ -124,7 +132,13 @@ export function ProjectList() {
               <span className="text-sm text-muted-foreground">Checking environment…</span>
             </div>
           )}
-          {showProjects &&
+          {projectLoading && (
+            <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Warming up…</span>
+            </div>
+          )}
+          {!projectLoading && showProjects &&
             (recentProjects.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No recent projects</p>
             ) : (

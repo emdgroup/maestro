@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Component } from "react";
+import { useState, useRef, Component } from "react";
 import type { ReactNode } from "react";
 import {
   FileText,
@@ -92,15 +92,15 @@ interface ActivityToolCallGroupProps {
 
 export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   const allDone = items.every((i) => i.status === "completed" || i.status === "error");
-  const [groupOpen, setGroupOpen] = useState(!allDone);
   const userToggled = useRef(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (!userToggled.current && allDone) {
-      setGroupOpen(false);
-    }
-  }, [allDone]);
+  const groupOpen = userToggled.current ? manualOpen : !allDone;
+  const setGroupOpen = (open: boolean) => {
+    userToggled.current = true;
+    setManualOpen(open);
+  };
 
   const status = groupStatus(items);
   const isError = status === "error";
@@ -135,10 +135,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     >
       <button
         type="button"
-        onClick={() => {
-          userToggled.current = true;
-          setGroupOpen((v) => !v);
-        }}
+        onClick={() => setGroupOpen(!groupOpen)}
         className="flex items-center gap-2 w-full px-3 py-2 bg-card hover:bg-muted/50 transition-colors text-left"
       >
         <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />

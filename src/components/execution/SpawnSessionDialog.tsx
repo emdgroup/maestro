@@ -17,7 +17,6 @@ import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
-  useCachedAgentModelsQuery,
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { usePreflightToolChecks } from "@/store/configStore";
@@ -52,8 +51,6 @@ export function SpawnSessionDialog({
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
-  const acpAgentId = sessionType !== "terminal" ? sessionType : null;
-  const { data: modelsCache } = useCachedAgentModelsQuery(projectId, acpAgentId);
   const toolChecks = usePreflightToolChecks(connectionId);
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
@@ -187,25 +184,6 @@ export function SpawnSessionDialog({
               </SelectContent>
             </Select>
           </div>
-
-          {sessionType !== "terminal" && (
-            <div className="space-y-2">
-              <Label htmlFor="spawn-model">Model (optional)</Label>
-              <Select value={selectedModel} onValueChange={(v) => setSelectedModel(v ?? "")}>
-                <SelectTrigger id="spawn-model">
-                  <SelectValue placeholder="Agent default" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Agent default</SelectItem>
-                  {(modelsCache?.models ?? []).map((m) => (
-                    <SelectItem key={m.model_id} value={m.model_id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label htmlFor="spawn-worktree">Worktree</Label>

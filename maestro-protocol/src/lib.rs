@@ -40,6 +40,7 @@ pub enum ServerRequest {
     ListAgents(ListAgentsRequest),
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
+    SetConfigOption(SetConfigOptionRequest),
     FileSearch(FileSearchRequest),
     FileRead(FileReadRequest),
     SessionList(SessionListRequest),
@@ -47,6 +48,8 @@ pub enum ServerRequest {
     SessionClose(SessionCloseRequest),
     PreInitialize(PreInitializeRequest),
     CheckTools(CheckToolsRequest),
+    DetectInstalledAgents(DetectInstalledAgentsRequest),
+    DetectProjectAgents(DetectProjectAgentsRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -85,6 +88,47 @@ pub struct ToolCheckResult {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CheckToolsResponse {
     pub results: Vec<ToolCheckResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DetectInstalledAgentsRequest {}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DetectProjectAgentsRequest {
+    pub cwd: String,
+}
+
+/// Info about an ACP agent whose underlying tool was detected on the host.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DetectedAgentInfo {
+    /// ACP registry agent ID (e.g. "claude-acp").
+    pub agent_id: String,
+    /// User-facing tool name to display instead of ACP wrapper name (e.g. "Claude Code").
+    pub tool_name: String,
+    pub binary_found: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_path: Option<String>,
+    pub config_dir_found: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DetectInstalledAgentsResponse {
+    /// Agents whose underlying tool was found (binary on PATH or config dir present).
+    pub agents: Vec<DetectedAgentInfo>,
+    /// All agent IDs that the detection table has an entry for (found OR not found).
+    /// Tauri uses this to distinguish "not installed" from "not in detection table".
+    pub all_checked_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectAgentMarker {
+    pub agent_id: String,
+    pub markers_found: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DetectProjectAgentsResponse {
+    pub agents: Vec<ProjectAgentMarker>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -130,6 +174,7 @@ pub enum ServerResponse {
     ListAgentsOk(ListAgentsResponse),
     SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
+    SetConfigOptionOk(SetConfigOptionOkResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
     TurnEnded(TurnEnded),
@@ -139,6 +184,8 @@ pub enum ServerResponse {
     PreInitializeOk(PreInitializeResponse),
     AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
+    DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
+    DetectProjectAgentsOk(DetectProjectAgentsResponse),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -197,6 +244,20 @@ pub struct SetModeRequest {
 pub struct SetModeOkResponse {
     pub session_id: String,
     pub mode_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetConfigOptionRequest {
+    pub session_id: String,
+    pub config_id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetConfigOptionOkResponse {
+    pub session_id: String,
+    pub config_id: String,
+    pub value: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -890,6 +951,65 @@ mod tests {
             agent_id: "claude-acp".to_string(),
             reason: "agent process exited unexpectedly".to_string(),
             affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_detect_installed_agents_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {}));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_detect_installed_agents_ok() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(DetectInstalledAgentsResponse {
+            agents: vec![
+                DetectedAgentInfo {
+                    agent_id: "claude-acp".to_string(),
+                    tool_name: "Claude Code".to_string(),
+                    binary_found: true,
+                    binary_path: Some("/usr/local/bin/claude".to_string()),
+                    config_dir_found: true,
+                },
+                DetectedAgentInfo {
+                    agent_id: "github-copilot-cli".to_string(),
+                    tool_name: "GitHub Copilot".to_string(),
+                    binary_found: false,
+                    binary_path: None,
+                    config_dir_found: true,
+                },
+            ],
+            all_checked_ids: vec!["claude-acp".to_string(), "github-copilot-cli".to_string(), "codex-acp".to_string()],
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_detect_project_agents_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest {
+            cwd: "/home/user/project".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_detect_project_agents_ok() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(DetectProjectAgentsResponse {
+            agents: vec![
+                ProjectAgentMarker {
+                    agent_id: "claude-acp".to_string(),
+                    markers_found: vec!["CLAUDE.md".to_string(), ".claude/".to_string()],
+                },
+            ],
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

@@ -1,4 +1,4 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { useState, useRef, type Dispatch, type SetStateAction } from "react";
 import type { WorktreeWithStatus } from "@/types/bindings";
 import type { DiffFileWithName } from "@/types/review";
 
@@ -36,39 +36,32 @@ export function useStagingState(
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [fileSearch, setFileSearch] = useState("");
 
-  // When the selected worktree changes, reset all staging state and navigation
-  // so we don't briefly show the previous worktree's file header.
-  useEffect(() => {
+  const prevWorktreePathRef = useRef(worktreePath);
+  const prevViewModeRef = useRef(viewMode);
+
+  function resetSelectionState() {
+    setStagedFiles(new Set());
+    setStagedHunks(new Map());
     setSelectedFileIndex(null);
+    setCommitMessage("");
+  }
+
+  if (prevWorktreePathRef.current !== worktreePath) {
+    prevWorktreePathRef.current = worktreePath;
+    resetSelectionState();
     setFileSearch("");
-    setStagedFiles(new Set());
-    setStagedHunks(new Map());
-    setCommitMessage("");
-  }, [worktreePath]);
-
-  // Clear staging state when switching between uncommitted/untracked modes
-  useEffect(() => {
-    setStagedFiles(new Set());
-    setStagedHunks(new Map());
-    setSelectedFileIndex(null);
-    setCommitMessage("");
-  }, [viewMode]);
-
-  // Update auto-generated shelve name when worktree changes
-  useEffect(() => {
     if (worktree) {
       setShelveName(buildDefaultShelveName(worktree));
     }
-  }, [worktree]);
+  }
 
-  // Auto-select the first file once diff data loads for the current worktree.
-  // Only fires when selectedFileIndex is null (i.e. we haven't picked one yet),
-  // so a background refetch does not bounce the user back to file 0 mid-navigation.
-  useEffect(() => {
-    if (diffFiles.length > 0) {
-      setSelectedFileIndex((prev) => (prev === null ? 0 : prev));
-    }
-  }, [diffFiles]);
+  if (prevViewModeRef.current !== viewMode) {
+    prevViewModeRef.current = viewMode;
+    resetSelectionState();
+  }
+
+  const effectiveSelectedFileIndex =
+    selectedFileIndex === null && diffFiles.length > 0 ? 0 : selectedFileIndex;
 
   return {
     stagedFiles,
@@ -79,7 +72,7 @@ export function useStagingState(
     setCommitMessage,
     shelveName,
     setShelveName,
-    selectedFileIndex,
+    selectedFileIndex: effectiveSelectedFileIndex,
     setSelectedFileIndex,
     fileSearch,
     setFileSearch,

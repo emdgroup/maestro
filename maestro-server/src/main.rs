@@ -8,6 +8,7 @@
 //! Architecture: Adapted from Zed's remote_server (GPL-3.0).
 
 mod agent;
+mod detection;
 mod file_ops;
 mod registry;
 mod session_handler;
@@ -388,6 +389,36 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            MaestroRpcMessage::Request(ServerRequest::SetConfigOption(req)) => {
+                if let Some(session) = sessions.get(&req.session_id) {
+                    if session
+                        .cmd_tx
+                        .send(SessionCommand::SetConfigOption {
+                            config_id: req.config_id,
+                            value: req.value,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        let _ = send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!("session {} connection closed", req.session_id),
+                            })),
+                        )
+                        .await;
+                    }
+                } else {
+                    let _ = send_response(
+                        &stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: format!("unknown session: {}", req.session_id),
+                        })),
+                    )
+                    .await;
+                }
+            }
+
             MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
                 let result = tokio::task::spawn_blocking(move || handle_file_search(req))
                     .await
@@ -605,6 +636,28 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(
                         CheckToolsResponse { results },
+                    )),
+                )
+                .await;
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
+                let response = detection::detect_installed_agents().await;
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
+                        response,
+                    )),
+                )
+                .await;
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(req)) => {
+                let response = detection::detect_project_agents(&req.cwd).await;
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(
+                        response,
                     )),
                 )
                 .await;

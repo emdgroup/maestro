@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import type { ThinkingItem } from "./types";
+import { MarkdownBlock } from "./MarkdownBlock";
 
 interface ActivityThinkingBlockProps {
   thinking: ThinkingItem;
@@ -20,9 +21,9 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
           <Brain className="w-3 h-3 shimmer-thinking-icon" />
           <span className="shimmer-thinking-text">Thinking</span>
         </div>
-        <p className="text-xs text-muted-foreground/70 leading-relaxed line-clamp-3">
-          {thinking.text}
-        </p>
+        <div className="text-xs text-muted-foreground/70 leading-relaxed line-clamp-3">
+          <MarkdownBlock text={thinking.text} />
+        </div>
       </div>
     );
   }
@@ -39,13 +40,9 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
         <span>Thought{expanded ? "" : " (click to expand)"}</span>
       </button>
       {expanded && (
-        <p
-          className={cn(
-            "text-xs text-muted-foreground/70 leading-relaxed mt-1.5 whitespace-pre-wrap",
-          )}
-        >
-          {thinking.text}
-        </p>
+        <div className={cn("text-xs text-muted-foreground/70 leading-relaxed mt-1.5")}>
+          <MarkdownBlock text={thinking.text} />
+        </div>
       )}
     </div>
   );

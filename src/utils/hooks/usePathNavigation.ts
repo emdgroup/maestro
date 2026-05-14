@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 
 const DRIVES_ROOT = "<<DRIVES>>";
 
@@ -7,10 +7,7 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
 
   // Use ref to avoid resetting state when drives change
   const drivesRef = useRef<string[]>(drives);
-
-  useEffect(() => {
-    drivesRef.current = drives;
-  }, [drives]);
+  drivesRef.current = drives;
 
   const navigateToDirectory = (dirName: string) => {
     // Handle drive selection on Windows

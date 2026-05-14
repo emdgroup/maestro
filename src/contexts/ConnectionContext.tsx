@@ -81,6 +81,7 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
     setPreflightResult(null);
     setPreflightError(null);
     setActiveConnection(null);
+    setView("connections");
   }, []);
 
   return (

@@ -2,6 +2,23 @@ import { User } from "lucide-react";
 import type { UserMessageItem } from "./types";
 import { MarkdownBlock } from "./MarkdownBlock";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildUnifiedMarkdown(blocks: ParsedContentBlock[]): string {
+  return blocks
+    .map((block) => {
+      if (block.type === "text") return block.text;
+      return `<span class="inline-flex items-center rounded-md bg-accent/10 border border-accent/20 text-accent/80 px-1.5 py-0.5 text-xs font-mono mx-0.5 align-baseline">${escapeHtml(block.name)}</span>`;
+    })
+    .join("");
+}
+
 interface ActivityUserMessageProps {
   message: UserMessageItem;
 }
@@ -57,17 +74,10 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
       <div className="flex-1 min-w-0">
         <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
           <div className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words">
-            {parsed.blocks.map((block, i) =>
-              block.type === "text" ? (
-                <MarkdownBlock key={i} text={block.text} />
-              ) : (
-                <span
-                  key={i}
-                  className="inline-flex items-center rounded-md bg-accent/10 border border-accent/20 text-accent/80 px-1.5 py-0.5 text-xs font-mono mx-0.5 align-baseline"
-                >
-                  {block.name}
-                </span>
-              ),
+            {parsed.blocks.some((b) => b.type === "attachment") ? (
+              <MarkdownBlock text={buildUnifiedMarkdown(parsed.blocks)} />
+            ) : (
+              <MarkdownBlock text={parsed.text} />
             )}
           </div>
         </div>

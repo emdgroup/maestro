@@ -10,6 +10,7 @@ pub enum SessionCommand {
     PromptStructured(Vec<serde_json::Value>),
     SetModel(String),
     SetMode(String),
+    SetConfigOption { config_id: String, value: String },
     CancelTurn,
 }
 

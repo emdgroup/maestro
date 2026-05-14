@@ -43,23 +43,25 @@ export function FilePicker({
   );
 
   // Set initial path when initialization completes
-  useEffect(() => {
-    if (initialization.isInitialized && initialization.initialPath && !navigation.currentPath) {
-      navigation.setCurrentPath(initialization.initialPath);
-    }
-  }, [initialization, navigation]);
+  const prevInitialized = useRef(false);
+  if (!prevInitialized.current && initialization.isInitialized && initialization.initialPath && !navigation.currentPath) {
+    prevInitialized.current = true;
+    navigation.setCurrentPath(initialization.initialPath);
+  }
 
   // Filter directories based on showHidden toggle
   const visibleDirectories = initialization.showHidden
     ? directories
     : directories.filter((dir) => !dir.startsWith("."));
 
-  // Single effect to reset keyboard selection when path changes
-  useEffect(() => {
-    if (initialization.isInitialized && navigation.currentPath) {
+  // Reset keyboard selection when path changes
+  const prevPath = useRef(navigation.currentPath);
+  if (prevPath.current !== navigation.currentPath) {
+    prevPath.current = navigation.currentPath;
+    if (initialization.isInitialized) {
       resetKeyboardIndex(-1);
     }
-  }, [navigation.currentPath, initialization.isInitialized, resetKeyboardIndex]);
+  }
 
   // Keyboard navigation effect
   useEffect(() => {

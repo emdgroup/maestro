@@ -1006,6 +1006,19 @@ async preflightConnection(connectionId: number | null) : Promise<Result<Prefligh
 }
 },
 /**
+ * Detect which agent tools have configuration markers in the given project directory.
+ * Used to suggest a default agent when opening a project.
+ * Requires the connection server to be running (call `preflight_connection` first).
+ */
+async detectProjectAgents(connectionId: number | null, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connectionId, cwd }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Discover available ACP agents via maestro-server.
  * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
  * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
@@ -1030,18 +1043,6 @@ async setAcpModel(logId: number, modelId: string) : Promise<Result<null, string>
 }
 },
 /**
- * Get cached model state for a running ACP session.
- * Returns None if the session hasn't reported models yet or session not found.
- */
-async getAcpModels(logId: number) : Promise<Result<AcpSessionModelState | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_acp_models", { logId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Send a SetMode request to change the active mode for a running ACP session.
  */
 async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> {
@@ -1053,24 +1054,12 @@ async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> 
 }
 },
 /**
- * Get cached mode state for a running ACP session.
- * Returns None if the session hasn't reported modes yet or session not found.
+ * Send a SetConfigOption request for a running ACP session.
+ * Routes to the appropriate underlying protocol message based on category.
  */
-async getAcpModes(logId: number) : Promise<Result<AcpSessionModeState | null, string>> {
+async setAcpConfigOption(logId: number, optionId: string, value: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_acp_modes", { logId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get cached prompt capabilities for a running ACP session.
- * Returns None if the session hasn't reported capabilities yet or session not found.
- */
-async getAcpCapabilities(logId: number) : Promise<Result<AcpPromptCapabilities | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_acp_capabilities", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_config_option", { logId, optionId, value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1208,12 +1197,13 @@ async sftpDownload(connectionId: number, remotePath: string, localPath: string, 
 }
 },
 /**
- * Get cached models for an agent from the in-memory AgentCache.
- * Returns None if no session has been spawned for this agent yet.
+ * Get the full agent-level catalog cache for a (project, agent) pair.
+ * Returns None if the agent has not been warmed up or spawned yet.
+ * Populated from PreInitialize/SpawnOk/SessionLoadOk/config_option_update.
  */
-async getCachedAgentModels(projectId: number, agentId: string) : Promise<Result<AgentModelsCache | null, string>> {
+async getAgentCache(projectId: number, agentId: string) : Promise<Result<AgentCacheResponse | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_cached_agent_models", { projectId, agentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_agent_cache", { projectId, agentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1231,22 +1221,22 @@ async getCachedAgentModels(projectId: number, agentId: string) : Promise<Result<
 
 /** user-defined types **/
 
-export type AcpModeInfo = { mode_id: string; name: string; description: string | null }
-export type AcpModelInfo = { model_id: string; name: string; description: string | null }
 export type AcpPromptCapabilities = { embedded_context: boolean; image: boolean; audio: boolean }
 export type AcpSessionMeta = { cwd: string; project_id: number | null; session_start_sha: string | null }
-export type AcpSessionModeState = { current_mode_id: string; available_modes: AcpModeInfo[] }
-export type AcpSessionModelState = { current_model_id: string; available_models: AcpModelInfo[] }
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
 export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
+export type AgentCatalogCommand = { name: string; description: string }
+export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string; options: AgentCatalogOptionValue[] }
+export type AgentCatalogOptionValue = { name: string; value: string; description: string | null }
 /**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
-export type AgentModelsCache = { agent_id: string; models: AcpModelInfo[]; fetched_at: string }
+export type AgentSessionCapabilities = { supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
@@ -1278,6 +1268,10 @@ export type MergeResult = { success: boolean; task_status: string; conflicts: st
 export type PreflightCheck = { ok: boolean; message: string | null }
 export type PreflightResult = { maestro_server: PreflightCheck; agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
+/**
+ * Project-level agent detection: which agent tools have config markers in the project dir.
+ */
+export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
 export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
 /**

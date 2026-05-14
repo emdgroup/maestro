@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useRef, useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import {
-  useReviewDiffData,
   useReviewSelectedFile,
   useReviewIsLoading,
-  useReviewError,
   useReviewActions,
 } from "@/store/reviewStore";
 import { parseDiffString } from "@/lib/diff-utils";
@@ -23,11 +21,9 @@ interface ReviewModalProps {
 }
 
 export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOpen, onClose }) => {
-  const diffData = useReviewDiffData();
   const selectedFile = useReviewSelectedFile();
   const isReviewLoading = useReviewIsLoading();
-  const reviewError = useReviewError();
-  const { openReview, closeReview, selectFile, setDiffData, setError } = useReviewActions();
+  const { openReview, closeReview, selectFile } = useReviewActions();
   const [showApprovalForm, setShowApprovalForm] = useState(false);
 
   const {
@@ -37,41 +33,30 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ taskId, taskName, isOp
     refetch: refetchDiff,
   } = useDiffForReviewQuery(isOpen ? taskId : null);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
+  const prevOpenRef = useRef(false);
+  if (isOpen && !prevOpenRef.current) {
     openReview(taskId);
+  }
+  prevOpenRef.current = isOpen;
 
+  const reviewError = useMemo(() => {
+    if (!isOpen) return null;
     if (diffError) {
       const errorMsg = diffError instanceof Error ? diffError.message : String(diffError);
-      setError(`Failed to fetch diff: ${errorMsg}`);
-      console.error("Fetch diff error:", diffError);
-      return;
+      return `Failed to fetch diff: ${errorMsg}`;
     }
+    return null;
+  }, [isOpen, diffError]);
 
-    if (isDiffLoading) {
-      return;
-    }
-
-    if (diffString) {
-      const diffFiles = parseDiffString(diffString);
-
-      if (diffFiles.length === 0) {
-        setError("No changes found in diff");
-        return;
-      }
-
-      setError(null);
-      setDiffData(diffFiles);
-    }
-  }, [isOpen, taskId, diffString, isDiffLoading, diffError, openReview, setError, setDiffData]);
+  const diffData = useMemo(() => {
+    if (!isOpen || isDiffLoading || diffError || !diffString) return [];
+    const files = parseDiffString(diffString);
+    return files;
+  }, [isOpen, isDiffLoading, diffError, diffString]);
 
   const selectedDiffFile = diffData.find((f) => f.fileName === selectedFile);
 
   const handleRetry = async () => {
-    setError(null);
     await refetchDiff();
   };
 

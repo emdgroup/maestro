@@ -62,8 +62,8 @@ fn fetch_projects_from_db(
 ) -> Result<Vec<Project>, String> {
 
     let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
-        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id = ? ORDER BY created_at DESC", params![id.clone()]),
-        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id IS NULL ORDER BY created_at DESC", params![])
+        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id = ? ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![id.clone()]),
+        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id IS NULL ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![])
     };
     let mut stmt = conn.prepare(query)
         .map_err(|e| e.to_string())?;
@@ -603,6 +603,12 @@ pub async fn prime_project_server(
         let ssh = app_state.ssh.get_session(conn_id).await
             .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
 
+        let deploy_lock = {
+            let mut locks = app_state.acp.deploy_locks.lock().await;
+            locks.entry(conn_id).or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))).clone()
+        };
+        let _deploy_guard = deploy_lock.lock().await;
+        // Re-check cache after acquiring lock: preflight or prefetch may have populated it.
         let cached_path = {
             let cache = app_state.acp.discovery_cache.lock().await;
             cache.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone())
@@ -644,6 +650,14 @@ pub async fn prime_project_server(
                 &app_state,
             )
             .await?;
+            crate::ipc::acp_handlers::spawn_pooled_session(
+                &*app_state,
+                project_id,
+                Some(conn_id),
+                &agent_id,
+                &project_path,
+            )
+            .await;
         }
     } else {
         crate::acp::spawn_connection_server(None, crate::acp::TransportTarget::Local, &app_state).await?;
@@ -660,6 +674,14 @@ pub async fn prime_project_server(
                 &app_state,
             )
             .await?;
+            crate::ipc::acp_handlers::spawn_pooled_session(
+                &*app_state,
+                project_id,
+                None,
+                &agent_id,
+                &project_path,
+            )
+            .await;
         }
     }
 

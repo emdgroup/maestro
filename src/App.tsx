@@ -24,7 +24,6 @@ import {
 } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { cn } from "@/lib/ui-utils";
-import { toast } from "sonner";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
@@ -113,12 +112,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 
-  useEffect(() => {
-    if (settingsError) {
-      console.error("Failed to load settings:", settingsError);
-      toast.error("Failed to load settings");
-    }
-  }, [settingsError]);
 
   function handleImportConfigSaved() {
     setShowImportSettings(false);

@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Connection, useConnectionContext } from "@/contexts/ConnectionContext";
 
 /**
@@ -10,22 +9,16 @@ import { Connection, useConnectionContext } from "@/contexts/ConnectionContext";
  * @returns navigation methods
  */
 export function useProjectPickerNavigation() {
-  const { activeConnection, setActiveConnection, setView } = useConnectionContext();
-
-  useEffect(() => {
-    if (activeConnection) {
-      setView("projects");
-    } else {
-      setView("connections");
-    }
-  }, [activeConnection, setView]);
+  const { setActiveConnection, setView } = useConnectionContext();
 
   const navigateToProjects = (connection: Connection) => {
     setActiveConnection(connection);
+    setView("projects");
   };
 
   const navigateToConnections = () => {
     setActiveConnection(null);
+    setView("connections");
   };
 
   return {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -36,11 +36,6 @@ export function CreateWorktreeDialog({
   const { data: branchData } = useProjectBranchesQuery(projectId);
   const branches = branchData?.[0] ?? [];
   const currentBranch = branchData?.[1] ?? "main";
-  const currentBranchRef = useRef(currentBranch);
-  useEffect(() => {
-    currentBranchRef.current = currentBranch;
-  });
-
   const createMutation = useCreateWorktreeMutation();
 
   useEffect(() => {
@@ -48,7 +43,7 @@ export function CreateWorktreeDialog({
     void queryClient.invalidateQueries({
       queryKey: [...taskQueryKeys.base, "branches", projectId],
     });
-    setBaseBranch(currentBranchRef.current);
+    setBaseBranch(currentBranch);
     setNewBranchName("");
     setCreateError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

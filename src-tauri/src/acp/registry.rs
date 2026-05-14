@@ -26,6 +26,24 @@ pub struct AgentDiscoveryResult {
     pub error: Option<String>,
 }
 
+/// Result of detecting which agent tools are installed on the host.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct DetectedAgent {
+    pub agent_id: String,
+    pub tool_name: String,
+    pub binary_found: bool,
+    pub config_dir_found: bool,
+}
+
+/// Project-level agent detection: which agent tools have config markers in the project dir.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ProjectAgentMatch {
+    pub agent_id: String,
+    pub markers_found: Vec<String>,
+}
+
 /// Internal cache entry — not exported to TS.
 pub struct AgentDiscoveryCacheEntry {
     pub result: AgentDiscoveryResult,

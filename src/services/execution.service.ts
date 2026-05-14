@@ -11,6 +11,8 @@ export const executionQueryKeys = {
   sessionList: (agentId: string, cwd: string, connectionId: number | null) =>
     ["sessionList", agentId, cwd, connectionId] as const,
   agentDiscovery: (connectionId: number | null) => ["agentDiscovery", connectionId] as const,
+  projectAgents: (connectionId: number | null, cwd: string) =>
+    ["projectAgents", connectionId, cwd] as const,
 };
 
 /**
@@ -152,6 +154,25 @@ export function useSpawnInteractiveExecutionMutation() {
 }
 
 /**
+ * Detect which agent tools have config markers in the given project directory.
+ * Used to suggest or pre-select a default agent when opening a project.
+ * Requires preflight to have run for this connection.
+ */
+export function useProjectAgentsQuery(
+  connectionId: number | null,
+  cwd: string | null,
+  enabled: boolean = true,
+) {
+  return useQuery({
+    queryKey: executionQueryKeys.projectAgents(connectionId, cwd ?? ""),
+    queryFn: () => api.detectProjectAgents(connectionId, cwd!),
+    enabled: enabled && cwd != null,
+    staleTime: 60_000,
+    gcTime: 5 * 60 * 1000,
+  });
+}
+
+/**
  * Unified agent discovery hook — works for both local and remote connections.
  * connectionId = null → local maestro-server
  * connectionId = number → remote SSH connection
@@ -168,8 +189,8 @@ export function useAgentDiscoveryQuery(connectionId: number | null, enabled: boo
 }
 
 
-/** Cached model list for an agent from in-memory AgentCache. Available after first SpawnOk. */
-export function useCachedAgentModelsQuery(projectId: number, agentId: string | null) {
+/** Full agent catalog (config options, commands, capabilities) from AgentCache. Available after first SpawnOk/PreInitialize. */
+export function useAgentCacheQuery(projectId: number | null, agentId: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -177,7 +198,7 @@ export function useCachedAgentModelsQuery(projectId: number, agentId: string | n
     listen<{ project_id: number; agent_id: string }>("agent-cache-updated", (event) => {
       if (event.payload.project_id === projectId && event.payload.agent_id === agentId) {
         void queryClient.invalidateQueries({
-          queryKey: ["cachedAgentModels", projectId, agentId],
+          queryKey: ["agentCache", projectId, agentId],
         });
       }
     }).then((fn) => { unlisten = fn; });
@@ -185,9 +206,9 @@ export function useCachedAgentModelsQuery(projectId: number, agentId: string | n
   }, [queryClient, projectId, agentId]);
 
   return useQuery({
-    queryKey: ["cachedAgentModels", projectId, agentId] as const,
-    queryFn: () => api.getCachedAgentModels(projectId, agentId!),
-    enabled: agentId != null,
+    queryKey: ["agentCache", projectId, agentId] as const,
+    queryFn: () => api.getAgentCache(projectId!, agentId!),
+    enabled: projectId != null && agentId != null,
     staleTime: 5_000,
     gcTime: Infinity,
   });

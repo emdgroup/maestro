@@ -98,12 +98,11 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::cancel_acp_session,
             crate::ipc::interrupt_acp_turn,
             crate::ipc::preflight_connection,
+            crate::ipc::detect_project_agents,
             crate::ipc::discover_agents,
             crate::ipc::set_acp_model,
-            crate::ipc::get_acp_models,
             crate::ipc::set_acp_mode,
-            crate::ipc::get_acp_modes,
-            crate::ipc::get_acp_capabilities,
+            crate::ipc::set_acp_config_option,
             crate::ipc::search_session_files,
             crate::ipc::read_session_file,
             crate::ipc::get_acp_session_meta,
@@ -115,7 +114,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
             crate::ipc::sftp_download,
-            crate::ipc::get_cached_agent_models
+            crate::ipc::get_agent_cache
         ])
 }
 

@@ -42,7 +42,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
 }
 
 function processEvent(state: ActivityState, payload: SessionUpdatePayload): ActivityState {
-  const newState = { ...state, isInitializing: false };
+  const newState = { ...state };
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
@@ -116,14 +116,20 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
             ? { ...i, item: updated }
             : i,
         );
-        return { ...newState, items: updatedItems, toolCallMap: newMap };
+        const extractedTitle = extractPlanTitle(payload);
+        return {
+          ...newState,
+          items: updatedItems,
+          toolCallMap: newMap,
+          ...(extractedTitle && { planTitle: extractedTitle }),
+        };
       }
       return { ...newState, items };
     }
 
     case "plan": {
       const items = finalizeLastStreaming(newState.items);
-      return { ...newState, items, plan: payload.entries, planTitle: payload.title ?? null };
+      return { ...newState, items, plan: payload.entries, planTitle: payload.title ?? state.planTitle };
     }
 
     case "user_message": {
@@ -153,6 +159,17 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
     default:
       return newState;
   }
+}
+
+function extractPlanTitle(payload: {
+  title?: string;
+  rawInput?: Record<string, unknown>;
+}): string | null {
+  if (payload.title !== "Ready to code?") return null;
+  const plan = payload.rawInput?.plan;
+  if (typeof plan !== "string") return null;
+  const match = plan.match(/^#\s+(.+)/m);
+  return match ? match[1].trim() : null;
 }
 
 function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
@@ -189,16 +206,25 @@ export function useAcpActivity(
       listen<string>(`acp://turn-ended/${logId}`, () => {
         dispatch({ type: "turn_ended" });
       }),
+      listen<null>(`acp://replay-drained/${logId}`, () => {
+        dispatch({ type: "finalize_streaming" });
+        dispatch({ type: "set_initialized" });
+      }),
+      listen<null>(`acp://spawn-ok/${logId}`, () => {
+        dispatch({ type: "set_initialized" });
+      }),
     ]).then((listeners) => {
       drainAcpReplay(logId).catch(console.error);
       return listeners;
     });
 
     return () => {
-      unlisteners.then(([u1, u2, u3]) => {
+      unlisteners.then(([u1, u2, u3, u4, u5]) => {
         u1();
         u2();
         u3();
+        u4();
+        u5();
       });
     };
   }, [logId]);

@@ -358,6 +358,7 @@ export function AgentMonitor({
             >
               <AgentActivityPanel
                 sessionKey={s.session_key}
+                agentId={s.agent_id ?? null}
                 isSelected={s.session_key === selectedSessionKey}
                 onWorkingFilesChange={handleWorkingFilesChange}
                 onSessionChangedFilesChange={handleSessionChangedFilesChange}

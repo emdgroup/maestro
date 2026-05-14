@@ -1,19 +1,13 @@
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api } from "@/lib/tauri-utils";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import type { AvailableCommand, UsageState } from "./types";
+import { useAgentCacheQuery } from "@/services/execution.service";
+import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { AcpPromptCapabilities } from "@/types/bindings";
 
-export type ModelOption = { id: string; label: string };
-export type ModeOption = { id: string; label: string };
-
 export type AcpSessionLifecycleResult = {
-  models: ModelOption[];
-  modelId: string;
-  modelsLoaded: boolean;
-  modes: ModeOption[];
-  modeId: string;
+  configOptions: ConfigOption[];
+  configValues: Record<string, string>;
   usageState: UsageState | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
@@ -29,15 +23,14 @@ export type AcpSessionLifecycleResult = {
 
 export function useAcpSessionLifecycle(
   sessionKey: number,
-  onUsageChangeRef: React.MutableRefObject<((usage: UsageState | null) => void) | undefined>,
+  projectId: number | null,
+  agentId: string | null,
+  onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
 ): AcpSessionLifecycleResult {
   const { setStatus: setActivityStatus } = useSessionActivityActions();
 
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [modelId, setModelId] = useState<string>("");
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [modes, setModes] = useState<ModeOption[]>([]);
-  const [modeId, setModeId] = useState<string>("");
+  const [configOptions, setConfigOptions] = useState<ConfigOption[]>([]);
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [usageState, setUsageState] = useState<UsageState | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
   const [promptCapabilities, setPromptCapabilities] = useState<AcpPromptCapabilities | null>(null);
@@ -51,7 +44,34 @@ export function useAcpSessionLifecycle(
     payload: Record<string, unknown>;
   } | null>(null);
 
-  // turn-ended: clear processing and set status idle
+  // Seed configOptions catalog from agent cache (available before any session events arrive)
+  const { data: agentCache } = useAgentCacheQuery(projectId, agentId);
+  useEffect(() => {
+    if (!agentCache) return;
+    setConfigOptions((prev) => {
+      // Don't overwrite if config_option_update already populated (has current_value semantics)
+      if (prev.length > 0) return prev;
+      return agentCache.config_options.map((o) => ({
+        id: o.id,
+        name: o.name,
+        category: o.category,
+        currentValue: o.options[0]?.value ?? "",
+        options: o.options.map((v) => ({
+          name: v.name,
+          value: v.value,
+          description: v.description ?? undefined,
+        })),
+      }));
+    });
+    setAvailableCommands((prev) => {
+      if (prev.length > 0) return prev;
+      return agentCache.available_commands.map((c) => ({ name: c.name, description: c.description }));
+    });
+    if (agentCache.prompt_capabilities) {
+      setPromptCapabilities((prev) => prev ?? (agentCache.prompt_capabilities as AcpPromptCapabilities));
+    }
+  }, [agentCache]);
+
   useEffect(() => {
     const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
       setActivityStatus(sessionKey, "idle");
@@ -61,7 +81,6 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, setActivityStatus]);
 
-  // permission-request
   useEffect(() => {
     const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
       `acp://permission-request/${sessionKey}`,
@@ -78,7 +97,6 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, setActivityStatus]);
 
-  // elicitation-request
   useEffect(() => {
     const unlisten = listen<{ request_id: string; message: string; payload: Record<string, unknown> }>(
       `acp://elicitation-request/${sessionKey}`,
@@ -96,7 +114,6 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, setActivityStatus]);
 
-  // capabilities: listen first, then fetch to close the race window
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -110,8 +127,6 @@ export function useAcpSessionLifecycle(
       );
       if (cancelled) { unlistenFn(); return; }
       unlisten = unlistenFn;
-      const caps = await api.getAcpCapabilities(sessionKey);
-      if (!cancelled && caps) setPromptCapabilities(caps);
     })();
 
     return () => {
@@ -120,7 +135,7 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey]);
 
-  // models: listen first, then fetch to close the race window
+  // session-models: legacy fallback for agents that don't send config_option_update
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -132,18 +147,23 @@ export function useAcpSessionLifecycle(
       }>(`acp://session-models/${sessionKey}`, (event) => {
         if (cancelled) return;
         const { current_model_id, available_models } = event.payload;
-        setModels(available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(current_model_id);
-        setModelsLoaded(true);
+        setConfigOptions((prev) => {
+          if (prev.some((o) => o.id === "model")) return prev;
+          return [
+            ...prev,
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              currentValue: current_model_id,
+              options: available_models.map((m) => ({ name: m.name, value: m.model_id })),
+            },
+          ];
+        });
+        setConfigValues((prev) => ({ ...prev, model: current_model_id }));
       });
       if (cancelled) { unlistenFn(); return; }
       unlisten = unlistenFn;
-      const modelState = await api.getAcpModels(sessionKey);
-      if (!cancelled && modelState) {
-        setModels(modelState.available_models.map((m) => ({ id: m.model_id, label: m.name })));
-        setModelId(modelState.current_model_id);
-        setModelsLoaded(true);
-      }
     })();
 
     return () => {
@@ -152,17 +172,17 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey]);
 
-  // model-changed event
+  // model-changed: update current value regardless of how options arrived
   useEffect(() => {
     const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
-      setModelId(event.payload);
+      setConfigValues((prev) => ({ ...prev, model: event.payload }));
     });
     return () => {
       unlisten.then((fn) => fn());
     };
   }, [sessionKey]);
 
-  // modes: listen first, then fetch to close the race window
+  // session-modes: legacy fallback for agents that don't send config_option_update
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -174,16 +194,23 @@ export function useAcpSessionLifecycle(
       }>(`acp://session-modes/${sessionKey}`, (event) => {
         if (cancelled) return;
         const { current_mode_id, available_modes } = event.payload;
-        setModes(available_modes.map((m) => ({ id: m.mode_id, label: m.name })));
-        setModeId(current_mode_id);
+        setConfigOptions((prev) => {
+          if (prev.some((o) => o.id === "mode")) return prev;
+          return [
+            ...prev,
+            {
+              id: "mode",
+              name: "Permission mode",
+              category: "mode",
+              currentValue: current_mode_id,
+              options: available_modes.map((m) => ({ name: m.name, value: m.mode_id })),
+            },
+          ];
+        });
+        setConfigValues((prev) => ({ ...prev, mode: current_mode_id }));
       });
       if (cancelled) { unlistenFn(); return; }
       unlisten = unlistenFn;
-      const modeState = await api.getAcpModes(sessionKey);
-      if (!cancelled && modeState) {
-        setModes(modeState.available_modes.map((m) => ({ id: m.mode_id, label: m.name })));
-        setModeId(modeState.current_mode_id);
-      }
     })();
 
     return () => {
@@ -192,17 +219,28 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey]);
 
-  // mode-changed event
+  // mode-changed: update current value regardless of how options arrived
   useEffect(() => {
     const unlisten = listen<string>(`acp://mode-changed/${sessionKey}`, (event) => {
-      setModeId(event.payload);
+      setConfigValues((prev) => ({ ...prev, mode: event.payload }));
     });
     return () => {
       unlisten.then((fn) => fn());
     };
   }, [sessionKey]);
 
-  // session-update event (usage + available commands)
+  useEffect(() => {
+    const unlisten = listen<{ config_id: string; value: string }>(
+      `acp://config-changed/${sessionKey}`,
+      (event) => {
+        setConfigValues((prev) => ({ ...prev, [event.payload.config_id]: event.payload.value }));
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [sessionKey]);
+
   useEffect(() => {
     type SessionUpdatePayloadRaw = {
       sessionUpdate?: string;
@@ -210,6 +248,7 @@ export function useAcpSessionLifecycle(
       size?: number;
       cost?: { amount: number; currency: string };
       availableCommands?: AvailableCommand[];
+      configOptions?: ConfigOption[];
     };
     const unlisten = listen<SessionUpdatePayloadRaw>(
       `acp://session-update/${sessionKey}`,
@@ -231,6 +270,21 @@ export function useAcpSessionLifecycle(
           if (Array.isArray(p.availableCommands)) {
             setAvailableCommands(p.availableCommands);
           }
+        } else if (p.sessionUpdate === "config_option_update") {
+          if (Array.isArray(p.configOptions)) {
+            setConfigOptions(p.configOptions);
+            setConfigValues((prev) => {
+              const next = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+              const keys = Object.keys(next);
+              if (
+                keys.length === Object.keys(prev).length &&
+                keys.every((k) => prev[k] === next[k])
+              ) {
+                return prev;
+              }
+              return next;
+            });
+          }
         }
       },
     );
@@ -239,19 +293,9 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey, onUsageChangeRef]);
 
-  // 3s safety valve: unblock UI if session fails to deliver models (crash, etc.)
-  useEffect(() => {
-    if (modelsLoaded) return;
-    const timer = setTimeout(() => setModelsLoaded(true), 3000);
-    return () => clearTimeout(timer);
-  }, [modelsLoaded]);
-
   return {
-    models,
-    modelId,
-    modelsLoaded,
-    modes,
-    modeId,
+    configOptions,
+    configValues,
     usageState,
     availableCommands,
     promptCapabilities,

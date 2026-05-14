@@ -15,9 +15,20 @@ use crate::acp::transport::{
     read_message, write_message, FileSearchResponse, FileReadResponse,
     PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
     SessionListOkResponse, SessionCloseRequest,
-    CheckToolsRequest, CheckToolsResponse,
+    CheckToolsRequest, CheckToolsResponse, SetModeRequest,
+};
+use maestro_protocol::{
+    DetectInstalledAgentsRequest, DetectInstalledAgentsResponse,
+    DetectProjectAgentsRequest, DetectProjectAgentsResponse,
 };
 
+
+/// A pre-warmed session held in the pool, keyed by (project_id, agent_id).
+/// The AcpProcess itself lives in AppState.acp.sessions under this log_id.
+pub struct PooledSession {
+    pub log_id: i32,
+    pub session_id: String,
+}
 
 /// Write transport for a live ACP session.
 /// Local sessions write to the child process stdin.
@@ -59,23 +70,59 @@ pub struct ConnectionServer {
     /// Pending `CheckTools` oneshot. At most one in-flight at a time.
     pub pending_check_tools: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
+    /// Pending `DetectInstalledAgents` oneshot. At most one in-flight at a time.
+    pub pending_detect_installed: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
+    /// Pending `DetectProjectAgents` oneshot. At most one in-flight at a time.
+    pub pending_detect_project: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
 }
 
-/// Cached session capabilities reported by the agent on SpawnOk.
-#[derive(Default, Clone)]
-pub struct SessionCapabilitiesCache {
+/// A single option value within a config option catalog entry.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CatalogOptionValue {
+    pub name: String,
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Session-agnostic catalog entry for a config option (model, mode, effort, etc.).
+/// Does NOT store current_value — that is per-session state.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CatalogOption {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub category: String,
+    pub options: Vec<CatalogOptionValue>,
+}
+
+/// A slash command available for an agent.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CatalogCommand {
+    pub name: String,
+    pub description: String,
+}
+
+/// Session capability flags reported by the agent on SpawnOk. Static per agent.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SessionCapabilitiesInfo {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
 }
 
-/// Agent-level cache for models/modes/capabilities. Keyed by (project_id, agent_id).
-/// Populated from PreInitializeResponse (warm session) and updated on each SpawnOk/SessionLoadOk.
+/// Agent-level catalog cache. Keyed by (project_id, agent_id).
+/// Populated from PreInitializeResponse and updated on each SpawnOk/SessionLoadOk/config_option_update.
+/// Session-agnostic: no current values stored here.
 #[derive(Default, Clone)]
 pub struct AgentCache {
-    pub models: Option<SessionModelState>,
-    pub modes: Option<SessionModeState>,
+    pub config_options: Vec<CatalogOption>,
+    pub available_commands: Vec<CatalogCommand>,
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
+    pub session_capabilities: SessionCapabilitiesInfo,
 }
 
 pub type AgentCacheMap = HashMap<(i32, String), AgentCache>;
@@ -98,15 +145,12 @@ pub struct AcpProcess {
     pub child: Option<Child>,
     /// Cancel signal for the background reader task.
     pub reader_cancel_tx: Option<oneshot::Sender<()>>,
-    /// Last known model state from SpawnOk/SetModelOk. Cached so the frontend
-    /// can query it on mount even if the event fired before the listener registered.
-    pub models: Arc<std::sync::Mutex<Option<SessionModelState>>>,
-    /// Last known mode state from SpawnOk/SessionLoadOk/SetModeOk. Cached for
-    /// the same reason as models.
-    pub modes: Arc<std::sync::Mutex<Option<SessionModeState>>>,
-    /// Prompt capabilities reported by the agent in InitializeResponse. Cached so the
-    /// frontend can query even if the SpawnOk event fired before the listener registered.
-    pub prompt_capabilities: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
+    /// Current model ID for this session (updated by SpawnOk/SessionLoadOk/SetModelOk).
+    /// Used internally for the SetMode re-send hack after SessionLoadOk.
+    pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
+    /// Current mode ID for this session (updated by SpawnOk/SessionLoadOk/SetModeOk/current_mode_update).
+    /// Used by the SetMode re-send hack to force config_option_update emission after SessionLoadOk.
+    pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory on the server host — passed in FileSearch/FileRead requests.
     pub cwd: String,
     /// Pending file search response channel. One request at a time.
@@ -128,12 +172,13 @@ pub struct AcpProcess {
     pub session_start_sha: Option<String>,
     /// Agent's native ACP session ID (returned by NewSessionRequest). Used for alias persistence.
     pub acp_session_id: Arc<std::sync::Mutex<Option<String>>>,
-    /// Session capabilities (supports_session_list/load/close), updated on SpawnOk.
-    pub session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
     /// Replay buffer for session-load sessions. `Some(vec)` while waiting for the frontend
     /// listener to register; `None` after drain — events emit directly.
     /// Fresh spawn sessions use `None` (no buffering needed).
     pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
+    /// emitting `replay-drained` before the session is ready (empty buffer race).
+    pub initialized: Arc<std::sync::Mutex<bool>>,
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
@@ -383,7 +428,7 @@ pub async fn try_spawn_via_connection_server(
             branch_name,
             session_start_sha,
             initial_acp_session_id: None,
-            enable_replay_buffer: false,
+            enable_replay_buffer: true,
         },
         log_id,
         app_state.app_handle.clone(),
@@ -396,7 +441,10 @@ pub async fn try_spawn_via_connection_server(
     Ok(true)
 }
 
-/// Emit cached models/modes/capabilities for a session immediately after creation.
+/// Emit cached catalog as legacy session-models/session-modes/session-capabilities events
+/// immediately after session creation, so the frontend gets available options before SpawnOk.
+/// Seeds per-session current_model_id/current_mode_id with the catalog's first option value
+/// as a best-guess; real current values arrive via SpawnOk/config_option_update.
 pub async fn emit_cached_capabilities(
     acp_process: &AcpProcess,
     project_id: Option<i32>,
@@ -405,19 +453,39 @@ pub async fn emit_cached_capabilities(
     app_state: &Arc<crate::db::AppState>,
 ) {
     let pid = match project_id { Some(p) => p, None => return };
-    if let Some(cache) = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.to_string())) {
-        if let Some(models) = &cache.models {
-            if let Ok(mut m) = acp_process.models.lock() { *m = Some(models.clone()); }
-            let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), models);
+    let cache = match app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.to_string())).cloned() {
+        Some(c) => c,
+        None => return,
+    };
+
+    if let Some(model_opt) = cache.config_options.iter().find(|o| o.id == "model") {
+        if let Some(first) = model_opt.options.first() {
+            if let Ok(mut m) = acp_process.current_model_id.lock() { *m = Some(first.value.clone()); }
         }
-        if let Some(modes) = &cache.modes {
-            if let Ok(mut m) = acp_process.modes.lock() { *m = Some(modes.clone()); }
-            let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), modes);
+        let legacy_models = serde_json::json!({
+            "current_model_id": model_opt.options.first().map(|v| &v.value),
+            "available_models": model_opt.options.iter().map(|v| serde_json::json!({
+                "model_id": v.value, "name": v.name
+            })).collect::<Vec<_>>(),
+        });
+        let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), &legacy_models);
+    }
+
+    if let Some(mode_opt) = cache.config_options.iter().find(|o| o.id == "mode") {
+        if let Some(first) = mode_opt.options.first() {
+            if let Ok(mut m) = acp_process.current_mode_id.lock() { *m = Some(first.value.clone()); }
         }
-        if let Some(caps) = &cache.prompt_capabilities {
-            if let Ok(mut c) = acp_process.prompt_capabilities.lock() { *c = Some(caps.clone()); }
-            let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-        }
+        let legacy_modes = serde_json::json!({
+            "current_mode_id": mode_opt.options.first().map(|v| &v.value),
+            "available_modes": mode_opt.options.iter().map(|v| serde_json::json!({
+                "mode_id": v.value, "name": v.name
+            })).collect::<Vec<_>>(),
+        });
+        let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), &legacy_modes);
+    }
+
+    if let Some(caps) = &cache.prompt_capabilities {
+        let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
     }
 }
 
@@ -559,14 +627,13 @@ pub struct ReaderTaskContext {
     pub log_id: i32,
     pub app_handle: tauri::AppHandle,
     pub app_state: Arc<crate::db::AppState>,
-    pub models_cache: Arc<std::sync::Mutex<Option<SessionModelState>>>,
-    pub modes_cache: Arc<std::sync::Mutex<Option<SessionModeState>>>,
-    pub capabilities_cache: Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
+    pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
+    pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
     pub pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     pub pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
-    pub session_capabilities: Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    pub initialized: Arc<std::sync::Mutex<bool>>,
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
@@ -579,28 +646,26 @@ impl AcpProcess {
         app_handle: tauri::AppHandle,
         app_state: Arc<crate::db::AppState>,
     ) -> (Self, ReaderTaskContext) {
-        let models = Arc::new(std::sync::Mutex::new(None));
-        let modes = Arc::new(std::sync::Mutex::new(None));
-        let prompt_capabilities = Arc::new(std::sync::Mutex::new(None));
+        let current_model_id = Arc::new(std::sync::Mutex::new(None));
+        let current_mode_id = Arc::new(std::sync::Mutex::new(None));
         let pending_file_search = Arc::new(std::sync::Mutex::new(None));
         let pending_file_read = Arc::new(std::sync::Mutex::new(None));
-        let session_capabilities = Arc::new(std::sync::Mutex::new(SessionCapabilitiesCache::default()));
         let acp_session_id = Arc::new(std::sync::Mutex::new(params.initial_acp_session_id));
         let replay_buffer = Arc::new(std::sync::Mutex::new(
             if params.enable_replay_buffer { Some(Vec::new()) } else { None },
         ));
+        let initialized = Arc::new(std::sync::Mutex::new(false));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,
             app_state,
-            models_cache: Arc::clone(&models),
-            modes_cache: Arc::clone(&modes),
-            capabilities_cache: Arc::clone(&prompt_capabilities),
+            current_model_id: Arc::clone(&current_model_id),
+            current_mode_id: Arc::clone(&current_mode_id),
             pending_file_search: Arc::clone(&pending_file_search),
             pending_file_read: Arc::clone(&pending_file_read),
-            session_capabilities: Arc::clone(&session_capabilities),
             acp_session_id_cache: Arc::clone(&acp_session_id),
             replay_buffer: Arc::clone(&replay_buffer),
+            initialized: Arc::clone(&initialized),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
@@ -609,9 +674,8 @@ impl AcpProcess {
             writer: params.writer,
             child: params.child,
             reader_cancel_tx: params.cancel_tx,
-            models,
-            modes,
-            prompt_capabilities,
+            current_model_id,
+            current_mode_id,
             cwd: params.cwd,
             pending_file_search,
             pending_file_read,
@@ -625,8 +689,8 @@ impl AcpProcess {
             branch_name: params.branch_name,
             session_start_sha: params.session_start_sha,
             acp_session_id,
-            session_capabilities,
             replay_buffer,
+            initialized,
         };
         (process, ctx)
     }
@@ -639,9 +703,9 @@ pub(crate) fn spawn_reader_task(
 ) {
     let ReaderTaskContext {
         log_id, app_handle, app_state,
-        models_cache, modes_cache, capabilities_cache,
-        pending_file_search, pending_file_read, session_capabilities,
-        acp_session_id_cache, replay_buffer,
+        current_model_id, current_mode_id,
+        pending_file_search, pending_file_read,
+        acp_session_id_cache, replay_buffer, initialized,
         session_name, agent_id, project_id,
     } = ctx;
     tokio::spawn(async move {
@@ -657,14 +721,32 @@ pub(crate) fn spawn_reader_task(
                     None => break,
                 },
             };
-            if project_id.is_some() {
+            if let Some(pid) = project_id {
                 update_agent_cache_from_response(&msg, &app_state).await;
+                update_agent_cache_from_session_update(&msg, pid, &agent_id, &app_state).await;
             }
-            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &models_cache, &modes_cache, &capabilities_cache, &pending_file_search, &pending_file_read, &session_capabilities, &acp_session_id_cache, &replay_buffer) {
+            let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
+                ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
+            ));
+            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
                     }
+                }
+            }
+            // After SpawnOk or SessionLoadOk, send SetMode with the current mode to trigger
+            // config_option_update from ACP, which includes all config options (model, mode, effort).
+            // SpawnOk/SessionLoadOk only provide models and modes; config options are missing until triggered.
+            if is_init_ok {
+                let mode_id = current_mode_id.lock().ok().and_then(|m| m.clone());
+                if let Some(mode_id) = mode_id {
+                    let session_id = format!("session-{}", log_id);
+                    let set_mode_msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+                        session_id,
+                        mode_id,
+                    }));
+                    let _ = crate::acp::write_to_acp_session(&app_state, log_id, &set_mode_msg).await;
                 }
             }
         }
@@ -675,30 +757,49 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-/// Emit Tauri events for a parsed server response.
+fn emit_session_init_events(
+    models: Option<&SessionModelState>,
+    modes: Option<&SessionModeState>,
+    caps: Option<&PromptCapabilitiesInfo>,
+    log_id: i32,
+    app_handle: &tauri::AppHandle,
+    current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
+    current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
+) {
+    if let Some(m) = models {
+        if let Ok(mut cache) = current_model_id.lock() { *cache = Some(m.current_model_id.clone()); }
+        let _ = app_handle.emit(&format!("acp://session-models/{}", log_id), m);
+    }
+    if let Some(m) = modes {
+        if let Ok(mut cache) = current_mode_id.lock() { *cache = Some(m.current_mode_id.clone()); }
+        let _ = app_handle.emit(&format!("acp://session-modes/{}", log_id), m);
+    }
+    if let Some(c) = caps {
+        let _ = app_handle.emit(&format!("acp://session-capabilities/{}", log_id), c);
+    }
+}
+
+/// Emit Tauri events for a parsed server response. Updates per-session current model/mode IDs.
 /// Returns the native ACP session ID when a SpawnOk message is processed, None otherwise.
 fn handle_server_message(
     msg: MaestroRpcMessage,
     log_id: i32,
     app_handle: &tauri::AppHandle,
-    models_cache: &Arc<std::sync::Mutex<Option<SessionModelState>>>,
-    modes_cache: &Arc<std::sync::Mutex<Option<SessionModeState>>>,
-    capabilities_cache: &Arc<std::sync::Mutex<Option<PromptCapabilitiesInfo>>>,
+    current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
+    current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
     pending_file_search: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
     pending_file_read: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
-    session_capabilities: &Arc<std::sync::Mutex<SessionCapabilitiesCache>>,
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    initialized: &Arc<std::sync::Mutex<bool>>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
-            // Detect CurrentModeUpdate to keep the modes cache current.
+            // Detect CurrentModeUpdate to keep the per-session current_mode_id current.
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str()) == Some("current_mode_update") {
                 if let Some(mode_id) = upd.payload.get("currentModeId").and_then(|v| v.as_str()) {
-                    if let Ok(mut cache) = modes_cache.lock() {
-                        if let Some(state) = cache.as_mut() {
-                            state.current_mode_id = mode_id.to_string();
-                        }
+                    if let Ok(mut m) = current_mode_id.lock() {
+                        *m = Some(mode_id.to_string());
                     }
                     let _ = app_handle.emit(&format!("acp://mode-changed/{}", log_id), mode_id);
                 }
@@ -724,21 +825,12 @@ fn handle_server_message(
             let _ = app_handle.emit(&format!("acp://elicitation-request/{}", log_id), &req);
         }
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(spawn_ok)) => {
-            apply_capabilities_to_caches(
+            emit_session_init_events(
                 spawn_ok.models.as_ref(),
                 spawn_ok.modes.as_ref(),
                 spawn_ok.prompt_capabilities.as_ref(),
-                models_cache,
-                modes_cache,
-                capabilities_cache,
-                app_handle,
-                log_id,
+                log_id, app_handle, current_model_id, current_mode_id,
             );
-            if let Ok(mut caps) = session_capabilities.lock() {
-                caps.supports_session_list = spawn_ok.supports_session_list;
-                caps.supports_session_load = spawn_ok.supports_session_load;
-                caps.supports_session_close = spawn_ok.supports_session_close;
-            }
             let new_native_id = if let Some(native_id) = spawn_ok.acp_session_id {
                 if let Ok(mut cache) = acp_session_id_cache.lock() {
                     *cache = Some(native_id.clone());
@@ -747,36 +839,34 @@ fn handle_server_message(
             } else {
                 None
             };
+            if let Ok(mut init) = initialized.lock() { *init = true; }
             let _ = app_handle.emit("sessions-changed", ());
+            let _ = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ());
             return new_native_id;
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(load_ok)) => {
-            apply_capabilities_to_caches(
+            emit_session_init_events(
                 load_ok.models.as_ref(),
                 load_ok.modes.as_ref(),
                 load_ok.prompt_capabilities.as_ref(),
-                models_cache,
-                modes_cache,
-                capabilities_cache,
-                app_handle,
-                log_id,
+                log_id, app_handle, current_model_id, current_mode_id,
             );
+            if let Ok(mut init) = initialized.lock() { *init = true; }
+            let _ = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ());
         }
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(ok)) => {
-            if let Ok(mut cache) = models_cache.lock() {
-                if let Some(state) = cache.as_mut() {
-                    state.current_model_id = ok.model_id.clone();
-                }
-            }
+            if let Ok(mut m) = current_model_id.lock() { *m = Some(ok.model_id.clone()); }
             let _ = app_handle.emit(&format!("acp://model-changed/{}", log_id), &ok.model_id);
         }
         MaestroRpcMessage::Response(ServerResponse::SetModeOk(ok)) => {
-            if let Ok(mut cache) = modes_cache.lock() {
-                if let Some(state) = cache.as_mut() {
-                    state.current_mode_id = ok.mode_id.clone();
-                }
-            }
+            if let Ok(mut m) = current_mode_id.lock() { *m = Some(ok.mode_id.clone()); }
             let _ = app_handle.emit(&format!("acp://mode-changed/{}", log_id), &ok.mode_id);
+        }
+        MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(ok)) => {
+            let _ = app_handle.emit(
+                &format!("acp://config-changed/{}", log_id),
+                &serde_json::json!({ "config_id": ok.config_id, "value": ok.value }),
+            );
         }
         MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
             if let Ok(mut guard) = pending_file_search.lock() {
@@ -859,33 +949,39 @@ async fn write_to_acp_session_raw(
     Ok(())
 }
 
-fn apply_capabilities_to_caches(
-    models: Option<&SessionModelState>,
-    modes: Option<&SessionModeState>,
-    caps: Option<&PromptCapabilitiesInfo>,
-    models_cache: &std::sync::Mutex<Option<SessionModelState>>,
-    modes_cache: &std::sync::Mutex<Option<SessionModeState>>,
-    capabilities_cache: &std::sync::Mutex<Option<PromptCapabilitiesInfo>>,
-    app_handle: &tauri::AppHandle,
-    log_id: i32,
-) {
-    if let Some(m) = models {
-        if let Ok(mut cache) = models_cache.lock() {
-            *cache = Some(m.clone());
-        }
-        let _ = app_handle.emit(&format!("acp://session-models/{}", log_id), m);
+fn model_state_to_catalog_option(state: &SessionModelState) -> CatalogOption {
+    CatalogOption {
+        id: "model".to_string(),
+        name: "Model".to_string(),
+        description: None,
+        category: "model".to_string(),
+        options: state.available_models.iter().map(|m| CatalogOptionValue {
+            name: m.name.clone(),
+            value: m.model_id.clone(),
+            description: None,
+        }).collect(),
     }
-    if let Some(m) = modes {
-        if let Ok(mut cache) = modes_cache.lock() {
-            *cache = Some(m.clone());
-        }
-        let _ = app_handle.emit(&format!("acp://session-modes/{}", log_id), m);
+}
+
+fn mode_state_to_catalog_option(state: &SessionModeState) -> CatalogOption {
+    CatalogOption {
+        id: "mode".to_string(),
+        name: "Permission mode".to_string(),
+        description: None,
+        category: "mode".to_string(),
+        options: state.available_modes.iter().map(|m| CatalogOptionValue {
+            name: m.name.clone(),
+            value: m.mode_id.clone(),
+            description: None,
+        }).collect(),
     }
-    if let Some(c) = caps {
-        if let Ok(mut cache) = capabilities_cache.lock() {
-            *cache = Some(c.clone());
-        }
-        let _ = app_handle.emit(&format!("acp://session-capabilities/{}", log_id), c);
+}
+
+fn upsert_catalog_option(options: &mut Vec<CatalogOption>, option: CatalogOption) {
+    if let Some(existing) = options.iter_mut().find(|o| o.id == option.id) {
+        *existing = option;
+    } else {
+        options.push(option);
     }
 }
 
@@ -920,28 +1016,35 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
         MaestroRpcMessage::Response(ServerResponse::TurnEnded(r)) => log_id_from_session_id(&r.session_id),
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(r)) => log_id_from_session_id(&r.session_id),
         MaestroRpcMessage::Response(ServerResponse::SetModeOk(r)) => log_id_from_session_id(&r.session_id),
+        MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(r)) => log_id_from_session_id(&r.session_id),
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => log_id_from_session_id(&r.session_id),
         _ => None,
     }
 }
 
-/// Update the agent-level cache when SpawnOk or SessionLoadOk arrives with models/modes.
-/// Looks up both agent_id and project_id from the AcpProcess session by log_id.
+/// Update the agent-level catalog cache from SpawnOk or SessionLoadOk.
+/// Converts models/modes to CatalogOption entries; stores prompt_capabilities and
+/// (SpawnOk only) session_capabilities in the agent cache.
 async fn update_agent_cache_from_response(
     msg: &MaestroRpcMessage,
     app_state: &Arc<crate::db::AppState>,
 ) {
-    let (models, modes, caps) = match msg {
+    let (models, modes, caps, spawn_caps) = match msg {
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
-            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref())
+            let spawn_caps = Some(SessionCapabilitiesInfo {
+                supports_session_list: r.supports_session_list,
+                supports_session_load: r.supports_session_load,
+                supports_session_close: r.supports_session_close,
+            });
+            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), spawn_caps)
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref())
+            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), None)
         }
         _ => return,
     };
 
-    if models.is_none() && modes.is_none() && caps.is_none() {
+    if models.is_none() && modes.is_none() && caps.is_none() && spawn_caps.is_none() {
         return;
     }
 
@@ -964,19 +1067,71 @@ async fn update_agent_cache_from_response(
             .entry((project_id, agent_id.clone()))
             .or_insert_with(AgentCache::default);
         if let Some(m) = models {
-            entry.models = Some(m.clone());
+            upsert_catalog_option(&mut entry.config_options, model_state_to_catalog_option(m));
         }
         if let Some(m) = modes {
-            entry.modes = Some(m.clone());
+            upsert_catalog_option(&mut entry.config_options, mode_state_to_catalog_option(m));
         }
         if let Some(c) = caps {
             entry.prompt_capabilities = Some(c.clone());
+        }
+        if let Some(sc) = spawn_caps {
+            entry.session_capabilities = sc;
         }
     }
     app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
         "project_id": project_id,
         "agent_id": agent_id,
     })).ok();
+}
+
+/// Update the agent-level catalog cache from config_option_update or available_commands_update
+/// SessionUpdate events. Called from the reader task loop alongside update_agent_cache_from_response.
+async fn update_agent_cache_from_session_update(
+    msg: &MaestroRpcMessage,
+    project_id: i32,
+    agent_id: &str,
+    app_state: &Arc<crate::db::AppState>,
+) {
+    let payload = match msg {
+        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => &upd.payload,
+        _ => return,
+    };
+
+    let update_type = match payload.get("sessionUpdate").and_then(|v| v.as_str()) {
+        Some(t) => t,
+        None => return,
+    };
+
+    let mut updated = false;
+
+    if update_type == "config_option_update" {
+        if let Some(options_val) = payload.get("configOptions") {
+            // Deserialize directly into CatalogOption; unknown fields (e.g. currentValue) are ignored.
+            if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(options_val.clone()) {
+                let mut cache_map = app_state.acp.agent_cache.lock().await;
+                let entry = cache_map.entry((project_id, agent_id.to_string())).or_insert_with(AgentCache::default);
+                entry.config_options = options;
+                updated = true;
+            }
+        }
+    } else if update_type == "available_commands_update" {
+        if let Some(commands_val) = payload.get("availableCommands") {
+            if let Ok(commands) = serde_json::from_value::<Vec<CatalogCommand>>(commands_val.clone()) {
+                let mut cache_map = app_state.acp.agent_cache.lock().await;
+                let entry = cache_map.entry((project_id, agent_id.to_string())).or_insert_with(AgentCache::default);
+                entry.available_commands = commands;
+                updated = true;
+            }
+        }
+    }
+
+    if updated {
+        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
+            "project_id": project_id,
+            "agent_id": agent_id,
+        })).ok();
+    }
 }
 
 /// Route a shared-reader message to the correct per-session handler or to
@@ -996,40 +1151,64 @@ async fn handle_shared_server_message(
         oneshot::Sender<Result<(), String>>>>>,
     pending_check_tools: &Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
+    pending_detect_installed: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
+    pending_detect_project: &Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
 ) {
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(log_id) = extract_session_log_id(&msg) {
-        // Update agent-level cache on SpawnOk/SessionLoadOk before dispatching.
+        // Update agent-level cache on SpawnOk/SessionLoadOk and session updates before dispatching.
         update_agent_cache_from_response(&msg, app_state).await;
+        let session_identity = {
+            let sessions = app_state.acp.sessions.lock().await;
+            sessions.get(&log_id).and_then(|s| s.project_id.map(|pid| (s.agent_id_meta.clone(), pid)))
+        };
+        if let Some((ref agent_id, pid)) = session_identity {
+            update_agent_cache_from_session_update(&msg, pid, agent_id, app_state).await;
+        }
 
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
             sessions.get(&log_id).map(|s| (
-                Arc::clone(&s.models),
-                Arc::clone(&s.modes),
-                Arc::clone(&s.prompt_capabilities),
+                Arc::clone(&s.current_model_id),
+                Arc::clone(&s.current_mode_id),
                 Arc::clone(&s.pending_file_search),
                 Arc::clone(&s.pending_file_read),
-                Arc::clone(&s.session_capabilities),
                 Arc::clone(&s.acp_session_id),
                 Arc::clone(&s.replay_buffer),
+                Arc::clone(&s.initialized),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
             ))
         };
-        if let Some((models, modes, caps, pfs, pfr, sess_caps, acp_sid, replay,
+        if let Some((current_model_id, current_mode_id, pfs, pfr, acp_sid, replay, initialized,
                       session_name, agent_id, pid)) = caches {
+            let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
+                ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
+            ));
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
-                &models, &modes, &caps, &pfs, &pfr, &sess_caps, &acp_sid, &replay,
+                &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
             );
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, project_id_val, &agent_id, &native_id, name);
                     }
+                }
+            }
+            if is_init_ok {
+                let mode_id = current_mode_id.lock().ok().and_then(|m| m.clone());
+                if let Some(mode_id) = mode_id {
+                    let session_id = format!("session-{}", log_id);
+                    let set_mode_msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+                        session_id,
+                        mode_id,
+                    }));
+                    let _ = crate::acp::write_to_acp_session(app_state, log_id, &set_mode_msg).await;
                 }
             }
         }
@@ -1067,6 +1246,20 @@ async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
             if let Ok(mut guard) = pending_check_tools.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
+            if let Ok(mut guard) = pending_detect_installed.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(resp)) => {
+            if let Ok(mut guard) = pending_detect_project.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
@@ -1144,6 +1337,26 @@ async fn handle_shared_server_message(
             }
             if !resolved {
                 if let Ok(mut guard) = pending_check_tools.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending_detect_installed.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending_detect_project.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1233,6 +1446,10 @@ fn spawn_shared_reader_task(
         oneshot::Sender<Result<(), String>>>>>,
     pending_check_tools: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
+    pending_detect_installed: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
+    pending_detect_project: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
 ) {
     tokio::spawn(async move {
         let mut source = source;
@@ -1247,6 +1464,8 @@ fn spawn_shared_reader_task(
                 &pending_session_list,
                 &pending_session_close,
                 &pending_check_tools,
+                &pending_detect_installed,
+                &pending_detect_project,
             )
             .await;
         }
@@ -1427,6 +1646,81 @@ pub async fn query_check_tools_via_server(
         .map_err(|_| "CheckTools response channel dropped".to_string())?
 }
 
+/// Send `DetectInstalledAgents` through the running connection server and return the result.
+pub async fn query_detect_installed_via_server(
+    connection_id: Option<i32>,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<DetectInstalledAgentsResponse, String> {
+    let (writer_tx, pending_detect_installed) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers
+            .get(&connection_id)
+            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_detect_installed))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending_detect_installed
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("DetectInstalledAgents already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
+
+    let req = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {}));
+    let bytes = serialize_message(&req)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+        .await
+        .map_err(|_| "DetectInstalledAgents timed out after 30s".to_string())?
+        .map_err(|_| "DetectInstalledAgents response channel dropped".to_string())?
+}
+
+/// Send `DetectProjectAgents` through the running connection server and return the result.
+pub async fn query_detect_project_agents_via_server(
+    connection_id: Option<i32>,
+    cwd: String,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<DetectProjectAgentsResponse, String> {
+    let (writer_tx, pending_detect_project) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers
+            .get(&connection_id)
+            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
+        (server.writer_tx.clone(), Arc::clone(&server.pending_detect_project))
+    };
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending_detect_project
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err("DetectProjectAgents already in progress".to_string());
+        }
+        *guard = Some(tx);
+    }
+
+    let req = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest { cwd }));
+    let bytes = serialize_message(&req)?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
+        .await
+        .map_err(|_| "DetectProjectAgents timed out after 15s".to_string())?
+        .map_err(|_| "DetectProjectAgents response channel dropped".to_string())?
+}
+
 /// Spawn a long-lived maestro-server shared across all sessions for `connection_id`.
 /// Idempotent — returns `Ok(())` if already running.
 /// Uses `TransportTarget` to handle both local subprocess and remote SSH exec channel.
@@ -1477,6 +1771,12 @@ pub async fn spawn_connection_server(
     let pending_check_tools: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<CheckToolsResponse, String>>>>> =
         Arc::new(std::sync::Mutex::new(None));
+    let pending_detect_installed: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let pending_detect_project: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>> =
+        Arc::new(std::sync::Mutex::new(None));
 
     let connection_server = ConnectionServer {
         child,
@@ -1486,6 +1786,8 @@ pub async fn spawn_connection_server(
         pending_session_list: Arc::clone(&pending_session_list),
         pending_session_close: Arc::clone(&pending_session_close),
         pending_check_tools: Arc::clone(&pending_check_tools),
+        pending_detect_installed: Arc::clone(&pending_detect_installed),
+        pending_detect_project: Arc::clone(&pending_detect_project),
     };
 
     // Re-check under lock to avoid double-spawn race.
@@ -1507,6 +1809,8 @@ pub async fn spawn_connection_server(
         pending_session_list,
         pending_session_close,
         pending_check_tools,
+        pending_detect_installed,
+        pending_detect_project,
     );
 
     Ok(())
@@ -1551,14 +1855,21 @@ pub async fn pre_initialize_via_connection_server(
         .map_err(|_| format!("PreInitialize timed out for agent {}", agent_id))?
         .map_err(|_| "PreInitialize response channel dropped".to_string())??;
 
-    // Populate agent-level cache from the warm session's models/modes/capabilities.
+    // Populate agent-level catalog cache from the warm session's models/modes/capabilities.
+    // session_capabilities are not provided by PreInitialize (no SpawnOk), so they are
+    // left at default until the first SpawnOk/SessionLoadOk updates the cache entry.
     if let Some(pid) = project_id {
         if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
-            let cache_entry = AgentCache {
-                models: response.models.clone(),
-                modes: response.modes.clone(),
-                prompt_capabilities: response.prompt_capabilities.clone(),
-            };
+            let mut cache_entry = AgentCache::default();
+            if let Some(m) = &response.models {
+                upsert_catalog_option(&mut cache_entry.config_options, model_state_to_catalog_option(m));
+            }
+            if let Some(m) = &response.modes {
+                upsert_catalog_option(&mut cache_entry.config_options, mode_state_to_catalog_option(m));
+            }
+            if let Some(c) = &response.prompt_capabilities {
+                cache_entry.prompt_capabilities = Some(c.clone());
+            }
             app_state
                 .acp
                 .agent_cache

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { Skeleton } from "@/ui/skeleton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useAcpActivity } from "./activity/useAcpActivity";
@@ -40,6 +41,7 @@ import { useSessionActivityActions } from "@/store/sessionActivityStore";
 
 interface AgentActivityPanelProps {
   sessionKey: number;
+  agentId: string | null;
   isSelected?: boolean;
   onUsageChange?: (usage: UsageState | null) => void;
   onWorkingFilesChange?: (sessionKey: number, files: string[]) => void;
@@ -56,6 +58,7 @@ const WRITE_KINDS = new Set(["edit", "delete", "move", "write_file", "edit_file"
 
 export function AgentActivityPanel({
   sessionKey,
+  agentId,
   isSelected = false,
   onUsageChange,
   onWorkingFilesChange,
@@ -90,10 +93,8 @@ export function AgentActivityPanel({
   const [liveState, liveDispatch] = useAcpActivity(sessionKey);
 
   const {
-    models,
-    modelId,
-    modes,
-    modeId,
+    configOptions,
+    configValues,
     usageState,
     availableCommands,
     promptCapabilities,
@@ -101,7 +102,7 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
-  } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef);
+  } = useAcpSessionLifecycle(sessionKey, selectedProject?.id ?? null, agentId, onUsageChangeRef);
 
   const isReady = !liveState.isInitializing;
   const {
@@ -168,21 +169,9 @@ export function AgentActivityPanel({
     Array<{ item: PermissionResponseItem; insertAt: number }>
   >([]);
 
-  const handleModelChange = useCallback(
-    async (id: string) => {
-      const prev = modelId;
-      try {
-        await api.setAcpModel(sessionKey, id);
-      } catch {
-        await api.setAcpModel(sessionKey, prev).catch(console.error);
-      }
-    },
-    [sessionKey, modelId],
-  );
-
-  const handleModeChange = useCallback(
-    async (id: string) => {
-      await api.setAcpMode(sessionKey, id).catch(console.error);
+  const handleConfigChange = useCallback(
+    async (optionId: string, value: string) => {
+      await api.setAcpConfigOption(sessionKey, optionId, value).catch(console.error);
     },
     [sessionKey],
   );
@@ -340,12 +329,6 @@ export function AgentActivityPanel({
     pendingElicitation,
   ]);
 
-  // 300ms: mark session as responsive
-  useEffect(() => {
-    if (!liveState.isInitializing) return;
-    const timer = setTimeout(() => liveDispatch({ type: "set_initialized" }), 300);
-    return () => clearTimeout(timer);
-  }, [liveState.isInitializing, liveDispatch]);
 
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
@@ -358,10 +341,21 @@ export function AgentActivityPanel({
 
   if (liveState.isInitializing) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Starting agent...
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 p-3 space-y-4">
+          <div className="space-y-2 max-w-[70%]">
+            <Skeleton className="h-3.5 w-48" />
+            <Skeleton className="h-3.5 w-72" />
+            <Skeleton className="h-3.5 w-56" />
+          </div>
+          <Skeleton className="h-9 w-64 rounded-lg" />
+          <div className="space-y-2 max-w-[60%]">
+            <Skeleton className="h-3.5 w-40" />
+            <Skeleton className="h-3.5 w-64" />
+          </div>
+        </div>
+        <div className="px-16 pb-2.5 pt-1">
+          <Skeleton className="h-12 w-full rounded-xl" />
         </div>
       </div>
     );
@@ -428,13 +422,10 @@ export function AgentActivityPanel({
             embeddedContext={promptCapabilities?.embedded_context ?? false}
             logId={sessionKey}
             projectPath={selectedProject?.path ?? null}
-            models={models}
-            modelId={modelId}
-            modes={modes}
-            modeId={modeId}
+            configOptions={configOptions}
+            configValues={configValues}
             usageState={usageState}
-            onModelChange={handleModelChange}
-            onModeChange={handleModeChange}
+            onConfigChange={handleConfigChange}
           />
         </div>
       );

@@ -1,6 +1,21 @@
 // ACP SessionUpdate payload types — frontend-only, not generated from Rust.
 // The backend emits serde_json::Value payloads; these types narrow them.
 
+export type ConfigOptionValue = {
+  name: string;
+  value: string;
+  description?: string;
+};
+
+export type ConfigOption = {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  currentValue: string;
+  options: ConfigOptionValue[];
+};
+
 export type AgentMessageChunk = {
   sessionUpdate: "agent_message_chunk";
   content: { type: "text"; text: string };
@@ -34,9 +49,11 @@ export type ToolCallContent =
 export type ToolCallUpdate = {
   sessionUpdate: "tool_call_update";
   toolCallId: string;
+  title?: string;
   status?: "pending" | "in_progress" | "completed" | "failed" | "error";
   content?: ToolCallContent[];
   locations?: ToolCallLocation[];
+  rawInput?: Record<string, unknown>;
 };
 
 export type PlanEntry = {
@@ -75,6 +92,11 @@ export type UserMessageChunkPayload = {
   content: { type: "text"; text: string };
 };
 
+export type ConfigOptionUpdatePayload = {
+  sessionUpdate: "config_option_update";
+  configOptions: ConfigOption[];
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -83,7 +105,8 @@ export type SessionUpdatePayload =
   | PlanUpdate
   | UserMessagePayload
   | UserMessageChunkPayload
-  | UsageUpdatePayload;
+  | UsageUpdatePayload
+  | ConfigOptionUpdatePayload;
 
 // Accumulated state for rendering
 

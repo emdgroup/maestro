@@ -7,23 +7,10 @@ use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use std::collections::HashSet;
 use crate::db::AppState;
+use crate::acp::PooledSession;
 use crate::models::worktree::{ActiveSessionInfo, SessionListEntryDto};
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpModelInfo {
-    pub model_id: String,
-    pub name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpSessionModelState {
-    pub current_model_id: String,
-    pub available_models: Vec<AcpModelInfo>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -33,11 +20,53 @@ pub struct AcpPromptCapabilities {
     pub audio: bool,
 }
 
-use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentCatalogOptionValue {
+    pub name: String,
+    pub value: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentCatalogOption {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub options: Vec<AgentCatalogOptionValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentCatalogCommand {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentSessionCapabilities {
+    pub supports_session_list: bool,
+    pub supports_session_load: bool,
+    pub supports_session_close: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AgentCacheResponse {
+    pub config_options: Vec<AgentCatalogOption>,
+    pub available_commands: Vec<AgentCatalogCommand>,
+    pub prompt_capabilities: Option<AcpPromptCapabilities>,
+    pub session_capabilities: AgentSessionCapabilities,
+}
+
+use crate::acp::registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry, ProjectAgentMatch};
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest,
     PromptRequest, CancelRequest, InterruptTurnRequest, PermissionResponse,
-    ElicitationResponse, SetModelRequest, SetModeRequest,
+    ElicitationResponse, SetModelRequest, SetModeRequest, SetConfigOptionRequest,
     FileSearchRequest, FileReadRequest,
     SessionListRequest,
     SessionCloseRequest,
@@ -73,25 +102,6 @@ async fn resolve_remote_context(
     Ok((ssh, maestro_path))
 }
 
-/// Read a cached field from a live ACP session and map it to a DTO.
-/// Returns None if the session is not found or the field has not been populated yet.
-async fn get_session_cache<T, U>(
-    app_state: &AppState,
-    log_id: i32,
-    field: impl Fn(&crate::acp::AcpProcess) -> &Arc<std::sync::Mutex<Option<T>>>,
-    map: impl FnOnce(T) -> U,
-) -> Result<Option<U>, String>
-where
-    T: Clone,
-{
-    let arc = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| Arc::clone(field(s)))
-    };
-    let Some(arc) = arc else { return Ok(None) };
-    let cloned = arc.lock().map_err(|e| format!("Lock poisoned: {e}"))?.clone();
-    Ok(cloned.map(map))
-}
 
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 /// Used for file search and file read operations.
@@ -117,6 +127,33 @@ async fn session_file_rpc<T>(
         .await
         .map_err(|_| "File operation timed out".to_string())?
         .map_err(|_| "File operation response channel closed".to_string())?
+}
+
+/// Spawn a pooled session for the given agent using the running connection server.
+/// The session is stored in `app_state.acp.session_pool` and hidden from the active
+/// sessions list until claimed by the user creating a session for that agent.
+pub async fn spawn_pooled_session(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    connection_id: Option<i32>,
+    agent_id: &str,
+    cwd: &str,
+) {
+    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let session_id = session_id_for(log_id);
+
+    let spawned = crate::acp::try_spawn_via_connection_server(
+        connection_id, Some(project_id), agent_id, cwd, &session_id,
+        None, None, None, None, None,
+        log_id, app_state,
+    ).await;
+
+    if matches!(spawned, Ok(true)) {
+        app_state.acp.session_pool.lock().await.insert(
+            (project_id, agent_id.to_string()),
+            PooledSession { log_id, session_id },
+        );
+    }
 }
 
 /// Launch a new ACP agent session via maestro-server subprocess.
@@ -161,6 +198,30 @@ pub async fn spawn_acp_session(
                 ).ok()
             })
     });
+
+    // Pool claim: if a session was pre-warmed for this agent, reuse it instantly.
+    {
+        let mut pool = app_state.acp.session_pool.lock().await;
+        if let Some(pooled) = pool.remove(&(project_id, agent_id.clone())) {
+            // Update metadata that wasn't known at warmup time.
+            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&pooled.log_id) {
+                proc.session_name = session_name;
+                proc.branch_name = branch_name;
+            }
+            drop(pool);
+
+            // Replenish pool in background using the warmup cwd (same project root).
+            let state = Arc::clone(&*app_state);
+            let aid = agent_id.clone();
+            let pool_cwd = cwd.clone();
+            tokio::spawn(async move {
+                spawn_pooled_session(&state, project_id, connection_id, &aid, &pool_cwd).await;
+            });
+
+            app_state.app_handle.emit("sessions-changed", ()).ok();
+            return Ok(pooled.log_id);
+        }
+    }
 
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
@@ -378,39 +439,6 @@ pub async fn set_acp_model(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-/// Get cached model state for a running ACP session.
-/// Returns None if the session hasn't reported models yet or session not found.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_acp_models(
-    app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
-) -> Result<Option<AcpSessionModelState>, String> {
-    get_session_cache(&app_state, log_id, |s| &s.models, |m| AcpSessionModelState {
-        current_model_id: m.current_model_id,
-        available_models: m.available_models.into_iter().map(|mi| AcpModelInfo {
-            model_id: mi.model_id,
-            name: mi.name,
-            description: mi.description,
-        }).collect(),
-    }).await
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpModeInfo {
-    pub mode_id: String,
-    pub name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpSessionModeState {
-    pub current_mode_id: String,
-    pub available_modes: Vec<AcpModeInfo>,
-}
-
 /// Send a SetMode request to change the active mode for a running ACP session.
 #[tauri::command]
 #[specta::specta]
@@ -427,37 +455,78 @@ pub async fn set_acp_mode(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-/// Get cached mode state for a running ACP session.
-/// Returns None if the session hasn't reported modes yet or session not found.
+/// Send a SetConfigOption request for a running ACP session.
+/// Routes to the appropriate underlying protocol message based on category.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_acp_modes(
+pub async fn set_acp_config_option(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
-) -> Result<Option<AcpSessionModeState>, String> {
-    get_session_cache(&app_state, log_id, |s| &s.modes, |m| AcpSessionModeState {
-        current_mode_id: m.current_mode_id,
-        available_modes: m.available_modes.into_iter().map(|mi| AcpModeInfo {
-            mode_id: mi.mode_id,
-            name: mi.name,
-            description: mi.description,
-        }).collect(),
-    }).await
+    option_id: String,
+    value: String,
+) -> Result<(), String> {
+    let session_id = session_id_for(log_id);
+    let msg = match option_id.as_str() {
+        "model" => MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+            session_id,
+            model_id: value,
+        })),
+        "mode" => MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+            session_id,
+            mode_id: value,
+        })),
+        other => MaestroRpcMessage::Request(ServerRequest::SetConfigOption(SetConfigOptionRequest {
+            session_id,
+            config_id: other.to_string(),
+            value,
+        })),
+    };
+    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-/// Get cached prompt capabilities for a running ACP session.
-/// Returns None if the session hasn't reported capabilities yet or session not found.
+/// Get the full agent-level catalog cache for a (project, agent) pair.
+/// Returns None if the agent has not been warmed up or spawned yet.
+/// Populated from PreInitialize/SpawnOk/SessionLoadOk/config_option_update.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_acp_capabilities(
+pub async fn get_agent_cache(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
-) -> Result<Option<AcpPromptCapabilities>, String> {
-    get_session_cache(&app_state, log_id, |s| &s.prompt_capabilities, |c| AcpPromptCapabilities {
-        embedded_context: c.embedded_context,
-        image: c.image,
-        audio: c.audio,
-    }).await
+    project_id: i32,
+    agent_id: String,
+) -> Result<Option<AgentCacheResponse>, String> {
+    let cache = app_state.acp.agent_cache.lock().await;
+    let entry = match cache.get(&(project_id, agent_id)) {
+        Some(e) => e,
+        None => return Ok(None),
+    };
+    Ok(Some(AgentCacheResponse {
+        config_options: entry.config_options.iter().map(|o| AgentCatalogOption {
+            id: o.id.clone(),
+            name: o.name.clone(),
+            description: o.description.clone(),
+            category: o.category.clone(),
+            options: o.options.iter().map(|v| AgentCatalogOptionValue {
+                name: v.name.clone(),
+                value: v.value.clone(),
+                description: v.description.clone(),
+            }).collect(),
+        }).collect(),
+        available_commands: entry.available_commands.iter().map(|c| AgentCatalogCommand {
+            name: c.name.clone(),
+            description: c.description.clone(),
+        }).collect(),
+        prompt_capabilities: entry.prompt_capabilities.as_ref().map(|c| AcpPromptCapabilities {
+            embedded_context: c.embedded_context,
+            image: c.image,
+            audio: c.audio,
+        }),
+        session_capabilities: AgentSessionCapabilities {
+            supports_session_list: entry.session_capabilities.supports_session_list,
+            supports_session_load: entry.session_capabilities.supports_session_load,
+            supports_session_close: entry.session_capabilities.supports_session_close,
+        },
+    }))
+
 }
 
 // ── Preflight ────────────────────────────────────────────────────────────────
@@ -516,6 +585,12 @@ pub async fn preflight_connection(
                     .ok_or_else(|| {
                         format!("No active SSH session for connection_id {}. Connect first.", conn_id)
                     })?;
+                let deploy_lock = {
+                    let mut locks = app_state.acp.deploy_locks.lock().await;
+                    locks.entry(conn_id).or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))).clone()
+                };
+                let _deploy_guard = deploy_lock.lock().await;
+                // Re-check cache: background prefetch may have populated it while we waited.
                 let cached_path = app_state
                     .acp
                     .discovery_cache
@@ -575,9 +650,38 @@ pub async fn preflight_connection(
         }
     }
 
-    let agents = crate::acp::query_list_agents_via_connection_server(connection_id, &app_state)
+    let all_agents = crate::acp::query_list_agents_via_connection_server(connection_id, &app_state)
         .await
         .unwrap_or_default();
+
+    // Detect which agent tools are actually installed on this host.
+    let detected = crate::acp::manager::query_detect_installed_via_server(connection_id, &app_state)
+        .await
+        .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
+            agents: Vec::new(),
+            all_checked_ids: Vec::new(),
+        });
+
+    // Build lookup maps from detection result.
+    let detected_tool_names: std::collections::HashMap<String, String> = detected
+        .agents
+        .iter()
+        .map(|d| (d.agent_id.clone(), d.tool_name.clone()))
+        .collect();
+    let detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
+
+    // Only show agents positively detected as installed. Agents without a detection entry
+    // (npx/uvx-only tools with no local binary or config) are treated as not installed.
+    let agents: Vec<DiscoveredAgent> = all_agents
+        .into_iter()
+        .filter(|a| detected_ids.contains(&a.id))
+        .map(|mut a| {
+            if let Some(tool_name) = detected_tool_names.get(&a.id) {
+                a.name = tool_name.clone();
+            }
+            a
+        })
+        .collect();
 
     let mut tools_to_check: Vec<String> = agents
         .iter()
@@ -634,6 +738,33 @@ pub async fn preflight_connection(
     })
 }
 
+/// Detect which agent tools have configuration markers in the given project directory.
+/// Used to suggest a default agent when opening a project.
+/// Requires the connection server to be running (call `preflight_connection` first).
+#[tauri::command]
+#[specta::specta]
+pub async fn detect_project_agents(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: Option<i32>,
+    cwd: String,
+) -> Result<Vec<ProjectAgentMatch>, String> {
+    let response = crate::acp::manager::query_detect_project_agents_via_server(
+        connection_id,
+        cwd,
+        &app_state,
+    )
+    .await?;
+
+    Ok(response
+        .agents
+        .into_iter()
+        .map(|a| ProjectAgentMatch {
+            agent_id: a.agent_id,
+            markers_found: a.markers_found,
+        })
+        .collect())
+}
+
 /// Run agent discovery and store result in the AppState cache.
 /// Fire-and-forget safe: returns silently on errors (result stored with error field set).
 /// Called at SSH connect time (connection_id = Some) and on-demand from `discover_agents` IPC.
@@ -644,6 +775,16 @@ pub async fn prefetch_agent_discovery(
     connection_id: Option<i32>,
     known_maestro_path: Option<String>,
 ) {
+    // Registry is stable (changes only on agent install/uninstall).
+    // If preflight already populated the cache, skip redundant fetch.
+    {
+        let cache = app_state.acp.discovery_cache.lock().await;
+        if let Some(entry) = cache.get(&connection_id) {
+            if !entry.result.agents.is_empty() {
+                return;
+            }
+        }
+    }
     match connection_id {
         Some(conn_id) => {
             // Fast path: route through already-running connection server — no new process spawn.
@@ -675,10 +816,23 @@ pub async fn prefetch_agent_discovery(
             let maestro_path = if let Some(p) = known_maestro_path {
                 Some(p)
             } else {
-                crate::acp::deploy::ensure_remote_server(&ssh, &app_state.app_handle, conn_id)
-                    .await
-                    .ok()
-                    .map(|r| r.path)
+                let deploy_lock = {
+                    let mut locks = app_state.acp.deploy_locks.lock().await;
+                    locks.entry(conn_id).or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))).clone()
+                };
+                let _deploy_guard = deploy_lock.lock().await;
+                // Re-check cache: preflight may have populated it while we waited.
+                let cached = app_state.acp.discovery_cache.lock().await
+                    .get(&Some(conn_id))
+                    .and_then(|e| e.maestro_server_path.clone());
+                if let Some(p) = cached {
+                    Some(p)
+                } else {
+                    crate::acp::deploy::ensure_remote_server(&ssh, &app_state.app_handle, conn_id)
+                        .await
+                        .ok()
+                        .map(|r| r.path)
+                }
             };
             let Some(path) = maestro_path else {
                 app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), AgentDiscoveryCacheEntry {
@@ -834,23 +988,39 @@ pub async fn get_active_sessions(
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
 
-    // ACP sessions
-    {
+    // ACP sessions — collect session data first, then look up agent cache separately
+    // to avoid holding two tokio::Mutex locks simultaneously (deadlock risk).
+    let pooled_log_ids: HashSet<i32> = {
+        let pool = app_state.acp.session_pool.lock().await;
+        pool.values().map(|p| p.log_id).collect()
+    };
+    let acp_session_data: Vec<_> = {
         let acp = app_state.acp.sessions.lock().await;
-        for (key, proc) in acp.iter() {
-            let caps = proc.session_capabilities.lock()
-                .map(|c| c.clone())
+        acp.iter()
+            .filter(|(key, _)| !pooled_log_ids.contains(key))
+            .map(|(key, proc)| {
+                let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
+                (*key, proc.session_name.clone(), proc.agent_id_meta.clone(),
+                 proc.started_at.clone(), proc.task_id, proc.task_name.clone(),
+                 proc.branch_name.clone(), native_id, proc.project_id)
+            }).collect()
+    };
+    {
+        let agent_cache = app_state.acp.agent_cache.lock().await;
+        for (key, session_name, agent_id, started_at, task_id, task_name, branch_name, native_id, project_id) in acp_session_data {
+            let caps = project_id
+                .and_then(|pid| agent_cache.get(&(pid, agent_id.clone())))
+                .map(|e| e.session_capabilities.clone())
                 .unwrap_or_default();
-            let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
             sessions.push(ActiveSessionInfo {
-                session_key: *key,
-                session_name: proc.session_name.clone(),
-                agent_id: Some(proc.agent_id_meta.clone()),
+                session_key: key,
+                session_name,
+                agent_id: Some(agent_id),
                 execution_mode: "acp".to_string(),
-                started_at: proc.started_at.clone(),
-                task_id: proc.task_id,
-                task_name: proc.task_name.clone(),
-                branch_name: proc.branch_name.clone(),
+                started_at,
+                task_id,
+                task_name,
+                branch_name,
                 acp_session_id: native_id,
                 supports_session_list: caps.supports_session_list,
                 supports_session_load: caps.supports_session_load,
@@ -1123,14 +1293,48 @@ pub async fn load_acp_session(
     Ok(log_id)
 }
 
-// ── Agent models cache ────────────────────────────────────────────────────────
+/// Re-emit model/mode state from AcpProcess fields and agent cache.
+/// Called during drain for buffered sessions so the frontend gets correct config values
+/// even if SpawnOk's direct emissions were lost (frontend not mounted at spawn time).
+async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
+    let (model_id, mode_id, project_id, agent_id) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let Some(session) = sessions.get(&log_id) else { return };
+        (
+            session.current_model_id.lock().ok().and_then(|m| m.clone()),
+            session.current_mode_id.lock().ok().and_then(|m| m.clone()),
+            session.project_id,
+            session.agent_id_meta.clone(),
+        )
+    };
+    let Some(pid) = project_id else { return };
+    let cache = app_state.acp.agent_cache.lock().await.get(&(pid, agent_id)).cloned();
+    let Some(cache) = cache else { return };
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentModelsCache {
-    pub agent_id: String,
-    pub models: Vec<AcpModelInfo>,
-    pub fetched_at: String,
+    if let Some(model_opt) = cache.config_options.iter().find(|o| o.id == "model") {
+        let current = model_id.unwrap_or_else(|| {
+            model_opt.options.first().map(|v| v.value.clone()).unwrap_or_default()
+        });
+        let payload = serde_json::json!({
+            "current_model_id": current,
+            "available_models": model_opt.options.iter().map(|v| serde_json::json!({
+                "model_id": v.value, "name": v.name
+            })).collect::<Vec<_>>(),
+        });
+        let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), &payload);
+    }
+    if let Some(mode_opt) = cache.config_options.iter().find(|o| o.id == "mode") {
+        let current = mode_id.unwrap_or_else(|| {
+            mode_opt.options.first().map(|v| v.value.clone()).unwrap_or_default()
+        });
+        let payload = serde_json::json!({
+            "current_mode_id": current,
+            "available_modes": mode_opt.options.iter().map(|v| serde_json::json!({
+                "mode_id": v.value, "name": v.name
+            })).collect::<Vec<_>>(),
+        });
+        let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), &payload);
+    }
 }
 
 #[tauri::command]
@@ -1152,34 +1356,25 @@ pub async fn drain_acp_replay(
         let mut buf = replay_arc
             .lock()
             .map_err(|e| format!("Lock poisoned: {}", e))?;
-        buf.take().unwrap_or_default()
+        buf.take()
     };
-    for payload in buffered {
-        let _ = app_state.app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
+    if let Some(events) = buffered {
+        let is_initialized = {
+            let sessions = app_state.acp.sessions.lock().await;
+            sessions.get(&log_id)
+                .and_then(|s| s.initialized.lock().ok().map(|g| *g))
+                .unwrap_or(false)
+        };
+        for payload in events {
+            let _ = app_state.app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
+        }
+        if is_initialized {
+            emit_init_events_from_session(log_id, &app_state).await;
+            let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
+        }
+        // If not initialized: spawn-ok fires directly when SpawnOk/SessionLoadOk arrives
     }
     Ok(())
-}
-
-/// Get cached models for an agent from the in-memory AgentCache.
-/// Returns None if no session has been spawned for this agent yet.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_cached_agent_models(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    agent_id: String,
-) -> Result<Option<AgentModelsCache>, String> {
-    let cache = app_state.acp.agent_cache.lock().await;
-    let entry = cache.get(&(project_id, agent_id.clone()));
-    Ok(entry.and_then(|e| e.models.as_ref()).map(|state| AgentModelsCache {
-        agent_id: agent_id.clone(),
-        models: state.available_models.iter().map(|m| AcpModelInfo {
-            model_id: m.model_id.clone(),
-            name: m.name.clone(),
-            description: m.description.clone(),
-        }).collect(),
-        fetched_at: chrono::Utc::now().to_rfc3339(),
-    }))
 }
 
 

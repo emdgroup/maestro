@@ -7,7 +7,7 @@ import { Bot } from "lucide-react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import {
   useAgentDiscoveryQuery,
-  useCachedAgentModelsQuery,
+  useAgentCacheQuery,
 } from "@/services/execution.service";
 import { showSuccessToast } from "./ErrorToast";
 
@@ -38,7 +38,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
     const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId);
-    const { data: modelsCache, isLoading: cacheLoading } = useCachedAgentModelsQuery(
+    const { data: agentCache, isLoading: cacheLoading } = useAgentCacheQuery(
       projectId,
       selectedAgent || null,
     );
@@ -58,7 +58,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       setValue("default_model", "");
     };
 
-    const availableModels = modelsCache?.models ?? [];
+    const availableModels = agentCache?.config_options.find((o) => o.id === "model")?.options ?? [];
 
     const onSubmit = async (data: ProjectSettingsFormData) => {
       try {
@@ -184,7 +184,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                           <SelectContent>
                             <SelectItem value="">Agent default</SelectItem>
                             {availableModels.map((model) => (
-                              <SelectItem key={model.model_id} value={model.model_id}>
+                              <SelectItem key={model.value} value={model.value}>
                                 {model.name}
                               </SelectItem>
                             ))}

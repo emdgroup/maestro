@@ -10,7 +10,9 @@ use acp::schema::{
     PermissionOptionId, PromptRequest, PromptResponse, ProtocolVersion, ReleaseTerminalRequest,
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
-    SetSessionModelRequest, SetSessionModeRequest, StopReason, TerminalExitStatus,
+    SetSessionConfigOptionRequest, SetSessionModelRequest, SetSessionModeRequest,
+    SessionConfigId, SessionConfigValueId,
+    StopReason, TerminalExitStatus,
     TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
     WaitForTerminalExitResponse,
 };
@@ -23,8 +25,8 @@ use maestro_protocol::{
     ModeInfo as ProtocolModeInfo, ModelInfo as ProtocolModelInfo,
     PermissionRequest as MaestroPermissionRequest, PromptCapabilitiesInfo, ServerResponse,
     SessionListEntry, SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, SessionUpdate, SetModeOkResponse,
-    SetModelOkResponse, TurnEnded,
+    SessionModelState as ProtocolSessionModelState, SessionUpdate, SetConfigOptionOkResponse,
+    SetModeOkResponse, SetModelOkResponse, TurnEnded,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -525,6 +527,29 @@ async fn run_command_loop(
                     )),
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetMode failed: {}", e),
+                    })),
+                };
+                let _ = send_response(&so, &msg).await;
+            }
+            SessionCommand::SetConfigOption { config_id, value } => {
+                let result = cx
+                    .send_request(SetSessionConfigOptionRequest::new(
+                        session_id.clone(),
+                        SessionConfigId::new(config_id.clone()),
+                        SessionConfigValueId::new(value.clone()),
+                    ))
+                    .block_task()
+                    .await;
+                let msg = match result {
+                    Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(
+                        SetConfigOptionOkResponse {
+                            session_id: maestro_sid.clone(),
+                            config_id,
+                            value,
+                        },
+                    )),
+                    Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: format!("SetConfigOption failed: {}", e),
                     })),
                 };
                 let _ = send_response(&so, &msg).await;

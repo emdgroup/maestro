@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import type { SshConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
@@ -29,7 +29,6 @@ interface sshConnectionManagerProps {
  */
 export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionManagerProps) {
   const [username, setUsername] = useState("");
-  const [connections, setConnections] = useState<Connection[]>([]);
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,9 +62,10 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     [],
   );
 
-  useEffect(() => {
-    setConnections([local.current, ...sshConnections.map(buildConnection)]);
-  }, [sshConnections, buildConnection]);
+  const connections = useMemo(
+    () => [local.current, ...sshConnections.map(buildConnection)],
+    [sshConnections, buildConnection],
+  );
 
   const keyMap = new Map<string, boolean>();
   for (const conn of sshConnections) {

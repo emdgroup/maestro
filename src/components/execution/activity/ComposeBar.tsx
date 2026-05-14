@@ -11,18 +11,11 @@ import { createPortal } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import type { JsonValue } from "@/types/bindings";
-import type { AvailableCommand, UsageState } from "./types";
-import type { ModeOption } from "./useAcpSessionLifecycle";
+import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { MentionEntry } from "./MentionEntry";
 import { LiquidContextIndicator } from "./LiquidContextIndicator";
-
-export interface ModelOption {
-  id: string;
-  label: string;
-}
-
+import { ConfigSelector } from "./config-selectors/ConfigSelector";
 
 interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
@@ -32,13 +25,10 @@ interface ComposeBarProps {
   embeddedContext?: boolean;
   logId?: number | null;
   projectPath?: string | null;
-  models: ModelOption[];
-  modelId: string;
-  modes: ModeOption[];
-  modeId: string;
+  configOptions: ConfigOption[];
+  configValues: Record<string, string>;
   usageState: UsageState | null;
-  onModelChange: (id: string) => void;
-  onModeChange: (id: string) => void;
+  onConfigChange: (optionId: string, value: string) => void;
 }
 
 export interface ComposeBarHandle {
@@ -84,13 +74,10 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     embeddedContext = false,
     logId,
     projectPath,
-    models,
-    modelId,
-    modes,
-    modeId,
+    configOptions,
+    configValues,
     usageState,
-    onModelChange,
-    onModeChange,
+    onConfigChange,
   },
   ref,
 ) {
@@ -302,11 +289,13 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab" && e.shiftKey && modes.length > 0) {
+    const modeOption = configOptions.find((o) => o.category === "mode");
+    if (e.key === "Tab" && e.shiftKey && modeOption && modeOption.options.length > 0) {
       e.preventDefault();
-      const idx = modes.findIndex((m) => m.id === modeId);
-      const next = (Math.max(idx, 0) + 1) % modes.length;
-      onModeChange(modes[next].id);
+      const currentModeValue = configValues[modeOption.id] ?? modeOption.currentValue;
+      const idx = modeOption.options.findIndex((o) => o.value === currentModeValue);
+      const next = (Math.max(idx, 0) + 1) % modeOption.options.length;
+      onConfigChange(modeOption.id, modeOption.options[next].value);
       return;
     }
 
@@ -601,7 +590,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={sendDisabled}
-                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
                 title="Send (Enter)"
               >
                 <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
@@ -616,42 +605,15 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
               onCompact={isProcessing ? undefined : () => onSend("/compact")}
             />
 
-            {models.length > 0 && (
-              <Select
-                value={modelId}
-                onValueChange={(v) => v && onModelChange(v)}
+            {configOptions.map((opt) => (
+              <ConfigSelector
+                key={opt.id}
+                option={opt}
+                value={configValues[opt.id] ?? opt.currentValue}
+                onChange={(v) => onConfigChange(opt.id, v)}
                 disabled={isProcessing}
-              >
-                <SelectTrigger className="h-auto data-[size=default]:h-auto py-0.5 pl-1.5 pr-1 text-[11px] w-auto border-transparent bg-transparent shadow-none text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors [&_svg]:size-3 disabled:opacity-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {models.map((m) => (
-                    <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {modes.length > 0 && (
-              <Select
-                value={modeId}
-                onValueChange={(v) => v && onModeChange(v)}
-                disabled={isProcessing}
-              >
-                <SelectTrigger className="h-auto data-[size=default]:h-auto py-0.5 pl-1.5 pr-1 text-[11px] w-auto border-transparent bg-transparent shadow-none text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors [&_svg]:size-3 disabled:opacity-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {modes.map((m) => (
-                    <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+              />
+            ))}
           </div>
         </div>
       </div>
