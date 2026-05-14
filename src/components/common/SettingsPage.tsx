@@ -136,7 +136,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                 {agent.icon && (
                                   <img
                                     src={agent.icon}
-                                    className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                                    className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
                                     onError={(e) => {
                                       (e.currentTarget as HTMLImageElement).style.display = "none";
                                     }}

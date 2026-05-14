@@ -83,16 +83,14 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         )}
       </div>
       {(!message.isStreaming || !isActivelyStreaming) && (
-        <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            type="button"
-            onClick={handleCopyMessage}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground"
-            aria-label={messageCopied ? "Copied" : "Copy response"}
-          >
-            {messageCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleCopyMessage}
+          className="sticky bottom-[58px] float-right -mt-5 p-1 rounded text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
+          aria-label={messageCopied ? "Copied" : "Copy response"}
+        >
+          {messageCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
       )}
     </div>
   );

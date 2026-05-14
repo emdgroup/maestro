@@ -32,21 +32,17 @@ use tokio::sync::Mutex;
 
 use file_ops::{handle_file_read, handle_file_search};
 use session_handler::{
-    create_session_on_connection, ensure_agent_cache, load_acp_session,
+    create_session_on_connection, load_acp_session,
     load_session_on_connection, pre_initialize_agent, run_session_close, run_session_list,
     session_close_on_connection, session_list_on_connection, spawn_acp_session,
 };
 use sessions::{AgentConnectionMap, SessionCommand, SessionMap};
 
-const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-
 async fn resolve_agent_spawn_params(
     agent_id: &str,
-    agent_cache: &mut Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)>,
-    registry: &AcpRegistry,
+    agents: &[registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
-    let agents = ensure_agent_cache(agent_cache, CACHE_TTL, registry).await;
     match agents.iter().find(|a| a.id == agent_id) {
         Some(a) => Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone())),
         None => {
@@ -93,12 +89,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdin = tokio::io::stdin();
     let mut sessions: SessionMap = HashMap::new();
     let mut agent_connections: AgentConnectionMap = HashMap::new();
-    let mut agent_cache: Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)> =
-        None;
 
     let registry: AcpRegistry = tokio::task::spawn_blocking(registry::load_registry)
         .await
-        .unwrap_or_else(|_| registry::parse_backup_registry());
+        .unwrap_or_else(|_| registry::load_registry());
+    let agents_with_spawn: Vec<registry::DiscoveredAgentWithSpawn> = registry::discover_agents(&registry);
 
     // Validate the protocol version handshake before entering the main dispatch loop.
     let first_msg = match read_message(&mut stdin).await {
@@ -169,8 +164,6 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
         match msg {
             MaestroRpcMessage::Request(ServerRequest::ListAgents(_req)) => {
-                let agents_with_spawn =
-                    ensure_agent_cache(&mut agent_cache, CACHE_TTL, &registry).await;
                 let agents: Vec<DiscoveredAgent> = agents_with_spawn
                     .iter()
                     .map(|a| DiscoveredAgent {
@@ -202,7 +195,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     .await
                 } else {
                     let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
                     else { continue; };
                     spawn_acp_session(
                         &spawn_cmd,
@@ -454,7 +447,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     session_list_on_connection(conn, &req.cwd, req.cursor).await
                 } else {
                     let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
                     else { continue; };
                     run_session_list(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.cursor).await
                 };
@@ -497,7 +490,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     .await
                 } else {
                     let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
                     else { continue; };
                     load_acp_session(
                         &spawn_cmd,
@@ -539,7 +532,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     session_close_on_connection(conn, req.session_id).await
                 } else {
                     let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
                     else { continue; };
                     run_session_close(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.session_id).await
                 };
@@ -578,7 +571,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Request(ServerRequest::PreInitialize(req)) => {
                 let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                    resolve_agent_spawn_params(&req.agent_id, &mut agent_cache, &registry, &stdout).await
+                    resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
                 else { continue; };
                 match pre_initialize_agent(
                     &spawn_cmd,

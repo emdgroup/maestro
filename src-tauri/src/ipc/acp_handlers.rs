@@ -650,38 +650,7 @@ pub async fn preflight_connection(
         }
     }
 
-    let all_agents = crate::acp::query_list_agents_via_connection_server(connection_id, &app_state)
-        .await
-        .unwrap_or_default();
-
-    // Detect which agent tools are actually installed on this host.
-    let detected = crate::acp::manager::query_detect_installed_via_server(connection_id, &app_state)
-        .await
-        .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
-            agents: Vec::new(),
-            all_checked_ids: Vec::new(),
-        });
-
-    // Build lookup maps from detection result.
-    let detected_tool_names: std::collections::HashMap<String, String> = detected
-        .agents
-        .iter()
-        .map(|d| (d.agent_id.clone(), d.tool_name.clone()))
-        .collect();
-    let detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
-
-    // Only show agents positively detected as installed. Agents without a detection entry
-    // (npx/uvx-only tools with no local binary or config) are treated as not installed.
-    let agents: Vec<DiscoveredAgent> = all_agents
-        .into_iter()
-        .filter(|a| detected_ids.contains(&a.id))
-        .map(|mut a| {
-            if let Some(tool_name) = detected_tool_names.get(&a.id) {
-                a.name = tool_name.clone();
-            }
-            a
-        })
-        .collect();
+    let (agents, _) = fetch_and_filter_agents(connection_id, &app_state).await;
 
     let mut tools_to_check: Vec<String> = agents
         .iter()
@@ -767,6 +736,43 @@ pub async fn detect_project_agents(
 
 /// Run agent discovery and store result in the AppState cache.
 /// Fire-and-forget safe: returns silently on errors (result stored with error field set).
+/// Fetch all agents from registry, detect which are installed on the target host,
+/// filter to installed-only, and override display names with tool names from the detection table.
+/// Returns (filtered_agents, error). On ListAgents RPC failure returns empty + error string.
+async fn fetch_and_filter_agents(
+    connection_id: Option<i32>,
+    app_state: &Arc<AppState>,
+) -> (Vec<DiscoveredAgent>, Option<String>) {
+    let result = crate::acp::query_list_agents_via_connection_server(connection_id, app_state).await;
+    let (all_agents, list_error) = match result {
+        Ok(a) => (a, None),
+        Err(e) => return (Vec::new(), Some(e)),
+    };
+
+    let detected = crate::acp::manager::query_detect_installed_via_server(connection_id, app_state)
+        .await
+        .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
+            agents: Vec::new(),
+            all_checked_ids: Vec::new(),
+        });
+
+    let detected_tool_names: std::collections::HashMap<String, String> = detected
+        .agents.iter().map(|d| (d.agent_id.clone(), d.tool_name.clone())).collect();
+    let detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
+
+    let agents = all_agents.into_iter()
+        .filter(|a| detected_ids.contains(&a.id))
+        .map(|mut a| {
+            if let Some(tool_name) = detected_tool_names.get(&a.id) {
+                a.name = tool_name.clone();
+            }
+            a
+        })
+        .collect();
+
+    (agents, list_error)
+}
+
 /// Called at SSH connect time (connection_id = Some) and on-demand from `discover_agents` IPC.
 /// For local discovery (connection_id = None), called on first `discover_agents` query.
 /// `known_maestro_path`: skip `ensure_remote_server` when caller already has the path.
@@ -794,12 +800,8 @@ pub async fn prefetch_agent_discovery(
                     let cache = app_state.acp.discovery_cache.try_lock().ok();
                     cache.and_then(|c| c.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone()))
                 });
-                let result = crate::acp::query_list_agents_via_connection_server(Some(conn_id), &app_state).await;
-                let maestro_server_available = result.is_ok();
-                let (agents, error) = match result {
-                    Ok(a) => (a, None),
-                    Err(e) => (Vec::new(), Some(e)),
-                };
+                let (agents, error) = fetch_and_filter_agents(Some(conn_id), &app_state).await;
+                let maestro_server_available = error.is_none();
                 let entry = AgentDiscoveryCacheEntry {
                     result: AgentDiscoveryResult { maestro_server_available, agents, error },
                     maestro_server_path: maestro_path,
@@ -849,9 +851,8 @@ pub async fn prefetch_agent_discovery(
             ).await.is_err() {
                 return;
             }
-            let result = crate::acp::query_list_agents_via_connection_server(Some(conn_id), &app_state).await;
-            let maestro_server_available = result.is_ok();
-            let (agents, error) = match result { Ok(a) => (a, None), Err(e) => (Vec::new(), Some(e)) };
+            let (agents, error) = fetch_and_filter_agents(Some(conn_id), &app_state).await;
+            let maestro_server_available = error.is_none();
             app_state.acp.discovery_cache.lock().await.insert(Some(conn_id), AgentDiscoveryCacheEntry {
                 result: AgentDiscoveryResult { maestro_server_available, agents, error },
                 maestro_server_path: Some(path),
@@ -872,8 +873,7 @@ pub async fn prefetch_agent_discovery(
                 .await.is_err() {
                 return;
             }
-            let result = crate::acp::query_list_agents_via_connection_server(None, &app_state).await;
-            let (agents, error) = match result { Ok(a) => (a, None), Err(e) => (Vec::new(), Some(e)) };
+            let (agents, error) = fetch_and_filter_agents(None, &app_state).await;
             app_state.acp.discovery_cache.lock().await.insert(None, AgentDiscoveryCacheEntry {
                 result: AgentDiscoveryResult { maestro_server_available: true, agents, error },
                 maestro_server_path: None,

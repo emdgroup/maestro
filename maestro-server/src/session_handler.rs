@@ -32,7 +32,6 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::agent;
-use crate::registry;
 use crate::send_response;
 use crate::sessions::{ActiveSession, AgentCapabilities, AgentConnection, SessionCommand, SessionRouter, SharedSessionState, TerminalHandle};
 use crate::terminal::handle_create_terminal;
@@ -382,22 +381,6 @@ pub(crate) async fn handle_prompt_result(
     let _ = send_response(stdout, &msg).await;
 }
 
-pub(crate) async fn ensure_agent_cache(
-    cache: &mut Option<(std::time::Instant, Vec<registry::DiscoveredAgentWithSpawn>)>,
-    ttl: std::time::Duration,
-    reg: &maestro_protocol::AcpRegistry,
-) -> Vec<registry::DiscoveredAgentWithSpawn> {
-    let needs_refresh = cache
-        .as_ref()
-        .map(|(ts, _)| ts.elapsed() > ttl)
-        .unwrap_or(true);
-    if !needs_refresh {
-        return cache.as_ref().unwrap().1.clone();
-    }
-    let agents = registry::discover_agents(reg).await;
-    *cache = Some((std::time::Instant::now(), agents.clone()));
-    agents
-}
 
 pub(crate) fn convert_acp_models(
     acp_models: Option<&acp::schema::SessionModelState>,

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { X, RotateCcw, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import {
   useSessionListQuery,
   useLoadAcpSessionMutation,
@@ -71,7 +71,7 @@ export function SessionHistoryPanel({
   );
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col bg-card border-l border-border">
+    <div className="absolute inset-0 z-30 flex flex-col bg-card border-l border-border">
       <div className="h-10 flex items-center justify-between px-4 border-b border-border shrink-0">
         <span className="text-sm font-medium">Session History</span>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
@@ -83,7 +83,26 @@ export function SessionHistoryPanel({
         <div className="px-4 py-2 border-b border-border shrink-0">
           <Select value={selectedAgentId ?? ""} onValueChange={(v) => v && setSelectedAgentId(v)}>
             <SelectTrigger className="h-8 text-sm">
-              <SelectValue placeholder="Select agent" />
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const agent = agents.find((a) => a.id === selectedAgentId);
+                  if (!agent) return <span>Select agent</span>;
+                  return (
+                    <>
+                      {agent.icon && (
+                        <img
+                          src={agent.icon}
+                          className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      )}
+                      <span>{agent.name}</span>
+                    </>
+                  );
+                })()}
+              </div>
             </SelectTrigger>
             <SelectContent>
               {agents.map((agent) => (
@@ -92,7 +111,7 @@ export function SessionHistoryPanel({
                     {agent.icon && (
                       <img
                         src={agent.icon}
-                        className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                        className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
                         onError={(e) => {
                           (e.currentTarget as HTMLImageElement).style.display = "none";
                         }}
@@ -166,7 +185,7 @@ export function SessionHistoryPanel({
                   );
                 }}
                 className={cn(
-                  "w-full text-left px-4 py-3 hover:bg-muted/20 transition-colors",
+                  "w-full text-left px-4 py-3 hover:bg-muted/20 transition-colors overflow-hidden",
                   loadMutation.isPending && "opacity-50 cursor-not-allowed",
                 )}
               >

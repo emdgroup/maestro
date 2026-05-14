@@ -20,6 +20,8 @@
 
 @import "tailwindcss" source("../src");
 
+@variant dark (&:where(.dark, .dark *));
+
 @plugin "tailwindcss-animate";
 
 /* shadcn/ui CSS Variables (light mode) - warm gray theme for reduced eye strain */
@@ -243,6 +245,19 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.selected-session-item {
+  background: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--accent) 28%, transparent),
+    color-mix(in oklch, var(--accent) 8%, transparent) 55%,
+    transparent
+  );
+}
+
+.selected-session-item .session-item-name {
+  color: oklch(from var(--accent) calc(l + 0.15) c h);
 }
 
 .shimmer-thinking-icon {

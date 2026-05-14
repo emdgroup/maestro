@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { Skeleton } from "@/ui/skeleton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -9,7 +9,7 @@ import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
-import { ActivityUserMessage } from "./activity/ActivityUserMessage";
+import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityFileCard } from "./activity/ActivityFileCard";
@@ -110,9 +110,13 @@ export function AgentActivityPanel({
     chatContentRef,
     showScrollFab,
     hasUnread,
+    lastUserMsgRef,
     handleWheel,
     handleChatScroll,
     scrollToBottom,
+    isLastUserMsgPinned,
+    scrollToLastUserMsg,
+    resetPinned,
   } = useAcpScrollBehavior(isReady);
 
   useEffect(() => {
@@ -339,23 +343,41 @@ export function AgentActivityPanel({
 
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
 
+  const lastUserMessage = useMemo(() => {
+    for (let i = agentSections.length - 1; i >= 0; i--) {
+      const s = agentSections[i];
+      if (s.type === "standalone" && s.item.type === "solo" && s.item.item.type === "userMessage") {
+        return s.item.item.item;
+      }
+    }
+    return null;
+  }, [agentSections]);
+
+  useEffect(() => {
+    resetPinned();
+  }, [lastUserMessage?.id, resetPinned]);
+
   if (liveState.isInitializing) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 p-3 space-y-4">
-          <div className="space-y-2 max-w-[70%]">
-            <Skeleton className="h-3.5 w-48" />
-            <Skeleton className="h-3.5 w-72" />
-            <Skeleton className="h-3.5 w-56" />
-          </div>
-          <Skeleton className="h-9 w-64 rounded-lg" />
-          <div className="space-y-2 max-w-[60%]">
-            <Skeleton className="h-3.5 w-40" />
-            <Skeleton className="h-3.5 w-64" />
+        <div className="flex-1 p-3 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <Skeleton className="w-7 h-7 rounded-lg shrink-0" />
+            <div className="flex-1 min-w-0 space-y-3">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-[70%]" />
+                <Skeleton className="h-4 w-[45%]" />
+              </div>
+              <Skeleton className="h-9 w-56 rounded-lg" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-[55%]" />
+                <Skeleton className="h-4 w-[35%]" />
+              </div>
+            </div>
           </div>
         </div>
         <div className="px-16 pb-2.5 pt-1">
-          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-[72px] w-full rounded-2xl" />
         </div>
       </div>
     );
@@ -452,7 +474,12 @@ export function AgentActivityPanel({
                 if (section.type === "standalone") {
                   const gi = section.item;
                   if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-                  return <ActivityUserMessage key={gi.item.item.id} message={gi.item.item} />;
+                  const isLast = gi.item.item.id === lastUserMessage?.id;
+                  return (
+                    <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
+                      <ActivityUserMessage message={gi.item.item} />
+                    </div>
+                  );
                 }
 
                 const { items, showConnector } = section;
@@ -539,6 +566,30 @@ export function AgentActivityPanel({
           {planOverlay && (
             <div className="absolute inset-0 z-30 flex flex-col bg-background">{planOverlay}</div>
           )}
+
+          <AnimatePresence>
+            {isLastUserMsgPinned && lastUserMessage && (
+              <motion.button
+                key="pinned-user-msg"
+                type="button"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                onClick={scrollToLastUserMsg}
+                className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-[4px] bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
+                aria-label="Scroll to last message"
+              >
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center flex-shrink-0">
+                  <User className="w-2.5 h-2.5 text-accent/70" />
+                </div>
+                <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
+                  {parseUserContent(lastUserMessage.content).text}
+                </span>
+                <ChevronUp className="w-3 h-3 text-muted-foreground flex-shrink-0 opacity-50" />
+              </motion.button>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence>
             {showScrollFab && (

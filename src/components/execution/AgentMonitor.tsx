@@ -49,6 +49,7 @@ interface AgentMonitorProps {
   onOpenTerminal?: (session: ActiveSessionInfo) => void;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
+  agentNames?: Record<string, string>;
   projectId?: number;
 }
 
@@ -61,6 +62,7 @@ export function AgentMonitor({
   onOpenTerminal,
   onClose,
   agentIcons,
+  agentNames,
   projectId,
 }: AgentMonitorProps) {
   const activityStatuses = useActivityStatuses();
@@ -172,20 +174,20 @@ export function AgentMonitor({
                   key={session.session_key}
                   onClick={() => onSelect(session.session_key)}
                   className={cn(
-                    "group px-3 py-3 cursor-pointer border-l-2 transition-colors",
+                    "group px-3 py-3 cursor-pointer transition-colors",
                     session.session_key === selectedSessionKey
-                      ? "border-ring bg-muted/20"
-                      : "border-transparent hover:bg-muted/10",
+                      ? "selected-session-item"
+                      : "hover:bg-muted/10",
                   )}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
                       className={cn(
                         "inline-block w-2 h-2 rounded-full shrink-0",
                         getStatusDot(session, activityStatuses[session.session_key]),
                       )}
                     />
-                    <span className="text-sm font-medium truncate">
+                    <span className="session-item-name text-sm font-medium truncate">
                       {session.session_name ??
                         session.task_name ??
                         session.branch_name ??
@@ -200,15 +202,15 @@ export function AgentMonitor({
                         agentIcons?.[session.agent_id] && (
                           <AgentIcon
                             src={agentIcons[session.agent_id]}
-                            className="w-3 h-3 rounded-sm brightness-0 dark:invert"
+                            className="w-3 h-3 rounded-sm dark:[filter:invert(1)]"
                           />
                         )}
                       {session.execution_mode === "acp"
                         ? session.agent_id
-                          ? session.agent_id
+                          ? (agentNames?.[session.agent_id] ?? session.agent_id
                               .split(/[-_]/)
                               .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                              .join(" ")
+                              .join(" "))
                           : "ACP"
                         : "Terminal"}
                     </Badge>
@@ -230,15 +232,15 @@ export function AgentMonitor({
       <div className="flex-1 flex flex-col min-w-0 relative">
         {selectedSession && (
           <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
                   {selectedSession.execution_mode === "acp" &&
                     selectedSession.agent_id &&
                     agentIcons?.[selectedSession.agent_id] && (
                       <AgentIcon
                         src={agentIcons[selectedSession.agent_id]}
-                        className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                        className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
                       />
                     )}
                   {renamingKey === selectedSession.session_key ? (
@@ -254,8 +256,8 @@ export function AgentMonitor({
                       onBlur={() => commitRename(selectedSession)}
                     />
                   ) : (
-                    <div className="group flex items-center gap-1.5">
-                      <h3 className="text-sm font-semibold truncate">
+                    <div className="group flex items-center gap-1.5 min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%_-_3rem),transparent)]">
                         {selectedSession.session_name ??
                           selectedSession.task_name ??
                           selectedSession.branch_name ??
@@ -289,7 +291,7 @@ export function AgentMonitor({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {selectedSession.execution_mode === "acp" && (
                   <>
                     <Button

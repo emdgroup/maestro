@@ -39,6 +39,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const agentIcons: Record<string, string> = Object.fromEntries(
     visibleAgents.filter((a) => a.icon).map((a) => [a.id, a.icon]),
   );
+  const agentNames: Record<string, string> = Object.fromEntries(
+    visibleAgents.map((a) => [a.id, a.name]),
+  );
   const lastAcpAgentId =
     [...sessions].reverse().find((s) => s.execution_mode === "acp")?.agent_id ?? null;
 
@@ -106,6 +109,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           search={search}
           onSpawn={() => setShowSpawnDialog(true)}
           agentIcons={agentIcons}
+          agentNames={agentNames}
           onClose={handleCloseSession}
           projectId={projectId}
           onOpenTerminal={(session) => {

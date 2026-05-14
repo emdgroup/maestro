@@ -27,7 +27,7 @@ export function ModeSelector({ option, value, onChange, disabled }: SelectorProp
       value={value}
       onChange={onChange}
       disabled={disabled}
-      contentClassName="w-56"
+      contentClassName="w-64"
       triggerContent={
         <>
           <TriggerIcon className="size-3 shrink-0" />

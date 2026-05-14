@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Terminal as TerminalIcon } from "lucide-react";
 import { generateSessionName } from "@/lib/generateSessionName";
 import { api } from "@/lib/tauri-utils";
 import {
@@ -134,10 +135,39 @@ export function SpawnSessionDialog({
               }}
             >
               <SelectTrigger id="spawn-type">
-                <SelectValue />
+                <div className="flex items-center gap-2">
+                  {sessionType === "terminal" ? (
+                    <>
+                      <TerminalIcon className="w-4 h-4 shrink-0" />
+                      <span>Terminal</span>
+                    </>
+                  ) : (() => {
+                    const agent = visibleAgents.find((a) => a.id === sessionType);
+                    if (!agent) return <span>{sessionType}</span>;
+                    return (
+                      <>
+                        {agent.icon && (
+                          <img
+                            src={agent.icon}
+                            className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        )}
+                        <span>{agent.name}</span>
+                      </>
+                    );
+                  })()}
+                </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="terminal">Terminal</SelectItem>
+                <SelectItem value="terminal">
+                  <div className="flex items-center gap-2">
+                    <TerminalIcon className="w-4 h-4 shrink-0" />
+                    Terminal
+                  </div>
+                </SelectItem>
                 {discoveryLoading && (
                   <SelectItem value="_loading" disabled>
                     Checking available agents...
@@ -170,7 +200,7 @@ export function SpawnSessionDialog({
                         {agent.icon && (
                           <img
                             src={agent.icon}
-                            className="w-4 h-4 rounded-sm shrink-0 brightness-0 dark:invert"
+                            className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display = "none";
                             }}
