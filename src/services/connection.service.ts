@@ -256,7 +256,7 @@ export function useSshConnectionStatus(connectionId: number) {
   const query = useQuery({
     queryKey: connectionQueryKeys.status(connectionId),
     queryFn: () => api.getSshConnectionStatus(connectionId),
-    refetchInterval: 8000,
+    refetchInterval: 15000,
     staleTime: 0,
     gcTime: 0,
   });

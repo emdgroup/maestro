@@ -17,7 +17,7 @@ export function ConfigSelector({ option, value, onChange, disabled }: ConfigSele
       return <ModelSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
     case "mode":
       return <ModeSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
-    case "thought_level":
+    case "effort":
       return <EffortSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
     default:
       return <GenericSelector option={option} value={value} onChange={onChange} disabled={disabled} />;

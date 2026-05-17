@@ -7,9 +7,11 @@ pub mod transport;
 pub use manager::{AcpProcess, AcpProcessParams, AcpTransportWriter,
     SessionCapabilitiesInfo, CatalogOption, CatalogOptionValue, CatalogCommand,
     ConnectionServer, AgentCache, AgentCacheMap, TransportTarget, PooledSession,
+    RestorableSession,
     spawn_acp_session_cold, load_acp_session_cold, write_to_acp_session,
     spawn_connection_server, pre_initialize_via_connection_server,
     try_spawn_via_connection_server, query_session_list_via_server,
     query_session_close_via_server, query_check_tools_via_server,
-    query_list_agents_via_connection_server};
+    query_list_agents_via_connection_server,
+    resolve_remote_context, try_session_load_via_connection_server, restore_acp_sessions};
 pub use registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};

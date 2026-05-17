@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -12,15 +14,27 @@ export const worktreeQueryKeys = {
 };
 
 /**
- * Query hook for fetching worktrees with status for a project.
- * Polls every 5 seconds for live updates in the Worktrees view.
+ * Event-driven worktree list. Refreshes on "worktrees-changed" Tauri event.
  */
 export function useWorktreesQuery(projectId: number | undefined, repoPath: string | undefined) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("worktrees-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [queryClient]);
+
   return useQuery({
     queryKey: worktreeQueryKeys.list(projectId ?? 0),
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),
     enabled: projectId != null && repoPath != null,
-    refetchInterval: 5000,
   });
 }
 
@@ -37,8 +51,8 @@ export function useWorktreeDiffQuery(
     queryKey: worktreeQueryKeys.diff(worktreePath ?? "", diffTarget),
     queryFn: () => api.getWorktreeDiff(projectId!, worktreePath!, diffTarget),
     enabled: projectId != null && worktreePath != null,
-    refetchInterval: 5000,
-    staleTime: 2000,
+    refetchInterval: 10000,
+    staleTime: 4000,
   });
 }
 
@@ -104,7 +118,7 @@ export function useCleanupZombieWorktreesMutation() {
 /**
  * Mutation hook for staging files in a worktree.
  * Stages specific files (git add) and/or applies a patch (git apply --cached).
- * No automatic query invalidation — the 5s polling interval handles refresh.
+ * No automatic query invalidation — diff query polling handles refresh.
  */
 export function useStageWorktreeFilesMutation() {
   return useMutation({

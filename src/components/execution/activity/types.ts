@@ -39,6 +39,7 @@ export type ToolCallCreated = {
   status?: "pending" | "in_progress" | "completed" | "error";
   content?: ToolCallContent[];
   locations?: ToolCallLocation[];
+  rawInput?: Record<string, unknown>;
 };
 
 export type ToolCallContent =
@@ -136,6 +137,7 @@ export type ToolCallItem = {
   status: "pending" | "in_progress" | "completed" | "error";
   content: ToolCallContent[];
   locations: ToolCallLocation[];
+  rawInput?: Record<string, unknown>;
 };
 
 export type PermissionResponseItem = {
@@ -161,6 +163,7 @@ export type ActivityItem =
 export type ActivityState = {
   items: ActivityItem[];
   toolCallMap: Map<string, ToolCallItem>;
+  lastUserMessageId: string | null;
   plan: PlanEntry[] | null;
   planTitle: string | null;
   isInitializing: boolean;
@@ -176,6 +179,7 @@ export type AvailableCommand = {
 export const INITIAL_ACTIVITY_STATE: ActivityState = {
   items: [],
   toolCallMap: new Map(),
+  lastUserMessageId: null,
   plan: null,
   planTitle: null,
   isInitializing: true,

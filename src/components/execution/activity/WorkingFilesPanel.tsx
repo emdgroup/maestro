@@ -2,12 +2,97 @@ import { useState, useEffect, useMemo } from "react";
 import { FileText, X, Copy, Check, FileCode } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
-import { MarkdownBlock } from "./MarkdownBlock";
+import { MarkdownBlock, SvgBlock, MermaidBlock, CodeBlockWrapper } from "./MarkdownBlock";
 
 interface WorkingFilesPanelProps {
   files: string[];
   sessionKey: number;
   onClose: () => void;
+}
+
+type FileViewType = "markdown" | "svg" | "mermaid" | "code" | "html" | "plain" | "image";
+
+const EXT_TO_LANG: Record<string, string> = {
+  ".json": "json",
+  ".yaml": "yaml",
+  ".yml": "yaml",
+  ".toml": "toml",
+  ".xml": "xml",
+  ".css": "css",
+  ".sql": "sql",
+  ".sh": "bash",
+  ".bash": "bash",
+  ".py": "python",
+  ".js": "javascript",
+  ".ts": "typescript",
+  ".rs": "rust",
+};
+
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
+function getFileViewType(path: string): FileViewType {
+  const dot = path.lastIndexOf(".");
+  const ext = dot !== -1 ? path.slice(dot).toLowerCase() : "";
+  if (ext === ".md") return "markdown";
+  if (ext === ".svg") return "svg";
+  if (ext === ".mmd" || ext === ".mermaid") return "mermaid";
+  if (ext === ".html") return "html";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (ext === ".txt" || ext === ".log" || ext === ".csv" || ext === ".tsv") return "plain";
+  if (ext in EXT_TO_LANG) return "code";
+  return "plain";
+}
+
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+function FileContentView({ content, viewType, path }: { content: string; viewType: FileViewType; path: string }) {
+  const dot = path.lastIndexOf(".");
+  const ext = dot !== -1 ? path.slice(dot).toLowerCase() : "";
+  const lang = EXT_TO_LANG[ext] ?? "text";
+
+  switch (viewType) {
+    case "markdown":
+      return <MarkdownBlock text={content} />;
+    case "svg":
+      return <SvgBlock code={content} />;
+    case "mermaid":
+      return <MermaidBlock code={content} />;
+    case "html":
+      return (
+        <iframe
+          srcDoc={content}
+          sandbox="allow-scripts"
+          className="w-full h-full border-0 bg-white rounded-md"
+          title={path.split("/").pop()}
+        />
+      );
+    case "plain":
+      return (
+        <pre className="text-xs font-mono whitespace-pre-wrap break-words text-foreground/80">
+          {content}
+        </pre>
+      );
+    case "code":
+      return <CodeBlockWrapper code={content} lang={lang} />;
+    case "image": {
+      const mime = IMAGE_MIME[ext] ?? "image/png";
+      return (
+        <img
+          src={`data:${mime};base64,${content}`}
+          alt={path.split("/").pop() ?? ""}
+          className="max-w-full rounded-md"
+        />
+      );
+    }
+    default:
+      return null;
+  }
 }
 
 export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPanelProps) {
@@ -37,20 +122,26 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
       : cwd ? `${cwd}/${selectedFile}` : null
     : null;
 
+  const viewType = selectedFile ? getFileViewType(selectedFile) : null;
+  const isBinary = viewType === "image";
+
   useEffect(() => {
     if (!relativePath) return;
     setLoading(true);
     setContent(null);
     setLoadError(null);
-    api.readSessionFile(sessionKey, relativePath).then((text) => {
+    const loader = isBinary
+      ? api.readSessionFileBinary(sessionKey, relativePath)
+      : api.readSessionFile(sessionKey, relativePath);
+    loader.then((data) => {
       setLoading(false);
-      setContent(text);
+      setContent(data);
     }).catch((err) => {
       console.error(err);
       setLoadError(String(err));
       setLoading(false);
     });
-  }, [relativePath, sessionKey]);
+  }, [relativePath, sessionKey, isBinary]);
 
   function copyPath() {
     if (!absolutePath) return;
@@ -109,18 +200,21 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
 
         {/* Content viewer */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 overflow-auto px-6 py-5 text-sm custom-scrollbar">
+          <div className={cn(
+            "flex-1 overflow-auto text-sm custom-scrollbar",
+            viewType === "html" ? "p-0" : "px-6 py-5",
+          )}>
             {loading && (
               <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
             )}
-            {!loading && content === null && !selectedFile && (
+            {!loading && !selectedFile && (
               <div className="text-xs text-muted-foreground">No file selected</div>
             )}
-            {!loading && content === null && selectedFile && loadError && (
+            {!loading && selectedFile && loadError && (
               <div className="text-xs text-destructive">{loadError}</div>
             )}
-            {!loading && content !== null && (
-              <MarkdownBlock text={content} />
+            {!loading && content !== null && viewType !== null && (
+              <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />
             )}
           </div>
 

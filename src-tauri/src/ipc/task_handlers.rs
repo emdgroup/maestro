@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use chrono::Utc;
 use crate::models::{Task, TaskRelationship, TaskInstruction, TASK_SELECT};
 use crate::db::AppState;
@@ -77,7 +77,9 @@ pub fn create_task(
     base_branch: String,
 ) -> Result<Task, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    create_task_impl(&conn, project_id, name, description, acceptance_criteria, skills, base_branch)
+    let task = create_task_impl(&conn, project_id, name, description, acceptance_criteria, skills, base_branch)?;
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
 }
 
 /// Update a task's status or other fields
@@ -154,6 +156,7 @@ pub fn update_task(
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
+    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
 
@@ -208,8 +211,10 @@ pub fn archive_task(
     .map_err(|e| e.to_string())?;
 
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())
+    let task = conn.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| e.to_string())?;
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
 }
 
 /// Delete a task by id
@@ -219,6 +224,7 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])
         .map_err(|e| e.to_string())?;
+    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(())
 }
 

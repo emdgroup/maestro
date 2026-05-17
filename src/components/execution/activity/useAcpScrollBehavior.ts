@@ -11,10 +11,12 @@ export type AcpScrollBehaviorResult = {
   handleChatScroll: () => void;
   scrollToBottom: (behavior?: ScrollBehavior) => void;
   scrollToLastUserMsg: () => void;
-  resetPinned: () => void;
 };
 
-export function useAcpScrollBehavior(isReady: boolean): AcpScrollBehaviorResult {
+export function useAcpScrollBehavior(
+  isReady: boolean,
+  lastUserMessageId: string | null,
+): AcpScrollBehaviorResult {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
@@ -60,35 +62,41 @@ export function useAcpScrollBehavior(isReady: boolean): AcpScrollBehaviorResult 
     const msgEl = lastUserMsgRef.current;
     if (!scrollEl || !msgEl) return;
     scrollingToMsgRef.current = true;
+    setIsLastUserMsgPinned(false);
     const top = msgEl.offsetTop - 10;
     scrollEl.scrollTo({ top, behavior: "smooth" });
     atBottomRef.current = false;
     setShowScrollFab(true);
   }, []);
 
-  const resetPinned = useCallback(() => {
-    setIsLastUserMsgPinned(false);
-  }, []);
-
   useEffect(() => {
+    setIsLastUserMsgPinned(false);
     const scrollEl = chatScrollRef.current;
     const msgEl = lastUserMsgRef.current;
-    if (!scrollEl || !msgEl) {
-      setIsLastUserMsgPinned(false);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const rootRect = entry.rootBounds;
-        const isAbove = rootRect && entry.boundingClientRect.bottom < rootRect.top + 10;
-        setIsLastUserMsgPinned(!entry.isIntersecting && !!isAbove);
-      },
-      { root: scrollEl, threshold: 0 },
-    );
-    observer.observe(msgEl);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, lastUserMsgRef.current]);
+    if (!scrollEl || !msgEl) return;
+
+    let observerCleanup: (() => void) | null = null;
+    const frameId = requestAnimationFrame(() => {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (scrollingToMsgRef.current) {
+            setIsLastUserMsgPinned(false);
+            return;
+          }
+          const rootRect = entry.rootBounds;
+          const isAbove = rootRect && entry.boundingClientRect.bottom < rootRect.top + 10;
+          setIsLastUserMsgPinned(!entry.isIntersecting && !!isAbove);
+        },
+        { root: scrollEl, threshold: 0 },
+      );
+      observer.observe(msgEl);
+      observerCleanup = () => observer.disconnect();
+    });
+    return () => {
+      cancelAnimationFrame(frameId);
+      observerCleanup?.();
+    };
+  }, [isReady, lastUserMessageId]);
 
   // ResizeObserver: auto-scroll when content grows if already at bottom
   useEffect(() => {
@@ -118,6 +126,5 @@ export function useAcpScrollBehavior(isReady: boolean): AcpScrollBehaviorResult 
     handleChatScroll,
     scrollToBottom,
     scrollToLastUserMsg,
-    resetPinned,
   };
 }

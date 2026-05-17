@@ -1092,6 +1092,22 @@ async readSessionFile(logId: number, relativePath: string) : Promise<Result<stri
 }
 },
 /**
+ * Read a binary file from the project and return it as a base64-encoded string.
+ * 
+ * For local sessions, reads directly from disk.
+ * For remote SSH sessions, downloads via SFTP to a local cache under `app_data_dir/working_file_cache/`
+ * and returns base64-encoded content. Subsequent calls for the same file return the cached copy.
+ * Files larger than 5 MB are rejected.
+ */
+async readSessionFileBinary(logId: number, relativePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_session_file_binary", { logId, relativePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Return metadata for a running ACP session needed to scope a session diff.
  */
 async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, string>> {

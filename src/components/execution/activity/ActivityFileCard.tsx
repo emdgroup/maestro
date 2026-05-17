@@ -14,7 +14,7 @@ export function ActivityFileCard({ variant, fileNames, onClick }: ActivityFileCa
 
   const title = isWorkingFiles ? "Working Files Updated" : "Files Changed";
   const subtitle = isWorkingFiles
-    ? `${count} plan file${count !== 1 ? "s" : ""} created`
+    ? `${count} working file${count !== 1 ? "s" : ""} updated`
     : `${count} file${count !== 1 ? "s" : ""} modified in this session`;
 
   const basenames = fileNames.map((f) => f.split("/").pop() ?? f);

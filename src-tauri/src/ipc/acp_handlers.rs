@@ -78,30 +78,6 @@ fn session_id_for(log_id: i32) -> String {
     format!("session-{}", log_id)
 }
 
-/// Resolve SSH session + maestro-server path for a remote connection.
-/// Errors with user-readable messages if either is missing.
-async fn resolve_remote_context(
-    app_state: &AppState,
-    conn_id: i32,
-) -> Result<(crate::ssh::RemoteSshSession, String), String> {
-    let maestro_path = app_state
-        .acp
-        .discovery_cache
-        .lock()
-        .await
-        .get(&Some(conn_id))
-        .and_then(|e| e.maestro_server_path.clone())
-        .ok_or_else(|| {
-            format!("maestro-server path not cached for connection {conn_id}. Reconnect to refresh.")
-        })?;
-    let ssh = app_state
-        .ssh
-        .get_session(conn_id)
-        .await
-        .ok_or_else(|| format!("No active SSH session for connection_id {conn_id}. Connect first."))?;
-    Ok((ssh, maestro_path))
-}
-
 
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 /// Used for file search and file read operations.
@@ -953,6 +929,109 @@ pub async fn read_session_file(
     .await
 }
 
+/// Read a binary file from the project and return it as a base64-encoded string.
+///
+/// For local sessions, reads directly from disk.
+/// For remote SSH sessions, downloads via SFTP to a local cache under `app_data_dir/working_file_cache/`
+/// and returns base64-encoded content. Subsequent calls for the same file return the cached copy.
+/// Files larger than 5 MB are rejected.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_session_file_binary(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    relative_path: String,
+) -> Result<String, String> {
+    if relative_path.starts_with('/') || relative_path.contains("..") {
+        return Err("Invalid path: must be relative and contain no '..'".to_string());
+    }
+
+    let (cwd, connection_id) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let s = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+        (s.cwd.clone(), s.connection_id)
+    };
+
+    const MAX_BINARY_SIZE: u64 = 5 * 1024 * 1024;
+
+    let bytes = match connection_id {
+        None => {
+            let full_path = std::path::Path::new(&cwd).join(&relative_path);
+            let metadata = tokio::fs::metadata(&full_path)
+                .await
+                .map_err(|e| format!("Cannot stat file: {e}"))?;
+            if metadata.len() > MAX_BINARY_SIZE {
+                return Err(format!("File too large ({} bytes, max 5 MB)", metadata.len()));
+            }
+            tokio::fs::read(&full_path)
+                .await
+                .map_err(|e| format!("Cannot read file: {e}"))?
+        }
+        Some(conn_id) => {
+            let cache_dir = app_state.app_data_dir
+                .join("working_file_cache")
+                .join(log_id.to_string());
+
+            // Use a hash of the relative path to avoid filesystem collisions
+            // while preserving the extension for human readability.
+            let path_hash = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                relative_path.hash(&mut h);
+                h.finish()
+            };
+            let ext = std::path::Path::new(&relative_path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("bin");
+            let cache_path = cache_dir.join(format!("{path_hash}.{ext}"));
+
+            if cache_path.exists() {
+                tokio::fs::read(&cache_path)
+                    .await
+                    .map_err(|e| format!("Cannot read cached file: {e}"))?
+            } else {
+                let session = app_state
+                    .ssh
+                    .get_session(conn_id)
+                    .await
+                    .ok_or_else(|| format!("No active SSH session for connection {conn_id}"))?;
+                let remote_path = format!("{}/{}", cwd.trim_end_matches('/'), relative_path);
+                tokio::fs::create_dir_all(&cache_dir)
+                    .await
+                    .map_err(|e| format!("Cannot create cache directory: {e}"))?;
+                let transfer_id = format!("working-file-{log_id}-{path_hash}");
+                crate::ssh::sftp::download_file(
+                    &session,
+                    &remote_path,
+                    &cache_path,
+                    &transfer_id,
+                    &app_state.app_handle,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let downloaded_size = tokio::fs::metadata(&cache_path)
+                    .await
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                if downloaded_size > MAX_BINARY_SIZE {
+                    let _ = tokio::fs::remove_file(&cache_path).await;
+                    return Err(format!("File too large ({downloaded_size} bytes, max 5 MB)"));
+                }
+                tokio::fs::read(&cache_path)
+                    .await
+                    .map_err(|e| format!("Cannot read downloaded file: {e}"))?
+            }
+        }
+    };
+
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct AcpSessionMeta {
@@ -1192,63 +1271,6 @@ pub async fn close_acp_session(
     .await
 }
 
-async fn try_session_load_via_connection_server(
-    connection_id: Option<i32>,
-    project_id: Option<i32>,
-    agent_id: &str,
-    acp_session_id: &str,
-    cwd: &str,
-    session_name: Option<String>,
-    log_id: i32,
-    app_state: &Arc<AppState>,
-) -> Result<bool, String> {
-    use crate::acp::transport::SessionLoadRequest;
-    let writer_tx = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        match servers.get(&connection_id) { Some(s) => s.writer_tx.clone(), None => return Ok(false) }
-    };
-    let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
-        agent_id: agent_id.to_string(),
-        session_id: session_id_for(log_id),
-        resume_session_id: acp_session_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let bytes = crate::acp::manager::serialize_message(&load_msg)?;
-
-    // Register session BEFORE sending request so the shared reader can route
-    // SessionUpdate messages into the replay buffer immediately.
-    // Sending first risks the server replying before the session is in the map,
-    // causing the shared reader to drop all history events silently.
-    let (acp_process, _ctx) = crate::acp::AcpProcess::create(
-        crate::acp::AcpProcessParams {
-            writer: crate::acp::AcpTransportWriter::SharedServer(writer_tx.clone()),
-            child: None,
-            cancel_tx: None,
-            cwd: cwd.to_string(),
-            session_name,
-            agent_id: agent_id.to_string(),
-            project_id,
-            connection_id,
-            task_id: None,
-            task_name: None,
-            branch_name: None,
-            session_start_sha: None,
-            initial_acp_session_id: Some(acp_session_id.to_string()),
-            enable_replay_buffer: true,
-        },
-        log_id,
-        app_state.app_handle.clone(),
-        Arc::clone(app_state),
-    );
-    crate::acp::manager::emit_cached_capabilities(&acp_process, project_id, agent_id, log_id, app_state).await;
-    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
-
-    if writer_tx.send(bytes).await.is_err() {
-        app_state.acp.sessions.lock().await.remove(&log_id);
-        return Err("Connection server writer channel closed".to_string());
-    }
-    Ok(true)
-}
 
 /// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
 #[tauri::command]
@@ -1265,7 +1287,7 @@ pub async fn load_acp_session(
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // Fast path: if a connection server is running, route through shared server.
-    if try_session_load_via_connection_server(
+    if crate::acp::try_session_load_via_connection_server(
         connection_id, project_id, &agent_id, &acp_session_id, &cwd, session_name.clone(), log_id, &app_state,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -1275,7 +1297,7 @@ pub async fn load_acp_session(
     // Cold path: spawn dedicated maestro-server subprocess.
     match connection_id {
         Some(conn_id) => {
-            let (ssh, maestro_path) = resolve_remote_context(&app_state, conn_id).await?;
+            let (ssh, maestro_path) = crate::acp::resolve_remote_context(&app_state, conn_id).await?;
             crate::acp::load_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
                 &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name, Some(conn_id),

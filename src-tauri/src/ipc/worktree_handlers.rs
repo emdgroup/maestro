@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use chrono::{Duration, Utc};
 
 use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult};
@@ -284,6 +284,7 @@ pub async fn create_worktree(
         conn.last_insert_rowid() as i32
     };
 
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(Worktree {
         id: worktree_id,
         project_id,
@@ -348,6 +349,7 @@ pub async fn create_worktree_for_task(
         conn.last_insert_rowid() as i32
     };
 
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok((worktree_id, abs_path))
 }
 
@@ -405,6 +407,7 @@ pub async fn delete_worktree(
         let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
     }
 
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }
 
@@ -523,6 +526,9 @@ pub async fn cleanup_zombie_worktrees(
         0
     };
 
+    if deleted > 0 {
+        app_state.app_handle.emit("worktrees-changed", ()).ok();
+    }
     Ok(deleted)
 }
 
@@ -587,6 +593,7 @@ pub async fn commit_worktree(
 ) -> Result<(), String> {
     let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["commit", "-m", &message]).await?;
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }
 
@@ -638,6 +645,7 @@ pub async fn discard_worktree_changes(
         let _ = std::fs::remove_file(&tmp_path);
         result?;
     }
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }
 
@@ -664,6 +672,7 @@ pub async fn shelve_worktree_changes(
         args.extend(refs);
     }
     crate::git::run_git_in_dir(&git_conn, &worktree_abs, &args).await?;
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }
 
@@ -721,5 +730,6 @@ pub async fn delete_worktree_for_task(
     )
     .map_err(|e| format!("Failed to delete worktree: {}", e))?;
 
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }

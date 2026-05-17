@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use chrono::Utc;
 
 use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult};
@@ -153,6 +153,7 @@ pub async fn request_changes(
         rusqlite::params![&now, task_id],
     ).map_err(|e| format!("Update task status failed: {}", e))?;
 
+    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
 }
 
@@ -214,6 +215,8 @@ pub async fn approve_task_and_merge(
             &branch_name,
         )
         .await?;
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        app_state.app_handle.emit("worktrees-changed", ()).ok();
         Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
     } else if !merge_result.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
@@ -376,8 +379,10 @@ pub async fn reject_review(
 
     // Read back the updated task
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| format!("Failed to read updated task: {}", e))
+    let task = conn.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| format!("Failed to read updated task: {}", e))?;
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
 }
 
 /// Reject merge and move task back to InProgress with conflict feedback
@@ -411,5 +416,6 @@ pub(crate) async fn reject_merge_on_conflict(
     )
     .map_err(|e| format!("Save feedback failed: {}", e))?;
 
+    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(())
 }

@@ -105,6 +105,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::set_acp_config_option,
             crate::ipc::search_session_files,
             crate::ipc::read_session_file,
+            crate::ipc::read_session_file_binary,
             crate::ipc::get_acp_session_meta,
             crate::ipc::get_active_sessions,
             crate::ipc::list_acp_sessions,

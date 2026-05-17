@@ -91,6 +91,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         status: payload.status ?? "pending",
         content: payload.content ?? [],
         locations: payload.locations ?? [],
+        rawInput: payload.rawInput,
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
@@ -107,9 +108,11 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
         const updated = { ...existing };
+        if (payload.title) updated.title = payload.title;
         if (payload.status) updated.status = payload.status === "failed" ? "error" : payload.status;
         if (payload.content) updated.content = payload.content;
         if (payload.locations) updated.locations = payload.locations;
+        if (payload.rawInput) updated.rawInput = payload.rawInput;
         newMap.set(payload.toolCallId, updated);
         const updatedItems = items.map((i) =>
           i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
@@ -138,7 +141,11 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         content: payload.content,
         sentAt: payload.sentAt,
       };
-      return { ...newState, items: [...newState.items, { type: "userMessage", item: userMsg }] };
+      return {
+        ...newState,
+        items: [...newState.items, { type: "userMessage", item: userMsg }],
+        lastUserMessageId: userMsg.id,
+      };
     }
 
     case "user_message_chunk": {
@@ -153,7 +160,11 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         content: payload.content.text,
         sentAt: Date.now(),
       };
-      return { ...newState, items: [...items, { type: "userMessage", item: userMsg }] };
+      return {
+        ...newState,
+        items: [...items, { type: "userMessage", item: userMsg }],
+        lastUserMessageId: userMsg.id,
+      };
     }
 
     default:

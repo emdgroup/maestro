@@ -30,6 +30,18 @@ pub struct PooledSession {
     pub session_id: String,
 }
 
+/// Metadata captured for sessions that were active when the connection server died.
+/// Used to reload them after SSH reconnects via the session/load mechanism.
+pub struct RestorableSession {
+    pub log_id: i32,
+    pub agent_id: String,
+    /// None when the session hadn't received SpawnOk yet — cannot be restored.
+    pub acp_session_id: Option<String>,
+    pub cwd: String,
+    pub session_name: Option<String>,
+    pub project_id: Option<i32>,
+}
+
 /// Write transport for a live ACP session.
 /// Local sessions write to the child process stdin.
 /// Remote sessions send framed bytes to a writer task via mpsc.
@@ -1473,23 +1485,89 @@ fn spawn_shared_reader_task(
         // Server process died — clean up all shared sessions for this connection.
         app_state.acp.connection_servers.lock().await.remove(&connection_id);
 
-        let to_remove: Vec<i32> = {
+        // Pool entries are pre-warmed sessions with no user work — exclude them from the
+        // restorable list so they are not reloaded after reconnect. The pool is also cleared
+        // for this connection so stale entries don't linger; it replenishes naturally after restore.
+        let pool_log_ids: std::collections::HashSet<i32> = {
             let sessions = app_state.acp.sessions.lock().await;
-            sessions
+            let connection_log_ids: std::collections::HashSet<i32> = sessions
                 .iter()
                 .filter(|(_, s)| s.connection_id == connection_id)
                 .map(|(id, _)| *id)
-                .collect()
+                .collect();
+            drop(sessions);
+            let mut pool = app_state.acp.session_pool.lock().await;
+            let ids: std::collections::HashSet<i32> = pool
+                .values()
+                .filter(|p| connection_log_ids.contains(&p.log_id))
+                .map(|p| p.log_id)
+                .collect();
+            pool.retain(|_, p| !ids.contains(&p.log_id));
+            ids
         };
+
+        // Snapshot restorable metadata before removing sessions from the map.
+        // Sessions without an acp_session_id haven't received SpawnOk yet and cannot
+        // be restored — emit session-ended for those immediately.
+        // Pool sessions (pre-warmed, no user work) are silently dropped.
+        let (to_restore, to_end_now): (Vec<RestorableSession>, Vec<i32>) = {
+            let sessions = app_state.acp.sessions.lock().await;
+            let mut restorable: Vec<RestorableSession> = Vec::new();
+            let mut unrestorable: Vec<i32> = Vec::new();
+            for (log_id, s) in sessions.iter().filter(|(_, s)| s.connection_id == connection_id) {
+                if pool_log_ids.contains(log_id) {
+                    // Pre-warmed pool entry — drop silently, no session-ended event needed.
+                    continue;
+                }
+                let acp_session_id = s.acp_session_id.lock().ok().and_then(|g| g.clone());
+                if acp_session_id.is_some() || connection_id.is_none() {
+                    restorable.push(RestorableSession {
+                        log_id: *log_id,
+                        agent_id: s.agent_id_meta.clone(),
+                        acp_session_id,
+                        cwd: s.cwd.clone(),
+                        session_name: s.session_name.clone(),
+                        project_id: s.project_id,
+                    });
+                } else {
+                    unrestorable.push(*log_id);
+                }
+            }
+            (restorable, unrestorable)
+        };
+
+        // Remove all affected sessions from the map (including pool entries).
         {
             let mut sessions = app_state.acp.sessions.lock().await;
-            for log_id in &to_remove {
+            for s in &to_restore {
+                sessions.remove(&s.log_id);
+            }
+            for log_id in &to_end_now {
+                sessions.remove(log_id);
+            }
+            for log_id in &pool_log_ids {
                 sessions.remove(log_id);
             }
         }
-        for log_id in to_remove {
+
+        // Immediately end unrestorable sessions (no acp_session_id yet).
+        for log_id in to_end_now {
             let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
         }
+
+        // For remote connections with restorable sessions, park them for the SSH reconnect
+        // handler to reload. For local connections there is no SSH reconnect path — end them.
+        if let Some(conn_id) = connection_id {
+            if !to_restore.is_empty() {
+                app_state.acp.restorable_sessions.lock().await.insert(conn_id, to_restore);
+                // Don't emit session-ended — the reconnect handler will do so if restore fails.
+            }
+        } else {
+            for s in to_restore {
+                let _ = app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+            }
+        }
+
         app_state.app_handle.emit("sessions-changed", ()).ok();
     });
 }
@@ -1884,4 +1962,145 @@ pub async fn pre_initialize_via_connection_server(
     }
 
     Ok(response)
+}
+
+/// Retrieve the SSH session and cached maestro-server path for a remote connection.
+/// Used by IPC handlers and the session restore path.
+pub async fn resolve_remote_context(
+    app_state: &Arc<crate::db::AppState>,
+    conn_id: i32,
+) -> Result<(crate::ssh::RemoteSshSession, String), String> {
+    let maestro_path = app_state
+        .acp
+        .discovery_cache
+        .lock()
+        .await
+        .get(&Some(conn_id))
+        .and_then(|e| e.maestro_server_path.clone())
+        .ok_or_else(|| {
+            format!("maestro-server path not cached for connection {conn_id}. Reconnect to refresh.")
+        })?;
+    let ssh = app_state
+        .ssh
+        .get_session(conn_id)
+        .await
+        .ok_or_else(|| format!("No active SSH session for connection_id {conn_id}. Connect first."))?;
+    Ok((ssh, maestro_path))
+}
+
+/// Load a session through the shared connection server (fast path).
+/// Returns `Ok(true)` if the server was running and the request was sent.
+/// Returns `Ok(false)` if no connection server exists for this connection.
+pub async fn try_session_load_via_connection_server(
+    connection_id: Option<i32>,
+    project_id: Option<i32>,
+    agent_id: &str,
+    acp_session_id: &str,
+    cwd: &str,
+    session_name: Option<String>,
+    log_id: i32,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<bool, String> {
+    use crate::acp::transport::SessionLoadRequest;
+    let writer_tx = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        match servers.get(&connection_id) {
+            Some(s) => s.writer_tx.clone(),
+            None => return Ok(false),
+        }
+    };
+    let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+        agent_id: agent_id.to_string(),
+        session_id: format!("session-{}", log_id),
+        resume_session_id: acp_session_id.to_string(),
+        cwd: cwd.to_string(),
+    }));
+    let bytes = serialize_message(&load_msg)?;
+
+    // Register session BEFORE sending so the shared reader can route SessionUpdate messages
+    // into the replay buffer immediately — avoids silent drops if the server replies fast.
+    let (acp_process, _ctx) = AcpProcess::create(
+        AcpProcessParams {
+            writer: AcpTransportWriter::SharedServer(writer_tx.clone()),
+            child: None,
+            cancel_tx: None,
+            cwd: cwd.to_string(),
+            session_name,
+            agent_id: agent_id.to_string(),
+            project_id,
+            connection_id,
+            task_id: None,
+            task_name: None,
+            branch_name: None,
+            session_start_sha: None,
+            initial_acp_session_id: Some(acp_session_id.to_string()),
+            enable_replay_buffer: true,
+        },
+        log_id,
+        app_state.app_handle.clone(),
+        Arc::clone(app_state),
+    );
+    emit_cached_capabilities(&acp_process, project_id, agent_id, log_id, app_state).await;
+    app_state.acp.sessions.lock().await.insert(log_id, acp_process);
+
+    if writer_tx.send(bytes).await.is_err() {
+        app_state.acp.sessions.lock().await.remove(&log_id);
+        return Err("Connection server writer channel closed".to_string());
+    }
+    Ok(true)
+}
+
+/// Re-spawn the shared maestro-server for a connection and reload sessions that were
+/// active when it died. Called after SSH successfully reconnects.
+/// Emits `acp://session-ended/{log_id}` for any session that cannot be restored.
+pub async fn restore_acp_sessions(
+    connection_id: i32,
+    app_state: &Arc<crate::db::AppState>,
+) -> Result<(), String> {
+    let (ssh, server_path) = resolve_remote_context(app_state, connection_id).await?;
+
+    spawn_connection_server(
+        Some(connection_id),
+        TransportTarget::Remote { ssh: &ssh, server_path: &server_path },
+        app_state,
+    ).await?;
+
+    let sessions: Vec<RestorableSession> = app_state
+        .acp
+        .restorable_sessions
+        .lock()
+        .await
+        .remove(&connection_id)
+        .unwrap_or_default();
+
+    for s in &sessions {
+        let Some(acp_session_id) = &s.acp_session_id else {
+            let _ = app_state.app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+            continue;
+        };
+
+        let new_log_id = app_state
+            .pty
+            .session_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        match try_session_load_via_connection_server(
+            Some(connection_id),
+            s.project_id,
+            &s.agent_id,
+            acp_session_id,
+            &s.cwd,
+            s.session_name.clone(),
+            new_log_id,
+            app_state,
+        ).await {
+            Ok(true) => {}
+            _ => {
+                let _ = app_state.app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+            }
+        }
+    }
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(())
 }

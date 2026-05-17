@@ -1041,6 +1041,34 @@ pub fn spawn_heartbeat_task(
                             Ok(()) => {
                                 let _ = app_handle.emit("ssh-reconnected", connection_id);
                                 reconnected = true;
+
+                                // Restore any ACP sessions that were active when the
+                                // connection dropped. Runs in background; emits
+                                // acp-sessions-restored when done (success or failure)
+                                // so the frontend can drop the DisconnectBackdrop.
+                                let restore_state = Arc::clone(&app_state);
+                                let restore_handle = app_handle.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = crate::acp::restore_acp_sessions(connection_id, &restore_state).await {
+                                        eprintln!("ACP session restore failed: {e}");
+                                        // Finalize any remaining restorable sessions as ended.
+                                        let remaining: Vec<crate::acp::RestorableSession> = restore_state
+                                            .acp
+                                            .restorable_sessions
+                                            .lock()
+                                            .await
+                                            .remove(&connection_id)
+                                            .unwrap_or_default();
+                                        for s in remaining {
+                                            let _ = restore_state.app_handle.emit(
+                                                &format!("acp://session-ended/{}", s.log_id), ()
+                                            );
+                                        }
+                                        restore_state.app_handle.emit("sessions-changed", ()).ok();
+                                    }
+                                    let _ = restore_handle.emit("acp-sessions-restored", connection_id);
+                                });
+
                                 break;
                             }
                             Err(_) => {
@@ -1050,7 +1078,22 @@ pub fn spawn_heartbeat_task(
                     }
 
                     if !reconnected {
-                        // All attempts exhausted — emit final failure event and stop
+                        // All attempts exhausted — emit final failure event and stop.
+                        // Finalize any restorable sessions as permanently ended.
+                        let remaining: Vec<crate::acp::RestorableSession> = app_state
+                            .acp
+                            .restorable_sessions
+                            .lock()
+                            .await
+                            .remove(&connection_id)
+                            .unwrap_or_default();
+                        let had_restorable = !remaining.is_empty();
+                        for s in remaining {
+                            let _ = app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+                        }
+                        if had_restorable {
+                            app_state.app_handle.emit("sessions-changed", ()).ok();
+                        }
                         let _ = app_handle.emit("ssh-connection-failed", connection_id);
                         *session.state.lock().await = SshConnectionState::Disconnected;
                         break;

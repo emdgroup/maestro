@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -29,16 +31,28 @@ export const taskQueryKeys = {
  */
 
 /**
- * Query hook for fetching all tasks for a project
+ * Event-driven task list. Refreshes on "tasks-changed" Tauri event.
  */
 export function useTasksQuery(projectId: number | null) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("tasks-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [queryClient]);
+
   return useQuery({
     queryKey: taskQueryKeys.list(projectId!),
     queryFn: () => api.getTasks(projectId!),
     enabled: projectId !== null,
-    staleTime: 30000, // 30 seconds—tasks change fairly frequently
-    refetchInterval: 3000, // Poll every 3 seconds for task updates
-    refetchIntervalInBackground: false, // Don't poll when app is in background
+    staleTime: 30000,
     refetchOnWindowFocus: true,
   });
 }

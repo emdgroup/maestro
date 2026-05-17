@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 use crate::project_lock;
 
-use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession};
+use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, RestorableSession};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
@@ -106,6 +106,10 @@ pub struct AcpState {
     /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
     /// connection from running SFTP uploads simultaneously.
     pub deploy_locks: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>,
+    /// Sessions captured at connection server death, awaiting restore after SSH reconnects.
+    /// Keyed by connection_id. Consumed by restore_acp_sessions on successful reconnect,
+    /// or finalized as ended on permanent failure.
+    pub restorable_sessions: tokio::sync::Mutex<HashMap<i32, Vec<RestorableSession>>>,
 }
 
 pub struct PtyState {
@@ -150,6 +154,7 @@ impl AppState {
                 agent_cache: tokio::sync::Mutex::new(HashMap::new()),
                 session_pool: tokio::sync::Mutex::new(HashMap::new()),
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
+                restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

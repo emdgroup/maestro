@@ -77,7 +77,7 @@ describe("useConnectionHealth", () => {
     expect(result.current.maxAttempts).toBe(5);
   });
 
-  it("transitions back to connected on ssh-reconnected event", async () => {
+  it("holds reconnecting state on ssh-reconnected, then connected on acp-sessions-restored", async () => {
     const { result } = renderHook(() => useConnectionHealth(42));
 
     await vi.waitFor(() => {
@@ -91,6 +91,12 @@ describe("useConnectionHealth", () => {
 
     act(() => {
       emitMockEvent("ssh-reconnected", 42);
+    });
+    // Backdrop stays up while ACP sessions restore
+    expect(result.current.state).toBe("reconnecting");
+
+    act(() => {
+      emitMockEvent("acp-sessions-restored", 42);
     });
     expect(result.current.state).toBe("connected");
     expect(result.current.attempt).toBe(0);

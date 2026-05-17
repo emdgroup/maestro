@@ -59,6 +59,13 @@ export function useConnectionHealth(connectionId: number | null): ConnectionHeal
       }),
       listen<number>("ssh-reconnected", (event) => {
         if (event.payload === connectionId) {
+          // Keep "reconnecting" state — backdrop stays up while ACP sessions restore.
+          // acp-sessions-restored will flip us to "connected".
+          setState("reconnecting");
+        }
+      }),
+      listen<number>("acp-sessions-restored", (event) => {
+        if (event.payload === connectionId) {
           setState("connected");
           setAttempt(0);
         }
@@ -71,11 +78,12 @@ export function useConnectionHealth(connectionId: number | null): ConnectionHeal
     ]);
 
     return () => {
-      unlisteners.then(([u1, u2, u3, u4]) => {
+      unlisteners.then(([u1, u2, u3, u4, u5]) => {
         u1();
         u2();
         u3();
         u4();
+        u5();
       });
     };
   }, [connectionId]);

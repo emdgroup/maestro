@@ -619,6 +619,7 @@ pub async fn spawn_interactive_execution(
                 .map_err(|e| format!("Failed to insert worktree: {}", e))?;
             }
 
+            app_state.app_handle.emit("worktrees-changed", ()).ok();
             format!("{}/{}", repo_path, relative_path)
         }
     };
@@ -629,10 +630,13 @@ pub async fn spawn_interactive_execution(
 
     if let Some(tid) = task_id {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Ready'",
             rusqlite::params![&now, tid],
         ).map_err(|e| format!("Failed to update task status: {}", e))?;
+        if changed > 0 {
+            app_state.app_handle.emit("tasks-changed", ()).ok();
+        }
     }
 
     // Step 3: Spawn PTY session — local or remote depending on project type

@@ -49,9 +49,21 @@ interface AgentActivityPanelProps {
   onOpenPanel?: (panel: "working-files" | "review-changes") => void;
 }
 
+const WORKING_FILE_EXTENSIONS = new Set([
+  ".md", ".txt", ".svg", ".mmd", ".mermaid",
+  ".json", ".yaml", ".yml", ".toml", ".xml",
+  ".csv", ".tsv", ".html", ".css", ".sql",
+  ".sh", ".bash", ".py", ".js", ".ts", ".rs",
+  ".log", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+]);
+
 function isWorkingFile(path: string): boolean {
-  // ACP agents send absolute paths; match .hidden-dir/*.md anywhere in path
-  return /\/\.[^/]+\/.*\.md$/.test(path) || /^\.[^/]+\/.*\.md$/.test(path);
+  // ACP agents send absolute paths; match files in .hidden-dirs (e.g. .claude/, .planning/)
+  const inHiddenDir = /\/\.[^/]+\//.test(path) || /^\.[^/]+\//.test(path);
+  if (!inHiddenDir) return false;
+  const dot = path.lastIndexOf(".");
+  if (dot === -1) return false;
+  return WORKING_FILE_EXTENSIONS.has(path.slice(dot).toLowerCase());
 }
 
 const WRITE_KINDS = new Set(["edit", "delete", "move", "write_file", "edit_file", "create_file"]);
@@ -116,8 +128,7 @@ export function AgentActivityPanel({
     scrollToBottom,
     isLastUserMsgPinned,
     scrollToLastUserMsg,
-    resetPinned,
-  } = useAcpScrollBehavior(isReady);
+  } = useAcpScrollBehavior(isReady, liveState.lastUserMessageId);
 
   useEffect(() => {
     if (liveState.isInitializing) return;
@@ -352,10 +363,6 @@ export function AgentActivityPanel({
     }
     return null;
   }, [agentSections]);
-
-  useEffect(() => {
-    resetPinned();
-  }, [lastUserMessage?.id, resetPinned]);
 
   if (liveState.isInitializing) {
     return (
