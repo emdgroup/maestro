@@ -29,7 +29,7 @@ use maestro_protocol::{
     SetModeOkResponse, SetModelOkResponse, TurnEnded,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::agent;
 use crate::send_response;
@@ -430,11 +430,24 @@ async fn run_command_loop(
     session_id: acp::schema::SessionId,
     so: Arc<Mutex<tokio::io::Stdout>>,
     maestro_sid: String,
+    router: Option<Arc<crate::sessions::SessionRouter>>,
 ) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
+            SessionCommand::CloseSession => {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    cx.send_request(CloseSessionRequest::new(session_id.to_string())).block_task(),
+                )
+                .await;
+                if let Some(ref router) = router {
+                    router.unregister(&session_id.to_string()).await;
+                }
+                return;
+            }
             SessionCommand::Prompt(content) => {
                 let so = Arc::clone(&so);
+                let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
                 let result = cx
                     .send_request_to(
@@ -446,11 +459,18 @@ async fn run_command_loop(
                         Ok(())
                     });
                 if result.is_err() {
+                    let _ = send_response(&so_err, &MaestroRpcMessage::Response(
+                        ServerResponse::TurnEnded(TurnEnded {
+                            session_id: maestro_sid.clone(),
+                            stop_reason: "error".to_string(),
+                        }),
+                    )).await;
                     break;
                 }
             }
             SessionCommand::PromptStructured(blocks) => {
                 let so = Arc::clone(&so);
+                let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
                 let content_blocks: Vec<acp::schema::ContentBlock> = blocks
                     .into_iter()
@@ -466,6 +486,12 @@ async fn run_command_loop(
                         Ok(())
                     });
                 if result.is_err() {
+                    let _ = send_response(&so_err, &MaestroRpcMessage::Response(
+                        ServerResponse::TurnEnded(TurnEnded {
+                            session_id: maestro_sid.clone(),
+                            stop_reason: "error".to_string(),
+                        }),
+                    )).await;
                     break;
                 }
             }
@@ -539,6 +565,76 @@ async fn run_command_loop(
             }
         }
     }
+    // Idempotent cleanup: ensure router unregistered regardless of how loop exited
+    // (send error, cmd_tx dropped, or any other break path).
+    if let Some(ref router) = router {
+        router.unregister(&session_id.to_string()).await;
+    }
+}
+
+type AgentTransport = acp::ByteStreams<Compat<tokio::process::ChildStdin>, Compat<tokio::process::ChildStdout>>;
+
+pub(crate) struct AgentBootstrap {
+    pub(crate) child: tokio::process::Child,
+    pub(crate) transport: AgentTransport,
+    pub(crate) cmd_tx: mpsc::Sender<SessionCommand>,
+    pub(crate) cmd_rx: mpsc::Receiver<SessionCommand>,
+    pub(crate) pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
+    pub(crate) pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
+    pub(crate) session_state: Arc<SharedSessionState>,
+    pub(crate) handlers: ConnectionHandlers,
+    pub(crate) terms: Arc<Mutex<HashMap<String, TerminalHandle>>>,
+    pub(crate) so: Arc<Mutex<tokio::io::Stdout>>,
+    pub(crate) sid: String,
+    pub(crate) cwd_owned: String,
+}
+
+async fn bootstrap_agent_transport(
+    spawn_cmd: &str,
+    spawn_args: &[String],
+    spawn_env: &HashMap<String, String>,
+    cwd: &str,
+    maestro_session_id: String,
+    stdout: Arc<Mutex<tokio::io::Stdout>>,
+) -> Option<AgentBootstrap> {
+    let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e }))).await;
+            return None;
+        }
+    };
+    let child_stdin = child.stdin.take().expect("child stdin must be piped");
+    let child_stdout = child.stdout.take().expect("child stdout must be piped");
+    let transport = acp::ByteStreams::new(child_stdin.compat_write(), child_stdout.compat());
+    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
+    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let session_state = Arc::new(SharedSessionState {
+        pending_permissions: Arc::clone(&pending_permissions),
+        pending_elicitations: Arc::clone(&pending_elicitations),
+    });
+    let (handlers, _router) = ConnectionHandlers::new(Arc::clone(&stdout));
+    let terms = Arc::clone(&handlers.terminals);
+    let so = Arc::clone(&stdout);
+    let sid = maestro_session_id;
+    let cwd_owned = cwd.to_string();
+    Some(AgentBootstrap { child, transport, cmd_tx, cmd_rx, pending_permissions, pending_elicitations, session_state, handlers, terms, so, sid, cwd_owned })
+}
+
+fn build_initialize_request() -> InitializeRequest {
+    InitializeRequest::new(ProtocolVersion::V1)
+        .client_info(Implementation::new("maestro-server", "0.1.0"))
+        .client_capabilities(
+            ClientCapabilities::new()
+                .terminal(true)
+                .elicitation(
+                    ElicitationCapabilities::new()
+                        .form(ElicitationFormCapabilities::new()),
+                ),
+        )
 }
 
 /// Spawn the ACP connection task for one agent session.
@@ -562,71 +658,18 @@ pub(crate) async fn spawn_acp_session(
     maestro_session_id: String,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<SpawnResult> {
-    // 1. Spawn agent subprocess
-    let mut child =
-        match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: e,
-                    })),
-                )
-                .await;
-                return None;
-            }
-        };
+    let Some(boot) = bootstrap_agent_transport(spawn_cmd, spawn_args, spawn_env, cwd, maestro_session_id, Arc::clone(&stdout)).await else {
+        return None;
+    };
+    let AgentBootstrap { child, transport, cmd_tx, cmd_rx, pending_permissions, pending_elicitations, session_state, handlers, terms, so, sid, cwd_owned } = boot;
+    let router = Arc::clone(&handlers.router);
 
-    // 2. Bridge subprocess stdio via compat() for ByteStreams
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let outgoing = child_stdin.compat_write();
-    let incoming = child_stdout.compat();
-    let transport = acp::ByteStreams::new(outgoing, incoming);
-
-    // 3. Channels: commands into the connection task, readiness signal out
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-
-    // 4. Per-session state shared between connection handlers (via router) and main.rs dispatch
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let session_state = Arc::new(SharedSessionState {
-        pending_permissions: Arc::clone(&pending_permissions),
-        pending_elicitations: Arc::clone(&pending_elicitations),
-    });
-
-    // 5. Build connection handlers with an empty router; session registered inside connect_with
-    //    after attach_session() gives us the ACP session ID.
-    let (handlers, router) = ConnectionHandlers::new(Arc::clone(&stdout));
-    let terms = Arc::clone(&handlers.terminals);
-    let so = Arc::clone(&stdout);
-    let sid = maestro_session_id.clone();
-    let cwd_owned = cwd.to_string();
     let (ready_tx, ready_rx) = oneshot::channel::<Result<(Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, bool, bool, bool, String), String>>();
 
-    // 6. Spawn ACP connection as background task
     let task = tokio::spawn(async move {
         let _result = configure_acp_builder!(handlers, terms)
             .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
-                let init_result = cx
-                    .send_request(
-                        InitializeRequest::new(ProtocolVersion::V1)
-                            .client_info(Implementation::new("maestro-server", "0.1.0"))
-                            .client_capabilities(
-                                ClientCapabilities::new()
-                                    .terminal(true)
-                                    .elicitation(
-                                        ElicitationCapabilities::new()
-                                            .form(ElicitationFormCapabilities::new()),
-                                    ),
-                            ),
-                    )
-                    .block_task()
-                    .await;
-                let init_response = match init_result {
+                let init_response = match cx.send_request(build_initialize_request()).block_task().await {
                     Ok(resp) => resp,
                     Err(e) => {
                         let _ = ready_tx.send(Err(format!("ACP initialize failed: {}", e)));
@@ -655,29 +698,19 @@ pub(crate) async fn spawn_acp_session(
                         return Ok(());
                     }
                 };
-
                 let acp_native_session_id = session.session_id().to_string();
-                // Register route before signaling readiness so handlers can route immediately.
                 router.register(acp_native_session_id.clone(), sid.clone(), session_state).await;
                 let _ = ready_tx.send(Ok((models, modes, prompt_caps, supports_list, supports_load, supports_close, acp_native_session_id)));
-
-                run_command_loop(cmd_rx, session.connection().clone(), session.session_id().clone(), so, sid).await;
-
+                run_command_loop(cmd_rx, session.connection().clone(), session.session_id().clone(), so, sid, None).await;
                 Ok(())
             })
             .await;
-
         drop(child);
     });
 
     match ready_rx.await {
         Ok(Ok((models, modes, prompt_caps, supports_list, supports_load, supports_close, native_session_id))) => Some(SpawnResult {
-            session: ActiveSession {
-                cmd_tx,
-                pending_permissions,
-                pending_elicitations,
-                task,
-            },
+            session: ActiveSession { cmd_tx, pending_permissions, pending_elicitations, task, cleanup: None },
             models,
             modes,
             prompt_capabilities: prompt_caps,
@@ -687,21 +720,13 @@ pub(crate) async fn spawn_acp_session(
             acp_session_id: native_session_id,
         }),
         Ok(Err(e)) => {
-            let _ = send_response(
-                &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e })),
-            )
-            .await;
+            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e }))).await;
             None
         }
         Err(_) => {
-            let _ = send_response(
-                &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: "ACP connection task exited unexpectedly".to_string(),
-                })),
-            )
-            .await;
+            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: "ACP connection task exited unexpectedly".to_string(),
+            }))).await;
             None
         }
     }
@@ -716,67 +741,22 @@ pub(crate) async fn load_acp_session(
     maestro_session_id: String,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo)> {
-    let mut child =
-        match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: e,
-                    })),
-                )
-                .await;
-                return None;
-            }
-        };
+    let Some(boot) = bootstrap_agent_transport(spawn_cmd, spawn_args, spawn_env, cwd, maestro_session_id.clone(), Arc::clone(&stdout)).await else {
+        return None;
+    };
+    let AgentBootstrap { child, transport, cmd_tx, cmd_rx, pending_permissions, pending_elicitations, session_state, handlers, terms, so, sid, cwd_owned } = boot;
+    let router = Arc::clone(&handlers.router);
 
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let outgoing = child_stdin.compat_write();
-    let incoming = child_stdout.compat();
-    let transport = acp::ByteStreams::new(outgoing, incoming);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let session_state = Arc::new(SharedSessionState {
-        pending_permissions: Arc::clone(&pending_permissions),
-        pending_elicitations: Arc::clone(&pending_elicitations),
-    });
-
-    let (handlers, router) = ConnectionHandlers::new(Arc::clone(&stdout));
-    let terms = Arc::clone(&handlers.terminals);
-    let so = Arc::clone(&stdout);
-    let sid = maestro_session_id.clone();
-    let cwd_owned = cwd.to_string();
     let load_sid = acp_session_id.clone();
     let (ready_tx, ready_rx) = oneshot::channel::<Result<(Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo), String>>();
 
     // Register the route before spawning — we already know the ACP session ID for a load.
-    router.register(acp_session_id.clone(), maestro_session_id.clone(), session_state).await;
+    router.register(acp_session_id.clone(), maestro_session_id, session_state).await;
 
     let task = tokio::spawn(async move {
         let _result = configure_acp_builder!(handlers, terms)
             .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
-                let init_result = cx
-                    .send_request(
-                        InitializeRequest::new(ProtocolVersion::V1)
-                            .client_info(Implementation::new("maestro-server", "0.1.0"))
-                            .client_capabilities(
-                                ClientCapabilities::new()
-                                    .terminal(true)
-                                    .elicitation(
-                                        ElicitationCapabilities::new()
-                                            .form(ElicitationFormCapabilities::new()),
-                                    ),
-                            ),
-                    )
-                    .block_task()
-                    .await;
-                let init_response = match init_result {
+                let init_response = match cx.send_request(build_initialize_request()).block_task().await {
                     Ok(resp) => resp,
                     Err(e) => {
                         let _ = ready_tx.send(Err(format!("ACP initialize failed: {}", e)));
@@ -796,44 +776,28 @@ pub(crate) async fn load_acp_session(
                 let models = convert_acp_models(load_response.models.as_ref());
                 let modes = convert_acp_modes(load_response.modes.as_ref());
                 let _ = ready_tx.send(Ok((models, modes, prompt_caps)));
-
-                run_command_loop(cmd_rx, cx, acp::schema::SessionId::new(load_sid), so, sid).await;
-
+                run_command_loop(cmd_rx, cx, acp::schema::SessionId::new(load_sid), so, sid, None).await;
                 Ok(())
             })
             .await;
-
         drop(child);
     });
 
     match ready_rx.await {
         Ok(Ok((models, modes, prompt_caps))) => Some((
-            ActiveSession {
-                cmd_tx,
-                pending_permissions,
-                pending_elicitations,
-                task,
-            },
+            ActiveSession { cmd_tx, pending_permissions, pending_elicitations, task, cleanup: None },
             models,
             modes,
             prompt_caps,
         )),
         Ok(Err(e)) => {
-            let _ = send_response(
-                &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e })),
-            )
-            .await;
+            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e }))).await;
             None
         }
         Err(_) => {
-            let _ = send_response(
-                &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: "ACP load connection task exited unexpectedly".to_string(),
-                })),
-            )
-            .await;
+            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: "ACP load connection task exited unexpectedly".to_string(),
+            }))).await;
             None
         }
     }
@@ -1079,7 +1043,8 @@ pub(crate) async fn create_session_on_connection(
     let supports_session_load = conn.capabilities.supports_session_load;
     let supports_session_close = conn.capabilities.supports_session_close;
 
-    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid));
+    let router = Arc::clone(&conn.router);
+    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
 
     Some(SpawnResult {
         session: ActiveSession {
@@ -1087,6 +1052,10 @@ pub(crate) async fn create_session_on_connection(
             pending_permissions,
             pending_elicitations,
             task,
+            cleanup: Some(crate::sessions::SessionCleanup {
+                acp_session_id: acp_session_id_str.clone(),
+                router,
+            }),
         },
         models,
         modes,
@@ -1162,7 +1131,8 @@ pub(crate) async fn load_session_on_connection(
 
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id;
-    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid));
+    let router = Arc::clone(&conn.router);
+    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
 
     Some((
         ActiveSession {
@@ -1170,6 +1140,10 @@ pub(crate) async fn load_session_on_connection(
             pending_permissions,
             pending_elicitations,
             task,
+            cleanup: Some(crate::sessions::SessionCleanup {
+                acp_session_id: resume_session_id,
+                router,
+            }),
         },
         models,
         modes,

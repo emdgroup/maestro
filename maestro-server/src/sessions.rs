@@ -12,6 +12,7 @@ pub enum SessionCommand {
     SetMode(String),
     SetConfigOption { config_id: String, value: String },
     CancelTurn,
+    CloseSession,
 }
 
 pub struct TerminalHandle {
@@ -116,11 +117,21 @@ impl AgentConnection {
     }
 }
 
+/// Cleanup metadata for fast-path (shared connection server) sessions.
+/// Used by the Cancel handler to gracefully close the session on the agent side.
+pub struct SessionCleanup {
+    pub acp_session_id: String,
+    pub router: Arc<SessionRouter>,
+}
+
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
     pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
     pub task: tokio::task::JoinHandle<()>,
+    /// Populated for fast-path sessions (shared connection server).
+    /// `None` for cold-path sessions (process killed by kill_on_drop on cancel).
+    pub cleanup: Option<SessionCleanup>,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

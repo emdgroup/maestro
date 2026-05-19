@@ -9,7 +9,7 @@ interface ActivityPlanPanelProps {
 
 const PRIORITY_LABEL: Record<PlanEntry["priority"], string> = {
   high: "HIGH",
-  medium: "MED",
+  medium: "MEDIUM",
   low: "LOW",
 };
 

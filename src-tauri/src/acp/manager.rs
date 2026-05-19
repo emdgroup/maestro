@@ -54,6 +54,40 @@ pub enum AcpTransportWriter {
     SharedServer(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
+/// Pending oneshot channels for a shared `ConnectionServer`.
+/// Arc-wrapped so the reader task can hold clones without borrowing the server.
+#[derive(Clone)]
+pub struct PendingChannels {
+    pub pre_init: Arc<std::sync::Mutex<HashMap<String,
+        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
+    pub list_agents: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
+    pub session_list: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
+    pub session_close: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>>,
+    pub check_tools: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
+    pub detect_installed: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
+    pub detect_project: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
+}
+
+impl PendingChannels {
+    pub fn new() -> Self {
+        Self {
+            pre_init: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            list_agents: Arc::new(std::sync::Mutex::new(None)),
+            session_list: Arc::new(std::sync::Mutex::new(None)),
+            session_close: Arc::new(std::sync::Mutex::new(None)),
+            check_tools: Arc::new(std::sync::Mutex::new(None)),
+            detect_installed: Arc::new(std::sync::Mutex::new(None)),
+            detect_project: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+}
+
 /// A long-lived maestro-server process shared across all sessions for one connection.
 ///
 /// Keyed by `connection_id`: `None` for local, `Some(id)` for remote SSH.
@@ -66,28 +100,7 @@ pub struct ConnectionServer {
     /// Channel to the writer task (framed bytes → child stdin / SSH channel).
     /// Cloned into each session's `AcpTransportWriter::SharedServer`.
     pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-    /// Pending `PreInitialize` oneshot channels keyed by `agent_id`. The shared
-    /// reader delivers `PreInitializeOk` / error responses here.
-    pub pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-    /// Pending `ListAgents` oneshot. At most one in-flight at a time.
-    pub pending_list_agents: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
-    /// Pending `SessionList` oneshot. At most one in-flight at a time.
-    pub pending_session_list: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
-    /// Pending `SessionClose` oneshot. At most one in-flight at a time.
-    pub pending_session_close: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>>,
-    /// Pending `CheckTools` oneshot. At most one in-flight at a time.
-    pub pending_check_tools: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
-    /// Pending `DetectInstalledAgents` oneshot. At most one in-flight at a time.
-    pub pending_detect_installed: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
-    /// Pending `DetectProjectAgents` oneshot. At most one in-flight at a time.
-    pub pending_detect_project: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
+    pub pending: PendingChannels,
 }
 
 /// A single option value within a config option catalog entry.
@@ -193,6 +206,19 @@ pub struct AcpProcess {
     pub initialized: Arc<std::sync::Mutex<bool>>,
 }
 
+pub struct TaskMetadata {
+    pub task_id: Option<i32>,
+    pub task_name: Option<String>,
+    pub branch_name: Option<String>,
+    pub session_start_sha: Option<String>,
+}
+
+impl Default for TaskMetadata {
+    fn default() -> Self {
+        Self { task_id: None, task_name: None, branch_name: None, session_start_sha: None }
+    }
+}
+
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
 /// from the Arc-wrapped caches, which `AcpProcess::create` allocates uniformly.
 pub struct AcpProcessParams {
@@ -205,10 +231,7 @@ pub struct AcpProcessParams {
     pub project_id: Option<i32>,
     /// SSH connection_id for sessions routed through a ConnectionServer.
     pub connection_id: Option<i32>,
-    pub task_id: Option<i32>,
-    pub task_name: Option<String>,
-    pub branch_name: Option<String>,
-    pub session_start_sha: Option<String>,
+    pub task: TaskMetadata,
     /// Pre-existing ACP session ID (for load sessions). `None` for fresh spawns.
     pub initial_acp_session_id: Option<String>,
     /// Whether to initialise the replay buffer (`Some(vec)`) for load sessions.
@@ -237,15 +260,30 @@ pub(crate) enum AcpReadSource {
 impl AcpReadSource {
     pub(crate) async fn next_message(&mut self) -> Option<MaestroRpcMessage> {
         match self {
-            AcpReadSource::Local { reader } => {
-                let msg = read_message(reader).await.ok();
-                if let Some(ref m) = msg {
-                    if let Ok(json) = serde_json::to_string(m) {
-                        eprintln!("[ACP ←] {}", json);
+            AcpReadSource::Local { reader } => loop {
+                match read_message(reader).await {
+                    Ok(msg) => {
+                        if let Ok(json) = serde_json::to_string(&msg) {
+                            eprintln!("[ACP ←] {}", json);
+                        }
+                        return Some(msg);
+                    }
+                    Err(e) => {
+                        // Only EOF is terminal. Parse errors are recoverable: read_message
+                        // consumed the frame bytes via read_exact before failing to deserialize,
+                        // so the stream is correctly positioned for the next frame.
+                        let is_eof = e
+                            .downcast_ref::<std::io::Error>()
+                            .map(|io| io.kind() == std::io::ErrorKind::UnexpectedEof)
+                            .unwrap_or(false);
+                        if is_eof {
+                            return None;
+                        }
+                        eprintln!("[ACP local] non-fatal read error (continuing): {}", e);
+                        // Loop and try next frame
                     }
                 }
-                msg
-            }
+            },
             AcpReadSource::Remote { read_half, msg_buf } => loop {
                 if let Some(msg) = try_parse_acp_frame(msg_buf) {
                     if let Ok(json) = serde_json::to_string(&msg) {
@@ -294,7 +332,8 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
     }
 }
 
-/// Parse one complete framed message from `buf`, consuming its bytes on success.
+/// Parse one complete framed message from `buf`, always consuming its bytes.
+/// Returns None on parse failure (corrupt frame skipped) or incomplete frame.
 pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage> {
     if buf.len() < 4 {
         return None;
@@ -303,9 +342,16 @@ pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage
     if buf.len() < 4 + len {
         return None;
     }
-    let msg: MaestroRpcMessage = serde_json::from_slice(&buf[4..4 + len]).ok()?;
+    // Drain first so a corrupt frame never loops — caller retries with the next frame.
+    let frame_bytes = buf[4..4 + len].to_vec();
     buf.drain(..4 + len);
-    Some(msg)
+    match serde_json::from_slice::<MaestroRpcMessage>(&frame_bytes) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            eprintln!("[ACP] skipped corrupt frame ({} bytes): {}", len, e);
+            None
+        }
+    }
 }
 
 /// Spawn a local maestro-server subprocess and perform handshake.
@@ -400,10 +446,7 @@ pub async fn try_spawn_via_connection_server(
     cwd: &str,
     session_id: &str,
     session_name: Option<String>,
-    task_id: Option<i32>,
-    task_name: Option<String>,
-    branch_name: Option<String>,
-    session_start_sha: Option<String>,
+    task: TaskMetadata,
     log_id: i32,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<bool, String> {
@@ -435,10 +478,7 @@ pub async fn try_spawn_via_connection_server(
             agent_id: agent_id.to_string(),
             project_id,
             connection_id,
-            task_id,
-            task_name,
-            branch_name,
-            session_start_sha,
+            task,
             initial_acp_session_id: None,
             enable_replay_buffer: true,
         },
@@ -511,12 +551,9 @@ pub async fn spawn_acp_session_cold(
     session_id: &str,
     app_state: &Arc<crate::db::AppState>,
     session_name: Option<String>,
-    task_id: Option<i32>,
-    task_name: Option<String>,
-    branch_name: Option<String>,
+    task: TaskMetadata,
     project_id: Option<i32>,
     connection_id: Option<i32>,
-    session_start_sha: Option<String>,
 ) -> Result<(), String> {
     let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
         agent_id: agent_id.to_string(),
@@ -552,10 +589,7 @@ pub async fn spawn_acp_session_cold(
             agent_id: agent_id.to_string(),
             project_id,
             connection_id,
-            task_id,
-            task_name,
-            branch_name,
-            session_start_sha,
+            task,
             initial_acp_session_id: None,
             enable_replay_buffer: false,
         },
@@ -617,10 +651,7 @@ pub async fn load_acp_session_cold(
             agent_id: agent_id.to_string(),
             project_id: None,
             connection_id,
-            task_id: None,
-            task_name: None,
-            branch_name: None,
-            session_start_sha: None,
+            task: TaskMetadata::default(),
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
@@ -696,10 +727,10 @@ impl AcpProcess {
             project_id: params.project_id,
             connection_id: params.connection_id,
             started_at: chrono::Utc::now().to_rfc3339(),
-            task_id: params.task_id,
-            task_name: params.task_name,
-            branch_name: params.branch_name,
-            session_start_sha: params.session_start_sha,
+            task_id: params.task.task_id,
+            task_name: params.task.task_name,
+            branch_name: params.task.branch_name,
+            session_start_sha: params.task.session_start_sha,
             acp_session_id,
             replay_buffer,
             initialized,
@@ -1153,20 +1184,7 @@ async fn handle_shared_server_message(
     connection_id: Option<i32>,
     app_handle: &tauri::AppHandle,
     app_state: &Arc<crate::db::AppState>,
-    pre_init_pending: &Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-    pending_list_agents: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
-    pending_session_list: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
-    pending_session_close: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>>,
-    pending_check_tools: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
-    pending_detect_installed: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
-    pending_detect_project: &Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
+    pending: &PendingChannels,
 ) {
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
@@ -1236,49 +1254,49 @@ async fn handle_shared_server_message(
                 icon: a.icon,
                 spawn_deps: a.spawn_deps,
             }).collect();
-            if let Ok(mut guard) = pending_list_agents.lock() {
+            if let Ok(mut guard) = pending.list_agents.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(agents));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
-            if let Ok(mut guard) = pending_session_list.lock() {
+            if let Ok(mut guard) = pending.session_list.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SessionCloseOk) => {
-            if let Ok(mut guard) = pending_session_close.lock() {
+            if let Ok(mut guard) = pending.session_close.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(()));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
-            if let Ok(mut guard) = pending_check_tools.lock() {
+            if let Ok(mut guard) = pending.check_tools.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
-            if let Ok(mut guard) = pending_detect_installed.lock() {
+            if let Ok(mut guard) = pending.detect_installed.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(resp)) => {
-            if let Ok(mut guard) = pending_detect_project.lock() {
+            if let Ok(mut guard) = pending.detect_project.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
-            let tx = pre_init_pending
+            let tx = pending.pre_init
                 .lock()
                 .ok()
                 .and_then(|mut map| map.remove(&resp.agent_id));
@@ -1328,7 +1346,7 @@ async fn handle_shared_server_message(
 
             // Pending SessionList / SessionClose / CheckTools
             if !resolved {
-                if let Ok(mut guard) = pending_session_list.lock() {
+                if let Ok(mut guard) = pending.session_list.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1338,7 +1356,7 @@ async fn handle_shared_server_message(
                 }
             }
             if !resolved {
-                if let Ok(mut guard) = pending_session_close.lock() {
+                if let Ok(mut guard) = pending.session_close.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1348,7 +1366,7 @@ async fn handle_shared_server_message(
                 }
             }
             if !resolved {
-                if let Ok(mut guard) = pending_check_tools.lock() {
+                if let Ok(mut guard) = pending.check_tools.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1358,7 +1376,7 @@ async fn handle_shared_server_message(
                 }
             }
             if !resolved {
-                if let Ok(mut guard) = pending_detect_installed.lock() {
+                if let Ok(mut guard) = pending.detect_installed.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1368,7 +1386,7 @@ async fn handle_shared_server_message(
                 }
             }
             if !resolved {
-                if let Ok(mut guard) = pending_detect_project.lock() {
+                if let Ok(mut guard) = pending.detect_project.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));
@@ -1405,7 +1423,7 @@ async fn handle_shared_server_message(
             }
             if !resolved {
                 // Try pending ListAgents.
-                if let Ok(mut guard) = pending_list_agents.lock() {
+                if let Ok(mut guard) = pending.list_agents.lock() {
                     if let Some(tx) = guard.take() {
                         let _ = tx.send(Err(err.message.clone()));
                         resolved = true;
@@ -1414,7 +1432,7 @@ async fn handle_shared_server_message(
             }
             if !resolved {
                 // Try pending PreInitialize.
-                let pre_init_tx = pre_init_pending.lock().ok().and_then(|mut map| {
+                let pre_init_tx = pending.pre_init.lock().ok().and_then(|mut map| {
                     let key = map.keys().next().cloned()?;
                     map.remove(&key)
                 });
@@ -1448,20 +1466,7 @@ fn spawn_shared_reader_task(
     connection_id: Option<i32>,
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::db::AppState>,
-    pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-    pending_list_agents: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
-    pending_session_list: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
-    pending_session_close: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>>,
-    pending_check_tools: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
-    pending_detect_installed: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
-    pending_detect_project: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
+    pending: PendingChannels,
 ) {
     tokio::spawn(async move {
         let mut source = source;
@@ -1471,13 +1476,7 @@ fn spawn_shared_reader_task(
                 connection_id,
                 &app_handle,
                 &app_state,
-                &pre_init_pending,
-                &pending_list_agents,
-                &pending_session_list,
-                &pending_session_close,
-                &pending_check_tools,
-                &pending_detect_installed,
-                &pending_detect_project,
+                &pending,
             )
             .await;
         }
@@ -1572,42 +1571,52 @@ fn spawn_shared_reader_task(
     });
 }
 
+/// Generic helper: lock→insert→send→await pattern shared by all connection-server query functions.
+async fn query_via_server<T: Send + 'static>(
+    connection_id: Option<i32>,
+    app_state: &Arc<crate::db::AppState>,
+    not_found_err: &str,
+    get_pending: impl FnOnce(&ConnectionServer) -> Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
+    already_in_progress_err: &str,
+    request: MaestroRpcMessage,
+    timeout_secs: u64,
+    timeout_err: &str,
+) -> Result<T, String> {
+    let (writer_tx, pending) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        let server = servers.get(&connection_id).ok_or_else(|| not_found_err.to_string())?;
+        (server.writer_tx.clone(), get_pending(server))
+    };
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut guard = pending.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        if guard.is_some() {
+            return Err(already_in_progress_err.to_string());
+        }
+        *guard = Some(tx);
+    }
+    let bytes = serialize_message(&request)?;
+    writer_tx.send(bytes).await.map_err(|_| "Connection server writer channel closed".to_string())?;
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
+        .await
+        .map_err(|_| timeout_err.to_string())?
+        .map_err(|_| "Response channel dropped".to_string())?
+}
+
 /// Send `ListAgents` through the running connection server and return the result.
 /// Much faster than `one_shot_rpc` — reuses the existing process and registry cache.
 pub async fn query_list_agents_via_connection_server(
     connection_id: Option<i32>,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<Vec<crate::acp::registry::DiscoveredAgent>, String> {
-    let (writer_tx, pending_list_agents) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection_id))?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_list_agents))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_list_agents
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("ListAgents already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let req = MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {}));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "ListAgents via connection server timed out after 15s".to_string())?
-        .map_err(|_| "ListAgents response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        &format!("No connection server for connection {:?}", connection_id),
+        |s| s.pending.list_agents.clone(),
+        "ListAgents already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
+        15, "ListAgents via connection server timed out after 15s",
+    ).await
 }
 
 /// Send `SessionList` through the running connection server and return the result.
@@ -1616,36 +1625,14 @@ pub async fn query_session_list_via_server(
     request: crate::acp::transport::SessionListRequest,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<SessionListOkResponse, String> {
-    let (writer_tx, pending_session_list) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_session_list))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_session_list
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("SessionList already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionList(request));
-    let bytes = serialize_message(&msg)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
-        .await
-        .map_err(|_| "SessionList via connection server timed out after 30s".to_string())?
-        .map_err(|_| "SessionList response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.session_list.clone(),
+        "SessionList already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SessionList(request)),
+        30, "SessionList via connection server timed out after 30s",
+    ).await
 }
 
 /// Send `SessionClose` through the running connection server.
@@ -1654,36 +1641,14 @@ pub async fn query_session_close_via_server(
     request: SessionCloseRequest,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<(), String> {
-    let (writer_tx, pending_session_close) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_session_close))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_session_close
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("SessionClose already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let msg = MaestroRpcMessage::Request(ServerRequest::SessionClose(request));
-    let bytes = serialize_message(&msg)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
-        .await
-        .map_err(|_| "SessionClose via connection server timed out after 30s".to_string())?
-        .map_err(|_| "SessionClose response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.session_close.clone(),
+        "SessionClose already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SessionClose(request)),
+        30, "SessionClose via connection server timed out after 30s",
+    ).await
 }
 
 /// Send `CheckTools` through the running connection server and return the result.
@@ -1692,36 +1657,14 @@ pub async fn query_check_tools_via_server(
     tools: Vec<String>,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<CheckToolsResponse, String> {
-    let (writer_tx, pending_check_tools) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_check_tools))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_check_tools
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("CheckTools already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let req = MaestroRpcMessage::Request(ServerRequest::CheckTools(CheckToolsRequest { tools }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "CheckTools via connection server timed out after 15s".to_string())?
-        .map_err(|_| "CheckTools response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.check_tools.clone(),
+        "CheckTools already in progress",
+        MaestroRpcMessage::Request(ServerRequest::CheckTools(CheckToolsRequest { tools })),
+        15, "CheckTools via connection server timed out after 15s",
+    ).await
 }
 
 /// Send `DetectInstalledAgents` through the running connection server and return the result.
@@ -1729,36 +1672,14 @@ pub async fn query_detect_installed_via_server(
     connection_id: Option<i32>,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<DetectInstalledAgentsResponse, String> {
-    let (writer_tx, pending_detect_installed) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_detect_installed))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_detect_installed
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("DetectInstalledAgents already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let req = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {}));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(30), rx)
-        .await
-        .map_err(|_| "DetectInstalledAgents timed out after 30s".to_string())?
-        .map_err(|_| "DetectInstalledAgents response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.detect_installed.clone(),
+        "DetectInstalledAgents already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {})),
+        30, "DetectInstalledAgents timed out after 30s",
+    ).await
 }
 
 /// Send `DetectProjectAgents` through the running connection server and return the result.
@@ -1767,36 +1688,14 @@ pub async fn query_detect_project_agents_via_server(
     cwd: String,
     app_state: &Arc<crate::db::AppState>,
 ) -> Result<DetectProjectAgentsResponse, String> {
-    let (writer_tx, pending_detect_project) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_id)
-            .ok_or_else(|| "Connection not initialized. Run preflight first.".to_string())?;
-        (server.writer_tx.clone(), Arc::clone(&server.pending_detect_project))
-    };
-
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending_detect_project
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("DetectProjectAgents already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
-    let req = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest { cwd }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    tokio::time::timeout(std::time::Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "DetectProjectAgents timed out after 15s".to_string())?
-        .map_err(|_| "DetectProjectAgents response channel dropped".to_string())?
+    query_via_server(
+        connection_id, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.detect_project.clone(),
+        "DetectProjectAgents already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest { cwd })),
+        15, "DetectProjectAgents timed out after 15s",
+    ).await
 }
 
 /// Spawn a long-lived maestro-server shared across all sessions for `connection_id`.
@@ -1834,38 +1733,12 @@ pub async fn spawn_connection_server(
         }
     };
 
-    let pre_init_pending: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
-    let pending_list_agents: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
-    let pending_session_list: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<SessionListOkResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
-    let pending_session_close: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
-    let pending_check_tools: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<CheckToolsResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
-    let pending_detect_installed: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
-    let pending_detect_project: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>> =
-        Arc::new(std::sync::Mutex::new(None));
+    let pending = PendingChannels::new();
 
     let connection_server = ConnectionServer {
         child,
         writer_tx: write_tx,
-        pre_init_pending: Arc::clone(&pre_init_pending),
-        pending_list_agents: Arc::clone(&pending_list_agents),
-        pending_session_list: Arc::clone(&pending_session_list),
-        pending_session_close: Arc::clone(&pending_session_close),
-        pending_check_tools: Arc::clone(&pending_check_tools),
-        pending_detect_installed: Arc::clone(&pending_detect_installed),
-        pending_detect_project: Arc::clone(&pending_detect_project),
+        pending: pending.clone(),
     };
 
     // Re-check under lock to avoid double-spawn race.
@@ -1882,13 +1755,7 @@ pub async fn spawn_connection_server(
         connection_id,
         app_state.app_handle.clone(),
         Arc::clone(app_state),
-        pre_init_pending,
-        pending_list_agents,
-        pending_session_list,
-        pending_session_close,
-        pending_check_tools,
-        pending_detect_installed,
-        pending_detect_project,
+        pending,
     );
 
     Ok(())
@@ -1909,7 +1776,7 @@ pub async fn pre_initialize_via_connection_server(
         let server = servers
             .get(&connection_id)
             .ok_or_else(|| format!("No connection server for connection {:?}", connection_id))?;
-        (server.writer_tx.clone(), Arc::clone(&server.pre_init_pending))
+        (server.writer_tx.clone(), server.pending.pre_init.clone())
     };
 
     let (tx, rx) = oneshot::channel();
@@ -2029,10 +1896,7 @@ pub async fn try_session_load_via_connection_server(
             agent_id: agent_id.to_string(),
             project_id,
             connection_id,
-            task_id: None,
-            task_name: None,
-            branch_name: None,
-            session_start_sha: None,
+            task: TaskMetadata::default(),
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },

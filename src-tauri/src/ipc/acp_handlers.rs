@@ -9,7 +9,7 @@ use specta::Type;
 
 use std::collections::HashSet;
 use crate::db::AppState;
-use crate::acp::PooledSession;
+use crate::acp::{PooledSession, TaskMetadata};
 use crate::models::worktree::{ActiveSessionInfo, SessionListEntryDto};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -120,7 +120,7 @@ pub async fn spawn_pooled_session(
 
     let spawned = crate::acp::try_spawn_via_connection_server(
         connection_id, Some(project_id), agent_id, cwd, &session_id,
-        None, None, None, None, None,
+        None, TaskMetadata::default(),
         log_id, app_state,
     ).await;
 
@@ -223,7 +223,8 @@ pub async fn spawn_acp_session(
     // Fast path: if a connection server is running, route through shared server.
     if crate::acp::try_spawn_via_connection_server(
         connection_id, Some(project_id), &agent_id, &cwd, &session_id, session_name.clone(),
-        None, None, branch_name.clone(), session_start_sha.clone(), log_id, &app_state,
+        TaskMetadata { task_id: None, task_name: None, branch_name: branch_name.clone(), session_start_sha: session_start_sha.clone() },
+        log_id, &app_state,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
         return Ok(log_id);
@@ -244,14 +245,18 @@ pub async fn spawn_acp_session(
             crate::acp::spawn_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
                 &agent_id, &cwd, log_id, &session_id, &app_state,
-                session_name, None, None, branch_name, Some(project_id), Some(conn_id), session_start_sha,
+                session_name,
+                TaskMetadata { task_id: None, task_name: None, branch_name, session_start_sha },
+                Some(project_id), Some(conn_id),
             ).await?;
         }
         None => {
             crate::acp::spawn_acp_session_cold(
                 crate::acp::TransportTarget::Local,
                 &agent_id, &cwd, log_id, &session_id, &app_state,
-                session_name, None, None, branch_name, Some(project_id), None, session_start_sha,
+                session_name,
+                TaskMetadata { task_id: None, task_name: None, branch_name, session_start_sha },
+                Some(project_id), None,
             ).await?;
         }
     }
@@ -368,13 +373,29 @@ pub async fn cancel_acp_session(
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
     // Remove from acp_sessions — this drops AcpProcess which drops Child (kill_on_drop).
-    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
-
-    // If the session had a cancel token, send it to stop the reader task.
-    if let Some(mut session) = removed {
-        if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-            let _ = cancel_tx.send(());
+    // Track whether this session used a connection server so we can tear it down if empty.
+    // Check remaining sessions in the same lock scope to avoid a second sessions.lock().
+    let teardown_key: Option<Option<i32>> = {
+        let mut sessions = app_state.acp.sessions.lock().await;
+        let removed = sessions.remove(&log_id);
+        // Sessions routed through a connection server have child=None (process owned by server).
+        let connection_key = removed.as_ref()
+            .filter(|s| s.child.is_none())
+            .map(|s| s.connection_id);
+        if let Some(mut session) = removed {
+            if let Some(cancel_tx) = session.reader_cancel_tx.take() {
+                let _ = cancel_tx.send(());
+            }
         }
+        connection_key
+            .filter(|&k| !sessions.values().any(|s| s.connection_id == k && s.child.is_none()))
+    };
+
+    // If no other sessions remain on this connection, tear down the connection server.
+    // This kills maestro-server (and its agent subprocesses) to free resources.
+    // The shared reader task detects EOF and cleans up remaining pool entries.
+    if let Some(key) = teardown_key {
+        app_state.acp.connection_servers.lock().await.remove(&key);
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -1283,6 +1304,7 @@ pub async fn load_acp_session(
     connection_id: Option<i32>,
     session_name: Option<String>,
     project_id: Option<i32>,
+    worktree_branch: Option<String>,
 ) -> Result<i32, String> {
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -1290,6 +1312,11 @@ pub async fn load_acp_session(
     if crate::acp::try_session_load_via_connection_server(
         connection_id, project_id, &agent_id, &acp_session_id, &cwd, session_name.clone(), log_id, &app_state,
     ).await? {
+        if let Some(ref branch) = worktree_branch {
+            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&log_id) {
+                proc.branch_name = Some(branch.clone());
+            }
+        }
         app_state.app_handle.emit("sessions-changed", ()).ok();
         return Ok(log_id);
     }
@@ -1308,6 +1335,12 @@ pub async fn load_acp_session(
                 crate::acp::TransportTarget::Local,
                 &agent_id, &cwd, log_id, &acp_session_id, &app_state, session_name, None,
             ).await?;
+        }
+    }
+
+    if let Some(ref branch) = worktree_branch {
+        if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&log_id) {
+            proc.branch_name = Some(branch.clone());
         }
     }
 
@@ -1399,6 +1432,243 @@ pub async fn drain_acp_replay(
     Ok(())
 }
 
+// ─── External file attachment ───────────────────────────────────────────────
+
+const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB hard reject
+const SCALE_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024; // 5 MB triggers scaling
+
+fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let size = bytes.len() as u64;
+    if size > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "Image too large ({} MB, max 10 MB)",
+            size / 1_048_576
+        ));
+    }
+    if size <= SCALE_THRESHOLD_BYTES {
+        return Ok(bytes);
+    }
+
+    let ratio = (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt();
+    if ratio >= 0.9 {
+        // Within 10% of threshold — not worth scaling
+        return Ok(bytes);
+    }
+
+    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let new_w = (img.width() as f64 * ratio) as u32;
+    let new_h = (img.height() as f64 * ratio) as u32;
+    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Triangle);
+
+    let mut output = Vec::new();
+    resized
+        .write_to(
+            &mut std::io::Cursor::new(&mut output),
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(output)
+}
+
+fn mime_for_extension(path: &str) -> Option<&'static str> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "rs" => Some("text/x-rust"),
+        "ts" | "tsx" => Some("text/typescript"),
+        "js" | "jsx" => Some("text/javascript"),
+        "py" => Some("text/x-python"),
+        "go" => Some("text/x-go"),
+        "rb" => Some("text/x-ruby"),
+        "java" => Some("text/x-java"),
+        "c" | "h" => Some("text/x-c"),
+        "cpp" => Some("text/x-c++"),
+        "toml" => Some("text/x-toml"),
+        "json" => Some("application/json"),
+        "md" => Some("text/markdown"),
+        "yaml" | "yml" => Some("text/yaml"),
+        "sh" => Some("text/x-sh"),
+        "html" => Some("text/html"),
+        "css" => Some("text/css"),
+        "sql" => Some("text/x-sql"),
+        "graphql" => Some("text/x-graphql"),
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "svg" => Some("image/svg+xml"),
+        "pdf" => Some("application/pdf"),
+        _ => None,
+    }
+}
+
+fn is_image_extension(path: &str) -> bool {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(
+        ext.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "bmp" | "ico" | "svg"
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ExternalFileRequest {
+    pub path: String,
+    pub is_image: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PreparedAttachment {
+    pub display_name: String,
+    pub local_path: String,
+    pub content_block: serde_json::Value,
+}
+
+/// Prepare external file attachments for inclusion in an ACP prompt.
+///
+/// For images: reads bytes, validates size (rejects >10 MB, scales down >5 MB), base64-encodes.
+/// For text files with embedded_context=true: reads content locally, uploads to remote if needed.
+/// For text files with embedded_context=false: uploads to remote if needed, sends path-only ResourceLink.
+///
+/// Remote uploads go to `{cwd}/.maestro/attachments/{session_id}/{basename}`.
+#[tauri::command]
+#[specta::specta]
+pub async fn prepare_external_attachments(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    files: Vec<ExternalFileRequest>,
+    embedded_context: bool,
+) -> Result<Vec<PreparedAttachment>, String> {
+    let (cwd, connection_id) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let s = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+        (s.cwd.clone(), s.connection_id)
+    };
+
+    let mut results = Vec::with_capacity(files.len());
+
+    for file in files {
+        let local_path = std::path::Path::new(&file.path);
+        let display_name = local_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&file.path)
+            .to_string();
+
+        let content_block = if file.is_image || is_image_extension(&file.path) {
+            // Image: read, scale if needed, base64-encode
+            let bytes = tokio::fs::read(local_path)
+                .await
+                .map_err(|e| format!("Cannot read '{}': {e}", file.path))?;
+            let prepared = prepare_image_bytes(bytes)?;
+            let mime = mime_for_extension(&file.path)
+                .unwrap_or("image/png")
+                .to_string();
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD.encode(&prepared);
+            let uri = format!("file://{}", file.path);
+            serde_json::json!({
+                "type": "image",
+                "data": data,
+                "mimeType": mime,
+                "uri": uri,
+            })
+        } else {
+            // Text/code file
+            let mime = mime_for_extension(&file.path)
+                .map(str::to_string);
+
+            // Upload to remote if this is an SSH session
+            let uri = match connection_id {
+                Some(conn_id) => {
+                    let session = app_state
+                        .ssh
+                        .get_session(conn_id)
+                        .await
+                        .ok_or_else(|| format!("No active SSH session for connection {conn_id}"))?;
+
+                    let attachments_dir = format!(
+                        "{}/.maestro/attachments/{}",
+                        cwd.trim_end_matches('/'),
+                        log_id
+                    );
+                    // Ensure directory exists on remote
+                    session
+                        .execute_command(&format!("mkdir -p '{attachments_dir}'"))
+                        .await
+                        .map_err(|e| format!("Failed to create attachments dir: {e}"))?;
+
+                    let remote_path = format!("{attachments_dir}/{display_name}");
+                    let transfer_id = format!("attach-{log_id}-{display_name}");
+                    crate::ssh::sftp::upload_file(
+                        &session,
+                        local_path,
+                        &remote_path,
+                        &transfer_id,
+                        &app_state.app_handle,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    format!("file://{remote_path}")
+                }
+                None => format!("file://{}", file.path),
+            };
+
+            if embedded_context {
+                // Read content locally (have it already regardless of local/remote)
+                let text = tokio::fs::read_to_string(local_path)
+                    .await
+                    .map_err(|e| format!("Cannot read '{}': {e}", file.path))?;
+                let mut resource = serde_json::json!({
+                    "uri": uri,
+                    "text": text,
+                });
+                if let Some(m) = mime {
+                    resource["mimeType"] = serde_json::Value::String(m);
+                }
+                serde_json::json!({
+                    "type": "resource",
+                    "resource": resource,
+                })
+            } else {
+                // Path-only — agent reads via fs/read_text_file
+                let metadata = tokio::fs::metadata(local_path).await.ok();
+                let size = metadata.map(|m| m.len());
+                let mut block = serde_json::json!({
+                    "type": "resource_link",
+                    "name": display_name,
+                    "uri": uri,
+                });
+                if let Some(m) = mime {
+                    block["mimeType"] = serde_json::Value::String(m);
+                }
+                if let Some(s) = size {
+                    block["size"] = serde_json::Value::Number(s.into());
+                }
+                block
+            }
+        };
+
+        results.push(PreparedAttachment {
+            display_name,
+            local_path: file.path,
+            content_block,
+        });
+    }
+
+    Ok(results)
+}
 
 #[cfg(test)]
 mod tests {

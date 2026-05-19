@@ -4,6 +4,44 @@ use tauri::{State, Emitter};
 use crate::db::AppState;
 use crate::ssh::SshWriteOp;
 
+/// Find the best available shell on Windows.
+///
+/// Priority: PowerShell 7+ (pwsh) from Program Files (highest version) →
+/// pwsh on PATH → powershell (5.1) on PATH → cmd.exe.
+///
+/// Returns an absolute path so portable-pty skips bare-name resolution,
+/// which EDR products flag as a reverse-shell pattern.
+#[cfg(windows)]
+fn resolve_windows_shell() -> String {
+    let program_files = std::env::var("ProgramFiles")
+        .unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let ps_dir = std::path::PathBuf::from(&program_files).join("PowerShell");
+    if let Ok(entries) = std::fs::read_dir(&ps_dir) {
+        let best = entries
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+            .filter_map(|entry| {
+                let version = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
+                let exe = entry.path().join("pwsh.exe");
+                exe.exists().then_some((version, exe))
+            })
+            .max_by_key(|(v, _)| *v);
+        if let Some((_, path)) = best {
+            return path.to_string_lossy().to_string();
+        }
+    }
+
+    if let Ok(path) = which::which("pwsh") {
+        return path.to_string_lossy().to_string();
+    }
+
+    if let Ok(path) = which::which("powershell") {
+        return path.to_string_lossy().to_string();
+    }
+
+    "cmd.exe".to_string()
+}
+
 /// Drain the Ready queue for auto-mode execution
 ///
 /// Checks if auto_mode is enabled in settings. If so, counts currently running
@@ -664,6 +702,9 @@ pub async fn spawn_interactive_execution(
 
         app_state.ssh.pty_sessions.lock().await.insert(log_id, pty_handle);
     } else {
+        #[cfg(windows)]
+        let shell = resolve_windows_shell();
+        #[cfg(not(windows))]
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let pty_session = crate::process::spawn_agent_cli_pty(
             log_id,

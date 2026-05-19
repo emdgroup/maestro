@@ -2,6 +2,7 @@ import { useEffect, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { drainAcpReplay } from "@/services/execution.service";
 import { INITIAL_ACTIVITY_STATE } from "./types";
+import { extractAgentMeta } from "./agentMeta";
 import type {
   SessionUpdatePayload,
   ActivityState,
@@ -13,7 +14,7 @@ import type {
 } from "./types";
 
 export type ActivityAction =
-  | { type: "event"; payload: SessionUpdatePayload }
+  | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
   | { type: "session_ended" }
   | { type: "turn_ended" }
   | { type: "finalize_streaming" }
@@ -22,16 +23,20 @@ export type ActivityAction =
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
     case "event":
-      return processEvent(state, action.payload);
-    case "session_ended":
+      return processEvent(state, action.payload, action.raw);
+    case "session_ended": {
+      const flushed = flushOrphans(state);
       return {
-        ...state,
-        items: finalizeLastStreaming(state.items),
+        ...flushed,
+        items: finalizeLastStreaming(flushed.items),
         sessionEnded: true,
         endReason: "completed",
       };
-    case "turn_ended":
-      return { ...state, items: finalizeLastStreaming(state.items) };
+    }
+    case "turn_ended": {
+      const flushed = flushOrphans(state);
+      return { ...flushed, items: finalizeLastStreaming(flushed.items) };
+    }
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "set_initialized":
@@ -41,7 +46,28 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
   }
 }
 
-function processEvent(state: ActivityState, payload: SessionUpdatePayload): ActivityState {
+function flushOrphans(state: ActivityState): ActivityState {
+  if (state.pendingOrphans.size === 0) return state;
+  const newMap = new Map(state.toolCallMap);
+  let items = state.items;
+  for (const [, childIds] of state.pendingOrphans) {
+    for (const childId of childIds) {
+      const tc = newMap.get(childId);
+      if (tc) {
+        const adopted = { ...tc, parentToolCallId: undefined };
+        newMap.set(childId, adopted);
+        items = [...items, { type: "toolCall" as const, item: adopted }];
+      }
+    }
+  }
+  return { ...state, items, toolCallMap: newMap, pendingOrphans: new Map() };
+}
+
+function processEvent(
+  state: ActivityState,
+  payload: SessionUpdatePayload,
+  raw: Record<string, unknown>,
+): ActivityState {
   const newState = { ...state };
 
   switch (payload.sessionUpdate) {
@@ -84,6 +110,7 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
 
     case "tool_call": {
       const items = finalizeLastStreaming(newState.items);
+      const parentToolCallId = extractAgentMeta(raw).parentToolCallId;
       const tc: ToolCallItem = {
         toolCallId: payload.toolCallId,
         title: payload.title,
@@ -92,9 +119,48 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         content: payload.content ?? [],
         locations: payload.locations ?? [],
         rawInput: payload.rawInput,
+        parentToolCallId,
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
+
+      if (parentToolCallId) {
+        const parent = newMap.get(parentToolCallId);
+        if (parent) {
+          const updatedParent = {
+            ...parent,
+            childToolCallIds: [...(parent.childToolCallIds ?? []), payload.toolCallId],
+          };
+          newMap.set(parentToolCallId, updatedParent);
+          const updatedItems = items.map((i) =>
+            i.type === "toolCall" && i.item.toolCallId === parentToolCallId
+              ? { ...i, item: updatedParent }
+              : i,
+          );
+          return { ...newState, items: updatedItems, toolCallMap: newMap };
+        }
+        // Parent not yet arrived — store as orphan, don't add to items
+        const newOrphans = new Map(newState.pendingOrphans);
+        const existing = newOrphans.get(parentToolCallId) ?? [];
+        newOrphans.set(parentToolCallId, [...existing, payload.toolCallId]);
+        return { ...newState, items, toolCallMap: newMap, pendingOrphans: newOrphans };
+      }
+
+      // No parent — normal tool call. Check if any orphans were waiting for this id.
+      if (newState.pendingOrphans.has(payload.toolCallId)) {
+        const orphanIds = newState.pendingOrphans.get(payload.toolCallId)!;
+        const updatedTc = { ...tc, childToolCallIds: [...(tc.childToolCallIds ?? []), ...orphanIds] };
+        newMap.set(payload.toolCallId, updatedTc);
+        const newOrphans = new Map(newState.pendingOrphans);
+        newOrphans.delete(payload.toolCallId);
+        return {
+          ...newState,
+          items: [...items, { type: "toolCall", item: updatedTc }],
+          toolCallMap: newMap,
+          pendingOrphans: newOrphans,
+        };
+      }
+
       return {
         ...newState,
         items: [...items, { type: "toolCall", item: tc }],
@@ -113,13 +179,45 @@ function processEvent(state: ActivityState, payload: SessionUpdatePayload): Acti
         if (payload.content) updated.content = payload.content;
         if (payload.locations) updated.locations = payload.locations;
         if (payload.rawInput) updated.rawInput = payload.rawInput;
+        const agentMeta = extractAgentMeta(raw);
+        const durationMs = agentMeta.totalDurationMs ?? (payload as Record<string, unknown>).totalDurationMs;
+        if (typeof durationMs === "number") {
+          updated.rawInput = {
+            ...updated.rawInput,
+            totalDurationMs: durationMs,
+            totalTokens: agentMeta.totalTokens ?? (payload as Record<string, unknown>).totalTokens,
+            totalToolUseCount: agentMeta.totalToolUseCount ?? (payload as Record<string, unknown>).totalToolUseCount,
+          };
+        }
         newMap.set(payload.toolCallId, updated);
+        const extractedTitle = extractPlanTitle(payload);
+
+        if (existing.parentToolCallId) {
+          // Refresh parent reference in items to trigger re-render of SubagentCard
+          const parent = newMap.get(existing.parentToolCallId);
+          if (parent) {
+            const refreshedParent = { ...parent };
+            newMap.set(existing.parentToolCallId, refreshedParent);
+            const updatedItems = items.map((i) =>
+              i.type === "toolCall" && i.item.toolCallId === existing.parentToolCallId
+                ? { ...i, item: refreshedParent }
+                : i,
+            );
+            return {
+              ...newState,
+              items: updatedItems,
+              toolCallMap: newMap,
+              ...(extractedTitle && { planTitle: extractedTitle }),
+            };
+          }
+          return { ...newState, items, toolCallMap: newMap };
+        }
+
         const updatedItems = items.map((i) =>
           i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
             ? { ...i, item: updated }
             : i,
         );
-        const extractedTitle = extractPlanTitle(payload);
         return {
           ...newState,
           items: updatedItems,
@@ -208,8 +306,9 @@ export function useAcpActivity(
 
     const unlisteners = Promise.all([
       listen<unknown>(`acp://session-update/${logId}`, (event) => {
-        const payload = event.payload as SessionUpdatePayload;
-        dispatch({ type: "event", payload });
+        const raw = event.payload as Record<string, unknown>;
+        const payload = raw as unknown as SessionUpdatePayload;
+        dispatch({ type: "event", payload, raw });
       }),
       listen<null>(`acp://session-ended/${logId}`, () => {
         dispatch({ type: "session_ended" });

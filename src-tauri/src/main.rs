@@ -2,6 +2,7 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 use maestro::db::{init_db, AppState};
+use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -32,24 +33,41 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(builder.invoke_handler())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent immediate close so we can cancel active ACP sessions first.
+                // This gives maestro-server a chance to send CloseSessionRequest to agents,
+                // freeing their in-memory session state rather than orphaning it.
+                api.prevent_close();
+                let handle = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = handle.state::<Arc<AppState>>();
+                    let session_keys: Vec<i32> = state.acp.sessions.lock().await.keys().copied().collect();
+                    for log_id in session_keys {
+                        let session_id = format!("session-{}", log_id);
+                        let cancel_msg = MaestroRpcMessage::Request(
+                            ServerRequest::Cancel(CancelRequest { session_id }),
+                        );
+                        let _ = maestro::acp::write_to_acp_session(&state, log_id, &cancel_msg).await;
+                    }
+                    // Give maestro-server time to forward CloseSessionRequest to agents.
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    handle.exit(0);
+                });
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            // Flush all SSH PTY session histories to DB on app close.
-            //
             // We CANNOT use Handle::current().block_on() here: Tauri 2's event loop runs
             // inside the tokio runtime, so block_on panics ("cannot call block_on inside
             // an async context"). Use try_lock (synchronous, safe from any context) instead.
-            // Background reader tasks are idle (waiting on Notify) or already dropped by
-            // the time the exit event fires, so try_lock succeeds in practice.
             let app_state = app_handle.state::<std::sync::Arc<AppState>>();
 
             // Release project lock so other instances can open this project immediately.
             app_state.release_active_project_lock();
-
-            // SSH PTY session history is in-memory only; no DB flush needed.
         }
     });
 }

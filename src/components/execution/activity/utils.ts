@@ -74,19 +74,45 @@ export function getOptionName(
   return options?.find((o) => o.optionId === optionId)?.name;
 }
 
+export function isSubagentToolCall(tc: ToolCallItem): boolean {
+  return typeof tc.rawInput?.prompt === "string";
+}
+
+
+export function subagentName(tc: ToolCallItem): string {
+  const desc = tc.rawInput?.description;
+  if (typeof desc === "string" && desc.trim()) return desc.trim();
+  return tc.title;
+}
+
 export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
   const result: GroupedDisplayItem[] = [];
   let i = 0;
   while (i < items.length) {
     const item = items[i];
     if (item.type === "toolCall") {
-      const group: ToolCallItem[] = [item.item];
-      while (i + 1 < items.length && items[i + 1].type === "toolCall") {
+      // Child tool calls should not be in items[], but skip defensively
+      if (item.item.parentToolCallId) {
         i++;
-        const next = items[i];
-        if (next.type === "toolCall") group.push(next.item);
+        continue;
       }
-      result.push({ type: "toolGroup", items: group });
+      if (isSubagentToolCall(item.item)) {
+        result.push({ type: "toolGroup", items: [item.item] });
+      } else {
+        const group: ToolCallItem[] = [item.item];
+        while (i + 1 < items.length) {
+          const lookahead = items[i + 1];
+          if (
+            lookahead.type !== "toolCall" ||
+            isSubagentToolCall(lookahead.item) ||
+            lookahead.item.parentToolCallId
+          )
+            break;
+          i++;
+          group.push(lookahead.item);
+        }
+        result.push({ type: "toolGroup", items: group });
+      }
     } else {
       result.push({ type: "solo", item });
     }

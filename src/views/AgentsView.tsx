@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { cn } from "@/lib/ui-utils";
 import { AgentMonitor } from "@/components/execution/AgentMonitor";
 import { SessionHistoryPanel } from "@/components/execution/SessionHistoryPanel";
 import { SpawnSessionDialog } from "@/components/execution/SpawnSessionDialog";
@@ -10,10 +11,14 @@ import {
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
+import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ActiveSessionInfo } from "@/types/bindings";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
-import { History, SearchIcon } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { History, SearchIcon, Settings2 } from "lucide-react";
+import type { ActivityVisibility } from "@/types/bindings";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -30,8 +35,49 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const [showHistory, setShowHistory] = useState(false);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
 
+  const { data: settings } = useSettings();
+  const saveSettings = useSaveSettings({ successToast: false });
+
+  const thinkingVisibility = settings?.thinking_visibility ?? "auto";
+  const toolCallVisibility = settings?.tool_call_visibility ?? "auto";
+
+  function handleThinkingVisibilityChange(value: ActivityVisibility | null) {
+    if (!settings || !value) return;
+    saveSettings.mutate({
+      ...settings,
+      thinking_visibility: value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  function handleToolCallVisibilityChange(value: ActivityVisibility | null) {
+    if (!settings || !value) return;
+    saveSettings.mutate({
+      ...settings,
+      tool_call_visibility: value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const { data: discovery } = useAgentDiscoveryQuery(connectionId ?? null);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.ctrlKey) return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "n") {
+        e.preventDefault();
+        setShowSpawnDialog(true);
+      } else if (e.key === "h") {
+        e.preventDefault();
+        if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [discovery?.agents?.length]);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
@@ -91,12 +137,53 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 text-xs"
+              className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
               onClick={() => setShowHistory((v) => !v)}
             >
               <History className="size-3.5 mr-1" />
+              History
             </Button>
           )}
+          <Popover>
+            <PopoverTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="Display settings">
+              <Settings2 className="size-3.5" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-60 gap-3">
+              <p className="text-xs font-semibold text-foreground">Display Settings</p>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-muted-foreground">Thinking blocks</label>
+                <Select value={thinkingVisibility} onValueChange={handleThinkingVisibilityChange}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue>
+                      {({ auto: "Auto", show: "Show expanded", collapse: "Collapsed", hide: "Hidden" })[thinkingVisibility]}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="show">Show expanded</SelectItem>
+                    <SelectItem value="collapse">Collapsed</SelectItem>
+                    <SelectItem value="hide">Hidden</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-muted-foreground">Tool calls</label>
+                <Select value={toolCallVisibility} onValueChange={handleToolCallVisibilityChange}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue>
+                      {({ auto: "Auto", show: "Show expanded", collapse: "Collapsed", hide: "Hidden" })[toolCallVisibility]}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="show">Show expanded</SelectItem>
+                    <SelectItem value="collapse">Collapsed</SelectItem>
+                    <SelectItem value="hide">Hidden</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -135,6 +222,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             repoPath={repoPath ?? ""}
             connectionId={connectionId ?? null}
             projectId={projectId ?? 0}
+            worktrees={worktrees}
             onClose={() => setShowHistory(false)}
             onSessionLoaded={(key) => {
               setSelectedSessionKey(key);

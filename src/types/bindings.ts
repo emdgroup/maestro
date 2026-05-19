@@ -1146,9 +1146,9 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
  */
-async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null, projectId: number | null) : Promise<Result<number, string>> {
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName, projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName, projectId, worktreeBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1157,6 +1157,23 @@ async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connect
 async drainAcpReplay(logId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("drain_acp_replay", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Prepare external file attachments for inclusion in an ACP prompt.
+ * 
+ * For images: reads bytes, validates size (rejects >10 MB, scales down >5 MB), base64-encodes.
+ * For text files with embedded_context=true: reads content locally, uploads to remote if needed.
+ * For text files with embedded_context=false: uploads to remote if needed, sends path-only ResourceLink.
+ * 
+ * Remote uploads go to `{cwd}/.maestro/attachments/{session_id}/{basename}`.
+ */
+async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], embeddedContext: boolean) : Promise<Result<PreparedAttachment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_external_attachments", { logId, files, embeddedContext }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1243,6 +1260,7 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
  * Active session info — in-memory only, returned by get_active_sessions
  */
 export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
 export type AgentCatalogCommand = { name: string; description: string }
 export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string; options: AgentCatalogOptionValue[] }
@@ -1257,7 +1275,7 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; updated_at: string }
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; updated_at: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1275,6 +1293,7 @@ export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } |
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
 export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_deps?: string[] }
+export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
@@ -1283,6 +1302,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
 export type PreflightCheck = { ok: boolean; message: string | null }
 export type PreflightResult = { maestro_server: PreflightCheck; agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
+export type PreparedAttachment = { display_name: string; local_path: string; content_block: JsonValue }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
 /**
  * Project-level agent detection: which agent tools have config markers in the project dir.

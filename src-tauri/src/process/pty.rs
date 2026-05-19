@@ -16,17 +16,35 @@ fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
         return Ok(p);
     }
 
-    let home = std::env::var("HOME").unwrap_or_default();
-    let candidates = [
-        format!("{}/.local/bin/{}", home, command),
-        format!("{}/.cargo/bin/{}", home, command),
-        "/usr/local/bin/".to_string() + command,
-        "/usr/bin/".to_string() + command,
-    ];
-    for candidate in &candidates {
-        let path = PathBuf::from(candidate);
-        if path.exists() {
-            return Ok(path);
+    #[cfg(not(windows))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let candidates = [
+            format!("{}/.local/bin/{}", home, command),
+            format!("{}/.cargo/bin/{}", home, command),
+            "/usr/local/bin/".to_string() + command,
+            "/usr/bin/".to_string() + command,
+        ];
+        for candidate in &candidates {
+            let path = PathBuf::from(candidate);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let profile = std::env::var("USERPROFILE").unwrap_or_default();
+        let candidates = [
+            format!("{}\\.local\\bin\\{}.exe", profile, command),
+            format!("{}\\AppData\\Local\\Programs\\{}.exe", profile, command),
+        ];
+        for candidate in &candidates {
+            let path = PathBuf::from(candidate);
+            if path.exists() {
+                return Ok(path);
+            }
         }
     }
 
@@ -96,20 +114,37 @@ pub async fn spawn_agent_cli_pty(
     // Enrich the child's PATH so tools it invokes (npm, cargo, nvm, etc.) are
     // found. This is scoped to the child environment only — the parent process
     // PATH is not modified, which avoids an EDR heuristic for PATH hijacking.
-    if let Ok(home) = std::env::var("HOME") {
+    #[cfg(not(windows))]
+    let home_var = "HOME";
+    #[cfg(windows)]
+    let home_var = "USERPROFILE";
+
+    if let Ok(home) = std::env::var(home_var) {
         let current_path = std::env::var("PATH").unwrap_or_default();
+
+        #[cfg(not(windows))]
         let extra = [
             format!("{}/.local/bin", home),
             format!("{}/.cargo/bin", home),
             "/usr/local/bin".to_string(),
         ];
+        #[cfg(windows)]
+        let extra = [
+            format!("{}\\.local\\bin", home),
+            format!("{}\\AppData\\Local\\Programs", home),
+        ];
+
         let mut paths: Vec<String> = extra
             .iter()
             .filter(|p| !current_path.contains(p.as_str()))
             .cloned()
             .collect();
         paths.push(current_path);
+
+        #[cfg(not(windows))]
         cmd.env("PATH", paths.join(":"));
+        #[cfg(windows)]
+        cmd.env("PATH", paths.join(";"));
     }
 
     // Spawn the command in the PTY slave end

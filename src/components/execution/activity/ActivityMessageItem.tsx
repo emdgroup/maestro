@@ -15,9 +15,9 @@ interface ActivityMessageItemProps {
   message: MessageItem;
 }
 
-function TypingDots() {
+export function TypingDots({ className }: { className?: string }) {
   return (
-    <span className="inline-flex items-center gap-[2px] ml-1 align-middle" aria-label="typing">
+    <span className={`inline-flex items-center gap-[2px] align-middle${className ? ` ${className}` : ""}`} aria-label="typing">
       {[0, 1, 2].map((i) => (
         <span
           key={i}
@@ -74,7 +74,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         {message.isStreaming && isActivelyStreaming ? (
           <>
             {completedText ? (hasSvg ? renderedSegments : <MarkdownBlock text={completedText} />) : null}
-            <TypingDots />
+            <TypingDots className="ml-1" />
           </>
         ) : hasSvg ? (
           renderedSegments

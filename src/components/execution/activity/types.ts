@@ -138,6 +138,8 @@ export type ToolCallItem = {
   content: ToolCallContent[];
   locations: ToolCallLocation[];
   rawInput?: Record<string, unknown>;
+  parentToolCallId?: string;
+  childToolCallIds?: string[];
 };
 
 export type PermissionResponseItem = {
@@ -163,6 +165,7 @@ export type ActivityItem =
 export type ActivityState = {
   items: ActivityItem[];
   toolCallMap: Map<string, ToolCallItem>;
+  pendingOrphans: Map<string, string[]>;
   lastUserMessageId: string | null;
   plan: PlanEntry[] | null;
   planTitle: string | null;
@@ -179,6 +182,7 @@ export type AvailableCommand = {
 export const INITIAL_ACTIVITY_STATE: ActivityState = {
   items: [],
   toolCallMap: new Map(),
+  pendingOrphans: new Map(),
   lastUserMessageId: null,
   plan: null,
   planTitle: null,

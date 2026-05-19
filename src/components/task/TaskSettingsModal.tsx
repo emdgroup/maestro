@@ -152,7 +152,9 @@ export function TaskSettingsModal({ isOpen, onClose, task }: TaskSettingsModalPr
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Use Project Default" />
+                  <SelectValue placeholder="Use Project Default">
+                    {watch("model_override") || null}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Use Project Default</SelectItem>

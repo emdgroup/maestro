@@ -72,6 +72,7 @@ export function useLoadAcpSessionMutation() {
       connectionId,
       sessionName,
       projectId,
+      worktreeBranch,
     }: {
       agentId: string;
       sessionId: string;
@@ -79,8 +80,9 @@ export function useLoadAcpSessionMutation() {
       connectionId: number | null;
       sessionName?: string | null;
       projectId?: number | null;
+      worktreeBranch?: string | null;
     }) => {
-      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null, projectId ?? null);
+      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, sessionName ?? null, projectId ?? null, worktreeBranch ?? null);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });

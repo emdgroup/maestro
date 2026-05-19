@@ -195,7 +195,9 @@ export function DiffActionBar({
               size="sm"
               className="h-auto border-none shadow-none bg-transparent font-mono text-sm font-semibold p-0 gap-1 focus:ring-0"
             >
-              <SelectValue />
+              <SelectValue>
+                {viewMode === "uncommitted" ? "Uncommitted Changes" : "Untracked Changes"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="uncommitted">Uncommitted Changes</SelectItem>

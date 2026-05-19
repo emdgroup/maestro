@@ -224,22 +224,18 @@ pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
     let mut agents = Vec::new();
     for (entry, binary_result, config_dir_path) in checks {
         let (detected, binary_found, binary_path, config_dir_found) = if entry.binary.is_some() {
-            // Binary defined: only check binary. Config dir is irrelevant even if it exists
-            // (leftover config from a past install does not mean the tool is installed).
             let (found, path) = match binary_result {
                 Some(Some(p)) => (true, Some(p)),
                 _ => (false, None),
             };
             (found, found, path, false)
         } else if entry.config_dir.is_some() {
-            // No known binary: fall back to config dir presence.
             let found = match config_dir_path {
                 Some(path) => tokio::fs::metadata(&path).await.is_ok(),
                 None => false,
             };
             (found, false, None, found)
         } else {
-            // No detection criteria: treat as not installed.
             (false, false, None, false)
         };
 
@@ -285,7 +281,8 @@ pub async fn detect_project_agents(cwd: &str) -> DetectProjectAgentsResponse {
     DetectProjectAgentsResponse { agents }
 }
 
-/// Run `which <binary>` for each binary in one shell call.
+/// Resolve each binary to its absolute path.
+/// Checks PATH first, then well-known installation directories.
 /// Returns a map of binary name → resolved path (None if not found).
 async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'static str, Option<String>> {
     let mut result = std::collections::HashMap::new();
@@ -293,23 +290,30 @@ async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'s
         return result;
     }
 
-    // Run each `which` concurrently rather than one big shell command,
-    // which avoids shell escaping issues and works on Windows too.
+    let home = home_dir();
+
     let handles: Vec<_> = binaries
         .iter()
         .map(|binary| {
             let binary = *binary;
+            let home = home.clone();
             tokio::spawn(async move {
-                let output = tokio::process::Command::new("which")
-                    .arg(binary)
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .output()
-                    .await;
-                let path = output.ok().filter(|o| o.status.success()).and_then(|o| {
-                    String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-                });
-                (binary, path)
+                // Try PATH-based resolution first
+                if let Ok(p) = which::which(binary) {
+                    return (binary, Some(p.to_string_lossy().to_string()));
+                }
+
+                // Fall back to well-known installation directories
+                if let Some(ref home) = home {
+                    let candidates = extra_binary_candidates(home, binary);
+                    for candidate in candidates {
+                        if candidate.exists() {
+                            return (binary, Some(candidate.to_string_lossy().to_string()));
+                        }
+                    }
+                }
+
+                (binary, None)
             })
         })
         .collect();
@@ -320,4 +324,26 @@ async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'s
         }
     }
     result
+}
+
+/// Well-known binary install locations not always on PATH.
+fn extra_binary_candidates(home: &PathBuf, binary: &str) -> Vec<PathBuf> {
+    #[cfg(not(windows))]
+    {
+        vec![
+            home.join(".local/bin").join(binary),
+            PathBuf::from("/usr/local/bin").join(binary),
+        ]
+    }
+    #[cfg(windows)]
+    {
+        let exe = format!("{}.exe", binary);
+        let cmd = format!("{}.cmd", binary);
+        vec![
+            home.join(".local\\bin").join(&exe),
+            home.join("AppData\\Local\\Programs").join(&exe),
+            home.join("AppData\\Roaming\\npm").join(&cmd),
+            home.join("AppData\\Roaming\\npm").join(&exe),
+        ]
+    }
 }

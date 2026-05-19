@@ -126,7 +126,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                             placeholder={
                               agentsLoading ? "Loading agents…" : "None (use session default)"
                             }
-                          />
+                          >
+                            {field.value === ""
+                              ? "None (use session default)"
+                              : (agents.find((a) => a.id === field.value)?.name ?? field.value)}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="">None (use session default)</SelectItem>
@@ -179,7 +183,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                       ? "No models cached yet"
                                       : "Select a model"
                               }
-                            />
+                            >
+                              {field.value === ""
+                                ? "Agent default"
+                                : (availableModels.find((m) => m.value === field.value)?.name ?? field.value)}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">Agent default</SelectItem>

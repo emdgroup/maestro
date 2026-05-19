@@ -8,14 +8,17 @@ import {
   useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
-import { Send, Paperclip } from "lucide-react";
+import { Send, Paperclip, File, FileCode, FileText, Image as ImageIcon } from "lucide-react";
+import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
-import type { JsonValue } from "@/types/bindings";
+import type { JsonValue, AcpPromptCapabilities } from "@/types/bindings";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { MentionEntry } from "./MentionEntry";
+import type { ExternalAttachment } from "./ExternalAttachment";
 import { LiquidContextIndicator } from "./LiquidContextIndicator";
 import { ConfigSelector } from "./config-selectors/ConfigSelector";
+import { isImageExtension, mimeForExtension } from "./file-type-utils";
 
 interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
@@ -29,41 +32,24 @@ interface ComposeBarProps {
   configValues: Record<string, string>;
   usageState: UsageState | null;
   onConfigChange: (optionId: string, value: string) => void;
+  promptCapabilities?: AcpPromptCapabilities | null;
+}
+
+const CODE_EXTENSIONS = new Set(["ts", "tsx", "js", "jsx", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "cs", "swift", "kt"]);
+const TEXT_EXTENSIONS = new Set(["md", "txt", "toml", "yaml", "yml", "json", "html", "css", "sql", "sh", "graphql"]);
+
+function iconForFilePath(path: string, className: string) {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  if (CODE_EXTENSIONS.has(ext)) return <FileCode className={className} />;
+  if (TEXT_EXTENSIONS.has(ext)) return <FileText className={className} />;
+  if (isImageExtension(path)) return <ImageIcon className={className} />;
+  return <File className={className} />;
 }
 
 export interface ComposeBarHandle {
   focus(): void;
 }
 
-const MIME_MAP: Record<string, string> = {
-  ".rs": "text/x-rust",
-  ".ts": "text/typescript",
-  ".tsx": "text/typescript",
-  ".js": "text/javascript",
-  ".jsx": "text/javascript",
-  ".py": "text/x-python",
-  ".go": "text/x-go",
-  ".rb": "text/x-ruby",
-  ".java": "text/x-java",
-  ".c": "text/x-c",
-  ".cpp": "text/x-c++",
-  ".h": "text/x-c",
-  ".toml": "text/x-toml",
-  ".json": "application/json",
-  ".md": "text/markdown",
-  ".yaml": "text/yaml",
-  ".yml": "text/yaml",
-  ".sh": "text/x-sh",
-  ".html": "text/html",
-  ".css": "text/css",
-  ".sql": "text/x-sql",
-  ".graphql": "text/x-graphql",
-};
-
-function mimeForPath(path: string): string | undefined {
-  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-  return MIME_MAP[ext];
-}
 
 export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function ComposeBar(
   {
@@ -78,6 +64,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     configValues,
     usageState,
     onConfigChange,
+    promptCapabilities,
   },
   ref,
 ) {
@@ -86,6 +73,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
   const [commandFilter, setCommandFilter] = useState("");
   const [commandHighlight, setCommandHighlight] = useState(0);
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
+  const [attachments, setAttachments] = useState<ExternalAttachment[]>([]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState<string[]>([]);
   const [mentionHighlight, setMentionHighlight] = useState(0);
@@ -166,6 +154,30 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     setMentionQuery("");
   }, []);
 
+  const resetForm = useCallback(() => {
+    setValue("");
+    setMentions([]);
+    setAttachments([]);
+    setShowCommands(false);
+    closeMentions();
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  }, [closeMentions]);
+
+  const handleAttach = useCallback(async () => {
+    const selected = await openFilePicker({ multiple: true });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const path of paths) {
+      const isImage = isImageExtension(path);
+      if (isImage && !promptCapabilities?.image) continue;
+      const displayName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+      setAttachments((prev) => [
+        ...prev,
+        { id: `${Date.now()}-${Math.random()}`, displayName, localAbsPath: path, isImage },
+      ]);
+    }
+  }, [promptCapabilities]);
+
   const selectMention = useCallback(
     (filePath: string) => {
       const newMention: MentionEntry = {
@@ -200,22 +212,40 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     if (!trimmed) return;
     if (isSending) return;
 
-    if (mentions.length === 0 || !logId) {
+    if (mentions.length === 0 && attachments.length === 0) {
       onSend(trimmed);
-      setValue("");
-      setShowCommands(false);
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      resetForm();
+      return;
+    }
+
+    if (!logId) {
+      onSend(trimmed);
+      resetForm();
       return;
     }
 
     setIsSending(true);
     try {
+      // Build attachment blocks (images + external files)
+      const attachmentBlocks: JsonValue[] = [];
+      if (attachments.length > 0) {
+        const prepared = await api.prepareExternalAttachments(
+          logId,
+          attachments.map((a) => ({ path: a.localAbsPath, is_image: a.isImage })),
+          embeddedContext,
+        );
+        for (const p of prepared) {
+          attachmentBlocks.push(p.content_block as JsonValue);
+        }
+      }
+
+      // Build mention blocks (project-scoped @mention files)
       const fileContents = new Map<string, { text: string; mime: string | undefined } | null>();
-      if (embeddedContext) {
+      if (mentions.length > 0 && embeddedContext) {
         const results = await Promise.allSettled(
           mentions.map(async (m) => {
             const text = await api.readSessionFile(logId, m.filePath);
-            return { path: m.filePath, text, mime: mimeForPath(m.filePath) };
+            return { path: m.filePath, text, mime: mimeForExtension(m.filePath) };
           }),
         );
         for (const r of results) {
@@ -225,7 +255,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
         }
       }
 
-      const contentBlocks: JsonValue[] = [];
+      const mentionBlocks: JsonValue[] = [];
       const sortedMentions = [...mentions].sort((a, b) => {
         const idxA = trimmed.indexOf(`@${a.filePath}`);
         const idxB = trimmed.indexOf(`@${b.filePath}`);
@@ -239,12 +269,12 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
         if (idx === -1) continue;
 
         const before = trimmed.slice(cursor, idx);
-        if (before) contentBlocks.push({ type: "text", text: before });
+        if (before) mentionBlocks.push({ type: "text", text: before });
 
         const uri = `file://${projectPath ?? ""}/${mention.filePath}`;
         const fetched = fileContents.get(mention.filePath);
         if (fetched) {
-          contentBlocks.push({
+          mentionBlocks.push({
             type: "resource",
             resource: {
               uri,
@@ -253,25 +283,23 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
             },
           });
         } else {
-          contentBlocks.push({ type: "resource_link", name: mention.displayName, uri });
+          mentionBlocks.push({ type: "resource_link", name: mention.displayName, uri });
         }
 
         cursor = idx + marker.length;
       }
 
       const trailing = trimmed.slice(cursor);
-      if (trailing) contentBlocks.push({ type: "text", text: trailing });
+      if (trailing) mentionBlocks.push({ type: "text", text: trailing });
+
+      const contentBlocks: JsonValue[] = [...attachmentBlocks, ...mentionBlocks];
 
       onSend(trimmed, contentBlocks as JsonValue);
-      setValue("");
-      setMentions([]);
-      setShowCommands(false);
-      closeMentions();
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      resetForm();
     } finally {
       setIsSending(false);
     }
-  }, [value, mentions, isSending, logId, projectPath, embeddedContext, onSend, closeMentions]);
+  }, [value, mentions, attachments, isSending, logId, projectPath, embeddedContext, onSend, resetForm]);
 
   const selectCommand = useCallback((cmd: AvailableCommand) => {
     const inserted = `/${cmd.name} `;
@@ -437,7 +465,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                     i === mentionHighlight ? "bg-muted" : "hover:bg-muted/50",
                   )}
                 >
-                  <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
+                  {iconForFilePath(path, "w-3 h-3 text-muted-foreground shrink-0")}
                   <span className="font-mono text-xs text-foreground truncate">{path}</span>
                 </button>
               ))}
@@ -501,15 +529,42 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
         )}
       >
         <div className="relative">
-          {/* File pills */}
-          {mentions.length > 0 && (
+          {/* External attachment pills + mention pills */}
+          {(attachments.length > 0 || mentions.length > 0) && (
             <div className="flex flex-wrap gap-1 px-3.5 pt-2.5">
+              {attachments.map((a) => (
+                <span
+                  key={a.id}
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-md border",
+                    a.isImage
+                      ? "bg-[oklch(70%_0.14_300/0.1)] border-[oklch(70%_0.14_300/0.18)] text-[oklch(70%_0.14_300)]"
+                      : "bg-[oklch(72%_0.12_195/0.1)] border-[oklch(72%_0.12_195/0.18)] text-[oklch(72%_0.12_195)]",
+                  )}
+                >
+                  {a.isImage ? (
+                    <ImageIcon className="w-2.5 h-2.5 shrink-0" />
+                  ) : (
+                    iconForFilePath(a.displayName, "w-2.5 h-2.5 shrink-0")
+                  )}
+                  {a.displayName}
+                  <button
+                    type="button"
+                    className="opacity-40 hover:opacity-100 transition-opacity"
+                    onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                  >
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
               {mentions.map((m) => (
                 <span
                   key={m.id}
                   className="inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-md bg-accent/8 border border-accent/12 text-accent"
                 >
-                  <Paperclip className="w-2.5 h-2.5 shrink-0" />
+                  {iconForFilePath(m.displayName, "w-2.5 h-2.5 shrink-0")}
                   {m.displayName}
                   <button
                     type="button"
@@ -541,6 +596,17 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
 
           {/* Textarea + send/stop row */}
           <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1">
+            {logId && (
+              <button
+                type="button"
+                onClick={() => void handleAttach()}
+                disabled={isProcessing || isSending}
+                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
+                title="Attach external files"
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+              </button>
+            )}
             <textarea
               ref={textareaRef}
               value={value}

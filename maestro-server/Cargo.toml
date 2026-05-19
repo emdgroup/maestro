@@ -19,3 +19,4 @@ tokio-util = { version = "0.7", features = ["compat"] }
 serde_json = "1"
 futures = "0.3"
 ignore = "0.4"
+which = "8.0.2"

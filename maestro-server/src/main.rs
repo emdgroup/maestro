@@ -135,6 +135,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Break the loop if stdout write fails — server can't communicate, no point continuing.
+    macro_rules! send_or_break {
+        ($e:expr) => {
+            if ($e).is_err() {
+                break;
+            }
+        };
+    }
+
     loop {
         let msg = match read_message(&mut stdin).await {
             Ok(msg) => msg,
@@ -151,13 +160,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 if is_eof {
                     break;
                 }
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("read error: {}", e),
                     })),
                 )
-                .await;
+                .await);
                 continue;
             }
         };
@@ -173,13 +182,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         spawn_deps: a.spawn_deps.clone(),
                     })
                     .collect();
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
                         ListAgentsResponse { agents },
                     )),
                 )
-                .await;
+                .await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
@@ -224,11 +233,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         supports_session_close: result.supports_session_close,
                     };
                     sessions.insert(req.session_id, result.session);
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
                     )
-                    .await;
+                    .await);
                 }
                 // None: error already sent by spawn function
             }
@@ -239,7 +248,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
                             session_id: req.session_id.clone(),
@@ -250,7 +259,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             }),
                         })),
                     )
-                    .await;
+                    .await);
                     let cmd = match req.content {
                         serde_json::Value::Array(blocks) => {
                             SessionCommand::PromptStructured(blocks)
@@ -260,7 +269,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     };
                     if session.cmd_tx.send(cmd).await.is_err() {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: format!(
@@ -269,24 +278,47 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 ),
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 } else {
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", req.session_id),
                         })),
                     )
-                    .await;
+                    .await);
                 }
             }
 
             MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
-                // Drop session — cmd_tx drop causes the connection task to exit,
-                // which drops child (kill_on_drop)
                 if let Some(session) = sessions.remove(&req.session_id) {
-                    session.task.abort();
+                    if session.cmd_tx.try_send(SessionCommand::CloseSession).is_ok() {
+                        // Graceful close: command loop sends CloseSessionRequest to agent.
+                        // Watchdog force-aborts after 5s if the loop stalls.
+                        let abort_handle = session.task.abort_handle();
+                        let cleanup = session.cleanup;
+                        tokio::spawn(async move {
+                            let timed_out = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                session.task,
+                            )
+                            .await
+                            .is_err();
+                            if timed_out {
+                                abort_handle.abort();
+                                if let Some(c) = cleanup {
+                                    c.router.unregister(&c.acp_session_id).await;
+                                }
+                            }
+                        });
+                    } else {
+                        // Channel full or closed — force abort and clean up manually.
+                        session.task.abort();
+                        if let Some(c) = session.cleanup {
+                            c.router.unregister(&c.acp_session_id).await;
+                        }
+                    }
                 }
             }
 
@@ -330,7 +362,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                         .is_err()
                     {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: format!(
@@ -339,16 +371,16 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 ),
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 } else {
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", set_model_req.session_id),
                         })),
                     )
-                    .await;
+                    .await);
                 }
             }
 
@@ -360,7 +392,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                         .is_err()
                     {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: format!(
@@ -369,16 +401,16 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 ),
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 } else {
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", set_mode_req.session_id),
                         })),
                     )
-                    .await;
+                    .await);
                 }
             }
 
@@ -393,22 +425,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                         .is_err()
                     {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: format!("session {} connection closed", req.session_id),
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 } else {
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", req.session_id),
                         })),
                     )
-                    .await;
+                    .await);
                 }
             }
 
@@ -424,7 +456,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         ErrorResponse { message: msg },
                     )),
                 };
-                let _ = send_response(&stdout, &response).await;
+                send_or_break!(send_response(&stdout, &response).await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::FileRead(req)) => {
@@ -437,7 +469,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         ErrorResponse { message: msg },
                     )),
                 };
-                let _ = send_response(&stdout, &response).await;
+                send_or_break!(send_response(&stdout, &response).await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
@@ -456,22 +488,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 match list_result {
                     Ok((sessions_list, next_cursor)) => {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
                                 SessionListOkResponse { sessions: sessions_list, next_cursor },
                             )),
                         )
-                        .await;
+                        .await);
                     }
                     Err(e) => {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: e,
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 }
             }
@@ -510,7 +542,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some((session, models, modes, prompt_caps)) = result {
                     sessions.insert(req.session_id.clone(), session);
-                    let _ = send_response(
+                    send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
                             SessionLoadOkResponse {
@@ -521,7 +553,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         )),
                     )
-                    .await;
+                    .await);
                 }
             }
 
@@ -541,32 +573,32 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 match close_result {
                     Ok(()) => {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
                         )
-                        .await;
+                        .await);
                     }
                     Err(e) => {
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: e,
                             })),
                         )
-                        .await;
+                        .await);
                     }
                 }
             }
 
             MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: "unexpected Handshake after initialization".to_string(),
                     })),
                 )
-                .await;
+                .await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::PreInitialize(req)) => {
@@ -609,13 +641,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             modes,
                         };
                         agent_connections.insert(req.agent_id, conn);
-                        let _ = send_response(
+                        send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(
                                 response,
                             )),
                         )
-                        .await;
+                        .await);
                     }
                     None => {
                         // Error already sent by pre_initialize_agent
@@ -625,38 +657,46 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Request(ServerRequest::CheckTools(req)) => {
                 let results = check_tools(req.tools).await;
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(
                         CheckToolsResponse { results },
                     )),
                 )
-                .await;
+                .await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
                 let response = detection::detect_installed_agents().await;
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
                         response,
                     )),
                 )
-                .await;
+                .await);
             }
 
             MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(req)) => {
                 let response = detection::detect_project_agents(&req.cwd).await;
-                let _ = send_response(
+                send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(
                         response,
                     )),
                 )
-                .await;
+                .await);
             }
 
             MaestroRpcMessage::Response(_) => {}
+        }
+    }
+
+    // Abort all active session tasks so agent child processes are killed promptly.
+    for (_id, session) in sessions.drain() {
+        session.task.abort();
+        if let Some(c) = session.cleanup {
+            c.router.unregister(&c.acp_session_id).await;
         }
     }
 

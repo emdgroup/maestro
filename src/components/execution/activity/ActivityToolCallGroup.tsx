@@ -1,5 +1,6 @@
-import { useState, useRef, Component } from "react";
+import { useState, useEffect, useRef, Component } from "react";
 import type { ReactNode } from "react";
+import { useSettings } from "@/services/settings.service";
 import {
   FileText,
   Terminal,
@@ -14,6 +15,7 @@ import {
   Brain,
   ArrowRightLeft,
   Settings2,
+  Wrench,
 } from "lucide-react";
 import type { ToolCallItem, ToolCallContent } from "./types";
 
@@ -88,23 +90,55 @@ class ContentErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
 interface ActivityToolCallGroupProps {
   items: ToolCallItem[];
+  hasSubsequentMessage: boolean;
 }
 
-export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
+export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityToolCallGroupProps) {
+  const { data: settings } = useSettings();
+  const visibility = settings?.tool_call_visibility ?? "auto";
+
   const allDone = items.every((i) => i.status === "completed" || i.status === "error");
+  const isSingleItem = items.length === 1;
+  const singleItemHasContent = isSingleItem && (() => {
+    const tc = items[0];
+    const isReadFile = tc.kind === "read_file" || tc.kind === "read";
+    return !isReadFile && tc.content.length > 0;
+  })();
   const userToggled = useRef(false);
-  const [manualOpen, setManualOpen] = useState(false);
+
+  const [manualOpen, setManualOpen] = useState(() => {
+    if (visibility === "collapse") return false;
+    if (visibility === "show") return true;
+    return !allDone;
+  });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const groupOpen = userToggled.current ? manualOpen : !allDone;
+  // Auto mode: derive open state from allDone unless user has toggled
+  const groupOpen = (() => {
+    if (isSingleItem && !singleItemHasContent) return false;
+    if (userToggled.current) return manualOpen;
+    if (visibility === "collapse") return false;
+    if (visibility === "show") return true;
+    // "auto": open while running
+    return !allDone;
+  })();
+
   const setGroupOpen = (open: boolean) => {
     userToggled.current = true;
     setManualOpen(open);
   };
 
+  // Auto mode: collapse when subsequent message arrives (unless user toggled)
+  useEffect(() => {
+    if (visibility === "auto" && hasSubsequentMessage && !userToggled.current) {
+      setManualOpen(false);
+    }
+  }, [visibility, hasSubsequentMessage]);
+
   const status = groupStatus(items);
   const isError = status === "error";
-  const Icon = KIND_ICON[items[0]?.kind] ?? Box;
+  const allSameKind = items.length > 0 && items.every((i) => i.kind === items[0].kind);
+  const Icon = allSameKind ? (KIND_ICON[items[0]?.kind] ?? Box) : Wrench;
   const label = groupLabel(items);
   const subtitle = terminalSubtitle(items);
   const errorCount = items.filter((i) => i.status === "error").length;
@@ -129,14 +163,16 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     });
   };
 
+  if (visibility === "hide") return null;
+
   return (
     <div
       className={`rounded-lg border overflow-hidden ${isError ? "border-destructive/40" : "border-border"}`}
     >
       <button
         type="button"
-        onClick={() => setGroupOpen(!groupOpen)}
-        className="flex items-center gap-2 w-full px-3 py-2 bg-card hover:bg-muted/50 transition-colors text-left"
+        onClick={() => { if (!isSingleItem || singleItemHasContent) setGroupOpen(!groupOpen); }}
+        className={`flex items-center gap-2 w-full px-3 py-2 bg-card transition-colors text-left ${isSingleItem && !singleItemHasContent ? "cursor-default" : "hover:bg-muted/50"}`}
       >
         <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
         <span className="text-xs font-medium text-foreground/80">{label}</span>
@@ -157,69 +193,84 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
           {status === "in_progress" && <Loader2 className="w-3 h-3 animate-spin" />}
           {statusText}
         </span>
-        {groupOpen ? (
-          <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+        {(!isSingleItem || singleItemHasContent) && (
+          groupOpen ? (
+            <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+          )
         )}
       </button>
 
       {groupOpen && (
-        <div className="border-t border-border divide-y divide-border/40">
-          {items.map((tc) => {
-            const CardIcon = KIND_ICON[tc.kind] ?? Box;
-            const isReadFile = tc.kind === "read_file" || tc.kind === "read";
-            const hasContent = !isReadFile && tc.content.length > 0;
-            const isExpanded = expandedIds.has(tc.toolCallId);
+        isSingleItem ? (
+          <ContentErrorBoundary>
+            <div className="border-t border-border px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5">
+              {items[0].content.map((c, i) => (
+                <ToolCallContentBlock key={i} content={c} />
+              ))}
+              {items[0].status === "error" && items[0].content.length === 0 && (
+                <span className="text-xs text-destructive italic">Tool call failed</span>
+              )}
+            </div>
+          </ContentErrorBoundary>
+        ) : (
+          <div className="border-t border-border divide-y divide-border/40">
+            {items.map((tc) => {
+              const CardIcon = KIND_ICON[tc.kind] ?? Box;
+              const isReadFile = tc.kind === "read_file" || tc.kind === "read";
+              const hasContent = !isReadFile && tc.content.length > 0;
+              const isExpanded = expandedIds.has(tc.toolCallId);
 
-            return (
-              <div key={tc.toolCallId}>
-                <button
-                  type="button"
-                  disabled={!hasContent}
-                  onClick={() => hasContent && toggleExpand(tc.toolCallId)}
-                  className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors ${
-                    hasContent ? "cursor-pointer hover:bg-muted/30" : "cursor-default"
-                  } ${isExpanded ? "bg-muted/20" : ""} ${tc.status === "in_progress" ? "animate-pulse" : ""}`}
-                >
-                  <CardIcon
-                    className={`w-3.5 h-3.5 shrink-0 ${
-                      tc.status === "error" ? "text-destructive" : "text-muted-foreground"
-                    }`}
-                  />
-                  <span
-                    className={`font-medium truncate flex-1 ${
-                      tc.status === "error" ? "text-destructive" : "text-foreground/80"
-                    }`}
+              return (
+                <div key={tc.toolCallId}>
+                  <button
+                    type="button"
+                    disabled={!hasContent}
+                    onClick={() => hasContent && toggleExpand(tc.toolCallId)}
+                    className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors ${
+                      hasContent ? "cursor-pointer hover:bg-muted/30" : "cursor-default"
+                    } ${isExpanded ? "bg-muted/20" : ""} ${tc.status === "in_progress" ? "animate-pulse" : ""}`}
                   >
-                    {tc.title}
-                  </span>
-                  {tc.status === "error" && (
-                    <span className="text-[10px] text-destructive shrink-0">Failed</span>
+                    <CardIcon
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        tc.status === "error" ? "text-destructive" : "text-muted-foreground"
+                      }`}
+                    />
+                    <span
+                      className={`font-medium truncate flex-1 ${
+                        tc.status === "error" ? "text-destructive" : "text-foreground/80"
+                      }`}
+                    >
+                      {tc.title}
+                    </span>
+                    {tc.status === "error" && (
+                      <span className="text-[10px] text-destructive shrink-0">Failed</span>
+                    )}
+                  </button>
+                  {isExpanded && (
+                    <ContentErrorBoundary>
+                      <div className="px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5 border-t border-border/40">
+                        {tc.content.map((c, i) => (
+                          <ToolCallContentBlock key={i} content={c} />
+                        ))}
+                        {tc.status === "error" && tc.content.length === 0 && (
+                          <span className="text-xs text-destructive italic">Tool call failed</span>
+                        )}
+                      </div>
+                    </ContentErrorBoundary>
                   )}
-                </button>
-                {isExpanded && (
-                  <ContentErrorBoundary>
-                    <div className="px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5 border-t border-border/40">
-                      {tc.content.map((c, i) => (
-                        <ToolCallContentBlock key={i} content={c} />
-                      ))}
-                      {tc.status === "error" && tc.content.length === 0 && (
-                        <span className="text-xs text-destructive italic">Tool call failed</span>
-                      )}
-                    </div>
-                  </ContentErrorBoundary>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );
 }
 
-function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
+export function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
   switch (content.type) {
     case "content": {
       const text = content.content?.text;

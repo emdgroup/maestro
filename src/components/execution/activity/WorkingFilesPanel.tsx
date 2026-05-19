@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { FileText, X, Copy, Check, FileCode } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
 import { MarkdownBlock, SvgBlock, MermaidBlock, CodeBlockWrapper } from "./MarkdownBlock";
+import { Slider } from "@/ui/slider";
+import { isImageExtension, imageMimeForExtension, langForExtension } from "./file-type-utils";
 
 interface WorkingFilesPanelProps {
   files: string[];
@@ -12,23 +14,6 @@ interface WorkingFilesPanelProps {
 
 type FileViewType = "markdown" | "svg" | "mermaid" | "code" | "html" | "plain" | "image";
 
-const EXT_TO_LANG: Record<string, string> = {
-  ".json": "json",
-  ".yaml": "yaml",
-  ".yml": "yaml",
-  ".toml": "toml",
-  ".xml": "xml",
-  ".css": "css",
-  ".sql": "sql",
-  ".sh": "bash",
-  ".bash": "bash",
-  ".py": "python",
-  ".js": "javascript",
-  ".ts": "typescript",
-  ".rs": "rust",
-};
-
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 function getFileViewType(path: string): FileViewType {
   const dot = path.lastIndexOf(".");
@@ -37,24 +22,34 @@ function getFileViewType(path: string): FileViewType {
   if (ext === ".svg") return "svg";
   if (ext === ".mmd" || ext === ".mermaid") return "mermaid";
   if (ext === ".html") return "html";
-  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (isImageExtension(path)) return "image";
   if (ext === ".txt" || ext === ".log" || ext === ".csv" || ext === ".tsv") return "plain";
-  if (ext in EXT_TO_LANG) return "code";
+  if (langForExtension(path) !== undefined) return "code";
   return "plain";
 }
 
-const IMAGE_MIME: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
+
+const IFRAME_SCROLLBAR_CSS = `<style>
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: rgba(128,128,128,0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(128,128,128,0.5); }
+html { scrollbar-width: thin; scrollbar-color: rgba(128,128,128,0.3) transparent; }
+</style>`;
+
+function injectIframeScrollbarCSS(html: string): string {
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `${IFRAME_SCROLLBAR_CSS}</head>`);
+  }
+  return IFRAME_SCROLLBAR_CSS + html;
+}
 
 function FileContentView({ content, viewType, path }: { content: string; viewType: FileViewType; path: string }) {
-  const dot = path.lastIndexOf(".");
-  const ext = dot !== -1 ? path.slice(dot).toLowerCase() : "";
-  const lang = EXT_TO_LANG[ext] ?? "text";
+  const lang = langForExtension(path) ?? "text";
+  const srcDoc = useMemo(
+    () => (viewType === "html" ? injectIframeScrollbarCSS(content) : ""),
+    [content, viewType],
+  );
 
   switch (viewType) {
     case "markdown":
@@ -66,7 +61,7 @@ function FileContentView({ content, viewType, path }: { content: string; viewTyp
     case "html":
       return (
         <iframe
-          srcDoc={content}
+          srcDoc={srcDoc}
           sandbox="allow-scripts"
           className="w-full h-full border-0 bg-white rounded-md"
           title={path.split("/").pop()}
@@ -81,7 +76,7 @@ function FileContentView({ content, viewType, path }: { content: string; viewTyp
     case "code":
       return <CodeBlockWrapper code={content} lang={lang} />;
     case "image": {
-      const mime = IMAGE_MIME[ext] ?? "image/png";
+      const mime = imageMimeForExtension(path);
       return (
         <img
           src={`data:${mime};base64,${content}`}
@@ -96,16 +91,50 @@ function FileContentView({ content, viewType, path }: { content: string; viewTyp
 }
 
 export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(files[0] ?? null);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [cwd, setCwd] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(100);
 
   useEffect(() => {
     api.getAcpSessionMeta(sessionKey).then((meta) => setCwd(meta.cwd)).catch(console.error);
   }, [sessionKey]);
+
+  useEffect(() => { setZoom(100); }, [selectedFile]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        setZoom((z) => Math.min(200, z + 10));
+      } else if (e.key === "-") {
+        e.preventDefault();
+        setZoom((z) => Math.max(50, z - 10));
+      } else if (e.key === "0") {
+        e.preventDefault();
+        setZoom(100);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    function handleWheel(e: WheelEvent) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom((z) => Math.min(200, Math.max(50, z + (e.deltaY < 0 ? 10 : -10))));
+    }
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
 
   // Gate: return null when path is absolute but cwd not yet loaded to avoid sending absolute path to server
   const relativePath = useMemo(() => {
@@ -153,7 +182,7 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
   const basename = selectedFile ? (selectedFile.split("/").pop() ?? selectedFile) : null;
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-background">
+    <div ref={panelRef} className="absolute inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center h-12 px-4 border-b border-border bg-card/50 shrink-0 gap-2">
         <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -164,10 +193,30 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
             <span className="text-xs font-mono text-muted-foreground truncate">{basename}</span>
           </>
         )}
+        <div className="flex-1" />
+        {content !== null && viewType !== null && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Slider
+              min={50}
+              max={200}
+              value={[zoom]}
+              onValueChange={(val) => setZoom(Array.isArray(val) ? val[0] : (val as number))}
+              className="zoom-slider w-20"
+            />
+            <button
+              type="button"
+              onClick={() => setZoom(100)}
+              className="px-1.5 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[3rem] text-center"
+            >
+              {zoom}%
+            </button>
+            <div className="w-px h-4 bg-border shrink-0" />
+          </div>
+        )}
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
@@ -214,7 +263,16 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
               <div className="text-xs text-destructive">{loadError}</div>
             )}
             {!loading && content !== null && viewType !== null && (
-              <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />
+              <div
+                style={{
+                  transform: zoom !== 100 ? `scale(${zoom / 100})` : undefined,
+                  transformOrigin: "top left",
+                  width: zoom !== 100 ? `${10000 / zoom}%` : undefined,
+                  height: viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
+                }}
+              >
+                <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />
+              </div>
             )}
           </div>
 

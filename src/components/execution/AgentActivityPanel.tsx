@@ -13,6 +13,7 @@ import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMe
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
 import { ActivityFileCard } from "./activity/ActivityFileCard";
+import { SubagentCard } from "./activity/SubagentCard";
 import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
 import { ComposeBar } from "./activity/ComposeBar";
 import type { ComposeBarHandle } from "./activity/ComposeBar";
@@ -33,6 +34,7 @@ import {
   mergeLiveItems,
   makeElicitationSummary,
   formatElicitationAnswer,
+  isSubagentToolCall,
 } from "./activity/utils";
 import { AgentResponseSection } from "./activity/AgentResponseSection";
 import type { JsonValue } from "@/types/bindings";
@@ -455,6 +457,7 @@ export function AgentActivityPanel({
             configValues={configValues}
             usageState={usageState}
             onConfigChange={handleConfigChange}
+            promptCapabilities={promptCapabilities}
           />
         </div>
       );
@@ -477,7 +480,7 @@ export function AgentActivityPanel({
             onWheel={handleWheel}
           >
             <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
-              {agentSections.map((section) => {
+              {agentSections.map((section, sectionIndex) => {
                 if (section.type === "standalone") {
                   const gi = section.item;
                   if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
@@ -498,8 +501,34 @@ export function AgentActivityPanel({
                       ? firstItem.item.item.toolCallId
                       : firstItem.item.item.id;
 
-                const children = items.map((gi) => {
+                const nextSectionStartsWithMessage = (() => {
+                  for (let si = sectionIndex + 1; si < agentSections.length; si++) {
+                    const next = agentSections[si];
+                    if (next.type === "agentSection") {
+                      const first = next.items[0];
+                      return first.type === "solo" && first.item.type === "message";
+                    }
+                  }
+                  return false;
+                })();
+
+                const children = items.map((gi, index) => {
+                  const hasSubsequentMessage = items
+                    .slice(index + 1)
+                    .some((later) => later.type === "solo" && later.item.type === "message")
+                    || nextSectionStartsWithMessage;
+
                   if (gi.type === "toolGroup") {
+                    if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {
+                      return (
+                        <SubagentCard
+                          key={gi.items[0].toolCallId}
+                          item={gi.items[0]}
+                          toolCallMap={liveState.toolCallMap}
+                        />
+                      );
+                    }
+
                     const groupDone = gi.items.every(
                       (i) => i.status === "completed" || i.status === "error",
                     );
@@ -526,7 +555,7 @@ export function AgentActivityPanel({
                     const groupKey = `tg-${gi.items[0].toolCallId}`;
                     return (
                       <div key={groupKey} className="space-y-3">
-                        <ActivityToolCallGroup items={gi.items} />
+                        <ActivityToolCallGroup items={gi.items} hasSubsequentMessage={hasSubsequentMessage} />
                         {groupDone && uniqueWorkingFiles.length > 0 && (
                           <ActivityFileCard
                             variant="working-files"
@@ -549,7 +578,7 @@ export function AgentActivityPanel({
                   if (item.type === "message") {
                     return <ActivityMessageItem key={item.item.id} message={item.item} />;
                   } else if (item.type === "thinking") {
-                    return <ActivityThinkingBlock key={item.item.id} thinking={item.item} />;
+                    return <ActivityThinkingBlock key={item.item.id} thinking={item.item} hasSubsequentMessage={hasSubsequentMessage} />;
                   } else if (item.type === "permissionResponse") {
                     return <PermissionResponseCard key={item.item.id} item={item.item} />;
                   } else if (item.type === "elicitationSummary") {
@@ -584,7 +613,7 @@ export function AgentActivityPanel({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
                 onClick={scrollToLastUserMsg}
-                className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-[4px] bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
+                className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-[4px] bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
                 aria-label="Scroll to last message"
               >
                 <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center flex-shrink-0">

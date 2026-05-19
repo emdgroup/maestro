@@ -220,6 +220,27 @@
   }
 }
 
+.zoom-slider [data-slot="slider-track"] {
+  height: 2px;
+}
+
+.zoom-slider [data-slot="slider-range"] {
+  background-color: var(--muted-foreground);
+}
+
+.zoom-slider [data-slot="slider-thumb"] {
+  width: 10px;
+  height: 10px;
+  border-color: var(--muted-foreground);
+  background-color: var(--muted-foreground);
+  box-shadow: none;
+}
+
+.zoom-slider [data-slot="slider-thumb"]:hover {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
 @keyframes shimmer {
   0% {
     background-position: 200% center;
@@ -256,9 +277,6 @@
   );
 }
 
-.selected-session-item .session-item-name {
-  color: oklch(from var(--accent) calc(l + 0.15) c h);
-}
 
 .shimmer-thinking-icon {
   mask-image: linear-gradient(

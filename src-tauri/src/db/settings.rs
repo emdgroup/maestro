@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::AppSettings;
+use crate::models::{AppSettings, ActivityVisibility};
 
 /// Load application settings from the database
 ///
@@ -50,10 +50,22 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(3);
 
+    let thinking_visibility = settings_map
+        .get("thinking_visibility")
+        .and_then(|v| v.parse::<ActivityVisibility>().ok())
+        .unwrap_or_default();
+
+    let tool_call_visibility = settings_map
+        .get("tool_call_visibility")
+        .and_then(|v| v.parse::<ActivityVisibility>().ok())
+        .unwrap_or_default();
+
     Ok(AppSettings {
         theme_preference,
         auto_mode,
         max_concurrent_agents,
+        thinking_visibility,
+        tool_call_visibility,
         updated_at,
     })
 }
@@ -67,11 +79,15 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     // Build key-value pairs for simple string fields
     let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
     let max_concurrent_str = settings.max_concurrent_agents.to_string();
-    let pairs = vec![
+    let thinking_vis = settings.thinking_visibility.to_string();
+    let tool_call_vis = settings.tool_call_visibility.to_string();
+    let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
         ("max_concurrent_agents", max_concurrent_str.as_str()),
-        ("updated_at", &settings.updated_at),
+        ("thinking_visibility", thinking_vis.as_str()),
+        ("tool_call_visibility", tool_call_vis.as_str()),
+        ("updated_at", settings.updated_at.as_str()),
     ];
 
     // Use a transaction for atomic writes
@@ -114,6 +130,8 @@ mod tests {
             theme_preference: Some("dark".to_string()),
             auto_mode: false,
             max_concurrent_agents: 3,
+            thinking_visibility: crate::models::ActivityVisibility::Auto,
+            tool_call_visibility: crate::models::ActivityVisibility::Auto,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 

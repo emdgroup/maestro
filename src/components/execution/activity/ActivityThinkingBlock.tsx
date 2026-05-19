@@ -3,13 +3,37 @@ import { Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import type { ThinkingItem } from "./types";
 import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
+import { useSettings } from "@/services/settings.service";
 
 interface ActivityThinkingBlockProps {
   thinking: ThinkingItem;
+  hasSubsequentMessage: boolean;
 }
 
-export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(thinking.isStreaming);
+export function ActivityThinkingBlock({ thinking, hasSubsequentMessage }: ActivityThinkingBlockProps) {
+  const { data: settings } = useSettings();
+  const visibility = settings?.thinking_visibility ?? "auto";
+
+  const userToggled = useRef(false);
+  const [expanded, setExpanded] = useState(() => {
+    if (visibility === "collapse") return false;
+    if (visibility === "show") return true;
+    // "auto": expanded while streaming; hide mode doesn't matter (handled below)
+    return thinking.isStreaming;
+  });
+  useEffect(() => {
+    if (visibility === "collapse") {
+      setExpanded(false);
+      userToggled.current = false;
+    } else if (visibility === "show") {
+      setExpanded(true);
+      userToggled.current = false;
+    } else if (visibility === "auto") {
+      setExpanded(thinking.isStreaming);
+      userToggled.current = false;
+    }
+  }, [visibility]);
+
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
   const highWaterRef = useRef("");
@@ -34,6 +58,13 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
     return () => clearInterval(interval);
   }, [thinking.isStreaming]);
 
+  // Auto mode: collapse when a subsequent agent message arrives (unless user toggled manually)
+  useEffect(() => {
+    if (visibility === "auto" && hasSubsequentMessage && !thinking.isStreaming && !userToggled.current) {
+      setExpanded(false);
+    }
+  }, [visibility, hasSubsequentMessage, thinking.isStreaming]);
+
   const completedText = useMemo(() => {
     if (!isActivelyStreaming) return "";
     const safe = getCompleteBlocksText(thinking.text);
@@ -43,8 +74,12 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
     return highWaterRef.current;
   }, [thinking.text, isActivelyStreaming]);
 
-  // Auto-collapse when streaming ends — handled by parent re-rendering with isStreaming=false
-  // which causes the default expanded=false on new mount (streaming block is replaced)
+  if (visibility === "hide") return null;
+
+  function handleToggle() {
+    userToggled.current = true;
+    setExpanded((v) => !v);
+  }
 
   if (thinking.isStreaming) {
     const textToRender = isActivelyStreaming ? completedText : thinking.text;
@@ -65,7 +100,7 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
     <div className="border-l-2 border-dashed border-border pl-3 py-1 opacity-60">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={handleToggle}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/60 transition-colors"
       >
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
