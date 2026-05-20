@@ -9,6 +9,7 @@ pub mod settings_handlers;
 pub mod filesystem_handlers;
 pub mod acp_handlers;
 pub mod sftp_handlers;
+pub mod ticketing_handlers;
 
 // Re-export all handlers for use in main.rs
 pub use project_handlers::*;
@@ -21,3 +22,4 @@ pub use filesystem_handlers::*;
 pub use ssh_handlers::*;
 pub use acp_handlers::*;
 pub use sftp_handlers::*;
+pub use ticketing_handlers::*;

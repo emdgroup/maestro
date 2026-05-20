@@ -11,7 +11,7 @@ pub mod project_lock;
 pub mod wsl;
 
 pub use db::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
-pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
+pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, TicketingConfig, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 // IPC command functions are accessed via crate::ipc:: prefix in create_builder()
 // No glob re-export needed; ssh_handlers uses super::project_handlers for internal imports
@@ -123,7 +123,10 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_wsl_directories,
             crate::ipc::get_wsl_home,
             crate::ipc::save_wsl_connection,
-            crate::ipc::get_wsl_connections
+            crate::ipc::get_wsl_connections,
+            // Ticketing config
+            crate::ipc::get_ticketing_config,
+            crate::ipc::save_ticketing_config
         ])
 }
 
