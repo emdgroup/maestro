@@ -115,7 +115,7 @@ See phase details below (archived after milestone close).
 **Milestone Goal:** Connect each project to one ticket tracking tool (GitHub Issues, GitLab Issues, Linear, or Jira Cloud) so users can browse and import open issues as Backlog tasks via an import modal, with per-project OAuth authentication and non-destructive change detection.
 
 - [ ] **Phase 50: Infrastructure** — CSP expansion + tauri-plugin-oauth wiring + new Cargo dependencies
-- [ ] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal
+- [x] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal (completed 2026-05-20)
 - [ ] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token refresh for expiring providers
 - [ ] **Phase 53: OAuth Flows** — Per-provider PKCE/3LO state machines for GitHub, GitLab, Linear, and Jira
 - [ ] **Phase 54: Provider API Clients** — Issue-fetching clients for all four providers with canonical field mapping
@@ -143,10 +143,10 @@ See phase details below (archived after milestone close).
   2. `models/ticketing.rs` compiles with `TicketingConfig` and `ProviderConfig` (externally-tagged enum with `Jira`, `GitHub`, `GitLab`, `Linear` variants); `pnpm tauri:gen` regenerates `bindings.ts` with these types present
   3. `sync_github_issues`, `sync_jira_issues`, and `save_import_config` IPC handlers are removed from `settings_handlers.rs` and deregistered from `lib.rs`; `ImportSettings.tsx` is deleted; `cargo check` and `pnpm build` both pass
   4. `.maestro/ticketing.json` can be written and read back for a project; attempting to connect a second provider overwrites the first (one provider per project enforced)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [x] 51-01-PLAN.md — Schema V16 + TicketingConfig model + IPC handlers
-- [ ] 51-02-PLAN.md — Legacy import code removal (Rust + frontend)
+- [x] 51-02-PLAN.md — Legacy import code removal (Rust + frontend)
 
 ### Phase 52: Token Management
 **Goal**: Tokens can be stored in and retrieved from the OS keychain for any project, and concurrent refresh races for GitLab and Jira are prevented by a mutex-guarded token manager
@@ -237,7 +237,7 @@ Plans:
 | 48 - Frontend: PermissionDialog | v1.5 | Complete | Complete | 2026-05-20 |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | Complete | Complete | 2026-05-20 |
 | 50 - Infrastructure | v1.6 | 0/TBD | Not started | - |
-| 51 - Data Foundation | v1.6 | 1/2 | In Progress|  |
+| 51 - Data Foundation | v1.6 | 2/2 | Complete   | 2026-05-20 |
 | 52 - Token Management | v1.6 | 0/TBD | Not started | - |
 | 53 - OAuth Flows | v1.6 | 0/TBD | Not started | - |
 | 54 - Provider API Clients | v1.6 | 0/TBD | Not started | - |

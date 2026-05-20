@@ -10,7 +10,7 @@
 - [ ] **FNDTN-01**: Tauri CSP updated to allow `api.github.com`, `gitlab.com`, `api.linear.app`, `auth.atlassian.com`, `api.atlassian.com`, `127.0.0.1:*`
 - [ ] **FNDTN-02**: `tauri-plugin-oauth` registered in Cargo.toml, lib.rs, and capabilities/default.json
 - [x] **FNDTN-03**: SQLite schema v16 adds `external_url`, `external_updated_at`, `labels` columns on tasks table
-- [ ] **FNDTN-04**: Old import code removed — `ImportSettings.tsx`, `sync_github_issues`, `sync_jira_issues`, `save_import_config` IPC handlers
+- [x] **FNDTN-04**: Old import code removed — `ImportSettings.tsx`, `sync_github_issues`, `sync_jira_issues`, `save_import_config` IPC handlers
 
 ### Auth
 
@@ -84,7 +84,7 @@
 | FNDTN-01 | Phase 50 | Pending |
 | FNDTN-02 | Phase 50 | Pending |
 | FNDTN-03 | Phase 51 | Complete |
-| FNDTN-04 | Phase 51 | Pending |
+| FNDTN-04 | Phase 51 | Complete |
 | CFG-01 | Phase 51 | Complete |
 | CFG-02 | Phase 51 | Complete |
 | AUTH-05 | Phase 52 | Pending |
