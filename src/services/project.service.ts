@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ProjectConfigRequest, JsonValue } from "@/types/bindings";
+import type { ProjectConfigRequest } from "@/types/bindings";
 import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
@@ -139,24 +139,6 @@ export function useUpdateProjectSettings() {
 }
 
 /**
- * Mutation hook for saving import configuration
- */
-export function useSaveImportConfig() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ projectId, importConfig }: { projectId: number; importConfig: JsonValue }) =>
-      api.saveImportConfig(projectId, "jira", importConfig),
-    onSuccess: (_data, { projectId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.settingsDetail(projectId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to save import config"),
-  });
-}
-
-/**
  * Mutation hook for initializing git in a non-git directory.
  * Called silently before createProject when user selects a non-git folder.
  */
@@ -227,50 +209,3 @@ export function useCreateNewProject() {
   });
 }
 
-/**
- * Mutation hook for syncing GitHub issues
- */
-export function useSyncGithubIssues() {
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      owner,
-      repo,
-      token,
-    }: {
-      projectId: number;
-      owner: string;
-      repo: string;
-      token: string;
-    }) => api.syncGithubIssues(projectId, owner, repo, token),
-    onSuccess: (data) => {
-      toast.success(`Synced ${data.imported_count} issues from GitHub`);
-    },
-    onError: createErrorToastHandler("Failed to sync GitHub issues"),
-  });
-}
-
-/**
- * Mutation hook for syncing Jira issues
- */
-export function useSyncJiraIssues() {
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      host,
-      email,
-      token,
-      jql,
-    }: {
-      projectId: number;
-      host: string;
-      email: string;
-      token: string;
-      jql: string;
-    }) => api.syncJiraIssues(projectId, host, email, token, jql),
-    onSuccess: (data) => {
-      toast.success(`Synced ${data.imported_count} issues from Jira`);
-    },
-    onError: createErrorToastHandler("Failed to sync Jira issues"),
-  });
-}

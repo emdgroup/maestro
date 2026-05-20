@@ -274,39 +274,6 @@ async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Sync issues from GitHub repository
- */
-async syncGithubIssues(projectId: number, owner: string, repo: string, token: string) : Promise<Result<SyncResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("sync_github_issues", { projectId, owner, repo, token }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Sync issues from Jira
- */
-async syncJiraIssues(projectId: number, host: string, email: string, apiToken: string, jql: string) : Promise<Result<SyncResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("sync_jira_issues", { projectId, host, email, apiToken, jql }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Save import configuration to settings
- */
-async saveImportConfig(projectId: number, provider: string, config: JsonValue) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_import_config", { projectId, provider, config }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async listWorktreesWithStatus(projectId: number, repoPath: string) : Promise<Result<WorktreeWithStatus[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_worktrees_with_status", { projectId, repoPath }) };
@@ -1304,6 +1271,22 @@ async getWslConnections() : Promise<Result<WslConnection[], string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getTicketingConfig(projectId: number) : Promise<Result<TicketingConfig, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_ticketing_config", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveTicketingConfig(projectId: number, config: TicketingConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_ticketing_config", { projectId, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1362,7 +1345,11 @@ export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_de
 export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
+export type GitHubConfig = { owner: string; repo: string }
+export type GitLabConfig = { host: string; project_id: string }
+export type JiraConfig = { host: string; email: string; project_key: string; jql_filter: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type LinearConfig = { team_id: string }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
@@ -1377,6 +1364,11 @@ export type Project = { id: number; name: string; path: string; created_at: stri
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
 export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
+/**
+ * Active ticketing provider — only one provider can be configured at a time.
+ * Serialized as an externally-tagged enum: `{"jira": {...}}` (serde default for enums).
+ */
+export type ProviderConfig = { jira: JiraConfig } | { github: GitHubConfig } | { gitlab: GitLabConfig } | { linear: LinearConfig }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -1405,7 +1397,6 @@ export type SshAuthMethod =
  * Saved SSH connection for quick reconnection
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
-export type SyncResult = { imported_count: number; updated_count: number; error_message?: string | null }
 export type TAURI_CHANNEL<TSend> = null
 export type Task = { id: number; project_id: number; name: string; description: string; acceptance_criteria?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; created_at: string; updated_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
@@ -1413,6 +1404,10 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
+/**
+ * Ticketing integration configuration stored in .maestro/ticketing.json
+ */
+export type TicketingConfig = { provider: ProviderConfig | null; updated_at: string }
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 
 /**
  * Agent IDs that require this tool to spawn.

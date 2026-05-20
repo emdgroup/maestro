@@ -48,13 +48,9 @@ const TaskModal = lazy(() =>
 const TaskDetail = lazy(() =>
   import("@/components/task/TaskDetail").then((m) => ({ default: m.TaskDetail })),
 );
-const ImportSettings = lazy(() =>
-  import("@/components/task/ImportSettings").then((m) => ({ default: m.ImportSettings })),
-);
 
 function App() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const [showImportSettings, setShowImportSettings] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Subscribe to project store for project selection
@@ -136,10 +132,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 
-
-  function handleImportConfigSaved() {
-    setShowImportSettings(false);
-  }
 
   if (settingsLoading) {
     return (
@@ -281,11 +273,6 @@ function App() {
             task={selectedTask}
             projectPath={currentProject.path}
             onClose={() => setSelectedTask(null)}
-          />
-          <ImportSettings
-            isOpen={showImportSettings}
-            onClose={() => setShowImportSettings(false)}
-            onConfigSaved={handleImportConfigSaved}
           />
         </Suspense>
       </main>
