@@ -1,145 +1,119 @@
 # Requirements: Maestro
 
-**Defined:** 2026-04-17
+**Defined:** 2026-05-20
 **Core Value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
 
-## v1.5 Requirements
+## v1.6 Requirements
 
-### ACP Server (maestro-server)
+### Foundation
 
-- [x] **SERVER-01**: maestro-server receives SpawnRequest on stdin, spawns ACP agent subprocess via ClientSideConnection, returns SpawnOk on stdout
-- [x] **SERVER-02**: maestro-server forwards structured session updates (agent messages, tool calls, diffs, plans) to stdout as ServerResponse::SessionUpdate
-- [x] **SERVER-03**: maestro-server forwards raw terminal output from ACP agent terminal callbacks to stdout as ServerResponse::TerminalOutput
-- [x] **SERVER-04**: maestro-server forwards permission requests to desktop as ServerResponse::PermissionRequest and awaits PermissionResponse on stdin to unblock the agent
+- [ ] **FNDTN-01**: Tauri CSP updated to allow `api.github.com`, `gitlab.com`, `api.linear.app`, `auth.atlassian.com`, `api.atlassian.com`, `127.0.0.1:*`
+- [ ] **FNDTN-02**: `tauri-plugin-oauth` registered in Cargo.toml, lib.rs, and capabilities/default.json
+- [x] **FNDTN-03**: SQLite schema v16 adds `external_url`, `external_updated_at`, `labels` columns on tasks table
+- [ ] **FNDTN-04**: Old import code removed — `ImportSettings.tsx`, `sync_github_issues`, `sync_jira_issues`, `save_import_config` IPC handlers
 
-### Local Session Management
+### Auth
 
-- [x] **SESSION-01
-**: Tauri backend launches maestro-server as local subprocess per ACP session with piped stdin/stdout
-- [x] **SESSION-02
-**: ACP sessions tracked in AppState (acp_sessions: tokio::sync::Mutex<HashMap<i32, AcpSession>>, keyed by log_id)
-- [x] **SESSION-03
-**: Tauri emits typed events per session (acp://session-update/{log_id}, acp://permission-request/{log_id}, acp://terminal-output/{log_id}) from background reader task
+- [ ] **AUTH-01**: OAuth PKCE flow (localhost redirect via tauri-plugin-oauth) for GitHub
+- [ ] **AUTH-02**: OAuth PKCE flow for GitLab cloud
+- [ ] **AUTH-03**: OAuth flow for Linear
+- [ ] **AUTH-04**: OAuth 2.0 3LO flow for Jira Cloud
+- [ ] **AUTH-05**: Tokens stored in OS keychain via `keyring 3.6.3`; entry key `maestro:{project_id}:ticketing`
+- [ ] **AUTH-06**: Mutex-guarded token refresh for GitLab (2h expiry) and Jira (1h expiry) prevents concurrent 401 race
 
-### Database & IPC
+### Config
 
-- [x] **PERSIST-01
-**: Schema v11 adds execution_mode TEXT DEFAULT 'pty', agent_id TEXT, structured_output TEXT columns to execution_logs
-- [x] **PERSIST-02
-**: User can spawn ACP session via IPC (creates execution_log with execution_mode='acp', launches maestro-server subprocess, returns log_id)
-- [x] **PERSIST-03
-**: User can send prompt to running ACP session via IPC (forwards PromptRequest to maestro-server stdin)
-- [x] **PERSIST-04
-**: User can respond to permission request via IPC (forwards PermissionResponse to maestro-server stdin, unblocking agent)
-- [x] **PERSIST-05
-**: User can cancel ACP session via IPC (forwards CancelRequest, cleans up session)
-- [x] **PERSIST-06
-**: Structured output periodically flushed from in-memory AcpSession.structured_updates to DB execution_logs.structured_output for dead session replay
+- [x] **CFG-01**: `.maestro/ticketing.json` stores provider type and non-sensitive config (repo, project key, team, filters)
+- [x] **CFG-02**: One provider per project enforced — connecting a new provider replaces the existing one
 
-### Agent Registry
+### Providers
 
-- [x] **REGISTRY-01
-**: User can fetch list of available ACP agents from CDN registry (https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json)
-- [x] **REGISTRY-02
-**: Registry cached in AppState with 5-min TTL; user can force refresh via IPC
-- [x] **REGISTRY-03
-**: Agent launch command resolved from AgentInfo.distribution (npx package / binary target / uvx package) for use in SpawnRequest
+- [ ] **PROV-01**: GitHub Issues client — fetch open issues, filter PRs, map title/body/labels/url/updated_at
+- [ ] **PROV-02**: GitLab Issues client — fetch open issues, map title/description/labels/url/updated_at
+- [ ] **PROV-03**: Linear Issues client — GraphQL, team selection during setup, map title/description/labels/url/updated_at
+- [ ] **PROV-04**: Jira Cloud client — REST API v3 via `api.atlassian.com/ex/jira/{cloudId}/`, strip ADF from descriptions
 
-### Frontend: Agent Selector
+### Settings UI
 
-- [x] **SPAWN-01
-**: User can browse and search available ACP agents by name and description in a modal
-- [x] **SPAWN-02
-**: User can spawn an ACP session by selecting an agent, choosing a worktree/branch, and clicking Spawn
-- [x] **SPAWN-03
-**: ACP sessions displayed with "ACP" badge in execution sidebar alongside PTY ("Interactive") sessions
+- [ ] **SETT-01**: Project settings has Ticketing section with provider picker (GitHub / GitLab / Linear / Jira)
+- [ ] **SETT-02**: Connect button triggers OAuth flow, shows connected status (provider name + account username)
+- [ ] **SETT-03**: Disconnect button clears token from keychain and config from `.maestro/ticketing.json`
 
-### Frontend: Activity Panel
+### Import Modal
 
-- [x] **ACTIVITY-01**: User sees structured ACP agent output (messages, tool calls with args/results, file diffs, plans) in real-time via Tauri event subscription
-- [x] **ACTIVITY-02**: User can toggle a terminal bottom panel to see raw ACP terminal output alongside the structured activity view (AcpTerminalPanel, slide-in from bottom)
-- [x] **ACTIVITY-03**: Completed ACP sessions replay structured output loaded from DB (dead session view)
+- [ ] **IMPT-01**: "Import tickets" button in Backlog column header, visible only when provider is connected
+- [ ] **IMPT-02**: Modal shows tickets in Available / Imported / Changed tabs
+- [ ] **IMPT-03**: Checkbox multi-select → "Import Selected" creates Backlog tasks with `external_url`, `labels`, `external_updated_at`
+- [ ] **IMPT-04**: Auto-refresh fetches fresh tickets every 5 min while modal is open
+- [ ] **IMPT-05**: Manual Refresh button forces immediate fetch
+- [ ] **IMPT-06**: Filter by label and state (open/closed) for providers that support it
 
-### Frontend: Permission Dialog
+### Change Detection
 
-- [ ] **PERM-01**: User sees permission dialog when agent requests file write, terminal command, or other tool permission
-- [ ] **PERM-02**: User can allow or deny individual permission requests; decision forwarded via respond_acp_permission IPC
-- [ ] **PERM-03**: User can allow all future requests for a given tool within the session (session-scoped allowlist in acpSessionStore)
-- [ ] **PERM-04**: Pending permission requests shown as urgent indicator (inline banner in ActivityPanel + global badge when on different tab)
+- [ ] **CHNG-01**: On ticket fetch, compare provider `updated_at` against stored `external_updated_at`; flag task as Changed if different
+- [ ] **CHNG-02**: Changed tab shows flagged tasks with Update action (overwrites title/description/labels from provider) and Dismiss action (clears flag, keeps current task)
 
-### Dual-Mode Dispatch
+## Future Requirements
 
-- [ ] **DISPATCH-01**: spawn_interactive_execution routes to ACP path when agent_id provided and found in registry, PTY path otherwise
-- [ ] **DISPATCH-02**: attach_terminal handles both ACP sessions (serves terminal_output buffer) and PTY sessions (existing path)
-- [ ] **DISPATCH-03**: All existing PTY execution flows continue working unchanged
+### Auth
 
-## v2 Requirements
+- **AUTH-F01**: OAuth for GitLab self-hosted instances (requires user-provided client_id + secret)
+- **AUTH-F02**: Azure DevOps integration (PAT-based, work items API)
 
-### Remote ACP
+### Import
 
-- **REMOTE-01**: maestro-server binary deployed to remote host via SFTP upload with version check
-- **REMOTE-02**: User can run ACP agents on remote SSH projects (maestro-server launched over SSH exec channel)
-- **REMOTE-03**: maestro-server cross-compiled for linux-aarch64, linux-x86_64-musl targets
-
-### Multi-Agent
-
-- **MULTI-01**: User can run multiple ACP agents concurrently on separate worktrees
-- **MULTI-02**: User can view all active ACP sessions across the project
-
-### Registry UI
-
-- **REGUI-01**: User can browse full agent registry with filtering by capability/language
-- **REGUI-02**: User can assign a default agent per task on Kanban board
+- **IMPT-F01**: Webhook-based real-time sync instead of polling
+- **IMPT-F02**: Two-way sync — update ticket status when Maestro task moves to Done
+- **IMPT-F03**: Bulk re-import all Changed tasks in one action
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| SSH stdio tunnel for remote ACP | 2 SSH round-trips per file op = unacceptable latency; use remote server model in v2 |
-| Multi-project agent coordination | Deferred to v2 |
-| Agent ratings / reviews | Out of scope for v1 |
-| Streamable HTTP transport | Draft only, no SDK/agent support |
-| Per-task agent assignment on Kanban | Deferred to v2 with multi-agent support |
+| GitLab self-hosted | Requires per-instance OAuth app registration — deferred to future |
+| Azure DevOps | Deferred to v1.7+ |
+| Write-back to ticket platform | Field mapping complexity, workflow differences per provider |
+| Jira Server / Data Center | No OAuth 2.0 3LO support; Cloud only |
+| Multiple providers per project | Adds complexity with no clear UX benefit |
+| Webhook-based sync | Desktop app lifecycle makes reliable webhook handling impractical |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SERVER-01 | Phase 42 | Complete |
-| SERVER-02 | Phase 42 | Complete |
-| SERVER-03 | Phase 42 | Complete |
-| SERVER-04 | Phase 42 | Complete |
-| SESSION-01 | Phase 43 | Pending |
-| SESSION-02 | Phase 43 | Pending |
-| SESSION-03 | Phase 43 | Pending |
-| PERSIST-01 | Phase 44 | Pending |
-| PERSIST-02 | Phase 44 | Pending |
-| PERSIST-03 | Phase 44 | Pending |
-| PERSIST-04 | Phase 44 | Pending |
-| PERSIST-05 | Phase 44 | Pending |
-| PERSIST-06 | Phase 44 | Pending |
-| REGISTRY-01 | Phase 45 | Pending |
-| REGISTRY-02 | Phase 45 | Pending |
-| REGISTRY-03 | Phase 45 | Pending |
-| SPAWN-01 | Phase 46 | Pending |
-| SPAWN-02 | Phase 46 | Pending |
-| SPAWN-03 | Phase 46 | Pending |
-| ACTIVITY-01 | Phase 47 | Complete |
-| ACTIVITY-02 | Phase 47 | Complete |
-| ACTIVITY-03 | Phase 47 | Complete |
-| PERM-01 | Phase 48 | Pending |
-| PERM-02 | Phase 48 | Pending |
-| PERM-03 | Phase 48 | Pending |
-| PERM-04 | Phase 48 | Pending |
-| DISPATCH-01 | Phase 49 | Pending |
-| DISPATCH-02 | Phase 49 | Pending |
-| DISPATCH-03 | Phase 49 | Pending |
+| FNDTN-01 | Phase 50 | Pending |
+| FNDTN-02 | Phase 50 | Pending |
+| FNDTN-03 | Phase 51 | Complete |
+| FNDTN-04 | Phase 51 | Pending |
+| CFG-01 | Phase 51 | Complete |
+| CFG-02 | Phase 51 | Complete |
+| AUTH-05 | Phase 52 | Pending |
+| AUTH-06 | Phase 52 | Pending |
+| AUTH-01 | Phase 53 | Pending |
+| AUTH-02 | Phase 53 | Pending |
+| AUTH-03 | Phase 53 | Pending |
+| AUTH-04 | Phase 53 | Pending |
+| PROV-01 | Phase 54 | Pending |
+| PROV-02 | Phase 54 | Pending |
+| PROV-03 | Phase 54 | Pending |
+| PROV-04 | Phase 54 | Pending |
+| SETT-01 | Phase 55 | Pending |
+| SETT-02 | Phase 55 | Pending |
+| SETT-03 | Phase 55 | Pending |
+| IMPT-01 | Phase 56 | Pending |
+| IMPT-02 | Phase 56 | Pending |
+| IMPT-03 | Phase 56 | Pending |
+| IMPT-04 | Phase 56 | Pending |
+| IMPT-05 | Phase 56 | Pending |
+| IMPT-06 | Phase 56 | Pending |
+| CHNG-01 | Phase 56 | Pending |
+| CHNG-02 | Phase 56 | Pending |
 
 **Coverage:**
-- v1.5 requirements: 29 total
-- Mapped to phases: 29
+- v1.6 requirements: 27 total
+- Mapped to phases: 27
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-17*
-*Last updated: 2026-04-22 — ACTIVITY-02 marked complete; description updated to reflect toggle-panel design (AcpTerminalPanel)*
+*Requirements defined: 2026-05-20*
+*Last updated: 2026-05-20 — traceability filled after roadmap creation (Phases 50-56)*

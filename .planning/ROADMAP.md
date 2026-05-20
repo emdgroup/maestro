@@ -139,13 +139,13 @@ See phase details below (archived after milestone close).
 **Depends on**: Phase 50
 **Requirements**: FNDTN-03, FNDTN-04, CFG-01, CFG-02
 **Success Criteria** (what must be TRUE):
-  1. Schema v16 migration adds `external_url`, `external_updated_at`, and `labels` columns to the tasks table; existing task rows survive the migration without data loss
-  2. `models/ticketing.rs` compiles with `TicketingConfig`, `RemoteIssue`, `ProviderKind`, and `OAuthFlowStarted` types; `pnpm tauri:gen` regenerates `bindings.ts` with these types present
+  1. Schema v16 migration is destructive (drops and recreates all tables); new schema adds `external_url`, `external_updated_at`, and `labels` columns to the tasks table; `cargo test` passes
+  2. `models/ticketing.rs` compiles with `TicketingConfig` and `ProviderConfig` (externally-tagged enum with `Jira`, `GitHub`, `GitLab`, `Linear` variants); `pnpm tauri:gen` regenerates `bindings.ts` with these types present
   3. `sync_github_issues`, `sync_jira_issues`, and `save_import_config` IPC handlers are removed from `settings_handlers.rs` and deregistered from `lib.rs`; `ImportSettings.tsx` is deleted; `cargo check` and `pnpm build` both pass
   4. `.maestro/ticketing.json` can be written and read back for a project; attempting to connect a second provider overwrites the first (one provider per project enforced)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
-- [ ] 51-01-PLAN.md — Schema V16 + TicketingConfig model + IPC handlers
+- [x] 51-01-PLAN.md — Schema V16 + TicketingConfig model + IPC handlers
 - [ ] 51-02-PLAN.md — Legacy import code removal (Rust + frontend)
 
 ### Phase 52: Token Management
@@ -237,7 +237,7 @@ Plans:
 | 48 - Frontend: PermissionDialog | v1.5 | Complete | Complete | 2026-05-20 |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | Complete | Complete | 2026-05-20 |
 | 50 - Infrastructure | v1.6 | 0/TBD | Not started | - |
-| 51 - Data Foundation | v1.6 | 0/2 | Not started | - |
+| 51 - Data Foundation | v1.6 | 1/2 | In Progress|  |
 | 52 - Token Management | v1.6 | 0/TBD | Not started | - |
 | 53 - OAuth Flows | v1.6 | 0/TBD | Not started | - |
 | 54 - Provider API Clients | v1.6 | 0/TBD | Not started | - |
