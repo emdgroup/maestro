@@ -6,6 +6,7 @@ import { DiffViewer } from "@/components/execution/DiffViewer";
 import { DiffActionBar } from "@/components/execution/DiffActionBar";
 import { DiffFilePanel } from "@/components/execution/DiffFilePanel";
 import { useStagingState } from "@/components/execution/useStagingState";
+import { UntrackedFileDiffViewer } from "@/components/execution/UntrackedFileDiffViewer";
 import {
   useWorktreeDiffQuery,
   useStageWorktreeFilesMutation,
@@ -66,6 +67,11 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     fileSearch,
     setFileSearch,
   } = useStagingState(worktreePath, viewMode, worktree, diffFiles);
+
+  const selectedUntrackedPath =
+    viewMode === "untracked" && selectedFileIndex !== null
+      ? (untrackedFiles[selectedFileIndex] ?? null)
+      : null;
 
   const filteredDiffFiles = useMemo(() => {
     if (!fileSearch.trim()) return diffFiles;
@@ -306,8 +312,6 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     <div className="flex flex-col h-full">
       <DiffActionBar
         branchName={worktree.branch_name}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
         fileSearch={fileSearch}
         onFileSearchChange={setFileSearch}
         fileListMode={fileListMode}
@@ -316,8 +320,8 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         onDiffViewModeChange={setDiffViewMode}
         forceUnified={forceUnified}
         hasAnyStaged={hasAnyStaged}
-        isDiscarding={discardMutation.isPending}
-        isDeletingUntracked={deleteMutation.isPending}
+        isDiscarding={viewMode === "untracked" ? deleteMutation.isPending : discardMutation.isPending}
+        isDeleteMode={viewMode === "untracked"}
         isShelving={shelveMutation.isPending}
         shelvePopoverOpen={shelvePopoverOpen}
         onShelvePopoverOpenChange={setShelvePopoverOpen}
@@ -331,6 +335,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
       <div className="flex flex-1 min-h-0">
         <DiffFilePanel
           viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          modifiedCount={diffFiles.length}
+          untrackedCount={untrackedFiles.length}
           fileListMode={fileListMode}
           diffLoading={diffLoading}
           diffFiles={diffFiles}
@@ -355,12 +362,18 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
 
         {/* Right diff body */}
         <div className="flex-1 flex flex-col min-w-0">
-          {viewMode === "untracked" && (
+          {viewMode === "untracked" && !selectedUntrackedPath && (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              {selectedFileIndex !== null && untrackedFiles[selectedFileIndex]
-                ? untrackedFiles[selectedFileIndex]
-                : "Select a file to view its path"}
+              Select a file to preview
             </div>
+          )}
+
+          {viewMode === "untracked" && selectedUntrackedPath && (
+            <UntrackedFileDiffViewer
+              projectId={projectId}
+              worktreePath={worktreePath}
+              filePath={selectedUntrackedPath}
+            />
           )}
 
           {viewMode === "uncommitted" &&

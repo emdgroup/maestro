@@ -38,6 +38,19 @@ export function useWorktreesQuery(projectId: number | undefined, repoPath: strin
   });
 }
 
+export function useUntrackedFileContentQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  filePath: string | null,
+) {
+  return useQuery({
+    queryKey: [...worktreeQueryKeys.base, "untracked-content", worktreePath, filePath] as const,
+    queryFn: () => api.getUntrackedFileContent(projectId!, worktreePath!, filePath!),
+    enabled: projectId != null && worktreePath != null && filePath != null,
+    staleTime: 30000,
+  });
+}
+
 /**
  * Query hook for fetching worktree diff (unified diff string).
  * Uses project_id + absolute worktree path — no DB lookup needed.

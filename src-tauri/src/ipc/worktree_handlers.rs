@@ -708,6 +708,27 @@ pub async fn delete_untracked_files(
     Ok(())
 }
 
+// ============================================================================
+// get_untracked_file_content — returns file content as a unified diff string
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_untracked_file_content(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    file_path: String,
+) -> Result<String, String> {
+    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    crate::git::run_git_in_dir_lossy(
+        &git_conn,
+        &worktree_path,
+        &["diff", "--no-index", "/dev/null", &file_path],
+    )
+    .await
+}
+
 /// Internal helper for worktree deletion during finalization.
 /// Called from execution_handlers.rs — NOT an IPC command.
 pub async fn delete_worktree_for_task(

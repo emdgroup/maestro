@@ -115,7 +115,8 @@ export function AgentActivityPanel({
     };
   }, [sessionKey]);
 
-  const [liveState, liveDispatch] = useAcpActivity(sessionKey);
+  const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(undefined);
+  const [liveState, liveDispatch] = useAcpActivity(sessionKey, sessionUpdateRef);
 
   const {
     configOptions,
@@ -127,7 +128,7 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
-  } = useAcpSessionLifecycle(sessionKey, selectedProject?.id ?? null, agentId, onUsageChangeRef);
+  } = useAcpSessionLifecycle(sessionKey, selectedProject?.id ?? null, agentId, onUsageChangeRef, sessionUpdateRef);
 
   const isReady = !liveState.isInitializing;
   const {

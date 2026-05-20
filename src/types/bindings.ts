@@ -869,6 +869,14 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
     else return { status: "error", error: e  as any };
 }
 },
+async getUntrackedFileContent(projectId: number, worktreePath: string, filePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_untracked_file_content", { projectId, worktreePath, filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Launch a new ACP agent session via maestro-server subprocess.
  * 

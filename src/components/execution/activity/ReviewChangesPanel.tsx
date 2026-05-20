@@ -8,6 +8,7 @@ import { DiffViewer } from "@/components/execution/DiffViewer";
 import { FileTree } from "@/components/execution/FileTree";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import { UntrackedFileDiffViewer } from "@/components/execution/UntrackedFileDiffViewer";
 import { api } from "@/lib/tauri-utils";
 import type { DiffFileWithName } from "@/types/review";
 
@@ -96,6 +97,8 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
 
   const selectedItem: DisplayItem | null = filteredItems[selectedFileIndex] ?? null;
 
+  const selectedUntrackedPath = selectedItem?.kind === "untracked" ? selectedItem.path : null;
+
   const totalStats = useMemo(() => {
     let insertions = 0;
     let deletions = 0;
@@ -175,41 +178,26 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
               <div className="text-xs text-muted-foreground py-8 text-center">No changes yet</div>
             )}
             {!loading && fileListMode === "tree" ? (
-              <>
-                <FileTree
-                  files={filteredItems
-                    .filter((i): i is { kind: "diff"; file: DiffFileWithName } => i.kind === "diff")
-                    .map((i) => i.file)}
-                  selectedFile={selectedItem?.kind === "diff" ? selectedItem.file.fileName : null}
-                  onSelectFile={(fileName) => {
-                    const idx = filteredItems.findIndex(
-                      (i) => i.kind === "diff" && i.file.fileName === fileName,
-                    );
-                    if (idx >= 0) setSelectedFileIndex(idx);
-                  }}
-                />
-                {filteredItems.map((item, idx) => {
-                  if (item.kind !== "untracked") return null;
-                  const basename = item.path.split("/").pop() ?? item.path;
-                  return (
-                    <button
-                      key={item.path}
-                      type="button"
-                      onClick={() => setSelectedFileIndex(idx)}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-2 py-2 text-left border-l-2 transition-colors",
-                        idx === selectedFileIndex
-                          ? "border-ring bg-muted/20"
-                          : "border-transparent hover:bg-muted/10",
-                      )}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-success" />
-                      <span className="flex-1 text-xs truncate text-foreground/80">{basename}</span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">new</span>
-                    </button>
+              <FileTree
+                files={filteredItems.map((i) =>
+                  i.kind === "diff"
+                    ? i.file
+                    : { fileName: i.path, hunks: [], status: "A" as const },
+                )}
+                selectedFile={
+                  selectedItem?.kind === "diff"
+                    ? selectedItem.file.fileName
+                    : selectedItem?.kind === "untracked"
+                      ? selectedItem.path
+                      : null
+                }
+                onSelectFile={(fileName) => {
+                  const idx = filteredItems.findIndex((i) =>
+                    i.kind === "diff" ? i.file.fileName === fileName : i.path === fileName,
                   );
-                })}
-              </>
+                  if (idx >= 0) setSelectedFileIndex(idx);
+                }}
+              />
             ) : (
               filteredItems.map((item, index) => {
                 if (item.kind === "diff") {
@@ -224,7 +212,7 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
                       className={cn(
                         "w-full flex items-center gap-2 px-2 py-2 text-left border-l-2 transition-colors",
                         index === selectedFileIndex
-                          ? "border-ring bg-muted/20"
+                          ? "border-ring selected-file-item"
                           : "border-transparent hover:bg-muted/10",
                       )}
                     >
@@ -257,7 +245,7 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
                       className={cn(
                         "w-full flex items-center gap-2 px-2 py-2 text-left border-l-2 transition-colors",
                         index === selectedFileIndex
-                          ? "border-ring bg-muted/20"
+                          ? "border-ring selected-file-item"
                           : "border-transparent hover:bg-muted/10",
                       )}
                     >
@@ -285,21 +273,25 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
         </div>
 
         {/* Diff viewer */}
-        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 flex flex-col">
           {loading ? (
-            <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />
-          ) : selectedItem?.kind === "diff" ? (
-            <DiffViewer diffFile={selectedItem.file} loading={false} diffViewMode={diffViewMode} />
-          ) : selectedItem?.kind === "untracked" ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              New untracked file — not yet staged
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+              <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />
             </div>
+          ) : selectedItem?.kind === "diff" ? (
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+              <DiffViewer diffFile={selectedItem.file} loading={false} diffViewMode={diffViewMode} />
+            </div>
+          ) : selectedItem?.kind === "untracked" ? (
+            <UntrackedFileDiffViewer projectId={projectId} worktreePath={cwd} filePath={selectedUntrackedPath} />
           ) : (
-            <DiffViewer
-              diffFile={null}
-              loading={false}
-              error={diffError ? String(diffError) : undefined}
-            />
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+              <DiffViewer
+                diffFile={null}
+                loading={false}
+                error={diffError ? String(diffError) : undefined}
+              />
+            </div>
           )}
         </div>
       </div>

@@ -298,6 +298,7 @@ function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
 
 export function useAcpActivity(
   logId: number | null,
+  sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
 
@@ -309,6 +310,7 @@ export function useAcpActivity(
         const raw = event.payload as Record<string, unknown>;
         const payload = raw as unknown as SessionUpdatePayload;
         dispatch({ type: "event", payload, raw });
+        sessionUpdateRef?.current?.(raw);
       }),
       listen<null>(`acp://session-ended/${logId}`, () => {
         dispatch({ type: "session_ended" });

@@ -9,7 +9,8 @@ use acp::schema::{
     KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
     PermissionOptionId, PromptRequest, PromptResponse, ProtocolVersion, ReleaseTerminalRequest,
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigKind,
+    SessionConfigOption, SessionConfigSelectOptions, SessionNotification,
     SetSessionConfigOptionRequest, SetSessionModelRequest, SetSessionModeRequest,
     SessionConfigId, SessionConfigValueId,
     StopReason, TerminalExitStatus,
@@ -416,6 +417,39 @@ pub(crate) fn convert_acp_modes(
     })
 }
 
+/// Used on session load when the agent provides config_options but no legacy modes field.
+fn modes_from_config_options(config_options: &[SessionConfigOption]) -> Option<ProtocolSessionModeState> {
+    let mode_opt = config_options.iter().find(|o| o.id.0.as_ref() == "mode")?;
+    let SessionConfigKind::Select(select) = &mode_opt.kind else {
+        return None;
+    };
+    let available_modes = match &select.options {
+        SessionConfigSelectOptions::Ungrouped(vals) => vals
+            .iter()
+            .map(|v| ProtocolModeInfo {
+                mode_id: v.value.0.to_string(),
+                name: v.name.clone(),
+                description: v.description.clone(),
+            })
+            .collect(),
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|g| {
+                g.options.iter().map(|v| ProtocolModeInfo {
+                    mode_id: v.value.0.to_string(),
+                    name: v.name.clone(),
+                    description: v.description.clone(),
+                })
+            })
+            .collect(),
+        _ => return None,
+    };
+    Some(ProtocolSessionModeState {
+        current_mode_id: select.current_value.0.to_string(),
+        available_modes,
+    })
+}
+
 fn extract_prompt_capabilities(response: &acp::schema::InitializeResponse) -> PromptCapabilitiesInfo {
     PromptCapabilitiesInfo {
         embedded_context: response.agent_capabilities.prompt_capabilities.embedded_context,
@@ -774,7 +808,9 @@ pub(crate) async fn load_acp_session(
                     }
                 };
                 let models = convert_acp_models(load_response.models.as_ref());
-                let modes = convert_acp_modes(load_response.modes.as_ref());
+                let modes = load_response.config_options.as_deref()
+                    .and_then(modes_from_config_options)
+                    .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
                 let _ = ready_tx.send(Ok((models, modes, prompt_caps)));
                 run_command_loop(cmd_rx, cx, acp::schema::SessionId::new(load_sid), so, sid, None).await;
                 Ok(())
@@ -1116,7 +1152,9 @@ pub(crate) async fn load_session_on_connection(
     };
 
     let models = convert_acp_models(load_response.models.as_ref());
-    let modes = convert_acp_modes(load_response.modes.as_ref());
+    let modes = load_response.config_options.as_deref()
+        .and_then(modes_from_config_options)
+        .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
     let session_id = acp::schema::SessionId::new(resume_session_id.clone());
 
     let prompt_capabilities = conn

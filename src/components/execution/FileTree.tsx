@@ -128,28 +128,22 @@ const DirectoryNode: React.FC<{
         )}
         {/* Folder tri-state checkbox — only when checkedFiles + onToggleFolder provided */}
         {folderCheckState !== null && checkedFiles && onToggleFolder && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleFolder(getDescendantFiles(node));
-            }}
-            className="shrink-0"
+          <CheckboxPrimitive.Root
+            checked={folderCheckState === "checked"}
+            indeterminate={folderCheckState === "indeterminate"}
+            onCheckedChange={() => onToggleFolder(getDescendantFiles(node))}
+            onClick={(e) => e.stopPropagation()}
+            className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-3.5 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+            tabIndex={-1}
           >
-            <CheckboxPrimitive.Root
-              checked={folderCheckState === "checked"}
-              indeterminate={folderCheckState === "indeterminate"}
-              className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-3.5 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
-              tabIndex={-1}
-            >
-              <CheckboxPrimitive.Indicator className="[&>svg]:size-3 grid place-content-center text-current">
-                {folderCheckState === "indeterminate" ? (
-                  <Minus className="size-3" />
-                ) : (
-                  <Check className="size-3" />
-                )}
-              </CheckboxPrimitive.Indicator>
-            </CheckboxPrimitive.Root>
-          </span>
+            <CheckboxPrimitive.Indicator className="[&>svg]:size-3 grid place-content-center text-current">
+              {folderCheckState === "indeterminate" ? (
+                <Minus className="size-3" />
+              ) : (
+                <Check className="size-3" />
+              )}
+            </CheckboxPrimitive.Indicator>
+          </CheckboxPrimitive.Root>
         )}
         <span className="font-mono truncate">{node.name}</span>
       </button>
@@ -209,33 +203,27 @@ const FileNode: React.FC<{
       onClick={() => node.fileName && onSelectFile(node.fileName)}
       className={cn(
         "flex items-center gap-1.5 px-2 py-1.5 cursor-pointer border-l-2 transition-colors text-xs",
-        isSelected ? "border-ring bg-muted/20" : "border-transparent hover:bg-muted/10",
+        isSelected ? "border-ring selected-file-item" : "border-transparent hover:bg-muted/10",
       )}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
     >
       {checkedFiles && onToggleFile && node.fileName && (
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFile(node.fileName!);
-          }}
-          className="shrink-0"
+        <CheckboxPrimitive.Root
+          checked={checkState === "checked"}
+          indeterminate={checkState === "indeterminate"}
+          onCheckedChange={() => onToggleFile(node.fileName!)}
+          onClick={(e) => e.stopPropagation()}
+          className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
+          tabIndex={-1}
         >
-          <CheckboxPrimitive.Root
-            checked={checkState === "checked"}
-            indeterminate={checkState === "indeterminate"}
-            className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
-            tabIndex={-1}
-          >
-            <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
-              {checkState === "indeterminate" ? (
-                <Minus className="size-3.5" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-            </CheckboxPrimitive.Indicator>
-          </CheckboxPrimitive.Root>
-        </span>
+          <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+            {checkState === "indeterminate" ? (
+              <Minus className="size-3.5" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+          </CheckboxPrimitive.Indicator>
+        </CheckboxPrimitive.Root>
       )}
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
       <span className="font-mono truncate">{node.name}</span>

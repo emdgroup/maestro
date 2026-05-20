@@ -24,12 +24,9 @@ import {
   AlertDialogCancel,
 } from "@/ui/alert-dialog";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/ui/select";
 
 interface DiffActionBarProps {
   branchName: string;
-  viewMode: "uncommitted" | "untracked";
-  onViewModeChange: (mode: "uncommitted" | "untracked") => void;
   fileSearch: string;
   onFileSearchChange: (value: string) => void;
   fileListMode: "flat" | "tree";
@@ -39,7 +36,7 @@ interface DiffActionBarProps {
   forceUnified: boolean;
   hasAnyStaged: boolean;
   isDiscarding: boolean;
-  isDeletingUntracked: boolean;
+  isDeleteMode?: boolean;
   isShelving: boolean;
   shelvePopoverOpen: boolean;
   onShelvePopoverOpenChange: (open: boolean) => void;
@@ -52,8 +49,6 @@ interface DiffActionBarProps {
 
 export function DiffActionBar({
   branchName,
-  viewMode,
-  onViewModeChange,
   fileSearch,
   onFileSearchChange,
   fileListMode,
@@ -63,7 +58,7 @@ export function DiffActionBar({
   forceUnified,
   hasAnyStaged,
   isDiscarding,
-  isDeletingUntracked,
+  isDeleteMode = false,
   isShelving,
   shelvePopoverOpen,
   onShelvePopoverOpenChange,
@@ -73,15 +68,9 @@ export function DiffActionBar({
   onShelve,
   onClose,
 }: DiffActionBarProps) {
-  const splitActive =
-    !forceUnified &&
-    viewMode !== "untracked" &&
-    diffViewMode === DiffModeEnum.SplitGitHub;
+  const splitActive = !forceUnified && diffViewMode === DiffModeEnum.SplitGitHub;
 
-  const revertDisabled =
-    viewMode === "untracked"
-      ? !hasAnyStaged || isDeletingUntracked
-      : !hasAnyStaged || isDiscarding;
+  const revertDisabled = !hasAnyStaged || isDiscarding;
 
   return (
     <div className="relative h-12 border-b border-border bg-muted/30 flex items-center px-4 shrink-0">
@@ -117,9 +106,7 @@ export function DiffActionBar({
                 size="sm"
                 disabled={revertDisabled}
                 className="h-8 w-8 p-0"
-                title={
-                  viewMode === "untracked" ? "Delete selected files" : "Revert selected changes"
-                }
+                title={isDeleteMode ? "Delete selected files" : "Revert selected changes"}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </Button>
@@ -127,20 +114,16 @@ export function DiffActionBar({
           />
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                {viewMode === "untracked" ? "Delete files?" : "Discard changes?"}
-              </AlertDialogTitle>
+              <AlertDialogTitle>{isDeleteMode ? "Delete files?" : "Discard changes?"}</AlertDialogTitle>
               <AlertDialogDescription>
-                {viewMode === "untracked"
+                {isDeleteMode
                   ? "This will permanently delete the selected untracked files. This action cannot be undone."
                   : "This will permanently discard the selected changes. This action cannot be undone."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onRevert}>
-                {viewMode === "untracked" ? "Delete" : "Discard"}
-              </AlertDialogAction>
+              <AlertDialogAction onClick={onRevert}>{isDeleteMode ? "Delete" : "Discard"}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -152,7 +135,7 @@ export function DiffActionBar({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={!hasAnyStaged || isShelving || viewMode === "untracked"}
+                disabled={!hasAnyStaged || isShelving}
                 className="h-8 w-8 p-0"
                 title="Shelve selected changes"
               >
@@ -182,29 +165,9 @@ export function DiffActionBar({
         </Popover>
       </div>
 
-      {/* Center: view mode dropdown */}
+      {/* Center: branch name */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-1.5 font-mono text-sm font-semibold">
-          <span className="truncate max-w-48">{branchName}</span>
-          <span>-</span>
-          <Select
-            value={viewMode}
-            onValueChange={(v) => onViewModeChange(v as "uncommitted" | "untracked")}
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-auto border-none shadow-none bg-transparent font-mono text-sm font-semibold p-0 gap-1 focus:ring-0"
-            >
-              <SelectValue>
-                {viewMode === "uncommitted" ? "Uncommitted Changes" : "Untracked Changes"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="uncommitted">Uncommitted Changes</SelectItem>
-              <SelectItem value="untracked">Untracked Changes</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <span className="font-mono text-sm font-semibold truncate max-w-48">{branchName}</span>
       </div>
 
       {/* Right side: unified/split toggle + close button */}
@@ -212,7 +175,7 @@ export function DiffActionBar({
         <ToggleGroup
           value={[splitActive ? "split" : "unified"]}
           onValueChange={(values) => {
-            if (forceUnified || viewMode === "untracked") return;
+            if (forceUnified) return;
             if (values.includes("split")) {
               onDiffViewModeChange(DiffModeEnum.SplitGitHub);
             } else {
@@ -227,10 +190,10 @@ export function DiffActionBar({
             value="split"
             size="sm"
             variant="outline"
-            disabled={forceUnified || viewMode === "untracked"}
+            disabled={forceUnified}
             className={cn(
               "size-8 p-0",
-              (forceUnified || viewMode === "untracked") && "opacity-30 cursor-not-allowed",
+              forceUnified && "opacity-30 cursor-not-allowed",
             )}
           >
             <Columns2 className="size-3.5" />

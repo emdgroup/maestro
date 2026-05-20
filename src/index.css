@@ -226,6 +226,15 @@
   }
 }
 
+/* Hunk checkbox injection — active when hunk selection enabled in DiffViewer */
+.hunk-selection-active .diff-line-hunk-action .hunk-checkbox {
+  flex-shrink: 0;
+}
+
+.hunk-selection-active .diff-line-hunk {
+  cursor: pointer;
+}
+
 .zoom-slider [data-slot="slider-track"] {
   height: 2px;
 }
@@ -275,6 +284,15 @@
 }
 
 .selected-session-item {
+  background: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--accent) 28%, transparent),
+    color-mix(in oklch, var(--accent) 8%, transparent) 55%,
+    transparent
+  );
+}
+
+.selected-file-item {
   background: linear-gradient(
     to right,
     color-mix(in oklch, var(--accent) 28%, transparent),

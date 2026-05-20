@@ -26,6 +26,7 @@ export function useAcpSessionLifecycle(
   projectId: number | null,
   agentId: string | null,
   onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
+  sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): AcpSessionLifecycleResult {
   const { setActivity: setActivityStatus } = useSessionActivityActions();
 
@@ -242,57 +243,59 @@ export function useAcpSessionLifecycle(
     };
   }, [sessionKey]);
 
-  useEffect(() => {
-    type SessionUpdatePayloadRaw = {
-      sessionUpdate?: string;
-      used?: number;
-      size?: number;
-      cost?: { amount: number; currency: string };
-      availableCommands?: AvailableCommand[];
-      configOptions?: ConfigOption[];
-    };
-    const unlisten = listen<SessionUpdatePayloadRaw>(
-      `acp://session-update/${sessionKey}`,
-      (event) => {
-        const p = event.payload;
-        if (p.sessionUpdate === "usage_update") {
-          if (typeof p.used === "number" && typeof p.size === "number") {
-            setUsageState((prev) => {
-              const next: UsageState = {
-                used: p.used!,
-                size: p.size!,
-                cost: p.cost ?? prev?.cost ?? null,
-              };
-              onUsageChangeRef.current?.(next);
-              return next;
-            });
-          }
-        } else if (p.sessionUpdate === "available_commands_update") {
-          if (Array.isArray(p.availableCommands)) {
-            setAvailableCommands(p.availableCommands);
-          }
-        } else if (p.sessionUpdate === "config_option_update") {
-          if (Array.isArray(p.configOptions)) {
-            setConfigOptions(p.configOptions);
-            setConfigValues((prev) => {
-              const next = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
-              const keys = Object.keys(next);
-              if (
-                keys.length === Object.keys(prev).length &&
-                keys.every((k) => prev[k] === next[k])
-              ) {
-                return prev;
-              }
-              return next;
-            });
-          }
+  // Write session-update handler to the shared ref so useAcpActivity (which registers
+  // its listener before drain) can forward events here without a race condition.
+  if (sessionUpdateRef) {
+    sessionUpdateRef.current = (raw: Record<string, unknown>) => {
+      const p = raw as {
+        sessionUpdate?: string;
+        used?: number;
+        size?: number;
+        cost?: { amount: number; currency: string };
+        availableCommands?: AvailableCommand[];
+        configOptions?: ConfigOption[];
+        modeId?: string;
+        currentModeId?: string;
+      };
+      if (p.sessionUpdate === "usage_update") {
+        if (typeof p.used === "number" && typeof p.size === "number") {
+          setUsageState((prev) => {
+            const next: UsageState = {
+              used: p.used!,
+              size: p.size!,
+              cost: p.cost ?? prev?.cost ?? null,
+            };
+            onUsageChangeRef.current?.(next);
+            return next;
+          });
         }
-      },
-    );
-    return () => {
-      unlisten.then((fn) => fn());
+      } else if (p.sessionUpdate === "available_commands_update") {
+        if (Array.isArray(p.availableCommands)) {
+          setAvailableCommands(p.availableCommands);
+        }
+      } else if (p.sessionUpdate === "config_option_update") {
+        if (Array.isArray(p.configOptions)) {
+          setConfigOptions(p.configOptions);
+          setConfigValues((prev) => {
+            const next = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+            const keys = Object.keys(next);
+            if (
+              keys.length === Object.keys(prev).length &&
+              keys.every((k) => prev[k] === next[k])
+            ) {
+              return prev;
+            }
+            return next;
+          });
+        }
+      } else if (p.sessionUpdate === "current_mode_update") {
+        const modeId = p.modeId ?? p.currentModeId;
+        if (modeId) {
+          setConfigValues((prev) => ({ ...prev, mode: modeId }));
+        }
+      }
     };
-  }, [sessionKey, onUsageChangeRef]);
+  }
 
   return {
     configOptions,

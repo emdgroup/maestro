@@ -90,6 +90,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::discard_worktree_changes,
             crate::ipc::shelve_worktree_changes,
             crate::ipc::delete_untracked_files,
+            crate::ipc::get_untracked_file_content,
             // ACP session management + unified agent discovery
             crate::ipc::spawn_acp_session,
             crate::ipc::send_acp_prompt,

@@ -13,9 +13,7 @@ pub struct ParsedWorktree {
     pub is_prunable: bool,
 }
 
-/// Run a git command inside a WSL distro: `wsl.exe -d <distro> -- git -C <path> <args>`.
-/// Returns stdout on success, Err on non-zero exit or spawn failure.
-async fn run_wsl_git(distro: &str, path: &str, args: &[&str]) -> Result<String, String> {
+async fn run_wsl_git(distro: &str, path: &str, args: &[&str], ignore_exit_code: bool) -> Result<String, String> {
     let mut cmd_args = vec!["-d", distro, "--", "git", "-C", path];
     cmd_args.extend_from_slice(args);
     let output = TokioCommand::new("wsl.exe")
@@ -23,11 +21,48 @@ async fn run_wsl_git(distro: &str, path: &str, args: &[&str]) -> Result<String, 
         .output()
         .await
         .map_err(|e| format!("Failed to spawn wsl.exe for git: {}", e))?;
-    if !output.status.success() {
+    if !ignore_exit_code && !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("WSL git error: {}", stderr));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+async fn run_git_in_dir_inner(
+    conn: &GitConnection,
+    abs_path: &str,
+    args: &[&str],
+    ignore_exit_code: bool,
+) -> Result<String, String> {
+    match conn {
+        GitConnection::Local { .. } => {
+            let output = TokioCommand::new("git")
+                .args(args)
+                .current_dir(abs_path)
+                .output()
+                .await
+                .map_err(|e| format!("git failed: {}", e))?;
+            if !ignore_exit_code && !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("git error: {}", stderr));
+            }
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+        GitConnection::Remote { ssh, .. } => {
+            let git_args = args.join(" ");
+            let cmd = if ignore_exit_code {
+                format!("cd {} && git {} || true", remote::shell_quote(abs_path), git_args)
+            } else {
+                format!("cd {} && git {}", remote::shell_quote(abs_path), git_args)
+            };
+            ssh.execute_command(&cmd)
+                .await
+                .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+        GitConnection::Wsl { distro, .. } => {
+            run_wsl_git(distro, abs_path, args, ignore_exit_code).await
+        }
+    }
 }
 
 /// Public dispatcher: routes git operations to local OR remote based on GitConnection type
@@ -63,7 +98,7 @@ pub async fn create_worktree(
             } else {
                 vec!["worktree", "add", worktree_name, branch]
             };
-            run_wsl_git(distro, path, &args).await.map(|_| ())
+            run_wsl_git(distro, path, &args, false).await.map(|_| ())
         }
     }
 }
@@ -83,7 +118,7 @@ pub async fn delete_worktree(
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
         GitConnection::Wsl { distro, path } => {
-            run_wsl_git(distro, path, &["worktree", "remove", worktree_name, "--force"]).await.map(|_| ())
+            run_wsl_git(distro, path, &["worktree", "remove", worktree_name, "--force"], false).await.map(|_| ())
         }
     }
 }
@@ -105,7 +140,7 @@ pub async fn git_diff(
         }
         GitConnection::Wsl { distro, path } => {
             let range = format!("{}...{}", base_branch, branch);
-            run_wsl_git(distro, path, &["diff", "--unified=6", &range]).await
+            run_wsl_git(distro, path, &["diff", "--unified=6", &range], false).await
         }
     }
 }
@@ -124,7 +159,7 @@ pub async fn git_status(
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
         GitConnection::Wsl { distro, path } => {
-            run_wsl_git(distro, path, &["status", "--porcelain"]).await
+            run_wsl_git(distro, path, &["status", "--porcelain"], false).await
         }
     }
 }
@@ -143,7 +178,7 @@ pub async fn list_branches(
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
         GitConnection::Wsl { distro, path } => {
-            let raw = run_wsl_git(distro, path, &["branch", "-a", "--format=%(refname:short)"]).await?;
+            let raw = run_wsl_git(distro, path, &["branch", "-a", "--format=%(refname:short)"], false).await?;
             let mut branches: Vec<String> = raw
                 .lines()
                 .map(|l| l.strip_prefix("origin/").unwrap_or(l).to_string())
@@ -170,7 +205,7 @@ pub async fn get_current_branch(
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
         GitConnection::Wsl { distro, path } => {
-            let raw = run_wsl_git(distro, path, &["symbolic-ref", "--short", "HEAD"]).await?;
+            let raw = run_wsl_git(distro, path, &["symbolic-ref", "--short", "HEAD"], false).await?;
             Ok(raw.trim().to_string())
         }
     }
@@ -190,44 +225,30 @@ pub async fn list_worktrees(
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
         GitConnection::Wsl { distro, path } => {
-            let raw = run_wsl_git(distro, path, &["worktree", "list", "--porcelain"]).await?;
+            let raw = run_wsl_git(distro, path, &["worktree", "list", "--porcelain"], false).await?;
             Ok(parse_worktree_list(&raw))
         }
     }
 }
 
-/// Generic dispatcher: run arbitrary git command in a directory (local or remote).
-///
-/// For local: `tokio::process::Command::new("git").args(args).current_dir(abs_path)`
-/// For remote: `cd '{abs_path}' && git {args joined}` via SSH
-///
-/// Returns stdout as String. Does NOT check exit status — caller decides if empty/error output matters.
+/// Run arbitrary git command in a directory (local, SSH, or WSL).
+/// Fails on non-zero exit for SSH/WSL. Use `run_git_in_dir_lossy` for commands
+/// that exit non-zero on success (e.g. `git diff --no-index`).
 pub async fn run_git_in_dir(
     conn: &GitConnection,
     abs_path: &str,
     args: &[&str],
 ) -> Result<String, String> {
-    match conn {
-        GitConnection::Local { .. } => {
-            let output = TokioCommand::new("git")
-                .args(args)
-                .current_dir(abs_path)
-                .output()
-                .await
-                .map_err(|e| format!("git failed: {}", e))?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        }
-        GitConnection::Remote { ssh, .. } => {
-            let git_args = args.join(" ");
-            let cmd = format!("cd {} && git {}", remote::shell_quote(abs_path), git_args);
-            ssh.execute_command(&cmd)
-                .await
-                .map_err(|e| format!("Remote git error: {:?}", e))
-        }
-        GitConnection::Wsl { distro, .. } => {
-            run_wsl_git(distro, abs_path, args).await
-        }
-    }
+    run_git_in_dir_inner(conn, abs_path, args, false).await
+}
+
+/// Like `run_git_in_dir` but tolerates non-zero exit codes (returns stdout anyway).
+pub async fn run_git_in_dir_lossy(
+    conn: &GitConnection,
+    abs_path: &str,
+    args: &[&str],
+) -> Result<String, String> {
+    run_git_in_dir_inner(conn, abs_path, args, true).await
 }
 
 /// List all worktrees via `git worktree list --porcelain`
