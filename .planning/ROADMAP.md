@@ -7,7 +7,8 @@
 - ✅ **v1.2 Deep Linking & Project Picker** — Phases 23-24 (shipped 2026-03-29)
 - ✅ **v1.3 Agents & Worktrees** — Phases 25-28 (shipped 2026-03-30)
 - ✅ **v1.4 Quality & Worktrees** — Phases 29-41 (shipped 2026-04-17)
-- 🚧 **v1.5 ACP Integration** — Phases 42-49 (in progress)
+- ✅ **v1.5 ACP Integration** — Phases 42-49 (shipped 2026-05-20)
+- 🚧 **v1.6 Ticketing Integration** — Phases 50-56 (in progress)
 
 ## Phases
 
@@ -93,126 +94,114 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full details.
 
 </details>
 
-### v1.5 ACP Integration (In Progress)
-
-**Milestone Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
+<details>
+<summary>✅ v1.5 ACP Integration (Phases 42-49) — SHIPPED 2026-05-20</summary>
 
 - [x] **Phase 42: maestro-server Activation** — Wire real ACP message loop in maestro-server binary (completed 2026-04-17)
 - [x] **Phase 43: Local ACP Session Manager** — Tauri backend tracks live ACP sessions in AppState (completed 2026-04-20)
-- [x] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle
+- [x] **Phase 44: DB Schema + ACP IPC Handlers** — Schema v11 + full IPC surface for ACP lifecycle (completed 2026-04-22)
 - [x] **Phase 45: Agent Registry Fetch + Caching** — Fetch, cache, and resolve agents from ACP CDN registry (completed 2026-04-21)
 - [x] **Phase 46: Frontend: Agent Selector + Spawn Flow** — Browse registry and spawn ACP sessions from UI (completed 2026-04-22)
 - [x] **Phase 47: Frontend: AgentActivityPanel** — Structured output viewer with real-time event streaming (completed 2026-04-22)
-- [ ] **Phase 48: Frontend: PermissionDialog** — Approve/deny permission requests with session allowlist
-- [ ] **Phase 49: Dual-Mode Execution Dispatcher** — Route spawn/attach through ACP or PTY path transparently
+- [x] **Phase 48: Frontend: PermissionDialog** — Approve/deny permission requests with session allowlist (completed 2026-05-20)
+- [x] **Phase 49: Dual-Mode Execution Dispatcher** — Route spawn/attach through ACP or PTY path transparently (completed 2026-05-20)
+
+See phase details below (archived after milestone close).
+
+</details>
+
+### 🚧 v1.6 Ticketing Integration (In Progress)
+
+**Milestone Goal:** Connect each project to one ticket tracking tool (GitHub Issues, GitLab Issues, Linear, or Jira Cloud) so users can browse and import open issues as Backlog tasks via an import modal, with per-project OAuth authentication and non-destructive change detection.
+
+- [ ] **Phase 50: Infrastructure** — CSP expansion + tauri-plugin-oauth wiring + new Cargo dependencies
+- [ ] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal
+- [ ] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token refresh for expiring providers
+- [ ] **Phase 53: OAuth Flows** — Per-provider PKCE/3LO state machines for GitHub, GitLab, Linear, and Jira
+- [ ] **Phase 54: Provider API Clients** — Issue-fetching clients for all four providers with canonical field mapping
+- [ ] **Phase 55: Settings UI** — Ticketing section in project settings with connect/disconnect and connection status
+- [ ] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection
 
 ## Phase Details
 
-### Phase 42: maestro-server Activation
-**Goal**: maestro-server binary handles the full ACP stdin/stdout message loop — receiving spawn requests, spawning agents via ClientSideConnection, and forwarding structured session events and permission requests to the Tauri host
-**Depends on**: Phase 41 (ACP infrastructure skeleton)
-**Requirements**: SERVER-01, SERVER-02, SERVER-03, SERVER-04
+### Phase 50: Infrastructure
+**Goal**: The app can make authenticated HTTP calls to all four provider APIs and handle OAuth localhost redirects — every prerequisite that silently blocks later provider work is eliminated in a single commit
+**Depends on**: Phase 49
+**Requirements**: FNDTN-01, FNDTN-02
 **Success Criteria** (what must be TRUE):
-  1. maestro-server receives a SpawnRequest on stdin and spawns the target agent subprocess via ACP ClientSideConnection without error
-  2. Structured session events (messages, tool calls, diffs, plans) arrive on stdout as ServerResponse::SessionUpdate JSON frames
-  3. Raw terminal output from the agent's PTY callbacks arrives on stdout as ServerResponse::TerminalOutput frames
-  4. Permission requests pause the agent and arrive on stdout as ServerResponse::PermissionRequest; sending PermissionResponse on stdin unblocks the agent
-**Plans**: 2 plans
-Plans:
-- [x] 42-01-PLAN.md — Protocol extension + session types + ACP Client trait implementation
-- [x] 42-02-PLAN.md — Agent spawner + main.rs stdin/stdout read loop with full ACP lifecycle
+  1. The app can make fetch requests to `api.github.com`, `gitlab.com`, `api.linear.app`, `auth.atlassian.com`, `api.atlassian.com`, and `127.0.0.1:*` without CSP violations in the browser console
+  2. `tauri-plugin-oauth` is registered and its `oauth:allow-start` and `oauth:allow-cancel` capabilities are present in `capabilities/default.json`; calling the start command does not produce a runtime "plugin not found" error
+  3. All new Cargo dependencies (`tauri-plugin-oauth`, `oauth2`, `octocrab`, `graphql_client`) are listed in `Cargo.toml` and `cargo check` compiles without errors
+**Plans**: TBD
 
-### Phase 43: Local ACP Session Manager
-**Goal**: Tauri backend can launch maestro-server as a managed subprocess per session, track live ACP sessions in AppState, and stream typed Tauri events to the frontend for each session
-**Depends on**: Phase 42
-**Requirements**: SESSION-01, SESSION-02, SESSION-03
+### Phase 51: Data Foundation
+**Goal**: All downstream Rust types and database columns required by ticketing exist, the canonical `external_id` format is locked in before any provider writes data, and the old broken import code is fully removed from the codebase
+**Depends on**: Phase 50
+**Requirements**: FNDTN-03, FNDTN-04, CFG-01, CFG-02
 **Success Criteria** (what must be TRUE):
-  1. Developer can call an IPC command that spawns a maestro-server child process with piped stdin/stdout and a unique log_id key
-  2. A background reader task parses maestro-server stdout and emits typed Tauri events (acp://session-update/{log_id}, acp://terminal-output/{log_id}, acp://permission-request/{log_id})
-  3. Active ACP sessions are accessible in AppState.acp_sessions and cleaned up when the session ends
-**Plans**: 2 plans
+  1. Schema v16 migration adds `external_url`, `external_updated_at`, and `labels` columns to the tasks table; existing task rows survive the migration without data loss
+  2. `models/ticketing.rs` compiles with `TicketingConfig`, `RemoteIssue`, `ProviderKind`, and `OAuthFlowStarted` types; `pnpm tauri:gen` regenerates `bindings.ts` with these types present
+  3. `sync_github_issues`, `sync_jira_issues`, and `save_import_config` IPC handlers are removed from `settings_handlers.rs` and deregistered from `lib.rs`; `ImportSettings.tsx` is deleted; `cargo check` and `pnpm build` both pass
+  4. `.maestro/ticketing.json` can be written and read back for a project; attempting to connect a second provider overwrites the first (one provider per project enforced)
+**Plans:** 2 plans
 Plans:
-- [ ] 43-01-PLAN.md — AcpProcess struct + AppState extension + spawn/reader/writer in acp/manager.rs
-- [ ] 43-02-PLAN.md — IPC commands (start_acp_session, send_to_acp_session, cancel_acp_session) + lib.rs registration
+- [ ] 51-01-PLAN.md — Schema V16 + TicketingConfig model + IPC handlers
+- [ ] 51-02-PLAN.md — Legacy import code removal (Rust + frontend)
 
-### Phase 44: DB Schema + ACP IPC Handlers
-**Goal**: Database schema v11 captures ACP-specific fields on execution_logs, and the full IPC surface (spawn, prompt, permission response, cancel, structured output flush) is available to the frontend
-**Depends on**: Phase 43
-**Requirements**: PERSIST-01, PERSIST-02, PERSIST-03, PERSIST-04, PERSIST-05, PERSIST-06
+### Phase 52: Token Management
+**Goal**: Tokens can be stored in and retrieved from the OS keychain for any project, and concurrent refresh races for GitLab and Jira are prevented by a mutex-guarded token manager
+**Depends on**: Phase 51
+**Requirements**: AUTH-05, AUTH-06
 **Success Criteria** (what must be TRUE):
-  1. Schema migration to v11 adds execution_mode, agent_id, and structured_output columns to execution_logs without breaking existing PTY session records
-  2. Calling spawn_acp_session IPC creates an execution_log row with execution_mode='acp' and returns the log_id to the caller
-  3. Calling send_acp_prompt and respond_acp_permission IPC commands forward the payloads to the correct maestro-server stdin without error
-  4. Structured output from in-memory AcpSession is periodically flushed to execution_logs.structured_output so dead session replay works after app restart
-**Plans**: 2 plans
-Plans:
-- [ ] 44-01-PLAN.md — Schema v11 migration + IPC command renames + ExecutionWithTask extension
-- [ ] 44-02-PLAN.md — Structured output flush in reader task + TypeScript bindings regeneration
+  1. A token can be stored via `ticketing/keychain.rs` using the `maestro:{project_id}:ticketing` key and retrieved in a subsequent call without error; deleting it returns `NoEntry` on the next get
+  2. On Linux/WSL where the system keyring is unavailable, a warning toast is shown and the app falls back to an encrypted file store rather than failing silently
+  3. Two concurrent calls attempting to refresh a GitLab or Jira token simultaneously result in exactly one network request; the second caller receives the result of the first refresh without making its own request
+**Plans**: TBD
 
-### Phase 45: Agent Registry Fetch + Caching
-**Goal**: Tauri backend can fetch the ACP agent registry from the CDN, cache it in AppState with a 5-minute TTL, and resolve a concrete launch command for any agent in the registry
-**Depends on**: Nothing (independent — can be developed in parallel with Phases 42-43)
-**Requirements**: REGISTRY-01, REGISTRY-02, REGISTRY-03
+### Phase 53: OAuth Flows
+**Goal**: Users can complete the full OAuth authorization code + PKCE (or 3LO) flow for each of the four providers via a browser pop-up, and the resulting tokens are stored in the OS keychain
+**Depends on**: Phase 52
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04
 **Success Criteria** (what must be TRUE):
-  1. Calling the fetch_agent_registry IPC returns the current list of available ACP agents from https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json
-  2. A second call within 5 minutes returns the cached result without hitting the network; calling force-refresh bypasses the cache
-  3. Given an AgentInfo from the registry, the backend resolves the correct launch command (npx package, binary target, or uvx package) for use in SpawnRequest
-**Plans**: 2 plans
-Plans:
-- [ ] 45-01-PLAN.md — Registry types extension + CDN fetch + cache logic + distribution resolution
-- [ ] 45-02-PLAN.md — IPC commands (fetch_agent_registry, resolve_agent_launch_command) + TypeScript bindings
-**UI hint**: no
+  1. Clicking "Connect" for GitHub opens a browser window at the GitHub authorization URL; completing authorization redirects to `127.0.0.1` and a `ticketing:connected` Tauri event is emitted with the provider name and account username
+  2. The same end-to-end flow works for GitLab (PKCE), Linear (PKCE), and Jira Cloud (3LO with `accessible-resources` cloud ID discovery)
+  3. If the user closes the browser or cancels, `tauri-plugin-oauth`'s cancel is called and a `ticketing:error` event is emitted; no partial token is stored in the keychain
+  4. After a successful connect, the token is retrievable from the keychain and a subsequent call to any provider API using that token does not return 401
+**Plans**: TBD
 
-### Phase 46: Frontend: Agent Selector + Spawn Flow
-**Goal**: Users can browse and search the ACP agent registry in a modal, select an agent and worktree, and spawn a live ACP session — with ACP sessions distinguished from PTY sessions in the execution sidebar
-**Depends on**: Phase 44, Phase 45
-**Requirements**: SPAWN-01, SPAWN-02, SPAWN-03
+### Phase 54: Provider API Clients
+**Goal**: The app can fetch open issues from all four providers and map each issue to the canonical `RemoteIssue` shape with a consistently formatted `external_id`
+**Depends on**: Phase 53
+**Requirements**: PROV-01, PROV-02, PROV-03, PROV-04
 **Success Criteria** (what must be TRUE):
-  1. User can open an agent selector modal that lists available ACP agents with name and description, and filter them by typing in a search box
-  2. User can select an agent and a worktree/branch, click Spawn, and see a new ACP session appear in the execution sidebar
-  3. ACP sessions in the sidebar display an "ACP" badge, distinguishing them from PTY ("Interactive") sessions at a glance
-**Plans**: 2 plans
-Plans:
-- [x] 46-01-PLAN.md — Service hooks (useAgentRegistryQuery, useSpawnAcpSessionMutation) + AgentSelectorDialog component
-- [x] 46-02-PLAN.md — Wire AgentSelectorDialog into AgentsView + ACP badge in AgentMonitor sidebar
-**UI hint**: yes
+  1. Given a valid stored token, calling the GitHub provider client returns open issues (PRs filtered out) with `title`, `body`, `labels`, `url`, and `updated_at` populated and `external_id` in `github:{number}` format
+  2. GitLab, Linear (GraphQL, team-scoped), and Jira Cloud (REST v3 via `accessible-resources` cloud ID, ADF stripped from descriptions) clients return issues in the same `RemoteIssue` shape with provider-specific `external_id` prefixes
+  3. Token expiry during a fetch triggers the mutex-guarded refresh flow (Phase 52) transparently; the caller receives the issue list without seeing the 401
+**Plans**: TBD
 
-### Phase 47: Frontend: AgentActivityPanel
-**Goal**: Users see a structured, real-time view of ACP agent output — messages, tool calls with args/results, file diffs, and plans — alongside the raw terminal, with completed sessions replaying from the database
-**Depends on**: Phase 46
-**Requirements**: ACTIVITY-01, ACTIVITY-02, ACTIVITY-03
+### Phase 55: Settings UI
+**Goal**: Users can connect and disconnect a ticketing provider from project settings and see at a glance whether a provider is currently active
+**Depends on**: Phase 54
+**Requirements**: SETT-01, SETT-02, SETT-03
 **Success Criteria** (what must be TRUE):
-  1. While an ACP session is running, structured output (messages, tool calls, diffs, plans) appears in real-time in the activity panel via Tauri event subscription
-  2. Raw terminal output from the agent is accessible via a toggleable bottom panel (AcpTerminalPanel) that slides in when the user clicks the Terminal button; the structured activity view remains the primary content area
-  3. Selecting a completed ACP session loads its structured output from the database and renders it identically to the live view
-**Plans**: 3 plans
-Plans:
-- [x] 47-01-PLAN.md — Backend IPC (get_structured_output) + frontend types + event hooks (useAcpActivity, useStructuredOutputQuery) + react-markdown install
-- [x] 47-02-PLAN.md — Activity sub-components (MessageItem, ToolCallCard, PlanPanel, AcpTerminalPanel) + AgentActivityPanel + AgentMonitor ACP branch wiring
-- [x] 47-03-PLAN.md — Documentation gap closure: align REQUIREMENTS.md and ROADMAP.md with toggle-panel design
-**UI hint**: yes
-
-### Phase 48: Frontend: PermissionDialog
-**Goal**: Users are surfaced permission requests from the running agent as a blocking modal, can allow or deny each request, can grant session-scoped blanket approval for a tool, and are notified of pending requests even when viewing a different tab
-**Depends on**: Phase 46
-**Requirements**: PERM-01, PERM-02, PERM-03, PERM-04
-**Success Criteria** (what must be TRUE):
-  1. When the agent requests a permission (file write, terminal command, or other tool), a dialog appears showing the request details and blocks until the user responds
-  2. User can click Allow or Deny; the decision is forwarded via respond_acp_permission IPC and the agent unblocks immediately
-  3. User can check "Allow all for this session" for a given tool; subsequent requests for that tool are auto-approved without showing the dialog again
-  4. If the user is on a different tab when a permission request arrives, an urgent badge or indicator signals there is a pending request
+  1. Project settings has a Ticketing section with a provider picker offering GitHub, GitLab, Linear, and Jira as options
+  2. Clicking "Connect" triggers the OAuth flow (Phase 53); after completion, the section shows the provider name, account username, and a green connected indicator without a page reload
+  3. Clicking "Disconnect" removes the token from the keychain and deletes `.maestro/ticketing.json`; the UI returns to the disconnected state showing the provider picker
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 49: Dual-Mode Execution Dispatcher
-**Goal**: spawn_interactive_execution routes transparently to the ACP or PTY execution path based on whether an agent_id is provided, attach_terminal handles both session types, and all existing PTY flows continue working without modification
-**Depends on**: Phase 47, Phase 48
-**Requirements**: DISPATCH-01, DISPATCH-02, DISPATCH-03
+### Phase 56: Import Modal + Change Detection
+**Goal**: Users can open the import modal from the Backlog column, browse available issues across three tabs (Available, Imported, Changed), bulk-import selected tickets as Backlog tasks, and act on tickets whose upstream content has changed since import
+**Depends on**: Phase 55
+**Requirements**: IMPT-01, IMPT-02, IMPT-03, IMPT-04, IMPT-05, IMPT-06, CHNG-01, CHNG-02
 **Success Criteria** (what must be TRUE):
-  1. Calling spawn_interactive_execution with an agent_id found in the registry launches an ACP session; calling it without agent_id (or with an unknown id) falls through to the existing PTY path
-  2. attach_terminal correctly serves the terminal_output buffer for ACP sessions and uses the existing PTY attach path for PTY sessions — callers see no difference
-  3. All existing PTY execution flows (spawn, attach, detach, cancel, resume) continue working without regression after the dispatcher is wired
+  1. The "Import tickets" button appears in the Backlog column header only when a provider is connected; clicking it opens the import modal
+  2. The modal's Available tab lists open remote issues not yet imported; the Imported tab lists issues that have already been imported as tasks; the Changed tab lists imported tasks whose provider `updated_at` is newer than the stored `external_updated_at`
+  3. Checking one or more issues in the Available tab and clicking "Import Selected" creates Backlog tasks with `external_url`, `labels`, and `external_updated_at` populated
+  4. The ticket list refreshes automatically every 5 minutes while the modal is open; clicking the Refresh button forces an immediate fetch
+  5. In the Changed tab, clicking "Update task" overwrites the task's title, description, and labels from the current provider data and clears the changed flag; clicking "Dismiss" clears the changed flag while keeping the current task content
 **Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
@@ -239,14 +228,21 @@ Plans:
 | 39 - Fix SSH terminal session switching | v1.4 | 3/3 | Complete | 2026-04-08 |
 | 40 - SSH disconnection handling | v1.4 | 4/4 | Complete | 2026-04-16 |
 | 41 - ACP Agent Selection & Discovery System | v1.4 | 3/3 | Complete | 2026-04-17 |
-| 42 - maestro-server Activation | v1.5 | Complete    | 2026-04-20 | 2026-04-17 |
-| 43 - Local ACP Session Manager | v1.5 | Complete    | 2026-04-20 | - |
-| 44 - DB Schema + ACP IPC Handlers | v1.5 | 0/2 | Not started | - |
-| 45 - Agent Registry Fetch + Caching | v1.5 | Complete    | 2026-04-21 | - |
+| 42 - maestro-server Activation | v1.5 | Complete | Complete | 2026-04-17 |
+| 43 - Local ACP Session Manager | v1.5 | Complete | Complete | 2026-04-20 |
+| 44 - DB Schema + ACP IPC Handlers | v1.5 | Complete | Complete | 2026-04-22 |
+| 45 - Agent Registry Fetch + Caching | v1.5 | Complete | Complete | 2026-04-21 |
 | 46 - Frontend: Agent Selector + Spawn Flow | v1.5 | 2/2 | Complete | 2026-04-22 |
 | 47 - Frontend: AgentActivityPanel | v1.5 | 3/3 | Complete | 2026-04-22 |
-| 48 - Frontend: PermissionDialog | v1.5 | 0/? | Not started | - |
-| 49 - Dual-Mode Execution Dispatcher | v1.5 | 0/? | Not started | - |
+| 48 - Frontend: PermissionDialog | v1.5 | Complete | Complete | 2026-05-20 |
+| 49 - Dual-Mode Execution Dispatcher | v1.5 | Complete | Complete | 2026-05-20 |
+| 50 - Infrastructure | v1.6 | 0/TBD | Not started | - |
+| 51 - Data Foundation | v1.6 | 0/2 | Not started | - |
+| 52 - Token Management | v1.6 | 0/TBD | Not started | - |
+| 53 - OAuth Flows | v1.6 | 0/TBD | Not started | - |
+| 54 - Provider API Clients | v1.6 | 0/TBD | Not started | - |
+| 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
+| 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
 
 ---
 
@@ -256,4 +252,5 @@ Plans:
 *v1.2 shipped: 2026-03-29*
 *v1.3 shipped: 2026-03-30*
 *v1.4 shipped: 2026-04-17*
-*v1.5 roadmap defined: 2026-04-17*
+*v1.5 shipped: 2026-05-20*
+*v1.6 roadmap created: 2026-05-20*
