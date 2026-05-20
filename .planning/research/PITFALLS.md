@@ -1,207 +1,273 @@
 # Pitfalls Research
 
-**Domain:** Adding Agents + Worktrees views; removing pool-based worktree system; xterm.js terminal; git diff in Rust; zombie worktree detection
-**Researched:** 2026-03-29
-**Confidence:** HIGH — all findings derived directly from codebase inspection of the live Rust and TypeScript source
+**Domain:** OAuth 2.0 + PKCE + OS keychain + multi-provider ticket import in a Tauri 2 desktop app
+**Researched:** 2026-05-20
+**Confidence:** HIGH — derived from codebase inspection, Context7 docs, and official provider documentation
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Pool Removal Breaks `spawn_agent_execution` and `resume_agent_execution`
+### Pitfall 1: Tauri CSP Blocks All New Provider API Calls
 
 **What goes wrong:**
 
-Both `spawn_agent_execution` (execution_handlers.rs:120) and `resume_agent_execution` (execution_handlers.rs:896) call `super::lease_worktree(...)` synchronously as step 2 of their background task setup. When you remove the pool, `lease_worktree` disappears entirely. Every call site that directly calls `lease_worktree` breaks at compile time, but more dangerously: any replacement on-demand creation that happens inside `spawn_agent_execution` needs to actually create a real git worktree on disk — the current stub path (worktree_handlers.rs:108: "TODO: Phase 4 - Invoke sidecar") just creates a DB record with a fake path and returns immediately. If you delete `lease_worktree` and replace it with real on-demand creation, that real creation must complete before the PTY is spawned, because the agent is immediately launched with `worktree_path` as its `cwd`. A non-existent directory causes PTY spawn failure.
+The existing `tauri.conf.json` CSP `connect-src` only permits `https://api.github.com` and `https://*.atlassian.net`. Every network call to GitLab (`https://gitlab.com`), Linear (`https://api.linear.app`), and Atlassian's OAuth auth server (`https://auth.atlassian.com`) will be blocked by the Tauri webview's Content Security Policy with a silent network error — the Tauri webview enforces CSP on all `fetch()`/`XMLHttpRequest` calls originating from the frontend. Calls made from Rust via `reqwest` are exempt, but any token exchange or API call triggered from TypeScript will fail.
+
+Additionally, the localhost redirect server started by `tauri-plugin-oauth` runs on a dynamic port (`http://127.0.0.1:{port}`). If OAuth token exchange or any step of the flow is triggered from the frontend, the `connect-src` must include `http://127.0.0.1:*` — or alternatively the entire token exchange must happen in Rust (recommended).
 
 **Why it happens:**
 
-The pool system was designed so that real disk worktrees were lazily created "on first lease" (see worktree_handlers.rs:109 comment). In practice the TODO was never implemented — the path returned is `.worktree-pool/wt-001` which may not exist on disk. Removing the pool exposes this gap: the migration from pool to on-demand means you must implement the actual `git worktree add` before touching the execution flow.
+Developers add a new provider, test the Rust `reqwest` call (which works fine), then add a frontend fetch for token inspection or status checking and get a CORS/CSP error that looks like a network failure with no clear attribution.
 
 **How to avoid:**
 
-Implement on-demand worktree creation (real `git worktree add` via sidecar or `tokio::process::Command`) as a standalone, tested IPC command _before_ touching `spawn_agent_execution`. Replace the `lease_worktree` call site only after the new creation command is verified to produce a real directory. Keep `lease_worktree`'s signature as a shim during transition so the compile error surface is zero until you are ready.
+Add all required origins to `connect-src` before writing any API integration code:
+```
+connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*
+  https://api.github.com
+  https://auth.atlassian.com https://*.atlassian.net https://api.atlassian.com
+  https://gitlab.com https://*.gitlab.com
+  https://api.linear.app https://auth.linear.app
+  https://github.com
+```
+Do all token exchange (code-for-token POST) from Rust, not from the frontend, to avoid needing the OAuth provider's token endpoint in `connect-src`.
 
 **Warning signs:**
 
-- PTY spawn fails with "No such file or directory" on the working directory path
-- `spawn_agent_execution` returns `exec_log_id` but the execution log immediately shows "PTY spawning failed"
-- Worktree DB record exists with `Leased` status but no corresponding filesystem path
+- Network error in browser devtools with no HTTP response code
+- `reqwest` call succeeds in Rust but equivalent `fetch()` in TypeScript fails
+- Error message contains "Content Security Policy"
 
-**Phase to address:** The first backend phase (worktree backend overhaul). Must be complete and tested before any execution-related phase begins.
+**Phase to address:** OAuth infrastructure phase (first phase of the milestone). Update CSP before writing any provider code.
 
 ---
 
-### Pitfall 2: Worktree Return Logic Must Be Removed, Not Just Bypassed
+### Pitfall 2: `tauri-plugin-oauth` Capability Not Registered — Plugin Silently Fails
 
 **What goes wrong:**
 
-The finalization block at the end of `spawn_agent_execution`'s tokio::spawn closure (execution_handlers.rs:350-365) does `UPDATE worktrees SET status = 'Available'` after the agent finishes. With on-demand worktrees, there is no "return to pool" — the worktree must be deleted. If you remove `lease_worktree` but forget to update the finalization block, every completed execution will flip a deleted-or-nonexistent worktree back to `Available`, leaving a ghost DB row. The same pattern exists in `resume_agent_execution` (line 990-999).
-
-The finalize path in `review_handlers.rs::finalize_successful_merge` correctly marks the worktree `Dirty` then deletes it. But the execution flow's finalization (non-merge path) does the wrong thing.
+Tauri 2 uses a capability system. `tauri-plugin-oauth` is not in the current `capabilities/default.json`. Calling `start()` from the TypeScript bindings will throw "plugin not found" or similar at runtime. The plugin must also be registered in `lib.rs` via `.plugin(tauri_plugin_oauth::init())`. Both steps are required and neither produces a compile-time error if skipped — only a runtime failure during the OAuth flow.
 
 **Why it happens:**
 
-There are two finalization paths: one at merge time (review_handlers.rs) and one at raw execution completion (execution_handlers.rs). They have different logic. The execution finalization was written for pool return; the merge finalization was written for cleanup. Removing the pool requires making both paths converge on cleanup.
+Tauri 2's plugin capability system is less familiar than Tauri 1's. Developers add the Rust dependency and TypeScript import but forget to add the capability entry. The error only surfaces when the user clicks "Connect" and nothing happens.
 
 **How to avoid:**
 
-When replacing the pool, audit all locations that write `status = 'Available'` or call `return_worktree`. There are at least three: `return_worktree` IPC command, the finalization block in `spawn_agent_execution`, and the finalization block in `resume_agent_execution`. Replace each with on-demand delete logic (mark Dirty, run sidecar to remove worktree, delete DB row).
+Three steps must all be completed in the same commit:
+1. Add `tauri-plugin-oauth` to `Cargo.toml`
+2. Register `.plugin(tauri_plugin_oauth::init())` in `lib.rs`
+3. Add `"oauth:allow-start"` and `"oauth:allow-cancel"` to `capabilities/default.json`
+
+Verify by starting the OAuth flow immediately after wiring — do not defer testing.
 
 **Warning signs:**
 
-- Worktrees table accumulates ghost rows with `Available` status that have no corresponding git worktree on disk
-- `git worktree list` shows fewer worktrees than the DB shows
+- `invoke('plugin:oauth|start')` throws at runtime despite the Rust code compiling cleanly
+- No localhost server appears when OAuth flow is initiated
+- Port number returned is undefined or zero
 
-**Phase to address:** Same backend phase as Pitfall 1. Must be done atomically with the lease removal.
-
----
-
-### Pitfall 3: `std::process::Command` Blocks the Tokio Runtime in Async IPC Handlers
-
-**What goes wrong:**
-
-`list_branches_local` (git/mod.rs:159) and `get_current_branch_local` (git/mod.rs:192) call `std::process::Command::new("git")` inside `async fn` bodies. `std::process::Command::output()` is a synchronous, blocking call. When called from within a tokio async context — which all `#[tauri::command]` handlers run in — this blocks the entire tokio worker thread for the duration of the git subprocess. Under Tauri 2's default multi-threaded runtime, this degrades concurrency. For git diff on large repositories (hundreds of changed files), the subprocess can take several seconds, effectively freezing all concurrent IPC for that duration.
-
-The pattern appears again in any new git diff IPC that queries `git diff` for the Worktrees view. It is tempting to write the new `list_worktrees` or `get_worktree_diff` commands using `std::process::Command` for simplicity.
-
-**Why it happens:**
-
-`std::process::Command` is the obvious first choice for spawning subprocesses. The async equivalent (`tokio::process::Command`) is non-obvious and requires changing `.output()` to `.output().await`. The existing code in `review_handlers.rs` (line 97) correctly uses `tokio::process::Command` for the merge and diff sidecar calls — but the git dispatcher module was written with `std::process::Command` as a shortcut.
-
-**How to avoid:**
-
-All git subprocess calls in `async fn` contexts must use `tokio::process::Command`. For any new IPC command that computes git diffs (listing worktrees with diff stats, per-file diffs for the Worktrees view), use `tokio::process::Command::new("git").args([...]).output().await`. If you must use a synchronous API (e.g., `git2` crate), wrap it with `tokio::task::spawn_blocking(|| { ... }).await` to avoid blocking the async runtime.
-
-**Warning signs:**
-
-- All IPC calls become slow or appear to queue up when a diff is computing
-- Tauri channel messages are delayed for seconds after a git diff is requested
-- `tokio::runtime` thread count in profiler shows worker threads fully occupied
-
-**Phase to address:** Any phase that adds git listing or git diff IPC for the Worktrees view backend.
+**Phase to address:** OAuth infrastructure phase. Verify capability registration as the first integration test.
 
 ---
 
-### Pitfall 4: xterm.js Terminal Not Cleaned Up on React Component Unmount
+### Pitfall 3: Token Refresh Race Condition — Concurrent Requests Trigger Multiple Refreshes
 
 **What goes wrong:**
 
-xterm.js creates an internal DOM canvas, event listeners on `window` and `document`, and an internal render loop. If `Terminal.dispose()` is not called when the React component unmounts, these persist indefinitely. In a Tauri single-page application where the user navigates between Agents view and other tabs, the terminal component will mount and unmount repeatedly. Each mount creates a new `Terminal` instance; each unmount without `dispose()` leaks the old one. The Tauri channel attached to stream PTY output also keeps a background tokio task alive (see execution_handlers.rs:604-667) until the channel is detected as closed. If the React component unmounts without closing the channel, the streaming task continues writing to a dead channel silently (it returns `false` from `output_channel.send()` but doesn't error).
+The import modal auto-refreshes every N minutes while open. If the access token expires during the modal session and multiple in-flight requests detect the 401 simultaneously, each will attempt to exchange the refresh token for a new access token. For GitLab (2-hour token lifetime) and Jira Cloud (rotating refresh tokens), the first successful refresh invalidates the refresh token. All concurrent refresh attempts after the first will fail with a 400 "invalid_grant" error, leaving the session in a broken state that requires the user to re-authenticate.
 
-A second xterm.js issue: calling `terminal.open(containerRef.current)` in a `useEffect` that runs before the container has been measured results in a zero-height or zero-width terminal. xterm.js does not auto-resize on container resize unless `FitAddon` is explicitly loaded, fitted, and wired to a `ResizeObserver`. The terminal will render with the hardcoded 24-row × 80-column PTY size (process/pty.rs:85-92) and will not expand to fill the container.
+The existing codebase has no token management layer — tokens are passed directly as parameters to `sync_github_issues` and `sync_jira_issues`.
 
 **Why it happens:**
 
-xterm.js is an imperative library that manages its own lifecycle. React's declarative model means the `Terminal` instance must be manually created in `useEffect` and manually destroyed in the cleanup function. Developers familiar with `<textarea>` or `<div>` elements forget that xterm.js has internal resource ownership that React cannot track.
-
-The FitAddon omission happens because basic xterm.js demos work at a fixed size and the need for FitAddon only becomes apparent when the UI requires the terminal to fill a flexible container.
+Without a centralized token manager, each API call independently reads the stored token, checks expiry, and refreshes if needed. Multiple callers checking at the same millisecond all find "expired" and all initiate refresh. The `tokio::Mutex` on the DB connection does not prevent this race because the refresh HTTP request is made outside the lock.
 
 **How to avoid:**
 
-Structure the terminal component with explicit lifecycle management:
+Implement a single `TokenManager` (one per project, held in `AppState`) that:
+1. Holds an `Arc<tokio::Mutex<TokenState>>` per provider
+2. On access: acquires the lock, checks expiry, refreshes if needed, releases lock, then returns the token
+3. Callers await the lock — the second caller blocks until the first finishes refreshing
 
-```typescript
-// The useEffect cleanup MUST call terminal.dispose()
-useEffect(() => {
-  const terminal = new Terminal({ ... });
-  const fitAddon = new FitAddon();
-  terminal.loadAddon(fitAddon);
-  terminal.open(containerRef.current!);
-  fitAddon.fit();
-
-  const observer = new ResizeObserver(() => fitAddon.fit());
-  observer.observe(containerRef.current!);
-
-  // invoke attach_terminal with channel, store channel reference
-
-  return () => {
-    observer.disconnect();
-    terminal.dispose();       // CRITICAL: releases canvas, event listeners
-    // close the channel to stop the backend streaming task
-  };
-}, [taskId]);
+```rust
+async fn get_valid_token(&self, provider: &str) -> Result<String, String> {
+    let mut state = self.tokens.lock().await;
+    if state.is_expired() {
+        let new_tokens = refresh_token(&state.refresh_token).await?;
+        state.update(new_tokens); // persists to keyring
+    }
+    Ok(state.access_token.clone())
+}
 ```
 
-Also call `resize_terminal` IPC after `fitAddon.fit()` to propagate the new dimensions to the PTY via SIGWINCH (resize_terminal IPC already exists at execution_handlers.rs:739).
-
 **Warning signs:**
 
-- Browser DevTools Memory tab shows accumulating `Terminal` instances that are never GC'd
-- Multiple overlapping streams of PTY output (each attach creating a duplicate stream)
-- Terminal renders at 80×24 but appears squashed inside a larger container
-- Navigating away from the Agents view and back causes duplicate output lines
+- Intermittent 400 "invalid_grant" errors after leaving the modal open for an extended period
+- User is logged out unexpectedly despite recently authenticating
+- Jira or GitLab API returns 401 after a successful refresh just seconds earlier
 
-**Phase to address:** The Agents view frontend phase, in the initial component scaffold.
+**Phase to address:** OAuth token management phase. Must be implemented before any provider integration that uses refresh tokens (GitLab, Jira).
 
 ---
 
-### Pitfall 5: Zombie Worktree Detection Race Between "No Task Linked" Check and Agent Startup
+### Pitfall 4: Linux Keyring Unavailable — Silent Credential Loss
 
 **What goes wrong:**
 
-A "zombie" worktree detector that reads the worktrees table and checks whether an associated task is `InProgress` is inherently racy. The sequence is:
+On Linux, `keyring` (v3.6.3 is already in `Cargo.toml`) defaults to the kernel keyutils backend. On headless or minimal desktop environments (CI, some Wayland compositors without a running secret service daemon, WSL without D-Bus), the keyutils backend may fail silently or return an error on `set_password()` that is discarded. If the error is not surfaced and token storage silently fails, the next call to `get_password()` returns `NoEntry`, and the user appears unauthenticated every launch — their OAuth flow appears to loop indefinitely.
 
-1. Frontend calls `spawn_agent_execution` for task T
-2. `spawn_agent_execution` creates an execution log and leases/creates a worktree W (worktree W is now `Leased`)
-3. Zombie detector runs concurrently, sees worktree W as `Leased` but the task is still `Ready` (status hasn't been transitioned to `InProgress` yet)
-4. Detector flags W as zombie and schedules deletion
-
-The existing worktree status machine is: `Available → Leased → InUse → Dirty → [deleted]`. The detector must respect this state machine. Checking only "no task is `InProgress` and worktree is `Leased`" is insufficient — `Leased` is a legitimate transient state during spawn setup.
-
-An additional race: `cleanup_worktree` marks the worktree `Dirty` then calls a sidecar, then deletes the DB row. If the zombie detector runs between "Dirty" and "DB row deleted", it might try to delete an already-being-deleted worktree.
+WSL is a confirmed use case in this codebase (WSL connections table added in schema v15). WSL does not have a running secret service by default.
 
 **Why it happens:**
 
-The state machine transition from `Leased` to `InUse` is not currently implemented in the codebase (the `InUse` variant exists in the enum but nothing writes it). The zombie definition of "Leased but no running execution" is therefore ambiguous.
+`keyring::Entry::set_password()` returns `Result<(), keyring::Error>`. If this result is discarded with `let _ =` or `.ok()`, the failure is invisible. The OS keychain fails silently because the developer tests on macOS (where Keychain always works) and never tests the Linux path.
 
 **How to avoid:**
 
-Before implementing zombie detection:
-1. Implement the `Leased → InUse` transition in `spawn_agent_execution` (set `InUse` when the PTY is successfully started, not when the lease is obtained).
-2. Define zombie as: `status = 'Leased'` AND `leased_at` is more than N minutes ago (e.g. 10 minutes) AND no execution log with `status = 'running'` for the associated task. The time threshold prevents false positives during normal agent startup.
-3. Never auto-delete zombies silently. Surface them in the UI as "stale" and require a user confirmation button to clean up.
-4. For the `Dirty` state: the recovery function `recover_dirty_worktrees` already exists — do not re-implement zombie cleanup for `Dirty` worktrees; call the existing recovery path.
+- Always propagate `keyring` errors to the UI layer. Do not use `let _ =` on `set_password()` or `delete_credential()`.
+- On Linux, call `keyring::set_default_credential_builder(keyring::set_default_credential_builder(...))` to prefer the Secret Service / D-Bus backend over kernel keyutils, with `use_native_store(true)` (prefers Secret Service when available).
+- Implement an encrypted-file fallback using the `keyring` crate's SQLite backend (`use_sqlite_store`) stored in the app data directory, activated when the native store is unavailable. Surface a warning toast ("Credentials stored in local encrypted file — install GNOME Keyring for better security") rather than failing.
+- Test explicitly on WSL and a headless Linux VM as part of the platform verification checklist.
 
 **Warning signs:**
 
-- Active agent's worktree disappears from disk mid-execution
-- Agent execution fails with "working directory not found" immediately after being marked `InProgress`
-- Worktree DB row deleted but `git worktree list` still shows the path (incomplete cleanup)
+- `keyring::Error::NoEntry` immediately after `set_password()` on Linux
+- User re-authenticates on every app launch on Linux
+- `get_password()` returns the error variant `PlatformFailure` with a D-Bus connection error
 
-**Phase to address:** The Worktrees view backend phase that adds zombie detection. The `Leased → InUse` transition must be implemented first.
+**Phase to address:** OAuth keychain storage phase. Implement fallback before any integration testing on Linux/WSL targets.
 
 ---
 
-### Pitfall 6: Attaching to a Dead PTY Session Must Not Crash the Tauri Channel
+### Pitfall 5: Jira Cloud `cloud_id` Discovery — Multiple Sites, Non-Unique IDs
 
 **What goes wrong:**
 
-`attach_terminal` (execution_handlers.rs:562) looks up the task_id in `app_state.pty_sessions`. If the session doesn't exist, it returns `Err("No PTY session for task {}")`. This error travels back over the Tauri IPC channel as a rejected Promise in the frontend. If the frontend calls `attach_terminal` from within a `useEffect` that runs every time the Agents view renders (e.g., when the user clicks on a completed task), the error is expected — but if it is not caught, it surfaces as an unhandled Promise rejection.
+Jira Cloud OAuth 3LO requires the `cloud_id` to construct all API URLs:
+`https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3/...`
 
-More critically: `attach_terminal` opens a `tokio::spawn` that calls `try_clone_reader()` in a loop (execution_handlers.rs:614). If the PTY process has already exited, `try_clone_reader()` may return an error or immediately produce EOF. The loop exits cleanly, but the reader task and sender task spin up and immediately complete. This is not a crash but produces confusing behavior: the channel opens, sends nothing, and closes — which the frontend may interpret as a successful attach with an empty terminal.
+The `cloud_id` is obtained by calling `https://api.atlassian.com/oauth/token/accessible-resources` with the access token. If the user has Atlassian access to multiple Jira Cloud instances (common in large organizations), this endpoint returns a list. If the code blindly picks `results[0]`, it will use the wrong site for users with multiple Jira organizations.
 
-For completed executions, the intended behavior is to show terminal history from the DB, not to attach to a live PTY. The `include_history: true` parameter handles this, but if `attach_terminal` is called without checking whether the task is still running first, you get a silent empty-terminal experience.
+Additionally, Atlassian documents that "the `id` is not unique across containers" — two entries can share the same `id` value if they are different container types. The code must validate the site URL against the user's configured Jira host rather than assuming index 0.
+
+The existing `sync_jira_issues` command in `settings_handlers.rs` constructs the URL as `https://{host}/rest/api/3/search` (direct host URL). This pattern does not work for OAuth — OAuth-authenticated calls must go through `api.atlassian.com/ex/jira/{cloudId}/`.
 
 **Why it happens:**
 
-The `pty_sessions` map in `AppState` only holds _live_ PTY sessions. It is populated when a PTY is spawned and is never persisted to the DB. After an app restart, or for tasks that finished in a previous session, the map is empty. The Agents view needs to distinguish "running" (attach to live PTY) from "finished" (render history from DB) before calling `attach_terminal`.
+The current code was written for Jira API Token auth (Basic auth with direct host), not OAuth. The two URL patterns are mutually exclusive. Copying the URL construction pattern from the existing code when adding OAuth support produces silent 401 or 404 errors.
 
 **How to avoid:**
 
-In the Agents view frontend, check the `ExecutionLog.status` field before calling `attach_terminal`:
-- `status = 'running'` → call `attach_terminal` with `include_history: true` (live stream + prepend history)
-- `status = 'complete'` or `'failed'` → call `get_execution_logs` and render `terminal_output` directly into xterm.js via `terminal.write(historicalOutput)`. Do not call `attach_terminal` at all.
-
-On the backend, `attach_terminal` should return an informative error (not a panic) when the session is not found, and the frontend should display a "Session ended" message rather than an empty terminal.
+- After token exchange, always call `accessible-resources` and store both the `cloudId` and the `url` (site domain) in `ticketing.json`.
+- Let the user confirm or select the correct site if multiple are returned.
+- Construct all Jira API calls as: `https://api.atlassian.com/ex/jira/{storedCloudId}/rest/api/3/...`
+- Delete the old URL pattern from `sync_jira_issues` entirely — it cannot coexist with OAuth.
 
 **Warning signs:**
 
-- Clicking on a completed task in the Agents view shows a blank terminal instead of history
-- Console shows unhandled Promise rejection from `attach_terminal`
-- xterm.js renders but never receives any data for finished tasks
+- Jira API calls return 401 despite a valid access token
+- API calls return data from the wrong Jira organization
+- `accessible-resources` returns an array with more than one element for the user's account
 
-**Phase to address:** The Agents view frontend phase, in the terminal attach logic.
+**Phase to address:** Jira provider integration phase. Accessible-resources call must happen before any task fetch. Remove old `sync_jira_issues` and `sync_github_issues` commands in the same phase to prevent confusion.
+
+---
+
+### Pitfall 6: Deduplication Fails Without a Stable External ID — Re-Import Creates Duplicates
+
+**What goes wrong:**
+
+The existing `upsert_imported_tasks` function deduplicates by `external_id` combined with `project_id`. This is correct but fragile: if the external ID format changes between the old code and the new code (e.g., GitHub: old code stored `"123"` as a string from `issue.number.to_string()`, new code stores `"github:owner/repo#123"`), every previously imported task will appear as a new entry — duplicating all tasks already in the Backlog.
+
+The v1.6 requirements add `external_url` and `external_updated_at` columns to the schema (bumping schema version). The destructive migration (drop all tables, recreate) will wipe all existing imported tasks. This is intentional but must be documented — users will lose any tasks previously imported from GitHub/Jira.
+
+**Why it happens:**
+
+External ID format is not documented or enforced. New providers have different natural key types: GitHub uses numeric issue number, GitLab uses `iid` (project-scoped integer), Linear uses UUID, Jira uses alphanumeric key (`PROJ-123`). Without a canonical format, each developer independently chooses a format.
+
+**How to avoid:**
+
+Define and document a canonical external ID format before writing any provider code:
+```
+{provider}:{natural_key}
+// GitHub:   "github:{number}"       e.g. "github:1234"
+// GitLab:   "gitlab:{project_id}/{iid}" e.g. "gitlab:12345/67"
+// Linear:   "linear:{issue_id}"    e.g. "linear:abc-123"
+// Jira:     "jira:{issue_key}"     e.g. "jira:PROJ-42"
+```
+
+Write a migration note in the schema bump comment: "Schema v16: existing external_id values are invalidated by format change. Destructive migration clears imported tasks."
+
+**Warning signs:**
+
+- Backlog column fills with duplicate tasks after re-importing
+- Imported count from `SyncResult` keeps increasing on every refresh even for unchanged issues
+- Previously imported tasks with `InProgress` status lose their import tracking
+
+**Phase to address:** Schema migration + import deduplication phase (same phase). Define the canonical ID format before implementing any provider's fetch logic.
+
+---
+
+### Pitfall 7: GitHub OAuth App vs GitHub App — Wrong App Type Causes Token Refresh Confusion
+
+**What goes wrong:**
+
+GitHub has two OAuth systems: OAuth Apps (classic) and GitHub Apps (newer). Their token behaviors are entirely different:
+- **OAuth Apps**: Access tokens never expire. No refresh token. Token is permanent until revoked.
+- **GitHub Apps** (with expiring tokens enabled): Access tokens expire after 8 hours, refresh tokens expire after 6 months.
+
+If v1.6 uses a GitHub App by mistake (or if documentation implies GitHub Apps are the recommended path), the implementation will need token refresh logic for GitHub. If it uses a GitHub OAuth App, refresh logic will silently never be needed — but if the code also implements "refresh on 401", the refresh endpoint call will fail with a 404 (no refresh token exists), crashing the flow.
+
+**Why it happens:**
+
+"GitHub App" sounds like the right choice for a "GitHub integration." The distinction between OAuth App and GitHub App is subtle and the GitHub documentation navigation conflates them.
+
+**How to avoid:**
+
+Use a **GitHub OAuth App** for this integration. Reasons:
+- OAuth Apps have non-expiring tokens (no refresh complexity)
+- `repo` or `public_repo` scope gives read access to issues without fine-grained permission configuration
+- GitHub Apps require specifying a GitHub App ID in the client, adding complexity
+
+Document this decision explicitly. Do not implement GitHub token refresh — GitHub OAuth App tokens do not expire and will never trigger a 401 due to expiry.
+
+**Warning signs:**
+
+- GitHub integration requires the user to re-authenticate frequently
+- POST to `https://github.com/login/oauth/access_token` with `grant_type=refresh_token` returns 404
+- `ghu_` prefix on the GitHub token (GitHub Apps use this prefix; OAuth Apps use `gho_`)
+
+**Phase to address:** GitHub provider setup phase. Choose app type before creating the GitHub OAuth App registration.
+
+---
+
+### Pitfall 8: Linear Uses Persistent Tokens (No Refresh) — But Handles Revocation Differently
+
+**What goes wrong:**
+
+Linear OAuth access tokens do not expire and there is no refresh token mechanism. This is simpler than the other providers but creates a different problem: if the token is revoked (user disconnects the app from Linear settings), every API call will silently return 401 with no token refresh recovery path. Code that assumes "401 means refresh" will loop indefinitely or crash.
+
+Linear uses GraphQL, not REST. A query that exceeds Linear's query complexity limit returns a 400 with a GraphQL error payload, not a network-level 429. Code that only inspects HTTP status codes will miss these errors. Complexity errors look like: `{"errors": [{"message": "Query is too complex: ..."}]}`.
+
+**Why it happens:**
+
+All other providers in this integration use REST and have some form of token refresh. Linear's OAuth is simpler but different. Developers copy the refresh-on-401 pattern from other providers and then can't explain why Linear keeps "logging out" users.
+
+**How to avoid:**
+
+- For Linear: on 401, surface an immediate "reconnect required" message rather than attempting token refresh.
+- Always check GraphQL `errors` array in responses — a 200 HTTP response can still contain errors.
+- Keep Linear queries simple: fetch only `id`, `title`, `description`, `url`, `updatedAt` — avoid nesting more than 2 levels deep.
+
+**Warning signs:**
+
+- Linear provider returns 401 periodically despite the user not revoking access
+- Infinite loop in token refresh logic for Linear (no refresh token available)
+- Import returns empty results with HTTP 200 but the `data` key is null
+
+**Phase to address:** Linear provider integration phase. Skip refresh token logic entirely for Linear.
 
 ---
 
@@ -209,11 +275,12 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Keep `list_branches_local` using `std::process::Command` | Zero change to existing code | Blocks tokio worker thread on every branch list call in Worktrees view | Never — fix to `tokio::process::Command` in the same phase |
-| Use DB worktree `path` column as sole source of truth for on-disk location | Simple — no extra lookup | Path can become stale if project is moved; `git worktree list` is authoritative | Never for deletion; always verify with `git worktree list` |
-| Auto-delete zombie worktrees without UI confirmation | Fewer clicks for cleanup | Active agent worktree deleted during race; unrecoverable data loss | Never — require explicit user action |
-| Skip `FitAddon` and use fixed 80x24 terminal size | Simpler initial implementation | Terminal looks wrong in any flex layout; hard to resize later | Only acceptable in first iteration if Agents view uses a fixed-size container |
-| Render all execution logs in a flat list without pagination | Simpler query | With many completed tasks, the list becomes unusable | Acceptable for MVP if history is limited by newest-N query |
+| Store OAuth tokens in `settings` table instead of OS keychain | Zero new dependency | Tokens in plaintext SQLite; readable by any process with file access | Never — the `keyring` crate is already in `Cargo.toml` |
+| Pass token as parameter to every IPC command (current pattern) | No TokenManager to build | Token refresh races; token visible in Tauri IPC logs | Never for production; acceptable only in stub/scaffold phase |
+| Hard-code `cloud_id` per Jira configuration | Skip `accessible-resources` call | Breaks for any user with multiple Jira sites or renamed workspace | Never — always discover dynamically |
+| Ignore `external_updated_at` and always re-fetch all fields on refresh | Simpler refresh logic | Full re-import on every refresh; duplicates if ID format inconsistent | Never — store and compare to detect changes |
+| Use the existing `sync_github_issues` / `sync_jira_issues` commands as-is | Faster initial integration | Old code uses Basic auth for Jira (incompatible with OAuth URL pattern); no `external_updated_at` support | Never — must be fully replaced |
+| Single fixed port (e.g., 8080) for OAuth redirect | Simpler redirect URI registration | Port collision if another app uses 8080; blocks concurrent OAuth flows | Acceptable only if providers require pre-registered exact URIs (some do) |
 
 ---
 
@@ -221,12 +288,18 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| xterm.js + Tauri channel | Open channel in `useEffect` without storing a reference for cleanup | Store the channel object returned from `Channel` constructor and close it in `useEffect` cleanup |
-| xterm.js + FitAddon | Call `fitAddon.fit()` before `terminal.open()` | Always call `open()` first, then `fit()`, then observe for resize |
-| Tauri `Channel<String>` + streaming | Assume channel is always open; ignore `send()` returning `false` | Check return value; exit background read loop when `send()` returns false (see execution_handlers.rs:649) |
-| `tokio::process::Command` for git diff | Forgetting `.await` after `.output()` | Every subprocess call in async context must be `let out = cmd.output().await?` |
-| git worktree + Dirty state recovery | Calling `recover_dirty_worktrees` only at project open | Also call it after any cleanup failure; the existing IPC command handles idempotent recovery |
-| PTY resize + xterm.js FitAddon | Calling `resize_terminal` IPC but not `fitAddon.fit()`, or vice versa | Both must be called; FitAddon updates the DOM dimensions, `resize_terminal` updates the PTY kernel dimensions |
+| Jira Cloud OAuth | Using `https://{host}/rest/api/3/` URL (old Basic auth pattern) | Use `https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3/` for all OAuth calls |
+| Jira Cloud OAuth | Assuming `accessible-resources[0]` is correct site | Let user confirm or match by `url` field against configured Jira domain |
+| GitHub OAuth | Implementing token refresh for GitHub OAuth Apps | GitHub OAuth App tokens never expire; skip all refresh logic |
+| GitHub OAuth | Using `repo` scope (gives full private repo access) | Use `public_repo` for public repos; use `repo` only if private repo issues needed |
+| GitLab OAuth | Self-hosted URL hardcoded as `gitlab.com` | The base URL must be configurable; self-hosted uses different domain |
+| GitLab OAuth | Forgetting to add `gitlab.com` and `*.gitlab.com` to CSP `connect-src` | Add all provider origins to CSP before testing |
+| Linear GraphQL | Checking only HTTP status code for errors | Always inspect `response.data.errors` array; 200 can carry errors |
+| Linear GraphQL | Requesting full issue history or deeply nested fields | Linear enforces query complexity limits; keep queries flat and minimal |
+| `tauri-plugin-oauth` | Starting OAuth flow without stopping the server on cancel | Call `cancel(port)` if the user dismisses the connect dialog; stale server blocks the port |
+| `tauri-plugin-oauth` | Not validating `state` parameter in the redirect URL callback | Omitting state validation allows authorization code injection attacks |
+| keyring-rs on Linux | Not handling `keyring::Error::NoStorageAccess` | Detect unavailable keyring and fall back to encrypted file storage with a user warning |
+| Token exchange | Doing code-for-token POST from TypeScript `fetch()` | Token exchange must happen in Rust via `reqwest` — avoids CSP issues and keeps client secret server-side |
 
 ---
 
@@ -234,10 +307,11 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Polling execution status from frontend via `getExecutionLogs` | DB hammered by repeated queries; high CPU from SQLite lock contention | Use Tauri events (`emit`) from the backend when status changes; frontend only polls as fallback | At 3+ concurrent agents polling every second |
-| Computing full git diff for every worktree row in the Worktrees view list | Page load takes seconds; UI freezes | Compute diff summary (changed file count) lazily on expand, not on list render | At 5+ worktrees with large diff surfaces |
-| `terminal_output` stored as unbounded TEXT in `execution_logs` | DB file grows to GB; `get_execution_logs` slow | Cap terminal output at a reasonable limit (e.g. 500KB) in `append_output`; truncate from the front | After a long-running agent session (hours) |
-| Loading all execution logs for all tasks in the Agents view at once | Agents view initial render slow | Query most-recent-N logs per task; use TanStack Query pagination | At 20+ completed tasks with long histories |
+| Fetching all open issues on every modal open (no pagination) | Modal takes seconds to show; Jira 65,000-point hourly quota depletes quickly | Use `updated_at` cursor: only fetch issues updated since last sync; implement pagination | At >100 open issues per project |
+| GraphQL query complexity budget exhausted (Linear) | 400 errors mid-import; partial imports | Keep queries to flat lists with minimal fields; split large fetches into pages of 50 | At >50 issues per Linear query |
+| Jira rate limit: 100 RPS burst, 65,000 points/hour | 429 responses; import fails halfway | Implement exponential backoff on 429; respect `Retry-After` header; fetch issues in pages of 50 | During bulk import of large projects |
+| DB mutex held during HTTP request (existing pattern in `sync_github_issues`) | HTTP timeout blocks all other IPC | Fetch all data over HTTP first, then acquire DB lock only for the upsert transaction | Always — never hold DB lock across `.await` |
+| Re-computing `Changed` badge by re-fetching all tickets on every Kanban render | Excessive API calls; rate limit exhaustion | Compute `Changed` state at import time, store it; re-check only on explicit modal open or scheduled refresh | At >20 imported tasks |
 
 ---
 
@@ -245,9 +319,12 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Constructing `git worktree add` command with unvalidated branch name from frontend | Command injection via branch name containing shell metacharacters | Pass branch name as a separate argument, never via shell string interpolation; use `tokio::process::Command::arg()` not `.arg(format!("...{}", branch_name))` |
-| Exposing full PTY session output (including agent's API keys, secrets it might print) in `terminal_output` DB column | Secrets stored in plaintext in SQLite file | Consider filtering/redacting known secret patterns before persistence; at minimum, document that terminal output is persisted |
-| Allowing zombie detection to delete worktrees based on DB state alone | Race condition deletes active worktree | Always verify with `git worktree list` before deletion; DB state is a hint, not ground truth |
+| Storing OAuth client secret in `ticketing.json` (per-project config file) | Client secret committed to git or readable by any process | For desktop apps using PKCE, no client secret is needed; OAuth Apps without PKCE use the secret only in Rust, never written to disk |
+| Logging access tokens in Rust (e.g., in error messages) | Token exposed in crash logs or debug output | Never format tokens into error strings; use `"[redacted]"` placeholder in error messages |
+| Storing access token as plain text in `ticketing.json` | Token readable by any process with file read access | Use OS keychain exclusively via `keyring`; `ticketing.json` stores provider config (provider type, project slug) but never credentials |
+| Not validating OAuth `state` parameter | CSRF / authorization code injection — attacker substitutes their auth code | Generate a cryptographically random `state` before redirecting; verify it matches before exchanging the code |
+| Accepting redirect to any origin via `tauri-plugin-oauth` callback | Open redirect abuse if URL not validated | Validate the callback URL host is `127.0.0.1` before processing |
+| Not zeroizing access/refresh tokens in memory after use | Tokens remain in process memory indefinitely | Use `zeroize` (already in `Cargo.toml`) on token strings; store tokens in `Zeroizing<String>` |
 
 ---
 
@@ -255,21 +332,27 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Showing "No session found" error as a toast when user clicks completed task | User confused — they just wanted to see what the agent did | Silently fall back to history rendering; no error visible |
-| Zombie worktree cleanup auto-runs on project open without warning | User's in-progress agent wiped if detection has a false positive | Show zombies in Worktrees view with a manual "Clean up" button; never auto-delete |
-| Terminal renders at wrong size on first mount | Text wraps incorrectly; diff output misaligned | Call `fitAddon.fit()` + `resize_terminal` IPC in a `useLayoutEffect` after the container is sized |
-| Worktrees view listing outdated DB state (not reflecting real git worktree list) | User sees worktrees that don't exist, or misses worktrees that do | Always read from `git worktree list` (via IPC) as the authoritative source; DB is a cache |
+| Browser tab opens for OAuth but app stays behind it | User confused; thinks app crashed | After opening the browser, bring Maestro window back to focus after redirect; show "Waiting for authentication..." spinner |
+| OAuth redirect server times out silently | Browser shows blank page; user must retry | Show a user-facing timeout (120s) and a "Try again" button; call `cancel(port)` on timeout |
+| "Changed" badge shows for ticket already updated by the user intentionally | Alert fatigue; users ignore all badges | Only flag "Changed" if the ticket content (title or body) changed, not just `updated_at` timestamp |
+| Import modal shows all tickets including those already `InProgress` or `Done` | Confusing list; user accidentally re-imports active tasks | Filter imported tickets by state: "Available" (not imported), "Imported" (in Backlog), "Changed" (title/description updated), but never show tickets whose tasks are `InProgress`/`Done` |
+| Connecting a second provider replaces the first without warning | User loses first provider's imported tasks | Since v1.6 is one-provider-per-project, surface a clear "Replacing {GitHub} with {Linear} will disconnect your current integration" confirmation dialog |
+| OAuth flow starts but user is not signed into the provider in browser | Browser shows provider login page; user completes login; redirect works | This is expected behavior — document it; do not show an error if the redirect takes >30s |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **On-demand worktree creation:** The DB record exists with a valid path — verify the directory actually exists on disk with `std::fs::metadata` or `git worktree list` before marking the task `InProgress`
-- [ ] **Pool removal:** Search for all callers of `lease_worktree`, `return_worktree`, `initialize_worktree_pool`, and `get_pool_status` — each must be removed or replaced, not just the primary path
-- [ ] **xterm.js cleanup:** Verify `Terminal.dispose()` is called by adding a console.log in the cleanup and navigating away from the Agents view; check DevTools Memory heap snapshot for lingering `Terminal` instances
-- [ ] **PTY resize propagation:** After attaching to a terminal, resize the browser window and verify the agent's output wraps correctly — the FitAddon + `resize_terminal` IPC path is only wired if both are present
-- [ ] **Completed task terminal history:** Click a task in `Done` status in the Agents view and confirm terminal history renders — not an empty terminal and not an error toast
-- [ ] **Zombie detection threshold:** Confirm a worktree that has been `Leased` for 9 minutes (a slow agent startup) is NOT flagged as a zombie; only test with a worktree abandoned for longer than the threshold
+- [ ] **OAuth flow cancellation:** Test clicking "Cancel" in the connect dialog mid-flow — verify `cancel(port)` is called and the localhost server shuts down; a stale server will block the same port on the next OAuth attempt
+- [ ] **Token persistence across restarts:** Authenticate, quit the app, relaunch — verify the import modal can fetch issues without re-authenticating (token retrieved from keychain)
+- [ ] **Token refresh under load:** Leave the import modal open for longer than the provider's token lifetime (GitLab: 2 hours, Jira: 90 days), then refresh — verify new token is used automatically without user intervention
+- [ ] **Linux keyring absent:** Run on WSL or a headless Linux environment — verify the app shows a warning toast rather than silently failing to save credentials
+- [ ] **Jira multiple workspaces:** Authenticate with an Atlassian account that has access to two Jira Cloud instances — verify the correct workspace is selected (or user is prompted)
+- [ ] **Duplicate prevention:** Import 10 issues, then open the modal again and click Import on all 10 — verify no duplicates are created in the Backlog
+- [ ] **Change detection accuracy:** Import a ticket, update its title in GitHub, re-open the modal — verify the "Changed" badge appears; update `updated_at` only (no content change) — verify no badge appears if content is unchanged
+- [ ] **CSP blocks nothing:** Open browser devtools Network tab, run a full OAuth flow and import — verify no requests are blocked by CSP (no red "blocked" entries)
+- [ ] **`external_id` uniqueness across providers:** If the project was previously connected to GitHub and had issues imported, disconnect and connect to Linear — verify no collision on external IDs (canonical format prevents this)
+- [ ] **Existing code removal:** Verify `sync_github_issues`, `sync_jira_issues`, and `save_import_config` IPC commands are not registered in `lib.rs` after the migration — old endpoints must be fully removed
 
 ---
 
@@ -277,12 +360,13 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Pool removal broke `spawn_agent_execution` | MEDIUM | Revert worktree_handlers.rs to stub `lease_worktree` that creates a real directory; fix execution flow next iteration |
-| Return-to-pool logic left in after pool removal, ghost rows accumulate | LOW | Run `DELETE FROM worktrees WHERE status = 'Available' AND path NOT IN (SELECT path FROM git worktree list output)` to purge ghosts |
-| xterm.js memory leak from missing dispose() | LOW | Add dispose() in useEffect cleanup; reload app to clear existing leaks |
-| Zombie detector deleted active worktree | HIGH | Restore from `git reflog` if commits exist on the branch; otherwise task must be re-executed from scratch |
-| `std::process::Command` blocking tokio causing IPC queue buildup | MEDIUM | Replace with `tokio::process::Command`; restart app to clear blocked runtime threads |
-| Attach to dead PTY causes blank terminal | LOW | Check `ExecutionLog.status` before calling `attach_terminal`; render DB history for non-running executions |
+| CSP blocks provider calls in production build | MEDIUM | Update `tauri.conf.json` CSP, rebuild app; no data loss |
+| Token refresh race left tokens in invalid state | LOW | User reconnects via OAuth flow; new tokens stored; existing imported tasks unaffected |
+| Linux keyring silently dropped tokens | LOW | User re-authenticates; implement fallback storage and redeploy |
+| Jira `accessible-resources[0]` selected wrong site | MEDIUM | User reconnects; code updated to show site selector; no data loss if deduplication is by external ID |
+| Old `external_id` format caused duplicates | HIGH | Requires manual cleanup: identify and delete duplicates from DB; or bump schema version (destructive migration) to start clean |
+| `tauri-plugin-oauth` port already in use | LOW | `start_with_config` with multiple fallback ports; first call that succeeds returns the active port |
+| Client secret accidentally written to `ticketing.json` | HIGH | Revoke and regenerate the OAuth client credentials immediately; remove from git history |
 
 ---
 
@@ -290,24 +374,31 @@ On the backend, `attach_terminal` should return an informative error (not a pani
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Pool removal breaks spawn_agent_execution | Backend: on-demand worktree creation phase | `spawn_agent_execution` creates a real directory; agent PTY starts successfully |
-| Return-to-pool logic left in | Backend: on-demand worktree creation phase | No `Available` worktrees in DB after task completion; rows are deleted |
-| `std::process::Command` blocks tokio | Backend: worktree listing / git diff IPC phase | All new git subprocess calls use `tokio::process::Command`; no `std::process::Command` in async fns |
-| xterm.js not disposed on unmount | Frontend: Agents view terminal component phase | Navigate away and back 5 times; DevTools Memory heap has no accumulation of Terminal objects |
-| Zombie detection race condition | Backend: Worktrees view zombie detection phase | `Leased` worktrees with leased_at < threshold AND no running exec log are detected; no false positives on active agents |
-| Attach to dead PTY session | Frontend: Agents view terminal attach logic | Clicking completed task shows history; no error toast; no blank terminal |
+| CSP blocks provider API calls | OAuth infrastructure setup (first phase) | All provider domains in `connect-src`; devtools shows no blocked requests |
+| `tauri-plugin-oauth` capability not registered | OAuth infrastructure setup (first phase) | `invoke('plugin:oauth|start')` returns a port number without error |
+| Token refresh race condition | OAuth token management phase | Two concurrent 401 responses result in exactly one refresh attempt; second caller waits and gets new token |
+| Linux keyring unavailable | OAuth keychain storage phase | On WSL, warning toast appears; token is stored in fallback encrypted file; next launch restores session |
+| Jira `cloud_id` multi-site confusion | Jira provider integration phase | Accessible-resources response with 2+ entries triggers site-selection UI |
+| Deduplication with wrong `external_id` format | Schema migration + deduplication phase | Re-importing same issues produces zero new rows; `SyncResult.imported_count = 0` on second call |
+| GitHub App vs OAuth App confusion | GitHub provider setup phase | Access token has `gho_` prefix (OAuth App); no refresh token stored |
+| Linear GraphQL no refresh | Linear provider integration phase | Linear 401 shows "Reconnect required" immediately; no retry loop |
 
 ---
 
 ## Sources
 
-- **Codebase inspection (HIGH confidence):** `src-tauri/src/ipc/worktree_handlers.rs` — pool constants, `lease_worktree`, `initialize_worktree_pool`, `cleanup_worktree`, `recover_dirty_worktrees`
-- **Codebase inspection (HIGH confidence):** `src-tauri/src/ipc/execution_handlers.rs` — `spawn_agent_execution` (lines 120-122 lease call; lines 350-365 return-to-pool finalization), `attach_terminal` (lines 562-671), `resize_terminal`, `resume_agent_execution` (line 896 lease call; lines 990-999 return-to-pool)
-- **Codebase inspection (HIGH confidence):** `src-tauri/src/git/mod.rs` — `std::process::Command` in `list_branches_local` and `get_current_branch_local` (async context violation); correct `tokio::process::Command` in `review_handlers.rs`
-- **Codebase inspection (HIGH confidence):** `src-tauri/src/process/pty.rs` — hardcoded `PtySize { rows: 24, cols: 80 }` on spawn; `try_clone_reader()` loop in attach_terminal
-- **Codebase inspection (HIGH confidence):** `src-tauri/src/db/connection.rs` — `pty_sessions: tokio::sync::Mutex<HashMap<i32, ...>>` is in-memory only; not persisted across restarts
-- **xterm.js documentation (MEDIUM confidence — training data, not verified via Context7):** `Terminal.dispose()` required for cleanup; `FitAddon` required for dynamic sizing; `ResizeObserver` pattern for container resize
+- **Codebase inspection (HIGH):** `src-tauri/tauri.conf.json` — existing CSP allows only `api.github.com` and `*.atlassian.net`; missing GitLab, Linear, `auth.atlassian.com`, and `127.0.0.1`
+- **Codebase inspection (HIGH):** `src-tauri/capabilities/default.json` — `tauri-plugin-oauth` not registered; must add `oauth:allow-start`, `oauth:allow-cancel`
+- **Codebase inspection (HIGH):** `src-tauri/src/ipc/settings_handlers.rs` — existing `sync_jira_issues` uses direct host URL (incompatible with OAuth); `sync_github_issues` uses Basic auth pattern; both must be deleted
+- **Codebase inspection (HIGH):** `src-tauri/Cargo.toml` — `keyring = "3.6.3"` already present; `zeroize = "1.8"` already present; `tauri-plugin-oauth` not yet added
+- **Context7 / tauri-plugin-oauth docs (HIGH):** `start_with_config` accepts port list and custom response HTML; `cancel(port)` required on user cancellation; `state` parameter must be validated in URL callback
+- **Context7 / keyring-rs docs (HIGH):** `use_native_store(true)` prefers Secret Service on Linux; `use_sqlite_store` provides file fallback; `release_store()` must be called on shutdown
+- **Atlassian official docs (HIGH):** `accessible-resources` required for `cloud_id` discovery; non-unique IDs across container types; rotating refresh tokens expire after 90 days inactivity; all OAuth calls must use `api.atlassian.com/ex/jira/{cloudId}/` not direct host URL
+- **GitHub official docs (HIGH):** OAuth Apps have non-expiring tokens (no refresh); GitHub Apps have 8-hour tokens with 6-month refresh; OAuth App tokens use `gho_` prefix
+- **GitLab official docs (HIGH):** PKCE flow recommended for desktop; tokens expire after 2 hours; refresh token rotation invalidates old tokens immediately
+- **Jira Cloud rate limiting docs (HIGH):** 100 RPS burst, 65,000 points/hour shared quota; 429 responses include `Retry-After` header; exponential backoff with jitter recommended
+- **GitHub rate limit docs (HIGH):** 5,000 requests/hour for authenticated OAuth App calls; `x-ratelimit-reset` header gives retry-after epoch timestamp
 
 ---
-*Pitfalls research for: Maestro v1.3 — Agents & Worktrees milestone*
-*Researched: 2026-03-29*
+*Pitfalls research for: Maestro v1.6 — OAuth + Ticket Import milestone*
+*Researched: 2026-05-20*
