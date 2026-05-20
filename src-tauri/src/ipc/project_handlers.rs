@@ -7,6 +7,7 @@ use serde_json;
 use crate::models::Project;
 use crate::db::{AppState, project_storage};
 use crate::git::remote::shell_quote;
+use crate::acp::ConnectionKey;
 
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
@@ -47,7 +48,7 @@ fn register_project_in_db(
     // Read back full project row
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
         rusqlite::params![project_id],
         Project::from_row,
     ).map_err(|e| e.to_string())
@@ -62,8 +63,8 @@ fn fetch_projects_from_db(
 ) -> Result<Vec<Project>, String> {
 
     let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
-        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id = ? ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![id.clone()]),
-        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE connection_id IS NULL ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![])
+        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE connection_id = ? ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![id.clone()]),
+        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE connection_id IS NULL ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![])
     };
     let mut stmt = conn.prepare(query)
         .map_err(|e| e.to_string())?;
@@ -83,7 +84,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
+        .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
@@ -177,7 +178,7 @@ pub fn get_project(
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
         [&project_id],
         Project::from_row
     );
@@ -212,7 +213,7 @@ pub fn open_project(
 
     let project: Project = conn
         .query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [&project_id],
             Project::from_row,
         )
@@ -459,21 +460,22 @@ pub async fn create_new_project(
 pub fn create_project(
     app_state: State<Arc<AppState>>,
     path: String,
-    connection_id: Option<i32>
+    connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
 ) -> Result<Project, String> {
     // NOTE: This older handler has similar logic to register_project_in_db but also
     // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
-            params![path, connection_id],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ?",
+            params![path, connection_id, wsl_connection_id],
             |row| row.get(0),
         ).ok();
         match existing {
             Some(id) => id,
             None => {
-                // Create new remote project in database
+                // Create new project in database
                 let now = Utc::now().to_rfc3339();
                 let name = Path::new(&path)
                     .file_name()
@@ -481,8 +483,8 @@ pub fn create_project(
                     .unwrap_or("Untitled")
                     .to_string();
                 conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                    params![name, path, now, now, connection_id, now],
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    params![name, path, now, now, connection_id, wsl_connection_id, now],
                 ).map_err(|e| format!("Failed to insert project '{}': {}", name, e))?;
                 conn.last_insert_rowid() as i32
             }
@@ -611,7 +613,7 @@ pub async fn prime_project_server(
         // Re-check cache after acquiring lock: preflight or prefetch may have populated it.
         let cached_path = {
             let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&Some(conn_id)).and_then(|e| e.maestro_server_path.clone())
+            cache.get(&ConnectionKey::Ssh(conn_id)).and_then(|e| e.maestro_server_path.clone())
         };
         let maestro_path = match cached_path {
             Some(p) => p,
@@ -623,7 +625,7 @@ pub async fn prime_project_server(
             }
         };
 
-        crate::acp::spawn_connection_server(Some(conn_id), crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
+        crate::acp::spawn_connection_server(ConnectionKey::Ssh(conn_id), crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
         // Run discovery and settings read in parallel. Discovery reuses the already-known
         // maestro_path so ensure_remote_server is not called a second time.
@@ -631,6 +633,7 @@ pub async fn prime_project_server(
             crate::ipc::acp_handlers::prefetch_agent_discovery(
                 Arc::clone(&*app_state),
                 Some(conn_id),
+                None,
                 Some(maestro_path.clone()),
             ),
             async {
@@ -643,7 +646,7 @@ pub async fn prime_project_server(
         );
         if let Some(agent_id) = default_agent {
             crate::acp::pre_initialize_via_connection_server(
-                Some(conn_id),
+                ConnectionKey::Ssh(conn_id),
                 Some(project_id),
                 &agent_id,
                 &project_path,
@@ -653,21 +656,21 @@ pub async fn prime_project_server(
             crate::ipc::acp_handlers::spawn_pooled_session(
                 &*app_state,
                 project_id,
-                Some(conn_id),
+                ConnectionKey::Ssh(conn_id),
                 &agent_id,
                 &project_path,
             )
             .await;
         }
     } else {
-        crate::acp::spawn_connection_server(None, crate::acp::TransportTarget::Local, &app_state).await?;
+        crate::acp::spawn_connection_server(ConnectionKey::Local, crate::acp::TransportTarget::Local, &app_state).await?;
 
         let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
             .ok()
             .and_then(|c| c.default_agent);
         if let Some(agent_id) = default_agent {
             crate::acp::pre_initialize_via_connection_server(
-                None,
+                ConnectionKey::Local,
                 Some(project_id),
                 &agent_id,
                 &project_path,
@@ -677,7 +680,7 @@ pub async fn prime_project_server(
             crate::ipc::acp_handlers::spawn_pooled_session(
                 &*app_state,
                 project_id,
-                None,
+                ConnectionKey::Local,
                 &agent_id,
                 &project_path,
             )

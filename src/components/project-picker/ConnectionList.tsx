@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Folder, Server, Globe, ChevronRight, Zap } from "lucide-react";
+import { Folder, Server, Globe, ChevronRight, Zap, Terminal } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { SshAuthModal } from "@/components/project-picker/SshAuthModal.tsx";
@@ -118,6 +118,13 @@ export function ConnectionList() {
                   );
                 }
 
+                const icon =
+                  connection.type === "wsl" ? (
+                    <Terminal className="w-4 h-4 mt-0.5 shrink-0" />
+                  ) : (
+                    <Folder className="w-4 h-4 mt-0.5 shrink-0" />
+                  );
+
                 return (
                   <li key={connection.id} className="relative">
                     <Button
@@ -127,7 +134,7 @@ export function ConnectionList() {
                       className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background shadow-md"
                     >
                       <div className="flex items-start gap-2 w-full">
-                        <Folder className="w-4 h-4 mt-0.5 shrink-0" />
+                        {icon}
                         <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
                           <span className="font-semibold">{connection.displayName}</span>
                           {connection.subtitle && (

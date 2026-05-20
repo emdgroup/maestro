@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
 import { api } from "@/lib/tauri-utils";
@@ -11,6 +11,8 @@ export interface ThemeContextValue {
   setTheme: (theme: ThemeValue) => Promise<void>;
   systemTheme: "light" | "dark";
   isReady: boolean;
+  accentHue: number | null;
+  setAccentColor: (hue: number | null) => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -29,56 +31,56 @@ function applyTheme(theme: ThemeValue, systemTheme: "light" | "dark"): void {
   }
 }
 
-async function loadSystemAccentColor(): Promise<void> {
-  try {
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const rgb = await api.getSystemAccentColor();
-    const rgbColor = { mode: "rgb" as const, r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255 };
-    const oklchColor = oklch(rgbColor);
+function applyAccentHue(hue: number): void {
+  const isDark = document.documentElement.classList.contains("dark");
+  const lightness = isDark ? 0.75 : 0.5;
+  const chroma = 0.15;
+  document.documentElement.style.setProperty("--accent", `oklch(${lightness * 100}% ${chroma} ${hue})`);
+  document.documentElement.style.setProperty(
+    "--accent-foreground",
+    isDark ? "oklch(25% 0.01 250)" : "oklch(100% 0 0)",
+  );
+}
 
-    if (!oklchColor) {
-      throw new Error("Failed to convert RGB to oklch");
-    }
-
-    const hue = oklchColor.h || 250;
-    const lightness = isDark ? 0.75 : 0.5;
-    const chroma = 0.15;
-
-    document.documentElement.style.setProperty(
-      "--accent",
-      `oklch(${lightness * 100}% ${chroma} ${hue})`,
-    );
-    document.documentElement.style.setProperty(
-      "--accent-foreground",
-      isDark ? "oklch(25% 0.01 250)" : "oklch(100% 0 0)",
-    );
-  } catch (err) {
-    console.error("Failed to load system accent color, using fallback:", err);
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.style.setProperty(
-      "--accent",
-      isDark ? "oklch(75% 0.15 250)" : "oklch(50% 0.15 250)",
-    );
-    document.documentElement.style.setProperty(
-      "--accent-foreground",
-      isDark ? "oklch(25% 0.01 250)" : "oklch(100% 0 0)",
-    );
-  }
+async function loadSystemAccentHue(): Promise<number> {
+  const rgb = await api.getSystemAccentColor();
+  const rgbColor = { mode: "rgb" as const, r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255 };
+  const oklchColor = oklch(rgbColor);
+  return oklchColor?.h ?? 250;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemeValue>("system");
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
   const [isReady, setIsReady] = useState(false);
+  const [accentHue, setAccentHueState] = useState<number | null>(null);
   const settingsQuery = useSettings();
-  const saveSettings = useSaveSettings({successToast: false});
+  const saveSettings = useSaveSettings({ successToast: false });
+  const systemAccentHueCacheRef = useRef<number | null>(null);
+
+  async function getSystemAccentHue(): Promise<number> {
+    if (systemAccentHueCacheRef.current != null) return systemAccentHueCacheRef.current;
+    const hue = await loadSystemAccentHue().catch(() => 250);
+    systemAccentHueCacheRef.current = hue;
+    return hue;
+  }
 
   useEffect(() => {
     if (settingsQuery.data == null || isReady) return;
     const savedTheme = (settingsQuery.data.theme_preference as ThemeValue) || "system";
     setThemeState(savedTheme);
     applyTheme(savedTheme, systemTheme);
-    void loadSystemAccentColor();
+
+    const savedAccent = settingsQuery.data.accent_color;
+    const customHue = savedAccent != null ? Number(savedAccent) : null;
+    setAccentHueState(customHue);
+
+    if (customHue != null) {
+      applyAccentHue(customHue);
+    } else {
+      void getSystemAccentHue().then((hue) => applyAccentHue(hue));
+    }
+
     setIsReady(true);
   }, [settingsQuery.data, isReady, systemTheme]);
 
@@ -88,6 +90,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     setThemeState(newTheme);
     applyTheme(newTheme, systemTheme);
+    // Re-apply accent with updated dark/light state
+    const hue = accentHue ?? (await getSystemAccentHue());
+    applyAccentHue(hue);
 
     const updatedSettings: AppSettings = {
       ...currentSettings,
@@ -102,6 +107,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function handleSetAccentColor(hue: number | null): Promise<void> {
+    const currentSettings = settingsQuery.data;
+    if (!currentSettings) return;
+
+    setAccentHueState(hue);
+
+    if (hue != null) {
+      applyAccentHue(hue);
+    } else {
+      const systemHue = await getSystemAccentHue();
+      applyAccentHue(systemHue);
+    }
+
+    const updatedSettings: AppSettings = {
+      ...currentSettings,
+      accent_color: hue != null ? String(hue) : null,
+      updated_at: new Date().toISOString(),
+    };
+    await saveSettings.mutateAsync(updatedSettings);
+  }
+
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = async (e: MediaQueryListEvent) => {
@@ -110,17 +136,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       if (theme === "system") {
         applyTheme("system", newSystemTheme);
       }
-      await loadSystemAccentColor();
+      // Re-apply accent for new dark/light state
+      const hue = accentHue ?? (await getSystemAccentHue());
+      applyAccentHue(hue);
     };
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme]);
+  }, [theme, accentHue]);
 
   const value: ThemeContextValue = {
     theme,
     setTheme: handleSetTheme,
     systemTheme,
     isReady,
+    accentHue,
+    setAccentColor: handleSetAccentColor,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

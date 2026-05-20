@@ -57,20 +57,7 @@ pub async fn ensure_remote_server(
 
     emit_status(app_handle, connection_id, "deploying", None);
 
-    let resource_dir = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Cannot resolve resource dir: {}", e))?;
-    let local_binary = resource_dir
-        .join("remote")
-        .join(format!("maestro-server-{}", REMOTE_TARGET));
-
-    if !local_binary.exists() {
-        return Err(format!(
-            "Remote binary not bundled: {}",
-            local_binary.display()
-        ));
-    }
+    let local_binary = resolve_bundled_linux_binary(app_handle)?;
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_remote_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 
@@ -101,6 +88,85 @@ pub async fn ensure_remote_server(
         path: abs_remote_path,
         deployed: true,
     })
+}
+
+/// Ensure maestro-server exists inside a WSL distro with the correct protocol version.
+/// Deploys the bundled Linux x86_64 binary via stdin pipe if missing or outdated.
+/// Returns the absolute Linux path to the binary.
+#[cfg(windows)]
+pub async fn ensure_wsl_server(
+    distro: &str,
+    app_handle: &AppHandle,
+) -> Result<DeployResult, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let probe_out = tokio::process::Command::new("wsl.exe")
+        .args([
+            "-d", distro, "--",
+            "sh", "-c",
+            &format!(
+                "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --protocol-version 2>/dev/null || echo MISSING)\"",
+                REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
+            ),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
+
+    let text = crate::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
+    let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
+    if parts.len() != 2 {
+        return Err(format!("Unexpected WSL probe output: {}", text.trim()));
+    }
+    let (home, remote_version) = (parts[0].trim(), parts[1].trim());
+
+    let local_version = maestro_protocol::PROTOCOL_VERSION.to_string();
+    let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
+    let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
+
+    if remote_version == local_version {
+        return Ok(DeployResult { path: abs_path, deployed: false });
+    }
+
+    let local_binary = resolve_bundled_linux_binary(app_handle)?;
+    let binary_bytes = tokio::fs::read(&local_binary)
+        .await
+        .map_err(|e| format!("Cannot read bundled binary: {}", e))?;
+
+    let mut child = tokio::process::Command::new("wsl.exe")
+        .args([
+            "-d", distro, "--",
+            "sh", "-c",
+            &format!("mkdir -p '{}' && cat > '{}' && chmod +x '{}'", abs_dir, abs_path, abs_path),
+        ])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn WSL deploy shell: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(&binary_bytes).await.map_err(|e| format!("Binary pipe write failed: {}", e))?;
+    }
+
+    let status = child.wait().await.map_err(|e| format!("WSL deploy process failed: {}", e))?;
+    if !status.success() {
+        return Err(format!("WSL deploy exited with status: {}", status));
+    }
+
+    Ok(DeployResult { path: abs_path, deployed: true })
+}
+
+fn resolve_bundled_linux_binary(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Cannot resolve resource dir: {}", e))?;
+    let local_binary = resource_dir
+        .join("remote")
+        .join(format!("maestro-server-{}", REMOTE_TARGET));
+    if !local_binary.exists() {
+        return Err(format!("Remote binary not bundled: {}", local_binary.display()));
+    }
+    Ok(local_binary)
 }
 
 fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message: Option<String>) {

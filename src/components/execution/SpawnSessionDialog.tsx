@@ -29,6 +29,7 @@ interface SpawnSessionDialogProps {
   projectId: number;
   repoPath: string;
   connectionId: number | null;
+  wslConnectionId: number | null;
   worktrees: WorktreeWithStatus[];
   onSuccess: (sessionKey: number) => void;
 }
@@ -39,6 +40,7 @@ export function SpawnSessionDialog({
   projectId,
   repoPath,
   connectionId,
+  wslConnectionId,
   worktrees,
   onSuccess,
 }: SpawnSessionDialogProps) {
@@ -48,7 +50,7 @@ export function SpawnSessionDialog({
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   const { data: projectSettings } = useProjectSettings(projectId);
-  const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(connectionId);
+  const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(connectionId, wslConnectionId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
@@ -96,6 +98,7 @@ export function SpawnSessionDialog({
           sessionName: sessionName.trim() || generateSessionName(),
           projectId,
           connectionId,
+          wslConnectionId,
           worktreeBranch: selectedWorktree.branch_name,
         },
         {

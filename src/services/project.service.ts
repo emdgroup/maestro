@@ -90,12 +90,13 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ path, connectionId }: { path: string; connectionId: number | null }) =>
-      api.createProject(path, connectionId),
-    onSuccess: (_data, { connectionId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
-      });
+    mutationFn: ({ path, connectionId, wslConnectionId }: { path: string; connectionId: number | null; wslConnectionId?: number | null }) =>
+      api.createProject(path, connectionId, wslConnectionId ?? null),
+    onSuccess: (_data, { connectionId, wslConnectionId }) => {
+      const key = wslConnectionId
+        ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
+        : projectQueryKeys.listByConnection(connectionId ?? "local");
+      void queryClient.invalidateQueries({ queryKey: key });
     },
     onError: createErrorToastHandler("Failed to create project"),
   });

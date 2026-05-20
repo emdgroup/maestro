@@ -21,7 +21,7 @@ pub async fn list_worktrees_with_status(
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [project_id],
             crate::models::Project::from_row,
         ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
@@ -398,6 +398,12 @@ pub async fn delete_worktree(
                 );
                 let _ = ssh.execute_command(&cmd).await;
             }
+            crate::models::GitConnection::Wsl { distro, path } => {
+                let _ = tokio::process::Command::new("wsl.exe")
+                    .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", &branch_name])
+                    .output()
+                    .await;
+            }
         }
     }
 
@@ -510,6 +516,12 @@ pub async fn cleanup_zombie_worktrees(
                     crate::git::remote::shell_quote(branch_name)
                 );
                 let _ = ssh.execute_command(&cmd).await;
+            }
+            crate::models::GitConnection::Wsl { distro, path } => {
+                let _ = tokio::process::Command::new("wsl.exe")
+                    .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", branch_name])
+                    .output()
+                    .await;
             }
         }
     }
@@ -707,7 +719,7 @@ pub async fn delete_worktree_for_task(
     let project: Option<crate::models::Project> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id \
+            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id, p.wsl_connection_id \
              FROM projects p JOIN worktrees w ON p.id = w.project_id WHERE w.id = ?",
             rusqlite::params![worktree_id],
             crate::models::Project::from_row,

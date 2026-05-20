@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 use crate::project_lock;
 
-use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, RestorableSession};
+use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, RestorableSession, ConnectionKey};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::db::schema::{initialize_schema};
 use crate::process::PtySession;
@@ -89,11 +89,10 @@ pub struct AcpState {
     /// and the reader task owns stdout independently.
     pub sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
     /// Per-connection agent discovery cache (5-minute TTL).
-    /// Key: None = local maestro-server, Some(id) = remote SSH connection.
-    pub discovery_cache: tokio::sync::Mutex<HashMap<Option<i32>, AgentDiscoveryCacheEntry>>,
-    /// One long-lived maestro-server process per connection (None=local, Some(id)=remote SSH).
+    pub discovery_cache: tokio::sync::Mutex<HashMap<ConnectionKey, AgentDiscoveryCacheEntry>>,
+    /// One long-lived maestro-server process per connection.
     /// All sessions for a connection share this process instead of spawning their own.
-    pub connection_servers: tokio::sync::Mutex<HashMap<Option<i32>, ConnectionServer>>,
+    pub connection_servers: tokio::sync::Mutex<HashMap<ConnectionKey, ConnectionServer>>,
     /// Agent-level models/modes/capabilities cache. Populated from PreInitialize warm
     /// session and updated on every SpawnOk/SessionLoadOk. Keyed by (project_id, agent_id).
     pub agent_cache: tokio::sync::Mutex<AgentCacheMap>,
@@ -198,10 +197,7 @@ impl AppState {
     }
 }
 
-/// Get a GitConnection for a project (local or remote via SSH)
-///
-/// For local projects: returns GitConnection::Local with the project path
-/// For remote projects: returns GitConnection::Remote with SSH session and remote path
+/// Get a GitConnection for a project (local, SSH, or WSL).
 pub async fn get_git_connection(
     project: &Project,
     app_state: &AppState,
@@ -214,7 +210,22 @@ pub async fn get_git_connection(
 
         Ok(GitConnection::Remote {
             ssh: Arc::new(ssh_session),
-            remote_path: project.path.clone(), // For remote projects, path is the remote path
+            remote_path: project.path.clone(),
+        })
+    } else if project.is_wsl() {
+        let wsl_id = project.wsl_connection_id
+            .ok_or("WSL project has no wsl_connection_id")?;
+        let distro = {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            conn.query_row(
+                "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                [wsl_id],
+                |row| row.get::<_, String>(0),
+            ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
+        };
+        Ok(GitConnection::Wsl {
+            distro,
+            path: project.path.clone(),
         })
     } else {
         Ok(GitConnection::Local {
@@ -234,7 +245,7 @@ pub async fn get_project_with_git_conn(
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [project_id],
             Project::from_row,
         ).map_err(|e| format!("Project {} not found: {}", project_id, e))?

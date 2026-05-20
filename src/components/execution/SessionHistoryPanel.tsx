@@ -14,6 +14,7 @@ interface SessionHistoryPanelProps {
   defaultAgentId: string | null;
   repoPath: string;
   connectionId: number | null;
+  wslConnectionId: number | null;
   projectId: number;
   worktrees: WorktreeWithStatus[];
   onClose: () => void;
@@ -52,6 +53,7 @@ export function SessionHistoryPanel({
   defaultAgentId,
   repoPath,
   connectionId,
+  wslConnectionId,
   projectId,
   worktrees,
   onClose,
@@ -74,6 +76,7 @@ export function SessionHistoryPanel({
     repoPath,
     connectionId,
     projectId,
+    wslConnectionId,
   );
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
@@ -124,6 +127,7 @@ export function SessionHistoryPanel({
             sessionId,
             cwd: repoPath,
             connectionId,
+            wslConnectionId,
             sessionName: title,
             projectId,
             worktreeBranch: mainBranch,
@@ -153,6 +157,7 @@ export function SessionHistoryPanel({
         sessionId: pendingRestore.sessionId,
         cwd: selectedWorktreePath,
         connectionId,
+        wslConnectionId,
         sessionName: pendingRestore.title,
         projectId,
         worktreeBranch: selectedWt?.branch_name ?? null,

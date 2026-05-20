@@ -11,25 +11,22 @@ pub struct Project {
     pub updated_at: String,  // ISO 8601
     pub last_opened: Option<String>, // ISO 8601
     pub connection_id: Option<i32>,  // Foreign key to ssh_connections; None = local project
+    pub wsl_connection_id: Option<i32>, // Foreign key to wsl_connections; None = non-WSL project
 }
 
 impl Project {
-    /// Get the connection type as a string
-    pub fn connection_type(&self) -> String {
-        if self.is_remote() {
-            "remote".to_string()
-        } else {
-            "local".to_string()
-        }
-    }
-
-    /// Check if this is a remote project
+    /// Check if this is a remote SSH project
     pub fn is_remote(&self) -> bool {
         self.connection_id.is_some()
     }
 
-    /// Parse a Project from a rusqlite Row
-    /// Expects columns in order
+    /// Check if this is a WSL project
+    pub fn is_wsl(&self) -> bool {
+        self.wsl_connection_id.is_some()
+    }
+
+    /// Parse a Project from a rusqlite Row.
+    /// Expects columns: id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id
     pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         Ok(Project {
             id: row.get(0)?,
@@ -39,6 +36,7 @@ impl Project {
             updated_at: row.get(4)?,
             last_opened: row.get(5)?,
             connection_id: row.get(6)?,
+            wsl_connection_id: row.get(7)?,
         })
     }
 

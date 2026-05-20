@@ -464,8 +464,6 @@ impl RemoteSshSession {
 
         let expanded = expand_tilde(path);
 
-        println!("Key auth: username={}, key_path='{}' (original: '{}')", username, expanded, path);
-
         if !Path::new(&expanded).exists() {
             return Err(SshError::AuthenticationError(format!(
                 "Key file not found: '{}'. Check the path and try again.",
@@ -486,8 +484,6 @@ impl RemoteSshSession {
                 "This is a public key file (.pub). Please select the matching private key file (no .pub extension).".to_string()
             ));
         }
-
-        println!("Key format: {} bytes", key_data.len());
 
         // Store the passphrase so reconnection can reuse it
         *self.key_passphrase.lock().await = passphrase.clone();
@@ -567,9 +563,8 @@ impl RemoteSshSession {
 
             match open_result {
                 Ok(ch) => ch,
-                Err(e) => {
+                Err(_) => {
                     // Connection was silently dropped — reconnect and try once more
-                    println!("Channel open failed ({}), reconnecting…", e);
                     *self.state.lock().await = SshConnectionState::Disconnected;
                     self.reconnect_if_needed().await?;
                     let guard = self.handle.lock().await;
@@ -1049,8 +1044,7 @@ pub fn spawn_heartbeat_task(
                                 let restore_state = Arc::clone(&app_state);
                                 let restore_handle = app_handle.clone();
                                 tokio::spawn(async move {
-                                    if let Err(e) = crate::acp::restore_acp_sessions(connection_id, &restore_state).await {
-                                        eprintln!("ACP session restore failed: {e}");
+                                    if let Err(_) = crate::acp::restore_acp_sessions(connection_id, &restore_state).await {
                                         // Finalize any remaining restorable sessions as ended.
                                         let remaining: Vec<crate::acp::RestorableSession> = restore_state
                                             .acp

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
@@ -16,6 +16,7 @@ import {
   useSlideDirection,
   usePendingTaskId,
   useNavigationActions,
+  type ViewType,
 } from "@/store/navigationStore";
 import {
   slideVariants,
@@ -69,6 +70,9 @@ function App() {
   const slideDirection = useSlideDirection();
   const { setActiveTab, clearPendingTask } = useNavigationActions();
 
+  const agentsControls = useAnimationControls();
+  const prevTabRef = useRef<ViewType>(activeTab);
+
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
 
@@ -101,6 +105,26 @@ function App() {
       clearPendingTask();
     }
   }, [pendingTaskId, tasks, clearPendingTask]);
+
+  useEffect(() => {
+    const prevTab = prevTabRef.current;
+    prevTabRef.current = activeTab;
+
+    if (activeTab === "agents" && prevTab !== "agents") {
+      agentsControls.set({ x: `${100 * slideDirection}%`, opacity: 0 });
+      agentsControls.start({
+        x: 0,
+        opacity: 1,
+        transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
+      });
+    } else if (activeTab !== "agents" && prevTab === "agents") {
+      agentsControls.start({
+        x: `${-100 * slideDirection}%`,
+        opacity: 0,
+        transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
+      });
+    }
+  }, [activeTab, slideDirection, agentsControls]);
 
   useEffect(() => {
     if (currentProject) {
@@ -155,15 +179,23 @@ function App() {
       />
       <main className="flex-1 overflow-hidden relative">
         {/* AgentsView always mounted — session state survives tab navigation */}
-        <div className={cn("absolute inset-0 overflow-hidden", activeTab !== "agents" && "hidden")}>
+        <motion.div
+          initial={activeTab === "agents" ? { x: 0, opacity: 1 } : { x: "100%", opacity: 0 }}
+          animate={agentsControls}
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab !== "agents" && "pointer-events-none",
+          )}
+        >
           <Suspense fallback={fallback}>
             <AgentsView
               projectId={currentProject.id}
               repoPath={currentProject.path}
               connectionId={currentProject.connection_id}
+              wslConnectionId={currentProject.wsl_connection_id}
             />
           </Suspense>
-        </div>
+        </motion.div>
         <AnimatePresence initial={false} custom={slideDirection}>
           {activeTab === "kanban" && (
             <motion.div
@@ -231,6 +263,7 @@ function App() {
                   ref={settingsPageRef}
                   projectId={currentProject.id}
                   connectionId={currentProject.connection_id}
+                  wslConnectionId={currentProject.wsl_connection_id}
                 />
               </Suspense>
             </motion.div>

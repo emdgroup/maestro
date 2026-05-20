@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { motion, LayoutGroup } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { AccentColorPicker } from "@/components/common/AccentColorPicker";
 import {
   Select,
   SelectContent,
@@ -229,6 +230,7 @@ export function AppHeader({
           <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
           <span className="text-xs text-muted-foreground">{agentCount} running</span>
         </div>
+        <AccentColorPicker />
         <ThemeToggle />
       </div>
     </header>

@@ -72,6 +72,7 @@ pub async fn get_diff_for_review(
             updated_at: proj_updated,
             last_opened: proj_last_opened,
             connection_id: proj_conn_id,
+            wsl_connection_id: None,
         };
         (project, wt_path, branch)
     };
@@ -272,26 +273,28 @@ pub(crate) async fn finalize_successful_merge(
 
     match crate::git::delete_worktree(&git_conn, worktree_path).await {
         Ok(()) => {
-            // Delete branch — no delete_branch in git dispatcher, use inline Command (non-fatal)
-            let repo_dir = match &git_conn {
-                crate::models::GitConnection::Local { path } => path.clone(),
-                crate::models::GitConnection::Remote { remote_path, .. } => remote_path.clone(),
-            };
-            let branch_result = tokio::process::Command::new("git")
-                .args(["branch", "-D", branch_name])
-                .current_dir(&repo_dir)
-                .output()
-                .await;
-            match branch_result {
-                Ok(output) if !output.status.success() => {
-                    // Non-fatal: branch delete failed
-                    let _ = output;
+            // Delete branch — non-fatal, best effort
+            match &git_conn {
+                crate::models::GitConnection::Local { path } => {
+                    let _ = tokio::process::Command::new("git")
+                        .args(["branch", "-D", branch_name])
+                        .current_dir(path)
+                        .output()
+                        .await;
                 }
-                Err(_) => {
-                    // Non-fatal: failed to run git branch -D
+                crate::models::GitConnection::Remote { ssh, remote_path } => {
+                    let cmd = format!(
+                        "git -C {} branch -D {}",
+                        crate::git::remote::shell_quote(remote_path),
+                        crate::git::remote::shell_quote(branch_name)
+                    );
+                    let _ = ssh.execute_command(&cmd).await;
                 }
-                _ => {
-                    // Branch deleted successfully
+                crate::models::GitConnection::Wsl { distro, path } => {
+                    let _ = tokio::process::Command::new("wsl.exe")
+                        .args(["-d", distro, "--", "git", "-C", path, "branch", "-D", branch_name])
+                        .output()
+                        .await;
                 }
             }
             // Delete from database on successful cleanup

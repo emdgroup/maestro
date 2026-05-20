@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
 import { Plus, Terminal, X, FileText, FileDiff } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
@@ -8,25 +8,74 @@ import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
 import { WorkingFilesPanel } from "@/components/execution/activity/WorkingFilesPanel";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import type { ActiveSessionInfo } from "@/types/bindings";
-import { useActivityStatuses, type SessionActivityStatus } from "@/store/sessionActivityStore";
+import { useSessionActivity, type SessionActivityStatus, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
   spawning: "bg-muted-foreground/60 animate-pulse",
-  working: "bg-success animate-glow",
-  idle: "bg-success",
-  awaiting_input: "bg-warning",
+  thinking: "bg-info animate-glow-info",
+  acting: "bg-purple animate-glow-purple",
+  awaiting_input: "bg-warning animate-pulse",
+  idle: "bg-muted-foreground/40",
+};
+
+const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
+  spawning: "Starting",
+  thinking: "Thinking",
+  acting: "Calling tool",
+  awaiting_input: "Waiting",
+  idle: "Ready",
 };
 
 function getStatusDot(
   session: ActiveSessionInfo,
-  activityStatus: SessionActivityStatus | undefined,
+  activityInfo: SessionActivityInfo | undefined,
 ): string {
   if (session.execution_mode === "acp") {
-    return ACTIVITY_DOT[activityStatus ?? "working"];
+    return ACTIVITY_DOT[activityInfo?.status ?? "thinking"];
   }
   return "bg-success animate-pulse";
 }
+
+function formatElapsedCompact(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function formatTimeAgo(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
+function getStatusLabel(activityInfo: SessionActivityInfo): string {
+  const { status, label } = activityInfo;
+  if (label) return label;
+  return STATUS_FALLBACK[status];
+}
+
+const ElapsedTime = memo(function ElapsedTime({
+  status,
+  stateChangedAt,
+}: {
+  status: SessionActivityStatus;
+  stateChangedAt: number;
+}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">
+      {status === "idle"
+        ? formatTimeAgo(now - stateChangedAt)
+        : formatElapsedCompact(now - stateChangedAt)}
+    </span>
+  );
+});
 
 function AgentIcon({ src, className }: { src: string; className: string }) {
   return (
@@ -39,6 +88,86 @@ function AgentIcon({ src, className }: { src: string; className: string }) {
     />
   );
 }
+
+interface SessionRowProps {
+  session: ActiveSessionInfo;
+  isSelected: boolean;
+  groupCount: number;
+  onSelect: (sessionKey: number) => void;
+  agentIcons?: Record<string, string>;
+  agentNames?: Record<string, string>;
+}
+
+const SessionRow = memo(function SessionRow({
+  session,
+  isSelected,
+  groupCount,
+  onSelect,
+  agentIcons,
+  agentNames,
+}: SessionRowProps) {
+  const activityInfo = useSessionActivity(session.session_key);
+  return (
+    <div
+      onClick={() => onSelect(session.session_key)}
+      className={cn(
+        "group px-3 py-3 cursor-pointer transition-colors",
+        isSelected ? "selected-session-item" : "hover:bg-muted/10",
+      )}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className={cn(
+            "inline-block w-2 h-2 rounded-full shrink-0",
+            getStatusDot(session, activityInfo),
+          )}
+        />
+        <span className="session-item-name text-sm font-medium truncate">
+          {session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session"}
+        </span>
+        <Badge
+          variant="outline"
+          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1"
+        >
+          {session.execution_mode === "acp" && session.agent_id && agentIcons?.[session.agent_id] && (
+            <AgentIcon
+              src={agentIcons[session.agent_id]}
+              className="w-3 h-3 rounded-sm dark:[filter:invert(1)]"
+            />
+          )}
+          {session.execution_mode === "acp"
+            ? session.agent_id
+              ? (agentNames?.[session.agent_id] ??
+                  session.agent_id
+                    .split(/[-_]/)
+                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                    .join(" "))
+              : "ACP"
+            : "Terminal"}
+        </Badge>
+      </div>
+      <div className="text-xs text-muted-foreground mt-0.5 pl-4 flex items-center justify-between gap-2 min-w-0">
+        {session.execution_mode === "acp" ? (
+          <>
+            <span className="truncate">
+              {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+            </span>
+            {activityInfo && (
+              <ElapsedTime status={activityInfo.status} stateChangedAt={activityInfo.stateChangedAt} />
+            )}
+          </>
+        ) : (
+          <>
+            <span>Running</span>
+            {session.branch_name && groupCount <= 1 && (
+              <span className="font-mono">{session.branch_name}</span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
 
 interface AgentMonitorProps {
   sessions: ActiveSessionInfo[];
@@ -65,7 +194,7 @@ export function AgentMonitor({
   agentNames,
   projectId,
 }: AgentMonitorProps) {
-  const activityStatuses = useActivityStatuses();
+  const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -162,58 +291,15 @@ export function AgentMonitor({
                 </div>
               )}
               {sessionList.map((session) => (
-                <div
+                <SessionRow
                   key={session.session_key}
-                  onClick={() => onSelect(session.session_key)}
-                  className={cn(
-                    "group px-3 py-3 cursor-pointer transition-colors",
-                    session.session_key === selectedSessionKey
-                      ? "selected-session-item"
-                      : "hover:bg-muted/10",
-                  )}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={cn(
-                        "inline-block w-2 h-2 rounded-full shrink-0",
-                        getStatusDot(session, activityStatuses[session.session_key]),
-                      )}
-                    />
-                    <span className="session-item-name text-sm font-medium truncate">
-                      {session.session_name ??
-                        session.task_name ??
-                        session.branch_name ??
-                        "Interactive session"}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1"
-                    >
-                      {session.execution_mode === "acp" &&
-                        session.agent_id &&
-                        agentIcons?.[session.agent_id] && (
-                          <AgentIcon
-                            src={agentIcons[session.agent_id]}
-                            className="w-3 h-3 rounded-sm dark:[filter:invert(1)]"
-                          />
-                        )}
-                      {session.execution_mode === "acp"
-                        ? session.agent_id
-                          ? (agentNames?.[session.agent_id] ?? session.agent_id
-                              .split(/[-_]/)
-                              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                              .join(" "))
-                          : "ACP"
-                        : "Terminal"}
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 pl-4">
-                    Running
-                    {session.branch_name && grouped.length <= 1 && (
-                      <span className="font-mono ml-1">{session.branch_name}</span>
-                    )}
-                  </div>
-                </div>
+                  session={session}
+                  isSelected={session.session_key === selectedSessionKey}
+                  groupCount={grouped.length}
+                  onSelect={onSelect}
+                  agentIcons={agentIcons}
+                  agentNames={agentNames}
+                />
               ))}
             </div>
           ))}
@@ -256,6 +342,7 @@ export function AgentMonitor({
                       onFocus={() => {
                         setRenamingKey(selectedSession.session_key);
                         setRenameValue(selectedSession.session_name ?? selectedSession.task_name ?? selectedSession.branch_name ?? "");
+                        requestAnimationFrame(() => renameInputRef.current?.select());
                       }}
                       onChange={(e) => setRenameValue(e.target.value)}
                       onKeyDown={(e) => {
@@ -280,10 +367,22 @@ export function AgentMonitor({
                   <span
                     className={cn(
                       "inline-block w-2 h-2 rounded-full shrink-0",
-                      getStatusDot(selectedSession, activityStatuses[selectedSession.session_key]),
+                      getStatusDot(selectedSession, selectedActivityInfo),
                     )}
                   />
-                  <span className="text-xs text-muted-foreground">Running</span>
+                  <span className="text-xs text-muted-foreground truncate">
+                    {selectedSession.execution_mode === "acp"
+                      ? selectedActivityInfo
+                        ? getStatusLabel(selectedActivityInfo)
+                        : "Starting…"
+                      : "Running"}
+                  </span>
+                  {selectedSession.execution_mode === "acp" && selectedActivityInfo && (
+                    <ElapsedTime
+                      status={selectedActivityInfo.status}
+                      stateChangedAt={selectedActivityInfo.stateChangedAt}
+                    />
+                  )}
                   {selectedSession.branch_name && (
                     <span className="text-xs text-muted-foreground font-mono truncate">
                       {selectedSession.branch_name}

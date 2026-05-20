@@ -30,9 +30,9 @@ async getConnectionProjects(connectionId: number | null) : Promise<Result<Projec
 /**
  * Create a new project
  */
-async createProject(path: string, connectionId: number | null) : Promise<Result<Project, string>> {
+async createProject(path: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -888,9 +888,9 @@ async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: s
  * Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
  * cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
  */
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connectionId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connectionId: number | null, wslConnectionId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connectionId, worktreeBranch }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connectionId, wslConnectionId, worktreeBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -997,9 +997,9 @@ async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
  * Idempotent: if the server is already running the spawn step is skipped and only
  * agent discovery + tool checks are refreshed. The server process lives until app quit.
  */
-async preflightConnection(connectionId: number | null) : Promise<Result<PreflightResult, string>> {
+async preflightConnection(connectionId: number | null, wslConnectionId: number | null) : Promise<Result<PreflightResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1010,9 +1010,9 @@ async preflightConnection(connectionId: number | null) : Promise<Result<Prefligh
  * Used to suggest a default agent when opening a project.
  * Requires the connection server to be running (call `preflight_connection` first).
  */
-async detectProjectAgents(connectionId: number | null, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
+async detectProjectAgents(connectionId: number | null, wslConnectionId: number | null, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connectionId, cwd }) };
+    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connectionId, wslConnectionId, cwd }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1023,9 +1023,9 @@ async detectProjectAgents(connectionId: number | null, cwd: string) : Promise<Re
  * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
  * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
  */
-async discoverAgents(connectionId: number | null) : Promise<Result<AgentDiscoveryResult, string>> {
+async discoverAgents(connectionId: number | null, wslConnectionId: number | null) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1135,9 +1135,9 @@ async getActiveSessions() : Promise<Result<ActiveSessionInfo[], string>> {
  * Applies user-defined aliases over agent-provided titles. When the full list is returned
  * (no next page), prunes stale aliases for sessions the agent no longer knows about.
  */
-async listAcpSessions(projectId: number, agentId: string, cwd: string, connectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
+async listAcpSessions(projectId: number, agentId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connectionId, cursor }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connectionId, wslConnectionId, cursor }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1146,9 +1146,9 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
  */
-async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, sessionName, projectId, worktreeBranch }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, wslConnectionId, sessionName, projectId, worktreeBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1182,9 +1182,9 @@ async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], em
 /**
  * Close an ACP session stored on the agent server (not a live Tauri session).
  */
-async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectionId: number | null) : Promise<Result<null, string>> {
+async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1241,6 +1241,61 @@ async getAgentCache(projectId: number, agentId: string) : Promise<Result<AgentCa
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * List installed WSL distros. Returns empty vec on non-Windows.
+ */
+async listWslDistros() : Promise<Result<WslDistro[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_wsl_distros") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List entries in a WSL distro directory.
+ */
+async listWslDirectories(distro: string, path: string) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_wsl_directories", { distro, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get the home directory for the default user in a WSL distro.
+ */
+async getWslHome(distro: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_wsl_home", { distro }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Upsert a WSL connection record and return the saved row.
+ */
+async saveWslConnection(distroName: string, displayName: string | null) : Promise<Result<WslConnection, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_wsl_connection", { distroName, displayName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List all saved WSL connections from the database.
+ */
+async getWslConnections() : Promise<Result<WslConnection[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_wsl_connections") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1259,7 +1314,7 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: string; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
 export type AgentCatalogCommand = { name: string; description: string }
@@ -1275,7 +1330,7 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; updated_at: string }
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; updated_at: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1293,6 +1348,10 @@ export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } |
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
 export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_deps?: string[] }
+/**
+ * How a session is executed: via the Agent Control Protocol or a raw PTY.
+ */
+export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
@@ -1303,7 +1362,7 @@ export type MergeResult = { success: boolean; task_status: string; conflicts: st
 export type PreflightCheck = { ok: boolean; message: string | null }
 export type PreflightResult = { maestro_server: PreflightCheck; agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type PreparedAttachment = { display_name: string; local_path: string; content_block: JsonValue }
-export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null }
+export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null; wsl_connection_id: number | null }
 /**
  * Project-level agent detection: which agent tools have config markers in the project dir.
  */
@@ -1368,6 +1427,15 @@ export type WorktreeDiffResult = { diff: string; untracked_files: string[] }
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
 export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; git_status: string; created_at: string | null; task_name: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null }
+/**
+ * A WSL connection record stored in the database.
+ */
+export type WslConnection = { id: number; distro_name: string; display_name: string | null; last_used_at: string; created_at: string }
+/**
+ * A WSL distro as reported by `wsl.exe --list --verbose`.
+ */
+export type WslDistro = { name: string; state: WslDistroState; version: number }
+export type WslDistroState = "Running" | "Stopped"
 
 /** tauri-specta globals **/
 

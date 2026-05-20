@@ -70,6 +70,17 @@ function isWorkingFile(path: string): boolean {
 
 const WRITE_KINDS = new Set(["edit", "delete", "move", "write_file", "edit_file", "create_file"]);
 
+function toolKindCategory(kind: string): string {
+  if (/edit|write_file|edit_file|create_file|delete/.test(kind)) return "Editing";
+  if (/read|read_file/.test(kind)) return "Reading";
+  if (/execute|bash|shell|run_terminal/.test(kind)) return "Running command";
+  if (/search|grep|glob/.test(kind)) return "Searching";
+  if (/fetch/.test(kind)) return "Fetching";
+  if (/think/.test(kind)) return "Thinking";
+  if (/switch_mode/.test(kind)) return "Switching mode";
+  return "Tool use";
+}
+
 export function AgentActivityPanel({
   sessionKey,
   agentId,
@@ -79,7 +90,7 @@ export function AgentActivityPanel({
   onSessionChangedFilesChange,
   onOpenPanel,
 }: AgentActivityPanelProps) {
-  const { setStatus: setActivityStatus, removeStatus: removeActivityStatus } =
+  const { setActivity: setActivityStatus, removeActivity: removeActivityStatus } =
     useSessionActivityActions();
   const onUsageChangeRef = useRef(onUsageChange);
   onUsageChangeRef.current = onUsageChange;
@@ -132,8 +143,11 @@ export function AgentActivityPanel({
     scrollToLastUserMsg,
   } = useAcpScrollBehavior(isReady, liveState.lastUserMessageId);
 
+  const initItemCountRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (liveState.isInitializing) return;
+    initItemCountRef.current = liveState.items.length;
     setActivityStatus(sessionKey, "idle");
   }, [liveState.isInitializing, sessionKey, setActivityStatus]);
 
@@ -143,6 +157,28 @@ export function AgentActivityPanel({
       removeActivityStatus(sessionKey);
     }
   }, [liveState.sessionEnded, sessionKey, removeActivityStatus]);
+
+  useEffect(() => {
+    if (liveState.isInitializing || liveState.sessionEnded) return;
+    if (initItemCountRef.current === null) return;
+    const items = liveState.items;
+    if (items.length <= initItemCountRef.current) return;
+
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
+
+    if (
+      (lastItem.type === "thinking" || lastItem.type === "message") &&
+      lastItem.item.isStreaming
+    ) {
+      setActivityStatus(sessionKey, "thinking");
+    } else if (lastItem.type === "toolCall") {
+      const tc = lastItem.item;
+      if (tc.status === "pending" || tc.status === "in_progress") {
+        setActivityStatus(sessionKey, "acting", toolKindCategory(tc.kind));
+      }
+    }
+  }, [liveState.items, liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivityStatus]);
 
   const agentItemsCountRef = useRef(0);
   agentItemsCountRef.current = liveState.items.length;
@@ -218,7 +254,7 @@ export function AgentActivityPanel({
         ]);
       }
       setPendingElicitation(null);
-      setActivityStatus(sessionKey, "working");
+      setActivityStatus(sessionKey, "thinking");
     },
     [sessionKey, pendingElicitation, setPendingElicitation, setActivityStatus],
   );
@@ -241,7 +277,7 @@ export function AgentActivityPanel({
         ]);
       }
       setPendingElicitation(null);
-      setActivityStatus(sessionKey, "working");
+      setActivityStatus(sessionKey, "thinking");
     },
     [sessionKey, pendingElicitation, setPendingElicitation, setActivityStatus],
   );
@@ -266,7 +302,7 @@ export function AgentActivityPanel({
         setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt }]);
       }
       setPendingPermission(null);
-      setActivityStatus(sessionKey, "working");
+      setActivityStatus(sessionKey, "thinking");
     },
     [sessionKey, pendingPermission, setPendingPermission, setActivityStatus],
   );
@@ -288,7 +324,7 @@ export function AgentActivityPanel({
       if (isProcessing) return;
       liveDispatch({ type: "finalize_streaming" });
       setIsProcessing(true);
-      setActivityStatus(sessionKey, "working");
+      setActivityStatus(sessionKey, "thinking");
       try {
         if (contentBlocks) {
           await api.sendAcpPromptStructured(sessionKey, contentBlocks);

@@ -8,6 +8,7 @@ pub mod git;
 pub mod streaming;
 pub mod acp;
 pub mod project_lock;
+pub mod wsl;
 
 pub use db::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, SyncResult, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
@@ -116,7 +117,12 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
             crate::ipc::sftp_download,
-            crate::ipc::get_agent_cache
+            crate::ipc::get_agent_cache,
+            crate::ipc::list_wsl_distros,
+            crate::ipc::list_wsl_directories,
+            crate::ipc::get_wsl_home,
+            crate::ipc::save_wsl_connection,
+            crate::ipc::get_wsl_connections
         ])
 }
 

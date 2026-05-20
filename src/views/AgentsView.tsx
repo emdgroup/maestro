@@ -24,9 +24,10 @@ interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
   connectionId?: number | null;
+  wslConnectionId?: number | null;
 }
 
-export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connectionId }) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connectionId, wslConnectionId }) => {
   const { data: sessions = [] } = useActiveSessionsQuery();
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
@@ -60,7 +61,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   }
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
-  const { data: discovery } = useAgentDiscoveryQuery(connectionId ?? null);
+  const { data: discovery } = useAgentDiscoveryQuery(connectionId ?? null, wslConnectionId ?? null);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -221,6 +222,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
             repoPath={repoPath ?? ""}
             connectionId={connectionId ?? null}
+            wslConnectionId={wslConnectionId ?? null}
             projectId={projectId ?? 0}
             worktrees={worktrees}
             onClose={() => setShowHistory(false)}
@@ -238,6 +240,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         projectId={projectId ?? 0}
         repoPath={repoPath ?? ""}
         connectionId={connectionId ?? null}
+        wslConnectionId={wslConnectionId ?? null}
         worktrees={worktrees}
         onSuccess={setSelectedSessionKey}
       />

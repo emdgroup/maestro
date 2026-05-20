@@ -266,3 +266,55 @@ export function useSshConnectionStatus(connectionId: number) {
 
   return { ...query, connected };
 }
+
+export const wslQueryKeys = {
+  base: ["wsl"] as const,
+  distros: () => [...wslQueryKeys.base, "distros"] as const,
+  connections: () => [...wslQueryKeys.base, "connections"] as const,
+  dirs: (distro: string, path: string) => [...wslQueryKeys.base, "dirs", distro, path] as const,
+  home: (distro: string) => [...wslQueryKeys.base, "home", distro] as const,
+};
+
+export function useWslDistros() {
+  return useQuery({
+    queryKey: wslQueryKeys.distros(),
+    queryFn: () => api.listWslDistros(),
+    staleTime: 30_000,
+  });
+}
+
+export function useWslConnections() {
+  return useQuery({
+    queryKey: wslQueryKeys.connections(),
+    queryFn: () => api.getWslConnections(),
+    staleTime: 30_000,
+  });
+}
+
+export function useWslDirectories(distro: string, path: string) {
+  return useQuery({
+    queryKey: wslQueryKeys.dirs(distro, path),
+    queryFn: () => api.listWslDirectories(distro, path),
+    enabled: !!distro && !!path,
+  });
+}
+
+export function useWslHome(distro: string) {
+  return useQuery({
+    queryKey: wslQueryKeys.home(distro),
+    queryFn: () => api.getWslHome(distro),
+    enabled: !!distro,
+    staleTime: Infinity,
+  });
+}
+
+export function useSaveWslConnection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ distroName, displayName }: { distroName: string; displayName: string | null }) =>
+      api.saveWslConnection(distroName, displayName),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() });
+    },
+  });
+}

@@ -97,7 +97,7 @@ describe("New Session dialog — agent type selector", () => {
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
 
-    expect(screen.getByLabelText(/type/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /new session/i })).toBeInTheDocument();
     expect(screen.getByText("Terminal")).toBeInTheDocument();
   });
 
@@ -123,7 +123,7 @@ describe("spawn flow", () => {
     renderView();
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
-    await user.click(screen.getByRole("button", { name: /^spawn$/i }));
+    await user.click(screen.getByRole("button", { name: /start session/i }));
 
     expect(mockMutate).toHaveBeenCalled();
   });

@@ -13,13 +13,31 @@ pub struct ParsedWorktree {
     pub is_prunable: bool,
 }
 
+/// Run a git command inside a WSL distro: `wsl.exe -d <distro> -- git -C <path> <args>`.
+/// Returns stdout on success, Err on non-zero exit or spawn failure.
+async fn run_wsl_git(distro: &str, path: &str, args: &[&str]) -> Result<String, String> {
+    let mut cmd_args = vec!["-d", distro, "--", "git", "-C", path];
+    cmd_args.extend_from_slice(args);
+    let output = TokioCommand::new("wsl.exe")
+        .args(&cmd_args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn wsl.exe for git: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("WSL git error: {}", stderr));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 /// Public dispatcher: routes git operations to local OR remote based on GitConnection type
 ///
 /// For local projects: Uses tokio::process::Command to run git CLI directly
 /// For remote projects: Executes git commands via SSH
+/// For WSL projects: Executes git commands via wsl.exe
 ///
 /// Callers don't need to know the difference - just pass a GitConnection and the operation works.
-/// Create a worktree on the project (local or remote)
+/// Create a worktree on the project (local, remote, or WSL)
 ///
 /// `branch` is the base branch (e.g. origin branch) to create from or check out.
 /// `new_branch` is an optional name for a new branch to create from `branch`.
@@ -39,6 +57,14 @@ pub async fn create_worktree(
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
+        GitConnection::Wsl { distro, path } => {
+            let args: Vec<&str> = if let Some(nb) = new_branch {
+                vec!["worktree", "add", worktree_name, "-b", nb, branch]
+            } else {
+                vec!["worktree", "add", worktree_name, branch]
+            };
+            run_wsl_git(distro, path, &args).await.map(|_| ())
+        }
     }
 }
 
@@ -55,6 +81,9 @@ pub async fn delete_worktree(
             remote::delete_remote_worktree(ssh, remote_path, worktree_name)
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+        GitConnection::Wsl { distro, path } => {
+            run_wsl_git(distro, path, &["worktree", "remove", worktree_name, "--force"]).await.map(|_| ())
         }
     }
 }
@@ -74,6 +103,10 @@ pub async fn git_diff(
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
+        GitConnection::Wsl { distro, path } => {
+            let range = format!("{}...{}", base_branch, branch);
+            run_wsl_git(distro, path, &["diff", "--unified=6", &range]).await
+        }
     }
 }
 
@@ -89,6 +122,9 @@ pub async fn git_status(
             remote::get_remote_status(ssh, remote_path)
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+        GitConnection::Wsl { distro, path } => {
+            run_wsl_git(distro, path, &["status", "--porcelain"]).await
         }
     }
 }
@@ -106,6 +142,17 @@ pub async fn list_branches(
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
+        GitConnection::Wsl { distro, path } => {
+            let raw = run_wsl_git(distro, path, &["branch", "-a", "--format=%(refname:short)"]).await?;
+            let mut branches: Vec<String> = raw
+                .lines()
+                .map(|l| l.strip_prefix("origin/").unwrap_or(l).to_string())
+                .filter(|b| !b.is_empty() && b != "HEAD")
+                .collect();
+            branches.sort();
+            branches.dedup();
+            Ok(branches)
+        }
     }
 }
 
@@ -122,6 +169,10 @@ pub async fn get_current_branch(
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
         }
+        GitConnection::Wsl { distro, path } => {
+            let raw = run_wsl_git(distro, path, &["symbolic-ref", "--short", "HEAD"]).await?;
+            Ok(raw.trim().to_string())
+        }
     }
 }
 
@@ -137,6 +188,10 @@ pub async fn list_worktrees(
             remote::list_remote_worktrees(ssh, remote_path)
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+        GitConnection::Wsl { distro, path } => {
+            let raw = run_wsl_git(distro, path, &["worktree", "list", "--porcelain"]).await?;
+            Ok(parse_worktree_list(&raw))
         }
     }
 }
@@ -168,6 +223,9 @@ pub async fn run_git_in_dir(
             ssh.execute_command(&cmd)
                 .await
                 .map_err(|e| format!("Remote git error: {:?}", e))
+        }
+        GitConnection::Wsl { distro, .. } => {
+            run_wsl_git(distro, abs_path, args).await
         }
     }
 }

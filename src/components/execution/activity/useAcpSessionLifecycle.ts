@@ -27,7 +27,7 @@ export function useAcpSessionLifecycle(
   agentId: string | null,
   onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
 ): AcpSessionLifecycleResult {
-  const { setStatus: setActivityStatus } = useSessionActivityActions();
+  const { setActivity: setActivityStatus } = useSessionActivityActions();
 
   const [configOptions, setConfigOptions] = useState<ConfigOption[]>([]);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -74,7 +74,7 @@ export function useAcpSessionLifecycle(
 
   useEffect(() => {
     const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
-      setActivityStatus(sessionKey, "idle");
+      setActivityStatus(sessionKey, "idle", null);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -85,9 +85,10 @@ export function useAcpSessionLifecycle(
     const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
       `acp://permission-request/${sessionKey}`,
       (event) => {
+        const permPayload = event.payload.payload;
         setPendingPermission({
           requestId: event.payload.request_id,
-          payload: event.payload.payload,
+          payload: permPayload,
         });
         setActivityStatus(sessionKey, "awaiting_input");
       },

@@ -60,12 +60,15 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<ActivityVisibility>().ok())
         .unwrap_or_default();
 
+    let accent_color = settings_map.get("accent_color").filter(|v| !v.is_empty()).cloned();
+
     Ok(AppSettings {
         theme_preference,
         auto_mode,
         max_concurrent_agents,
         thinking_visibility,
         tool_call_visibility,
+        accent_color,
         updated_at,
     })
 }
@@ -81,12 +84,14 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let max_concurrent_str = settings.max_concurrent_agents.to_string();
     let thinking_vis = settings.thinking_visibility.to_string();
     let tool_call_vis = settings.tool_call_visibility.to_string();
+    let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
         ("max_concurrent_agents", max_concurrent_str.as_str()),
         ("thinking_visibility", thinking_vis.as_str()),
         ("tool_call_visibility", tool_call_vis.as_str()),
+        ("accent_color", accent_color_str.as_str()),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -132,6 +137,7 @@ mod tests {
             max_concurrent_agents: 3,
             thinking_visibility: crate::models::ActivityVisibility::Auto,
             tool_call_visibility: crate::models::ActivityVisibility::Auto,
+            accent_color: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 

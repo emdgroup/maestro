@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from "react";
 import { Button } from "@/ui/button";
-import type { SshConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
@@ -14,11 +14,12 @@ import {
 import { usePathNavigation } from "@/utils/hooks/usePathNavigation";
 import { useKeyboardNavigation } from "@/utils/hooks/useKeyboardNavigation";
 import { useFilePickerInitialization } from "@/utils/hooks/useFilePickerInitialization";
-import { useListDirectories } from "@/services/connection.service";
+import { useListDirectories, useWslDirectories, useWslHome } from "@/services/connection.service";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
-  onProjectSelect: (path: string, connectionId?: number) => void;
+  wslConnection?: WslConnection | null;
+  onProjectSelect: (path: string, connectionId?: number, wslConnectionId?: number) => void;
   loading?: boolean;
 }
 
@@ -26,27 +27,40 @@ const DRIVES_ROOT = "<<DRIVES>>";
 
 export function FilePicker({
   connection,
+  wslConnection,
   onProjectSelect,
   loading: externalLoading = false,
 }: FilePickerProps) {
-  const isLocal = !connection;
+  const isLocal = !connection && !wslConnection;
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Custom hooks handle all business logic
   const keyboard = useKeyboardNavigation();
   const { setSelectedIndex: resetKeyboardIndex } = keyboard;
   const initialization = useFilePickerInitialization(isLocal, connection);
+  const { data: wslHome } = useWslHome(wslConnection?.distro_name ?? "");
   const navigation = usePathNavigation(isLocal, initialization.drives);
-  const { data: directories = [], isLoading: directoriesLoading } = useListDirectories(
+  const { data: sshDirectories = [], isLoading: sshLoading } = useListDirectories(
     connection?.id,
     navigation.currentPath,
   );
+  const { data: wslDirectories = [], isLoading: wslLoading } = useWslDirectories(
+    wslConnection?.distro_name ?? "",
+    navigation.currentPath,
+  );
+  const directories = wslConnection ? wslDirectories : sshDirectories;
+  const directoriesLoading = wslConnection ? wslLoading : sshLoading;
 
-  // Set initial path when initialization completes
+  // Set initial path when initialization completes (WSL uses home dir, local/SSH use standard init)
   const prevInitialized = useRef(false);
-  if (!prevInitialized.current && initialization.isInitialized && initialization.initialPath && !navigation.currentPath) {
-    prevInitialized.current = true;
-    navigation.setCurrentPath(initialization.initialPath);
+  if (!prevInitialized.current && !navigation.currentPath) {
+    if (wslConnection && wslHome) {
+      prevInitialized.current = true;
+      navigation.setCurrentPath(wslHome);
+    } else if (!wslConnection && initialization.isInitialized && initialization.initialPath) {
+      prevInitialized.current = true;
+      navigation.setCurrentPath(initialization.initialPath);
+    }
   }
 
   // Filter directories based on showHidden toggle
@@ -120,8 +134,8 @@ export function FilePicker({
   }, [keyboard, navigation, initialization.drives, visibleDirectories, isLocal]);
 
   const handleSelectCurrentDirectory = useCallback(() => {
-    onProjectSelect(navigation.currentPath, connection?.id);
-  }, [navigation.currentPath, connection?.id, onProjectSelect]);
+    onProjectSelect(navigation.currentPath, connection?.id, wslConnection?.id);
+  }, [navigation.currentPath, connection?.id, wslConnection?.id, onProjectSelect]);
 
   // Compute loading state
   const loading = directoriesLoading || initialization.isLoading;
@@ -137,6 +151,11 @@ export function FilePicker({
         {connection && (
           <p className="text-sm text-muted-foreground">
             Connected to {connection.connection_string}
+          </p>
+        )}
+        {wslConnection && (
+          <p className="text-sm text-muted-foreground">
+            WSL: {wslConnection.distro_name}
           </p>
         )}
       </div>

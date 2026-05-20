@@ -51,6 +51,15 @@ pub struct WorktreeWithStatus {
     pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
 }
 
+/// How a session is executed: via the Agent Control Protocol or a raw PTY.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionMode {
+    Acp,
+    Pty,
+}
+
 /// Active session info — in-memory only, returned by get_active_sessions
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -58,7 +67,7 @@ pub struct ActiveSessionInfo {
     pub session_key: i32,
     pub session_name: Option<String>,
     pub agent_id: Option<String>,
-    pub execution_mode: String,  // "acp" or "pty"
+    pub execution_mode: ExecutionMode,
     pub started_at: String,
     pub task_id: Option<i32>,
     pub task_name: Option<String>,

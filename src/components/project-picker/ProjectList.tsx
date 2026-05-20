@@ -41,15 +41,16 @@ export function ProjectList() {
   const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
   const { mutateAsync: gitInitProject } = useGitInitProject();
 
-  const handleProjectSelect = async (selectedPath: string, connectionId?: number) => {
+  const handleProjectSelect = async (selectedPath: string, connectionId?: number, wslConnectionId?: number) => {
     setProjectLoading(true);
     try {
-      if (!connectionId) {
+      if (!connectionId && !wslConnectionId) {
         await gitInitProject({ path: selectedPath, connectionId: null });
       }
       const created = await createProject({
         path: selectedPath,
         connectionId: connectionId ?? null,
+        wslConnectionId: wslConnectionId ?? null,
       });
       const project = await api.openProject(created.id);
       try {
@@ -163,6 +164,7 @@ export function ProjectList() {
           <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
             <FilePicker
               connection={activeConnection?.sshConnection}
+              wslConnection={activeConnection?.wslConnection}
               onProjectSelect={handleProjectSelect}
               loading={projectLoading}
             />

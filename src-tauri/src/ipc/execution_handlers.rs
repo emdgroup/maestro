@@ -701,6 +701,34 @@ pub async fn spawn_interactive_execution(
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
         app_state.ssh.pty_sessions.lock().await.insert(log_id, pty_handle);
+    } else if let crate::models::GitConnection::Wsl { ref distro, .. } = git_conn {
+        let shell = "wsl.exe".to_string();
+        let args = vec![
+            "-d".to_string(),
+            distro.clone(),
+            "--cd".to_string(),
+            worktree_abs_path.clone(),
+        ];
+        // cwd for wsl.exe process itself is irrelevant — --cd sets the WSL working dir.
+        // Use a safe Windows path so the PTY spawn doesn't fail on a Linux path.
+        let windows_cwd = std::env::var("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
+        let pty_session = crate::process::spawn_agent_cli_pty(
+            log_id,
+            shell,
+            args,
+            windows_cwd,
+        )
+        .await?;
+
+        let app_state_arc: Arc<AppState> = (*app_state).clone();
+        let mut sessions = app_state_arc.pty.sessions.lock().await;
+        sessions.insert(
+            log_id,
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
+        drop(sessions);
     } else {
         #[cfg(windows)]
         let shell = resolve_windows_shell();

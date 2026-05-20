@@ -63,6 +63,8 @@
   /* Custom colors */
   --success: oklch(55% 0.15 145);
   --warning: oklch(60% 0.15 70);
+  --info: oklch(55% 0.15 250);
+  --purple: oklch(50% 0.18 300);
 
   /* Diff colors */
   --diff-add-bg: oklch(95% 0.05 145 / 0.5);
@@ -105,6 +107,8 @@
 
   --success: oklch(65% 0.15 145);
   --warning: oklch(75% 0.15 70);
+  --info: oklch(70% 0.15 250);
+  --purple: oklch(70% 0.18 300);
 
   /* Diff colors */
   --diff-add-bg: oklch(25% 0.06 145 / 0.5);
@@ -137,6 +141,8 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-purple: var(--purple);
   --color-diff-add-bg: var(--diff-add-bg);
   --color-diff-add-fg: var(--diff-add-fg);
   --color-diff-del-bg: var(--diff-del-bg);
@@ -349,6 +355,34 @@
 
 @utility animate-glow {
   animation: glow-ring 2.5s ease-in-out infinite;
+}
+
+@keyframes glow-ring-info {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0px color-mix(in oklch, var(--info) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 30%, transparent);
+  }
+}
+
+@utility animate-glow-info {
+  animation: glow-ring-info 2.5s ease-in-out infinite;
+}
+
+@keyframes glow-ring-purple {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0px color-mix(in oklch, var(--purple) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--purple) 30%, transparent);
+  }
+}
+
+@utility animate-glow-purple {
+  animation: glow-ring-purple 2.5s ease-in-out infinite;
 }
 
 @keyframes rail-comet {

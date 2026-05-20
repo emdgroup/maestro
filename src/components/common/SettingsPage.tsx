@@ -14,6 +14,7 @@ import { showSuccessToast } from "./ErrorToast";
 interface SettingsPageProps {
   projectId: number;
   connectionId: number | null;
+  wslConnectionId?: number | null;
 }
 
 interface ProjectSettingsFormData {
@@ -28,7 +29,7 @@ export interface SettingsPageHandle {
 
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
-  ({ projectId, connectionId }, ref) => {
+  ({ projectId, connectionId, wslConnectionId }, ref) => {
     const { control, handleSubmit, watch, setValue, reset } = useForm<ProjectSettingsFormData>({
       defaultValues: { default_agent: "", default_model: "" },
     });
@@ -37,7 +38,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
-    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId);
+    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId, wslConnectionId ?? null);
     const { data: agentCache, isLoading: cacheLoading } = useAgentCacheQuery(
       projectId,
       selectedAgent || null,

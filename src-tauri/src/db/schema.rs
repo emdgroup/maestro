@@ -1,10 +1,19 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
-pub const SCHEMA_V14: &str = r#"
+pub const SCHEMA_V15: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
+
+-- WSL connections table: one row per WSL distro the user has connected to
+CREATE TABLE IF NOT EXISTS wsl_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    distro_name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    last_used_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 
 -- Projects table: stores project metadata
 CREATE TABLE IF NOT EXISTS projects (
@@ -14,7 +23,8 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_opened TEXT,
-    connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL
+    connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL,
+    wsl_connection_id INTEGER REFERENCES wsl_connections(id) ON DELETE SET NULL
 );
 
 -- Tasks table: stores individual tasks for projects
@@ -175,12 +185,13 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 DROP TABLE IF EXISTS tasks;
                 DROP TABLE IF EXISTS known_hosts;
                 DROP TABLE IF EXISTS projects;
+                DROP TABLE IF EXISTS wsl_connections;
                 DROP TABLE IF EXISTS ssh_connections;
                 DROP TABLE IF EXISTS settings;
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V14)?;
+        conn.execute_batch(SCHEMA_V15)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -220,6 +231,7 @@ mod tests {
         assert!(tables.contains(&"task_instructions".to_string()));
         assert!(tables.contains(&"known_hosts".to_string()));
         assert!(tables.contains(&"ssh_connections".to_string()));
+        assert!(tables.contains(&"wsl_connections".to_string()));
         assert!(tables.contains(&"session_aliases".to_string()));
         assert!(!tables.contains(&"execution_logs".to_string()), "execution_logs removed in V13");
 
@@ -234,7 +246,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 14);
+        assert_eq!(version, 15);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

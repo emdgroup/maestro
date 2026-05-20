@@ -2,33 +2,56 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 
-export type SessionActivityStatus = "spawning" | "working" | "idle" | "awaiting_input";
+export type SessionActivityStatus = "spawning" | "thinking" | "acting" | "awaiting_input" | "idle";
+
+export interface SessionActivityInfo {
+  status: SessionActivityStatus;
+  stateChangedAt: number;
+  label: string | null;
+}
 
 interface SessionActivityState {
-  statuses: Record<number, SessionActivityStatus>;
-  setStatus: (executionId: number, status: SessionActivityStatus) => void;
-  removeStatus: (executionId: number) => void;
+  sessions: Record<number, SessionActivityInfo>;
+  setActivity: (executionId: number, status: SessionActivityStatus, label?: string | null) => void;
+  removeActivity: (executionId: number) => void;
 }
 
 export const useSessionActivityStore = create<SessionActivityState>()(
   immer((set) => ({
-    statuses: {},
-    setStatus: (executionId, status) =>
+    sessions: {},
+    setActivity: (executionId, status, label = null) =>
       set((state) => {
-        state.statuses[executionId] = status;
+        const existing = state.sessions[executionId];
+        if (existing) {
+          const normalizedLabel = label ?? null;
+          if (existing.status === status && existing.label === normalizedLabel) return;
+          if (existing.status !== status) {
+            existing.stateChangedAt = Date.now();
+          }
+          existing.status = status;
+          existing.label = normalizedLabel;
+        } else {
+          state.sessions[executionId] = {
+            status,
+            stateChangedAt: Date.now(),
+            label: label ?? null,
+          };
+        }
       }),
-    removeStatus: (executionId) =>
+    removeActivity: (executionId) =>
       set((state) => {
-        delete state.statuses[executionId];
+        delete state.sessions[executionId];
       }),
   })),
 );
 
-export const useActivityStatuses = () => useSessionActivityStore((s) => s.statuses);
+export const useActivitySessions = () => useSessionActivityStore((s) => s.sessions);
+export const useSessionActivity = (key: number | undefined) =>
+  useSessionActivityStore((s) => (key != null ? s.sessions[key] : undefined));
 export const useSessionActivityActions = () =>
   useSessionActivityStore(
     useShallow((s) => ({
-      setStatus: s.setStatus,
-      removeStatus: s.removeStatus,
+      setActivity: s.setActivity,
+      removeActivity: s.removeActivity,
     })),
   );

@@ -52,6 +52,8 @@ pub struct AppSettings {
     pub thinking_visibility: ActivityVisibility,
     #[serde(default)]
     pub tool_call_visibility: ActivityVisibility,
+    #[serde(default)]
+    pub accent_color: Option<String>,
     pub updated_at: String,
 }
 
@@ -63,6 +65,7 @@ impl Default for AppSettings {
             max_concurrent_agents: 3,
             thinking_visibility: ActivityVisibility::Auto,
             tool_call_visibility: ActivityVisibility::Auto,
+            accent_color: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
     }

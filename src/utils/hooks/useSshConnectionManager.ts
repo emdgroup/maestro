@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback } from "react";
-import type { SshConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
   useSshConnections,
@@ -9,6 +9,9 @@ import {
   useConnectSshWithKey,
   useCreateSshConnection,
   useDeleteSshConnection,
+  useWslDistros,
+  useWslConnections,
+  useSaveWslConnection,
 } from "@/services/connection.service";
 import type { AuthSubmission } from "@/components/project-picker/SshAuthModal";
 
@@ -34,6 +37,9 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   const [loading, setLoading] = useState(false);
   const [isNewConnection, setIsNewConnection] = useState(false);
   const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
+  const { data: wslDistros = [] } = useWslDistros();
+  const { data: wslConnections = [] } = useWslConnections();
+  const { mutateAsync: saveWslConnection } = useSaveWslConnection();
 
   // Service mutation hooks for SSH operations
   const { mutate: connectSsh } = useConnectSsh();
@@ -62,23 +68,39 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     [],
   );
 
-  const connections = useMemo(
-    () => [local.current, ...sshConnections.map(buildConnection)],
-    [sshConnections, buildConnection],
+  const buildWslConnection = useCallback(
+    (distroName: string, savedConn: WslConnection | undefined): Connection => ({
+      type: "wsl" as const,
+      id: `wsl-${distroName}`,
+      displayName: distroName,
+      subtitle: "WSL",
+      wslConnection: savedConn,
+    }),
+    [],
   );
 
-  const keyMap = new Map<string, boolean>();
-  for (const conn of sshConnections) {
-    const method = conn.auth_method;
-    if (typeof method === "object" && "KeyFile" in method) {
-      const { path, save_passphrase } = method.KeyFile;
-      keyMap.set(path, (keyMap.get(path) ?? false) || save_passphrase);
+  const connections = useMemo(() => {
+    const wslItems = wslDistros.map((distro) => {
+      const saved = wslConnections.find((c) => c.distro_name === distro.name);
+      return buildWslConnection(distro.name, saved);
+    });
+    return [local.current, ...wslItems, ...sshConnections.map(buildConnection)];
+  }, [sshConnections, wslDistros, wslConnections, buildConnection, buildWslConnection]);
+
+  const savedKeyFiles = useMemo(() => {
+    const keyMap = new Map<string, boolean>();
+    for (const conn of sshConnections) {
+      const method = conn.auth_method;
+      if (typeof method === "object" && "KeyFile" in method) {
+        const { path, save_passphrase } = method.KeyFile;
+        keyMap.set(path, (keyMap.get(path) ?? false) || save_passphrase);
+      }
     }
-  }
-  const savedKeyFiles = Array.from(keyMap.entries()).map(([path, hasSavedPassphrase]) => ({
-    path,
-    hasSavedPassphrase,
-  }));
+    return Array.from(keyMap.entries()).map(([path, hasSavedPassphrase]) => ({
+      path,
+      hasSavedPassphrase,
+    }));
+  }, [sshConnections]);
 
   const getConnectionById = async (id: number): Promise<Connection | null> => {
     try {
@@ -116,6 +138,15 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     setUsername(connection.sshConnection?.username ?? "");
     if (connection.type === "local") {
       onConnectionSuccess(local.current);
+    } else if (connection.type === "wsl") {
+      setLoading(true);
+      try {
+        const saved = await saveWslConnection({ distroName: connection.displayName, displayName: null });
+        const wslConn: Connection = { ...connection, wslConnection: saved };
+        onConnectionSuccess(wslConn);
+      } finally {
+        setLoading(false);
+      }
     } else if (connection.sshConnection) {
       await initiateConnection(connection.sshConnection.id);
     }

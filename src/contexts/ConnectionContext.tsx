@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
-import type { SshConnection, PreflightResult } from "@/types/bindings";
+import type { SshConnection, WslConnection, PreflightResult } from "@/types/bindings";
 import { commands } from "@/types/bindings";
 import { useConfigStore } from "@/store/configStore";
 
 type View = "connections" | "projects";
 
-type ConnectionType = "local" | "ssh";
+type ConnectionType = "local" | "ssh" | "wsl";
 
 export type PreflightStatus = "idle" | "checking" | "passed" | "failed" | "failed-ignored";
 
@@ -16,6 +16,7 @@ export interface Connection {
   subtitle?: string;
   metadata?: string;
   sshConnection?: SshConnection;
+  wslConnection?: WslConnection;
 }
 
 interface ConnectionContextValue {
@@ -52,11 +53,16 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
         ? connection.sshConnection.id
         : null;
 
+    const wslConnectionId =
+      connection.type === "wsl" && connection.wslConnection
+        ? connection.wslConnection.id
+        : null;
+
     setPreflightStatus("checking");
     setPreflightResult(null);
     setPreflightError(null);
 
-    const response = await commands.preflightConnection(connectionId);
+    const response = await commands.preflightConnection(connectionId, wslConnectionId);
     if (response.status === "error") {
       setPreflightError(response.error as string);
       setPreflightStatus("failed");
