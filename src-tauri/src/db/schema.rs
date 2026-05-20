@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 
-pub const SCHEMA_V15: &str = r#"
+pub const SCHEMA_V16: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     model_override TEXT,
     mcp_allowlist TEXT,
     skills_override TEXT,
+    external_url TEXT,
+    external_updated_at TEXT,
+    labels TEXT DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -191,7 +194,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V15)?;
+        conn.execute_batch(SCHEMA_V16)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -246,7 +249,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 15);
+        assert_eq!(version, 16);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -263,5 +266,17 @@ mod tests {
         assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
         assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
         assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");
+
+        // Verify tasks table has new V16 columns
+        let task_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(tasks)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(task_columns.contains(&"external_url".to_string()));
+        assert!(task_columns.contains(&"external_updated_at".to_string()));
+        assert!(task_columns.contains(&"labels".to_string()));
     }
 }
