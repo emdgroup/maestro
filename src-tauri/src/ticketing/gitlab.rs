@@ -24,16 +24,7 @@ struct GitLabIssueResponse {
     updated_at: Option<String>,
 }
 
-/// Strip trailing slashes and ensure the URL has an https:// scheme.
-/// If the user explicitly provides http://, that is preserved.
-pub fn normalize_instance_url(url: &str) -> String {
-    let trimmed = url.trim_end_matches('/');
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        trimmed.to_string()
-    } else {
-        format!("https://{}", trimmed)
-    }
-}
+use super::normalize_instance_url;
 
 /// Validate a GitLab PAT, resolve the numeric project ID from the project path,
 /// save the TicketingConfig, and store the token.
