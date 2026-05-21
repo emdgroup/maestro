@@ -61,13 +61,14 @@ impl TokenManager {
 
         if let Some(ref token) = *cached {
             if let Some(exp) = token.expires_at {
-                if exp - now_unix() >= 60 {
+                if exp > 0 && exp - now_unix() >= 60 {
                     return Ok(Some(token.clone()));
                 }
+                // Expired, nearly expired, or zero/invalid expiry — evict
             } else {
                 return Ok(Some(token.clone()));
             }
-            // Token expired or nearly expired — evict and fall through to keychain read
+            // Fall through to keychain read after evicting the stale cache entry
             *cached = None;
         }
 
