@@ -40,6 +40,16 @@ pub async fn save_ticketing_config(
         ).map_err(|_| format!("Project {} not found", project_id))?
     };
 
+    if config.provider.is_some() {
+        // Clear any stale credential so the next fetch_remote_issues is forced
+        // through a validate_and_store path. Best-effort — not fatal if no token stored.
+        let _ = app_state.token_manager.delete_token(
+            project_id,
+            &app_state.app_data_dir,
+            &app_state.app_handle,
+        );
+    }
+
     let config = TicketingConfig {
         updated_at: now_rfc3339(),
         ..config
