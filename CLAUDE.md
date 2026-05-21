@@ -71,11 +71,12 @@ Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e
 
 ### Tech Stack
 
-- **Frontend**: React 19 + TypeScript, Vite build
+- **Frontend**: React 19 + TypeScript, Vite build, Tailwind CSS 4.1
 - **Backend**: Tauri 2 (Rust), SQLite for persistence
 - **State Management**: Zustand with Immer middleware
-- **UI Components**: Base UI (Dialog, Select)
-- **Type Safety**: ts-rs for Rust → TypeScript type generation
+- **UI Components**: shadcn/ui components
+- **Data Fetching**: TanStack Query for all IPC operations (37+ hooks)
+- **Type Safety**: ts-rs + tauri-specta for Rust → TypeScript type generation
 
 ### Code Structure
 
@@ -98,7 +99,10 @@ Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e
 - `ssh/` — SSH connections (session, password manager)
 - `git/` — Git remote operations
 - `process/` — PTY/process spawning (local + remote)
-- `websocket/` — WebSocket streaming to frontend
+- `streaming/` — WebSocket streaming to frontend
+- `wsl.rs` — WSL distro detection and connection helpers
+- `project_lock.rs` — file-based single-instance project locking
+- `error.rs` — shared error types
 
 **maestro-server (`maestro-server/src/`):**
 
@@ -108,22 +112,23 @@ Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI
 
 Shared crate defining the JSON message types between maestro (Tauri) and maestro-server.
 
+**Cargo workspace:** Root `Cargo.toml` defines three members: `src-tauri`, `maestro-server`, `maestro-protocol`. Build from repo root with `cargo build` or from `src-tauri/` for the Tauri app only.
+
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V12 (destructive migration on version mismatch).
+SQLite with foreign key constraints enabled. Schema V15 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `worktrees`, `execution_logs`, `ssh_connections`, `settings`, `acp_sessions`, `acp_messages`, `reviews`, `review_changes`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `session_aliases`
 
 ### IPC Communication
 
-Frontend invokes Rust commands via `@tauri-apps/api/core`:
+All IPC uses TanStack Query — components never call `invoke()` directly. The pattern is:
 
-```typescript
-import { invoke } from "@tauri-apps/api/core";
-const tasks = await invoke<Task[]>("get_tasks", { projectId: 1 });
+```
+Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta` in `lib.rs`.
+Service functions in `src/services/` wrap `invoke()`. Hooks in `src/utils/hooks/` wrap services via `useQuery`/`useMutation`. Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta` in `lib.rs`.
 
 ## Key Patterns
 
@@ -150,6 +155,16 @@ When modifying Rust models:
 1. Run `pnpm tauri:gen` (runs `cargo test generate_typescript_bindings`)
 2. TS types appear in `src/types/bindings.ts`
 3. Import in React components
+
+### Project-Local Storage (`.maestro/`)
+
+Each project has a `.maestro/` folder in its root with:
+- `settings.json` — `ProjectConfig` (non-sensitive project settings)
+- `state.json` — `ProjectState` (runtime/cached state)
+- `bin/` — bundled `maestro-server` binary for that project
+- `attachments/` — agent file attachments
+
+Read/write via `project_storage.rs`. Follow this pattern when adding new project-scoped config (e.g., ticketing config goes in `.maestro/ticketing.json`).
 
 ## Project Conventions
 
@@ -187,13 +202,16 @@ When modifying Rust models:
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Schema version: 12. Migration is destructive (drops all tables on version mismatch)
+- Schema version: 15. Migration is destructive (drops all tables on version mismatch)
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
 - All IPC commands use `Arc<AppState>` for thread-safe DB access
 - ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
 - Schema migration drops all tables on version mismatch (no data preservation strategy)
+- Projects have three connection types: local, SSH (via `ssh_connections`), WSL (via `wsl_connections`)
+- Handlers needing both a `Project` and `GitConnection` use `get_project_with_git_conn()` from `db/connection.rs`
+- `AcpState` manages: active sessions, discovery cache, connection servers, agent cache, session pool, deploy locks, restorable sessions
 
 # Rust coding guidelines
 
