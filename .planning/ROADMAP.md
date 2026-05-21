@@ -166,7 +166,9 @@ Plans:
   2. For GitLab and Forgejo: user provides instance URL + PAT; `save_credentials` validates against `/api/v4/user` (GitLab) or `/api/v1/user` (Forgejo), stores token in keychain, and returns `displayName`
   3. Given stored credentials, each provider client returns open issues (PRs excluded for GitHub) with `title`, `body`, `labels`, `url`, `updated_at`, and `external_id` in `github:{number}`, `gitlab:{project_id}/{issue_iid}`, or `forgejo:{number}` format
   4. `ProviderConfig` enum updated to include `Forgejo`, `JiraCloud`, `JiraServer`, `AzureDevOps` variants; `cargo check` and `pnpm tauri:gen` both pass; `tauri-plugin-oauth` and `oauth2` crates removed from Cargo.toml
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 53-01-PLAN.md — ProviderConfig + RemoteIssue models, three provider modules, 5 IPC commands
 
 ### Phase 54: Linear/Jira/AzDO Auth + API Clients
 **Goal**: Users can connect Linear (API key), Jira Cloud (email + API token), Jira Server 8.14+ (PAT), and Azure DevOps (PAT); the app validates credentials, stores them in the keychain, and fetches open issues mapped to `RemoteIssue`
@@ -239,7 +241,7 @@ Plans:
 | 50 - Infrastructure | v1.6 | 2/2 | Complete | 2026-05-21 |
 | 51 - Data Foundation | v1.6 | 2/2 | Complete | 2026-05-20 |
 | 52 - Token Management | v1.6 | 1/1 | Complete | 2026-05-21 |
-| 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 0/TBD | Not started | - |
+| 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 0/1 | In progress | - |
 | 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 0/TBD | Not started | - |
 | 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
 | 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
