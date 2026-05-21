@@ -40,6 +40,9 @@ pub struct GitHubConfig {
 pub struct GitLabConfig {
     pub instance_url: String,
     pub project_path: String,
+    // i64 stored in Rust for precision; exported as number via i32 approximation in TypeScript
+    // (GitLab project IDs in practice fit well within i32 range)
+    #[specta(type = i32)]
     pub project_id: i64,
 }
 

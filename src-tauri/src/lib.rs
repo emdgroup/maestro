@@ -124,7 +124,13 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_wsl_connections,
             // Ticketing config
             crate::ipc::get_ticketing_config,
-            crate::ipc::save_ticketing_config
+            crate::ipc::save_ticketing_config,
+            // Ticketing providers (Phase 53)
+            crate::ipc::save_github_credentials,
+            crate::ipc::save_gitlab_credentials,
+            crate::ipc::save_forgejo_credentials,
+            crate::ipc::delete_ticketing_credentials,
+            crate::ipc::fetch_remote_issues,
         ])
 }
 

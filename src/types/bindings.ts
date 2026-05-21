@@ -1287,6 +1287,46 @@ async saveTicketingConfig(projectId: number, config: TicketingConfig) : Promise<
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async saveGithubCredentials(projectId: number, owner: string, repo: string, token: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_github_credentials", { projectId, owner, repo, token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveGitlabCredentials(projectId: number, instanceUrl: string, projectPath: string, token: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_gitlab_credentials", { projectId, instanceUrl, projectPath, token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveForgejoCredentials(projectId: number, instanceUrl: string, owner: string, repo: string, token: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_forgejo_credentials", { projectId, instanceUrl, owner, repo, token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTicketingCredentials(projectId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_ticketing_credentials", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fetchRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_remote_issues", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1322,6 +1362,7 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  */
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; updated_at: string }
+export type AzureDevOpsConfig = { org_url: string; project: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1345,11 +1386,13 @@ export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_de
 export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
+export type ForgejoConfig = { instance_url: string; owner: string; repo: string }
 export type GitHubConfig = { owner: string; repo: string }
-export type GitLabConfig = { host: string; project_id: string }
-export type JiraConfig = { host: string; email: string; project_key: string; jql_filter: string | null }
+export type GitLabConfig = { instance_url: string; project_path: string; project_id: number }
+export type JiraCloudConfig = { site_url: string; email: string; project_key: string }
+export type JiraServerConfig = { base_url: string; project_key: string }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-export type LinearConfig = { team_id: string }
+export type LinearConfig = { team_id: string | null }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
@@ -1366,9 +1409,13 @@ export type ProjectConfigRequest = { default_agent: string | null; default_model
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
 /**
  * Active ticketing provider — only one provider can be configured at a time.
- * Serialized as an externally-tagged enum: `{"jira": {...}}` (serde default for enums).
+ * Serialized as an externally-tagged enum: `{"github": {...}}` (serde default for enums).
  */
-export type ProviderConfig = { jira: JiraConfig } | { github: GitHubConfig } | { gitlab: GitLabConfig } | { linear: LinearConfig }
+export type ProviderConfig = { github: GitHubConfig } | { gitlab: GitLabConfig } | { forgejo: ForgejoConfig } | { linear: LinearConfig } | { jiracloud: JiraCloudConfig } | { jiraserver: JiraServerConfig } | { azuredevops: AzureDevOpsConfig }
+/**
+ * A remote issue fetched from a ticketing provider, ready for import as a Task.
+ */
+export type RemoteIssue = { external_id: string; title: string; body: string | null; url: string; labels: string[]; updated_at: string | null }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
