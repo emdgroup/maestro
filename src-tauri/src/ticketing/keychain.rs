@@ -73,11 +73,17 @@ impl KeychainStore {
     ) -> Result<KeychainOutcome<()>, String> {
         let entry = Entry::new(SERVICE, &username(project_id))
             .map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.delete_credential() {
+        let keyring_result = entry.delete_credential();
+        // Always attempt to clean up the file fallback too, regardless of whether
+        // the keyring had an entry — a token may have been written to the file
+        // fallback on a previous run where the keyring was unavailable, and later
+        // the keyring became accessible again. Without this, the stale .enc file
+        // would persist even after a successful "delete credentials" operation.
+        let _ = Self::delete_file(project_id, app_data_dir);
+        match keyring_result {
             Ok(()) => Ok(KeychainOutcome::Keychain(())),
             Err(keyring::Error::NoEntry) => Ok(KeychainOutcome::Keychain(())),
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
-                Self::delete_file(project_id, app_data_dir)?;
                 Ok(KeychainOutcome::FileFallback(()))
             }
             Err(e) => Err(format!("Failed to delete token: {}", e)),
