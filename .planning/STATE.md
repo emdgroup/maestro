@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Ticketing Integration
-status: in_progress
-stopped_at: Phase 52 complete — Phase 53-56 pivoted to API key auth; ready for Phase 53 planning
-last_updated: "2026-05-21T00:00:00.000Z"
-last_activity: 2026-05-21 -- Phase 52 complete (5 tasks, 9 tests pass)
+status: between_phases
+stopped_at: Phase 53 complete
+last_updated: "2026-05-21T00:00:00Z"
+last_activity: 2026-05-21 -- Phase 53 complete (GitHub/GitLab/Forgejo PAT auth + API clients)
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 2
-  completed_plans: 4
-  percent: 43
+  completed_phases: 4
+  total_plans: 7
+  completed_plans: 7
+  percent: 57
 ---
 
 # Project State: v1.6 — Ticketing Integration
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 53 — github-gitlab-forgejo-auth
+**Current focus:** Phase 54 — Linear/Jira/AzDO Auth + API Clients (next)
 
 ## Current Position
 
-Phase: 52 — COMPLETE
-Plan: 1 of 1
-Status: Phase 52 complete
-Last activity: 2026-05-21 -- Phase 52 complete (TokenManager + KeychainStore)
+Phase: 53 (api-key-auth) — COMPLETE
+Next: Phase 54 (linear-jira-azdo)
+Status: Ready to plan Phase 54
+Last activity: 2026-05-21 -- Phase 53 complete (GitHub/GitLab/Forgejo PAT auth + API clients)
 
 Progress: [██████████] 100%
 
@@ -73,16 +73,15 @@ Key v1.6 decisions locked in at roadmap creation:
 
 ### Pending Todos
 
-None.
+- `/gsd:code-review 53 --fix` (optional): 3 advisory findings from Phase 53 code review — CR-01 URL encoding for owner/repo in GitHub/Forgejo paths, CR-02 stale .enc file cleanup on delete, CR-03 SHA-256 key stretching in file fallback
 
 ### Blockers/Concerns
 
-- **Atlassian localhost OAuth acceptance:** Implied but not explicitly documented — validate by registering a test Atlassian OAuth app before committing Jira implementation effort in Phase 53
 - **Linear GraphQL complexity budget:** Not published; test proposed minimal-field query empirically before finalizing Phase 54 Linear plan
-- **graphql_client reqwest feature pin:** Verify at dependency install (Phase 50) whether graphql_client 0.16.0 reqwest feature pins reqwest 0.12; if so, use `default-features = false` and call generated types via reqwest 0.13 client
+- **graphql_client reqwest feature pin:** Verify at dependency install whether graphql_client 0.16.0 reqwest feature pins reqwest 0.12; if so, use `default-features = false` and call generated types via reqwest 0.13 client
 
 ## Session Continuity
 
-Last session: 2026-05-21T00:00:00.000Z
-Stopped at: Phase 52 complete
-Resume file: .planning/phases/53-api-key-auth/PLAN.md (not yet created)
+Last session: 2026-05-21T00:00:00Z
+Stopped at: Phase 53 complete
+Resume file: None — ready for Phase 54 planning
