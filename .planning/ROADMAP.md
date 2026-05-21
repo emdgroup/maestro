@@ -114,7 +114,7 @@ See phase details below (archived after milestone close).
 
 **Milestone Goal:** Connect each project to one ticket tracking tool (GitHub Issues, GitLab Issues, Linear, or Jira Cloud) so users can browse and import open issues as Backlog tasks via an import modal, with per-project OAuth authentication and non-destructive change detection.
 
-- [ ] **Phase 50: Infrastructure** — CSP expansion + tauri-plugin-oauth wiring + new Cargo dependencies
+- [x] **Phase 50: Infrastructure** — CSP expansion + tauri-plugin-oauth wiring + new Cargo dependencies (completed 2026-05-21)
 - [x] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal (completed 2026-05-20)
 - [ ] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token refresh for expiring providers
 - [ ] **Phase 53: OAuth Flows** — Per-provider PKCE/3LO state machines for GitHub, GitLab, Linear, and Jira
