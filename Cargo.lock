@@ -1059,6 +1059,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array 0.14.7",
+ "rand_core 0.6.4",
  "typenum",
 ]
 
@@ -3333,15 +3334,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
+name = "machine-uid"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe0d6336d341b10ae80e099b8f3c59f34bf8aef66ef25e83aa98bf2955c0ae7"
+dependencies = [
+ "libc",
+ "windows-registry",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "maestro"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm 0.10.3",
  "base64 0.22.1",
  "chrono",
  "fs2",
  "graphql_client",
  "image",
  "keyring",
+ "machine-uid",
  "maestro-protocol",
  "oauth2",
  "octocrab",
@@ -3352,6 +3366,7 @@ dependencies = [
  "russh-sftp",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "specta",
  "specta-typescript",
  "tauri",
@@ -3360,6 +3375,7 @@ dependencies = [
  "tauri-plugin-oauth",
  "tauri-plugin-opener",
  "tauri-specta",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "urlencoding",
