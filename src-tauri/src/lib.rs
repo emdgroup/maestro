@@ -8,6 +8,7 @@ pub mod git;
 pub mod streaming;
 pub mod acp;
 pub mod project_lock;
+pub mod ticketing;
 pub mod wsl;
 
 pub use db::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
