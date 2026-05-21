@@ -126,9 +126,10 @@ pub async fn fetch_issues(
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
+    let safe_key = project_key.replace('"', "\\\"");
     let jql = format!(
-        "project = {} AND statusCategory != Done ORDER BY updated DESC",
-        project_key
+        "project = \"{}\" AND statusCategory != Done ORDER BY updated DESC",
+        safe_key
     );
     let search_url = format!(
         "{}/rest/api/3/search?maxResults=100&fields=summary,description,labels,updated,self&jql={}",

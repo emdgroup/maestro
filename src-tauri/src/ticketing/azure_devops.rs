@@ -168,11 +168,14 @@ pub async fn fetch_issues(
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     // Step 1: WIQL — get list of work item IDs
+    // Single-quote escaping: WIQL uses '' to escape ' within string literals.
+    let escaped_project = project.replace('\'', "''");
     let wiql_query = format!(
         "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{}' AND [System.State] <> 'Closed'",
-        project
+        escaped_project
     );
-    let wiql_url = format!("{}/{}/_apis/wit/wiql?api-version=7.1", base, project);
+    let encoded_project = urlencoding::encode(project);
+    let wiql_url = format!("{}/{}/_apis/wit/wiql?api-version=7.1", base, encoded_project);
     let wiql_response = client
         .post(&wiql_url)
         .header("Authorization", auth.clone())
@@ -205,7 +208,7 @@ pub async fn fetch_issues(
     }
 
     // Step 2: Batch fetch work item details in chunks of 200
-    let batch_url = format!("{}/{}/_apis/wit/workitemsbatch?api-version=7.1", base, project);
+    let batch_url = format!("{}/{}/_apis/wit/workitemsbatch?api-version=7.1", base, encoded_project);
     let mut results: Vec<RemoteIssue> = Vec::new();
 
     for chunk in ids.chunks(200) {
@@ -245,7 +248,7 @@ pub async fn fetch_issues(
                 external_id: format!("azuredevops:{}", item.id),
                 title: item.fields.title,
                 body: item.fields.description,
-                url: format!("{}/{}/_workitems/edit/{}", base, project, item.id),
+                url: format!("{}/{}/_workitems/edit/{}", base, encoded_project, item.id),
                 labels,
                 updated_at: item.fields.changed_date,
             });
