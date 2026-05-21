@@ -4,6 +4,7 @@ pub mod github;
 pub mod gitlab;
 pub mod forgejo;
 pub mod linear;
+pub mod jira_cloud;
 
 pub use keychain::KeychainStore;
 pub use token_manager::{StoredToken, TokenManager};
