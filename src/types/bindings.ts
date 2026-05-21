@@ -1327,6 +1327,38 @@ async fetchRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], strin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async saveLinearCredentials(projectId: number, apiKey: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_linear_credentials", { projectId, apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listLinearTeams(projectId: number) : Promise<Result<LinearTeam[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_linear_teams", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveJiraCloudCredentials(projectId: number, siteUrl: string, email: string, apiToken: string, projectKey: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_jira_cloud_credentials", { projectId, siteUrl, email, apiToken, projectKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveAzureDevopsCredentials(projectId: number, orgUrl: string, project: string, token: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_azure_devops_credentials", { projectId, orgUrl, project, token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1393,6 +1425,10 @@ export type JiraCloudConfig = { site_url: string; email: string; project_key: st
 export type JiraServerConfig = { base_url: string; project_key: string }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LinearConfig = { team_id: string | null }
+/**
+ * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
+ */
+export type LinearTeam = { id: string; name: string; key: string }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
