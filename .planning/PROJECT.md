@@ -10,9 +10,9 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 ## Current State
 
-**Latest Release:** v1.4 Quality & Worktrees (shipped 2026-04-17)
+**Latest Release:** v1.5 ACP Integration (shipped 2026-05-20)
 
-**Active milestone:** v1.5 — not yet defined. Run `/gsd:new-milestone` to start planning.
+**Active milestone:** v1.6 — Ticketing Integration
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
@@ -103,23 +103,29 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ ACP infrastructure: Cargo workspace, maestro-protocol crate, MaestroAcpClient stub, maestro-server binary — v1.4 (Phase 41)
 - ✓ Full backend code quality sweep (30 findings: panics, DRY, shell injection, password zeroing) — v1.4 (Phases 32-33)
 
-**v1.5 Requirements (in progress):**
+**v1.5 Requirements (shipped 2026-05-20):**
 
 - ✓ maestro-server activation: real ACP stdin/stdout loop, spawn agents, forward prompts/cancels/permissions — v1.5 (Phase 42)
+- ✓ Local ACP session manager in Tauri backend with AppState integration — v1.5 (Phase 43)
+- ✓ DB schema v11 + IPC handlers for ACP session lifecycle — v1.5 (Phase 43)
+- ✓ Agent registry fetch and caching from ACP CDN — v1.5 (Phase 45)
+- ✓ AgentSelector UI: browse and spawn ACP agents from registry — v1.5 (Phase 46)
+- ✓ AgentActivityPanel: structured output (messages, tool calls, diffs) with Tauri event streaming — v1.5 (Phase 47)
+- ✓ PermissionDialog: approve/reject agent permission requests — v1.5 (Phase 48)
+- ✓ Dual-mode execution dispatcher: ACP vs PTY routing — v1.5 (Phase 49)
 
-## Current Milestone: v1.5 ACP Integration
+## Current Milestone: v1.6 Ticketing Integration
 
-**Goal:** Activate ACP protocol integration so users can select agents from the registry, spawn them locally, see structured output (plans, tool calls, diffs), approve/reject permission requests, with PTY fallback for non-ACP agents.
+**Goal:** Connect each project to one ticket tracking tool so users can browse and import issues as Backlog tasks via an import modal, with OAuth auth and change detection.
 
 **Target features:**
-- ~~maestro-server activation: real ACP agent spawning via stdin/stdout message loop~~ ✓ Phase 42
-- Local ACP session manager in Tauri backend with AppState integration
-- DB schema v11 + IPC handlers for ACP session lifecycle
-- Agent registry fetch and caching from ACP CDN
-- AgentSelector UI: browse and spawn ACP agents from registry
-- AgentActivityPanel: structured output (messages, tool calls, diffs) with Tauri event streaming
-- PermissionDialog: approve/reject agent permission requests
-- Dual-mode execution dispatcher: ACP vs PTY routing
+- Remove existing untested GitHub/Jira import code
+- OAuth connection per-project via `tauri-plugin-oauth` (localhost redirect); tokens in OS keychain, config in `.maestro/ticketing.json`
+- Providers: GitHub Issues, GitLab Issues (cloud + self-hosted), Linear, Jira Cloud
+- Import modal triggered from Backlog column: Available / Imported / Changed ticket states, checkbox multi-select
+- Auto-refresh every X min while modal open + manual Refresh button
+- Change detection: store `external_updated_at` at import, flag when source ticket updates
+- Task fields: `external_url`, `external_updated_at`, labels imported
 
 ### Out of Scope
 
