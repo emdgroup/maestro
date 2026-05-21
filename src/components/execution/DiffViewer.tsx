@@ -59,11 +59,11 @@ function HunkCheckboxOverlay({
             checked={hunkSelection?.has(idx) ?? false}
             onCheckedChange={() => onHunkToggle(idx)}
             onClick={(e) => e.stopPropagation()}
-            className="hunk-checkbox border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-3.5 items-center justify-center rounded-[3px] border shadow-xs shrink-0 outline-none"
+            className="hunk-checkbox border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4.5 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
             tabIndex={-1}
           >
-            <CheckboxPrimitive.Indicator className="[&>svg]:size-3 grid place-content-center text-current">
-              <Check className="size-3" />
+            <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+              <Check className="size-3.5" />
             </CheckboxPrimitive.Indicator>
           </CheckboxPrimitive.Root>,
           cell,

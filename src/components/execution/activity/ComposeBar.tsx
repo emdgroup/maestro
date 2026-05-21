@@ -33,6 +33,7 @@ interface ComposeBarProps {
   usageState: UsageState | null;
   onConfigChange: (optionId: string, value: string) => void;
   promptCapabilities?: AcpPromptCapabilities | null;
+  variant?: "centered" | "docked";
 }
 
 const CODE_EXTENSIONS = new Set(["ts", "tsx", "js", "jsx", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "cs", "swift", "kt"]);
@@ -65,6 +66,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     usageState,
     onConfigChange,
     promptCapabilities,
+    variant = "docked",
   },
   ref,
 ) {
@@ -523,9 +525,10 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       <div
         ref={containerRef}
         className={cn(
-          "rounded-2xl border backdrop-blur-[4px] transition-colors duration-200",
+          "rounded-3xl border backdrop-blur-[4px] transition-colors duration-200",
           "bg-input/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
           isFocused ? "border-accent/40" : "border-border/30",
+          variant === "centered" && "shadow-lg",
         )}
       >
         <div className="relative">
@@ -594,7 +597,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
             </div>
           )}
 
-          {/* Textarea + send/stop row */}
+          {/* Textarea row */}
           <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1">
             {logId && (
               <button
@@ -614,62 +617,20 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
               onKeyDown={handleKeyDown}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              placeholder={logId ? "Send a message… (@ files, / commands)" : "Send a message…"}
+              placeholder={logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"}
               rows={1}
               className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed"
             />
-            {isProcessing ? (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
-                title="Cancel"
-              >
-                <svg
-                  viewBox="0 0 42 42"
-                  className="absolute pointer-events-none"
-                  style={{ inset: "-5px", width: "42px", height: "42px", overflow: "visible" }}
-                >
-                  <circle
-                    cx="20"
-                    cy="20"
-                    r="16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeOpacity={1}
-                    strokeWidth={1.8}
-                    strokeLinecap="round"
-                    strokeDasharray="22 79"
-                    style={{
-                      transformBox: "fill-box",
-                      transformOrigin: "center",
-                      animation: "arc-spin-cw 0.9s linear infinite",
-                    }}
-                  />
-                </svg>
-                <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="4" y="4" width="16" height="16" rx="2.5" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleSend()}
-                disabled={sendDisabled}
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
-                title="Send (Enter)"
-              >
-                <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
-              </button>
-            )}
           </div>
 
-          {/* Meta row: context indicator · model · permission mode */}
-          <div className="flex items-center gap-1 px-3 pb-2">
-            <LiquidContextIndicator
-              usage={usageState ?? { used: 0, size: 1, cost: null }}
-              onCompact={isProcessing ? undefined : () => onSend("/compact")}
-            />
+          {/* Meta row: context indicator · model · mode · send */}
+          <div className="flex items-center gap-2 pl-3.5 pr-2 pb-2">
+            <div className="w-7 flex items-center justify-center shrink-0">
+              <LiquidContextIndicator
+                usage={usageState ?? { used: 0, size: 1, cost: null }}
+                onCompact={isProcessing ? undefined : () => onSend("/compact")}
+              />
+            </div>
 
             {configOptions.map((opt) => (
               <ConfigSelector
@@ -680,6 +641,53 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                 disabled={isProcessing}
               />
             ))}
+
+            <div className="ml-auto">
+              {isProcessing ? (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
+                  title="Cancel"
+                >
+                  <svg
+                    viewBox="0 0 42 42"
+                    className="absolute pointer-events-none"
+                    style={{ inset: "-5px", width: "42px", height: "42px", overflow: "visible" }}
+                  >
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeOpacity={1}
+                      strokeWidth={1.8}
+                      strokeLinecap="round"
+                      strokeDasharray="22 79"
+                      style={{
+                        transformBox: "fill-box",
+                        transformOrigin: "center",
+                        animation: "arc-spin-cw 0.9s linear infinite",
+                      }}
+                    />
+                  </svg>
+                  <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="4" y="4" width="16" height="16" rx="2.5" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleSend()}
+                  disabled={sendDisabled}
+                  className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
+                  title="Send (Enter)"
+                >
+                  <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

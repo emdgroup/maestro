@@ -227,8 +227,10 @@
 }
 
 /* Hunk checkbox injection — active when hunk selection enabled in DiffViewer */
-.hunk-selection-active .diff-line-hunk-action .hunk-checkbox {
-  flex-shrink: 0;
+.hunk-selection-active .diff-line-hunk-action {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 .hunk-selection-active .diff-line-hunk {

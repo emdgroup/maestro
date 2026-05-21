@@ -96,6 +96,7 @@ export function AgentActivityPanel({
   onUsageChangeRef.current = onUsageChange;
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const selectedProject = useSelectedProject();
 
@@ -403,6 +404,17 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
+  const isCenteredCompose =
+    !liveState.isInitializing && displayItems.length === 0 && !hasSentFirstMessage;
+
+  const handleSendWithTransition = useCallback(
+    (content: string, contentBlocks?: JsonValue) => {
+      if (isCenteredCompose) setHasSentFirstMessage(true);
+      handleSend(content, contentBlocks);
+    },
+    [isCenteredCompose, handleSend],
+  );
+
   if (liveState.isInitializing) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
@@ -423,7 +435,7 @@ export function AgentActivityPanel({
           </div>
         </div>
         <div className="px-16 pb-2.5 pt-1">
-          <Skeleton className="h-[72px] w-full rounded-2xl" />
+          <Skeleton className="h-[72px] w-full rounded-3xl" />
         </div>
       </div>
     );
@@ -478,12 +490,17 @@ export function AgentActivityPanel({
           </motion.div>
         );
       }
-    } else {
+    } else if (!isCenteredCompose) {
       bottomBar = (
-        <div className="sticky bottom-0 z-10 px-16 pb-2.5 pt-1">
+        <motion.div
+          className="sticky bottom-0 z-10 px-16 pb-2.5 pt-1"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        >
           <ComposeBar
             ref={composeBarRef}
-            onSend={handleSend}
+            onSend={handleSendWithTransition}
             onCancel={handleCancel}
             isProcessing={isProcessing}
             commands={availableCommands}
@@ -496,7 +513,7 @@ export function AgentActivityPanel({
             onConfigChange={handleConfigChange}
             promptCapabilities={promptCapabilities}
           />
-        </div>
+        </motion.div>
       );
     }
   }
@@ -635,6 +652,42 @@ export function AgentActivityPanel({
 
             {bottomBar}
           </div>
+
+          <AnimatePresence>
+            {isCenteredCompose && (
+              <motion.div
+                key="centered-compose"
+                className="absolute inset-0 z-10 flex items-center justify-center px-8"
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <motion.div
+                  className="w-full max-w-xl"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 30, scale: 0.97 }}
+                  transition={{ type: "spring", stiffness: 350, damping: 28 }}
+                >
+                  <ComposeBar
+                    ref={composeBarRef}
+                    onSend={handleSendWithTransition}
+                    onCancel={handleCancel}
+                    isProcessing={isProcessing}
+                    commands={availableCommands}
+                    embeddedContext={promptCapabilities?.embedded_context ?? false}
+                    logId={sessionKey}
+                    projectPath={selectedProject?.path ?? null}
+                    configOptions={configOptions}
+                    configValues={configValues}
+                    usageState={usageState}
+                    onConfigChange={handleConfigChange}
+                    promptCapabilities={promptCapabilities}
+                    variant="centered"
+                  />
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {planOverlay && (
             <div className="absolute inset-0 z-30 flex flex-col bg-background">{planOverlay}</div>
