@@ -171,24 +171,22 @@ mod tests {
         let order = Arc::new(Mutex::new(Vec::<i32>::new()));
 
         let project_lock = manager.get_or_create_lock(1);
-        {
-            let _guard = project_lock.lock().unwrap();
+        let guard = project_lock.lock().unwrap();
 
-            let barrier2 = Arc::clone(&barrier);
-            let order2 = Arc::clone(&order);
-            let project_lock2 = Arc::clone(&project_lock);
+        let barrier2 = Arc::clone(&barrier);
+        let order2 = Arc::clone(&order);
+        let project_lock2 = Arc::clone(&project_lock);
 
-            let handle = thread::spawn(move || {
-                barrier2.wait();
-                let _g = project_lock2.lock().unwrap();
-                order2.lock().unwrap().push(2);
-            });
+        let handle = thread::spawn(move || {
+            barrier2.wait();
+            let _g = project_lock2.lock().unwrap();
+            order2.lock().unwrap().push(2);
+        });
 
-            barrier.wait();
-            order.lock().unwrap().push(1);
-            // _guard drops here, unblocking the spawned thread
-            handle.join().unwrap();
-        }
+        barrier.wait();
+        order.lock().unwrap().push(1);
+        drop(guard);
+        handle.join().unwrap();
 
         let seen = order.lock().unwrap().clone();
         assert_eq!(seen, vec![1, 2], "second caller must not proceed before first releases lock");
