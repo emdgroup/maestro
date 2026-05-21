@@ -135,7 +135,8 @@ pub async fn fetch_issues(
 
     let url = format!(
         "https://api.github.com/repos/{}/{}/issues?state=open&per_page=100",
-        owner, repo
+        urlencoding::encode(owner),
+        urlencoding::encode(repo),
     );
 
     let response = client

@@ -114,7 +114,9 @@ pub async fn fetch_issues(
 
     let url = format!(
         "{}/api/v1/repos/{}/{}/issues?state=open&type=issues&limit=50",
-        base, owner, repo
+        base,
+        urlencoding::encode(owner),
+        urlencoding::encode(repo),
     );
 
     let response = client
