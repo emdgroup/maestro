@@ -144,16 +144,6 @@ impl TokenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
-
-    fn test_token(provider: &str) -> StoredToken {
-        StoredToken {
-            access_token: "tok".to_string(),
-            refresh_token: None,
-            expires_at: Some(9999999999),
-            provider: provider.to_string(),
-        }
-    }
 
     #[test]
     fn test_get_or_create_lock_same_arc() {

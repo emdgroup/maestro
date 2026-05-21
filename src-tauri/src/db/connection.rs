@@ -134,6 +134,9 @@ pub struct AppState {
     /// Active project lock: the project ID and the open File whose flock holds the lock.
     /// Dropping the File releases the lock (including on crash/kill-9).
     pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
+    /// Mutex-guarded token storage for ticketing provider tokens.
+    /// Per-project locks prevent concurrent refresh races (AUTH-06).
+    pub token_manager: crate::ticketing::TokenManager,
 }
 
 impl AppState {
@@ -163,6 +166,7 @@ impl AppState {
             },
             app_data_dir,
             active_project_lock: Mutex::new(None),
+            token_manager: crate::ticketing::TokenManager::new(),
         }
     }
 
