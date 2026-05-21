@@ -236,9 +236,9 @@ Plans:
 | 47 - Frontend: AgentActivityPanel | v1.5 | 3/3 | Complete | 2026-04-22 |
 | 48 - Frontend: PermissionDialog | v1.5 | Complete | Complete | 2026-05-20 |
 | 49 - Dual-Mode Execution Dispatcher | v1.5 | Complete | Complete | 2026-05-20 |
-| 50 - Infrastructure | v1.6 | 0/TBD | Not started | - |
-| 51 - Data Foundation | v1.6 | 2/2 | Complete   | 2026-05-20 |
-| 52 - Token Management | v1.6 | 0/TBD | Not started | - |
+| 50 - Infrastructure | v1.6 | 2/2 | Complete | 2026-05-21 |
+| 51 - Data Foundation | v1.6 | 2/2 | Complete | 2026-05-20 |
+| 52 - Token Management | v1.6 | 1/1 | Complete | 2026-05-21 |
 | 53 - OAuth Flows | v1.6 | 0/TBD | Not started | - |
 | 54 - Provider API Clients | v1.6 | 0/TBD | Not started | - |
 | 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
