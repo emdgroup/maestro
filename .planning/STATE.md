@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Ticketing Integration
-status: between_phases
-stopped_at: Phase 53 complete
+status: executing
+stopped_at: Phase 54 complete
 last_updated: "2026-05-21T00:00:00Z"
-last_activity: 2026-05-21 -- Phase 53 complete (GitHub/GitLab/Forgejo PAT auth + API clients)
+last_activity: 2026-05-21 -- Phase 54 complete (Linear/Jira Cloud/AzDO — 4 plans, 3 waves; Jira Server dropped per Atlassian EOL; 70 tests pass)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 7
+  total_plans: 11
   completed_plans: 7
   percent: 57
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-20)
 
 ## Current Position
 
-Phase: 53 (api-key-auth) — COMPLETE
-Next: Phase 54 (linear-jira-azdo)
-Status: Ready to plan Phase 54
-Last activity: 2026-05-21 -- Phase 53 complete (GitHub/GitLab/Forgejo PAT auth + API clients)
+Phase: 54 (linear-jira-azdo) — COMPLETE
+Next: Phase 55 (Settings UI)
+Status: Phase 54 complete — ready for Phase 55 planning
+Last activity: 2026-05-21 -- Phase 54 complete (4/4 plans, 70 tests pass)
 
 Progress: [██████████] 100%
 
@@ -83,5 +83,5 @@ Key v1.6 decisions locked in at roadmap creation:
 ## Session Continuity
 
 Last session: 2026-05-21T00:00:00Z
-Stopped at: Phase 53 complete
-Resume file: None — ready for Phase 54 planning
+Stopped at: Phase 54 complete
+Resume file: None — ready for Phase 55 planning

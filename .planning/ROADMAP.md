@@ -118,7 +118,7 @@ See phase details below (archived after milestone close).
 - [x] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal (completed 2026-05-20)
 - [x] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token manager (completed 2026-05-21)
 - [x] **Phase 53: GitHub/GitLab/Forgejo Auth + API Clients** — PAT-based connection + issue fetching for GitHub (gh CLI auto-detect), GitLab (self-hosted), and Forgejo (completed 2026-05-21)
-- [ ] **Phase 54: Linear/Jira/AzDO Auth + API Clients** — API key connection + issue fetching for Linear (GraphQL), Jira Cloud (email+token) and Server (PAT), Azure DevOps (PAT)
+- [x] **Phase 54: Linear/Jira/AzDO Auth + API Clients** — API key connection + issue fetching for Linear (GraphQL), Jira Cloud (email+token), Azure DevOps (PAT); Jira Server dropped (Atlassian EOL) (completed 2026-05-21)
 - [ ] **Phase 55: Settings UI** — Ticketing section in project settings with provider picker, connect/disconnect, and connection status for all 6 providers
 - [ ] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection
 
@@ -186,6 +186,10 @@ Plans:
 - [ ] 54-03-PLAN.md — jira_server.rs + azure_devops.rs modules
 - [ ] 54-04-PLAN.md — Wire all modules (mod.rs + IPC handlers + lib.rs + pnpm tauri:gen)
 
+Wave 1 — **54-01** (Cargo.toml + Linear)
+Wave 2 *(blocked on Wave 1)* — **54-02**, **54-03** (parallel: Jira Cloud | Jira Server + AzDO)
+Wave 3 *(blocked on Wave 2)* — **54-04** (IPC wiring + bindings regeneration)
+
 ### Phase 55: Settings UI
 **Goal**: Users can connect and disconnect any of the 6 providers from project settings and see at a glance whether a provider is currently active
 **Depends on**: Phase 54
@@ -247,7 +251,7 @@ Plans:
 | 51 - Data Foundation | v1.6 | 2/2 | Complete | 2026-05-20 |
 | 52 - Token Management | v1.6 | 1/1 | Complete | 2026-05-21 |
 | 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 1/1 | Complete   | 2026-05-21 |
-| 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 0/4 | Not started | - |
+| 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 4/4 | Complete | 2026-05-21 |
 | 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
 | 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
 
