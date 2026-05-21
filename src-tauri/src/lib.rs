@@ -131,6 +131,11 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::save_forgejo_credentials,
             crate::ipc::delete_ticketing_credentials,
             crate::ipc::fetch_remote_issues,
+            // Ticketing providers (Phase 54)
+            crate::ipc::save_linear_credentials,
+            crate::ipc::list_linear_teams,
+            crate::ipc::save_jira_cloud_credentials,
+            crate::ipc::save_azure_devops_credentials,
         ])
 }
 
