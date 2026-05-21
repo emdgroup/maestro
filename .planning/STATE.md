@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Ticketing Integration
 status: in_progress
-stopped_at: Phase 52 complete — ready for Phase 53
+stopped_at: Phase 52 complete — Phase 53-56 pivoted to API key auth; ready for Phase 53 planning
 last_updated: "2026-05-21T00:00:00.000Z"
 last_activity: 2026-05-21 -- Phase 52 complete (5 tasks, 9 tests pass)
 progress:
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 53 — oauth-flows
+**Current focus:** Phase 53 — github-gitlab-forgejo-auth
 
 ## Current Position
 
@@ -85,4 +85,4 @@ None.
 
 Last session: 2026-05-21T00:00:00.000Z
 Stopped at: Phase 52 complete
-Resume file: .planning/phases/53-oauth/PLAN.md (not yet created)
+Resume file: .planning/phases/53-api-key-auth/PLAN.md (not yet created)

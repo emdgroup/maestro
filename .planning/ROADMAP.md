@@ -112,27 +112,26 @@ See phase details below (archived after milestone close).
 
 ### 🚧 v1.6 Ticketing Integration (In Progress)
 
-**Milestone Goal:** Connect each project to one ticket tracking tool (GitHub Issues, GitLab Issues, Linear, or Jira Cloud) so users can browse and import open issues as Backlog tasks via an import modal, with per-project OAuth authentication and non-destructive change detection.
+**Milestone Goal:** Connect each project to one ticket tracking tool (GitHub, GitLab, Forgejo, Linear, Jira Cloud/Server, or Azure DevOps) so users can browse and import open issues as Backlog tasks via an import modal, with per-project API key authentication and non-destructive change detection.
 
-- [x] **Phase 50: Infrastructure** — CSP expansion + tauri-plugin-oauth wiring + new Cargo dependencies (completed 2026-05-21)
+- [x] **Phase 50: Infrastructure** — CSP expansion + new Cargo dependencies (completed 2026-05-21)
 - [x] **Phase 51: Data Foundation** — Schema v16 + Rust model types + ticketing config storage + old import code removal (completed 2026-05-20)
-- [ ] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token refresh for expiring providers
-- [ ] **Phase 53: OAuth Flows** — Per-provider PKCE/3LO state machines for GitHub, GitLab, Linear, and Jira
-- [ ] **Phase 54: Provider API Clients** — Issue-fetching clients for all four providers with canonical field mapping
-- [ ] **Phase 55: Settings UI** — Ticketing section in project settings with connect/disconnect and connection status
+- [x] **Phase 52: Token Management** — OS keychain storage + mutex-guarded token manager (completed 2026-05-21)
+- [ ] **Phase 53: GitHub/GitLab/Forgejo Auth + API Clients** — PAT-based connection + issue fetching for GitHub (gh CLI auto-detect), GitLab (self-hosted), and Forgejo
+- [ ] **Phase 54: Linear/Jira/AzDO Auth + API Clients** — API key connection + issue fetching for Linear (GraphQL), Jira Cloud (email+token) and Server (PAT), Azure DevOps (PAT)
+- [ ] **Phase 55: Settings UI** — Ticketing section in project settings with provider picker, connect/disconnect, and connection status for all 6 providers
 - [ ] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection
 
 ## Phase Details
 
 ### Phase 50: Infrastructure
-**Goal**: The app can make authenticated HTTP calls to all four provider APIs and handle OAuth localhost redirects — every prerequisite that silently blocks later provider work is eliminated in a single commit
+**Goal**: The app can make authenticated HTTP calls to all provider APIs — every prerequisite that silently blocks later provider work is eliminated in a single commit
 **Depends on**: Phase 49
 **Requirements**: FNDTN-01, FNDTN-02
 **Success Criteria** (what must be TRUE):
   1. The app can make fetch requests to `api.github.com`, `gitlab.com`, `api.linear.app`, `auth.atlassian.com`, `api.atlassian.com`, and `127.0.0.1:*` without CSP violations in the browser console
-  2. `tauri-plugin-oauth` is registered and its `oauth:allow-start` and `oauth:allow-cancel` capabilities are present in `capabilities/default.json`; calling the start command does not produce a runtime "plugin not found" error
-  3. All new Cargo dependencies (`tauri-plugin-oauth`, `oauth2`, `octocrab`, `graphql_client`) are listed in `Cargo.toml` and `cargo check` compiles without errors
-**Plans**: TBD
+  2. All new Cargo dependencies (`octocrab`, `graphql_client`) are listed in `Cargo.toml` and `cargo check` compiles without errors
+**Plans**: 2/2 complete
 
 ### Phase 51: Data Foundation
 **Goal**: All downstream Rust types and database columns required by ticketing exist, the canonical `external_id` format is locked in before any provider writes data, and the old broken import code is fully removed from the codebase
@@ -149,43 +148,44 @@ Plans:
 - [x] 51-02-PLAN.md — Legacy import code removal (Rust + frontend)
 
 ### Phase 52: Token Management
-**Goal**: Tokens can be stored in and retrieved from the OS keychain for any project, and concurrent refresh races for GitLab and Jira are prevented by a mutex-guarded token manager
+**Goal**: Tokens can be stored in and retrieved from the OS keychain for any project; KeychainStore + TokenManager are wired into AppState
 **Depends on**: Phase 51
 **Requirements**: AUTH-05, AUTH-06
 **Success Criteria** (what must be TRUE):
   1. A token can be stored via `ticketing/keychain.rs` using the `maestro:{project_id}:ticketing` key and retrieved in a subsequent call without error; deleting it returns `NoEntry` on the next get
   2. On Linux/WSL where the system keyring is unavailable, a warning toast is shown and the app falls back to an encrypted file store rather than failing silently
-  3. Two concurrent calls attempting to refresh a GitLab or Jira token simultaneously result in exactly one network request; the second caller receives the result of the first refresh without making its own request
-**Plans**: TBD
+  3. Two concurrent calls for the same project lock serialize correctly via per-project mutex
+**Plans**: 1/1 complete
 
-### Phase 53: OAuth Flows
-**Goal**: Users can complete the full OAuth authorization code + PKCE (or 3LO) flow for each of the four providers via a browser pop-up, and the resulting tokens are stored in the OS keychain
+### Phase 53: GitHub/GitLab/Forgejo Auth + API Clients
+**Goal**: Users can connect GitHub (with gh CLI auto-detect), GitLab (self-hosted), and Forgejo via PAT; the app validates credentials, stores them in the OS keychain, and fetches open issues mapped to `RemoteIssue`
 **Depends on**: Phase 52
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04
+**Requirements**: AUTH-01, AUTH-02, PROV-01, PROV-02
 **Success Criteria** (what must be TRUE):
-  1. Clicking "Connect" for GitHub opens a browser window at the GitHub authorization URL; completing authorization redirects to `127.0.0.1` and a `ticketing:connected` Tauri event is emitted with the provider name and account username
-  2. The same end-to-end flow works for GitLab (PKCE), Linear (PKCE), and Jira Cloud (3LO with `accessible-resources` cloud ID discovery)
-  3. If the user closes the browser or cancels, `tauri-plugin-oauth`'s cancel is called and a `ticketing:error` event is emitted; no partial token is stored in the keychain
-  4. After a successful connect, the token is retrievable from the keychain and a subsequent call to any provider API using that token does not return 401
+  1. For GitHub: if `gh auth token` succeeds, credentials are auto-detected and stored without user input; if `gh` is absent or unauthenticated, a PAT input field is shown instead
+  2. For GitLab and Forgejo: user provides instance URL + PAT; `save_credentials` validates against `/api/v4/user` (GitLab) or `/api/v1/user` (Forgejo), stores token in keychain, and returns `displayName`
+  3. Given stored credentials, each provider client returns open issues (PRs excluded for GitHub) with `title`, `body`, `labels`, `url`, `updated_at`, and `external_id` in `github:{number}`, `gitlab:{project_id}/{issue_iid}`, or `forgejo:{number}` format
+  4. `ProviderConfig` enum updated to include `Forgejo`, `JiraCloud`, `JiraServer`, `AzureDevOps` variants; `cargo check` and `pnpm tauri:gen` both pass; `tauri-plugin-oauth` and `oauth2` crates removed from Cargo.toml
 **Plans**: TBD
 
-### Phase 54: Provider API Clients
-**Goal**: The app can fetch open issues from all four providers and map each issue to the canonical `RemoteIssue` shape with a consistently formatted `external_id`
+### Phase 54: Linear/Jira/AzDO Auth + API Clients
+**Goal**: Users can connect Linear (API key), Jira Cloud (email + API token), Jira Server 8.14+ (PAT), and Azure DevOps (PAT); the app validates credentials, stores them in the keychain, and fetches open issues mapped to `RemoteIssue`
 **Depends on**: Phase 53
-**Requirements**: PROV-01, PROV-02, PROV-03, PROV-04
+**Requirements**: AUTH-03, AUTH-04, PROV-03, PROV-04
 **Success Criteria** (what must be TRUE):
-  1. Given a valid stored token, calling the GitHub provider client returns open issues (PRs filtered out) with `title`, `body`, `labels`, `url`, and `updated_at` populated and `external_id` in `github:{number}` format
-  2. GitLab, Linear (GraphQL, team-scoped), and Jira Cloud (REST v3 via `accessible-resources` cloud ID, ADF stripped from descriptions) clients return issues in the same `RemoteIssue` shape with provider-specific `external_id` prefixes
-  3. Token expiry during a fetch triggers the mutex-guarded refresh flow (Phase 52) transparently; the caller receives the issue list without seeing the 401
+  1. Linear: API key validated via GraphQL `{ viewer { id name } }`; issues fetched via Linear GraphQL API with `external_id` in `linear:{identifier}` format; team selection supported
+  2. Jira Cloud (`JiraCloudConfig`): site URL + email + API token validated via `GET /rest/api/3/myself` with Basic auth; issues fetched from REST v3; ADF body stripped to plain text; `external_id` in `jira:{issue_key}` format
+  3. Jira Server (`JiraServerConfig`): base URL + PAT validated via `GET /rest/api/2/myself` with Bearer auth; same `external_id` format
+  4. Azure DevOps: org URL + PAT (Basic auth with empty username) validated via `GET /_apis/connectionData`; work items fetched; `external_id` in `azuredevops:{id}` format
 **Plans**: TBD
 
 ### Phase 55: Settings UI
-**Goal**: Users can connect and disconnect a ticketing provider from project settings and see at a glance whether a provider is currently active
+**Goal**: Users can connect and disconnect any of the 6 providers from project settings and see at a glance whether a provider is currently active
 **Depends on**: Phase 54
 **Requirements**: SETT-01, SETT-02, SETT-03
 **Success Criteria** (what must be TRUE):
-  1. Project settings has a Ticketing section with a provider picker offering GitHub, GitLab, Linear, and Jira as options
-  2. Clicking "Connect" triggers the OAuth flow (Phase 53); after completion, the section shows the provider name, account username, and a green connected indicator without a page reload
+  1. Project settings has a Ticketing section with a provider picker offering GitHub, GitLab, Forgejo, Linear, Jira Cloud, Jira Server, and Azure DevOps as options
+  2. After entering credentials and clicking "Connect", the section shows the provider name, account username/display name, and a green connected indicator without a page reload
   3. Clicking "Disconnect" removes the token from the keychain and deletes `.maestro/ticketing.json`; the UI returns to the disconnected state showing the provider picker
 **Plans**: TBD
 **UI hint**: yes
@@ -239,8 +239,8 @@ Plans:
 | 50 - Infrastructure | v1.6 | 2/2 | Complete | 2026-05-21 |
 | 51 - Data Foundation | v1.6 | 2/2 | Complete | 2026-05-20 |
 | 52 - Token Management | v1.6 | 1/1 | Complete | 2026-05-21 |
-| 53 - OAuth Flows | v1.6 | 0/TBD | Not started | - |
-| 54 - Provider API Clients | v1.6 | 0/TBD | Not started | - |
+| 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 0/TBD | Not started | - |
+| 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 0/TBD | Not started | - |
 | 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
 | 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
 
