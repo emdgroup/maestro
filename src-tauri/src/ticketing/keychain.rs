@@ -90,14 +90,41 @@ impl KeychainStore {
         }
     }
 
-    fn derive_key(machine_id: &str) -> [u8; 32] {
-        let input = format!("{}maestro-token-fallback", machine_id);
+    // Key derivation uses SHA-256 (not a KDF). This provides defense-in-depth
+    // against naive file access but not against targeted brute force. The file
+    // fallback is used only when the OS keychain is unavailable.
+    fn derive_key(seed: &str) -> [u8; 32] {
+        let input = format!("{}maestro-token-fallback", seed);
         let hash = Sha256::digest(input.as_bytes());
         hash.into()
     }
 
-    fn get_machine_id() -> String {
-        machine_uid::get().unwrap_or_else(|_| "maestro-unknown-machine".to_string())
+    /// Returns the machine ID if available, otherwise reads or creates a persistent
+    /// random local secret in app_data_dir. The random secret is generated once and
+    /// stored so that encrypted files remain decryptable across restarts.
+    fn get_encryption_seed(app_data_dir: &Path) -> String {
+        if let Ok(id) = machine_uid::get() {
+            return id;
+        }
+        let secret_path = app_data_dir.join("tokens").join("maestro-local-secret");
+        if let Ok(existing) = std::fs::read_to_string(&secret_path) {
+            let trimmed = existing.trim().to_string();
+            if !trimmed.is_empty() {
+                return trimmed;
+            }
+        }
+        use rand::RngCore;
+        let mut buf = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut buf);
+        let hex: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
+        // Best-effort persist — if this fails, a new secret will be generated next
+        // time, making existing encrypted files unreadable. This is acceptable: the
+        // file fallback is last-resort when neither machine_uid nor keyring work.
+        if let Some(parent) = secret_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&secret_path, &hex);
+        hex
     }
 
     fn token_file_path(project_id: i32, app_data_dir: &Path) -> PathBuf {
@@ -113,7 +140,7 @@ impl KeychainStore {
             .map_err(|e| format!("Failed to create tokens directory: {}", e))?;
         let plaintext = serde_json::to_vec(token)
             .map_err(|e| format!("Serialization failed: {}", e))?;
-        let key_bytes = Self::derive_key(&Self::get_machine_id());
+        let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
         let cipher = Aes256Gcm::new(key);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
@@ -142,7 +169,7 @@ impl KeychainStore {
         if data.len() < 12 {
             return Ok(None);
         }
-        let key_bytes = Self::derive_key(&Self::get_machine_id());
+        let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
         let cipher = Aes256Gcm::new(key);
