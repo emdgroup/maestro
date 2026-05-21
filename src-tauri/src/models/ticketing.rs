@@ -14,24 +14,18 @@ pub struct TicketingConfig {
 }
 
 /// Active ticketing provider — only one provider can be configured at a time.
-/// Serialized as an externally-tagged enum: `{"jira": {...}}` (serde default for enums).
+/// Serialized as an externally-tagged enum: `{"github": {...}}` (serde default for enums).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
 #[specta(export)]
 pub enum ProviderConfig {
-    Jira(JiraConfig),
-    GitHub(GitHubConfig),
-    GitLab(GitLabConfig),
+    Github(GitHubConfig),
+    Gitlab(GitLabConfig),
+    Forgejo(ForgejoConfig),
     Linear(LinearConfig),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
-#[serde(default)]
-pub struct JiraConfig {
-    pub host: String,
-    pub email: String,
-    pub project_key: String,
-    pub jql_filter: Option<String>,
+    Jiracloud(JiraCloudConfig),
+    Jiraserver(JiraServerConfig),
+    Azuredevops(AzureDevOpsConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
@@ -44,14 +38,57 @@ pub struct GitHubConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
 #[serde(default)]
 pub struct GitLabConfig {
-    pub host: String,
-    pub project_id: String,
+    pub instance_url: String,
+    pub project_path: String,
+    pub project_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct ForgejoConfig {
+    pub instance_url: String,
+    pub owner: String,
+    pub repo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
 #[serde(default)]
 pub struct LinearConfig {
-    pub team_id: String,
+    pub team_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct JiraCloudConfig {
+    pub site_url: String,
+    pub email: String,
+    pub project_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct JiraServerConfig {
+    pub base_url: String,
+    pub project_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct AzureDevOpsConfig {
+    pub org_url: String,
+    pub project: String,
+}
+
+/// A remote issue fetched from a ticketing provider, ready for import as a Task.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct RemoteIssue {
+    pub external_id: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub url: String,
+    pub labels: Vec<String>,
+    pub updated_at: Option<String>,
 }
 
 impl TicketingConfig {

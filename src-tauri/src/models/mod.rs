@@ -18,4 +18,4 @@ pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewReques
 pub use project_config::ProjectConfig;
 pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};
 pub use diff::{DiffTarget, WorktreeDiffResult};
-pub use ticketing::TicketingConfig;
+pub use ticketing::{TicketingConfig, RemoteIssue};
