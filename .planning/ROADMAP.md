@@ -198,7 +198,11 @@ Wave 3 *(blocked on Wave 2)* — **54-04** (IPC wiring + bindings regeneration)
   1. Project settings has a Ticketing section with a provider picker offering GitHub, GitLab, Forgejo, Linear, Jira Cloud, Jira Server, and Azure DevOps as options
   2. After entering credentials and clicking "Connect", the section shows the provider name, account username/display name, and a green connected indicator without a page reload
   3. Clicking "Disconnect" removes the token from the keychain and deletes `.maestro/ticketing.json`; the UI returns to the disconnected state showing the provider picker
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 55-01-PLAN.md — Backend: integration model + keychain rewrite + IPC handlers
+- [ ] 55-02-PLAN.md — Frontend: IntegrationsTab, ConnectDialog, ProjectPicker tabs, SettingsPage Ticketing card
+- [ ] 55-03-PLAN.md — Cascade check: IntegrationMissingDialog + project open validation
 **UI hint**: yes
 
 ### Phase 56: Import Modal + Change Detection
@@ -252,7 +256,7 @@ Wave 3 *(blocked on Wave 2)* — **54-04** (IPC wiring + bindings regeneration)
 | 52 - Token Management | v1.6 | 1/1 | Complete | 2026-05-21 |
 | 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 1/1 | Complete   | 2026-05-21 |
 | 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 4/4 | Complete | 2026-05-21 |
-| 55 - Settings UI | v1.6 | 0/TBD | Not started | - |
+| 55 - Settings UI | v1.6 | 0/3 | Not started | - |
 | 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
 
 ---
