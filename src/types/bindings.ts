@@ -1272,89 +1272,84 @@ async getWslConnections() : Promise<Result<WslConnection[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getTicketingConfig(projectId: number) : Promise<Result<TicketingConfig, string>> {
+/**
+ * Probe all known provider keys in the keyring and return their connection status.
+ * For GitHub, also probes the gh CLI as a fallback credential source.
+ * Raw tokens are never returned — only IntegrationStatus (D-01 security constraint).
+ */
+async listIntegrations() : Promise<Result<IntegrationStatus[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_ticketing_config", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_integrations") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async saveTicketingConfig(projectId: number, config: TicketingConfig) : Promise<Result<null, string>> {
+/**
+ * Validate credentials against the provider API and store them globally in the keyring.
+ * Returns the display name from the provider on success.
+ * Raw tokens are never returned to the frontend (D-01).
+ */
+async saveIntegration(provider: string, token: string, instanceUrl: string | null, email: string | null) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_ticketing_config", { projectId, config }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_integration", { provider, token, instanceUrl, email }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async saveGithubCredentials(projectId: number, owner: string, repo: string, token: string | null) : Promise<Result<string, string>> {
+/**
+ * Remove stored credentials for a provider from the keyring and file fallback.
+ */
+async deleteIntegration(provider: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_github_credentials", { projectId, owner, repo, token }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_integration", { provider }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async saveGitlabCredentials(projectId: number, instanceUrl: string, projectPath: string, token: string) : Promise<Result<string, string>> {
+/**
+ * Validate credentials against the provider API without storing them.
+ * Returns the display name from the provider on success.
+ */
+async testIntegration(provider: string, token: string, instanceUrl: string | null, email: string | null) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_gitlab_credentials", { projectId, instanceUrl, projectPath, token }) };
+    return { status: "ok", data: await TAURI_INVOKE("test_integration", { provider, token, instanceUrl, email }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async saveForgejoCredentials(projectId: number, instanceUrl: string, owner: string, repo: string, token: string) : Promise<Result<string, string>> {
+/**
+ * Read the ticketing field from .maestro/settings.json for the given project.
+ */
+async getProjectTicketingConfig(projectId: number) : Promise<Result<ProjectTicketingConfig | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_forgejo_credentials", { projectId, instanceUrl, owner, repo, token }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_project_ticketing_config", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async deleteTicketingCredentials(projectId: number) : Promise<Result<null, string>> {
+/**
+ * Write the ticketing field into .maestro/settings.json for the given project.
+ */
+async saveProjectTicketingConfig(projectId: number, ticketing: ProjectTicketingConfig | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_ticketing_credentials", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_project_ticketing_config", { projectId, ticketing }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Fetch remote issues using the global keychain for credentials and per-project
+ * ticketing config for provider-specific fields (repo, project_key, etc.).
+ */
 async fetchRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fetch_remote_issues", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async saveLinearCredentials(projectId: number, apiKey: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_linear_credentials", { projectId, apiKey }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async listLinearTeams(projectId: number) : Promise<Result<LinearTeam[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_linear_teams", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async saveJiraCloudCredentials(projectId: number, siteUrl: string, email: string, apiToken: string, projectKey: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_jira_cloud_credentials", { projectId, siteUrl, email, apiToken, projectKey }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async saveAzureDevopsCredentials(projectId: number, orgUrl: string, project: string, token: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_azure_devops_credentials", { projectId, orgUrl, project, token }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1394,11 +1389,11 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  */
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; updated_at: string }
-export type AzureDevOpsConfig = { org_url: string; project: string }
 /**
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
+export type CredentialSource = "manual" | "gh_cli"
 /**
  * Controls what get_worktree_diff compares against.
  * 
@@ -1418,17 +1413,11 @@ export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_de
 export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
-export type ForgejoConfig = { instance_url: string; owner: string; repo: string }
-export type GitHubConfig = { owner: string; repo: string }
-export type GitLabConfig = { instance_url: string; project_path: string; project_id: number }
-export type JiraCloudConfig = { site_url: string; email: string; project_key: string }
-export type JiraServerConfig = { base_url: string; project_key: string }
-export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-export type LinearConfig = { team_id: string | null }
 /**
- * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
+ * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */
-export type LinearTeam = { id: string; name: string; key: string }
+export type IntegrationStatus = { provider: string; connected: boolean; display_name: string | null; source: CredentialSource | null }
+export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Typed response for approve_task_and_merge IPC command
  */
@@ -1443,11 +1432,7 @@ export type Project = { id: number; name: string; path: string; created_at: stri
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
 export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
-/**
- * Active ticketing provider — only one provider can be configured at a time.
- * Serialized as an externally-tagged enum: `{"github": {...}}` (serde default for enums).
- */
-export type ProviderConfig = { github: GitHubConfig } | { gitlab: GitLabConfig } | { forgejo: ForgejoConfig } | { linear: LinearConfig } | { jiracloud: JiraCloudConfig } | { jiraserver: JiraServerConfig } | { azuredevops: AzureDevOpsConfig }
+export type ProjectTicketingConfig = { provider: string; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
  */
@@ -1487,10 +1472,6 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
-/**
- * Ticketing integration configuration stored in .maestro/ticketing.json
- */
-export type TicketingConfig = { provider: ProviderConfig | null; updated_at: string }
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 
 /**
  * Agent IDs that require this tool to spawn.

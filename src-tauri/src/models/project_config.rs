@@ -13,6 +13,25 @@ pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub default_model: Option<String>,
     pub updated_at: String,
+    pub ticketing: Option<ProjectTicketingConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ProjectTicketingConfig {
+    pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
 }
 
 impl ProjectConfig {

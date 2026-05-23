@@ -12,7 +12,7 @@ pub mod ticketing;
 pub mod wsl;
 
 pub use db::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
-pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, TicketingConfig, RemoteIssue, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
+pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, TicketingConfig, RemoteIssue, IntegrationStatus, CredentialSource, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 // IPC command functions are accessed via crate::ipc:: prefix in create_builder()
 // No glob re-export needed; ssh_handlers uses super::project_handlers for internal imports
@@ -122,20 +122,15 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_wsl_home,
             crate::ipc::save_wsl_connection,
             crate::ipc::get_wsl_connections,
-            // Ticketing config
-            crate::ipc::get_ticketing_config,
-            crate::ipc::save_ticketing_config,
-            // Ticketing providers (Phase 53)
-            crate::ipc::save_github_credentials,
-            crate::ipc::save_gitlab_credentials,
-            crate::ipc::save_forgejo_credentials,
-            crate::ipc::delete_ticketing_credentials,
+            // Integration management (Phase 55)
+            crate::ipc::list_integrations,
+            crate::ipc::save_integration,
+            crate::ipc::delete_integration,
+            crate::ipc::test_integration,
+            // Project ticketing config (Phase 55)
+            crate::ipc::get_project_ticketing_config,
+            crate::ipc::save_project_ticketing_config,
             crate::ipc::fetch_remote_issues,
-            // Ticketing providers (Phase 54)
-            crate::ipc::save_linear_credentials,
-            crate::ipc::list_linear_teams,
-            crate::ipc::save_jira_cloud_credentials,
-            crate::ipc::save_azure_devops_credentials,
         ])
 }
 
