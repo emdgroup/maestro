@@ -37,6 +37,31 @@ fn current_platform_key() -> &'static str {
     { return ""; }
 }
 
+/// Normalize a registry binary cmd to a PATH-resolvable command.
+///
+/// Registry JSON uses relative paths like "./opencode" or "./dist-package/cursor-agent"
+/// designed for post-archive-extraction. Maestro expects binaries on PATH, so we extract
+/// the filename and resolve to an absolute path via `which`.
+fn normalize_binary_cmd(raw_cmd: &str) -> String {
+    let filename = raw_cmd
+        .rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or(raw_cmd);
+
+    eprintln!("[registry] normalize_binary_cmd: raw={raw_cmd:?} filename={filename:?}");
+    match which::which(filename) {
+        Ok(abs_path) => {
+            let resolved = abs_path.to_string_lossy().into_owned();
+            eprintln!("[registry] which resolved: {filename:?} -> {resolved:?}");
+            resolved
+        }
+        Err(e) => {
+            eprintln!("[registry] which failed for {filename:?}: {e}");
+            filename.to_string()
+        }
+    }
+}
+
 /// Returns (spawn_cmd, spawn_args, spawn_env, spawn_deps).
 /// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npx"] or ["uvx"]).
 /// Binary agents have no external dep so spawn_deps is empty.
@@ -57,7 +82,8 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
                 if let Some(extra) = &target.args {
                     args.extend(extra.iter().cloned());
                 }
-                return Some((target.cmd.clone(), args, Default::default(), vec![]));
+                let cmd = normalize_binary_cmd(&target.cmd);
+                return Some((cmd, args, Default::default(), vec![]));
             }
         }
     }
@@ -95,4 +121,35 @@ pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> 
         });
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    
+
+    // Test filename extraction only; which resolution depends on PATH in the test environment.
+    fn extract_filename(raw_cmd: &str) -> &str {
+        raw_cmd
+            .rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(raw_cmd)
+    }
+
+    #[test]
+    fn normalize_binary_cmd_extracts_filename() {
+        let cases = [
+            ("./opencode", "opencode"),
+            ("./dist-package/cursor-agent", "cursor-agent"),
+            ("./codex-acp", "codex-acp"),
+            ("./goose", "goose"),
+            ("./opencode.exe", "opencode.exe"),
+            ("./goose-package\\goose.exe", "goose.exe"),
+            ("./Applications/junie.app/Contents/MacOS/junie", "junie"),
+            ("./junie-app/bin/junie", "junie"),
+            ("amp-acp.exe", "amp-acp.exe"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(extract_filename(input), expected, "input: {input:?}");
+        }
+    }
 }

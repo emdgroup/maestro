@@ -43,9 +43,14 @@ async fn resolve_agent_spawn_params(
     agents: &[registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
+    eprintln!("[main] resolve_agent_spawn_params: agent_id={agent_id:?}");
     match agents.iter().find(|a| a.id == agent_id) {
-        Some(a) => Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone())),
+        Some(a) => {
+            eprintln!("[main] resolved: cmd={:?} args={:?}", a.spawn_cmd, a.spawn_args);
+            Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()))
+        }
         None => {
+            eprintln!("[main] agent not found: {agent_id:?}");
             let _ = send_response(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -192,7 +197,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
+                eprintln!("[main] Spawn request: agent_id={:?} session_id={:?} cwd={:?}", req.agent_id, req.session_id, req.cwd);
                 let used_fast_path = agent_connections.contains_key(&req.agent_id);
+                eprintln!("[main] fast_path={used_fast_path}");
                 let result = if used_fast_path {
                     let conn = agent_connections.get(&req.agent_id).unwrap();
                     create_session_on_connection(

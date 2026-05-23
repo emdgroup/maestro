@@ -631,9 +631,14 @@ async fn bootstrap_agent_transport(
     maestro_session_id: String,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<AgentBootstrap> {
+    eprintln!("[session_handler] bootstrap_agent_transport: cmd={spawn_cmd:?} args={spawn_args:?} cwd={cwd:?}");
     let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
-        Ok(c) => c,
+        Ok(c) => {
+            eprintln!("[session_handler] agent subprocess spawned OK");
+            c
+        }
         Err(e) => {
+            eprintln!("[session_handler] agent spawn FAILED: {e}");
             let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e }))).await;
             return None;
         }

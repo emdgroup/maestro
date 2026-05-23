@@ -28,6 +28,7 @@ pub async fn spawn_agent_subprocess(
         return Err(format!("cwd does not exist: {}", cwd));
     }
 
+    eprintln!("[agent] spawn_agent_subprocess: command={command:?} args={args:?} cwd={cwd:?}");
     let child = tokio::process::Command::new(command)
         .args(args)
         .current_dir(cwd_path)
@@ -37,7 +38,11 @@ pub async fn spawn_agent_subprocess(
         .stderr(std::process::Stdio::null()) // suppress agent stderr noise
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("failed to spawn agent '{}': {}", command, e))?;
+        .map_err(|e| {
+            eprintln!("[agent] spawn FAILED: command={command:?} error={e}");
+            format!("failed to spawn agent '{}': {}", command, e)
+        })?;
+    eprintln!("[agent] spawn OK: pid={:?}", child.id());
 
     Ok(child)
 }
