@@ -13,8 +13,8 @@ import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
   spawning: "bg-muted-foreground/60 animate-pulse",
-  thinking: "bg-info animate-glow-info",
-  acting: "bg-purple animate-glow-purple",
+  thinking: "bg-purple animate-glow-purple",
+  acting: "bg-info animate-glow-info",
   awaiting_input: "bg-warning animate-pulse",
   idle: "bg-muted-foreground/40",
 };
@@ -31,10 +31,12 @@ function getStatusDot(
   session: ActiveSessionInfo,
   activityInfo: SessionActivityInfo | undefined,
 ): string {
-  if (session.execution_mode === "acp") {
-    return ACTIVITY_DOT[activityInfo?.status ?? "thinking"];
+  if (session.execution_mode !== "acp") return "";
+  const status = activityInfo?.status ?? "thinking";
+  if (status === "idle" && activityInfo && !activityInfo.seen) {
+    return "bg-success animate-pulse";
   }
-  return "bg-success animate-pulse";
+  return ACTIVITY_DOT[status];
 }
 
 function formatElapsedCompact(ms: number): string {
@@ -51,8 +53,9 @@ function formatTimeAgo(ms: number): string {
 }
 
 function getStatusLabel(activityInfo: SessionActivityInfo): string {
-  const { status, label } = activityInfo;
+  const { status, label, seen } = activityInfo;
   if (label) return label;
+  if (status === "idle" && !seen) return "Done";
   return STATUS_FALLBACK[status];
 }
 
@@ -92,7 +95,6 @@ function AgentIcon({ src, className }: { src: string; className: string }) {
 interface SessionRowProps {
   session: ActiveSessionInfo;
   isSelected: boolean;
-  groupCount: number;
   onSelect: (sessionKey: number) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
@@ -101,7 +103,6 @@ interface SessionRowProps {
 const SessionRow = memo(function SessionRow({
   session,
   isSelected,
-  groupCount,
   onSelect,
   agentIcons,
   agentNames,
@@ -116,18 +117,20 @@ const SessionRow = memo(function SessionRow({
       )}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <span
-          className={cn(
-            "inline-block w-2 h-2 rounded-full shrink-0",
-            getStatusDot(session, activityInfo),
-          )}
-        />
+        {session.execution_mode === "acp" && (
+          <span
+            className={cn(
+              "inline-block w-2 h-2 rounded-full shrink-0",
+              getStatusDot(session, activityInfo),
+            )}
+          />
+        )}
         <span className="session-item-name text-sm font-medium truncate">
           {session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session"}
         </span>
         <Badge
           variant="outline"
-          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1"
+          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1 ml-auto"
         >
           {session.execution_mode === "acp" && session.agent_id && agentIcons?.[session.agent_id] && (
             <AgentIcon
@@ -146,25 +149,16 @@ const SessionRow = memo(function SessionRow({
             : "Terminal"}
         </Badge>
       </div>
-      <div className="text-xs text-muted-foreground mt-0.5 pl-4 flex items-center justify-between gap-2 min-w-0">
-        {session.execution_mode === "acp" ? (
-          <>
-            <span className="truncate">
-              {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
-            </span>
-            {activityInfo && (
-              <ElapsedTime status={activityInfo.status} stateChangedAt={activityInfo.stateChangedAt} />
-            )}
-          </>
-        ) : (
-          <>
-            <span>Running</span>
-            {session.branch_name && groupCount <= 1 && (
-              <span className="font-mono">{session.branch_name}</span>
-            )}
-          </>
-        )}
-      </div>
+      {session.execution_mode === "acp" && (
+        <div className="text-xs text-muted-foreground mt-0.5 pl-4 flex items-center justify-between gap-2 min-w-0">
+          <span className="truncate">
+            {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+          </span>
+          {activityInfo && (
+            <ElapsedTime status={activityInfo.status} stateChangedAt={activityInfo.stateChangedAt} />
+          )}
+        </div>
+      )}
     </div>
   );
 });
@@ -295,7 +289,7 @@ export function AgentMonitor({
                   key={session.session_key}
                   session={session}
                   isSelected={session.session_key === selectedSessionKey}
-                  groupCount={grouped.length}
+
                   onSelect={onSelect}
                   agentIcons={agentIcons}
                   agentNames={agentNames}
@@ -364,24 +358,24 @@ export function AgentMonitor({
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span
-                    className={cn(
-                      "inline-block w-2 h-2 rounded-full shrink-0",
-                      getStatusDot(selectedSession, selectedActivityInfo),
-                    )}
-                  />
-                  <span className="text-xs text-muted-foreground truncate">
-                    {selectedSession.execution_mode === "acp"
-                      ? selectedActivityInfo
-                        ? getStatusLabel(selectedActivityInfo)
-                        : "Starting…"
-                      : "Running"}
-                  </span>
-                  {selectedSession.execution_mode === "acp" && selectedActivityInfo && (
-                    <ElapsedTime
-                      status={selectedActivityInfo.status}
-                      stateChangedAt={selectedActivityInfo.stateChangedAt}
-                    />
+                  {selectedSession.execution_mode === "acp" && (
+                    <>
+                      <span
+                        className={cn(
+                          "inline-block w-2 h-2 rounded-full shrink-0",
+                          getStatusDot(selectedSession, selectedActivityInfo),
+                        )}
+                      />
+                      <span className="text-xs text-muted-foreground truncate">
+                        {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
+                      </span>
+                      {selectedActivityInfo && (
+                        <ElapsedTime
+                          status={selectedActivityInfo.status}
+                          stateChangedAt={selectedActivityInfo.stateChangedAt}
+                        />
+                      )}
+                    </>
                   )}
                   {selectedSession.branch_name && (
                     <span className="text-xs text-muted-foreground font-mono truncate">

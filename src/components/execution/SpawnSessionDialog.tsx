@@ -125,6 +125,7 @@ export function SpawnSessionDialog({
             Choose an agent and worktree to get started.
           </p>
         </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); if (selectedWorktree && !isPending) handleSpawn(); }}>
         <div className="space-y-5 py-1">
           {/* Agent selection */}
           <div className="space-y-2">
@@ -277,13 +278,14 @@ export function SpawnSessionDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={!selectedWorktree || isPending} onClick={handleSpawn}>
+          <Button type="submit" disabled={!selectedWorktree || isPending}>
             {isPending ? "Starting..." : "Start Session"}
           </Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

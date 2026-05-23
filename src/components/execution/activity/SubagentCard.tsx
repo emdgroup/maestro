@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Bot, ChevronRight, Box, Loader2 } from "lucide-react";
 import {
   FileText,
@@ -131,18 +131,19 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
       setToolCallsOpen(true);
     }
   }, [toolCallVisibility]);
-  const outputRef = useRef<HTMLDivElement>(null);
-
   const isStreaming = item.status === "in_progress" || item.status === "pending";
 
-  const rawText = useMemo(
-    () =>
-      item.content
-        .filter((c): c is { type: "content"; content: { type: "text"; text: string } } => c.type === "content")
-        .map((c) => c.content.text)
-        .join(""),
-    [item.content],
-  );
+  const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
+
+  const rawText = useMemo(() => {
+    const textBlocks = item.content
+      .filter((c): c is { type: "content"; content: { type: "text"; text: string } } => c.type === "content")
+      .map((c) => c.content.text);
+    if (prompt && textBlocks.length > 0 && textBlocks[0].trim() === prompt.trim()) {
+      return textBlocks.slice(1).join("");
+    }
+    return textBlocks.join("");
+  }, [item.content, prompt]);
   const usage = useMemo(() => {
     if (isStreaming) return null;
     const ms = item.rawInput?.totalDurationMs;
@@ -155,7 +156,6 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
       tools: String(tools),
     };
   }, [isStreaming, item.rawInput]);
-  const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
   const displayText = useMemo(() => {
     let text = stripUsage(rawText);
     if (prompt && text.startsWith(prompt)) {
@@ -173,16 +173,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   }, [item.childToolCallIds, toolCallMap]);
 
   useEffect(() => {
-    if (expanded && !displayText && !isStreaming) {
+    if (expanded && !displayText) {
       setPromptOpen(true);
     }
-  }, [expanded, displayText, isStreaming]);
-
-  useEffect(() => {
-    if (isStreaming && expanded && outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [rawText, isStreaming, expanded]);
+  }, [expanded, displayText]);
 
   return (
     <div
@@ -276,10 +270,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             </div>
           )}
 
-          <div
-            ref={outputRef}
-            className="px-3.5 py-3 max-h-72 overflow-y-auto custom-scrollbar text-xs leading-relaxed"
-          >
+          <div className="px-3.5 py-3 text-xs leading-relaxed">
             {displayText ? (
               <>
                 <MarkdownBlock text={displayText} />

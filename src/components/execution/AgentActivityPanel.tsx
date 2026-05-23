@@ -39,7 +39,8 @@ import {
 import { AgentResponseSection } from "./activity/AgentResponseSection";
 import type { JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
-import { useSessionActivityActions } from "@/store/sessionActivityStore";
+import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
+import { useActiveTab } from "@/store/navigationStore";
 
 interface AgentActivityPanelProps {
   sessionKey: number;
@@ -90,13 +91,16 @@ export function AgentActivityPanel({
   onSessionChangedFilesChange,
   onOpenPanel,
 }: AgentActivityPanelProps) {
-  const { setActivity: setActivityStatus, removeActivity: removeActivityStatus } =
+  const { setActivity: setActivityStatus, markSeen, removeActivity: removeActivityStatus } =
     useSessionActivityActions();
+  const activityInfo = useSessionActivity(sessionKey);
+  const activeTab = useActiveTab();
   const onUsageChangeRef = useRef(onUsageChange);
   onUsageChangeRef.current = onUsageChange;
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
+  const [centeredHasContent, setCenteredHasContent] = useState(false);
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const selectedProject = useSelectedProject();
 
@@ -145,6 +149,18 @@ export function AgentActivityPanel({
     scrollToLastUserMsg,
   } = useAcpScrollBehavior(isReady, liveState.lastUserMessageId);
 
+  useEffect(() => {
+    if (
+      isSelected &&
+      activeTab === "agents" &&
+      !hasUnread &&
+      activityInfo?.status === "idle" &&
+      activityInfo?.seen === false
+    ) {
+      markSeen(sessionKey);
+    }
+  }, [isSelected, activeTab, hasUnread, activityInfo?.status, activityInfo?.seen, sessionKey, markSeen]);
+
   const initItemCountRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -177,7 +193,11 @@ export function AgentActivityPanel({
     } else if (lastItem.type === "toolCall") {
       const tc = lastItem.item;
       if (tc.status === "pending" || tc.status === "in_progress") {
-        setActivityStatus(sessionKey, "acting", toolKindCategory(tc.kind));
+        if (/think/.test(tc.kind)) {
+          setActivityStatus(sessionKey, "thinking");
+        } else {
+          setActivityStatus(sessionKey, "acting", toolKindCategory(tc.kind));
+        }
       }
     }
   }, [liveState.items, liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivityStatus]);
@@ -662,11 +682,12 @@ export function AgentActivityPanel({
                 transition={{ duration: 0.15 }}
               >
                 <motion.div
-                  className="w-full max-w-xl"
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 30, scale: 0.97 }}
                   transition={{ type: "spring", stiffness: 350, damping: 28 }}
+                  className="w-full transition-[max-width] duration-300 ease-out"
+                  style={{ maxWidth: centeredHasContent ? "calc(100% - 4rem)" : "36rem" }}
                 >
                   <ComposeBar
                     ref={composeBarRef}
@@ -683,6 +704,7 @@ export function AgentActivityPanel({
                     onConfigChange={handleConfigChange}
                     promptCapabilities={promptCapabilities}
                     variant="centered"
+                    onContentChange={setCenteredHasContent}
                   />
                 </motion.div>
               </motion.div>
@@ -727,11 +749,11 @@ export function AgentActivityPanel({
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => scrollToBottom()}
-                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/60 border-accent/40 hover:bg-accent/70" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
+                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
                 aria-label="Scroll to bottom"
               >
                 <ChevronDown
-                  className={`w-4 h-4 ${hasUnread ? "text-accent-foreground" : "text-muted-foreground"}`}
+                  className={`w-4 h-4 ${hasUnread ? "text-accent" : "text-muted-foreground"}`}
                 />
               </motion.button>
             )}
