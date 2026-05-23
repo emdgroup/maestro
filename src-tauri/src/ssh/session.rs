@@ -245,11 +245,17 @@ async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClientHandler>, 
         ..Default::default()
     });
     let addr = format!("{}:{}", host, port);
-    client::connect(config, addr.as_str(), SshClientHandler)
-        .await
-        .map_err(|e| SshError::ConnectionError(format!(
-            "Failed to connect to {}:{}: {}", host, port, e
-        )))
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        client::connect(config, addr.as_str(), SshClientHandler),
+    )
+    .await
+    .map_err(|_| SshError::ConnectionError(format!(
+        "Connection to {}:{} timed out", host, port
+    )))?
+    .map_err(|e| SshError::ConnectionError(format!(
+        "Failed to connect to {}:{}: {}", host, port, e
+    )))
 }
 
 /// Authenticate via SSH agent (platform-specific)
@@ -727,26 +733,22 @@ impl RemoteSshSession {
                 }
             }
             SshConnectionState::Reconnecting => {
-                let attempt = self.reconnect_attempts.load(Ordering::SeqCst);
-                if attempt >= 5 {
-                    return Err(SshError::ConnectionError(
-                        "Max reconnection attempts exceeded".to_string(),
-                    ));
+                // Heartbeat owns reconnection — wait for it to complete.
+                drop(state);
+                let mut polls = 0;
+                while {
+                    let s = *self.state.lock().await;
+                    s == SshConnectionState::Reconnecting || s == SshConnectionState::Connecting
+                } && polls < 200
+                {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    polls += 1;
                 }
-
-                *state = SshConnectionState::Connecting;
-                drop(state); // Release before async work
-
-                let delay_ms = 100u64 * 2u64.pow(attempt as u32);
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-
-                self.reconnect_attempts.fetch_add(1, Ordering::SeqCst);
-
-                let result = self.connect(password).await;
-                if result.is_err() && attempt < 4 {
-                    *self.state.lock().await = SshConnectionState::Reconnecting;
+                if self.is_connected().await {
+                    Ok(())
+                } else {
+                    Err(SshError::ConnectionError("Reconnection failed".to_string()))
                 }
-                result
             }
         }
     }
@@ -1009,6 +1011,9 @@ pub fn spawn_heartbeat_task(
                     *session.state.lock().await = SshConnectionState::Reconnecting;
 
                     let max_attempts: usize = 5;
+                    // Delays tuned for network transitions (ethernet→wifi): give the
+                    // new network interface time to come up before each attempt.
+                    const RETRY_DELAYS_SECS: [u64; 5] = [3, 6, 12, 24, 45];
                     let mut reconnected = false;
 
                     for attempt in 1..=max_attempts {
@@ -1018,8 +1023,7 @@ pub fn spawn_heartbeat_task(
                             max_attempts,
                         });
 
-                        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
-                        let delay = Duration::from_secs(1u64 << (attempt - 1));
+                        let delay = Duration::from_secs(RETRY_DELAYS_SECS[attempt - 1]);
                         tokio::time::sleep(delay).await;
 
                         // Check if removed while we were sleeping
