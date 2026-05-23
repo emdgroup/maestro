@@ -26,6 +26,7 @@ export function ProjectPicker() {
         <div className="bg-card border border-border rounded-lg overflow-clip relative min-h-125 max-h-175">
           {/* Connections View */}
           <div
+            data-testid="connections-panel"
             className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
               view === "projects" ? "-translate-x-full invisible" : "translate-x-0"
             }`}
@@ -46,6 +47,7 @@ export function ProjectPicker() {
 
           {/* Projects View */}
           <div
+            data-testid="projects-panel"
             className={`absolute inset-0 p-6 transition-transform duration-300 ease-in-out flex flex-col ${
               view === "projects" ? "translate-x-0" : "translate-x-full"
             }`}

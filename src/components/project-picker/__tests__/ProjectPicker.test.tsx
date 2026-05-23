@@ -16,6 +16,10 @@ vi.mock("@/components/common/ThemeToggle", () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">ThemeToggle</div>,
 }));
 
+vi.mock("@/components/project-picker/IntegrationsTab", () => ({
+  IntegrationsTab: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
+}));
+
 // Test utilities
 function renderWithContext(view: "connections" | "projects" = "connections") {
   const mockSetView = vi.fn();
@@ -78,43 +82,38 @@ describe("ProjectPicker", () => {
   describe("View State Logic", () => {
     it('shows ConnectionList when view is "connections"', () => {
       renderWithContext("connections");
-      const connectionList = screen.getByTestId("connection-list");
+      const panel = screen.getByTestId("connections-panel");
 
-      // Check that it's not translated away (has translate-x-0 class or not -translate-x-full)
-      expect(connectionList.parentElement).toHaveClass("translate-x-0");
-      expect(connectionList.parentElement).not.toHaveClass("-translate-x-full");
+      expect(panel).toHaveClass("translate-x-0");
+      expect(panel).not.toHaveClass("-translate-x-full");
     });
 
     it('hides ProjectList when view is "connections"', () => {
       renderWithContext("connections");
-      const projectList = screen.getByTestId("project-list");
+      const panel = screen.getByTestId("projects-panel");
 
-      // Check that it's translated away (has translate-x-full class)
-      expect(projectList.parentElement).toHaveClass("translate-x-full");
+      expect(panel).toHaveClass("translate-x-full");
     });
 
     it('shows ProjectList when view is "projects"', () => {
       renderWithContext("projects");
-      const projectList = screen.getByTestId("project-list");
+      const panel = screen.getByTestId("projects-panel");
 
-      // Check that it's not translated away (has translate-x-0 class)
-      expect(projectList.parentElement).toHaveClass("translate-x-0");
-      expect(projectList.parentElement).not.toHaveClass("translate-x-full");
+      expect(panel).toHaveClass("translate-x-0");
+      expect(panel).not.toHaveClass("translate-x-full");
     });
 
     it('hides ConnectionList when view is "projects"', () => {
       renderWithContext("projects");
-      const connectionList = screen.getByTestId("connection-list");
+      const panel = screen.getByTestId("connections-panel");
 
-      // Check that it's translated away and invisible
-      expect(connectionList.parentElement).toHaveClass("-translate-x-full");
-      expect(connectionList.parentElement).toHaveClass("invisible");
+      expect(panel).toHaveClass("-translate-x-full");
+      expect(panel).toHaveClass("invisible");
     });
 
     it("correctly reads view state from ConnectionContext", () => {
-      // Test with "connections" view
       const { mockSetView: mockSetView1 } = renderWithContext("connections");
-      expect(screen.getByTestId("connection-list").parentElement).toHaveClass("translate-x-0");
+      expect(screen.getByTestId("connections-panel")).toHaveClass("translate-x-0");
       expect(mockSetView1).not.toHaveBeenCalled();
     });
   });
@@ -148,8 +147,8 @@ describe("ProjectPicker", () => {
       );
 
       // Verify initial state
-      expect(screen.getByTestId("connection-list").parentElement).toHaveClass("translate-x-0");
-      expect(screen.getByTestId("project-list").parentElement).toHaveClass("translate-x-full");
+      expect(screen.getByTestId("connections-panel")).toHaveClass("translate-x-0");
+      expect(screen.getByTestId("projects-panel")).toHaveClass("translate-x-full");
 
       // Re-render with "projects" view
       rerender(
@@ -173,8 +172,8 @@ describe("ProjectPicker", () => {
       );
 
       // Verify updated state
-      expect(screen.getByTestId("connection-list").parentElement).toHaveClass("-translate-x-full");
-      expect(screen.getByTestId("project-list").parentElement).toHaveClass("translate-x-0");
+      expect(screen.getByTestId("connections-panel")).toHaveClass("-translate-x-full");
+      expect(screen.getByTestId("projects-panel")).toHaveClass("translate-x-0");
     });
 
     it("does not call setView (component only reads, does not write)", () => {
