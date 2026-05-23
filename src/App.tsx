@@ -25,6 +25,8 @@ import {
 } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { cn } from "@/lib/ui-utils";
+import { useListIntegrations, useProjectTicketingConfig } from "@/services/integration.service";
+import { IntegrationMissingDialog } from "@/components/project-picker/IntegrationMissingDialog";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
@@ -52,6 +54,8 @@ const TaskDetail = lazy(() =>
 function App() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showMissingDialog, setShowMissingDialog] = useState(false);
+  const [missingProvider, setMissingProvider] = useState<string | null>(null);
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
@@ -71,6 +75,12 @@ function App() {
 
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
+
+  // D-19 cascade check: verify ticketing integration is still connected after project opens
+  const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
+  const { data: ticketingConfig, isLoading: ticketingLoading } = useProjectTicketingConfig(
+    currentProject?.id ?? 0,
+  );
 
   // Running agent count for header badge
   const { data: sessions = [] } = useActiveSessionsQuery();
@@ -132,6 +142,20 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
 
+  useEffect(() => {
+    if (!currentProject || integrationsLoading || ticketingLoading) return;
+    if (!ticketingConfig) {
+      setShowMissingDialog(false);
+      return;
+    }
+    const integration = integrations?.find((i) => i.provider === ticketingConfig.provider);
+    if (!integration || !integration.connected) {
+      setMissingProvider(ticketingConfig.provider);
+      setShowMissingDialog(true);
+    } else {
+      setShowMissingDialog(false);
+    }
+  }, [currentProject, integrations, ticketingConfig, integrationsLoading, ticketingLoading]);
 
   if (settingsLoading) {
     return (
@@ -276,6 +300,15 @@ function App() {
           />
         </Suspense>
       </main>
+
+      {/* D-19 cascade check: block project access when ticketing integration is missing */}
+      <IntegrationMissingDialog
+        open={showMissingDialog}
+        projectId={currentProject.id}
+        provider={missingProvider ?? ""}
+        onFixIntegration={clearSelectedProject}
+        onDropConfig={() => setShowMissingDialog(false)}
+      />
 
       {/* SSH connection loss overlay — blocks interaction during reconnect */}
       {connectionHealth !== "connected" && (
