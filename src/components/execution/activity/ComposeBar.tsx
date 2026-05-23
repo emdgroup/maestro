@@ -34,6 +34,7 @@ interface ComposeBarProps {
   onConfigChange: (optionId: string, value: string) => void;
   promptCapabilities?: AcpPromptCapabilities | null;
   variant?: "centered" | "docked";
+  onContentChange?: (hasContent: boolean) => void;
 }
 
 const CODE_EXTENSIONS = new Set(["ts", "tsx", "js", "jsx", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "cs", "swift", "kt"]);
@@ -67,6 +68,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     onConfigChange,
     promptCapabilities,
     variant = "docked",
+    onContentChange,
   },
   ref,
 ) {
@@ -163,7 +165,8 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     setShowCommands(false);
     closeMentions();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [closeMentions]);
+    onContentChange?.(false);
+  }, [closeMentions, onContentChange]);
 
   const handleAttach = useCallback(async () => {
     const selected = await openFilePicker({ multiple: true });
@@ -179,6 +182,54 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       ]);
     }
   }, [promptCapabilities]);
+
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (!promptCapabilities?.image || !logId) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === "file" && items[i].type.startsWith("image/")) {
+          const file = items[i].getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length === 0) return;
+      e.preventDefault();
+
+      for (const file of imageFiles) {
+        const mimeType = file.type || "image/png";
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64Data = btoa(binary);
+
+        const tempPath = await api.saveClipboardImage(base64Data, mimeType);
+
+        const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
+        const existingPasted = attachments.filter((a) =>
+          a.displayName.startsWith("Pasted image"),
+        ).length;
+        const displayName =
+          existingPasted === 0
+            ? `Pasted image.${ext}`
+            : `Pasted image (${existingPasted + 1}).${ext}`;
+
+        setAttachments((prev) => [
+          ...prev,
+          { id: `${Date.now()}-${Math.random()}`, displayName, localAbsPath: tempPath, isImage: true },
+        ]);
+      }
+    },
+    [promptCapabilities, logId, attachments],
+  );
 
   const selectMention = useCallback(
     (filePath: string) => {
@@ -425,6 +476,8 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     const el = e.target;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+
+    onContentChange?.(newValue.trim().length > 0);
   };
 
   const sendDisabled = isProcessing || isSending || !value.trim();
@@ -615,6 +668,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
               value={value}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
+              onPaste={(e) => void handlePaste(e)}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               placeholder={logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"}

@@ -327,11 +327,14 @@ async fn send_prompt_impl(
     log_id: i32,
     content: serde_json::Value,
 ) -> Result<(), String> {
+    eprintln!("[maestro] send_prompt_impl: log_id={log_id} content={content}");
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id_for(log_id),
         content,
     }));
-    crate::acp::write_to_acp_session(app_state, log_id, &msg).await
+    let result = crate::acp::write_to_acp_session(app_state, log_id, &msg).await;
+    eprintln!("[maestro] send_prompt_impl result: {result:?}");
+    result
 }
 
 /// Send a plain-text prompt to a running ACP session.
@@ -1898,6 +1901,48 @@ pub async fn prepare_external_attachments(
     }
 
     Ok(results)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn save_clipboard_image(
+    base64_data: String,
+    mime_type: String,
+) -> Result<String, String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&base64_data)
+        .map_err(|e| format!("Invalid base64 data: {e}"))?;
+
+    if bytes.is_empty() {
+        return Err("Empty image data".to_string());
+    }
+
+    let ext = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        _ => "png",
+    };
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let random_suffix: u32 = rand::random();
+
+    let tmp_path = std::env::temp_dir()
+        .join(format!("maestro-clipboard-{timestamp}-{random_suffix}.{ext}"));
+
+    tokio::fs::write(&tmp_path, &bytes)
+        .await
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+
+    Ok(tmp_path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

@@ -1154,6 +1154,14 @@ async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], em
     else return { status: "error", error: e  as any };
 }
 },
+async saveClipboardImage(base64Data: string, mimeType: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_clipboard_image", { base64Data, mimeType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Close an ACP session stored on the agent server (not a live Tauri session).
  */
