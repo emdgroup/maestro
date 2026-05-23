@@ -7,6 +7,7 @@ import {
   FolderTree,
   RotateCcw,
   Archive,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -37,6 +38,10 @@ interface DiffActionBarProps {
   hasAnyStaged: boolean;
   isDiscarding: boolean;
   isDeleteMode?: boolean;
+  deleteDialogOpen?: boolean;
+  onDeleteDialogOpenChange?: (open: boolean) => void;
+  isDeleting?: boolean;
+  deleteError?: string | null;
   isShelving: boolean;
   shelvePopoverOpen: boolean;
   onShelvePopoverOpenChange: (open: boolean) => void;
@@ -59,6 +64,10 @@ export function DiffActionBar({
   hasAnyStaged,
   isDiscarding,
   isDeleteMode = false,
+  deleteDialogOpen,
+  onDeleteDialogOpenChange,
+  isDeleting = false,
+  deleteError = null,
   isShelving,
   shelvePopoverOpen,
   onShelvePopoverOpenChange,
@@ -98,7 +107,16 @@ export function DiffActionBar({
         </ToggleGroup>
 
         {/* Revert button with confirmation dialog */}
-        <AlertDialog>
+        <AlertDialog
+          open={isDeleteMode ? deleteDialogOpen : undefined}
+          onOpenChange={
+            isDeleteMode
+              ? (open) => {
+                  if (!isDeleting) onDeleteDialogOpenChange?.(open);
+                }
+              : undefined
+          }
+        >
           <AlertDialogTrigger
             render={
               <Button
@@ -114,16 +132,43 @@ export function DiffActionBar({
           />
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{isDeleteMode ? "Delete files?" : "Discard changes?"}</AlertDialogTitle>
+              <AlertDialogTitle>
+                {isDeleting
+                  ? "Deleting files…"
+                  : deleteError
+                    ? "Deletion failed"
+                    : isDeleteMode
+                      ? "Delete files?"
+                      : "Discard changes?"}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                {isDeleteMode
-                  ? "This will permanently delete the selected untracked files. This action cannot be undone."
-                  : "This will permanently discard the selected changes. This action cannot be undone."}
+                {isDeleting
+                  ? "Removing selected files from the worktree."
+                  : deleteError
+                    ? deleteError
+                    : isDeleteMode
+                      ? "This will permanently delete the selected untracked files. This action cannot be undone."
+                      : "This will permanently discard the selected changes. This action cannot be undone."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onRevert}>{isDeleteMode ? "Delete" : "Discard"}</AlertDialogAction>
+              <AlertDialogCancel disabled={isDeleting}>
+                {deleteError ? "Dismiss" : "Cancel"}
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Deleting…
+                  </>
+                ) : deleteError ? (
+                  "Retry"
+                ) : isDeleteMode ? (
+                  "Delete"
+                ) : (
+                  "Discard"
+                )}
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

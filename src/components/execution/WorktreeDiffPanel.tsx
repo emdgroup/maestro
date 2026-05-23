@@ -47,6 +47,12 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const shelveMutation = useShelveWorktreeChangesMutation();
   const deleteMutation = useDeleteUntrackedFilesMutation();
   const [shelvePopoverOpen, setShelvePopoverOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  function handleDeleteDialogOpenChange(open: boolean) {
+    if (!open) deleteMutation.reset();
+    setDeleteDialogOpen(open);
+  }
 
   const diffFiles = useMemo(() => {
     if (!diffString) return [];
@@ -281,8 +287,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         filePaths: [...stagedFiles],
       });
       setStagedFiles(new Set());
+      setDeleteDialogOpen(false);
     } catch {
-      // error toast handled by mutation
+      // keep dialog open; error surfaced via deleteMutation.error
     }
   }
 
@@ -320,8 +327,12 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         onDiffViewModeChange={setDiffViewMode}
         forceUnified={forceUnified}
         hasAnyStaged={hasAnyStaged}
-        isDiscarding={viewMode === "untracked" ? deleteMutation.isPending : discardMutation.isPending}
+        isDiscarding={discardMutation.isPending}
         isDeleteMode={viewMode === "untracked"}
+        deleteDialogOpen={deleteDialogOpen}
+        onDeleteDialogOpenChange={handleDeleteDialogOpenChange}
+        isDeleting={deleteMutation.isPending}
+        deleteError={deleteMutation.error ? String(deleteMutation.error) : null}
         isShelving={shelveMutation.isPending}
         shelvePopoverOpen={shelvePopoverOpen}
         onShelvePopoverOpenChange={setShelvePopoverOpen}
