@@ -1,7 +1,9 @@
 import { ConnectionList } from "@/components/project-picker/ConnectionList";
 import { ProjectList } from "@/components/project-picker/ProjectList";
+import { IntegrationsTab } from "@/components/project-picker/IntegrationsTab";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
 
 export function ProjectPicker() {
   const { view } = useConnectionContext();
@@ -28,7 +30,18 @@ export function ProjectPicker() {
               view === "projects" ? "-translate-x-full invisible" : "translate-x-0"
             }`}
           >
-            <ConnectionList />
+            <Tabs defaultValue="connections" className="flex flex-col h-full">
+              <TabsList className="w-full mb-4">
+                <TabsTrigger value="connections">Connections</TabsTrigger>
+                <TabsTrigger value="integrations">Integrations</TabsTrigger>
+              </TabsList>
+              <TabsContent value="connections" className="flex-1 overflow-hidden">
+                <ConnectionList />
+              </TabsContent>
+              <TabsContent value="integrations" className="flex-1 overflow-hidden">
+                <IntegrationsTab />
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Projects View */}

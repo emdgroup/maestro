@@ -1,14 +1,21 @@
-import { useEffect, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
-import { Bot } from "lucide-react";
+import { Input } from "@/ui/input";
+import { Bot, Ticket } from "lucide-react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import {
   useAgentDiscoveryQuery,
   useAgentCacheQuery,
 } from "@/services/execution.service";
+import {
+  useListIntegrations,
+  useProjectTicketingConfig,
+  useSaveProjectTicketingConfig,
+} from "@/services/integration.service";
+import type { ProjectTicketingConfig } from "@/types/bindings";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
@@ -44,6 +51,15 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       selectedAgent || null,
     );
 
+    const { data: integrations } = useListIntegrations();
+    const projectTicketingQuery = useProjectTicketingConfig(projectId);
+    const saveTicketingMutation = useSaveProjectTicketingConfig();
+
+    const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+    const [ticketingFields, setTicketingFields] = useState<Record<string, string>>({});
+    const [ticketingConfigured, setTicketingConfigured] = useState(false);
+    const [ticketingEditing, setTicketingEditing] = useState(false);
+
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
       const { default_agent, default_model } = projectSettingsQuery.data;
@@ -52,6 +68,26 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         default_model: default_model ?? "",
       });
     }, [projectSettingsQuery.data, reset]);
+
+    useEffect(() => {
+      if (!projectTicketingQuery.data) {
+        setTicketingConfigured(false);
+        setSelectedProvider(null);
+        setTicketingFields({});
+        return;
+      }
+      const config = projectTicketingQuery.data;
+      setTicketingConfigured(true);
+      setSelectedProvider(config.provider);
+      setTicketingFields({
+        owner: config.owner ?? "",
+        repo: config.repo ?? "",
+        project_path: config.project_path ?? "",
+        team_id: config.team_id ?? "",
+        project_key: config.project_key ?? "",
+        project_name: config.project_name ?? "",
+      });
+    }, [projectTicketingQuery.data]);
 
     // When agent changes, clear model selection
     const handleAgentChange = (value: string | null) => {
@@ -79,6 +115,18 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     useImperativeHandle(ref, () => ({
       save: async () => {
         await handleSubmit(onSubmit)();
+        if (selectedProvider) {
+          const config: ProjectTicketingConfig = {
+            provider: selectedProvider,
+            owner: ticketingFields.owner || null,
+            repo: ticketingFields.repo || null,
+            project_path: ticketingFields.project_path || null,
+            team_id: ticketingFields.team_id || null,
+            project_key: ticketingFields.project_key || null,
+            project_name: ticketingFields.project_name || null,
+          };
+          await saveTicketingMutation.mutateAsync({ projectId, ticketing: config });
+        }
       },
       resetToDefaults: () => {
         reset({ default_agent: "", default_model: "" });
@@ -87,6 +135,42 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const agents = discovery?.agents ?? [];
     const isLoading = projectSettingsQuery.isLoading;
+
+    const connectedIntegrations = integrations?.filter((s) => s.connected) ?? [];
+
+    const PROVIDER_NAMES: Record<string, string> = {
+      github: "GitHub",
+      gitlab: "GitLab",
+      forgejo: "Forgejo",
+      linear: "Linear",
+      jira_cloud: "Jira Cloud",
+      jira_server: "Jira Server",
+      azuredevops: "Azure DevOps",
+    };
+
+    function getTicketingFields(
+      provider: string,
+    ): { key: string; label: string; placeholder?: string }[] {
+      switch (provider) {
+        case "github":
+        case "forgejo":
+          return [
+            { key: "owner", label: "Owner" },
+            { key: "repo", label: "Repository" },
+          ];
+        case "gitlab":
+          return [{ key: "project_path", label: "Project Path", placeholder: "group/project" }];
+        case "linear":
+          return [{ key: "team_id", label: "Team ID", placeholder: "team identifier" }];
+        case "jira_cloud":
+        case "jira_server":
+          return [{ key: "project_key", label: "Project Key", placeholder: "PROJ" }];
+        case "azuredevops":
+          return [{ key: "project_name", label: "Project Name" }];
+        default:
+          return [];
+      }
+    }
 
     return (
       <div className="h-full">
@@ -213,6 +297,118 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     </p>
                   )}
                 </div>
+              </div>
+
+              {/* Ticketing Card */}
+              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Ticket className="w-4 h-4 text-muted-foreground" />
+                  Ticketing
+                </h3>
+
+                {connectedIntegrations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No integrations connected. Add integrations from the project picker screen.
+                  </p>
+                ) : ticketingConfigured && !ticketingEditing ? (
+                  /* State C: Configured read-only */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {connectedIntegrations.map((integration) => (
+                        <div
+                          key={integration.provider}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-default ${
+                            integration.provider === selectedProvider
+                              ? "border-primary ring-2 ring-primary bg-primary/5"
+                              : "border-border bg-muted/30 opacity-50"
+                          }`}
+                        >
+                          <span className="text-sm font-medium">
+                            {PROVIDER_NAMES[integration.provider] ?? integration.provider}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedProvider && getTicketingFields(selectedProvider).length > 0 && (
+                      <div className="space-y-2">
+                        {getTicketingFields(selectedProvider).map((field) => (
+                          <div key={field.key} className="space-y-1">
+                            <Label className="text-sm font-medium">{field.label}</Label>
+                            <p className="text-sm text-muted-foreground">
+                              {ticketingFields[field.key] || "—"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTicketingEditing(true)}
+                      >
+                        Change
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          await saveTicketingMutation.mutateAsync({ projectId, ticketing: null });
+                          setTicketingConfigured(false);
+                          setSelectedProvider(null);
+                          setTicketingFields({});
+                          setTicketingEditing(false);
+                        }}
+                        disabled={saveTicketingMutation.isPending}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* State B: Picker (not configured or editing) */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {connectedIntegrations.map((integration) => (
+                        <button
+                          key={integration.provider}
+                          type="button"
+                          onClick={() => setSelectedProvider(integration.provider)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                            selectedProvider === integration.provider
+                              ? "border-primary ring-2 ring-primary bg-primary/5"
+                              : "border-border bg-card hover:bg-muted/50 opacity-70 hover:opacity-100"
+                          }`}
+                        >
+                          <span className="text-sm font-medium">
+                            {PROVIDER_NAMES[integration.provider] ?? integration.provider}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedProvider && getTicketingFields(selectedProvider).length > 0 && (
+                      <div className="space-y-3">
+                        {getTicketingFields(selectedProvider).map((field) => (
+                          <div key={field.key} className="space-y-1.5">
+                            <Label className="text-sm font-medium">{field.label}</Label>
+                            <Input
+                              placeholder={field.placeholder}
+                              value={ticketingFields[field.key] ?? ""}
+                              onChange={(e) =>
+                                setTicketingFields((prev) => ({
+                                  ...prev,
+                                  [field.key]: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end">
