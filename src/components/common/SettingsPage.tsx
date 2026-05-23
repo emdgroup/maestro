@@ -14,6 +14,7 @@ import {
   useListIntegrations,
   useProjectTicketingConfig,
   useSaveProjectTicketingConfig,
+  PROVIDER_NAMES,
 } from "@/services/integration.service";
 import type { ProjectTicketingConfig } from "@/types/bindings";
 import { showSuccessToast } from "./ErrorToast";
@@ -127,18 +128,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     useImperativeHandle(ref, () => ({
       save: async () => {
         await handleSubmit(onSubmit)();
-        if (selectedProvider) {
-          const config: ProjectTicketingConfig = {
-            provider: selectedProvider,
-            owner: ticketingFields.owner || null,
-            repo: ticketingFields.repo || null,
-            project_path: ticketingFields.project_path || null,
-            team_id: ticketingFields.team_id || null,
-            project_key: ticketingFields.project_key || null,
-            project_name: ticketingFields.project_name || null,
-          };
-          await saveTicketingMutation.mutateAsync({ projectId, ticketing: config });
-        }
       },
       resetToDefaults: () => {
         reset({ default_agent: "", default_model: "" });
@@ -149,15 +138,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const isLoading = projectSettingsQuery.isLoading;
 
     const connectedIntegrations = integrations?.filter((s) => s.connected) ?? [];
-
-    const PROVIDER_NAMES: Record<string, string> = {
-      github: "GitHub",
-      gitlab: "GitLab",
-      forgejo: "Forgejo",
-      linear: "Linear",
-      jira_cloud: "Jira Cloud",
-      azuredevops: "Azure DevOps",
-    };
 
     function getTicketingFields(
       provider: string,

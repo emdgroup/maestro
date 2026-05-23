@@ -29,6 +29,7 @@ export const useSessionActivityStore = create<SessionActivityState>()(
           if (existing.status === status && existing.label === normalizedLabel) return;
           if (existing.status !== status) {
             existing.stateChangedAt = Date.now();
+            // Reset seen so the session row shows a pulse dot until the user opens it.
             if (status === "idle") {
               existing.seen = false;
             }

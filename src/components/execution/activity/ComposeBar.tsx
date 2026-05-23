@@ -201,6 +201,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       if (imageFiles.length === 0) return;
       e.preventDefault();
 
+      let pastedCount = attachments.filter((a) => a.displayName.startsWith("Pasted image")).length;
       for (const file of imageFiles) {
         const mimeType = file.type || "image/png";
         const buffer = await file.arrayBuffer();
@@ -214,13 +215,9 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
         const tempPath = await api.saveClipboardImage(base64Data, mimeType);
 
         const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
-        const existingPasted = attachments.filter((a) =>
-          a.displayName.startsWith("Pasted image"),
-        ).length;
         const displayName =
-          existingPasted === 0
-            ? `Pasted image.${ext}`
-            : `Pasted image (${existingPasted + 1}).${ext}`;
+          pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount + 1}).${ext}`;
+        pastedCount += 1;
 
         setAttachments((prev) => [
           ...prev,

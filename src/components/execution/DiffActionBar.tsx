@@ -26,6 +26,35 @@ import {
 } from "@/ui/alert-dialog";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 
+function getDialogContent(
+  isDeleting: boolean,
+  deleteError: string | null,
+  isDeleteMode: boolean,
+): { title: string; description: string; actionLabel: string } {
+  if (isDeleting) {
+    return {
+      title: "Deleting files…",
+      description: "Removing selected files from the worktree.",
+      actionLabel: "Deleting…",
+    };
+  }
+  if (deleteError) {
+    return { title: "Deletion failed", description: deleteError, actionLabel: "Retry" };
+  }
+  if (isDeleteMode) {
+    return {
+      title: "Delete files?",
+      description: "This will permanently delete the selected untracked files. This action cannot be undone.",
+      actionLabel: "Delete",
+    };
+  }
+  return {
+    title: "Discard changes?",
+    description: "This will permanently discard the selected changes. This action cannot be undone.",
+    actionLabel: "Discard",
+  };
+}
+
 interface DiffActionBarProps {
   branchName: string;
   fileSearch: string;
@@ -131,45 +160,32 @@ export function DiffActionBar({
             }
           />
           <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {isDeleting
-                  ? "Deleting files…"
-                  : deleteError
-                    ? "Deletion failed"
-                    : isDeleteMode
-                      ? "Delete files?"
-                      : "Discard changes?"}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {isDeleting
-                  ? "Removing selected files from the worktree."
-                  : deleteError
-                    ? deleteError
-                    : isDeleteMode
-                      ? "This will permanently delete the selected untracked files. This action cannot be undone."
-                      : "This will permanently discard the selected changes. This action cannot be undone."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isDeleting}>
-                {deleteError ? "Dismiss" : "Cancel"}
-              </AlertDialogCancel>
-              <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
-                {isDeleting ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Deleting…
-                  </>
-                ) : deleteError ? (
-                  "Retry"
-                ) : isDeleteMode ? (
-                  "Delete"
-                ) : (
-                  "Discard"
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
+            {(() => {
+              const dialog = getDialogContent(isDeleting, deleteError, isDeleteMode);
+              return (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{dialog.title}</AlertDialogTitle>
+                    <AlertDialogDescription>{dialog.description}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>
+                      {deleteError ? "Dismiss" : "Cancel"}
+                    </AlertDialogCancel>
+                    <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          {dialog.actionLabel}
+                        </>
+                      ) : (
+                        dialog.actionLabel
+                      )}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              );
+            })()}
           </AlertDialogContent>
         </AlertDialog>
 

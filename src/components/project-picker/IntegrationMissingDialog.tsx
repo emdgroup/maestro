@@ -8,16 +8,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { AlertTriangle } from "lucide-react";
-import { useSaveProjectTicketingConfig } from "@/services/integration.service";
-
-const PROVIDER_NAMES: Record<string, string> = {
-  github: "GitHub",
-  gitlab: "GitLab",
-  forgejo: "Forgejo",
-  linear: "Linear",
-  jira_cloud: "Jira Cloud",
-  azuredevops: "Azure DevOps",
-};
+import { useSaveProjectTicketingConfig, PROVIDER_NAMES } from "@/services/integration.service";
 
 interface IntegrationMissingDialogProps {
   open: boolean;

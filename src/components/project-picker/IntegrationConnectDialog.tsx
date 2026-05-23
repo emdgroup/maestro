@@ -11,16 +11,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
-import { useSaveIntegration } from "@/services/integration.service";
-
-const PROVIDER_NAMES: Record<string, string> = {
-  github: "GitHub",
-  gitlab: "GitLab",
-  forgejo: "Forgejo",
-  linear: "Linear",
-  jira_cloud: "Jira Cloud",
-  azuredevops: "Azure DevOps",
-};
+import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
 
 interface IntegrationConnectDialogProps {
   provider: string;

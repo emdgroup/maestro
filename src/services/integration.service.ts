@@ -5,6 +5,15 @@ import type { IntegrationStatus, ProjectTicketingConfig } from "@/types/bindings
 
 export type { IntegrationStatus, ProjectTicketingConfig };
 
+export const PROVIDER_NAMES: Record<string, string> = {
+  github: "GitHub",
+  gitlab: "GitLab",
+  forgejo: "Forgejo",
+  linear: "Linear",
+  jira_cloud: "Jira Cloud",
+  azuredevops: "Azure DevOps",
+};
+
 export const integrationQueryKeys = {
   base: ["integrations"] as const,
   list: () => [...integrationQueryKeys.base, "list"] as const,

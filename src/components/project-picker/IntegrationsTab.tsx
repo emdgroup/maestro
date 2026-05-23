@@ -2,17 +2,8 @@ import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { siGithub, siGitlab, siForgejo, siLinear, siJira } from "simple-icons";
 import { Button } from "@/ui/button";
-import { useListIntegrations, useDeleteIntegration } from "@/services/integration.service";
+import { useListIntegrations, useDeleteIntegration, PROVIDER_NAMES } from "@/services/integration.service";
 import { IntegrationConnectDialog } from "@/components/project-picker/IntegrationConnectDialog";
-
-const PROVIDER_NAMES: Record<string, string> = {
-  github: "GitHub",
-  gitlab: "GitLab",
-  forgejo: "Forgejo",
-  linear: "Linear",
-  jira_cloud: "Jira Cloud",
-  azuredevops: "Azure DevOps",
-};
 
 // Ordered as: row 1: GitHub, Jira Cloud | row 2: Linear, GitLab | row 3: Azure DevOps, Forgejo
 const ALL_PROVIDERS = ["github", "jira_cloud", "linear", "gitlab", "azuredevops", "forgejo"];
