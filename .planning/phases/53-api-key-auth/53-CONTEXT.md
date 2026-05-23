@@ -122,8 +122,10 @@ Forgejo: same as GitHub structure.
 ```rust
 // Connect a provider (validate + store credentials)
 save_github_credentials(project_id: i32, owner: String, repo: String, token: Option<String>) -> Result<String, String>
-save_gitlab_credentials(project_id: i32, instance_url: String, token: String) -> Result<String, String>
-save_forgejo_credentials(project_id: i32, instance_url: String, token: String) -> Result<String, String>
+save_gitlab_credentials(project_id: i32, instance_url: String, project_path: String, token: String) -> Result<String, String>
+// project_path required to resolve numeric project_id at connect time (locked external_id format: gitlab:{project_id}/{iid})
+save_forgejo_credentials(project_id: i32, instance_url: String, owner: String, repo: String, token: String) -> Result<String, String>
+// owner + repo required for the issues endpoint URL
 
 // Disconnect
 delete_ticketing_credentials(project_id: i32) -> Result<(), String>
