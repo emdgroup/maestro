@@ -556,6 +556,7 @@ pub async fn update_project_settings(
         default_agent: settings.default_agent,
         default_model: settings.default_model,
         updated_at: Utc::now().to_rfc3339(),
+        ticketing: None,
     };
 
     if let Some(conn_id) = connection_id {

@@ -8,6 +8,7 @@ pub mod project_config;
 pub mod project_state;
 pub mod diff;
 pub mod ticketing;
+pub mod integration;
 
 pub use project::{Project, ProjectStatus};
 pub use connection::{GitConnection, ConnectionStatus};
@@ -19,3 +20,4 @@ pub use project_config::ProjectConfig;
 pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};
 pub use diff::{DiffTarget, WorktreeDiffResult};
 pub use ticketing::{TicketingConfig, RemoteIssue};
+pub use integration::{IntegrationStatus, CredentialSource};
