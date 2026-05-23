@@ -144,7 +144,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       forgejo: "Forgejo",
       linear: "Linear",
       jira_cloud: "Jira Cloud",
-      jira_server: "Jira Server",
       azuredevops: "Azure DevOps",
     };
 
@@ -163,7 +162,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         case "linear":
           return [{ key: "team_id", label: "Team ID", placeholder: "team identifier" }];
         case "jira_cloud":
-        case "jira_server":
           return [{ key: "project_key", label: "Project Key", placeholder: "PROJ" }];
         case "azuredevops":
           return [{ key: "project_name", label: "Project Name" }];

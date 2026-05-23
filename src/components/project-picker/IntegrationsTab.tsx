@@ -10,7 +10,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   forgejo: "Forgejo",
   linear: "Linear",
   jira_cloud: "Jira Cloud",
-  jira_server: "Jira Server",
   azuredevops: "Azure DevOps",
 };
 
@@ -106,7 +105,7 @@ export function IntegrationsTab() {
       <IntegrationConnectDialog
         provider={connectProvider ?? ""}
         open={connectProvider !== null}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setConnectProvider(null);
         }}
       />

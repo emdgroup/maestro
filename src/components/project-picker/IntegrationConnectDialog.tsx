@@ -19,7 +19,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   forgejo: "Forgejo",
   linear: "Linear",
   jira_cloud: "Jira Cloud",
-  jira_server: "Jira Server",
   azuredevops: "Azure DevOps",
 };
 
@@ -59,14 +58,6 @@ function getProviderFields(provider: string): {
         instanceUrlLabel: "Site URL",
         instanceUrlPlaceholder: "https://yourorg.atlassian.net",
         showEmail: true,
-        tokenLabel: "API Token",
-      };
-    case "jira_server":
-      return {
-        showInstanceUrl: true,
-        instanceUrlLabel: "Base URL",
-        instanceUrlPlaceholder: "https://jira.yourcompany.com",
-        showEmail: false,
         tokenLabel: "API Token",
       };
     case "azuredevops":
