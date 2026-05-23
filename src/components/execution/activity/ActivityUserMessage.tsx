@@ -14,15 +14,7 @@ function escapeHtml(str: string): string {
 }
 
 function preprocessUserMarkdown(text: string): string {
-  const parts = text.split(/(```[\s\S]*?```)/g);
-  return parts
-    .map((part, i) => {
-      if (i % 2 === 1) return part;
-      return part
-        .replace(/^([2-9]\d*|[1-9]\d+)\./, "$1\\.")
-        .replace(/\n/g, "\n ");
-    })
-    .join("");
+  return text.replace(/^([2-9]\d*|[1-9]\d+)\./, "$1\\.");
 }
 
 function buildTextMarkdown(blocks: ParsedContentBlock[]): string {
@@ -100,9 +92,9 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
         <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
           <div className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words">
             {hasAttachments ? (
-              <MarkdownBlock text={preprocessUserMarkdown(buildTextMarkdown(parsed.blocks))} />
+              <MarkdownBlock text={preprocessUserMarkdown(buildTextMarkdown(parsed.blocks))} breaks />
             ) : (
-              <MarkdownBlock text={preprocessUserMarkdown(parsed.text)} />
+              <MarkdownBlock text={preprocessUserMarkdown(parsed.text)} breaks />
             )}
             {hasExtras && (
               <div className="flex flex-wrap items-start gap-2 mt-2 pt-2 border-t border-border/15">

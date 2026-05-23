@@ -14,6 +14,7 @@ import {
   type ReactElement,
 } from "react";
 import Markdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkMark } from "remark-mark-highlight";
 import remarkMath from "remark-math";
@@ -527,10 +528,10 @@ function MarkdownAnchorComponent({ href, children }: { href?: string; children?:
 
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
 // so the forward reference is safe — MARKDOWN_COMPONENTS is initialized before any rendering.
-export const MarkdownBlock = memo(function MarkdownBlock({ text }: { text: string }) {
+export const MarkdownBlock = memo(function MarkdownBlock({ text, breaks }: { text: string; breaks?: boolean }) {
   return (
     <Markdown
-      remarkPlugins={MARKDOWN_PLUGINS.remark}
+      remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}
       rehypePlugins={MARKDOWN_PLUGINS.rehype}
       // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
       components={MARKDOWN_COMPONENTS as any}
