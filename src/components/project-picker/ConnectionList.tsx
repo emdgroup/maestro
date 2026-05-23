@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Folder, Server, Globe, ChevronRight, Zap, Terminal } from "lucide-react";
+import { Folder, Server, ChevronRight, Zap, Terminal } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { SshAuthModal } from "@/components/project-picker/SshAuthModal.tsx";
@@ -94,11 +94,6 @@ export function ConnectionList() {
   return (
     <>
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border">
-          <Globe className="w-5 h-5 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Connections</h2>
-        </div>
-
         <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">
           {connections.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">

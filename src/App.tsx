@@ -143,7 +143,7 @@ function App() {
   }, [currentProject?.id]);
 
   useEffect(() => {
-    if (!currentProject || integrationsLoading || ticketingLoading) return;
+if (!currentProject || integrationsLoading || ticketingLoading) return;
     if (!ticketingConfig) {
       setShowMissingDialog(false);
       return;

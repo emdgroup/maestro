@@ -106,6 +106,18 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             default_model: data.default_model || null,
           },
         });
+        if (selectedProvider) {
+          const config: ProjectTicketingConfig = {
+            provider: selectedProvider,
+            owner: ticketingFields.owner || null,
+            repo: ticketingFields.repo || null,
+            project_path: ticketingFields.project_path || null,
+            team_id: ticketingFields.team_id || null,
+            project_key: ticketingFields.project_key || null,
+            project_name: ticketingFields.project_name || null,
+          };
+          await saveTicketingMutation.mutateAsync({ projectId, ticketing: config });
+        }
         showSuccessToast("Settings saved");
       } catch (err) {
         console.error("Failed to save project settings:", err);

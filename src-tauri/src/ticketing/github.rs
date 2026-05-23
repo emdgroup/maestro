@@ -24,6 +24,21 @@ struct GitHubLabel {
     name: String,
 }
 
+/// Fetch the authenticated GitHub username via `gh api user --jq '.login'`.
+/// Returns None if gh is unavailable, unauthenticated, or the call fails.
+pub async fn try_gh_cli_display_name() -> Option<String> {
+    let output = TokioCommand::new("gh")
+        .args(["api", "user", "--jq", ".login"])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
 /// Try to retrieve an auth token from the gh CLI. Never returns Err — returns None
 /// if gh is not installed, not authenticated, or the command fails for any reason.
 /// The token value is never logged.

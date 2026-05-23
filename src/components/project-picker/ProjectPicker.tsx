@@ -1,12 +1,44 @@
+import { useState, useRef } from "react";
+import { Cable, Server } from "lucide-react";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { ConnectionList } from "@/components/project-picker/ConnectionList";
 import { ProjectList } from "@/components/project-picker/ProjectList";
 import { IntegrationsTab } from "@/components/project-picker/IntegrationsTab";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
+import {
+  slideVariants,
+  PAGE_TRANSITION_DURATION,
+  PAGE_TRANSITION_EASING,
+} from "@/utils/constants/animations";
+
+type TabId = "connections" | "integrations";
+
+const TABS: Array<{
+  id: TabId;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: "connections", label: "Connections", icon: Server },
+  { id: "integrations", label: "Integrations", icon: Cable },
+];
+
+const TAB_ORDER: TabId[] = ["connections", "integrations"];
 
 export function ProjectPicker() {
   const { view } = useConnectionContext();
+  const [activeTab, setActiveTab] = useState<TabId>("connections");
+  const [tabSlideDir, setTabSlideDir] = useState(1);
+  const prevTabRef = useRef<TabId>("connections");
+
+  const handleTabClick = (tab: TabId) => {
+    if (tab === prevTabRef.current) return;
+    const prevIdx = TAB_ORDER.indexOf(prevTabRef.current);
+    const newIdx = TAB_ORDER.indexOf(tab);
+    setTabSlideDir(newIdx > prevIdx ? 1 : -1);
+    prevTabRef.current = tab;
+    setActiveTab(tab);
+  };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background text-foreground p-8 relative">
@@ -31,18 +63,59 @@ export function ProjectPicker() {
               view === "projects" ? "-translate-x-full invisible" : "translate-x-0"
             }`}
           >
-            <Tabs defaultValue="connections" className="flex flex-col h-full">
-              <TabsList className="w-full mb-4">
-                <TabsTrigger value="connections">Connections</TabsTrigger>
-                <TabsTrigger value="integrations">Integrations</TabsTrigger>
-              </TabsList>
-              <TabsContent value="connections" className="flex-1 overflow-hidden">
-                <ConnectionList />
-              </TabsContent>
-              <TabsContent value="integrations" className="flex-1 overflow-hidden">
-                <IntegrationsTab />
-              </TabsContent>
-            </Tabs>
+            {/* Tab bar matching AppHeader style */}
+            <LayoutGroup id="picker-tab-nav">
+              <div className="grid grid-cols-2 rounded-lg bg-muted p-1 gap-1 mb-4">
+                {TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleTabClick(tab.id)}
+                      className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${
+                        isActive ? "" : "cursor-pointer hover:bg-background/50"
+                      }`}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="picker-active-pill"
+                          className="absolute inset-0 rounded-md bg-background shadow-sm"
+                          transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                        />
+                      )}
+                      <motion.span
+                        animate={{ color: isActive ? "var(--accent)" : "var(--muted-foreground)" }}
+                        transition={{ duration: 0.15 }}
+                        className="relative z-10 flex items-center gap-1.5"
+                      >
+                        <Icon className="size-3.5" />
+                        {tab.label}
+                      </motion.span>
+                    </button>
+                  );
+                })}
+              </div>
+            </LayoutGroup>
+
+            {/* Animated tab content */}
+            <div className="flex-1 relative overflow-hidden">
+              <AnimatePresence initial={false} custom={tabSlideDir}>
+                <motion.div
+                  key={activeTab}
+                  custom={tabSlideDir}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
+                  className="absolute inset-0 overflow-hidden"
+                >
+                  {activeTab === "connections" && <ConnectionList />}
+                  {activeTab === "integrations" && <IntegrationsTab />}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Projects View */}

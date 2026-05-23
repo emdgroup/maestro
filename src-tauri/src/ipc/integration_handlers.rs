@@ -16,7 +16,6 @@ const KNOWN_PROVIDERS: &[&str] = &[
     "forgejo",
     "linear",
     "jira_cloud",
-    "jira_server",
     "azuredevops",
 ];
 
@@ -46,10 +45,11 @@ pub async fn list_integrations(
                     // gh CLI is an ephemeral credential source — re-probed each call,
                     // never stored in keyring (per D-18 and RESEARCH.md Pitfall 3).
                     if let Some(_token) = crate::ticketing::github::try_gh_cli_token().await {
+                        let display_name = crate::ticketing::github::try_gh_cli_display_name().await;
                         statuses.push(IntegrationStatus {
                             provider: provider.to_string(),
                             connected: true,
-                            display_name: None,
+                            display_name,
                             source: Some(CredentialSource::GhCli),
                         });
                         continue;

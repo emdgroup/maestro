@@ -863,6 +863,7 @@ fn handle_server_message(
     replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
     initialized: &Arc<std::sync::Mutex<bool>>,
 ) -> Option<String> {
+    eprintln!("[maestro] handle_server_message: log_id={log_id} msg={msg:?}");
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
             // Detect CurrentModeUpdate to keep the per-session current_mode_id current.
@@ -1210,6 +1211,7 @@ async fn handle_shared_server_message(
     app_state: &Arc<crate::db::AppState>,
     pending: &PendingChannels,
 ) {
+    eprintln!("[maestro] handle_shared_server_message: log_id={:?} msg={msg:?}", extract_session_log_id(&msg));
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(log_id) = extract_session_log_id(&msg) {
