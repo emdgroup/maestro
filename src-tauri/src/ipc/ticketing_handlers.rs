@@ -1,334 +1,180 @@
 use std::sync::Arc;
-use std::fs;
-use std::path::Path;
+
 use tauri::State;
+
 use crate::db::AppState;
-use crate::models::ticketing::{ProviderConfig, RemoteIssue, TicketingConfig};
-use crate::models::project_config::now_rfc3339;
+use crate::models::project_config::{now_rfc3339, ProjectConfig, ProjectTicketingConfig};
+use crate::models::ticketing::RemoteIssue;
+use crate::ticketing::keychain::{KeychainOutcome, KeychainStore};
 
-#[tauri::command]
-#[specta::specta]
-pub async fn get_ticketing_config(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<TicketingConfig, String> {
-    let path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-
-    Ok(TicketingConfig::load_from_project(&path).unwrap_or_default())
+fn extract_project_path(app_state: &AppState, project_id: i32) -> Result<String, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT path FROM projects WHERE id = ?",
+        [project_id],
+        |row| row.get::<_, String>(0),
+    )
+    .map_err(|_| format!("Project {} not found", project_id))
 }
 
+/// Read the ticketing field from .maestro/settings.json for the given project.
 #[tauri::command]
 #[specta::specta]
-pub async fn save_ticketing_config(
+pub async fn get_project_ticketing_config(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    config: TicketingConfig,
+) -> Result<Option<ProjectTicketingConfig>, String> {
+    let path = extract_project_path(&app_state, project_id)?;
+    let config = ProjectConfig::load_from_project(&path).unwrap_or_default();
+    Ok(config.ticketing)
+}
+
+/// Write the ticketing field into .maestro/settings.json for the given project.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_project_ticketing_config(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    ticketing: Option<ProjectTicketingConfig>,
 ) -> Result<(), String> {
-    let path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-
-    if config.provider.is_some() {
-        // Clear any stale credential so the next fetch_remote_issues is forced
-        // through a validate_and_store path. Best-effort — not fatal if no token stored.
-        app_state.token_manager.delete_token(
-            project_id,
-            &app_state.app_data_dir,
-            &app_state.app_handle,
-        ).ok();
-    }
-
-    let config = TicketingConfig {
-        updated_at: now_rfc3339(),
-        ..config
-    };
-
+    let path = extract_project_path(&app_state, project_id)?;
+    let mut config = ProjectConfig::load_from_project(&path).unwrap_or_default();
+    config.ticketing = ticketing;
+    config.updated_at = now_rfc3339();
     config.save_to_project(&path)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn save_github_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    owner: String,
-    repo: String,
-    token: Option<String>,
-) -> Result<String, String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::github::validate_and_store(
-        project_id,
-        &owner,
-        &repo,
-        token,
-        &project_path,
-        &app_state,
-    )
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_gitlab_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    instance_url: String,
-    project_path: String,
-    token: String,
-) -> Result<String, String> {
-    let db_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::gitlab::validate_and_store(
-        project_id,
-        &instance_url,
-        &project_path,
-        &token,
-        &db_path,
-        &app_state,
-    )
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_forgejo_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    instance_url: String,
-    owner: String,
-    repo: String,
-    token: String,
-) -> Result<String, String> {
-    let db_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::forgejo::validate_and_store(
-        project_id,
-        &instance_url,
-        &owner,
-        &repo,
-        &token,
-        &db_path,
-        &app_state,
-    )
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_linear_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    api_key: String,
-) -> Result<String, String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::linear::validate_and_store(project_id, &api_key, &project_path, &app_state).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn list_linear_teams(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<Vec<crate::ticketing::linear::LinearTeam>, String> {
-    let token = app_state
-        .token_manager
-        .get_token(project_id, &app_state.app_data_dir, &app_state.app_handle)?
-        .ok_or_else(|| "No stored Linear credentials found".to_string())?;
-    crate::ticketing::linear::list_teams(&token.access_token).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_jira_cloud_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    site_url: String,
-    email: String,
-    api_token: String,
-    project_key: String,
-) -> Result<String, String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::jira_cloud::validate_and_store(
-        project_id,
-        &site_url,
-        &email,
-        &api_token,
-        &project_key,
-        &project_path,
-        &app_state,
-    )
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_azure_devops_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    org_url: String,
-    project: String,
-    token: String,
-) -> Result<String, String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    crate::ticketing::azure_devops::validate_and_store(
-        project_id,
-        &org_url,
-        &project,
-        &token,
-        &project_path,
-        &app_state,
-    )
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_ticketing_credentials(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<(), String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    app_state.token_manager.delete_token(
-        project_id,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-    let config_path = Path::new(&project_path)
-        .join(".maestro")
-        .join("ticketing.json");
-    if config_path.exists() {
-        fs::remove_file(&config_path)
-            .map_err(|e| format!("Failed to remove ticketing.json: {}", e))?;
-    }
-    Ok(())
-}
-
+/// Fetch remote issues using the global keychain for credentials and per-project
+/// ticketing config for provider-specific fields (repo, project_key, etc.).
 #[tauri::command]
 #[specta::specta]
 pub async fn fetch_remote_issues(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let project_path = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, String>(0),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-    let config = TicketingConfig::load_from_project(&project_path)
-        .map_err(|_| "No ticketing provider configured".to_string())?;
-    let provider = config
-        .provider
+    let path = extract_project_path(&app_state, project_id)?;
+
+    let config = ProjectConfig::load_from_project(&path)
+        .map_err(|_| "Failed to load project config".to_string())?;
+
+    let ticketing = config
+        .ticketing
         .ok_or_else(|| "No ticketing provider configured".to_string())?;
-    let token = app_state
-        .token_manager
-        .get_token(project_id, &app_state.app_data_dir, &app_state.app_handle)?
-        .ok_or_else(|| "No stored credentials found".to_string())?;
-    match provider {
-        ProviderConfig::Github(cfg) => {
-            crate::ticketing::github::fetch_issues(&cfg.owner, &cfg.repo, &token.access_token)
-                .await
+
+    let provider = &ticketing.provider;
+
+    match provider.as_str() {
+        "github" => {
+            // First try global keychain, then fall back to gh CLI.
+            let token = match KeychainStore::get_integration("github", &app_state.app_data_dir)? {
+                KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
+                    creds.token
+                }
+                KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
+                    crate::ticketing::github::try_gh_cli_token()
+                        .await
+                        .ok_or_else(|| "No GitHub credentials found".to_string())?
+                }
+            };
+            let owner = ticketing
+                .owner
+                .as_deref()
+                .ok_or_else(|| "GitHub: owner required in project ticketing config".to_string())?;
+            let repo = ticketing
+                .repo
+                .as_deref()
+                .ok_or_else(|| "GitHub: repo required in project ticketing config".to_string())?;
+            crate::ticketing::github::fetch_issues(owner, repo, &token).await
         }
-        ProviderConfig::Gitlab(cfg) => {
-            crate::ticketing::gitlab::fetch_issues(
-                &cfg.instance_url,
-                cfg.project_id,
-                &token.access_token,
-            )
-            .await
+
+        "gitlab" => {
+            let creds = get_integration_creds("gitlab", &app_state)?;
+            let instance_url = creds
+                .instance_url
+                .as_deref()
+                .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
+            // project_path in ticketing config holds the GitLab project path (e.g. "group/project").
+            // The numeric project_id is resolved via the GitLab API and stored in project_key as a string.
+            let gitlab_project_id: i64 = ticketing
+                .project_key
+                .as_deref()
+                .ok_or_else(|| "GitLab: project_key (numeric id) required in project ticketing config".to_string())?
+                .parse()
+                .map_err(|_| "GitLab: project_key must be a numeric project id".to_string())?;
+            crate::ticketing::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
         }
-        ProviderConfig::Forgejo(cfg) => {
-            crate::ticketing::forgejo::fetch_issues(
-                &cfg.instance_url,
-                &cfg.owner,
-                &cfg.repo,
-                &token.access_token,
-            )
-            .await
+
+        "forgejo" => {
+            let creds = get_integration_creds("forgejo", &app_state)?;
+            let instance_url = creds
+                .instance_url
+                .as_deref()
+                .ok_or_else(|| "Forgejo: instance_url missing from stored credentials".to_string())?;
+            let owner = ticketing
+                .owner
+                .as_deref()
+                .ok_or_else(|| "Forgejo: owner required in project ticketing config".to_string())?;
+            let repo = ticketing
+                .repo
+                .as_deref()
+                .ok_or_else(|| "Forgejo: repo required in project ticketing config".to_string())?;
+            crate::ticketing::forgejo::fetch_issues(instance_url, owner, repo, &creds.token).await
         }
-        ProviderConfig::Linear(cfg) => {
-            crate::ticketing::linear::fetch_issues(&token.access_token, cfg.team_id.as_deref()).await
+
+        "linear" => {
+            let creds = get_integration_creds("linear", &app_state)?;
+            crate::ticketing::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
         }
-        ProviderConfig::Jiracloud(cfg) => {
-            crate::ticketing::jira_cloud::fetch_issues(
-                &cfg.site_url,
-                &cfg.email,
-                &token.access_token,
-                &cfg.project_key,
-            )
-            .await
+
+        "jira_cloud" => {
+            let creds = get_integration_creds("jira_cloud", &app_state)?;
+            let site_url = creds
+                .instance_url
+                .as_deref()
+                .ok_or_else(|| "Jira Cloud: site_url missing from stored credentials".to_string())?;
+            let email = creds
+                .email
+                .as_deref()
+                .ok_or_else(|| "Jira Cloud: email missing from stored credentials".to_string())?;
+            let project_key = ticketing
+                .project_key
+                .as_deref()
+                .ok_or_else(|| "Jira Cloud: project_key required in project ticketing config".to_string())?;
+            crate::ticketing::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
         }
-        ProviderConfig::Jiraserver(_cfg) => {
-            Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string())
+
+        "jira_server" => Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string()),
+
+        "azuredevops" => {
+            let creds = get_integration_creds("azuredevops", &app_state)?;
+            let org_url = creds
+                .instance_url
+                .as_deref()
+                .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
+            let project_name = ticketing
+                .project_name
+                .as_deref()
+                .ok_or_else(|| "Azure DevOps: project_name required in project ticketing config".to_string())?;
+            crate::ticketing::azure_devops::fetch_issues(org_url, project_name, &creds.token).await
         }
-        ProviderConfig::Azuredevops(cfg) => {
-            crate::ticketing::azure_devops::fetch_issues(
-                &cfg.org_url,
-                &cfg.project,
-                &token.access_token,
-            )
-            .await
+
+        unknown => Err(format!("Unknown ticketing provider: {}", unknown)),
+    }
+}
+
+fn get_integration_creds(
+    provider: &str,
+    app_state: &AppState,
+) -> Result<crate::models::integration::IntegrationCredentials, String> {
+    match KeychainStore::get_integration(provider, &app_state.app_data_dir)? {
+        KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
+            Ok(creds)
+        }
+        KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
+            Err(format!("No credentials found for {}", provider))
         }
     }
 }
