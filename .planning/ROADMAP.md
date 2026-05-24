@@ -8,7 +8,7 @@
 - ✅ **v1.3 Agents & Worktrees** — Phases 25-28 (shipped 2026-03-30)
 - ✅ **v1.4 Quality & Worktrees** — Phases 29-41 (shipped 2026-04-17)
 - ✅ **v1.5 ACP Integration** — Phases 42-49 (shipped 2026-05-20)
-- 🚧 **v1.6 Ticketing Integration** — Phases 50-56 (in progress)
+- ✅ **v1.6 Ticketing Integration** — Phases 50-56 (shipped 2026-05-24)
 
 ## Phases
 
@@ -120,7 +120,7 @@ See phase details below (archived after milestone close).
 - [x] **Phase 53: GitHub/GitLab/Forgejo Auth + API Clients** — PAT-based connection + issue fetching for GitHub (gh CLI auto-detect), GitLab (self-hosted), and Forgejo (completed 2026-05-21)
 - [x] **Phase 54: Linear/Jira/AzDO Auth + API Clients** — API key connection + issue fetching for Linear (GraphQL), Jira Cloud (email+token), Azure DevOps (PAT); Jira Server dropped (Atlassian EOL) (completed 2026-05-21)
 - [x] **Phase 55: Settings UI** — Ticketing section in project settings with provider picker, connect/disconnect, and connection status for all 6 providers (completed 2026-05-23)
-- [ ] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection
+- [x] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection (completed 2026-05-24)
 
 ## Phase Details
 
@@ -217,8 +217,8 @@ Plans:
   5. In the Changed tab, clicking "Update task" overwrites the task's title, description, and labels from the current provider data and clears the changed flag; clicking "Dismiss" clears the changed flag while keeping the current task content
 **Plans**: 2 plans
 Plans:
-- [ ] 56-01-PLAN.md — RemoteIssue priority field + AzDo HTML fix + 3 new IPC commands + lib.rs registration + bindings regen
-- [ ] 56-02-PLAN.md — Service hooks + ImportTicketsModal component + BacklogView Import button
+- [x] 56-01-PLAN.md — RemoteIssue priority field + AzDo HTML fix + 3 new IPC commands + lib.rs registration + bindings regen
+- [x] 56-02-PLAN.md — Service hooks + ImportTicketsModal component + BacklogView Import button
 **UI hint**: yes
 
 ## Progress
