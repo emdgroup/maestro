@@ -1362,6 +1362,42 @@ async fetchRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], strin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Batch-import remote issues as Backlog tasks for a project, skipping any that have already
+ * been imported (by external_id + project_id). Returns the list of newly-created tasks.
+ */
+async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) : Promise<Result<Task[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_tasks", { projectId, issues, baseBranch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update a task's title, description, labels, and external_updated_at from a remote issue.
+ * This is the "Update task" action in the Changed tab — performs a non-destructive content overwrite.
+ */
+async updateTaskFromRemote(taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { taskId, issue }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Advance a task's external_updated_at to the remote value, clearing the "changed" flag
+ * without modifying title, description, or labels.
+ */
+async dismissTaskChange(taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { taskId, remoteUpdatedAt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1444,7 +1480,7 @@ export type ProjectTicketingConfig = { provider: string; owner?: string | null; 
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
  */
-export type RemoteIssue = { external_id: string; title: string; body: string | null; url: string; labels: string[]; updated_at: string | null }
+export type RemoteIssue = { external_id: string; title: string; body: string | null; url: string; labels: string[]; updated_at: string | null; priority: string | null }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
