@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Download } from "lucide-react";
 import { useTasksQuery, useDeleteTaskMutation, useUpdateTask } from "@/services/task.service";
 import { useKanban } from "@/contexts/KanbanContext";
 import { Button } from "@/ui/button";
 import { BacklogTaskSheet } from "@/components/kanban/BacklogTaskSheet";
+import { ImportTicketsModal } from "@/components/kanban/ImportTicketsModal";
+import { useProjectTicketingConfig } from "@/services/integration.service";
 import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITY_BADGE_CLASSES } from "@/utils/constants/priority";
 
@@ -30,6 +32,13 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<"create" | "edit">("create");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const openImportModal = () => setImportModalOpen(true);
+  const closeImportModal = () => setImportModalOpen(false);
+
+  const { data: ticketingConfig } = useProjectTicketingConfig(projectId ?? 0);
+  const hasTicketing = ticketingConfig != null;
 
   if (isLoading) {
     return (
@@ -89,10 +98,18 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
               Tasks waiting to be refined and promoted to the board
             </p>
           </div>
-          <Button variant="accent" size="sm" onClick={openCreate} className="h-8">
-            <Plus className="w-4 h-4" />
-            Add Task
-          </Button>
+          <div className="flex items-center gap-2">
+            {hasTicketing && (
+              <Button variant="outline" size="sm" onClick={openImportModal} className="h-8">
+                <Download className="w-4 h-4" />
+                Import tickets
+              </Button>
+            )}
+            <Button variant="accent" size="sm" onClick={openCreate} className="h-8">
+              <Plus className="w-4 h-4" />
+              Add Task
+            </Button>
+          </div>
         </div>
 
         {/* Task list */}
@@ -167,6 +184,14 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
             projectId={projectId ?? 0}
           />
         </div>
+      )}
+
+      {hasTicketing && importModalOpen && (
+        <ImportTicketsModal
+          isOpen={importModalOpen}
+          onClose={closeImportModal}
+          projectId={projectId ?? 0}
+        />
       )}
     </div>
   );
