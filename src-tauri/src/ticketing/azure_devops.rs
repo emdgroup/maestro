@@ -4,6 +4,10 @@ use crate::ticketing::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
 
+fn html_to_markdown(html: &str) -> String {
+    htmd::convert(html).unwrap_or_else(|_| html.to_string())
+}
+
 fn make_azdo_auth(token: &str) -> String {
     let credentials = format!(":{}", token);
     format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes()))
@@ -66,6 +70,8 @@ struct WorkItemFields {
     changed_date: Option<String>,
     #[serde(rename = "System.Tags")]
     tags: Option<String>,
+    #[serde(rename = "Microsoft.VSTO.Priority")]
+    priority: Option<i32>,
 }
 
 const WIQL_FIELDS: &[&str] = &[
@@ -75,6 +81,7 @@ const WIQL_FIELDS: &[&str] = &[
     "System.WorkItemType",
     "System.ChangedDate",
     "System.Tags",
+    "Microsoft.VSTO.Priority",
 ];
 
 /// Validate an Azure DevOps PAT against the connectionData endpoint, save the
@@ -247,10 +254,17 @@ pub async fn fetch_issues(
             results.push(RemoteIssue {
                 external_id: format!("azuredevops:{}", item.id),
                 title: item.fields.title,
-                body: item.fields.description,
+                body: item.fields.description.map(|h| html_to_markdown(&h)),
                 url: format!("{}/{}/_workitems/edit/{}", base, encoded_project, item.id),
                 labels,
                 updated_at: item.fields.changed_date,
+                priority: match item.fields.priority {
+                    Some(1) => Some("Urgent".to_string()),
+                    Some(2) => Some("High".to_string()),
+                    Some(3) => Some("Medium".to_string()),
+                    Some(4) => Some("Low".to_string()),
+                    _ => None,
+                },
             });
         }
     }

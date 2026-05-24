@@ -140,6 +140,7 @@ pub async fn fetch_issues(
             url: issue.html_url,
             labels: issue.labels.into_iter().map(|l| l.name).collect(),
             updated_at: issue.updated_at,
+            priority: None,
         })
         .collect();
 

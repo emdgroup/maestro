@@ -41,6 +41,7 @@ struct LinearIssue {
     #[serde(rename = "updatedAt")]
     updated_at: Option<String>,
     labels: LabelConnection,
+    priority: Option<i32>,   // 0=null, 1=Urgent, 2=High, 3=Medium, 4=Low
 }
 
 #[derive(serde::Deserialize)]
@@ -76,8 +77,8 @@ pub struct LinearTeam {
 
 const VIEWER_QUERY: &str = "{ viewer { id name } }";
 const TEAMS_QUERY: &str = "{ teams { nodes { id name key } } }";
-const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt labels { nodes { name } } } } }"#;
-const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt labels { nodes { name } } } } }"#;
+const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
+const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
 
 // ── HTTP helper ──────────────────────────────────────────────────────────────
 
@@ -263,6 +264,13 @@ pub async fn fetch_issues(
             url: issue.url,
             labels: issue.labels.nodes.into_iter().map(|l| l.name).collect(),
             updated_at: issue.updated_at,
+            priority: match issue.priority {
+                Some(1) => Some("Urgent".to_string()),
+                Some(2) => Some("High".to_string()),
+                Some(3) => Some("Medium".to_string()),
+                Some(4) => Some("Low".to_string()),
+                _ => None,
+            },
         })
         .collect();
 

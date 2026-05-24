@@ -24,11 +24,17 @@ struct JiraIssueResponse {
 }
 
 #[derive(serde::Deserialize)]
+struct JiraPriority {
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
 struct JiraIssueFields {
     summary: String,
     description: Option<serde_json::Value>,
     labels: Vec<String>,
     updated: Option<String>,
+    priority: Option<JiraPriority>,
 }
 
 fn make_basic_auth(email: &str, api_token: &str) -> String {
@@ -132,7 +138,7 @@ pub async fn fetch_issues(
         safe_key
     );
     let search_url = format!(
-        "{}/rest/api/3/search?maxResults=100&fields=summary,description,labels,updated,self&jql={}",
+        "{}/rest/api/3/search?maxResults=100&fields=summary,description,labels,updated,priority,self&jql={}",
         base,
         urlencoding::encode(&jql)
     );
@@ -174,6 +180,13 @@ pub async fn fetch_issues(
                 url,
                 labels: issue.fields.labels,
                 updated_at: issue.fields.updated,
+                priority: issue.fields.priority.as_ref().and_then(|p| match p.name.as_str() {
+                    "Highest" => Some("Urgent".to_string()),
+                    "High" => Some("High".to_string()),
+                    "Medium" => Some("Medium".to_string()),
+                    "Low" | "Lowest" => Some("Low".to_string()),
+                    _ => None,
+                }),
             }
         })
         .collect();

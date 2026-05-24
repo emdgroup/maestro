@@ -161,6 +161,7 @@ pub async fn fetch_issues(
             url: issue.web_url,
             labels: issue.labels,
             updated_at: issue.updated_at,
+            priority: None,
         })
         .collect();
 

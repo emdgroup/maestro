@@ -92,6 +92,7 @@ pub struct RemoteIssue {
     pub url: String,
     pub labels: Vec<String>,
     pub updated_at: Option<String>,
+    pub priority: Option<String>,   // normalized: "Urgent"|"High"|"Medium"|"Low"|null
 }
 
 impl TicketingConfig {
