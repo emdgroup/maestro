@@ -79,9 +79,8 @@ export function useCreateTaskMutation() {
     mutationFn: (request: Task) =>
       api.createTask(
         request.project_id,
-        request.name,
+        request.title,
         request.description,
-        request.acceptance_criteria || "",
         request.skills,
         request.base_branch,
       ),
@@ -104,9 +103,8 @@ export function useUpdateTask() {
         taskId,
         updates.status ?? null,
         updates.description ?? null,
-        updates.name ?? null,
+        updates.title ?? null,
         updates.priority ?? null,
-        updates.acceptance_criteria ?? null,
         updates.base_branch ?? null,
         updates.skills ?? null,
       ),

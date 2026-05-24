@@ -142,9 +142,9 @@ async getTasks(projectId: number) : Promise<Result<Task[], string>> {
 /**
  * Create a new task with validation
  */
-async createTask(projectId: number, name: string, description: string, acceptanceCriteria: string, skills: string[], baseBranch: string) : Promise<Result<Task, string>> {
+async createTask(projectId: number, title: string, description: string, skills: string[], baseBranch: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_task", { projectId, name, description, acceptanceCriteria, skills, baseBranch }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_task", { projectId, title, description, skills, baseBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -153,9 +153,9 @@ async createTask(projectId: number, name: string, description: string, acceptanc
 /**
  * Update a task's status or other fields
  */
-async updateTask(taskId: number, status: string | null, description: string | null, name: string | null, priority: string | null, acceptanceCriteria: string | null, baseBranch: string | null, skills: string[] | null) : Promise<Result<Task, string>> {
+async updateTask(taskId: number, status: string | null, description: string | null, title: string | null, priority: string | null, baseBranch: string | null, skills: string[] | null) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description, name, priority, acceptanceCriteria, baseBranch, skills }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description, title, priority, baseBranch, skills }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1474,10 +1474,10 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; name: string; description: string; acceptance_criteria?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; created_at: string; updated_at: string }
+export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
-export type TaskPriority = "Urgent" | "High" | "Medium" | "Low"
+export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 

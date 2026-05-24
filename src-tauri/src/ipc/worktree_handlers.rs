@@ -50,7 +50,7 @@ pub async fn list_worktrees_with_status(
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at, w.base_branch,
-                    t.name AS task_name
+                    t.title AS task_name
              FROM worktrees w
              LEFT JOIN tasks t ON t.id = w.task_id
              WHERE w.project_id = ?"

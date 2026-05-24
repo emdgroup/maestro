@@ -29,7 +29,7 @@ export function useExecuteTask(projectId: number | null, projectPath: string) {
         worktreeId = existingWorktree.id;
         branchName = existingWorktree.branch_name;
       } else {
-        const slug = task.name
+        const slug = task.title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "")
@@ -49,12 +49,12 @@ export function useExecuteTask(projectId: number | null, projectPath: string) {
         projectId,
         branchName,
         repoPath: projectPath,
-        sessionName: task.name,
+        sessionName: task.title,
         worktreeId,
         taskId: task.id,
         taskDescription: task.description,
       });
-      toast.success(`Session started for "${task.name}"`);
+      toast.success(`Session started for "${task.title}"`);
     } catch (error) {
       toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

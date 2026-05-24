@@ -62,7 +62,7 @@ export function TaskCard({ task, onReviewClick, onSettingsClick, onArchiveClick 
       { taskId: task.id, updates: { status: "Backlog" } },
       {
         onSuccess: () => {
-          toast.success(`"${task.name}" moved back to Backlog`);
+          toast.success(`"${task.title}" moved back to Backlog`);
         },
       },
     );
@@ -85,7 +85,7 @@ export function TaskCard({ task, onReviewClick, onSettingsClick, onArchiveClick 
           <div
             className={`h-2 w-2 rounded-full shrink-0 ${getStatusDotColor(task.status)} ${task.status === "InProgress" ? "animate-pulse" : ""}`}
           />
-          <div className="font-base text-foreground truncate">{task.name}</div>
+          <div className="font-base text-foreground truncate">{task.title}</div>
         </div>
         <div className="relative shrink-0">
           <button
@@ -141,7 +141,7 @@ export function TaskCard({ task, onReviewClick, onSettingsClick, onArchiveClick 
       )}
       {task.status === "Review" && (
         <button
-          onClick={() => onReviewClick?.(task.id, task.name)}
+          onClick={() => onReviewClick?.(task.id, task.title)}
           className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded bg-secondary text-secondary-foreground hover:shadow-md transition-all duration-200"
           title="View diff and approve/reject changes"
         >

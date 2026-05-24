@@ -12,6 +12,7 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   High: 1,
   Medium: 2,
   Low: 3,
+  None: 4,
 };
 
 interface BacklogViewProps {
@@ -49,7 +50,7 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
   const filteredTasks = backlogTasks.filter(
     (t) =>
       (priorityFilter === "All" || t.priority === priorityFilter) &&
-      (!search || t.name.toLowerCase().includes(search.toLowerCase())),
+      (!search || t.title.toLowerCase().includes(search.toLowerCase())),
   );
 
   const handlePromote = (task: Task) => {
@@ -120,7 +121,7 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
                   >
                     <button className="flex-1 text-left min-w-0" onClick={() => openEdit(task)}>
                       <span className="text-sm font-medium text-foreground truncate block">
-                        {task.name}
+                        {task.title}
                       </span>
                     </button>
 

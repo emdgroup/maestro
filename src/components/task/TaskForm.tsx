@@ -11,8 +11,7 @@ import { useProjectBranchesQuery } from "@/services/task.service";
 export interface TaskFormData {
   title: string;
   description: string;
-  acceptanceCriteria: string;
-  priority: "Urgent" | "High" | "Medium" | "Low";
+  priority: "Urgent" | "High" | "Medium" | "Low" | "None";
   baseBranch: string;
 }
 
@@ -71,10 +70,10 @@ export function TaskForm({
         base_branch: data.baseBranch,
         updated_at: "",
         project_id: projectId,
-        name: data.title,
+        title: data.title,
         description: data.description,
-        acceptance_criteria: data.acceptanceCriteria,
         skills: [],
+        labels: [],
       });
     } catch (error) {
       console.error("Form submission error:", error);
@@ -126,25 +125,6 @@ export function TaskForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="acceptanceCriteria">Acceptance Criteria *</Label>
-        <Textarea
-          id="acceptanceCriteria"
-          placeholder="Acceptance criteria (min 10 characters)"
-          rows={4}
-          {...register("acceptanceCriteria", {
-            required: "Acceptance criteria is required",
-            minLength: {
-              value: 10,
-              message: "Acceptance criteria must be at least 10 characters",
-            },
-          })}
-        />
-        {errors.acceptanceCriteria && (
-          <span className="text-destructive text-xs mt-1">{errors.acceptanceCriteria.message}</span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2">
         <Label htmlFor="priority">Priority</Label>
         <Controller
           name="priority"
@@ -159,6 +139,7 @@ export function TaskForm({
                 <SelectItem value="High">High</SelectItem>
                 <SelectItem value="Medium">Medium</SelectItem>
                 <SelectItem value="Low">Low</SelectItem>
+                <SelectItem value="None">None</SelectItem>
               </SelectContent>
             </Select>
           )}

@@ -214,7 +214,7 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
     >
       <div className="bg-card border border-border rounded-lg shadow-lg max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-xl font-semibold text-foreground">{task.name}</h2>
+          <h2 className="text-xl font-semibold text-foreground">{task.title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
             ✕
           </Button>
@@ -293,14 +293,6 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
                 )}
               </div>
 
-              {/* Acceptance Criteria — read-only (backend expansion required for editing) */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Acceptance Criteria</h3>
-                <p className="text-sm text-muted-foreground">
-                  {task.acceptance_criteria || "No criteria"}
-                </p>
-              </div>
-
               {/* Priority — read-only (backend expansion required for editing) */}
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-foreground">Priority</h3>
@@ -334,7 +326,7 @@ export function TaskDetail({ task, projectPath, onClose }: TaskDetailProps) {
               taskId={task.id}
               projectId={task.project_id}
               projectPath={projectPath}
-              taskName={task.name}
+              taskName={task.title}
             />
           )}
 

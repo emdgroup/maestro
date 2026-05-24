@@ -15,9 +15,8 @@ interface BacklogTaskSheetProps {
 
 function taskToFormValues(task: Task): Partial<TaskFormData> {
   return {
-    title: task.name,
+    title: task.title,
     description: task.description,
-    acceptanceCriteria: task.acceptance_criteria ?? "",
     priority: task.priority,
     baseBranch: task.base_branch ?? "",
   };
@@ -57,9 +56,8 @@ export function BacklogTaskSheet({
         {
           taskId: task.id,
           updates: {
-            name: data.name,
+            title: data.title,
             description: data.description,
-            acceptance_criteria: data.acceptance_criteria,
             priority: data.priority,
             base_branch: data.base_branch,
           },

@@ -28,23 +28,18 @@ pub fn get_tasks(
 fn create_task_impl(
     conn: &rusqlite::Connection,
     project_id: i32,
-    name: String,
+    title: String,
     description: String,
-    acceptance_criteria: String,
     skills: Vec<String>,
     base_branch: String,
 ) -> Result<Task, String> {
-    let trimmed_name = name.trim();
-    if trimmed_name.is_empty() || trimmed_name.len() < 3 || trimmed_name.len() > 255 {
-        return Err("Name must be 3-255 characters".to_string());
+    let trimmed_title = title.trim();
+    if trimmed_title.is_empty() || trimmed_title.len() < 3 || trimmed_title.len() > 255 {
+        return Err("Title must be 3-255 characters".to_string());
     }
     let trimmed_description = description.trim();
     if trimmed_description.is_empty() || trimmed_description.len() < 10 {
         return Err("Description must be at least 10 characters".to_string());
-    }
-    let trimmed_criteria = acceptance_criteria.trim();
-    if trimmed_criteria.is_empty() || trimmed_criteria.len() < 10 {
-        return Err("Acceptance criteria must be at least 10 characters".to_string());
     }
 
     let now = Utc::now().to_rfc3339();
@@ -52,9 +47,9 @@ fn create_task_impl(
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
-        "INSERT INTO tasks (project_id, name, description, acceptance_criteria, skills, status, base_branch, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        rusqlite::params![project_id, &name, &description, &acceptance_criteria, &skills_json, "Backlog", &base_branch, &now, &now],
+        "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![project_id, &title, &description, &skills_json, "Backlog", &base_branch, &now, &now],
     )
     .map_err(|e| e.to_string())?;
 
@@ -70,14 +65,13 @@ fn create_task_impl(
 pub fn create_task(
     app_state: State<Arc<AppState>>,
     project_id: i32,
-    name: String,
+    title: String,
     description: String,
-    acceptance_criteria: String,
     skills: Vec<String>,
     base_branch: String,
 ) -> Result<Task, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let task = create_task_impl(&conn, project_id, name, description, acceptance_criteria, skills, base_branch)?;
+    let task = create_task_impl(&conn, project_id, title, description, skills, base_branch)?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
@@ -91,9 +85,8 @@ pub fn update_task(
     task_id: i32,
     status: Option<String>,
     description: Option<String>,
-    name: Option<String>,
+    title: Option<String>,
     priority: Option<String>,
-    acceptance_criteria: Option<String>,
     base_branch: Option<String>,
     skills: Option<Vec<String>>,
 ) -> Result<Task, String> {
@@ -114,16 +107,12 @@ pub fn update_task(
         set_parts.push("description = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = name {
-        set_parts.push("name = ?".to_string());
+    if let Some(ref v) = title {
+        set_parts.push("title = ?".to_string());
         params.push(Box::new(v.clone()));
     }
     if let Some(ref v) = priority {
         set_parts.push("priority = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = acceptance_criteria {
-        set_parts.push("acceptance_criteria = ?".to_string());
         params.push(Box::new(v.clone()));
     }
     if let Some(ref v) = base_branch {
@@ -413,11 +402,10 @@ mod tests {
         let err = create_task_impl(
             &conn, project_id, "ab".to_string(),
             "valid description here".to_string(),
-            "valid criteria here".to_string(),
             vec![], "main".to_string(),
         )
         .unwrap_err();
-        assert!(err.contains("Name must be 3-255 characters"), "got: {err}");
+        assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
     }
 
     #[test]
@@ -427,25 +415,10 @@ mod tests {
         let err = create_task_impl(
             &conn, project_id, "Valid Name".to_string(),
             "too short".to_string(),
-            "valid criteria here".to_string(),
             vec![], "main".to_string(),
         )
         .unwrap_err();
         assert!(err.contains("Description must be at least 10 characters"), "got: {err}");
-    }
-
-    #[test]
-    fn create_task_rejects_short_criteria() {
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let err = create_task_impl(
-            &conn, project_id, "Valid Name".to_string(),
-            "valid description here".to_string(),
-            "too short".to_string(),
-            vec![], "main".to_string(),
-        )
-        .unwrap_err();
-        assert!(err.contains("Acceptance criteria must be at least 10 characters"), "got: {err}");
     }
 
     #[test]
@@ -456,11 +429,10 @@ mod tests {
             &conn, project_id,
             "Valid Task Name".to_string(),
             "This is a valid description.".to_string(),
-            "Task must do something useful.".to_string(),
             vec!["rust".to_string()], "main".to_string(),
         )
         .unwrap();
-        assert_eq!(task.name, "Valid Task Name");
+        assert_eq!(task.title, "Valid Task Name");
         assert_eq!(task.project_id, project_id);
         assert!(matches!(task.status, crate::models::TaskStatus::Backlog));
     }
@@ -473,7 +445,6 @@ mod tests {
             &conn, project_id,
             "Task to Delete".to_string(),
             "This task will be deleted.".to_string(),
-            "Acceptance criteria here.".to_string(),
             vec![], "main".to_string(),
         )
         .unwrap();

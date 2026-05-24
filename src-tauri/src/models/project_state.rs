@@ -10,7 +10,7 @@ use specta::Type;
 #[specta(export)]
 pub struct TaskSnapshot {
     pub id: i32,
-    pub name: String,
+    pub title: String,
     pub description: String,
     /// Task status as string (e.g., "Backlog", "Ready", "InProgress", "Review", "Failed", "Done")
     pub status: String,
@@ -21,8 +21,6 @@ pub struct TaskSnapshot {
     pub mcp_allowlist: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skills_override: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acceptance_criteria: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

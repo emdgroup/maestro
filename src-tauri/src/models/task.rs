@@ -4,24 +4,23 @@ use std::str::FromStr;
 
 /// SQL SELECT clause for all task columns, matching Task::from_row column order.
 ///
-/// Column order: id(0), project_id(1), name(2), description(3), acceptance_criteria(4),
-/// status(5), priority(6), base_branch(7), archived_at(8), external_id(9),
-/// is_imported(10), import_source(11), skills(12), model_override(13),
-/// mcp_allowlist(14), skills_override(15), created_at(16), updated_at(17)
+/// Column order: id(0), project_id(1), title(2), description(3), status(4), priority(5),
+/// base_branch(6), archived_at(7), external_id(8), is_imported(9), import_source(10),
+/// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
+/// external_url(16), external_updated_at(17), created_at(18), updated_at(19)
 pub const TASK_SELECT: &str =
-    "SELECT id, project_id, name, description, acceptance_criteria, status, priority, \
+    "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
-     model_override, mcp_allowlist, skills_override, created_at, updated_at FROM tasks";
+     model_override, mcp_allowlist, skills_override, labels, \
+     external_url, external_updated_at, created_at, updated_at FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct Task {
     pub id: i32,
     pub project_id: i32,
-    pub name: String,
+    pub title: String,
     pub description: String,
-    #[specta(optional)]
-    pub acceptance_criteria: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub base_branch: String,
@@ -40,6 +39,11 @@ pub struct Task {
     pub mcp_allowlist: Option<Vec<String>>,
     #[specta(optional)]
     pub skills_override: Option<Vec<String>>,
+    pub labels: Vec<String>,
+    #[specta(optional)]
+    pub external_url: Option<String>,
+    #[specta(optional)]
+    pub external_updated_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -72,6 +76,7 @@ pub enum TaskPriority {
     High,
     Medium,
     Low,
+    None,
 }
 
 impl FromStr for TaskPriority {
@@ -83,9 +88,8 @@ impl FromStr for TaskPriority {
             "High" => Ok(TaskPriority::High),
             "Medium" => Ok(TaskPriority::Medium),
             "Low" => Ok(TaskPriority::Low),
-            _ => {
-                Ok(TaskPriority::Medium)
-            }
+            "None" => Ok(TaskPriority::None),
+            _ => Ok(TaskPriority::Medium),
         }
     }
 }
@@ -109,32 +113,28 @@ impl FromStr for TaskStatus {
 }
 
 impl Task {
-    /// Column order matches TASK_SELECT constant defined in this file:
-    /// id(0), project_id(1), name(2), description(3), acceptance_criteria(4),
-    /// status(5), priority(6), base_branch(7), archived_at(8),
-    /// external_id(9), is_imported(10), import_source(11), skills(12),
-    /// model_override(13), mcp_allowlist(14), skills_override(15),
-    /// created_at(16), updated_at(17)
     pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         Ok(Task {
             id: row.get(0)?,
             project_id: row.get(1)?,
-            name: row.get(2)?,
+            title: row.get(2)?,
             description: row.get(3)?,
-            acceptance_criteria: row.get(4)?,
-            status: row.get::<_, String>(5)?.parse().unwrap_or(TaskStatus::Backlog),
-            priority: row.get::<_, String>(6)?.parse().unwrap_or(TaskPriority::Medium),
-            base_branch: row.get::<_, String>(7)?,
-            archived_at: row.get(8)?,
-            external_id: row.get(9)?,
-            is_imported: row.get(10)?,
-            import_source: row.get(11)?,
-            skills: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
-            model_override: row.get(13)?,
-            mcp_allowlist: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()),
-            skills_override: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()),
-            created_at: row.get(16)?,
-            updated_at: row.get(17)?,
+            status: row.get::<_, String>(4)?.parse().unwrap_or(TaskStatus::Backlog),
+            priority: row.get::<_, String>(5)?.parse().unwrap_or(TaskPriority::Medium),
+            base_branch: row.get::<_, String>(6)?,
+            archived_at: row.get(7)?,
+            external_id: row.get(8)?,
+            is_imported: row.get(9)?,
+            import_source: row.get(10)?,
+            skills: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
+            model_override: row.get(12)?,
+            mcp_allowlist: row.get::<_, Option<String>>(13)?.and_then(|s| serde_json::from_str(&s).ok()),
+            skills_override: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()),
+            labels: serde_json::from_str(&row.get::<_, String>(15).unwrap_or_else(|_| "[]".to_string())).unwrap_or_default(),
+            external_url: row.get(16)?,
+            external_updated_at: row.get(17)?,
+            created_at: row.get(18)?,
+            updated_at: row.get(19)?,
         })
     }
 }
@@ -143,9 +143,8 @@ impl Task {
 #[specta(export)]
 pub struct CreateTaskRequest {
     pub project_id: i32,
-    pub name: String,
+    pub title: String,
     pub description: String,
-    pub acceptance_criteria: String,
     pub skills: Vec<String>,
 }
 

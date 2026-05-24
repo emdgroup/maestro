@@ -172,11 +172,6 @@ fn build_claude_code_command(
     let escaped_desc = task.description.replace('"', "\\\"");
     cmd.push_str(&format!(" --task=\"{}\"", escaped_desc));
 
-    if let Some(ref criteria) = task.acceptance_criteria {
-        let escaped_criteria = criteria.replace('"', "\\\"");
-        cmd.push_str(&format!(" --criteria=\"{}\"", escaped_criteria));
-    }
-
     // Add configuration overrides
     if let Some(ref model) = config.model_override {
         cmd.push_str(&format!(" --model={}", model));

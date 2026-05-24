@@ -44,7 +44,7 @@ export function ArchiveView({ search, filter }: ArchiveViewProps) {
   const archiveTasks: Task[] = (tasks ?? [])
     .filter((t) => t.archived_at != null || t.status === "Cancelled")
     .filter((t) => filter === "all" || t.status === filter)
-    .filter((t) => !search || t.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   return (
@@ -64,7 +64,7 @@ export function ArchiveView({ search, filter }: ArchiveViewProps) {
             >
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground truncate block">
-                  {task.name}
+                  {task.title}
                 </span>
               </div>
 

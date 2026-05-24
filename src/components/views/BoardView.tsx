@@ -90,7 +90,7 @@ export function BoardView() {
         <ExecutionTerminal
           taskId={activeTerminalTaskId}
           taskName={
-            taskList.find((t) => t.id === activeTerminalTaskId)?.name ||
+            taskList.find((t) => t.id === activeTerminalTaskId)?.title ||
             `Task ${activeTerminalTaskId}`
           }
           isActive={true}
