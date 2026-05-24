@@ -293,19 +293,21 @@ export function ImportTicketsModal({
           <div className="flex items-center gap-1">
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Refresh tickets"
-                    onClick={() => void refetch()}
-                    disabled={isRemoteLoading}
-                  >
-                    <RefreshCw
-                      className={`size-4 ${isRemoteLoading ? "animate-spin" : ""}`}
-                    />
-                  </Button>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Refresh tickets"
+                      onClick={() => void refetch()}
+                      disabled={isRemoteLoading}
+                    >
+                      <RefreshCw
+                        className={`size-4 ${isRemoteLoading ? "animate-spin" : ""}`}
+                      />
+                    </Button>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={8}>
                   {isRemoteLoading ? "Refreshing…" : "Refresh tickets"}
                 </TooltipContent>
@@ -518,20 +520,16 @@ function AvailableTabContent({
       {/* Filter bar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0">
         <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-7 gap-1.5 ${activeLabels.size > 0 ? "text-accent" : ""}`}
-            >
-              <Filter className="size-3.5" />
-              Filter
-              {activeLabels.size > 0 && (
-                <span className="ml-1 bg-accent text-accent-foreground text-xs rounded-full px-1.5">
-                  {activeLabels.size}
-                </span>
-              )}
-            </Button>
+          <PopoverTrigger
+            className={`h-7 inline-flex items-center gap-1.5 px-3 text-sm rounded-md border border-border bg-background font-medium ${activeLabels.size > 0 ? "text-accent" : "text-foreground"}`}
+          >
+            <Filter className="size-3.5" />
+            Filter
+            {activeLabels.size > 0 && (
+              <span className="ml-1 bg-accent text-accent-foreground text-xs rounded-full px-1.5">
+                {activeLabels.size}
+              </span>
+            )}
           </PopoverTrigger>
           <PopoverContent className="w-56 p-2">
             {allLabels.length === 0 ? (
@@ -631,15 +629,17 @@ function ImportedTabContent({ tasks }: { tasks: Task[] }) {
             {task.external_url && (
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => void openUrl(task.external_url!)}
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => void openUrl(task.external_url!)}
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </Button>
+                    }
+                  />
                   <TooltipContent>Open in browser</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
