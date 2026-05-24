@@ -172,6 +172,7 @@ export type ActivityState = {
   isInitializing: boolean;
   sessionEnded: boolean;
   endReason: "completed" | "failed" | "cancelled" | null;
+  suppressUserChunks: boolean;
 };
 
 export type AvailableCommand = {
@@ -189,4 +190,5 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   isInitializing: true,
   sessionEnded: false,
   endReason: null,
+  suppressUserChunks: false,
 };

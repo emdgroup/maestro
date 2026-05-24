@@ -243,10 +243,16 @@ function processEvent(
         ...newState,
         items: [...newState.items, { type: "userMessage", item: userMsg }],
         lastUserMessageId: userMsg.id,
+        suppressUserChunks: true,
       };
     }
 
     case "user_message_chunk": {
+      // Suppress agent echo during live sessions — user_message already captured it.
+      // Only process during resume/replay where no user_message fires.
+      if (state.suppressUserChunks) {
+        return newState;
+      }
       const items = finalizeLastStreaming(newState.items);
       const lastItem = items[items.length - 1];
       if (lastItem && lastItem.type === "userMessage") {
