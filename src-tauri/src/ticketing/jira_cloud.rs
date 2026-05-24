@@ -137,16 +137,20 @@ pub async fn fetch_issues(
         "project = \"{}\" AND statusCategory != Done ORDER BY updated DESC",
         safe_key
     );
-    let search_url = format!(
-        "{}/rest/api/3/search?maxResults=100&fields=summary,description,labels,updated,priority,self&jql={}",
-        base,
-        urlencoding::encode(&jql)
-    );
+    let search_url = format!("{}/rest/api/3/search/jql", base);
+
+    let body = serde_json::json!({
+        "jql": jql,
+        "maxResults": 100,
+        "fields": ["summary", "description", "labels", "updated", "priority"]
+    });
 
     let response = client
-        .get(&search_url)
+        .post(&search_url)
         .header("Authorization", auth)
         .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;

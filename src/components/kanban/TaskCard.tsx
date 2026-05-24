@@ -114,6 +114,18 @@ export function TaskCard({ task, onReviewClick, onSettingsClick, onArchiveClick 
             🔒 Read-only
           </span>
         )}
+        {task.labels.length > 0 &&
+          task.labels.slice(0, 3).map((label) => (
+            <span
+              key={label}
+              className="inline-block px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground"
+            >
+              {label}
+            </span>
+          ))}
+        {task.labels.length > 3 && (
+          <span className="text-xs text-muted-foreground">+{task.labels.length - 3} more</span>
+        )}
       </div>
 
       {task.status === "Ready" && (
