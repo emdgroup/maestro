@@ -5,7 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction } from "@/types/bindings";
+import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -356,5 +356,101 @@ export function useAddTaskInstructionMutation() {
       });
     },
     onError: createErrorToastHandler("Failed to add instruction"),
+  });
+}
+
+/**
+ * Query key factory for ticketing-related queries (separate from task keys)
+ */
+export const ticketingQueryKeys = {
+  remoteIssues: (projectId: number) =>
+    ["ticketing", "remote-issues", projectId] as const,
+};
+
+/**
+ * Fetches remote issues from the connected ticketing provider.
+ * Only runs while the modal is open (enabled: isModalOpen).
+ * Automatically refetches every 5 minutes while open; stops when closed.
+ */
+export function useFetchRemoteIssuesQuery(
+  projectId: number | null,
+  isModalOpen: boolean,
+) {
+  return useQuery({
+    queryKey: ticketingQueryKeys.remoteIssues(projectId!),
+    queryFn: () => api.fetchRemoteIssues(projectId!),
+    enabled: isModalOpen && projectId !== null,
+    staleTime: 0,
+    refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
+    retry: 1,
+  });
+}
+
+/**
+ * Batch-imports a list of RemoteIssues as Backlog tasks for the given project.
+ * Skips any that have already been imported (handled by Rust).
+ * Invalidates task list cache on success.
+ */
+export function useImportTasksMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      issues,
+      baseBranch,
+    }: {
+      projectId: number;
+      issues: RemoteIssue[];
+      baseBranch: string;
+    }) => api.importTasks(projectId, issues, baseBranch),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to import tasks"),
+  });
+}
+
+/**
+ * Overwrites a task's title, description, labels, and external_updated_at
+ * from the current remote issue data. This is the "Update task" action in the Changed tab.
+ */
+export function useUpdateTaskFromRemoteMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      issue,
+    }: {
+      taskId: number;
+      issue: RemoteIssue;
+    }) => api.updateTaskFromRemote(taskId, issue),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to update task from remote"),
+  });
+}
+
+/**
+ * Advances a task's external_updated_at to the remote value, clearing the
+ * "changed" flag without modifying task content. This is the "Dismiss change" action.
+ */
+export function useDismissTaskChangeMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      remoteUpdatedAt,
+    }: {
+      taskId: number;
+      remoteUpdatedAt: string;
+    }) => api.dismissTaskChange(taskId, remoteUpdatedAt),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to dismiss task change"),
   });
 }
