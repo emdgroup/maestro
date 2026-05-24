@@ -215,7 +215,10 @@ Plans:
   3. Checking one or more issues in the Available tab and clicking "Import Selected" creates Backlog tasks with `external_url`, `labels`, and `external_updated_at` populated
   4. The ticket list refreshes automatically every 5 minutes while the modal is open; clicking the Refresh button forces an immediate fetch
   5. In the Changed tab, clicking "Update task" overwrites the task's title, description, and labels from the current provider data and clears the changed flag; clicking "Dismiss" clears the changed flag while keeping the current task content
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 56-01-PLAN.md — RemoteIssue priority field + AzDo HTML fix + 3 new IPC commands + lib.rs registration + bindings regen
+- [ ] 56-02-PLAN.md — Service hooks + ImportTicketsModal component + BacklogView Import button
 **UI hint**: yes
 
 ## Progress
@@ -257,7 +260,7 @@ Plans:
 | 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 1/1 | Complete   | 2026-05-21 |
 | 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 4/4 | Complete | 2026-05-21 |
 | 55 - Settings UI | v1.6 | 3/3 | Complete | 2026-05-23 |
-| 56 - Import Modal + Change Detection | v1.6 | 0/TBD | Not started | - |
+| 56 - Import Modal + Change Detection | v1.6 | 0/2 | Not started | - |
 
 ---
 
