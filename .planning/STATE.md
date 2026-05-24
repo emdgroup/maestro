@@ -74,7 +74,7 @@ Key v1.6 decisions locked in at roadmap creation:
 
 ### Pending Todos
 
-- `/gsd:code-review 53 --fix` (optional): 3 advisory findings from Phase 53 code review — CR-01 URL encoding for owner/repo in GitHub/Forgejo paths, CR-02 stale .enc file cleanup on delete, CR-03 SHA-256 key stretching in file fallback
+_(none)_
 
 ### Blockers/Concerns
 
