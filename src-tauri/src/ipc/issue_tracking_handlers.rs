@@ -71,7 +71,6 @@ pub async fn fetch_remote_issues(
 
     match provider.as_str() {
         "github" => {
-            // First try global keychain, then fall back to gh CLI.
             let token = match KeychainStore::get_integration("github", &app_state.app_data_dir)? {
                 KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
                     creds.token
@@ -229,12 +228,12 @@ pub async fn import_tasks(
             all_params.push(id as &dyn rusqlite::ToSql);
         }
         let mut stmt = tx.prepare(&query).map_err(|e| e.to_string())?;
-        let rows: Vec<String> = stmt
+        let set: HashSet<String> = stmt
             .query_map(all_params.as_slice(), |row| row.get::<_, String>(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
-        rows.into_iter().collect()
+        set
     };
 
     let mut created_tasks: Vec<Task> = Vec::new();
