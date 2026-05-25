@@ -25,7 +25,7 @@ import {
 } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { cn } from "@/lib/ui-utils";
-import { useListIntegrations, useProjectTicketingConfig } from "@/services/integration.service";
+import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/components/project-picker/IntegrationMissingDialog";
 import "./App.css";
 
@@ -76,9 +76,9 @@ function App() {
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
 
-  // D-19 cascade check: verify ticketing integration is still connected after project opens
+  // D-19 cascade check: verify issue tracking integration is still connected after project opens
   const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
-  const { data: ticketingConfig, isLoading: ticketingLoading } = useProjectTicketingConfig(
+  const { data: issueTrackingConfig, isLoading: issueTrackingLoading } = useProjectIssueTrackingConfig(
     currentProject?.id ?? 0,
   );
 
@@ -143,19 +143,19 @@ function App() {
   }, [currentProject?.id]);
 
   useEffect(() => {
-if (!currentProject || integrationsLoading || ticketingLoading) return;
-    if (!ticketingConfig) {
+    if (!currentProject || integrationsLoading || issueTrackingLoading) return;
+    if (!issueTrackingConfig) {
       setShowMissingDialog(false);
       return;
     }
-    const integration = integrations?.find((i) => i.provider === ticketingConfig.provider);
+    const integration = integrations?.find((i) => i.provider === issueTrackingConfig.provider);
     if (!integration || !integration.connected) {
-      setMissingProvider(ticketingConfig.provider);
+      setMissingProvider(issueTrackingConfig.provider);
       setShowMissingDialog(true);
     } else {
       setShowMissingDialog(false);
     }
-  }, [currentProject, integrations, ticketingConfig, integrationsLoading, ticketingLoading]);
+  }, [currentProject, integrations, issueTrackingConfig, integrationsLoading, issueTrackingLoading]);
 
   if (settingsLoading) {
     return (
@@ -301,7 +301,7 @@ if (!currentProject || integrationsLoading || ticketingLoading) return;
         </Suspense>
       </main>
 
-      {/* D-19 cascade check: block project access when ticketing integration is missing */}
+      {/* D-19 cascade check: block project access when issue tracking integration is missing */}
       <IntegrationMissingDialog
         open={showMissingDialog}
         projectId={currentProject.id}

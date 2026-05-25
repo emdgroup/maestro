@@ -7,7 +7,7 @@ pub mod connection;
 pub mod project_config;
 pub mod project_state;
 pub mod diff;
-pub mod ticketing;
+pub mod issue_tracking;
 pub mod integration;
 
 pub use project::{Project, ProjectStatus};
@@ -19,5 +19,5 @@ pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewReques
 pub use project_config::ProjectConfig;
 pub use project_state::{ProjectState, TaskSnapshot, WorktreeSnapshot};
 pub use diff::{DiffTarget, WorktreeDiffResult};
-pub use ticketing::{TicketingConfig, RemoteIssue};
+pub use issue_tracking::{IssueTrackingConfig, RemoteIssue};
 pub use integration::{IntegrationStatus, CredentialSource};

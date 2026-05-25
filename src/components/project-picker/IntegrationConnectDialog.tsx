@@ -59,6 +59,14 @@ function getProviderFields(provider: string): {
         showEmail: false,
         tokenLabel: "Personal Access Token",
       };
+    case "gitea":
+      return {
+        showInstanceUrl: true,
+        instanceUrlLabel: "Instance URL",
+        instanceUrlPlaceholder: "https://gitea.example.com",
+        showEmail: false,
+        tokenLabel: "Token",
+      };
     case "linear":
       return {
         showInstanceUrl: false,
@@ -129,14 +137,47 @@ function getProviderInstructions(provider: string): InstructionLine[] | null {
         { text: "Click Create and copy the token immediately" },
         { text: "Organization URL format: https://dev.azure.com/yourorgname", code: true },
       ];
+    case "gitea":
+      return [
+        { text: "Log into your Gitea instance" },
+        { text: "Go to Settings → Applications → Manage Access Tokens" },
+        { text: "Enter a token name, select issue scope (read)" },
+        { text: "Click Generate Token and copy it immediately" },
+      ];
     default:
       return null;
   }
 }
 
-function ProviderInstructions({ provider }: { provider: string }) {
+const BITBUCKET_INSTRUCTIONS: Record<"cloud" | "server", InstructionLine[]> = {
+  cloud: [
+    { text: "Go to Bitbucket → Personal settings → App passwords" },
+    { text: "Click Create app password → enter a label" },
+    { text: "Select Repositories (Read) permissions" },
+    { text: "Click Create — copy the password immediately" },
+  ],
+  server: [
+    { text: "Log into your Bitbucket Server or Data Center instance" },
+    { text: "Click your avatar → Manage account → HTTP access tokens" },
+    { text: "Click Create token → enter a name, select Repositories (Read)" },
+    { text: "Click Create — copy the token immediately" },
+  ],
+};
+
+function ProviderInstructions({
+  provider,
+  bitbucketMode,
+}: {
+  provider: string;
+  bitbucketMode?: "cloud" | "server";
+}) {
   const [open, setOpen] = useState(false);
-  const instructions = getProviderInstructions(provider);
+
+  const instructions =
+    provider === "bitbucket" && bitbucketMode
+      ? BITBUCKET_INSTRUCTIONS[bitbucketMode]
+      : getProviderInstructions(provider);
+
   if (!instructions) return null;
 
   return (
@@ -168,6 +209,36 @@ function ProviderInstructions({ provider }: { provider: string }) {
   );
 }
 
+function BitbucketModeToggle({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: "cloud" | "server";
+  onChange: (m: "cloud" | "server") => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex rounded-md border border-border overflow-hidden w-fit">
+      {(["cloud", "server"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(m)}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+            mode === m
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          {m === "cloud" ? "Cloud" : "Server / DC"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function IntegrationConnectDialog({
   provider,
   open,
@@ -177,11 +248,13 @@ export function IntegrationConnectDialog({
   const [instanceUrl, setInstanceUrl] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [bitbucketMode, setBitbucketMode] = useState<"cloud" | "server">("cloud");
 
   const { mutateAsync: saveIntegration, isPending } = useSaveIntegration();
 
   const providerName = PROVIDER_NAMES[provider] ?? provider;
   const fields = getProviderFields(provider);
+  const isBitbucket = provider === "bitbucket";
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -189,8 +262,17 @@ export function IntegrationConnectDialog({
       setInstanceUrl("");
       setEmail("");
       setError(null);
+      setBitbucketMode("cloud");
     }
     onOpenChange(nextOpen);
+  };
+
+  const handleModeChange = (m: "cloud" | "server") => {
+    setBitbucketMode(m);
+    setToken("");
+    setInstanceUrl("");
+    setEmail("");
+    setError(null);
   };
 
   const handleSubmit = async () => {
@@ -200,8 +282,12 @@ export function IntegrationConnectDialog({
       await saveIntegration({
         provider,
         token: token.trim(),
-        instanceUrl: instanceUrl.trim() || null,
-        email: email.trim() || null,
+        instanceUrl: isBitbucket
+          ? bitbucketMode === "server" ? instanceUrl.trim() || null : null
+          : instanceUrl.trim() || null,
+        email: isBitbucket
+          ? bitbucketMode === "cloud" ? email.trim() || null : null
+          : email.trim() || null,
       });
       handleOpenChange(false);
     } catch (e) {
@@ -220,46 +306,102 @@ export function IntegrationConnectDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {fields.showInstanceUrl && (
-            <div className="space-y-2">
-              <Label htmlFor="integration-instance-url">{fields.instanceUrlLabel}</Label>
-              <Input
-                id="integration-instance-url"
-                placeholder={fields.instanceUrlPlaceholder}
-                value={instanceUrl}
-                onChange={(e) => setInstanceUrl(e.target.value)}
-                disabled={isPending}
-              />
-            </div>
-          )}
-
-          {fields.showEmail && (
-            <div className="space-y-2">
-              <Label htmlFor="integration-email">Email</Label>
-              <Input
-                id="integration-email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isPending}
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="integration-token">{fields.tokenLabel}</Label>
-            <Input
-              id="integration-token"
-              type="password"
-              placeholder={`Enter ${fields.tokenLabel.toLowerCase()}`}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
+          {isBitbucket && (
+            <BitbucketModeToggle
+              mode={bitbucketMode}
+              onChange={handleModeChange}
               disabled={isPending}
             />
-          </div>
+          )}
 
-          <ProviderInstructions provider={provider} />
+          {isBitbucket ? (
+            <>
+              {bitbucketMode === "server" && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-instance-url">Instance URL</Label>
+                  <Input
+                    id="integration-instance-url"
+                    placeholder="https://bitbucket.mycompany.com"
+                    value={instanceUrl}
+                    onChange={(e) => setInstanceUrl(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+              {bitbucketMode === "cloud" && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-email">Email</Label>
+                  <Input
+                    id="integration-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="integration-token">
+                  {bitbucketMode === "cloud" ? "App Password" : "HTTP Access Token"}
+                </Label>
+                <Input
+                  id="integration-token"
+                  type="password"
+                  placeholder={bitbucketMode === "cloud" ? "Enter app password" : "Enter HTTP access token"}
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={isPending}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {fields.showInstanceUrl && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-instance-url">{fields.instanceUrlLabel}</Label>
+                  <Input
+                    id="integration-instance-url"
+                    placeholder={fields.instanceUrlPlaceholder}
+                    value={instanceUrl}
+                    onChange={(e) => setInstanceUrl(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+
+              {fields.showEmail && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-email">Email</Label>
+                  <Input
+                    id="integration-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="integration-token">{fields.tokenLabel}</Label>
+                <Input
+                  id="integration-token"
+                  type="password"
+                  placeholder={`Enter ${fields.tokenLabel.toLowerCase()}`}
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={isPending}
+                />
+              </div>
+            </>
+          )}
+
+          <ProviderInstructions
+            provider={provider}
+            bitbucketMode={isBitbucket ? bitbucketMode : undefined}
+          />
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

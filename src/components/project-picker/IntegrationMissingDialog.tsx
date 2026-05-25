@@ -8,7 +8,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { AlertTriangle } from "lucide-react";
-import { useSaveProjectTicketingConfig, PROVIDER_NAMES } from "@/services/integration.service";
+import { useSaveProjectIssueTrackingConfig, PROVIDER_NAMES } from "@/services/integration.service";
 
 interface IntegrationMissingDialogProps {
   open: boolean;
@@ -25,11 +25,11 @@ export function IntegrationMissingDialog({
   onFixIntegration,
   onDropConfig,
 }: IntegrationMissingDialogProps) {
-  const { mutateAsync: saveProjectTicketingConfig, isPending } = useSaveProjectTicketingConfig();
+  const { mutateAsync: saveProjectIssueTrackingConfig, isPending } = useSaveProjectIssueTrackingConfig();
   const providerDisplayName = PROVIDER_NAMES[provider] ?? provider;
 
   async function handleDropConfig() {
-    await saveProjectTicketingConfig({ projectId, ticketing: null });
+    await saveProjectIssueTrackingConfig({ projectId, issueTracking: null });
     onDropConfig();
   }
 
@@ -42,7 +42,7 @@ export function IntegrationMissingDialog({
             <DialogTitle>Integration Unavailable</DialogTitle>
           </div>
           <DialogDescription>
-            This project uses {providerDisplayName} for ticketing, but the integration is no longer
+            This project uses {providerDisplayName} for issue tracking, but the integration is no longer
             connected.
           </DialogDescription>
         </DialogHeader>
@@ -51,7 +51,7 @@ export function IntegrationMissingDialog({
             Fix Integration
           </Button>
           <Button variant="destructive" onClick={handleDropConfig} disabled={isPending}>
-            Remove Ticketing Config
+            Remove Issue Tracking Config
           </Button>
         </DialogFooter>
       </DialogContent>

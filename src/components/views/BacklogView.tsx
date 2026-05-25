@@ -5,7 +5,7 @@ import { useKanban } from "@/contexts/KanbanContext";
 import { Button } from "@/ui/button";
 import { BacklogTaskSheet } from "@/components/kanban/BacklogTaskSheet";
 import { ImportTicketsModal } from "@/components/kanban/ImportTicketsModal";
-import { useProjectTicketingConfig } from "@/services/integration.service";
+import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITY_BADGE_CLASSES } from "@/utils/constants/priority";
 
@@ -37,8 +37,8 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
   const openImportModal = () => setImportModalOpen(true);
   const closeImportModal = () => setImportModalOpen(false);
 
-  const { data: ticketingConfig } = useProjectTicketingConfig(projectId ?? 0);
-  const hasTicketing = ticketingConfig != null;
+  const { data: issueTrackingConfig } = useProjectIssueTrackingConfig(projectId ?? 0);
+  const hasIssueTracking = issueTrackingConfig != null;
 
   if (isLoading) {
     return (
@@ -99,7 +99,7 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {hasTicketing && (
+            {hasIssueTracking && (
               <Button variant="outline" size="sm" onClick={openImportModal} className="h-8">
                 <Download className="w-4 h-4" />
                 Import tickets
@@ -186,7 +186,7 @@ export function BacklogView({ search, priorityFilter }: BacklogViewProps) {
         </div>
       )}
 
-      {hasTicketing && importModalOpen && (
+      {hasIssueTracking && importModalOpen && (
         <ImportTicketsModal
           isOpen={importModalOpen}
           onClose={closeImportModal}

@@ -273,6 +273,7 @@ export function SpawnSessionDialog({
               placeholder="Auto-generated if blank"
               value={sessionName}
               onChange={(e) => setSessionName(e.target.value)}
+              autoFocus
             />
             <p className="text-[10px] text-muted-foreground/40">Leave blank to auto-generate a name.</p>
           </div>

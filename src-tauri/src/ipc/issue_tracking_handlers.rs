@@ -4,10 +4,10 @@ use tauri::{Emitter, State};
 use chrono::Utc;
 
 use crate::db::AppState;
-use crate::models::project_config::{now_rfc3339, ProjectConfig, ProjectTicketingConfig};
-use crate::models::ticketing::RemoteIssue;
+use crate::models::project_config::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
+use crate::models::issue_tracking::RemoteIssue;
 use crate::models::{Task, TASK_SELECT};
-use crate::ticketing::keychain::{KeychainOutcome, KeychainStore};
+use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
 
 fn extract_project_path(app_state: &AppState, project_id: i32) -> Result<String, String> {
     let conn = app_state
@@ -25,26 +25,26 @@ fn extract_project_path(app_state: &AppState, project_id: i32) -> Result<String,
 /// Read the ticketing field from .maestro/settings.json for the given project.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_project_ticketing_config(
+pub async fn get_project_issue_tracking_config(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-) -> Result<Option<ProjectTicketingConfig>, String> {
+) -> Result<Option<ProjectIssueTrackingConfig>, String> {
     let path = extract_project_path(&app_state, project_id)?;
     let config = ProjectConfig::load_from_project(&path).unwrap_or_default();
-    Ok(config.ticketing)
+    Ok(config.issue_tracking)
 }
 
 /// Write the ticketing field into .maestro/settings.json for the given project.
 #[tauri::command]
 #[specta::specta]
-pub async fn save_project_ticketing_config(
+pub async fn save_project_issue_tracking_config(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    ticketing: Option<ProjectTicketingConfig>,
+    issue_tracking: Option<ProjectIssueTrackingConfig>,
 ) -> Result<(), String> {
     let path = extract_project_path(&app_state, project_id)?;
     let mut config = ProjectConfig::load_from_project(&path).unwrap_or_default();
-    config.ticketing = ticketing;
+    config.issue_tracking = issue_tracking;
     config.updated_at = now_rfc3339();
     config.save_to_project(&path)
 }
@@ -63,7 +63,7 @@ pub async fn fetch_remote_issues(
         .map_err(|_| "Failed to load project config".to_string())?;
 
     let ticketing = config
-        .ticketing
+        .issue_tracking
         .ok_or_else(|| "No ticketing provider configured".to_string())?;
 
     let provider = &ticketing.provider;
@@ -76,7 +76,7 @@ pub async fn fetch_remote_issues(
                     creds.token
                 }
                 KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
-                    crate::ticketing::github::try_gh_cli_token()
+                    crate::issue_tracking::github::try_gh_cli_token()
                         .await
                         .ok_or_else(|| "No GitHub credentials found".to_string())?
                 }
@@ -89,7 +89,7 @@ pub async fn fetch_remote_issues(
                 .repo
                 .as_deref()
                 .ok_or_else(|| "GitHub: repo required in project ticketing config".to_string())?;
-            crate::ticketing::github::fetch_issues(owner, repo, &token).await
+            crate::issue_tracking::github::fetch_issues(owner, repo, &token).await
         }
 
         "gitlab" => {
@@ -106,7 +106,7 @@ pub async fn fetch_remote_issues(
                 .ok_or_else(|| "GitLab: project_key (numeric id) required in project ticketing config".to_string())?
                 .parse()
                 .map_err(|_| "GitLab: project_key must be a numeric project id".to_string())?;
-            crate::ticketing::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
+            crate::issue_tracking::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
         }
 
         "forgejo" => {
@@ -123,12 +123,12 @@ pub async fn fetch_remote_issues(
                 .repo
                 .as_deref()
                 .ok_or_else(|| "Forgejo: repo required in project ticketing config".to_string())?;
-            crate::ticketing::forgejo::fetch_issues(instance_url, owner, repo, &creds.token).await
+            crate::issue_tracking::forgejo::fetch_issues(instance_url, owner, repo, &creds.token).await
         }
 
         "linear" => {
             let creds = get_integration_creds("linear", &app_state)?;
-            crate::ticketing::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
+            crate::issue_tracking::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
         }
 
         "jira_cloud" => {
@@ -145,7 +145,7 @@ pub async fn fetch_remote_issues(
                 .project_key
                 .as_deref()
                 .ok_or_else(|| "Jira Cloud: project_key required in project ticketing config".to_string())?;
-            crate::ticketing::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
+            crate::issue_tracking::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
         }
 
         "jira_server" => Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string()),
@@ -160,8 +160,27 @@ pub async fn fetch_remote_issues(
                 .project_name
                 .as_deref()
                 .ok_or_else(|| "Azure DevOps: project_name required in project ticketing config".to_string())?;
-            crate::ticketing::azure_devops::fetch_issues(org_url, project_name, &creds.token).await
+            crate::issue_tracking::azure_devops::fetch_issues(org_url, project_name, &creds.token).await
         }
+
+        "gitea" => {
+            let creds = get_integration_creds("gitea", &app_state)?;
+            let instance_url = creds
+                .instance_url
+                .as_deref()
+                .ok_or_else(|| "Gitea: instance_url missing from stored credentials".to_string())?;
+            let owner = ticketing
+                .owner
+                .as_deref()
+                .ok_or_else(|| "Gitea: owner required in project ticketing config".to_string())?;
+            let repo = ticketing
+                .repo
+                .as_deref()
+                .ok_or_else(|| "Gitea: repo required in project ticketing config".to_string())?;
+            crate::issue_tracking::gitea::fetch_issues(instance_url, owner, repo, &creds.token).await
+        }
+
+        "bitbucket" => Err("Bitbucket does not support issue tracking".to_string()),
 
         unknown => Err(format!("Unknown ticketing provider: {}", unknown)),
     }

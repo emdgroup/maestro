@@ -7,16 +7,18 @@ use tauri::{Emitter, State};
 use crate::db::AppState;
 use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::keychain::{KeychainOutcome, KeychainStore};
-use crate::ticketing::normalize_instance_url;
+use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
+use crate::issue_tracking::normalize_instance_url;
 
 const KNOWN_PROVIDERS: &[&str] = &[
     "github",
     "gitlab",
     "forgejo",
+    "gitea",
     "linear",
     "jira_cloud",
     "azuredevops",
+    "bitbucket",
 ];
 
 /// Probe all known provider keys in the keyring and return their connection status.
@@ -44,8 +46,8 @@ pub async fn list_integrations(
                 if provider == "github" {
                     // gh CLI is an ephemeral credential source — re-probed each call,
                     // never stored in keyring (per D-18 and RESEARCH.md Pitfall 3).
-                    if let Some(_token) = crate::ticketing::github::try_gh_cli_token().await {
-                        let display_name = crate::ticketing::github::try_gh_cli_display_name().await;
+                    if let Some(_token) = crate::issue_tracking::github::try_gh_cli_token().await {
+                        let display_name = crate::issue_tracking::github::try_gh_cli_display_name().await;
                         statuses.push(IntegrationStatus {
                             provider: provider.to_string(),
                             connected: true,
@@ -408,6 +410,130 @@ async fn validate_credentials(
                 .provider_display_name
                 .or(conn_data.authenticated_user.subject_descriptor)
                 .unwrap_or_else(|| "unknown".to_string()))
+        }
+
+        "gitea" => {
+            #[derive(serde::Deserialize)]
+            struct GiteaUser {
+                login: String,
+            }
+
+            let base = normalize_instance_url(
+                instance_url.ok_or_else(|| "gitea: instance_url required".to_string())?,
+            );
+            let response = client
+                .get(format!("{}/api/v1/user", base))
+                .header("Authorization", format!("token {}", token))
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+
+            if response.status().as_u16() == 401 {
+                return Err("gitea: bad credentials".to_string());
+            }
+            if !response.status().is_success() {
+                let status = response.status();
+                return Err(format!("gitea: API error {}", status.as_u16()));
+            }
+            let user: GiteaUser = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse Gitea response: {}", e))?;
+            Ok(user.login)
+        }
+
+        "bitbucket" => {
+            match instance_url {
+                None => {
+                    // Cloud: email + app password, Basic auth
+                    #[derive(serde::Deserialize)]
+                    struct BitbucketCloudUser {
+                        display_name: String,
+                    }
+
+                    let email_str =
+                        email.ok_or_else(|| "bitbucket: email required".to_string())?;
+                    let credentials = format!("{}:{}", email_str, token);
+                    let auth = format!(
+                        "Basic {}",
+                        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
+                    );
+                    let response = client
+                        .get("https://api.bitbucket.org/2.0/user")
+                        .header("Authorization", auth)
+                        .send()
+                        .await
+                        .map_err(|e| format!("Network error: {}", e))?;
+
+                    if response.status().as_u16() == 401 {
+                        return Err("bitbucket: bad credentials".to_string());
+                    }
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        return Err(format!("bitbucket: API error {}", status.as_u16()));
+                    }
+                    let user: BitbucketCloudUser = response
+                        .json()
+                        .await
+                        .map_err(|e| format!("Failed to parse Bitbucket response: {}", e))?;
+                    Ok(user.display_name)
+                }
+                Some(url) => {
+                    #[derive(serde::Deserialize)]
+                    struct BitbucketServerUser {
+                        #[serde(rename = "displayName")]
+                        display_name: Option<String>,
+                        slug: Option<String>,
+                    }
+
+                    let base = normalize_instance_url(url);
+                    let bearer = format!("Bearer {}", token);
+
+                    // Step 1: /plugins/servlet/applinks/whoami → authenticated username
+                    let whoami_response = client
+                        .get(format!("{}/plugins/servlet/applinks/whoami", base))
+                        .header("Authorization", &bearer)
+                        .send()
+                        .await
+                        .map_err(|e| format!("Network error: {}", e))?;
+
+                    if whoami_response.status().as_u16() == 401 {
+                        return Err("bitbucket: bad credentials".to_string());
+                    }
+                    if !whoami_response.status().is_success() {
+                        let status = whoami_response.status();
+                        return Err(format!("bitbucket: API error {}", status.as_u16()));
+                    }
+                    let username = whoami_response
+                        .text()
+                        .await
+                        .map_err(|e| format!("Failed to read whoami response: {}", e))?
+                        .trim()
+                        .to_string();
+
+                    if username.is_empty() {
+                        return Err("bitbucket: could not determine authenticated user".to_string());
+                    }
+
+                    // Step 2: get display name from user details
+                    let user_response = client
+                        .get(format!("{}/rest/api/latest/users/{}", base, username))
+                        .header("Authorization", &bearer)
+                        .send()
+                        .await
+                        .map_err(|e| format!("Network error: {}", e))?;
+
+                    if user_response.status().is_success() {
+                        let user: BitbucketServerUser = user_response
+                            .json()
+                            .await
+                            .map_err(|e| format!("Failed to parse user response: {}", e))?;
+                        Ok(user.display_name.or(user.slug).unwrap_or(username))
+                    } else {
+                        Ok(username)
+                    }
+                }
+            }
         }
 
         unknown => Err(format!("Unknown provider: {}", unknown)),

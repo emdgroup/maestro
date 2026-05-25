@@ -1,6 +1,6 @@
-use crate::models::ticketing::{JiraCloudConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{JiraCloudConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
 
@@ -92,7 +92,7 @@ pub async fn validate_and_store(
         .or(user.email_address)
         .unwrap_or_else(|| "unknown".to_string());
 
-    let config = TicketingConfig {
+    let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Jiracloud(JiraCloudConfig {
             site_url: base.clone(),
             email: email.to_string(),

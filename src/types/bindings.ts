@@ -1332,9 +1332,9 @@ async testIntegration(provider: string, token: string, instanceUrl: string | nul
 /**
  * Read the ticketing field from .maestro/settings.json for the given project.
  */
-async getProjectTicketingConfig(projectId: number) : Promise<Result<ProjectTicketingConfig | null, string>> {
+async getProjectIssueTrackingConfig(projectId: number) : Promise<Result<ProjectIssueTrackingConfig | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_project_ticketing_config", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_project_issue_tracking_config", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1343,9 +1343,9 @@ async getProjectTicketingConfig(projectId: number) : Promise<Result<ProjectTicke
 /**
  * Write the ticketing field into .maestro/settings.json for the given project.
  */
-async saveProjectTicketingConfig(projectId: number, ticketing: ProjectTicketingConfig | null) : Promise<Result<null, string>> {
+async saveProjectIssueTrackingConfig(projectId: number, issueTracking: ProjectIssueTrackingConfig | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_project_ticketing_config", { projectId, ticketing }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_project_issue_tracking_config", { projectId, issueTracking }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1476,7 +1476,7 @@ export type Project = { id: number; name: string; path: string; created_at: stri
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
 export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
-export type ProjectTicketingConfig = { provider: string; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
+export type ProjectIssueTrackingConfig = { provider: string; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
  */

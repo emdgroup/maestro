@@ -1,6 +1,6 @@
-use crate::models::ticketing::{LinearConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{LinearConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 
 // ── Response structs ────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ async fn post_graphql_query(
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/// Validate a Linear API key via the viewer query, save the TicketingConfig to the
+/// Validate a Linear API key via the viewer query, save the IssueTrackingConfig to the
 /// project, and store the token. Returns the authenticated user's display name.
 pub async fn validate_and_store(
     project_id: i32,
@@ -145,7 +145,7 @@ pub async fn validate_and_store(
         .viewer
         .name;
 
-    let config = TicketingConfig {
+    let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Linear(LinearConfig { team_id: None })),
         updated_at: now_rfc3339(),
     };

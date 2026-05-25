@@ -8,7 +8,7 @@ use keyring::Entry;
 use sha2::{Digest, Sha256};
 
 use crate::models::integration::IntegrationCredentials;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 
 /// Signals which storage backend served the operation.
 /// Used by TokenManager to emit the keyring-unavailable warning exactly once.

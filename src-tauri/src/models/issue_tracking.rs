@@ -4,11 +4,11 @@ use std::fs;
 use std::path::Path;
 use specta::Type;
 
-/// Ticketing integration configuration stored in .maestro/ticketing.json
+/// Ticketing integration configuration stored in .maestro/issue_tracking.json
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
 #[serde(default)]
 #[specta(export)]
-pub struct TicketingConfig {
+pub struct IssueTrackingConfig {
     pub provider: Option<ProviderConfig>,
     pub updated_at: String,
 }
@@ -22,10 +22,12 @@ pub enum ProviderConfig {
     Github(GitHubConfig),
     Gitlab(GitLabConfig),
     Forgejo(ForgejoConfig),
+    Gitea(GiteaConfig),
     Linear(LinearConfig),
     Jiracloud(JiraCloudConfig),
     Jiraserver(JiraServerConfig),
     Azuredevops(AzureDevOpsConfig),
+    Bitbucket(BitbucketConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
@@ -82,6 +84,22 @@ pub struct AzureDevOpsConfig {
     pub project: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct GiteaConfig {
+    pub instance_url: String,
+    pub owner: String,
+    pub repo: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
+pub struct BitbucketConfig {
+    pub instance_url: Option<String>,
+    pub workspace: String,
+    pub repo_slug: String,
+}
+
 /// A remote issue fetched from a ticketing provider, ready for import as a Task.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -95,18 +113,18 @@ pub struct RemoteIssue {
     pub priority: Option<String>,   // normalized: "Urgent"|"High"|"Medium"|"Low"|null
 }
 
-impl TicketingConfig {
+impl IssueTrackingConfig {
     pub fn load_from_project(project_path: &str) -> Result<Self, String> {
         let config_path = Path::new(project_path)
             .join(".maestro")
-            .join("ticketing.json");
+            .join("issue_tracking.json");
 
         let content = fs::read_to_string(&config_path).map_err(|e| {
             format!("Failed to read {}: {}", config_path.display(), e)
         })?;
 
         serde_json::from_str(&content).map_err(|e| {
-            format!("Invalid JSON in ticketing.json: {}", e)
+            format!("Invalid JSON in issue_tracking.json: {}", e)
         })
     }
 
@@ -116,13 +134,13 @@ impl TicketingConfig {
             format!("Failed to create .maestro directory: {}", e)
         })?;
 
-        let config_path = maestro_dir.join("ticketing.json");
+        let config_path = maestro_dir.join("issue_tracking.json");
         let json = serde_json::to_string_pretty(&self).map_err(|e| {
             format!("Serialization failed: {}", e)
         })?;
 
         fs::write(&config_path, json).map_err(|e| {
-            format!("Failed to write ticketing.json: {}", e)
+            format!("Failed to write issue_tracking.json: {}", e)
         })
     }
 }

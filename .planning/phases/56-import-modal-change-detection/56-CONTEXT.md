@@ -128,6 +128,12 @@ This is a Phase 56 plan detail, not a Phase 56 prerequisite.
 
 ---
 
+## Deferred Ideas
+
+- **Open/closed state filter for IMPT-06** — requires provider-side query parameter changes across all six providers; deferred to a future phase.
+
+---
+
 ## Scope: what Phase 56 delivers
 
 1. **`RemoteIssue` priority field** — add to struct + populate in 3 provider files (Linear, Jira, AzDo) + AzDo HTML→markdown fix

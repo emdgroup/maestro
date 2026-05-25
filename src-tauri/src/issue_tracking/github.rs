@@ -1,7 +1,7 @@
 use tokio::process::Command as TokioCommand;
-use crate::models::ticketing::{GitHubConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{GitHubConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
 struct GitHubUserResponse {
@@ -63,7 +63,7 @@ pub async fn try_gh_cli_token() -> Option<String> {
 }
 
 /// Validate a GitHub PAT (or auto-detect via gh CLI if token is None), save the
-/// TicketingConfig to the project, and store the token in the token manager.
+/// IssueTrackingConfig to the project, and store the token in the token manager.
 /// Returns the authenticated GitHub username on success.
 pub async fn validate_and_store(
     project_id: i32,
@@ -112,7 +112,7 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
 
-    let config = TicketingConfig {
+    let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Github(GitHubConfig {
             owner: owner.to_string(),
             repo: repo.to_string(),

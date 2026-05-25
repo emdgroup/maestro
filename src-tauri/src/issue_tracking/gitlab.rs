@@ -1,6 +1,6 @@
-use crate::models::ticketing::{GitLabConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{GitLabConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
 struct GitLabUserResponse {
@@ -27,7 +27,7 @@ struct GitLabIssueResponse {
 use super::normalize_instance_url;
 
 /// Validate a GitLab PAT, resolve the numeric project ID from the project path,
-/// save the TicketingConfig, and store the token.
+/// save the IssueTrackingConfig, and store the token.
 /// Returns the authenticated GitLab username on success.
 pub async fn validate_and_store(
     project_id: i32,
@@ -87,7 +87,7 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Failed to parse GitLab project response: {}", e))?;
 
-    let config = TicketingConfig {
+    let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Gitlab(GitLabConfig {
             instance_url: base,
             project_path: project_path.to_string(),

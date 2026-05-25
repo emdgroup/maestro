@@ -13,12 +13,12 @@ pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub default_model: Option<String>,
     pub updated_at: String,
-    pub ticketing: Option<ProjectTicketingConfig>,
+    pub issue_tracking: Option<ProjectIssueTrackingConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
-pub struct ProjectTicketingConfig {
+pub struct ProjectIssueTrackingConfig {
     pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,

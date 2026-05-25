@@ -12,11 +12,11 @@ import {
 } from "@/services/execution.service";
 import {
   useListIntegrations,
-  useProjectTicketingConfig,
-  useSaveProjectTicketingConfig,
+  useProjectIssueTrackingConfig,
+  useSaveProjectIssueTrackingConfig,
   PROVIDER_NAMES,
 } from "@/services/integration.service";
-import type { ProjectTicketingConfig } from "@/types/bindings";
+import type { ProjectIssueTrackingConfig } from "@/types/bindings";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
@@ -53,13 +53,13 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     );
 
     const { data: integrations } = useListIntegrations();
-    const projectTicketingQuery = useProjectTicketingConfig(projectId);
-    const saveTicketingMutation = useSaveProjectTicketingConfig();
+    const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
+    const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
 
     const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-    const [ticketingFields, setTicketingFields] = useState<Record<string, string>>({});
-    const [ticketingConfigured, setTicketingConfigured] = useState(false);
-    const [ticketingEditing, setTicketingEditing] = useState(false);
+    const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
+    const [issueTrackingConfigured, setIssueTrackingConfigured] = useState(false);
+    const [issueTrackingEditing, setIssueTrackingEditing] = useState(false);
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
@@ -71,16 +71,16 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     }, [projectSettingsQuery.data, reset]);
 
     useEffect(() => {
-      if (!projectTicketingQuery.data) {
-        setTicketingConfigured(false);
+      if (!projectIssueTrackingQuery.data) {
+        setIssueTrackingConfigured(false);
         setSelectedProvider(null);
-        setTicketingFields({});
+        setIssueTrackingFields({});
         return;
       }
-      const config = projectTicketingQuery.data;
-      setTicketingConfigured(true);
+      const config = projectIssueTrackingQuery.data;
+      setIssueTrackingConfigured(true);
       setSelectedProvider(config.provider);
-      setTicketingFields({
+      setIssueTrackingFields({
         owner: config.owner ?? "",
         repo: config.repo ?? "",
         project_path: config.project_path ?? "",
@@ -88,7 +88,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         project_key: config.project_key ?? "",
         project_name: config.project_name ?? "",
       });
-    }, [projectTicketingQuery.data]);
+    }, [projectIssueTrackingQuery.data]);
 
     // When agent changes, clear model selection
     const handleAgentChange = (value: string | null) => {
@@ -108,16 +108,16 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           },
         });
         if (selectedProvider) {
-          const config: ProjectTicketingConfig = {
+          const config: ProjectIssueTrackingConfig = {
             provider: selectedProvider,
-            owner: ticketingFields.owner || null,
-            repo: ticketingFields.repo || null,
-            project_path: ticketingFields.project_path || null,
-            team_id: ticketingFields.team_id || null,
-            project_key: ticketingFields.project_key || null,
-            project_name: ticketingFields.project_name || null,
+            owner: issueTrackingFields.owner || null,
+            repo: issueTrackingFields.repo || null,
+            project_path: issueTrackingFields.project_path || null,
+            team_id: issueTrackingFields.team_id || null,
+            project_key: issueTrackingFields.project_key || null,
+            project_name: issueTrackingFields.project_name || null,
           };
-          await saveTicketingMutation.mutateAsync({ projectId, ticketing: config });
+          await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: config });
         }
         showSuccessToast("Settings saved");
       } catch (err) {
@@ -137,14 +137,21 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const agents = discovery?.agents ?? [];
     const isLoading = projectSettingsQuery.isLoading;
 
-    const connectedIntegrations = integrations?.filter((s) => s.connected) ?? [];
+    // Providers that only host repos and do not support issue tracking in Maestro.
+    const reposOnlyProviders = new Set(["bitbucket"]);
 
-    function getTicketingFields(
+    const connectedIntegrations = integrations?.filter((s) => s.connected) ?? [];
+    const issueTrackingIntegrations = connectedIntegrations.filter(
+      (s) => !reposOnlyProviders.has(s.provider),
+    );
+
+    function getIssueTrackingFields(
       provider: string,
     ): { key: string; label: string; placeholder?: string }[] {
       switch (provider) {
         case "github":
         case "forgejo":
+        case "gitea":
           return [
             { key: "owner", label: "Owner" },
             { key: "repo", label: "Repository" },
@@ -289,22 +296,22 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 </div>
               </div>
 
-              {/* Ticketing Card */}
+              {/* Issue Tracking Card */}
               <div className="bg-card border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                   <Ticket className="w-4 h-4 text-muted-foreground" />
-                  Ticketing
+                  Issue Tracking
                 </h3>
 
-                {connectedIntegrations.length === 0 ? (
+                {issueTrackingIntegrations.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No integrations connected. Add integrations from the project picker screen.
                   </p>
-                ) : ticketingConfigured && !ticketingEditing ? (
+                ) : issueTrackingConfigured && !issueTrackingEditing ? (
                   /* State C: Configured read-only */
                   <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
-                      {connectedIntegrations.map((integration) => (
+                      {issueTrackingIntegrations.map((integration) => (
                         <div
                           key={integration.provider}
                           className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-default ${
@@ -319,13 +326,13 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </div>
                       ))}
                     </div>
-                    {selectedProvider && getTicketingFields(selectedProvider).length > 0 && (
+                    {selectedProvider && getIssueTrackingFields(selectedProvider).length > 0 && (
                       <div className="space-y-2">
-                        {getTicketingFields(selectedProvider).map((field) => (
+                        {getIssueTrackingFields(selectedProvider).map((field) => (
                           <div key={field.key} className="space-y-1">
                             <Label className="text-sm font-medium">{field.label}</Label>
                             <p className="text-sm text-muted-foreground">
-                              {ticketingFields[field.key] || "—"}
+                              {issueTrackingFields[field.key] || "—"}
                             </p>
                           </div>
                         ))}
@@ -336,7 +343,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setTicketingEditing(true)}
+                        onClick={() => setIssueTrackingEditing(true)}
                       >
                         Change
                       </Button>
@@ -345,13 +352,13 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         variant="outline"
                         size="sm"
                         onClick={async () => {
-                          await saveTicketingMutation.mutateAsync({ projectId, ticketing: null });
-                          setTicketingConfigured(false);
+                          await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: null });
+                          setIssueTrackingConfigured(false);
                           setSelectedProvider(null);
-                          setTicketingFields({});
-                          setTicketingEditing(false);
+                          setIssueTrackingFields({});
+                          setIssueTrackingEditing(false);
                         }}
-                        disabled={saveTicketingMutation.isPending}
+                        disabled={saveIssueTrackingMutation.isPending}
                       >
                         Remove
                       </Button>
@@ -361,7 +368,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   /* State B: Picker (not configured or editing) */
                   <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
-                      {connectedIntegrations.map((integration) => (
+                      {issueTrackingIntegrations.map((integration) => (
                         <button
                           key={integration.provider}
                           type="button"
@@ -378,16 +385,16 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </button>
                       ))}
                     </div>
-                    {selectedProvider && getTicketingFields(selectedProvider).length > 0 && (
+                    {selectedProvider && getIssueTrackingFields(selectedProvider).length > 0 && (
                       <div className="space-y-3">
-                        {getTicketingFields(selectedProvider).map((field) => (
+                        {getIssueTrackingFields(selectedProvider).map((field) => (
                           <div key={field.key} className="space-y-1.5">
                             <Label className="text-sm font-medium">{field.label}</Label>
                             <Input
                               placeholder={field.placeholder}
-                              value={ticketingFields[field.key] ?? ""}
+                              value={issueTrackingFields[field.key] ?? ""}
                               onChange={(e) =>
-                                setTicketingFields((prev) => ({
+                                setIssueTrackingFields((prev) => ({
                                   ...prev,
                                   [field.key]: e.target.value,
                                 }))

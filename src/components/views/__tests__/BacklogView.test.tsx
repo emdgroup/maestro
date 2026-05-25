@@ -13,7 +13,7 @@ vi.mock("@/services/task.service", () => ({
 
 const mockUseProjectTicketingConfig = vi.fn();
 vi.mock("@/services/integration.service", () => ({
-  useProjectTicketingConfig: () => mockUseProjectTicketingConfig(),
+  useProjectIssueTrackingConfig: () => mockUseProjectTicketingConfig(),
 }));
 
 vi.mock("@/contexts/KanbanContext", () => ({
@@ -41,13 +41,13 @@ describe("BacklogView", () => {
     mockUseProjectTicketingConfig.mockReturnValue({ data: null });
   });
 
-  it("IMPT-01: Import tickets button is hidden when ticketingConfig is null", () => {
+  it("IMPT-01: Import tickets button is hidden when issueTrackingConfig is null", () => {
     mockUseProjectTicketingConfig.mockReturnValue({ data: null });
     render(<BacklogView search="" priorityFilter="All" />, { wrapper: createWrapper() });
     expect(screen.queryByText("Import tickets")).toBeNull();
   });
 
-  it("IMPT-01: Import tickets button is visible when ticketingConfig is non-null", () => {
+  it("IMPT-01: Import tickets button is visible when issueTrackingConfig is non-null", () => {
     mockUseProjectTicketingConfig.mockReturnValue({
       data: { provider: "github" },
     });

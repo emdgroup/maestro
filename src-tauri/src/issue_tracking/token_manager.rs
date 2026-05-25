@@ -72,8 +72,8 @@ impl TokenManager {
             *cached = None;
         }
 
-        match crate::ticketing::keychain::KeychainStore::get_token(project_id, app_data_dir) {
-            Ok(crate::ticketing::keychain::KeychainOutcome::FileFallback(result)) => {
+        match crate::issue_tracking::keychain::KeychainStore::get_token(project_id, app_data_dir) {
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::FileFallback(result)) => {
                 self.emit_keyring_warning_once(app_handle);
                 if let Some(token) = result {
                     *cached = Some(token.clone());
@@ -82,7 +82,7 @@ impl TokenManager {
                     Ok(None)
                 }
             }
-            Ok(crate::ticketing::keychain::KeychainOutcome::Keychain(result)) => {
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::Keychain(result)) => {
                 if let Some(token) = result {
                     *cached = Some(token.clone());
                     Ok(Some(token))
@@ -104,15 +104,15 @@ impl TokenManager {
         let project_lock = self.get_or_create_lock(project_id);
         let mut cached = project_lock.lock().expect("per-project token lock poisoned");
 
-        match crate::ticketing::keychain::KeychainStore::store_token(
+        match crate::issue_tracking::keychain::KeychainStore::store_token(
             project_id,
             &token,
             app_data_dir,
         ) {
-            Ok(crate::ticketing::keychain::KeychainOutcome::FileFallback(())) => {
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::FileFallback(())) => {
                 self.emit_keyring_warning_once(app_handle);
             }
-            Ok(crate::ticketing::keychain::KeychainOutcome::Keychain(())) => {}
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::Keychain(())) => {}
             Err(e) => return Err(e),
         }
 
@@ -129,11 +129,11 @@ impl TokenManager {
         let project_lock = self.get_or_create_lock(project_id);
         let mut cached = project_lock.lock().expect("per-project token lock poisoned");
 
-        match crate::ticketing::keychain::KeychainStore::delete_token(project_id, app_data_dir) {
-            Ok(crate::ticketing::keychain::KeychainOutcome::FileFallback(())) => {
+        match crate::issue_tracking::keychain::KeychainStore::delete_token(project_id, app_data_dir) {
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::FileFallback(())) => {
                 self.emit_keyring_warning_once(app_handle);
             }
-            Ok(crate::ticketing::keychain::KeychainOutcome::Keychain(())) => {}
+            Ok(crate::issue_tracking::keychain::KeychainOutcome::Keychain(())) => {}
             Err(e) => return Err(e),
         }
 

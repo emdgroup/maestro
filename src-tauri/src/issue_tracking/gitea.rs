@@ -1,31 +1,31 @@
-use crate::models::ticketing::{ForgejoConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{GiteaConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
-struct ForgejoUserResponse {
+struct GiteaUserResponse {
     login: String,
 }
 
 #[derive(serde::Deserialize)]
-struct ForgejoIssueResponse {
+struct GiteaIssueResponse {
     number: u64,
     title: String,
     body: Option<String>,
     html_url: String,
-    labels: Vec<ForgejoLabel>,
+    labels: Vec<GiteaLabel>,
     updated_at: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-struct ForgejoLabel {
+struct GiteaLabel {
     name: String,
 }
 
 use super::normalize_instance_url;
 
-/// Validate a Forgejo API token, save the TicketingConfig, and store the token.
-/// Returns the authenticated Forgejo login name on success.
+/// Validate a Gitea API token, save the IssueTrackingConfig, and store the token.
+/// Returns the authenticated Gitea login name on success.
 pub async fn validate_and_store(
     project_id: i32,
     instance_url: &str,
@@ -52,19 +52,19 @@ pub async fn validate_and_store(
     if !response.status().is_success() {
         let status = response.status();
         return Err(format!(
-            "Forgejo API error {}: {}",
+            "Gitea API error {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
         ));
     }
 
-    let user: ForgejoUserResponse = response
+    let user: GiteaUserResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Forgejo user response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Gitea user response: {}", e))?;
 
-    let config = TicketingConfig {
-        provider: Some(ProviderConfig::Forgejo(ForgejoConfig {
+    let config = IssueTrackingConfig {
+        provider: Some(ProviderConfig::Gitea(GiteaConfig {
             instance_url: base,
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -77,7 +77,7 @@ pub async fn validate_and_store(
         access_token: token.to_string(),
         refresh_token: None,
         expires_at: None,
-        provider: "forgejo".to_string(),
+        provider: "gitea".to_string(),
     };
     app_state.token_manager.store_token(
         project_id,
@@ -89,7 +89,7 @@ pub async fn validate_and_store(
     Ok(user.login)
 }
 
-/// Fetch open issues (excluding PRs, filtered server-side) from a Forgejo repository.
+/// Fetch open issues (excluding PRs, filtered server-side) from a Gitea repository.
 pub async fn fetch_issues(
     instance_url: &str,
     owner: &str,
@@ -120,21 +120,21 @@ pub async fn fetch_issues(
     if !response.status().is_success() {
         let status = response.status();
         return Err(format!(
-            "Forgejo API error {}: {}",
+            "Gitea API error {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
         ));
     }
 
-    let issues: Vec<ForgejoIssueResponse> = response
+    let issues: Vec<GiteaIssueResponse> = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Forgejo issues response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Gitea issues response: {}", e))?;
 
     let remote_issues = issues
         .into_iter()
         .map(|issue| RemoteIssue {
-            external_id: format!("forgejo:{}", issue.number),
+            external_id: format!("gitea:{}", issue.number),
             title: issue.title,
             body: issue.body,
             url: issue.html_url,
@@ -154,46 +154,30 @@ mod tests {
     #[test]
     fn test_normalize_instance_url_strips_trailing_slash() {
         assert_eq!(
-            normalize_instance_url("https://codeberg.org/"),
-            "https://codeberg.org"
+            normalize_instance_url("https://gitea.example.com/"),
+            "https://gitea.example.com"
         );
     }
 
     #[test]
     fn test_normalize_instance_url_adds_https_when_scheme_absent() {
         assert_eq!(
-            normalize_instance_url("forgejo.myco.com"),
-            "https://forgejo.myco.com"
+            normalize_instance_url("gitea.myco.com"),
+            "https://gitea.myco.com"
         );
     }
 
     #[test]
-    fn test_normalize_instance_url_preserves_existing_https() {
-        assert_eq!(
-            normalize_instance_url("https://codeberg.org"),
-            "https://codeberg.org"
-        );
-    }
-
-    #[test]
-    fn test_forgejo_external_id_format() {
+    fn test_gitea_external_id_format() {
         let number: u64 = 42;
-        assert_eq!(format!("forgejo:{}", number), "forgejo:42");
+        assert_eq!(format!("gitea:{}", number), "gitea:42");
     }
 
     #[test]
-    fn test_forgejo_issue_deserialization() {
-        let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://codeberg.org/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
-        let issue: ForgejoIssueResponse = serde_json::from_str(json).unwrap();
+    fn test_gitea_issue_deserialization() {
+        let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://gitea.example.com/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
+        let issue: GiteaIssueResponse = serde_json::from_str(json).unwrap();
         assert_eq!(issue.number, 42);
         assert_eq!(issue.labels[0].name, "enhancement");
-    }
-
-    #[test]
-    fn test_forgejo_label_deserialization() {
-        let json = r#"{"number":1,"title":"T","body":null,"html_url":"","labels":[{"name":"bug"},{"name":"good first issue"}],"updated_at":null}"#;
-        let issue: ForgejoIssueResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(issue.labels.len(), 2);
-        assert_eq!(issue.labels[0].name, "bug");
     }
 }

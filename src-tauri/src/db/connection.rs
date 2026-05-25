@@ -136,7 +136,7 @@ pub struct AppState {
     pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
     /// Mutex-guarded token storage for ticketing provider tokens.
     /// Per-project locks prevent concurrent refresh races (AUTH-06).
-    pub token_manager: crate::ticketing::TokenManager,
+    pub token_manager: crate::issue_tracking::TokenManager,
 }
 
 impl AppState {
@@ -166,7 +166,7 @@ impl AppState {
             },
             app_data_dir,
             active_project_lock: Mutex::new(None),
-            token_manager: crate::ticketing::TokenManager::new(),
+            token_manager: crate::issue_tracking::TokenManager::new(),
         }
     }
 

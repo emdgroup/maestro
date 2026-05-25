@@ -1,24 +1,47 @@
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
-import { siGithub, siGitlab, siForgejo, siLinear, siJira } from "simple-icons";
+import { X, CircleDot } from "lucide-react";
+import { siGithub, siGitlab, siForgejo, siLinear, siJira, siGitea, siBitbucket, siGit } from "simple-icons";
 import { Button } from "@/ui/button";
-import { useListIntegrations, useDeleteIntegration, PROVIDER_NAMES } from "@/services/integration.service";
+import { useListIntegrations, useDeleteIntegration, PROVIDER_NAMES, PROVIDER_CAPABILITIES } from "@/services/integration.service";
 import { IntegrationConnectDialog } from "@/components/project-picker/IntegrationConnectDialog";
 
-// Ordered as: row 1: GitHub, Jira Cloud | row 2: Linear, GitLab | row 3: Azure DevOps, Forgejo
-const ALL_PROVIDERS = ["github", "jira_cloud", "linear", "gitlab", "azuredevops", "forgejo"];
+// Ordered as: row 1: Jira Cloud, Bitbucket | row 2: GitHub, GitLab | row 3: Gitea, Forgejo | row 4: Azure DevOps, Linear
+const ALL_PROVIDERS = ["jira_cloud", "bitbucket", "github", "gitlab", "gitea", "forgejo", "azuredevops", "linear"];
 
 const PROVIDER_SIMPLE_ICONS: Record<string, { path: string; viewBox?: string }> = {
   github: siGithub,
   gitlab: siGitlab,
   forgejo: siForgejo,
+  gitea: siGitea,
   linear: siLinear,
   jira_cloud: siJira,
+  bitbucket: siBitbucket,
   azuredevops: {
     path: "M17,4v9.74l-4,3.28-6.2-2.26V17L3.29,12.41l10.23.8V4.44Zm-3.41.49L7.85,1V3.29L2.58,4.84,1,6.87v4.61l2.26,1V6.57Z",
     viewBox: "0 0 18 18",
   },
 };
+
+function CapabilityTag({ capability }: { capability: string }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground bg-muted rounded px-1">
+      {capability === "issues" ? (
+        <CircleDot className="w-2.5 h-2.5" />
+      ) : (
+        <svg
+          role="img"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-2.5 h-2.5"
+          fill="currentColor"
+        >
+          <path d={siGit.path} />
+        </svg>
+      )}
+      {capability}
+    </span>
+  );
+}
 
 export function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
   const icon = PROVIDER_SIMPLE_ICONS[provider];
@@ -63,12 +86,13 @@ export function IntegrationsTab() {
               return (
                 <div
                   key={provider}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors"
+                  className={`flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors ${!connected ? "cursor-pointer" : ""}`}
+                  onClick={!connected ? () => setConnectProvider(provider) : undefined}
                 >
                   <div className="relative shrink-0">
-                    <ProviderIcon provider={provider} className="w-4 h-4 text-muted-foreground" />
+                    <ProviderIcon provider={provider} className="w-7 h-7 text-muted-foreground" />
                     <span
-                      className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-background ${
+                      className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-background ${
                         connected ? "bg-emerald-500" : "bg-muted-foreground/40"
                       }`}
                     />
@@ -90,28 +114,23 @@ export function IntegrationsTab() {
                         )}
                       </div>
                     )}
+                    <div className="flex gap-1 mt-0.5">
+                      {(PROVIDER_CAPABILITIES[provider] ?? []).map((cap) => (
+                        <CapabilityTag key={cap} capability={cap} />
+                      ))}
+                    </div>
                   </div>
 
-                  {connected ? (
+                  {connected && (
                     <Button
                       variant="ghost"
                       size="icon"
                       className="shrink-0 h-6 w-6"
                       disabled={isGhCli}
                       title={isGhCli ? "Managed by gh CLI" : `Disconnect ${PROVIDER_NAMES[provider]}`}
-                      onClick={() => deleteIntegration(provider)}
+                      onClick={(e) => { e.stopPropagation(); deleteIntegration(provider); }}
                     >
                       <X className="w-3 h-3" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 h-6 w-6"
-                      title={`Connect ${PROVIDER_NAMES[provider]}`}
-                      onClick={() => setConnectProvider(provider)}
-                    >
-                      <Plus className="w-3 h-3" />
                     </Button>
                   )}
                 </div>

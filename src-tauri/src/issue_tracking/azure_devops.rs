@@ -1,6 +1,6 @@
-use crate::models::ticketing::{AzureDevOpsConfig, ProviderConfig, RemoteIssue, TicketingConfig};
+use crate::models::issue_tracking::{AzureDevOpsConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
-use crate::ticketing::token_manager::StoredToken;
+use crate::issue_tracking::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
 
@@ -85,7 +85,7 @@ const WIQL_FIELDS: &[&str] = &[
 ];
 
 /// Validate an Azure DevOps PAT against the connectionData endpoint, save the
-/// TicketingConfig to the project, and store the token in the token manager.
+/// IssueTrackingConfig to the project, and store the token in the token manager.
 /// Returns the authenticated user's display name on success.
 pub async fn validate_and_store(
     project_id: i32,
@@ -133,7 +133,7 @@ pub async fn validate_and_store(
         .or(conn_data.authenticated_user.subject_descriptor)
         .unwrap_or_else(|| "unknown".to_string());
 
-    let config = TicketingConfig {
+    let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Azuredevops(AzureDevOpsConfig {
             org_url: base.clone(),
             project: project.to_string(),

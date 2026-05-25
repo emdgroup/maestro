@@ -359,16 +359,13 @@ export function useAddTaskInstructionMutation() {
   });
 }
 
-/**
- * Query key factory for ticketing-related queries (separate from task keys)
- */
-export const ticketingQueryKeys = {
+export const issueTrackingQueryKeys = {
   remoteIssues: (projectId: number) =>
-    ["ticketing", "remote-issues", projectId] as const,
+    ["issue_tracking", "remote-issues", projectId] as const,
 };
 
 /**
- * Fetches remote issues from the connected ticketing provider.
+ * Fetches remote issues from the connected issue tracking provider.
  * Only runs while the modal is open (enabled: isModalOpen).
  * Automatically refetches every 5 minutes while open; stops when closed.
  */
@@ -377,7 +374,7 @@ export function useFetchRemoteIssuesQuery(
   isModalOpen: boolean,
 ) {
   return useQuery({
-    queryKey: ticketingQueryKeys.remoteIssues(projectId!),
+    queryKey: issueTrackingQueryKeys.remoteIssues(projectId!),
     queryFn: () => api.fetchRemoteIssues(projectId!),
     enabled: isModalOpen && projectId !== null,
     staleTime: 0,

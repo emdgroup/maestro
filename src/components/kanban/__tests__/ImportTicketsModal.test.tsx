@@ -27,7 +27,7 @@ vi.mock("@/services/task.service", () => ({
 }));
 
 vi.mock("@/services/integration.service", () => ({
-  useProjectTicketingConfig: vi.fn().mockReturnValue({ data: null }),
+  useProjectIssueTrackingConfig: vi.fn().mockReturnValue({ data: null }),
   PROVIDER_NAMES: { github: "GitHub" },
 }));
 

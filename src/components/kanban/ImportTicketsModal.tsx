@@ -26,7 +26,7 @@ import {
   useTasksQuery,
   useProjectBranchesQuery,
 } from "@/services/task.service";
-import { useProjectTicketingConfig, PROVIDER_NAMES } from "@/services/integration.service";
+import { useProjectIssueTrackingConfig, PROVIDER_NAMES } from "@/services/integration.service";
 
 import type { RemoteIssue, Task } from "@/types/bindings";
 
@@ -167,14 +167,14 @@ export function ImportTicketsModal({
 
   const { data: tasks } = useTasksQuery(projectId);
   const { data: branchesResult } = useProjectBranchesQuery(projectId);
-  const { data: ticketingConfig } = useProjectTicketingConfig(projectId);
+  const { data: issueTrackingConfig } = useProjectIssueTrackingConfig(projectId);
 
   // baseBranch: second element of branchesResult tuple, fallback "main"
   const baseBranch = branchesResult?.[1] ?? "main";
 
   // Provider display name + subtitle
-  const providerName = ticketingConfig?.provider
-    ? (PROVIDER_NAMES[ticketingConfig.provider] ?? ticketingConfig.provider)
+  const providerName = issueTrackingConfig?.provider
+    ? (PROVIDER_NAMES[issueTrackingConfig.provider] ?? issueTrackingConfig.provider)
     : "";
   const subtitle = providerName;
 
