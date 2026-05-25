@@ -98,10 +98,7 @@ pub async fn validate_and_store(
     let base = normalize_instance_url(org_url);
     let auth = make_azdo_auth(token);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let response = client
         .get(format!("{}/_apis/connectionData?api-version=7.1", base))
@@ -169,10 +166,7 @@ pub async fn fetch_issues(
     let base = normalize_instance_url(org_url);
     let auth = make_azdo_auth(token);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     // Step 1: WIQL — get list of work item IDs
     // Single-quote escaping: WIQL uses '' to escape ' within string literals.

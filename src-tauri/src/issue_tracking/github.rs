@@ -82,10 +82,7 @@ pub async fn validate_and_store(
             })?,
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let response = client
         .get("https://api.github.com/user")
@@ -143,10 +140,7 @@ pub async fn fetch_issues(
     repo: &str,
     token: &str,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let url = format!(
         "https://api.github.com/repos/{}/{}/issues?state=open&per_page=100",

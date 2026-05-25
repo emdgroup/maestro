@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use base64::Engine as _;
 use tauri::{Emitter, State};
@@ -152,10 +151,7 @@ async fn validate_credentials(
     instance_url: Option<&str>,
     email: Option<&str>,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = crate::issue_tracking::build_http_client()?;
 
     match provider {
         "github" => {

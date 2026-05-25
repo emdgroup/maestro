@@ -39,10 +39,7 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let user_response = client
         .get(format!("{}/api/v4/user", base))
@@ -121,10 +118,7 @@ pub async fn fetch_issues(
 ) -> Result<Vec<RemoteIssue>, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let url = format!(
         "{}/api/v4/projects/{}/issues?state=opened&per_page=100",

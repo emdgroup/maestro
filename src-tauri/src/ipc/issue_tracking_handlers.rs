@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tauri::{Emitter, State};
@@ -98,8 +99,7 @@ pub async fn fetch_remote_issues(
                 .instance_url
                 .as_deref()
                 .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
-            // project_path in ticketing config holds the GitLab project path (e.g. "group/project").
-            // The numeric project_id is resolved via the GitLab API and stored in project_key as a string.
+            // GitLab v4 API requires a numeric project id for issue listing; path lookup stores it in project_key.
             let gitlab_project_id: i64 = ticketing
                 .project_key
                 .as_deref()
@@ -215,22 +215,35 @@ pub async fn import_tasks(
 
     let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
 
+    let already_imported: HashSet<String> = if issues.is_empty() {
+        HashSet::new()
+    } else {
+        let external_ids: Vec<&str> = issues.iter().map(|i| i.external_id.as_str()).collect();
+        let placeholders = external_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!(
+            "SELECT external_id FROM tasks WHERE project_id = ? AND external_id IN ({})",
+            placeholders
+        );
+        let mut all_params: Vec<&dyn rusqlite::ToSql> = vec![&project_id as &dyn rusqlite::ToSql];
+        for id in &external_ids {
+            all_params.push(id as &dyn rusqlite::ToSql);
+        }
+        let mut stmt = tx.prepare(&query).map_err(|e| e.to_string())?;
+        let rows: Vec<String> = stmt
+            .query_map(all_params.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows.into_iter().collect()
+    };
+
     let mut created_tasks: Vec<Task> = Vec::new();
 
     for issue in &issues {
-        // Security: scope duplicate check to project_id — external_id is not globally unique
-        // (e.g. "github:42" may appear in multiple projects for different repos)
-        let exists: bool = tx.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE external_id = ? AND project_id = ?",
-            rusqlite::params![&issue.external_id, project_id],
-            |row| row.get::<_, i64>(0),
-        ).map(|count| count > 0).unwrap_or(false);
-
-        if exists {
+        if already_imported.contains(&issue.external_id) {
             continue;
         }
 
-        // Security: validate field lengths to prevent oversized inserts
         if issue.title.len() > 1000 || issue.external_id.len() > 200 {
             return Err(format!("Issue fields exceed maximum allowed length: {}", issue.external_id));
         }

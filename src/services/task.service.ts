@@ -377,7 +377,7 @@ export function useFetchRemoteIssuesQuery(
     queryKey: issueTrackingQueryKeys.remoteIssues(projectId!),
     queryFn: () => api.fetchRemoteIssues(projectId!),
     enabled: isModalOpen && projectId !== null,
-    staleTime: 0,
+    staleTime: 60_000,
     refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
     retry: 1,
   });

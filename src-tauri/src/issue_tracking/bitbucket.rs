@@ -39,10 +39,7 @@ pub async fn validate_and_store(
     project_root: &str,
     app_state: &crate::db::AppState,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let auth = make_basic_auth(email, token);
 

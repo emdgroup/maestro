@@ -109,10 +109,7 @@ pub async fn validate_and_store(
     project_path: &str,
     app_state: &crate::db::AppState,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let response = post_graphql_query(&client, api_key, VIEWER_QUERY, serde_json::Value::Null).await?;
 
@@ -169,10 +166,7 @@ pub async fn validate_and_store(
 
 /// Fetch all teams in the Linear workspace for the given API key.
 pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let response = post_graphql_query(&client, token, TEAMS_QUERY, serde_json::Value::Null).await?;
 
@@ -211,10 +205,7 @@ pub async fn fetch_issues(
     token: &str,
     team_id: Option<&str>,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = super::build_http_client()?;
 
     let response = match team_id {
         None => {
