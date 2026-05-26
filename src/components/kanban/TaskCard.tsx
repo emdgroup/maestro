@@ -2,6 +2,7 @@ import { Task, TaskPriority } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask } from "@/hooks/useExecuteTask";
 import { useNavigationActions } from "@/store/navigationStore";
+import { ShieldAlert } from "lucide-react";
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
   Urgent: "#f87171",
@@ -21,8 +22,7 @@ export function TaskCard({ task, onReviewClick }: TaskCardProps) {
   const { setActiveTaskId } = useNavigationActions();
   const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
 
-  const hasMetadata =
-    task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
+  const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
 
   return (
     <div
@@ -53,6 +53,9 @@ export function TaskCard({ task, onReviewClick }: TaskCardProps) {
             <span className="text-xs text-muted-foreground">
               +{task.labels.length - 3}
             </span>
+          )}
+          {task.auto_approve && (
+            <ShieldAlert className="h-3.5 w-3.5 text-amber-500 ml-auto shrink-0" />
           )}
         </div>
       )}
