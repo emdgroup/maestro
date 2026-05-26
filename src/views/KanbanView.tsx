@@ -4,6 +4,7 @@ import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/components/task/TaskDetailScreen";
 import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
+import { useWorktreesQuery } from "@/services/worktree.service";
 import { Input } from "@/ui/input";
 import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
@@ -15,8 +16,13 @@ export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
   const selectedProject = useSelectedProject();
   const projectId = selectedProject?.id ?? null;
+  const projectPath = selectedProject?.path ?? "";
   const { data: tasks } = useTasksQuery(projectId);
   const taskList = tasks ?? [];
+  const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
+  const worktreeTaskIds = new Set(
+    (worktrees ?? []).filter((w) => w.task_id != null).map((w) => w.task_id!),
+  );
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
@@ -125,7 +131,7 @@ export const KanbanView: React.FC = () => {
         </Popover>
       </div>
       <div className="flex-1 min-h-0">
-        <BoardView tasks={filteredTasks} />
+        <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} />
       </div>
     </div>
   );

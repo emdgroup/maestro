@@ -17,9 +17,10 @@ const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
 
 interface BoardViewProps {
   tasks: Task[];
+  worktreeTaskIds: Set<number>;
 }
 
-export function BoardView({ tasks }: BoardViewProps) {
+export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
   const activeTerminalTaskId = useActiveTerminalTaskId();
   const isTerminalOpen = useIsTerminalOpen();
   const { closeTerminal } = useBoardActions();
@@ -47,6 +48,7 @@ export function BoardView({ tasks }: BoardViewProps) {
                 setSelectedTaskName(taskName);
                 setReviewModalOpen(true);
               }}
+              worktreeTaskIds={worktreeTaskIds}
             />
           );
         })}

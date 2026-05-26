@@ -15,9 +15,10 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 interface TaskCardProps {
   task: Task;
   onReviewClick?: (taskId: number, taskName: string) => void;
+  worktreeTaskIds: Set<number>;
 }
 
-export function TaskCard({ task, onReviewClick }: TaskCardProps) {
+export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps) {
   const { projectId, projectPath } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
@@ -62,7 +63,14 @@ export function TaskCard({ task, onReviewClick }: TaskCardProps) {
 
       {/* Row 3: Footer (worktree badge left, action button right) */}
       <div className="flex items-center justify-between mt-2">
-        <div>{/* worktree badge placeholder — Task 6 */}</div>
+        <div>
+          {worktreeTaskIds.has(task.id) && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              worktree
+            </span>
+          )}
+        </div>
         <div className="shrink-0">
           {task.status === "Ready" && (
             <button

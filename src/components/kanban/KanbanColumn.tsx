@@ -7,6 +7,7 @@ interface KanbanColumnProps {
   tasks: Task[];
   status: TaskStatus;
   onReviewClick?: (taskId: number, taskName: string) => void;
+  worktreeTaskIds: Set<number>;
 }
 
 const getColumnBorderColor = (status: TaskStatus): string => {
@@ -38,6 +39,7 @@ export function KanbanColumn({
   tasks,
   status,
   onReviewClick,
+  worktreeTaskIds,
 }: KanbanColumnProps) {
   const borderColor = getColumnBorderColor(status);
   const badgeColor = getBadgeColor(status);
@@ -56,6 +58,7 @@ export function KanbanColumn({
             key={task.id}
             task={task}
             onReviewClick={onReviewClick}
+            worktreeTaskIds={worktreeTaskIds}
           />
         ))}
       </div>
