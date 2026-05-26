@@ -296,7 +296,12 @@ Plans:
   3. All existing `navigationStore.test.ts` tests pass with the updated store; new tests cover `activeTaskId` set/clear behavior
   4. KanbanView renders `<TaskDetailScreen>` when `activeTaskId` is set and the board when it is null; no regressions in other view routing
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
+
 **UI hint**: yes
 
 ### Phase 59: Board View
@@ -311,7 +316,11 @@ Plans:
   3. Selecting a priority from the priority filter shows only cards matching that priority across all columns; selecting "All" restores full list
   4. Selecting a label from the label filter shows only cards carrying that label across all columns; filters compose correctly with the search and priority filter
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
 **UI hint**: yes
 
 ### Phase 60: Task Card Redesign
@@ -328,7 +337,11 @@ Plans:
   5. Review column cards show a Review button that navigates to the diff view for that task's worktree
   6. Done column cards show an Archive button that archives the task and removes it from the board
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
 **UI hint**: yes
 
 ### Phase 61: Create Task Modal
@@ -343,7 +356,11 @@ Plans:
   3. The branch selector opens a popover with Local and Remote sub-tabs, a search input, a refresh button that re-fetches branches, and a checkmark on the currently selected branch
   4. Enabling "Create another" keeps the modal open after successful creation with fields cleared, allowing rapid task entry
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
 **UI hint**: yes
 
 ### Phase 62: Task Detail Screen
@@ -361,7 +378,11 @@ Plans:
   6. The right sidebar shows a status dropdown; changing it updates the task status without leaving the detail screen
   7. The action bar shows a delete button (trash icon) that removes the task; when status is Done the same button shows an archive icon and archives instead of deleting
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
 **UI hint**: yes
 
 ### Phase 63: Archive Modal
@@ -375,7 +396,11 @@ Plans:
   2. The archive modal has a search input that filters tasks by title and filter tabs for All, Done, and Cancelled; filters update the list in real time
   3. Clicking a row in the archive modal closes the modal and opens the task detail screen in read-only mode; no edit actions are available for archived tasks
 
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+
+- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
+- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
 **UI hint**: yes
 
 ## Progress
@@ -419,7 +444,7 @@ Plans:
 | 55 - Settings UI | v1.6 | 3/3 | Complete | 2026-05-23 |
 | 56 - Import Modal + Change Detection | v1.6 | 2/2 | Complete | 2026-05-24 |
 | 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
-| 58 - Navigation Store | v1.7 | 0/TBD | Not started | - |
+| 58 - Navigation Store | v1.7 | 0/2 | Not started | - |
 | 59 - Board View | v1.7 | 0/TBD | Not started | - |
 | 60 - Task Card Redesign | v1.7 | 0/TBD | Not started | - |
 | 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
