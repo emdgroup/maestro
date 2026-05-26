@@ -1,7 +1,15 @@
-import { Task } from "@/types/bindings";
+import { Task, TaskPriority } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask } from "@/hooks/useExecuteTask";
 import { useNavigationActions } from "@/store/navigationStore";
+
+const PRIORITY_COLORS: Record<TaskPriority, string> = {
+  Urgent: "#f87171",
+  High: "#fb923c",
+  Medium: "#facc15",
+  Low: "#4ade80",
+  None: "#4b5563",
+};
 
 interface TaskCardProps {
   task: Task;
@@ -23,7 +31,13 @@ export function TaskCard({ task, onReviewClick }: TaskCardProps) {
           <div className="font-base text-foreground truncate">{task.title}</div>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2 items-center">
+        {task.priority !== "None" && (
+          <span
+            style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+            className="h-[7px] w-[7px] rounded-full shrink-0 inline-block"
+          />
+        )}
         {task.labels.length > 0 &&
           task.labels.slice(0, 3).map((label) => (
             <span
