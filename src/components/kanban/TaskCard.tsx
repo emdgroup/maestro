@@ -21,70 +21,81 @@ export function TaskCard({ task, onReviewClick }: TaskCardProps) {
   const { setActiveTaskId } = useNavigationActions();
   const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
 
+  const hasMetadata =
+    task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
+
   return (
     <div
       className="rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-ring"
       onClick={() => setActiveTaskId(task.id)}
     >
-      <div className="flex justify-between items-start gap-2">
-        <div className="flex items-center gap-2 flex-1">
-          <div className="font-base text-foreground truncate">{task.title}</div>
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2 items-center">
-        {task.priority !== "None" && (
-          <span
-            style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-            className="h-[7px] w-[7px] rounded-full shrink-0 inline-block"
-          />
-        )}
-        {task.labels.length > 0 &&
-          task.labels.slice(0, 3).map((label) => (
+      {/* Row 1: Title */}
+      <p className="text-sm font-medium text-foreground line-clamp-2">{task.title}</p>
+
+      {/* Row 2: Metadata (priority dot + labels + auto-approve) */}
+      {hasMetadata && (
+        <div className="flex items-center gap-1.5 mt-1.5">
+          {task.priority !== "None" && (
+            <span
+              style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+              className="h-[7px] w-[7px] rounded-full shrink-0 inline-block"
+            />
+          )}
+          {task.labels.slice(0, 3).map((label) => (
             <span
               key={label}
-              className="inline-block px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground"
+              className="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground"
             >
               {label}
             </span>
           ))}
-        {task.labels.length > 3 && (
-          <span className="text-xs text-muted-foreground">+{task.labels.length - 3} more</span>
-        )}
-      </div>
-
-      {task.status === "Ready" && (
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={() => void handleExecute(task)}
-            disabled={isExecuting}
-            className={`flex-1 px-3 py-2 text-sm font-semibold rounded transition-all duration-200 ${
-              isExecuting
-                ? "bg-muted text-muted-foreground cursor-not-allowed"
-                : "bg-accent text-accent-foreground hover:shadow-md"
-            }`}
-          >
-            {isExecuting ? "Executing..." : "Execute"}
-          </button>
+          {task.labels.length > 3 && (
+            <span className="text-xs text-muted-foreground">
+              +{task.labels.length - 3}
+            </span>
+          )}
         </div>
       )}
-      {task.status === "Review" && (
-        <button
-          onClick={() => onReviewClick?.(task.id, task.title)}
-          className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded bg-secondary text-secondary-foreground hover:shadow-md transition-all duration-200"
-          title="View diff and approve/reject changes"
-        >
-          Review
-        </button>
-      )}
-      {task.status === "Done" && !task.archived_at && (
-        <button
-          onClick={() => {}}
-          className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded bg-muted text-muted-foreground hover:bg-muted/80 hover:shadow-md transition-all duration-200"
-          title="Archive this task"
-        >
-          Archive
-        </button>
-      )}
+
+      {/* Row 3: Footer (worktree badge left, action button right) */}
+      <div className="flex items-center justify-between mt-2">
+        <div>{/* worktree badge placeholder — Task 6 */}</div>
+        <div className="shrink-0">
+          {task.status === "Ready" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleExecute(task);
+              }}
+              disabled={isExecuting}
+              className="text-xs px-2 py-1 rounded bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
+            >
+              {isExecuting ? "..." : "▶ Execute"}
+            </button>
+          )}
+          {task.status === "Review" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onReviewClick?.(task.id, task.title);
+              }}
+              className="text-xs px-2 py-1 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80"
+            >
+              Review
+            </button>
+          )}
+          {task.status === "Done" && !task.archived_at && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
+            >
+              Archive
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
