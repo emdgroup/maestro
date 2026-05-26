@@ -5,7 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue } from "@/types/bindings";
+import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -23,6 +23,7 @@ export const taskQueryKeys = {
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
   relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
   instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
+  attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
 };
 
 /**
@@ -449,5 +450,73 @@ export function useDismissTaskChangeMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to dismiss task change"),
+  });
+}
+
+/**
+ * Query hook for fetching attachments for a task
+ */
+export function useTaskAttachmentsQuery(taskId: number | null) {
+  return useQuery<TaskAttachment[]>({
+    queryKey: taskQueryKeys.attachments(taskId!),
+    queryFn: () => api.getTaskAttachments(taskId!),
+    enabled: taskId !== null,
+  });
+}
+
+/**
+ * Mutation hook for adding an attachment record to a task
+ */
+export function useAddTaskAttachmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      filename,
+      filePath,
+      fileSize,
+    }: {
+      taskId: number;
+      filename: string;
+      filePath: string;
+      fileSize: number;
+    }) => api.addTaskAttachment(taskId, filename, filePath, fileSize),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.attachments(variables.taskId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to add attachment"),
+  });
+}
+
+/**
+ * Mutation hook for removing an attachment record from a task
+ */
+export function useRemoveTaskAttachmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ attachmentId }: { attachmentId: number; taskId: number }) =>
+      api.removeTaskAttachment(attachmentId),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.attachments(variables.taskId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to remove attachment"),
+  });
+}
+
+/**
+ * Mutation hook for interrupting the active session for a task and returning it to Backlog
+ */
+export function useInterruptTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.interruptTask(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to interrupt task"),
   });
 }
