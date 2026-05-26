@@ -3,8 +3,6 @@ import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
-import type { Task } from "@/types/bindings";
-import { useTasksQuery } from "@/services/task.service";
 import { ProjectPickerView } from "@/views/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
@@ -14,7 +12,6 @@ import { DisconnectBackdrop } from "@/components/common/DisconnectBackdrop";
 import {
   useActiveTab,
   useSlideDirection,
-  usePendingTaskId,
   useNavigationActions,
   type ViewType,
 } from "@/store/navigationStore";
@@ -47,13 +44,9 @@ const SettingsView = lazy(() =>
 const TaskModal = lazy(() =>
   import("@/components/kanban/TaskModal").then((m) => ({ default: m.TaskModal })),
 );
-const TaskDetail = lazy(() =>
-  import("@/components/task/TaskDetail").then((m) => ({ default: m.TaskDetail })),
-);
 
 function App() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showMissingDialog, setShowMissingDialog] = useState(false);
   const [missingProvider, setMissingProvider] = useState<string | null>(null);
 
@@ -68,7 +61,7 @@ function App() {
   // Page routing backed by navigationStore
   const activeTab = useActiveTab();
   const slideDirection = useSlideDirection();
-  const { setActiveTab, clearPendingTask } = useNavigationActions();
+  const { setActiveTab } = useNavigationActions();
 
   const agentsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
@@ -99,18 +92,6 @@ function App() {
     dismissBackdrop();
     clearSelectedProject();
   }, [dismissBackdrop, clearSelectedProject]);
-
-  // Consume pendingTaskId from store to open TaskDetail sheet
-  const pendingTaskId = usePendingTaskId();
-  const { data: tasks } = useTasksQuery(currentProject?.id ?? null);
-
-  useEffect(() => {
-    if (pendingTaskId && tasks) {
-      const task = tasks.find((t) => String(t.id) === pendingTaskId) ?? null;
-      setSelectedTask(task);
-      clearPendingTask();
-    }
-  }, [pendingTaskId, tasks, clearPendingTask]);
 
   useEffect(() => {
     const prevTab = prevTabRef.current;
@@ -231,7 +212,7 @@ function App() {
                 <KanbanProvider
                   projectId={currentProject.id}
                   projectPath={currentProject.path}
-                  onTaskClick={setSelectedTask}
+                  onTaskClick={() => {}}
                   onAddTask={() => setShowNewTaskModal(true)}
                 >
                   <KanbanView />
@@ -292,11 +273,6 @@ function App() {
             isOpen={showNewTaskModal}
             onClose={() => setShowNewTaskModal(false)}
             projectId={currentProject.id}
-          />
-          <TaskDetail
-            task={selectedTask}
-            projectPath={currentProject.path}
-            onClose={() => setSelectedTask(null)}
           />
         </Suspense>
       </main>
