@@ -3,8 +3,8 @@ import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
-import { Bot, Ticket } from "lucide-react";
+import { Bot, CircleDot } from "lucide-react";
+import { IssueTrackingProviderForm } from "@/components/common/settings/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import {
   useAgentDiscoveryQuery,
@@ -145,30 +145,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       (s) => !reposOnlyProviders.has(s.provider),
     );
 
-    function getIssueTrackingFields(
-      provider: string,
-    ): { key: string; label: string; placeholder?: string }[] {
-      switch (provider) {
-        case "github":
-        case "forgejo":
-        case "gitea":
-          return [
-            { key: "owner", label: "Owner" },
-            { key: "repo", label: "Repository" },
-          ];
-        case "gitlab":
-          return [{ key: "project_path", label: "Project Path", placeholder: "group/project" }];
-        case "linear":
-          return [{ key: "team_id", label: "Team ID", placeholder: "team identifier" }];
-        case "jira_cloud":
-          return [{ key: "project_key", label: "Project Key", placeholder: "PROJ" }];
-        case "azuredevops":
-          return [{ key: "project_name", label: "Project Name" }];
-        default:
-          return [];
-      }
-    }
-
     return (
       <div className="h-full">
         <div className="max-w-3xl mx-auto p-6">
@@ -299,7 +275,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
               {/* Issue Tracking Card */}
               <div className="bg-card border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <Ticket className="w-4 h-4 text-muted-foreground" />
+                  <CircleDot className="w-4 h-4 text-muted-foreground" />
                   Issue Tracking
                 </h3>
 
@@ -326,16 +302,15 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </div>
                       ))}
                     </div>
-                    {selectedProvider && getIssueTrackingFields(selectedProvider).length > 0 && (
-                      <div className="space-y-2">
-                        {getIssueTrackingFields(selectedProvider).map((field) => (
-                          <div key={field.key} className="space-y-1">
-                            <Label className="text-sm font-medium">{field.label}</Label>
-                            <p className="text-sm text-muted-foreground">
-                              {issueTrackingFields[field.key] || "—"}
+                    {selectedProvider && Object.values(issueTrackingFields).some(Boolean) && (
+                      <div className="space-y-1">
+                        {Object.entries(issueTrackingFields)
+                          .filter(([, v]) => v)
+                          .map(([key, value]) => (
+                            <p key={key} className="text-sm text-muted-foreground">
+                              {value}
                             </p>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     )}
                     <div className="flex gap-2">
@@ -385,24 +360,13 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </button>
                       ))}
                     </div>
-                    {selectedProvider && getIssueTrackingFields(selectedProvider).length > 0 && (
-                      <div className="space-y-3">
-                        {getIssueTrackingFields(selectedProvider).map((field) => (
-                          <div key={field.key} className="space-y-1.5">
-                            <Label className="text-sm font-medium">{field.label}</Label>
-                            <Input
-                              placeholder={field.placeholder}
-                              value={issueTrackingFields[field.key] ?? ""}
-                              onChange={(e) =>
-                                setIssueTrackingFields((prev) => ({
-                                  ...prev,
-                                  [field.key]: e.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                        ))}
-                      </div>
+                    {selectedProvider && (
+                      <IssueTrackingProviderForm
+                        provider={selectedProvider}
+                        integration={issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!}
+                        fields={issueTrackingFields}
+                        onFieldsChange={setIssueTrackingFields}
+                      />
                     )}
                   </div>
                 )}

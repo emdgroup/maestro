@@ -185,7 +185,7 @@ pub async fn fetch_remote_issues(
     }
 }
 
-fn get_integration_creds(
+pub(crate) fn get_integration_creds(
     provider: &str,
     app_state: &AppState,
 ) -> Result<crate::models::integration::IntegrationCredentials, String> {

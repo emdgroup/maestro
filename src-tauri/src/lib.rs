@@ -136,6 +136,15 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::import_tasks,
             crate::ipc::update_task_from_remote,
             crate::ipc::dismiss_task_change,
+            // Issue tracking lookup (Phase 57)
+            crate::ipc::check_github_owner,
+            crate::ipc::list_github_repos,
+            crate::ipc::list_jira_projects,
+            crate::ipc::list_linear_teams,
+            crate::ipc::list_gitlab_projects,
+            crate::ipc::list_forgejo_repos,
+            crate::ipc::list_gitea_repos,
+            crate::ipc::list_azuredevops_projects,
         ])
 }
 

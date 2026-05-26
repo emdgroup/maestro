@@ -1,6 +1,6 @@
 {
   "default_agent": "claude-acp",
   "default_model": "opusplan",
-  "updated_at": "2026-05-24T13:28:25.693906200+00:00",
-  "ticketing": null
+  "updated_at": "2026-05-26T01:21:38.395704900+00:00",
+  "issue_tracking": null
 }

@@ -100,6 +100,43 @@ pub struct BitbucketConfig {
     pub repo_slug: String,
 }
 
+/// A repository option returned by provider lookup commands for combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct RepoOption {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// A Jira Cloud project option for combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct JiraProjectOption {
+    pub key: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub is_favourite: bool,
+}
+
+/// A GitLab project option for combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct GitLabProjectOption {
+    #[specta(type = i32)]
+    pub id: i64,
+    pub path_with_namespace: String,
+    pub name: String,
+}
+
+/// An Azure DevOps project option for combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AzureDevOpsProjectOption {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
 /// A remote issue fetched from a ticketing provider, ready for import as a Task.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]

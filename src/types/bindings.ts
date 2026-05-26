@@ -1398,6 +1398,95 @@ async dismissTaskChange(taskId: number, remoteUpdatedAt: string) : Promise<Resul
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Check whether a GitHub user or organization exists. Returns true if found, false if not.
+ */
+async checkGithubOwner(owner: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_github_owner", { owner }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List repositories for a GitHub user or organization.
+ */
+async listGithubRepos(owner: string) : Promise<Result<RepoOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_github_repos", { owner }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List Jira Cloud projects accessible to the authenticated user.
+ * Starred/favourite projects are indicated via `is_favourite`.
+ */
+async listJiraProjects() : Promise<Result<JiraProjectOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_jira_projects") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List all Linear teams in the authenticated workspace.
+ */
+async listLinearTeams() : Promise<Result<LinearTeam[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_linear_teams") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List GitLab projects the authenticated user is a member of.
+ */
+async listGitlabProjects() : Promise<Result<GitLabProjectOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_gitlab_projects") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List Forgejo repositories for the authenticated user or a given owner.
+ */
+async listForgejoRepos(owner: string) : Promise<Result<RepoOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_forgejo_repos", { owner }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List Gitea repositories for the given owner.
+ */
+async listGiteaRepos(owner: string) : Promise<Result<RepoOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_gitea_repos", { owner }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List Azure DevOps projects for the authenticated organization.
+ */
+async listAzuredevopsProjects() : Promise<Result<AzureDevOpsProjectOption[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_azuredevops_projects") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1434,6 +1523,10 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; updated_at: string }
 /**
+ * An Azure DevOps project option for combobox display.
+ */
+export type AzureDevOpsProjectOption = { id: string; name: string; description: string | null }
+/**
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
@@ -1458,10 +1551,22 @@ export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 /**
+ * A GitLab project option for combobox display.
+ */
+export type GitLabProjectOption = { id: number; path_with_namespace: string; name: string }
+/**
  * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */
 export type IntegrationStatus = { provider: string; connected: boolean; display_name: string | null; source: CredentialSource | null }
+/**
+ * A Jira Cloud project option for combobox display.
+ */
+export type JiraProjectOption = { key: string; name: string; avatar_url: string | null; is_favourite: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+/**
+ * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
+ */
+export type LinearTeam = { id: string; name: string; key: string }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
@@ -1481,6 +1586,10 @@ export type ProjectIssueTrackingConfig = { provider: string; owner?: string | nu
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
  */
 export type RemoteIssue = { external_id: string; title: string; body: string | null; url: string; labels: string[]; updated_at: string | null; priority: string | null }
+/**
+ * A repository option returned by provider lookup commands for combobox display.
+ */
+export type RepoOption = { name: string; description: string | null }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
