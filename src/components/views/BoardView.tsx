@@ -6,18 +6,23 @@ import { ReviewModal } from "@/components/common/ReviewModal";
 import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
 import { useKanban } from "@/contexts/KanbanContext";
-import { useTasksQuery, useArchiveTaskMutation } from "@/services/task.service";
+import { useArchiveTaskMutation } from "@/services/task.service";
 
-const BOARD_STATUSES: Array<TaskStatus> = ["Ready", "InProgress", "Review", "Done"];
+const BOARD_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
 
 const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
+  Backlog: "Backlog",
   Ready: "Ready",
   InProgress: "In Progress",
   Review: "Review",
   Done: "Done",
 };
 
-export function BoardView() {
+interface BoardViewProps {
+  tasks: Task[];
+}
+
+export function BoardView({ tasks }: BoardViewProps) {
   const { projectId } = useKanban();
 
   const activeTerminalTaskId = useActiveTerminalTaskId();
@@ -29,23 +34,16 @@ export function BoardView() {
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
   const [selectedTaskForSettings, setSelectedTaskForSettings] = useState<Task | null>(null);
 
-  const { data: tasks, isLoading } = useTasksQuery(projectId);
   const archiveTask = useArchiveTaskMutation();
-
-  if (isLoading) {
-    return <div className="kanban-board">Loading tasks...</div>;
-  }
-
-  const taskList = tasks ?? [];
 
   return (
     <div className="h-full flex flex-col">
-      <div className="grid grid-cols-4 p-4 bg-background flex-1">
+      <div className="grid grid-cols-5 p-4 bg-background flex-1">
         {BOARD_STATUSES.map((status) => {
           const columnTasks =
             status === "Done"
-              ? taskList.filter((t) => t.status === status && !t.archived_at)
-              : taskList.filter((t) => t.status === status);
+              ? tasks.filter((t) => t.status === status && !t.archived_at)
+              : tasks.filter((t) => t.status === status);
           return (
             <KanbanColumn
               key={status}
@@ -90,7 +88,7 @@ export function BoardView() {
         <ExecutionTerminal
           taskId={activeTerminalTaskId}
           taskName={
-            taskList.find((t) => t.id === activeTerminalTaskId)?.title ||
+            tasks.find((t) => t.id === activeTerminalTaskId)?.title ||
             `Task ${activeTerminalTaskId}`
           }
           isActive={true}
