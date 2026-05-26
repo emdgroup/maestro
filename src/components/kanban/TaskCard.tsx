@@ -1,6 +1,7 @@
 import { Task, TaskPriority } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask } from "@/hooks/useExecuteTask";
+import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
 
@@ -22,6 +23,8 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
   const { projectId, projectPath } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
+  const interruptTask = useInterruptTaskMutation();
+  const archiveTask = useArchiveTaskMutation();
 
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
 
@@ -84,6 +87,17 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
               {isExecuting ? "..." : "▶ Execute"}
             </button>
           )}
+          {task.status === "InProgress" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                interruptTask.mutate(task.id);
+              }}
+              className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
+            >
+              ⏹ Interrupt
+            </button>
+          )}
           {task.status === "Review" && (
             <button
               onClick={(e) => {
@@ -99,6 +113,7 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                archiveTask.mutate(task.id);
               }}
               className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
             >
