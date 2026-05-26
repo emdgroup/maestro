@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Tasks UX Rework
-status: verifying
-stopped_at: Phase 60 context gathered
-last_updated: "2026-05-26T22:12:08.753Z"
+status: ready_to_plan
+stopped_at: Phase 60 complete (2/2) — ready to discuss Phase 61
+last_updated: 2026-05-26T22:22:48.742Z
 last_activity: 2026-05-26
 progress:
   total_phases: 14
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 60 — task-card-redesign
+**Current focus:** Phase 61 — create task modal
 
 ## Current Position
 
-Phase: 60 (task-card-redesign) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
+Phase: 61
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-26
 
 Progress bar: ███░░░░░░░ 30% (3/7 phases complete, 6/6 plans through Phase 59)
@@ -46,7 +46,7 @@ Progress bar: ███░░░░░░░ 30% (3/7 phases complete, 6/6 plans
 | 57 | 2/2 | ~12 min | ~6 min |
 | 58 | 2/2 | ~8 min | ~4 min |
 | 59 | 2 | - | - |
-| 60 | TBD | — | — |
+| 60 | 2 | - | - |
 | 61 | TBD | — | — |
 | 62 | TBD | — | — |
 | 63 | TBD | — | — |

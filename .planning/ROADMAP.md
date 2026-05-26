@@ -456,7 +456,7 @@ Plans:
 | 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 60 - Task Card Redesign | v1.7 | 2/2 | Complete   | 2026-05-26 |
+| 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
