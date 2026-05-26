@@ -3,10 +3,7 @@ import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/s
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
 import { ReviewModal } from "@/components/common/ReviewModal";
-import { TaskSettingsModal } from "@/components/task/TaskSettingsModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
-import { useKanban } from "@/contexts/KanbanContext";
-import { useArchiveTaskMutation } from "@/services/task.service";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
 
@@ -23,8 +20,6 @@ interface BoardViewProps {
 }
 
 export function BoardView({ tasks }: BoardViewProps) {
-  const { projectId } = useKanban();
-
   const activeTerminalTaskId = useActiveTerminalTaskId();
   const isTerminalOpen = useIsTerminalOpen();
   const { closeTerminal } = useBoardActions();
@@ -32,9 +27,6 @@ export function BoardView({ tasks }: BoardViewProps) {
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
-  const [selectedTaskForSettings, setSelectedTaskForSettings] = useState<Task | null>(null);
-
-  const archiveTask = useArchiveTaskMutation();
 
   return (
     <div className="h-full flex flex-col">
@@ -55,8 +47,6 @@ export function BoardView({ tasks }: BoardViewProps) {
                 setSelectedTaskName(taskName);
                 setReviewModalOpen(true);
               }}
-              onSettingsClick={(task) => setSelectedTaskForSettings(task)}
-              onArchiveClick={(taskId) => archiveTask.mutate(taskId)}
             />
           );
         })}
@@ -72,15 +62,6 @@ export function BoardView({ tasks }: BoardViewProps) {
             setSelectedTaskId(null);
             setSelectedTaskName("");
           }}
-        />
-      )}
-
-      {selectedTaskForSettings && (
-        <TaskSettingsModal
-          isOpen={!!selectedTaskForSettings}
-          onClose={() => setSelectedTaskForSettings(null)}
-          task={selectedTaskForSettings}
-          projectId={projectId}
         />
       )}
 
