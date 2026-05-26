@@ -1,76 +1,73 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Ticketing Integration
-status: milestone_complete
-stopped_at: v1.6 Ticketing Integration complete — all 7 phases shipped
-last_updated: "2026-05-24T00:00:00.000Z"
-last_activity: 2026-05-24 -- Phase 56 execution complete; v1.6 milestone shipped
+milestone: v1.7
+milestone_name: Tasks UX Rework
+status: executing
+stopped_at: Phase 57 Plan 01 complete — schema V18 + Task model + TaskAttachment model
+last_updated: "2026-05-26T13:15:00.000Z"
+last_activity: 2026-05-26 -- Phase 57 Plan 01 executed
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_phases: 14
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 0
 ---
 
-# Project State: v1.6 — Ticketing Integration
+# Project State: v1.7 — Tasks UX Rework
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** v1.6 complete — ready for v1.7 planning
+**Current focus:** v1.7 Tasks UX Rework — Phase 57 (Data Model & Backend)
 
 ## Current Position
 
-Phase: 56 (import-modal) — COMPLETE
-Plan: 56-01 (Wave 1 — DONE), 56-02 (Wave 2 — DONE)
-Next: Phase 56 verified and complete — v1.6 milestone complete
-Status: All plans executed. 19/19 test files pass (153 tests, 8 todo stubs). TypeScript errors fixed.
-Last activity: 2026-05-24 -- Phase 56 execution complete; all 2 plans done
+Phase: 57 — Data Model & Backend
+Plan: 01 complete, next: Plan 02
+Status: Executing
+Last activity: 2026-05-26 -- Phase 57 Plan 01 complete (schema V18, Task model, TaskAttachment)
 
-Progress: [██████████] 100%
+Progress bar: █░░░░░░░░░ 7% (0/7 phases, 1/2 Phase 57 plans)
 
 ## Performance Metrics
 
-**Velocity:** (v1.6 not yet started — reference v1.5 baselines)
+**Velocity:** (reference v1.6 baselines)
 
 - Average plan duration: ~0.06h per plan
-- Reference: Phase 47 (3 plans, 0.143h total), Phase 46 (2 plans, 0.123h total)
+- Reference: Phase 56 (2 plans, complete), Phase 55 (3 plans, complete)
 
 **By Phase:** (to be filled as plans complete)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 50 | TBD | — | — |
-| 51 | TBD | — | — |
-| 52 | TBD | — | — |
-| 53 | TBD | — | — |
-| 54 | TBD | — | — |
-| 55 | TBD | — | — |
-| 56 | TBD | — | — |
+| 57 | 1/2 | ~5 min | ~5 min |
+| 58 | TBD | — | — |
+| 59 | TBD | — | — |
+| 60 | TBD | — | — |
+| 61 | TBD | — | — |
+| 62 | TBD | — | — |
+| 63 | TBD | — | — |
 
 *Updated after each plan completion*
-| Phase 51-data-foundation P01 | 7min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-Key v1.6 decisions locked in at roadmap creation:
+Key v1.7 decisions locked in at roadmap creation:
 
-- [Phase 50]: CSP and tauri-plugin-oauth capability registration must be atomic (three required steps: Cargo, lib.rs, capabilities/default.json) — missing any step produces runtime failure only at click time
-- [Phase 51]: Canonical external_id format locked before provider code: `github:{number}`, `gitlab:{project_id}/{issue_iid}`, `linear:{identifier}`, `jira:{issue_key}` — schema v16 migration is destructive; document as breaking change
-- [Phase 52]: `keyring 3.6.3` already installed; needs feature flag expansion for apple-native and linux-native-sync-persistent; keyring 4.x is a sample app — do not upgrade
-- [Phase 52]: `oauth2 5.0.0` must use `default-features = false` — enabling defaults pulls reqwest 0.12, which conflicts with existing reqwest 0.13 (open issue, Jan 2026); bridge via ~20-line `AsyncHttpClient` trait adapter
-- [Phase 52]: Linux/WSL is a confirmed Maestro use case; keyring unavailability must not be silently discarded — encrypted file fallback with warning toast required
-- [Phase 53]: Token exchange happens in Rust via reqwest, never in frontend TypeScript — minimizes CSP surface
-- [Phase 53]: PKCE verifier and state nonce captured in `start_with_config` closure, never stored in AppState
-- [Phase 53]: Jira `cloudId` discovered via `accessible-resources` after token exchange; multiple Jira sites require user confirmation
-- [Phase 54]: GitHub via `octocrab`; Linear via `graphql_client` (verify reqwest feature pin at install time); GitLab + Jira via existing `reqwest 0.13`
-- [Phase 55/56]: Issue classification (Available/Imported/Changed) is a pure frontend derivation — no extra IPC round-trip needed; uses TanStack Query cached task data + live remote issue list
+- [Phase 57]: Schema bump is V18 (V17 was used by Phase 56 title rename commit); migration is destructive per project convention — no data preservation strategy
+- [Phase 57]: `interrupt_task` must stop the active ACP/PTY session before moving task status to Backlog; calling it with no active session should surface an error to UI, not silently succeed
+- [Phase 57]: `auto_approve` defaults false, `isolated_worktree` defaults true — matches existing agent behavior expectations
+- [Phase 58]: `activeSubView` / `SubView` removed entirely; `activeTaskId: number | null` replaces sub-view routing for the Tasks view; `pendingTaskId` consolidated into `activeTaskId`
+- [Phase 59]: The 3-icon sub-view toggle (Backlog / Board / Archive) is deleted; KanbanView renders board unconditionally; Archive moves to a modal (Phase 63)
+- [Phase 61]: `CreateTaskModal` replaces `TaskModal`, `BacklogTaskSheet`, and `ImportTicketsModal` — those three files are deleted
+- [Phase 62]: `TaskDetailScreen` replaces `TaskDetail.tsx` — that file is deleted; full screen means no overlay, no modal backdrop
+- [Phase 62]: Task fields editable only in Backlog status; Interrupt is the only path to unlock a non-Backlog task
+- [Phase 63]: `ArchiveView.tsx` deleted; `ArchiveModal.tsx` is the replacement; archive is read-only (no actions on archived tasks)
 
 ### Pending Todos
 
@@ -78,11 +75,10 @@ _(none)_
 
 ### Blockers/Concerns
 
-- **Linear GraphQL complexity budget:** Not published; test proposed minimal-field query empirically before finalizing Phase 54 Linear plan
-- **graphql_client reqwest feature pin:** Verify at dependency install whether graphql_client 0.16.0 reqwest feature pins reqwest 0.12; if so, use `default-features = false` and call generated types via reqwest 0.13 client
+- **interrupt_task session lookup**: Need to verify how the ACP session manager and PTY path each expose an active session reference for a given task_id before implementing the IPC command (Plan 02 scope)
 
 ## Session Continuity
 
-Last session: 2026-05-24T00:00:00Z
-Stopped at: v1.6 milestone complete — Phase 56 shipped, ROADMAP.md updated
-Resume file: None — ready for v1.7 planning
+Last session: 2026-05-26T13:15:00Z
+Stopped at: Phase 57 Plan 01 complete — schema V18 + Task model extension + TaskAttachment model
+Resume file: None — continue with Phase 57 Plan 02 (IPC handlers + service hooks)
