@@ -74,6 +74,8 @@ export function TaskForm({
         description: data.description,
         skills: [],
         labels: [],
+        auto_approve: false,
+        isolated_worktree: true,
       });
     } catch (error) {
       console.error("Form submission error:", error);
