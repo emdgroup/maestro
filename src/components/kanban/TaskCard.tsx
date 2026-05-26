@@ -1,6 +1,7 @@
 import { Task } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask } from "@/hooks/useExecuteTask";
+import { useNavigationActions } from "@/store/navigationStore";
 
 interface TaskCardProps {
   task: Task;
@@ -8,14 +9,14 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, onReviewClick }: TaskCardProps) {
-  // Get context from KanbanProvider
   const { projectId, projectPath } = useKanban();
-
+  const { setActiveTaskId } = useNavigationActions();
   const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
 
   return (
     <div
-      className="rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 cursor-default hover:shadow-md hover:border-ring"
+      className="rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-ring"
+      onClick={() => setActiveTaskId(task.id)}
     >
       <div className="flex justify-between items-start gap-2">
         <div className="flex items-center gap-2 flex-1">
