@@ -9,6 +9,7 @@
 - ✅ **v1.4 Quality & Worktrees** — Phases 29-41 (shipped 2026-04-17)
 - ✅ **v1.5 ACP Integration** — Phases 42-49 (shipped 2026-05-20)
 - ✅ **v1.6 Ticketing Integration** — Phases 50-56 (shipped 2026-05-24)
+- 🚧 **v1.7 Tasks UX Rework** — Phases 57-63 (in progress)
 
 ## Phases
 
@@ -110,7 +111,7 @@ See phase details below (archived after milestone close).
 
 </details>
 
-### 🚧 v1.6 Ticketing Integration (In Progress)
+### ✅ v1.6 Ticketing Integration (Phases 50-56) — SHIPPED 2026-05-24
 
 **Milestone Goal:** Connect each project to one ticket tracking tool (GitHub, GitLab, Forgejo, Linear, Jira Cloud/Server, or Azure DevOps) so users can browse and import open issues as Backlog tasks via an import modal, with per-project API key authentication and non-destructive change detection.
 
@@ -121,6 +122,18 @@ See phase details below (archived after milestone close).
 - [x] **Phase 54: Linear/Jira/AzDO Auth + API Clients** — API key connection + issue fetching for Linear (GraphQL), Jira Cloud (email+token), Azure DevOps (PAT); Jira Server dropped (Atlassian EOL) (completed 2026-05-21)
 - [x] **Phase 55: Settings UI** — Ticketing section in project settings with provider picker, connect/disconnect, and connection status for all 6 providers (completed 2026-05-23)
 - [x] **Phase 56: Import Modal + Change Detection** — Full import modal with Available/Imported/Changed tabs, multi-select, auto-refresh, and change detection (completed 2026-05-24)
+
+### 🚧 v1.7 Tasks UX Rework (In Progress)
+
+**Milestone Goal:** Replace the 3-view Kanban/Backlog/Archive navigation with a unified 5-column board and consistent interaction patterns throughout the Tasks view — unified board, tabbed create modal, dedicated task detail screen, attachment support, interrupt flow, and archive modal.
+
+- [ ] **Phase 57: Data Model & Backend** — Schema bump + new task fields + attachments table + interrupt IPC command
+- [ ] **Phase 58: Navigation Store** — Replace activeSubView with activeTaskId; enable task detail screen routing
+- [ ] **Phase 59: Board View** — Unified 5-column board with search, priority filter, label filter
+- [ ] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions
+- [ ] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components
+- [ ] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow
+- [ ] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks
 
 ## Phase Details
 
@@ -221,6 +234,96 @@ Plans:
 - [x] 56-02-PLAN.md — Service hooks + ImportTicketsModal component + BacklogView Import button
 **UI hint**: yes
 
+### Phase 57: Data Model & Backend
+**Goal**: The Rust backend has all data structures and IPC commands that v1.7 frontend phases depend on — new task fields, attachments table, and interrupt capability are available before any UI work begins
+**Depends on**: Phase 56
+**Requirements**: DATA-01, DATA-02, DATA-03, DATA-04
+**Success Criteria** (what must be TRUE):
+  1. `Task` struct has `auto_approve: bool` (default false) and `isolated_worktree: bool` (default true); `pnpm tauri:gen` regenerates bindings with these fields present; `cargo check` passes
+  2. Schema is bumped to V17; `task_attachments` table exists with `id`, `task_id` (FK → tasks with CASCADE delete), `filename`, `file_path`, `file_size`, `created_at`; `cargo test` passes
+  3. `get_task_attachments`, `add_task_attachment`, and `remove_task_attachment` IPC commands are registered and callable from TypeScript; attachment CRUD round-trips correctly (add → get → remove → get returns empty)
+  4. `interrupt_task` IPC command stops the active agent session for the given task and moves the task status back to Backlog; calling it on a task with no active session returns an error surfaced to the UI
+**Plans:** 2 plans
+Plans:
+- [ ] 57-01-PLAN.md — Schema V18 + Task model extension + TaskAttachment model
+- [ ] 57-02-PLAN.md — Attachment CRUD IPC + interrupt_task IPC + command registration + bindings
+
+### Phase 58: Navigation Store
+**Goal**: The navigation store supports task detail screen routing — `activeTaskId` replaces the obsolete sub-view state, enabling any component to navigate directly to a task detail screen without prop drilling
+**Depends on**: Phase 57
+**Requirements**: (infrastructure — enables DETAIL-01, DETAIL-03, DETAIL-04 in Phase 62)
+**Success Criteria** (what must be TRUE):
+  1. `navigationStore.ts` exports `activeTaskId: number | null`, `setActiveTaskId(id)`, and `useActiveTaskId()` hook; the old `activeSubView` state and `SubView` type are removed
+  2. `navigate({ taskId })` sets `activeTaskId` to the given ID; `navigate({ view: 'tasks' })` clears `activeTaskId` back to null
+  3. All existing `navigationStore.test.ts` tests pass with the updated store; new tests cover `activeTaskId` set/clear behavior
+  4. KanbanView renders `<TaskDetailScreen>` when `activeTaskId` is set and the board when it is null; no regressions in other view routing
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 59: Board View
+**Goal**: Users see all five task statuses on a single board without switching views and can narrow visible tasks by title, priority, or label from a persistent action bar
+**Depends on**: Phase 58
+**Requirements**: BOARD-01, BOARD-02, BOARD-03, BOARD-04
+**Success Criteria** (what must be TRUE):
+  1. The Tasks view shows Backlog, Ready, InProgress, Review, and Done as five visible columns with no sub-view toggle; all task statuses are reachable without any navigation action
+  2. Typing in the search input filters cards across all columns by title match in real time; clearing the input restores all cards
+  3. Selecting a priority from the priority filter shows only cards matching that priority across all columns; selecting "All" restores full list
+  4. Selecting a label from the label filter shows only cards carrying that label across all columns; filters compose correctly with the search and priority filter
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 60: Task Card Redesign
+**Goal**: Every task card communicates its full context at a glance and provides the one action a user most needs for that task's current status — no extra navigation required for common workflows
+**Depends on**: Phase 59
+**Requirements**: CARD-01, CARD-02, CARD-03, CARD-04, CARD-05, CARD-06
+**Success Criteria** (what must be TRUE):
+  1. Each card shows priority pill, up to 3 label pills with overflow count, title capped at 2 lines, agent name, worktree badge, and auto-approve icon when enabled
+  2. Clicking anywhere on a card (outside the inline action button) navigates to the task detail screen for that task
+  3. Ready column cards show an Execute button; clicking it triggers execution and the task moves to InProgress without a confirmation dialog
+  4. InProgress column cards show an Interrupt button; clicking it calls `interrupt_task` and the task returns to Backlog
+  5. Review column cards show a Review button that navigates to the diff view for that task's worktree
+  6. Done column cards show an Archive button that archives the task and removes it from the board
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 61: Create Task Modal
+**Goal**: Users create tasks through one consistent modal that covers both the branch-first workflow and the issue-import workflow — the three legacy creation components are replaced entirely
+**Depends on**: Phase 60
+**Requirements**: CREATE-01, CREATE-02, CREATE-03, CREATE-04
+**Success Criteria** (what must be TRUE):
+  1. Clicking "+ New Task" opens a modal with a "From Branch" tab; the tab has title, description, branch selector, priority, agent, isolated worktree toggle, auto-approve toggle, and creates a Backlog task on submit
+  2. When a ticketing provider is configured, a "From Issue" tab is visible; selecting an issue pre-fills the title and description fields; the same branch selector and pill row are present; submitting creates a Backlog task
+  3. The branch selector opens a popover with Local and Remote sub-tabs, a search input, a refresh button that re-fetches branches, and a checkmark on the currently selected branch
+  4. Enabling "Create another" keeps the modal open after successful creation with fields cleared, allowing rapid task entry
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 62: Task Detail Screen
+**Goal**: Users can read, edit, and act on a task from one full-screen surface — the fullscreen overlay is replaced by a dedicated screen with a clear locked/unlocked editing model and attachment support
+**Depends on**: Phase 61
+**Requirements**: DETAIL-01, DETAIL-02, DETAIL-03, DETAIL-04, DETAIL-05, DETAIL-06, DETAIL-07, DETAIL-08
+**Success Criteria** (what must be TRUE):
+  1. Clicking a task card navigates to a dedicated full screen (not a modal overlay); pressing the close button returns to the board
+  2. When the task is in Backlog status, the title and description fields are editable inline; when status is anything else, both fields are read-only and a locked banner reads "Task is locked. Click Interrupt to unlock."
+  3. When status is not Backlog, an Interrupt button is visible in the action bar; clicking it calls `interrupt_task`, the task returns to Backlog, the locked banner disappears, and fields become editable
+  4. When status is InProgress or Review, an Execution button is visible in the action bar that navigates to the Agents view for the task's active session
+  5. In Backlog status, the user can drag-drop or browse to upload file attachments; uploaded files appear in the attachments list with filename, size, and a remove button; removing a file calls `remove_task_attachment`
+  6. The right sidebar shows a status dropdown; changing it updates the task status without leaving the detail screen
+  7. The action bar shows a delete button (trash icon) that removes the task; when status is Done the same button shows an archive icon and archives instead of deleting
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 63: Archive Modal
+**Goal**: Archived and cancelled tasks are accessible through a dedicated modal from the board action bar — the ArchiveView sub-view is removed entirely
+**Depends on**: Phase 62
+**Requirements**: ARCHIVE-01, ARCHIVE-02, ARCHIVE-03
+**Success Criteria** (what must be TRUE):
+  1. An "Archive" button in the board action bar opens a modal listing all tasks where `archived_at` is set or status is Cancelled; the modal is reachable without leaving the board view
+  2. The archive modal has a search input that filters tasks by title and filter tabs for All, Done, and Cancelled; filters update the list in real time
+  3. Clicking a row in the archive modal closes the modal and opens the task detail screen in read-only mode; no edit actions are available for archived tasks
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -260,7 +363,14 @@ Plans:
 | 53 - GitHub/GitLab/Forgejo Auth + API Clients | v1.6 | 1/1 | Complete   | 2026-05-21 |
 | 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 4/4 | Complete | 2026-05-21 |
 | 55 - Settings UI | v1.6 | 3/3 | Complete | 2026-05-23 |
-| 56 - Import Modal + Change Detection | v1.6 | 0/2 | Not started | - |
+| 56 - Import Modal + Change Detection | v1.6 | 2/2 | Complete | 2026-05-24 |
+| 57 - Data Model & Backend | v1.7 | 0/2 | Not started | - |
+| 58 - Navigation Store | v1.7 | 0/TBD | Not started | - |
+| 59 - Board View | v1.7 | 0/TBD | Not started | - |
+| 60 - Task Card Redesign | v1.7 | 0/TBD | Not started | - |
+| 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
+| 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
+| 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
 ---
 
@@ -272,3 +382,5 @@ Plans:
 *v1.4 shipped: 2026-04-17*
 *v1.5 shipped: 2026-05-20*
 *v1.6 roadmap created: 2026-05-20*
+*v1.6 shipped: 2026-05-24*
+*v1.7 roadmap created: 2026-05-26*
