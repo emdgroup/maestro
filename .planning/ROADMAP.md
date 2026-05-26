@@ -127,7 +127,7 @@ See phase details below (archived after milestone close).
 
 **Milestone Goal:** Replace the 3-view Kanban/Backlog/Archive navigation with a unified 5-column board and consistent interaction patterns throughout the Tasks view — unified board, tabbed create modal, dedicated task detail screen, attachment support, interrupt flow, and archive modal.
 
-- [ ] **Phase 57: Data Model & Backend** — Schema bump + new task fields + attachments table + interrupt IPC command
+- [x] **Phase 57: Data Model & Backend** — Schema bump + new task fields + attachments table + interrupt IPC command (completed 2026-05-26)
 - [ ] **Phase 58: Navigation Store** — Replace activeSubView with activeTaskId; enable task detail screen routing
 - [ ] **Phase 59: Board View** — Unified 5-column board with search, priority filter, label filter
 - [ ] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions
@@ -274,7 +274,7 @@ Plans:
   3. `get_task_attachments`, `add_task_attachment`, and `remove_task_attachment` IPC commands are registered and callable from TypeScript; attachment CRUD round-trips correctly (add → get → remove → get returns empty)
   4. `interrupt_task` IPC command stops the active agent session for the given task and moves the task status back to Backlog; calling it on a task with no active session returns an error surfaced to the UI
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 **Wave 1**
 
@@ -282,7 +282,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 57-02-PLAN.md — Attachment CRUD IPC + interrupt_task IPC + command registration + bindings
+- [x] 57-02-PLAN.md — Attachment CRUD IPC + interrupt_task IPC + command registration + bindings
 
 ### Phase 58: Navigation Store
 
@@ -418,7 +418,7 @@ Plans:
 | 54 - Linear/Jira/AzDO Auth + API Clients | v1.6 | 4/4 | Complete | 2026-05-21 |
 | 55 - Settings UI | v1.6 | 3/3 | Complete | 2026-05-23 |
 | 56 - Import Modal + Change Detection | v1.6 | 2/2 | Complete | 2026-05-24 |
-| 57 - Data Model & Backend | v1.7 | 1/2 | In Progress | - |
+| 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 58 - Navigation Store | v1.7 | 0/TBD | Not started | - |
 | 59 - Board View | v1.7 | 0/TBD | Not started | - |
 | 60 - Task Card Redesign | v1.7 | 0/TBD | Not started | - |

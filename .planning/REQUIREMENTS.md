@@ -77,6 +77,55 @@
 | Multiple providers per project | Adds complexity with no clear UX benefit |
 | Webhook-based sync | Desktop app lifecycle makes reliable webhook handling impractical |
 
+## v1.7 Requirements
+
+### Board Layout
+
+- [ ] **BOARD-01**: User sees all 5 task statuses (Backlog, Ready, InProgress, Review, Done) on single board without switching views
+- [ ] **BOARD-02**: User can search tasks across all columns by title
+- [ ] **BOARD-03**: User can filter tasks by priority
+- [ ] **BOARD-04**: User can filter tasks by label
+
+### Task Cards
+
+- [ ] **CARD-01**: Card shows priority, labels (max 3 + overflow count), title (2 lines max), agent name, worktree badge, auto-approve icon
+- [ ] **CARD-02**: Clicking card navigates to task detail screen
+- [ ] **CARD-03**: Ready cards show inline Execute action
+- [ ] **CARD-04**: InProgress cards show inline Interrupt action
+- [ ] **CARD-05**: Review cards show inline Review action (navigates to diff view)
+- [ ] **CARD-06**: Done cards show inline Archive action
+
+### Task Creation
+
+- [ ] **CREATE-01**: User can create task via "From Branch" tab (title, description, branch, priority, agent, isolated worktree, auto-approve)
+- [ ] **CREATE-02**: User can create task via "From Issue" tab when provider configured — selecting issue pre-fills title and description
+- [ ] **CREATE-03**: Branch selector shows local/remote branches with search and refresh
+- [ ] **CREATE-04**: "Create another" toggle keeps modal open after creation
+
+### Task Detail
+
+- [ ] **DETAIL-01**: Task detail is a dedicated full screen (not overlay/modal)
+- [ ] **DETAIL-02**: Title and description editable only when status is Backlog
+- [ ] **DETAIL-03**: Locked banner + Interrupt button appear in action bar when status ≠ Backlog
+- [ ] **DETAIL-04**: Interrupt stops active agent session and moves task to Backlog
+- [ ] **DETAIL-05**: User can upload and remove file attachments (only in Backlog)
+- [ ] **DETAIL-06**: User changes task status via sidebar dropdown
+- [ ] **DETAIL-07**: Execution button in action bar links to agent session (InProgress/Review only)
+- [ ] **DETAIL-08**: Delete action removes task; becomes Archive when status is Done
+
+### Archive
+
+- [ ] **ARCHIVE-01**: User views archived/cancelled tasks via modal from board action bar
+- [ ] **ARCHIVE-02**: Archive modal supports search and filter by Done/Cancelled
+- [ ] **ARCHIVE-03**: Clicking archived task opens read-only task detail screen
+
+### Backend/Data
+
+- [ ] **DATA-01**: Task model has auto_approve (bool, default false) and isolated_worktree (bool, default true) fields
+- [ ] **DATA-02**: task_attachments table with CASCADE delete on task removal
+- [x] **DATA-03**: IPC commands for attachment CRUD (get, add, remove)
+- [x] **DATA-04**: interrupt_task IPC command stops agent session and moves task to Backlog
+
 ## Traceability
 
 | Requirement | Phase | Status |
@@ -108,12 +157,44 @@
 | IMPT-06 | Phase 56 | Pending |
 | CHNG-01 | Phase 56 | Pending |
 | CHNG-02 | Phase 56 | Pending |
+| DATA-01 | Phase 57 | Pending |
+| DATA-02 | Phase 57 | Pending |
+| DATA-03 | Phase 57 | Complete |
+| DATA-04 | Phase 57 | Complete |
+| BOARD-01 | Phase 59 | Pending |
+| BOARD-02 | Phase 59 | Pending |
+| BOARD-03 | Phase 59 | Pending |
+| BOARD-04 | Phase 59 | Pending |
+| CARD-01 | Phase 60 | Pending |
+| CARD-02 | Phase 60 | Pending |
+| CARD-03 | Phase 60 | Pending |
+| CARD-04 | Phase 60 | Pending |
+| CARD-05 | Phase 60 | Pending |
+| CARD-06 | Phase 60 | Pending |
+| CREATE-01 | Phase 61 | Pending |
+| CREATE-02 | Phase 61 | Pending |
+| CREATE-03 | Phase 61 | Pending |
+| CREATE-04 | Phase 61 | Pending |
+| DETAIL-01 | Phase 62 | Pending |
+| DETAIL-02 | Phase 62 | Pending |
+| DETAIL-03 | Phase 62 | Pending |
+| DETAIL-04 | Phase 62 | Pending |
+| DETAIL-05 | Phase 62 | Pending |
+| DETAIL-06 | Phase 62 | Pending |
+| DETAIL-07 | Phase 62 | Pending |
+| DETAIL-08 | Phase 62 | Pending |
+| ARCHIVE-01 | Phase 63 | Pending |
+| ARCHIVE-02 | Phase 63 | Pending |
+| ARCHIVE-03 | Phase 63 | Pending |
 
 **Coverage:**
 - v1.6 requirements: 27 total
 - Mapped to phases: 27
 - Unmapped: 0 ✓
+- v1.7 requirements: 26 total
+- Mapped to phases: 26
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-20*
-*Last updated: 2026-05-20 — traceability filled after roadmap creation (Phases 50-56)*
+*Last updated: 2026-05-26 — v1.7 requirements mapped to phases 57-63*
