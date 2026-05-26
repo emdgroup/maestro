@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Tasks UX Rework
 status: executing
-stopped_at: Phase 57 complete — verified 11/11 must-haves, ready for Phase 58
-last_updated: "2026-05-26T14:00:00.000Z"
-last_activity: 2026-05-26 -- Phase 57 complete (schema V18, Task fields, TaskAttachment, interrupt_task IPC)
+stopped_at: Phase 58 complete — navigation store refactored, activeTaskId replaces sub-view routing, KanbanView simplified, TaskDetailScreen stub created
+last_updated: "2026-05-26T14:40:00.000Z"
+last_activity: 2026-05-26 -- Phase 58 complete (2/2 plans)
 progress:
   total_phases: 14
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 7
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 4
+  percent: 14
 ---
 
 # Project State: v1.7 — Tasks UX Rework
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** v1.7 Tasks UX Rework — Phase 58 (Navigation Store)
+**Current focus:** Phase 59 — board-view
 
 ## Current Position
 
-Phase: 58 — Navigation Store
-Plan: —
-Status: Ready to execute
-Last activity: 2026-05-26 -- Phase 57 complete, verified 11/11 must-haves
+Phase: 59 (board-view) — NOT STARTED
+Plan: 0 of TBD
+Status: Phase 58 complete; ready for Phase 59
+Last activity: 2026-05-26 -- Phase 58 complete (2/2 plans)
 
-Progress bar: █░░░░░░░░░ 14% (1/7 phases complete, 2/2 Phase 57 plans)
+Progress bar: ██░░░░░░░░ 28% (2/7 phases complete, 4/4 plans through Phase 58)
 
 ## Performance Metrics
 
@@ -44,7 +44,7 @@ Progress bar: █░░░░░░░░░ 14% (1/7 phases complete, 2/2 Phase
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 57 | 2/2 | ~12 min | ~6 min |
-| 58 | TBD | — | — |
+| 58 | 2/2 | ~8 min | ~4 min |
 | 59 | TBD | — | — |
 | 60 | TBD | — | — |
 | 61 | TBD | — | — |
@@ -80,6 +80,6 @@ _(none)_
 
 ## Session Continuity
 
-Last session: 2026-05-26T13:29:00Z
-Stopped at: Phase 57 Plan 02 complete — attachment CRUD handlers, interrupt_task, TypeScript bindings, service hooks
-Resume file: None — continue with Phase 58 (store refactor)
+Last session: 2026-05-26T14:40:00Z
+Stopped at: Phase 58 complete — navigationStore refactored, KanbanView simplified, TaskDetailScreen stub created
+Resume file: None — continue with Phase 59 (board-view)
