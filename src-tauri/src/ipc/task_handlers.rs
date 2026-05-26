@@ -481,6 +481,7 @@ pub async fn interrupt_task(
     if let Some(log_id) = acp_log_id {
         let session_id = format!("session-{}", log_id);
         let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
+        // Best-effort — maestro-server may already be gone; error is non-fatal.
         let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
         let teardown_key: Option<crate::acp::ConnectionKey> = {

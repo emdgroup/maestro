@@ -79,7 +79,7 @@ pub struct TaskAttachment {
     pub task_id: i32,
     pub filename: String,
     pub file_path: String,
-    pub file_size: i32,
+    pub file_size: i64,
     pub created_at: String,
 }
 

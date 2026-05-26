@@ -156,13 +156,13 @@ pub fn create_builder() -> Builder<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use specta_typescript::Typescript;
+    use specta_typescript::{BigIntExportBehavior, Typescript};
 
     #[test]
     fn generate_typescript_bindings() {
         create_builder()
             .export(
-                Typescript::default().header("// @ts-nocheck"),
+                Typescript::default().header("// @ts-nocheck").bigint(BigIntExportBehavior::Number),
                 "../src/types/bindings.ts"
             )
             .expect("Failed to export TypeScript bindings");
