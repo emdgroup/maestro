@@ -1487,6 +1487,55 @@ async listAzuredevopsProjects() : Promise<Result<AzureDevOpsProjectOption[], str
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Get attachments for a task
+ */
+async getTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_task_attachments", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add an attachment record for a task
+ */
+async addTaskAttachment(taskId: number, filename: string, filePath: string, fileSize: number) : Promise<Result<TaskAttachment, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { taskId, filename, filePath, fileSize }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remove an attachment record by id
+ */
+async removeTaskAttachment(attachmentId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_task_attachment", { attachmentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop the active ACP or PTY session for a task and move the task back to Backlog.
+ * 
+ * Searches ACP sessions and PTY session metadata for an entry associated with the
+ * given task_id. If found, replicates the teardown logic from cancel_acp_session or
+ * close_pty_session respectively. After all async work is done, updates the task
+ * status to Backlog via the sync DB mutex (never held across an await point).
+ */
+async interruptTask(taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1619,7 +1668,8 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string }
+export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean }
+export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
