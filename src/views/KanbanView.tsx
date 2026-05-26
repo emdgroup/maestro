@@ -44,7 +44,7 @@ export const KanbanView: React.FC = () => {
         {/* Search */}
         <Input
           placeholder="Search tasks..."
-          className="h-8 flex-1 min-w-0"
+          className="h-8 w-48"
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
