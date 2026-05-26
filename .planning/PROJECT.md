@@ -12,7 +12,7 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 
 **Latest Release:** v1.5 ACP Integration (shipped 2026-05-20)
 
-**Active milestone:** v1.6 — Ticketing Integration
+**Active milestone:** v1.7 — Tasks UX Rework (Phase 60 complete: TaskCard redesigned with 3-row layout, priority dot, worktree badge, ShieldAlert, per-status actions)
 
 **Tech stack:**
 - Frontend: React 19 + TypeScript + Tailwind CSS 4.1 + shadcn/ui + TanStack Query
@@ -114,18 +114,18 @@ Orchestrate multiple AI coding agents in parallel with isolation, visibility, an
 - ✓ PermissionDialog: approve/reject agent permission requests — v1.5 (Phase 48)
 - ✓ Dual-mode execution dispatcher: ACP vs PTY routing — v1.5 (Phase 49)
 
-## Current Milestone: v1.6 Ticketing Integration
+## Current Milestone: v1.7 Tasks UX Rework
 
-**Goal:** Connect each project to one ticket tracking tool so users can browse and import issues as Backlog tasks via an import modal, with OAuth auth and change detection.
+**Goal:** Replace the 3-view Kanban/Backlog/Archive navigation with a unified 5-column board and consistent interaction patterns throughout the Tasks view.
 
 **Target features:**
-- Remove existing untested GitHub/Jira import code
-- OAuth connection per-project via `tauri-plugin-oauth` (localhost redirect); tokens in OS keychain, config in `.maestro/ticketing.json`
-- Providers: GitHub Issues, GitLab Issues (cloud + self-hosted), Linear, Jira Cloud
-- Import modal triggered from Backlog column: Available / Imported / Changed ticket states, checkbox multi-select
-- Auto-refresh every X min while modal open + manual Refresh button
-- Change detection: store `external_updated_at` at import, flag when source ticket updates
-- Task fields: `external_url`, `external_updated_at`, labels imported
+- 5-column board: Backlog → Ready → InProgress → Review → Done (Backlog as first column, sub-view switching removed)
+- Tabbed Create Task modal: "From Branch" + "From Issue" (replaces TaskModal, BacklogTaskSheet, ImportTicketsModal)
+- Task detail dedicated full screen (replaces fullscreen overlay) with action bar, right sidebar, editable only in Backlog state
+- Interrupt flow: locks task editing, Interrupt button restores Backlog state
+- Attachments support on tasks (file upload, list, remove)
+- Archive modal dialog (replaces ArchiveView sub-view)
+- Backend: `auto_approve` + `isolated_worktree` task fields, `task_attachments` table, `interrupt_task` IPC command
 
 ### Out of Scope
 
