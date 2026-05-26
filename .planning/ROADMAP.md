@@ -130,7 +130,7 @@ See phase details below (archived after milestone close).
 - [x] **Phase 57: Data Model & Backend** — Schema bump + new task fields + attachments table + interrupt IPC command (completed 2026-05-26)
 - [ ] **Phase 58: Navigation Store** — Replace activeSubView with activeTaskId; enable task detail screen routing
 - [x] **Phase 59: Board View** — Unified 5-column board with search, priority filter, label filter (completed 2026-05-26)
-- [ ] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions
+- [x] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions (completed 2026-05-26)
 - [ ] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components
 - [ ] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow
 - [ ] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks
@@ -343,7 +343,7 @@ Plans:
   5. Review column cards show a Review button that navigates to the diff view for that task's worktree
   6. Done column cards show an Archive button that archives the task and removes it from the board
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 
 - [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
@@ -456,7 +456,7 @@ Plans:
 | 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 60 - Task Card Redesign | v1.7 | 1/2 | In Progress|  |
+| 60 - Task Card Redesign | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
