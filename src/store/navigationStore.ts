@@ -3,12 +3,11 @@ import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 
 export type ViewType = "kanban" | "agents" | "worktrees" | "settings";
-export type SubView = "backlog" | "board" | "archive";
 export type NavigationTarget =
-  | { taskId: string }
+  | { taskId: number }
   | { agentId: string }
   | { worktreeId: string }
-  | { view: "backlog" | "board" | "archive" | "agents" | "worktree" | "settings" };
+  | { view: "tasks" | "agents" | "worktree" | "settings" };
 
 const PAGE_ORDER: Record<ViewType, number> = {
   kanban: 0,
@@ -19,22 +18,20 @@ const PAGE_ORDER: Record<ViewType, number> = {
 
 function targetViewToTab(view: string): ViewType {
   if (view === "worktree") return "worktrees";
-  if (view === "backlog" || view === "board" || view === "archive") return "kanban";
+  if (view === "tasks") return "kanban";
   return view as ViewType;
 }
 
 interface NavigationState {
   activeTab: ViewType;
   slideDirection: number;
-  activeSubView: SubView;
-  pendingTaskId: string | null;
+  activeTaskId: number | null;
   pendingAgentId: string | null;
   pendingWorktreeId: string | null;
 
   navigate: (target: NavigationTarget) => void;
   setActiveTab: (tab: ViewType) => void;
-  setActiveSubView: (sub: SubView) => void;
-  clearPendingTask: () => void;
+  setActiveTaskId: (id: number | null) => void;
   clearPendingAgent: () => void;
   clearPendingWorktree: () => void;
 }
@@ -43,8 +40,7 @@ export const useNavigationStore = create<NavigationState>()(
   immer((set) => ({
     activeTab: "kanban",
     slideDirection: 1,
-    activeSubView: "board",
-    pendingTaskId: null,
+    activeTaskId: null,
     pendingAgentId: null,
     pendingWorktreeId: null,
 
@@ -54,8 +50,7 @@ export const useNavigationStore = create<NavigationState>()(
           const newTab: ViewType = "kanban";
           state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
-          state.activeSubView = "board";
-          state.pendingTaskId = target.taskId;
+          state.activeTaskId = target.taskId;
         } else if ("agentId" in target) {
           const newTab: ViewType = "agents";
           state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
@@ -70,8 +65,8 @@ export const useNavigationStore = create<NavigationState>()(
           const newTab = targetViewToTab(target.view);
           state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
-          if (target.view === "backlog" || target.view === "board" || target.view === "archive") {
-            state.activeSubView = target.view;
+          if (target.view === "tasks") {
+            state.activeTaskId = null;
           }
         }
       }),
@@ -84,14 +79,9 @@ export const useNavigationStore = create<NavigationState>()(
         }
       }),
 
-    setActiveSubView: (sub: SubView) =>
+    setActiveTaskId: (id: number | null) =>
       set((state) => {
-        state.activeSubView = sub;
-      }),
-
-    clearPendingTask: () =>
-      set((state) => {
-        state.pendingTaskId = null;
+        state.activeTaskId = id;
       }),
 
     clearPendingAgent: () =>
@@ -109,8 +99,7 @@ export const useNavigationStore = create<NavigationState>()(
 // Selector hooks
 export const useActiveTab = () => useNavigationStore((s) => s.activeTab);
 export const useSlideDirection = () => useNavigationStore((s) => s.slideDirection);
-export const useActiveSubView = () => useNavigationStore((s) => s.activeSubView);
-export const usePendingTaskId = () => useNavigationStore((s) => s.pendingTaskId);
+export const useActiveTaskId = () => useNavigationStore((s) => s.activeTaskId);
 export const usePendingAgentId = () => useNavigationStore((s) => s.pendingAgentId);
 export const usePendingWorktreeId = () => useNavigationStore((s) => s.pendingWorktreeId);
 export const useNavigate = () => useNavigationStore((s) => s.navigate);
@@ -118,8 +107,7 @@ export const useNavigationActions = () =>
   useNavigationStore(
     useShallow((s) => ({
       setActiveTab: s.setActiveTab,
-      setActiveSubView: s.setActiveSubView,
-      clearPendingTask: s.clearPendingTask,
+      setActiveTaskId: s.setActiveTaskId,
       clearPendingAgent: s.clearPendingAgent,
       clearPendingWorktree: s.clearPendingWorktree,
     })),
