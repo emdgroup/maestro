@@ -100,7 +100,7 @@ export function AgentActivityPanel({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
-  const [centeredHasContent, setCenteredHasContent] = useState(false);
+  const [centeredTextWidth, setCenteredTextWidth] = useState<number | null>(null);
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const selectedProject = useSelectedProject();
 
@@ -686,8 +686,12 @@ export function AgentActivityPanel({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 30, scale: 0.97 }}
                   transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                  className="w-full transition-[max-width] duration-300 ease-out"
-                  style={{ maxWidth: centeredHasContent ? "calc(100% - 4rem)" : "36rem" }}
+                  className="transition-[width] duration-150 ease-out"
+                  style={{
+                    width: centeredTextWidth !== null
+                      ? `clamp(36rem, ${centeredTextWidth + 80}px, calc(100% - 4rem))`
+                      : "36rem",
+                  }}
                 >
                   <ComposeBar
                     ref={composeBarRef}
@@ -704,7 +708,7 @@ export function AgentActivityPanel({
                     onConfigChange={handleConfigChange}
                     promptCapabilities={promptCapabilities}
                     variant="centered"
-                    onContentChange={setCenteredHasContent}
+                    onContentChange={setCenteredTextWidth}
                   />
                 </motion.div>
               </motion.div>

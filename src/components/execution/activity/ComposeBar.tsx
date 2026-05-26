@@ -34,7 +34,7 @@ interface ComposeBarProps {
   onConfigChange: (optionId: string, value: string) => void;
   promptCapabilities?: AcpPromptCapabilities | null;
   variant?: "centered" | "docked";
-  onContentChange?: (hasContent: boolean) => void;
+  onContentChange?: (width: number | null) => void;
 }
 
 const CODE_EXTENSIONS = new Set(["ts", "tsx", "js", "jsx", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "cs", "swift", "kt"]);
@@ -89,6 +89,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     null,
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sizerRef = useRef<HTMLSpanElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mentionSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mentionButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
@@ -132,6 +133,19 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
   }, [commandHighlight]);
 
   useLayoutEffect(() => {
+    const sizer = sizerRef.current;
+    if (!sizer) return;
+    const trimmed = value.trim();
+    if (!trimmed) {
+      onContentChange?.(null);
+      return;
+    }
+    const longest = value.split("\n").reduce((a, b) => (b.length > a.length ? b : a), "");
+    sizer.textContent = longest;
+    onContentChange?.(sizer.getBoundingClientRect().width);
+  }, [value, onContentChange]);
+
+  useLayoutEffect(() => {
     if (!showMentions && !showCommands) {
       setPanelPos(null);
       return;
@@ -165,8 +179,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     setShowCommands(false);
     closeMentions();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-    onContentChange?.(false);
-  }, [closeMentions, onContentChange]);
+  }, [closeMentions]);
 
   const handleAttach = useCallback(async () => {
     const selected = await openFilePicker({ multiple: true });
@@ -474,7 +487,6 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
 
-    onContentChange?.(newValue.trim().length > 0);
   };
 
   const sendDisabled = isProcessing || isSending || !value.trim();
@@ -493,6 +505,21 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
 
   return (
     <>
+      <span
+        ref={sizerRef}
+        aria-hidden
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          top: "-9999px",
+          visibility: "hidden",
+          whiteSpace: "pre",
+          fontSize: "0.875rem",
+          lineHeight: "1.625",
+          fontFamily: "inherit",
+          pointerEvents: "none",
+        }}
+      />
       {/* Mention suggestions — portaled to body to escape backdrop-filter stacking context */}
       {showMentions &&
         mentionSuggestions.length > 0 &&
@@ -670,7 +697,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
               onBlur={() => setIsFocused(false)}
               placeholder={logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"}
               rows={1}
-              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed custom-scrollbar"
             />
           </div>
 
