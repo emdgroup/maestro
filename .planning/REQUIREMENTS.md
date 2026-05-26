@@ -88,12 +88,12 @@
 
 ### Task Cards
 
-- [ ] **CARD-01**: Card shows priority, labels (max 3 + overflow count), title (2 lines max), agent name, worktree badge, auto-approve icon
-- [ ] **CARD-02**: Clicking card navigates to task detail screen
-- [ ] **CARD-03**: Ready cards show inline Execute action
-- [ ] **CARD-04**: InProgress cards show inline Interrupt action
-- [ ] **CARD-05**: Review cards show inline Review action (navigates to diff view)
-- [ ] **CARD-06**: Done cards show inline Archive action
+- [x] **CARD-01**: Card shows priority, labels (max 3 + overflow count), title (2 lines max), agent name, worktree badge, auto-approve icon
+- [x] **CARD-02**: Clicking card navigates to task detail screen
+- [x] **CARD-03**: Ready cards show inline Execute action
+- [x] **CARD-04**: InProgress cards show inline Interrupt action
+- [x] **CARD-05**: Review cards show inline Review action (navigates to diff view)
+- [x] **CARD-06**: Done cards show inline Archive action
 
 ### Task Creation
 
@@ -165,12 +165,12 @@
 | BOARD-02 | Phase 59 | Complete |
 | BOARD-03 | Phase 59 | Complete |
 | BOARD-04 | Phase 59 | Complete |
-| CARD-01 | Phase 60 | Pending |
-| CARD-02 | Phase 60 | Pending |
-| CARD-03 | Phase 60 | Pending |
-| CARD-04 | Phase 60 | Pending |
-| CARD-05 | Phase 60 | Pending |
-| CARD-06 | Phase 60 | Pending |
+| CARD-01 | Phase 60 | Complete |
+| CARD-02 | Phase 60 | Complete |
+| CARD-03 | Phase 60 | Complete |
+| CARD-04 | Phase 60 | Complete |
+| CARD-05 | Phase 60 | Complete |
+| CARD-06 | Phase 60 | Complete |
 | CREATE-01 | Phase 61 | Pending |
 | CREATE-02 | Phase 61 | Pending |
 | CREATE-03 | Phase 61 | Pending |

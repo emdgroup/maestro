@@ -343,7 +343,7 @@ Plans:
   5. Review column cards show a Review button that navigates to the diff view for that task's worktree
   6. Done column cards show an Archive button that archives the task and removes it from the board
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 
 - [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
@@ -456,7 +456,7 @@ Plans:
 | 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 60 - Task Card Redesign | v1.7 | 0/TBD | Not started | - |
+| 60 - Task Card Redesign | v1.7 | 1/2 | In Progress|  |
 | 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
