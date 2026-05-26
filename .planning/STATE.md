@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Tasks UX Rework
 status: executing
-stopped_at: Phase 57 Plan 02 complete — attachment CRUD handlers, interrupt_task, TypeScript bindings, service hooks
-last_updated: "2026-05-26T13:29:00.000Z"
-last_activity: 2026-05-26 -- Phase 57 Plan 02 complete (IPC handlers, bindings, TanStack Query hooks)
+stopped_at: Phase 57 complete — verified 11/11 must-haves, ready for Phase 58
+last_updated: "2026-05-26T14:00:00.000Z"
+last_activity: 2026-05-26 -- Phase 57 complete (schema V18, Task fields, TaskAttachment, interrupt_task IPC)
 progress:
   total_phases: 14
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** v1.7 Tasks UX Rework — Phase 57 (Data Model & Backend)
+**Current focus:** v1.7 Tasks UX Rework — Phase 58 (Navigation Store)
 
 ## Current Position
 
-Phase: 57 — Data Model & Backend
-Plan: 02 complete — Phase 57 done
-Status: Executing
-Last activity: 2026-05-26 -- Phase 57 Plan 02 complete (IPC handlers, bindings, TanStack Query hooks)
+Phase: 58 — Navigation Store
+Plan: —
+Status: Ready to execute
+Last activity: 2026-05-26 -- Phase 57 complete, verified 11/11 must-haves
 
 Progress bar: █░░░░░░░░░ 14% (1/7 phases complete, 2/2 Phase 57 plans)
 
