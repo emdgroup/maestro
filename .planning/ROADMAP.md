@@ -321,7 +321,7 @@ Plans:
   3. Selecting a priority from the priority filter shows only cards matching that priority across all columns; selecting "All" restores full list
   4. Selecting a label from the label filter shows only cards carrying that label across all columns; filters compose correctly with the search and priority filter
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 
 - [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
@@ -455,7 +455,7 @@ Plans:
 | 56 - Import Modal + Change Detection | v1.6 | 2/2 | Complete | 2026-05-24 |
 | 57 - Data Model & Backend | v1.7 | 2/2 | Complete   | 2026-05-26 |
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
-| 59 - Board View | v1.7 | 0/TBD | Not started | - |
+| 59 - Board View | v1.7 | 1/2 | In Progress|  |
 | 60 - Task Card Redesign | v1.7 | 0/TBD | Not started | - |
 | 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
