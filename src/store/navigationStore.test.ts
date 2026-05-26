@@ -6,8 +6,7 @@ function resetStore() {
   useNavigationStore.setState({
     activeTab: "kanban",
     slideDirection: 1,
-    activeSubView: "board",
-    pendingTaskId: null,
+    activeTaskId: null,
     pendingAgentId: null,
     pendingWorktreeId: null,
   });
@@ -20,8 +19,7 @@ describe("navigationStore – initial state", () => {
     const state = useNavigationStore.getState();
     expect(state.activeTab).toBe("kanban");
     expect(state.slideDirection).toBe(1);
-    expect(state.activeSubView).toBe("board");
-    expect(state.pendingTaskId).toBeNull();
+    expect(state.activeTaskId).toBeNull();
     expect(state.pendingAgentId).toBeNull();
     expect(state.pendingWorktreeId).toBeNull();
   });
@@ -29,15 +27,6 @@ describe("navigationStore – initial state", () => {
 
 describe("navigationStore – navigate() with entity targets", () => {
   beforeEach(resetStore);
-
-  it("navigate({ taskId }) sets activeTab=kanban, activeSubView=board, pendingTaskId", () => {
-    const { navigate } = useNavigationStore.getState();
-    navigate({ taskId: "42" });
-    const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("kanban");
-    expect(state.activeSubView).toBe("board");
-    expect(state.pendingTaskId).toBe("42");
-  });
 
   it("navigate({ agentId }) sets activeTab=agents, pendingAgentId", () => {
     const { navigate } = useNavigationStore.getState();
@@ -58,30 +47,6 @@ describe("navigationStore – navigate() with entity targets", () => {
 
 describe("navigationStore – navigate() with view targets", () => {
   beforeEach(resetStore);
-
-  it("navigate({ view: 'board' }) sets activeTab=kanban, activeSubView=board", () => {
-    const { navigate } = useNavigationStore.getState();
-    navigate({ view: "board" });
-    const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("kanban");
-    expect(state.activeSubView).toBe("board");
-  });
-
-  it("navigate({ view: 'backlog' }) sets activeTab=kanban, activeSubView=backlog", () => {
-    const { navigate } = useNavigationStore.getState();
-    navigate({ view: "backlog" });
-    const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("kanban");
-    expect(state.activeSubView).toBe("backlog");
-  });
-
-  it("navigate({ view: 'archive' }) sets activeTab=kanban, activeSubView=archive", () => {
-    const { navigate } = useNavigationStore.getState();
-    navigate({ view: "archive" });
-    const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("kanban");
-    expect(state.activeSubView).toBe("archive");
-  });
 
   it("navigate({ view: 'agents' }) sets activeTab=agents", () => {
     const { navigate } = useNavigationStore.getState();
@@ -132,12 +97,6 @@ describe("navigationStore – slideDirection", () => {
 describe("navigationStore – clear actions", () => {
   beforeEach(resetStore);
 
-  it("clearPendingTask sets pendingTaskId to null", () => {
-    useNavigationStore.setState({ pendingTaskId: "99" });
-    useNavigationStore.getState().clearPendingTask();
-    expect(useNavigationStore.getState().pendingTaskId).toBeNull();
-  });
-
   it("clearPendingAgent sets pendingAgentId to null", () => {
     useNavigationStore.setState({ pendingAgentId: "55" });
     useNavigationStore.getState().clearPendingAgent();
@@ -151,11 +110,33 @@ describe("navigationStore – clear actions", () => {
   });
 });
 
-describe("navigationStore – setActiveSubView", () => {
+describe("navigationStore – activeTaskId", () => {
   beforeEach(resetStore);
 
-  it("setActiveSubView('archive') sets activeSubView to archive", () => {
-    useNavigationStore.getState().setActiveSubView("archive");
-    expect(useNavigationStore.getState().activeSubView).toBe("archive");
+  it("navigate({ taskId: 42 }) sets activeTaskId to 42 and activeTab to kanban", () => {
+    const { navigate } = useNavigationStore.getState();
+    navigate({ taskId: 42 });
+    const state = useNavigationStore.getState();
+    expect(state.activeTaskId).toBe(42);
+    expect(state.activeTab).toBe("kanban");
+  });
+
+  it("navigate({ view: 'tasks' }) clears activeTaskId to null", () => {
+    useNavigationStore.setState({ activeTaskId: 42 });
+    const { navigate } = useNavigationStore.getState();
+    navigate({ view: "tasks" });
+    const state = useNavigationStore.getState();
+    expect(state.activeTaskId).toBeNull();
+  });
+
+  it("setActiveTaskId(7) sets activeTaskId to 7", () => {
+    useNavigationStore.getState().setActiveTaskId(7);
+    expect(useNavigationStore.getState().activeTaskId).toBe(7);
+  });
+
+  it("setActiveTaskId(null) clears activeTaskId to null", () => {
+    useNavigationStore.setState({ activeTaskId: 7 });
+    useNavigationStore.getState().setActiveTaskId(null);
+    expect(useNavigationStore.getState().activeTaskId).toBeNull();
   });
 });
