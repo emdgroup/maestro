@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 
-pub const SCHEMA_V17: &str = r#"
+pub const SCHEMA_V18: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     external_url TEXT,
     external_updated_at TEXT,
     labels TEXT DEFAULT '[]',
+    auto_approve INTEGER NOT NULL DEFAULT 0,
+    isolated_worktree INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -72,6 +74,18 @@ CREATE TABLE IF NOT EXISTS task_instructions (
     created_at TEXT NOT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+
+-- Task attachments table: stores file attachment metadata for tasks
+CREATE TABLE IF NOT EXISTS task_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_attachments_task_id ON task_attachments(task_id);
 
 -- Worktrees table: stores git worktree instances
 CREATE TABLE IF NOT EXISTS worktrees (
@@ -178,6 +192,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             // Drop all tables to recreate with new schema (no production data to preserve)
             conn.execute_batch(r#"
                 PRAGMA foreign_keys = OFF;
+                DROP TABLE IF EXISTS task_attachments;
                 DROP TABLE IF EXISTS session_aliases;
                 DROP TABLE IF EXISTS review_comments;
                 DROP TABLE IF EXISTS task_reviews;
@@ -193,7 +208,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V17)?;
+        conn.execute_batch(SCHEMA_V18)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -235,6 +250,7 @@ mod tests {
         assert!(tables.contains(&"ssh_connections".to_string()));
         assert!(tables.contains(&"wsl_connections".to_string()));
         assert!(tables.contains(&"session_aliases".to_string()));
+        assert!(tables.contains(&"task_attachments".to_string()));
         assert!(!tables.contains(&"execution_logs".to_string()), "execution_logs removed in V13");
 
         // Verify foreign keys are enabled
@@ -248,7 +264,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -280,5 +296,7 @@ mod tests {
         assert!(task_columns.contains(&"external_url".to_string()));
         assert!(task_columns.contains(&"external_updated_at".to_string()));
         assert!(task_columns.contains(&"labels".to_string()));
+        assert!(task_columns.contains(&"auto_approve".to_string()));
+        assert!(task_columns.contains(&"isolated_worktree".to_string()));
     }
 }
