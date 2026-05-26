@@ -82,9 +82,9 @@
 ### Board Layout
 
 - [x] **BOARD-01**: User sees all 5 task statuses (Backlog, Ready, InProgress, Review, Done) on single board without switching views
-- [ ] **BOARD-02**: User can search tasks across all columns by title
-- [ ] **BOARD-03**: User can filter tasks by priority
-- [ ] **BOARD-04**: User can filter tasks by label
+- [x] **BOARD-02**: User can search tasks across all columns by title
+- [x] **BOARD-03**: User can filter tasks by priority
+- [x] **BOARD-04**: User can filter tasks by label
 
 ### Task Cards
 
@@ -162,9 +162,9 @@
 | DATA-03 | Phase 57 | Complete |
 | DATA-04 | Phase 57 | Complete |
 | BOARD-01 | Phase 59 | Complete |
-| BOARD-02 | Phase 59 | Pending |
-| BOARD-03 | Phase 59 | Pending |
-| BOARD-04 | Phase 59 | Pending |
+| BOARD-02 | Phase 59 | Complete |
+| BOARD-03 | Phase 59 | Complete |
+| BOARD-04 | Phase 59 | Complete |
 | CARD-01 | Phase 60 | Pending |
 | CARD-02 | Phase 60 | Pending |
 | CARD-03 | Phase 60 | Pending |

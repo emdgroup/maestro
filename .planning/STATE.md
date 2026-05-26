@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Tasks UX Rework
-status: executing
+status: verifying
 stopped_at: Phase 58 complete — navigationStore refactored, KanbanView simplified, TaskDetailScreen stub created
-last_updated: "2026-05-26T20:07:02.821Z"
+last_updated: "2026-05-26T20:11:52.451Z"
 last_activity: 2026-05-26
 progress:
   total_phases: 14
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 19
-  percent: 14
+  completed_plans: 20
+  percent: 21
 ---
 
 # Project State: v1.7 — Tasks UX Rework
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-20)
 
 ## Current Position
 
-Phase: 59 (board-view) — EXECUTING
+Phase: 59 (board-view) — COMPLETE
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase 59 complete — all plans executed
 Last activity: 2026-05-26
 
-Progress bar: ██░░░░░░░░ 28% (2/7 phases complete, 4/4 plans through Phase 58)
+Progress bar: ███░░░░░░░ 30% (3/7 phases complete, 6/6 plans through Phase 59)
 
 ## Performance Metrics
 
@@ -45,7 +45,7 @@ Progress bar: ██░░░░░░░░ 28% (2/7 phases complete, 4/4 plans
 |-------|-------|-------|----------|
 | 57 | 2/2 | ~12 min | ~6 min |
 | 58 | 2/2 | ~8 min | ~4 min |
-| 59 | TBD | — | — |
+| 59 | 2/2 | ~15 min | ~8 min |
 | 60 | TBD | — | — |
 | 61 | TBD | — | — |
 | 62 | TBD | — | — |
@@ -69,6 +69,8 @@ Key v1.7 decisions locked in at roadmap creation:
 - [Phase 62]: `TaskDetailScreen` replaces `TaskDetail.tsx` — that file is deleted; full screen means no overlay, no modal backdrop
 - [Phase 62]: Task fields editable only in Backlog status; Interrupt is the only path to unlock a non-Backlog task
 - [Phase 63]: `ArchiveView.tsx` deleted; `ArchiveModal.tsx` is the replacement; archive is read-only (no actions on archived tasks)
+- [Phase 59 Plan 02]: Used buttonVariants() on PopoverTrigger — base-ui/react popover Trigger has no asChild prop (unlike Radix UI)
+- [Phase 59 Plan 02]: availableLabels derived from full taskList so label popover shows all known labels regardless of active filters
 
 ### Pending Todos
 
@@ -80,6 +82,6 @@ _(none)_
 
 ## Session Continuity
 
-Last session: 2026-05-26T20:07:02.795Z
-Stopped at: Phase 58 complete — navigationStore refactored, KanbanView simplified, TaskDetailScreen stub created
+Last session: 2026-05-26T20:30:00Z
+Stopped at: Phase 59 complete — filter bar added to KanbanView, BacklogView deleted
 Resume file: None
