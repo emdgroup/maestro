@@ -415,11 +415,10 @@ Plans:
   2. The archive modal has a search input that filters tasks by title and filter tabs for All, Done, and Cancelled; filters update the list in real time
   3. Clicking a row in the archive modal closes the modal and opens the task detail screen in read-only mode; no edit actions are available for archived tasks
 
-**Plans:** 2 plans
+**Plans:** 1 plan
 Plans:
 
-- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
-- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
+- [ ] 63-01-PLAN.md — ArchiveModal component + KanbanView wiring + ArchiveView deletion
 
 **UI hint**: yes
 
@@ -469,7 +468,7 @@ Plans:
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 2/2 | Complete   | 2026-05-27 |
 | 62 - Task Detail Screen | v1.7 | 2/2 | Complete   | 2026-05-27 |
-| 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
+| 63 - Archive Modal | v1.7 | 0/1 | Planned | - |
 
 ---
 
