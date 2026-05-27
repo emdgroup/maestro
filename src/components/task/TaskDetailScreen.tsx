@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/ui/select";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   useTasksQuery,
   useUpdateTask,
@@ -310,21 +311,25 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
     }
   }
 
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    for (const file of files) {
-      // In Tauri WebView, file.path is not available for dropped files; use name as fallback
-      const filePath = (file as File & { path?: string }).path ?? file.name;
-      addAttachment.mutate({
-        taskId: task!.id,
-        filename: file.name,
-        filePath,
-        fileSize: file.size,
-      });
-    }
-  }
+  useEffect(() => {
+    if (!isEditable || !task) return;
+    const taskId = task.id;
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "drop") {
+        setIsDragOver(false);
+        for (const filePath of event.payload.paths) {
+          const filename = filePath.split(/[/\\]/).pop() ?? filePath;
+          addAttachment.mutate({ taskId, filename, filePath, fileSize: 0 });
+        }
+      }
+      if (event.payload.type === "leave") {
+        setIsDragOver(false);
+      }
+    });
+    return () => {
+      unlisten.then((fn: () => void) => fn());
+    };
+  }, [isEditable, task?.id]);
 
   return (
     <TooltipProvider>
@@ -535,7 +540,6 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                     setIsDragOver(true);
                   }}
                   onDragLeave={() => setIsDragOver(false)}
-                  onDrop={handleDrop}
                 >
                   <Upload className="mx-auto mb-2 size-5 text-muted-foreground/60" />
                   <p>
