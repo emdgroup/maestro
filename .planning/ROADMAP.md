@@ -366,8 +366,13 @@ Plans:
 **Plans:** 2 plans
 Plans:
 
-- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
-- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
+- [ ] 61-01-PLAN.md — Schema V19 + Task model agent_id + IPC handler extensions + frontend mutation
+- [ ] 61-02-PLAN.md — CreateTaskModal component + KanbanView wiring + legacy deletion
+
+
+
+
+
 
 **UI hint**: yes
 
@@ -457,7 +462,7 @@ Plans:
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 61 - Create Task Modal | v1.7 | 0/TBD | Not started | - |
+| 61 - Create Task Modal | v1.7 | 0/2 | Planning complete | - |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
