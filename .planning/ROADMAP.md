@@ -394,8 +394,13 @@ Plans:
 **Plans:** 2 plans
 Plans:
 
-- [ ] 58-01-PLAN.md — Store refactor + tests + TaskDetailScreen stub
-- [ ] 58-02-PLAN.md — KanbanView simplification + App.tsx cleanup
+**Wave 1**
+
+- [ ] 62-01-PLAN.md — Extend update_task + add cancel_task IPC + regen bindings
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 62-02-PLAN.md — Full TaskDetailScreen implementation + delete legacy TaskDetail.tsx
 
 **UI hint**: yes
 
