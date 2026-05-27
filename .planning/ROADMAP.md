@@ -131,7 +131,7 @@ See phase details below (archived after milestone close).
 - [ ] **Phase 58: Navigation Store** — Replace activeSubView with activeTaskId; enable task detail screen routing
 - [x] **Phase 59: Board View** — Unified 5-column board with search, priority filter, label filter (completed 2026-05-26)
 - [x] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions (completed 2026-05-26)
-- [ ] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components
+- [x] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components (completed 2026-05-27)
 - [ ] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow
 - [ ] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks
 
@@ -363,7 +363,7 @@ Plans:
   3. The branch selector opens a popover with Local and Remote sub-tabs, a search input, a refresh button that re-fetches branches, and a checkmark on the currently selected branch
   4. Enabling "Create another" keeps the modal open after successful creation with fields cleared, allowing rapid task entry
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 
 **Wave 1**
@@ -372,7 +372,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 61-02-PLAN.md — CreateTaskModal component + KanbanView wiring + legacy deletion
+- [x] 61-02-PLAN.md — CreateTaskModal component + KanbanView wiring + legacy deletion
 
 **UI hint**: yes
 
@@ -462,7 +462,7 @@ Plans:
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 61 - Create Task Modal | v1.7 | 1/2 | In Progress|  |
+| 61 - Create Task Modal | v1.7 | 2/2 | Complete   | 2026-05-27 |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
