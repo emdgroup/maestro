@@ -105,11 +105,11 @@
 ### Task Detail
 
 - [ ] **DETAIL-01**: Task detail is a dedicated full screen (not overlay/modal)
-- [ ] **DETAIL-02**: Title and description editable only when status is Backlog
+- [x] **DETAIL-02**: Title and description editable only when status is Backlog
 - [ ] **DETAIL-03**: Locked banner + Interrupt button appear in action bar when status ≠ Backlog
-- [ ] **DETAIL-04**: Interrupt stops active agent session and moves task to Backlog
+- [x] **DETAIL-04**: Interrupt stops active agent session and moves task to Backlog
 - [ ] **DETAIL-05**: User can upload and remove file attachments (only in Backlog)
-- [ ] **DETAIL-06**: User changes task status via sidebar dropdown
+- [x] **DETAIL-06**: User changes task status via sidebar dropdown
 - [ ] **DETAIL-07**: Execution button in action bar links to agent session (InProgress/Review only)
 - [ ] **DETAIL-08**: Delete action removes task; becomes Archive when status is Done
 
@@ -176,11 +176,11 @@
 | CREATE-03 | Phase 61 | Pending |
 | CREATE-04 | Phase 61 | Pending |
 | DETAIL-01 | Phase 62 | Pending |
-| DETAIL-02 | Phase 62 | Pending |
+| DETAIL-02 | Phase 62 | Complete |
 | DETAIL-03 | Phase 62 | Pending |
-| DETAIL-04 | Phase 62 | Pending |
+| DETAIL-04 | Phase 62 | Complete |
 | DETAIL-05 | Phase 62 | Pending |
-| DETAIL-06 | Phase 62 | Pending |
+| DETAIL-06 | Phase 62 | Complete |
 | DETAIL-07 | Phase 62 | Pending |
 | DETAIL-08 | Phase 62 | Pending |
 | ARCHIVE-01 | Phase 63 | Pending |

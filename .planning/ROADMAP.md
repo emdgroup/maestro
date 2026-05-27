@@ -391,12 +391,12 @@ Plans:
   6. The right sidebar shows a status dropdown; changing it updates the task status without leaving the detail screen
   7. The action bar shows a delete button (trash icon) that removes the task; when status is Done the same button shows an archive icon and archives instead of deleting
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 
 **Wave 1**
 
-- [ ] 62-01-PLAN.md — Extend update_task + add cancel_task IPC + regen bindings
+- [x] 62-01-PLAN.md — Extend update_task + add cancel_task IPC + regen bindings
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -468,7 +468,7 @@ Plans:
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 2/2 | Complete   | 2026-05-27 |
-| 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
+| 62 - Task Detail Screen | v1.7 | 1/2 | In Progress|  |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
 ---
