@@ -1,4 +1,8 @@
-import { describe, it, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { ArchiveModal } from "../ArchiveModal";
+
+const mockSetActiveTaskId = vi.fn();
 
 vi.mock("@/services/task.service", () => ({
   useTasksQuery: vi.fn(() => ({
@@ -28,14 +32,49 @@ vi.mock("@/services/task.service", () => ({
 
 vi.mock("@/store/navigationStore", () => ({
   useNavigationActions: vi.fn(() => ({
-    setActiveTaskId: vi.fn(),
+    setActiveTaskId: mockSetActiveTaskId,
   })),
 }));
 
 describe("ArchiveModal", () => {
-  it.todo("renders task list when isOpen=true");
-  it.todo("filters tasks by search input value");
-  it.todo("shows only Done tasks when Done tab selected");
-  it.todo("shows only Cancelled tasks when Cancelled tab selected");
-  it.todo("calls setActiveTaskId and onClose when a task row is clicked");
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders task list when isOpen=true", () => {
+    render(<ArchiveModal isOpen={true} onClose={vi.fn()} projectId={1} />);
+    expect(screen.getByText("Completed task")).toBeInTheDocument();
+    expect(screen.getByText("Cancelled task")).toBeInTheDocument();
+  });
+
+  it("filters tasks by search input value", () => {
+    render(<ArchiveModal isOpen={true} onClose={vi.fn()} projectId={1} />);
+    fireEvent.change(screen.getByPlaceholderText("Search archived tasks..."), {
+      target: { value: "Completed" },
+    });
+    expect(screen.getByText("Completed task")).toBeInTheDocument();
+    expect(screen.queryByText("Cancelled task")).not.toBeInTheDocument();
+  });
+
+  it("shows only Done tasks when Done tab selected", () => {
+    render(<ArchiveModal isOpen={true} onClose={vi.fn()} projectId={1} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Done" }));
+    expect(screen.getByText("Completed task")).toBeInTheDocument();
+    expect(screen.queryByText("Cancelled task")).not.toBeInTheDocument();
+  });
+
+  it("shows only Cancelled tasks when Cancelled tab selected", () => {
+    render(<ArchiveModal isOpen={true} onClose={vi.fn()} projectId={1} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Cancelled" }));
+    expect(screen.getByText("Cancelled task")).toBeInTheDocument();
+    expect(screen.queryByText("Completed task")).not.toBeInTheDocument();
+  });
+
+  it("calls setActiveTaskId and onClose when a task row is clicked", () => {
+    const onClose = vi.fn();
+    render(<ArchiveModal isOpen={true} onClose={onClose} projectId={1} />);
+    fireEvent.click(screen.getByText("Completed task").closest("button")!);
+    expect(mockSetActiveTaskId).toHaveBeenCalledWith(1);
+    expect(onClose).toHaveBeenCalled();
+  });
 });
