@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Archive } from "lucide-react";
 import { BoardView } from "@/components/views/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/components/task/TaskDetailScreen";
@@ -14,6 +14,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import type { TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/CreateTaskModal";
+import { ArchiveModal } from "@/components/kanban/ArchiveModal";
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
@@ -32,6 +33,7 @@ export const KanbanView: React.FC = () => {
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
 
   const availableLabels = useMemo(
     () => [...new Set(taskList.flatMap((t) => t.labels))].sort(),
@@ -138,6 +140,11 @@ export const KanbanView: React.FC = () => {
           </PopoverContent>
         </Popover>
 
+        <Button size="sm" variant="outline" onClick={() => setIsArchiveModalOpen(true)}>
+          <Archive className="size-4" />
+          Archive
+        </Button>
+
         <div className="ml-auto">
           <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
             <Plus className="size-4" />
@@ -148,6 +155,11 @@ export const KanbanView: React.FC = () => {
       <CreateTaskModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
+        projectId={projectId ?? 0}
+      />
+      <ArchiveModal
+        isOpen={isArchiveModalOpen}
+        onClose={() => setIsArchiveModalOpen(false)}
         projectId={projectId ?? 0}
       />
       <div className="flex-1 min-h-0">
