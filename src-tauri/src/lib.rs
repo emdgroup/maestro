@@ -150,6 +150,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::add_task_attachment,
             crate::ipc::remove_task_attachment,
             crate::ipc::interrupt_task,
+            // Task detail screen (Phase 62)
+            crate::ipc::cancel_task,
         ])
 }
 

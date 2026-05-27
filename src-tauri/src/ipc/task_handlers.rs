@@ -112,20 +112,30 @@ pub fn create_task(
     Ok(task)
 }
 
+/// Fields that can be updated on a task. All fields are optional — only non-None fields
+/// are included in the SQL UPDATE. Grouped into a struct to work around the specta
+/// 10-argument limit on #[tauri::command] functions.
+#[derive(serde::Deserialize, specta::Type)]
+pub struct UpdateTaskRequest {
+    pub status: Option<String>,
+    pub description: Option<String>,
+    pub title: Option<String>,
+    pub priority: Option<String>,
+    pub base_branch: Option<String>,
+    pub skills: Option<Vec<String>>,
+    pub agent_id: Option<String>,
+    pub labels: Option<Vec<String>>,
+    pub auto_approve: Option<bool>,
+    pub isolated_worktree: Option<bool>,
+}
+
 /// Update a task's status or other fields
 #[tauri::command]
 #[specta::specta]
-#[allow(clippy::too_many_arguments)]
 pub fn update_task(
     app_state: State<Arc<AppState>>,
     task_id: i32,
-    status: Option<String>,
-    description: Option<String>,
-    title: Option<String>,
-    priority: Option<String>,
-    base_branch: Option<String>,
-    skills: Option<Vec<String>>,
-    agent_id: Option<String>,
+    updates: UpdateTaskRequest,
 ) -> Result<Task, String> {
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -136,35 +146,49 @@ pub fn update_task(
     let mut set_parts: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(ref v) = status {
+    if let Some(ref v) = updates.status {
         set_parts.push("status = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = description {
+    if let Some(ref v) = updates.description {
         set_parts.push("description = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = title {
+    if let Some(ref v) = updates.title {
         set_parts.push("title = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = priority {
+    if let Some(ref v) = updates.priority {
         set_parts.push("priority = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref v) = base_branch {
+    if let Some(ref v) = updates.base_branch {
         set_parts.push("base_branch = ?".to_string());
         params.push(Box::new(v.clone()));
     }
-    if let Some(ref new_skills) = skills {
+    if let Some(ref new_skills) = updates.skills {
         let skills_json = serde_json::to_string(new_skills)
             .map_err(|e| format!("JSON serialization failed: {}", e))?;
         set_parts.push("skills = ?".to_string());
         params.push(Box::new(skills_json));
     }
-    if let Some(ref v) = agent_id {
+    if let Some(ref v) = updates.agent_id {
         set_parts.push("agent_id = ?".to_string());
         params.push(Box::new(v.clone()));
+    }
+    if let Some(ref new_labels) = updates.labels {
+        let labels_json = serde_json::to_string(new_labels)
+            .map_err(|e| format!("JSON serialization failed: {}", e))?;
+        set_parts.push("labels = ?".to_string());
+        params.push(Box::new(labels_json));
+    }
+    if let Some(v) = updates.auto_approve {
+        set_parts.push("auto_approve = ?".to_string());
+        params.push(Box::new(v));
+    }
+    if let Some(v) = updates.isolated_worktree {
+        set_parts.push("isolated_worktree = ?".to_string());
+        params.push(Box::new(v));
     }
 
     // Always update updated_at
@@ -186,6 +210,29 @@ pub fn update_task(
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+/// Cancel a task: sets status=Cancelled and archived_at in one statement
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_task(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+) -> Result<Task, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE tasks SET status = 'Cancelled', archived_at = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&now, &now, task_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let query = format!("{} WHERE id = ?", TASK_SELECT);
+    let task = conn.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| e.to_string())?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
