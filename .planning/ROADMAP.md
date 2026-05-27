@@ -363,16 +363,16 @@ Plans:
   3. The branch selector opens a popover with Local and Remote sub-tabs, a search input, a refresh button that re-fetches branches, and a checkmark on the currently selected branch
   4. Enabling "Create another" keeps the modal open after successful creation with fields cleared, allowing rapid task entry
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 
-- [ ] 61-01-PLAN.md — Schema V19 + Task model agent_id + IPC handler extensions + frontend mutation
+**Wave 1**
+
+- [x] 61-01-PLAN.md — Schema V19 + Task model agent_id + IPC handler extensions + frontend mutation
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 61-02-PLAN.md — CreateTaskModal component + KanbanView wiring + legacy deletion
-
-
-
-
-
 
 **UI hint**: yes
 
@@ -462,7 +462,7 @@ Plans:
 | 58 - Navigation Store | v1.7 | 2/2 | Complete | 2026-05-26 |
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
-| 61 - Create Task Modal | v1.7 | 0/2 | Planning complete | - |
+| 61 - Create Task Modal | v1.7 | 1/2 | In Progress|  |
 | 62 - Task Detail Screen | v1.7 | 0/TBD | Not started | - |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
