@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 18;
+pub const SCHEMA_VERSION: u32 = 19;
 
-pub const SCHEMA_V18: &str = r#"
+pub const SCHEMA_V19: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     labels TEXT DEFAULT '[]',
     auto_approve INTEGER NOT NULL DEFAULT 0,
     isolated_worktree INTEGER NOT NULL DEFAULT 1,
+    agent_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -208,7 +209,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V18)?;
+        conn.execute_batch(SCHEMA_V19)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -264,7 +265,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 18);
+        assert_eq!(version, 19);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -298,5 +299,6 @@ mod tests {
         assert!(task_columns.contains(&"labels".to_string()));
         assert!(task_columns.contains(&"auto_approve".to_string()));
         assert!(task_columns.contains(&"isolated_worktree".to_string()));
+        assert!(task_columns.contains(&"agent_id".to_string()));
     }
 }
