@@ -153,9 +153,9 @@ async createTask(request: CreateTaskRequest) : Promise<Result<Task, string>> {
 /**
  * Update a task's status or other fields
  */
-async updateTask(taskId: number, status: string | null, description: string | null, title: string | null, priority: string | null, baseBranch: string | null, skills: string[] | null, agentId: string | null) : Promise<Result<Task, string>> {
+async updateTask(taskId: number, updates: UpdateTaskRequest) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, status, description, title, priority, baseBranch, skills, agentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, updates }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1536,6 +1536,17 @@ async interruptTask(taskId: number) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Cancel a task: sets status=Cancelled and archived_at in one statement
+ */
+async cancelTask(taskId: number) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1686,6 +1697,12 @@ required_by: string[];
  * `true` for `git` — the session cannot function without it.
  */
 mandatory: boolean }
+/**
+ * Fields that can be updated on a task. All fields are optional — only non-None fields
+ * are included in the SQL UPDATE. Grouped into a struct to work around the specta
+ * 10-argument limit on #[tauri::command] functions.
+ */
+export type UpdateTaskRequest = { status: string | null; description: string | null; title: string | null; priority: string | null; base_branch: string | null; skills: string[] | null; agent_id: string | null; labels: string[] | null; auto_approve: boolean | null; isolated_worktree: boolean | null }
 /**
  * Worktree record from database (schema v6)
  */

@@ -5,7 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment, CreateTaskRequest } from "@/types/bindings";
+import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment, CreateTaskRequest, UpdateTaskRequest } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -92,17 +92,21 @@ export function useUpdateTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) =>
-      api.updateTask(
-        taskId,
-        updates.status ?? null,
-        updates.description ?? null,
-        updates.title ?? null,
-        updates.priority ?? null,
-        updates.base_branch ?? null,
-        updates.skills ?? null,
-        updates.agent_id ?? null,
-      ),
+    mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) => {
+      const request: UpdateTaskRequest = {
+        status: updates.status ?? null,
+        description: updates.description ?? null,
+        title: updates.title ?? null,
+        priority: updates.priority ?? null,
+        base_branch: updates.base_branch ?? null,
+        skills: updates.skills ?? null,
+        agent_id: updates.agent_id ?? null,
+        labels: updates.labels ?? null,
+        auto_approve: updates.auto_approve ?? null,
+        isolated_worktree: updates.isolated_worktree ?? null,
+      };
+      return api.updateTask(taskId, request);
+    },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
@@ -512,5 +516,20 @@ export function useInterruptTaskMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to interrupt task"),
+  });
+}
+
+/**
+ * Mutation hook for cancelling a task: sets status=Cancelled and archived_at atomically
+ */
+export function useCancelTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.cancelTask(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      toast.success("Task cancelled");
+    },
+    onError: createErrorToastHandler("Failed to cancel task"),
   });
 }
