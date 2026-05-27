@@ -77,13 +77,27 @@ export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: Task) =>
+    mutationFn: (request: {
+      project_id: number;
+      title: string;
+      description: string;
+      skills: string[];
+      base_branch: string;
+      agent_id: string | null;
+      priority: string;
+      auto_approve: boolean;
+      isolated_worktree: boolean;
+    }) =>
       api.createTask(
         request.project_id,
         request.title,
         request.description,
         request.skills,
         request.base_branch,
+        request.agent_id,
+        request.priority,
+        request.auto_approve,
+        request.isolated_worktree,
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
@@ -108,6 +122,7 @@ export function useUpdateTask() {
         updates.priority ?? null,
         updates.base_branch ?? null,
         updates.skills ?? null,
+        updates.agent_id ?? null,
       ),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
