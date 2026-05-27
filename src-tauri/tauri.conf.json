@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1 https://api.github.com https://github.com https://gitlab.com https://api.linear.app https://auth.atlassian.com https://api.atlassian.com https://*.atlassian.net; font-src 'self' data: https://fonts.gstatic.com"
+      "csp": "default-src 'self'; script-src 'self'; frame-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1 https://api.github.com https://github.com https://gitlab.com https://api.linear.app https://auth.atlassian.com https://api.atlassian.com https://*.atlassian.net; font-src 'self' data: https://fonts.gstatic.com"
     }
   },
   "bundle": {

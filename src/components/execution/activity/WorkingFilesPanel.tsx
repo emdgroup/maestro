@@ -46,10 +46,20 @@ function injectIframeScrollbarCSS(html: string): string {
 
 function FileContentView({ content, viewType, path }: { content: string; viewType: FileViewType; path: string }) {
   const lang = langForExtension(path) ?? "text";
-  const srcDoc = useMemo(
-    () => (viewType === "html" ? injectIframeScrollbarCSS(content) : ""),
-    [content, viewType],
-  );
+
+  // blob: URLs have their own opaque origin — not subject to parent CSP, so inline scripts execute
+  const blobUrl = useMemo(() => {
+    if (viewType !== "html") return null;
+    const html = injectIframeScrollbarCSS(content);
+    const blob = new Blob([html], { type: "text/html" });
+    return URL.createObjectURL(blob);
+  }, [content, viewType]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
 
   switch (viewType) {
     case "markdown":
@@ -61,7 +71,7 @@ function FileContentView({ content, viewType, path }: { content: string; viewTyp
     case "html":
       return (
         <iframe
-          srcDoc={srcDoc}
+          src={blobUrl ?? undefined}
           sandbox="allow-scripts"
           className="w-full h-full border-0 bg-white rounded-md"
           title={path.split("/").pop()}

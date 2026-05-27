@@ -31,7 +31,7 @@ export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="grid grid-cols-5 p-4 bg-background flex-1">
+      <div className="grid grid-cols-5 p-4 bg-background flex-1 min-h-0 overflow-hidden">
         {BOARD_STATUSES.map((status) => {
           const columnTasks =
             status === "Done"

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback } from "react";
-import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
+import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
 import type { SettingsPageHandle } from "@/components/common/SettingsPage";
@@ -16,7 +16,6 @@ import {
   type ViewType,
 } from "@/store/navigationStore";
 import {
-  slideVariants,
   PAGE_TRANSITION_DURATION,
   PAGE_TRANSITION_EASING,
 } from "@/utils/constants/animations";
@@ -58,7 +57,17 @@ function App() {
   const { setActiveTab } = useNavigationActions();
 
   const agentsControls = useAnimationControls();
+  const kanbanControls = useAnimationControls();
+  const worktreesControls = useAnimationControls();
+  const settingsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
+
+  const viewControls = {
+    kanban: kanbanControls,
+    agents: agentsControls,
+    worktrees: worktreesControls,
+    settings: settingsControls,
+  } satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>;
 
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
@@ -90,22 +99,28 @@ function App() {
   useEffect(() => {
     const prevTab = prevTabRef.current;
     prevTabRef.current = activeTab;
+    if (prevTab === activeTab) return;
 
-    if (activeTab === "agents" && prevTab !== "agents") {
-      agentsControls.set({ x: `${100 * slideDirection}%`, opacity: 0 });
-      agentsControls.start({
-        x: 0,
-        opacity: 1,
-        transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
-      });
-    } else if (activeTab !== "agents" && prevTab === "agents") {
-      agentsControls.start({
-        x: `${-100 * slideDirection}%`,
-        opacity: 0,
-        transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
-      });
-    }
-  }, [activeTab, slideDirection, agentsControls]);
+    const exitingTab = prevTab;
+    viewControls[exitingTab].start({
+      x: `${-100 * slideDirection}%`,
+      opacity: 0,
+      transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
+    }).then(() => {
+      // Reset x to 0 so stale percentage pixels don't affect layout on window resize.
+      // Guard: only reset if this tab is still inactive.
+      if (prevTabRef.current !== exitingTab) {
+        viewControls[exitingTab].set({ x: 0, opacity: 0 });
+      }
+    });
+
+    viewControls[activeTab].set({ x: `${100 * slideDirection}%`, opacity: 0 });
+    viewControls[activeTab].start({
+      x: 0,
+      opacity: 1,
+      transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
+    });
+  }, [activeTab, slideDirection]);
 
   useEffect(() => {
     if (currentProject) {
@@ -169,9 +184,9 @@ function App() {
         agentCount={runningAgentCount}
       />
       <main className="flex-1 overflow-hidden relative">
-        {/* AgentsView always mounted — session state survives tab navigation */}
+        {/* Agents View — always mounted, imperative animation */}
         <motion.div
-          initial={activeTab === "agents" ? { x: 0, opacity: 1 } : { x: "100%", opacity: 0 }}
+          initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
           animate={agentsControls}
           className={cn(
             "absolute inset-0 overflow-hidden",
@@ -187,78 +202,60 @@ function App() {
             />
           </Suspense>
         </motion.div>
-        <AnimatePresence initial={false} custom={slideDirection}>
-          {activeTab === "kanban" && (
-            <motion.div
-              key="kanban"
-              custom={slideDirection}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                duration: PAGE_TRANSITION_DURATION,
-                ease: PAGE_TRANSITION_EASING,
-              }}
-              className="absolute inset-0 overflow-auto custom-scrollbar"
-            >
-              <Suspense fallback={fallback}>
-                <KanbanProvider
-                  projectId={currentProject.id}
-                  projectPath={currentProject.path}
-                  onTaskClick={() => {}}
-                >
-                  <KanbanView />
-                </KanbanProvider>
-              </Suspense>
-            </motion.div>
+        {/* Kanban View — always mounted, imperative animation */}
+        <motion.div
+          initial={{ opacity: activeTab === "kanban" ? 1 : 0 }}
+          animate={kanbanControls}
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab !== "kanban" && "pointer-events-none",
           )}
+        >
+          <Suspense fallback={fallback}>
+            <KanbanProvider
+              projectId={currentProject.id}
+              projectPath={currentProject.path}
+              onTaskClick={() => {}}
+            >
+              <KanbanView />
+            </KanbanProvider>
+          </Suspense>
+        </motion.div>
 
-          {activeTab === "worktrees" && (
-            <motion.div
-              key="worktrees"
-              custom={slideDirection}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                duration: PAGE_TRANSITION_DURATION,
-                ease: PAGE_TRANSITION_EASING,
-              }}
-              className="absolute inset-0 overflow-auto custom-scrollbar"
-            >
-              <Suspense fallback={fallback}>
-                <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
-              </Suspense>
-            </motion.div>
+        {/* Worktrees View — always mounted, imperative animation */}
+        <motion.div
+          initial={{ opacity: activeTab === "worktrees" ? 1 : 0 }}
+          animate={worktreesControls}
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab !== "worktrees" && "pointer-events-none",
           )}
+        >
+          <Suspense fallback={fallback}>
+            <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
+          </Suspense>
+        </motion.div>
 
-          {activeTab === "settings" && (
-            <motion.div
-              key="settings"
-              custom={slideDirection}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                duration: PAGE_TRANSITION_DURATION,
-                ease: PAGE_TRANSITION_EASING,
-              }}
-              className="absolute inset-0 overflow-auto custom-scrollbar"
-            >
-              <Suspense fallback={fallback}>
-                <SettingsView
-                  ref={settingsPageRef}
-                  projectId={currentProject.id}
-                  connectionId={currentProject.connection_id}
-                  wslConnectionId={currentProject.wsl_connection_id}
-                />
-              </Suspense>
-            </motion.div>
+        {/* Settings View — always mounted, imperative animation */}
+        <motion.div
+          initial={{ opacity: activeTab === "settings" ? 1 : 0 }}
+          animate={settingsControls}
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab !== "settings" && "pointer-events-none",
           )}
-        </AnimatePresence>
+        >
+          <div className="h-full overflow-auto custom-scrollbar">
+            <Suspense fallback={fallback}>
+              <SettingsView
+                ref={settingsPageRef}
+                projectId={currentProject.id}
+                connectionId={currentProject.connection_id}
+                wslConnectionId={currentProject.wsl_connection_id}
+              />
+            </Suspense>
+          </div>
+        </motion.div>
 
       </main>
 

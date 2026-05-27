@@ -12,6 +12,7 @@ export interface ThemeContextValue {
   systemTheme: "light" | "dark";
   isReady: boolean;
   accentHue: number | null;
+  systemAccentHue: number | null;
   setAccentColor: (hue: number | null) => Promise<void>;
 }
 
@@ -54,6 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
   const [isReady, setIsReady] = useState(false);
   const [accentHue, setAccentHueState] = useState<number | null>(null);
+  const [systemAccentHue, setSystemAccentHue] = useState<number | null>(null);
   const settingsQuery = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
   const systemAccentHueCacheRef = useRef<number | null>(null);
@@ -62,6 +64,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (systemAccentHueCacheRef.current != null) return systemAccentHueCacheRef.current;
     const hue = await loadSystemAccentHue().catch(() => 250);
     systemAccentHueCacheRef.current = hue;
+    setSystemAccentHue(hue);
     return hue;
   }
 
@@ -150,6 +153,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     systemTheme,
     isReady,
     accentHue,
+    systemAccentHue,
     setAccentColor: handleSetAccentColor,
   };
 

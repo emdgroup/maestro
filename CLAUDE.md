@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code (claude.ai/code) working in this repo.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
 
@@ -22,6 +22,7 @@ See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 
 ```bash
 pnpm dev              # Start Vite dev server (port 5173)
+pnpm build            # TypeScript check + Vite production build
 pnpm test             # Run Vitest unit tests
 pnpm test <pattern>   # Run single test file (e.g. pnpm test usePathNavigation)
 pnpm test:e2e         # Run Playwright E2E tests
@@ -138,7 +139,8 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 **Frontend (`src/`):**
 
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
-- `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/)
+- `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
+  - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
 - `services/` — IPC service layer wrapping `invoke()` calls (task.service, worktree.service, etc.)
 - `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, sessionActivityStore)
 - `contexts/` — React contexts (ConnectionContext, KanbanContext)
@@ -147,7 +149,7 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 
 **Rust backend (`src-tauri/src/`):**
 
-- `ipc/` — Tauri command handlers by domain
+- `ipc/` — Tauri command handlers, one file per domain (`task_handlers.rs`, `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`, `review_handlers.rs`, `acp_handlers.rs`, `ssh_handlers.rs`, `integration_handlers.rs`, etc.)
 - `models/` — Data models with ts-rs derive
 - `db/` — SQLite schema, storage, migrations
 - `acp/` — ACP session management (manager, registry, transport)
@@ -155,6 +157,7 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 - `git/` — Git remote operations
 - `process/` — PTY/process spawning (local + remote)
 - `streaming/` — WebSocket streaming to frontend
+- `issue_tracking/` — provider-specific issue sync logic
 - `wsl.rs` — WSL distro detection and connection helpers
 - `project_lock.rs` — file-based single-instance project locking
 - `error.rs` — shared error types
@@ -171,7 +174,7 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V15 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V18 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `session_aliases`
 
@@ -183,7 +186,7 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()`. Hooks in `src/utils/hooks/` wrap services via `useQuery`/`useMutation`. Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta` in `lib.rs`.
+Service functions in `src/services/` wrap `invoke()`. Hooks in `src/utils/hooks/` wrap services via `useQuery`/`useMutation`. Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta`'s `collect_commands![]` in `lib.rs`.
 
 ## Key Patterns
 
@@ -257,7 +260,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Schema version: 15. Migration is destructive (drops all tables on version mismatch)
+- Schema version: 18. Migration is destructive (drops all tables on version mismatch)
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)

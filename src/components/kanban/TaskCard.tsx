@@ -1,17 +1,10 @@
-import { Task, TaskPriority } from "@/types/bindings";
+import { Task } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask } from "@/hooks/useExecuteTask";
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
-
-const PRIORITY_COLORS: Record<TaskPriority, string> = {
-  Urgent: "#f87171",
-  High: "#fb923c",
-  Medium: "#facc15",
-  Low: "#4ade80",
-  None: "#4b5563",
-};
+import { PRIORITY_COLORS } from "@/utils/constants/priority";
 
 interface TaskCardProps {
   task: Task;

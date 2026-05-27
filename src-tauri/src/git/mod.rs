@@ -5,6 +5,12 @@ use crate::models::GitConnection;
 use crate::models::MergeResult;
 use tokio::process::Command as TokioCommand;
 
+#[derive(serde::Serialize, specta::Type)]
+pub struct BranchList {
+    pub local: Vec<String>,
+    pub remote: Vec<String>,
+}
+
 /// Parsed worktree entry from `git worktree list --porcelain`
 pub struct ParsedWorktree {
     pub path: String,
@@ -167,7 +173,7 @@ pub async fn git_status(
 /// List branches in the project (local or remote)
 pub async fn list_branches(
     conn: &GitConnection,
-) -> Result<Vec<String>, String> {
+) -> Result<BranchList, String> {
     match conn {
         GitConnection::Local { path } => {
             list_branches_local(path).await
@@ -179,14 +185,7 @@ pub async fn list_branches(
         }
         GitConnection::Wsl { distro, path } => {
             let raw = run_wsl_git(distro, path, &["branch", "-a", "--format=%(refname:short)"], false).await?;
-            let mut branches: Vec<String> = raw
-                .lines()
-                .map(|l| l.strip_prefix("origin/").unwrap_or(l).to_string())
-                .filter(|b| !b.is_empty() && b != "HEAD")
-                .collect();
-            branches.sort();
-            branches.dedup();
-            Ok(branches)
+            Ok(parse_branch_list(raw.lines()))
         }
     }
 }
@@ -397,9 +396,30 @@ async fn git_status_local(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>) -> BranchList {
+    let mut local: Vec<String> = Vec::new();
+    let mut remote: Vec<String> = Vec::new();
+    for line in lines {
+        if let Some(name) = line.strip_prefix("origin/") {
+            if !name.is_empty() && name != "HEAD" {
+                remote.push(name.to_string());
+            }
+        } else if !line.is_empty() && line != "HEAD" {
+            local.push(line.to_string());
+        }
+    }
+    local.sort();
+    local.dedup();
+    remote.sort();
+    remote.dedup();
+    // Drop remote entries that already exist as local branches (same branch, no need to show twice)
+    remote.retain(|r| !local.contains(r));
+    BranchList { local, remote }
+}
+
 async fn list_branches_local(
     path: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<BranchList, String> {
     let output = TokioCommand::new("git")
         .args(["branch", "-a", "--format=%(refname:short)"])
         .current_dir(path)
@@ -413,19 +433,7 @@ async fn list_branches_local(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut branches: Vec<String> = stdout
-        .lines()
-        .map(|line| {
-            // %(refname:short) gives "origin/main" for remote-tracking refs; strip the prefix.
-            line.strip_prefix("origin/").unwrap_or(line).to_string()
-        })
-        .filter(|b| !b.is_empty() && b != "HEAD")
-        .collect();
-
-    // Deduplicate (local + remote-tracking may share names)
-    branches.sort();
-    branches.dedup();
-    Ok(branches)
+    Ok(parse_branch_list(stdout.lines()))
 }
 
 async fn get_current_branch_local(

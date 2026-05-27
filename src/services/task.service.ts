@@ -87,18 +87,20 @@ export function useCreateTaskMutation() {
       priority: string;
       auto_approve: boolean;
       isolated_worktree: boolean;
+      model_override: string | null;
     }) =>
-      api.createTask(
-        request.project_id,
-        request.title,
-        request.description,
-        request.skills,
-        request.base_branch,
-        request.agent_id,
-        request.priority,
-        request.auto_approve,
-        request.isolated_worktree,
-      ),
+      api.createTask({
+        project_id: request.project_id,
+        title: request.title,
+        description: request.description,
+        skills: request.skills,
+        base_branch: request.base_branch,
+        agent_id: request.agent_id,
+        priority: request.priority,
+        auto_approve: request.auto_approve,
+        isolated_worktree: request.isolated_worktree,
+        model_override: request.model_override,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -339,7 +341,7 @@ export function useTaskInstructionsQuery(taskId: number | null) {
 
 /**
  * Query hook for listing git branches of a project
- * Returns [branches, currentBranch] tuple
+ * Returns [BranchList, currentBranch] tuple where BranchList has local and remote arrays
  */
 export function useProjectBranchesQuery(projectId: number | null) {
   return useQuery({

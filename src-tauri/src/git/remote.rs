@@ -87,21 +87,14 @@ pub async fn get_remote_status(
 /// List branches on the remote machine via SSH
 ///
 /// Executes: cd '{remote_path}' && git branch -a
-/// Returns normalized, deduplicated branch names (strips asterisk and remotes/origin/ prefix).
+/// Returns classified branch list (local and remote-tracking branches separated).
 pub async fn list_remote_branches(
     ssh: &Arc<RemoteSshSession>,
     remote_path: &str,
-) -> Result<Vec<String>, SshError> {
+) -> Result<crate::git::BranchList, SshError> {
     let cmd = format!("cd {} && git branch -a --format='%(refname:short)'", shell_quote(remote_path));
     let output = ssh.execute_command(&cmd).await?;
-    let mut branches: Vec<String> = output
-        .lines()
-        .map(|line: &str| line.strip_prefix("origin/").unwrap_or(line).to_string())
-        .filter(|b| !b.is_empty() && b != "HEAD")
-        .collect();
-    branches.sort();
-    branches.dedup();
-    Ok(branches)
+    Ok(crate::git::parse_branch_list(output.lines()))
 }
 
 /// Get the currently checked-out branch on the remote machine via SSH

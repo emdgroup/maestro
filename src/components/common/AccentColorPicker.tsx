@@ -13,15 +13,13 @@ const COLORS: Array<{ name: string; hue: number }> = [
   { name: "Teal", hue: 195 },
 ];
 
-const OS_PREVIEW_HUE = 250;
-
 function swatchColor(hue: number, isDark: boolean): string {
   const lightness = isDark ? "75%" : "50%";
   return `oklch(${lightness} 0.15 ${hue})`;
 }
 
 export function AccentColorPicker() {
-  const { accentHue, setAccentColor, systemTheme } = useTheme();
+  const { accentHue, systemAccentHue, setAccentColor, systemTheme } = useTheme();
   const isDark = systemTheme === "dark";
 
   return (
@@ -50,7 +48,7 @@ export function AccentColorPicker() {
         >
           <span
             className="h-5 w-5 rounded-full shrink-0 flex items-center justify-center"
-            style={{ background: swatchColor(OS_PREVIEW_HUE, isDark) }}
+            style={{ background: swatchColor(systemAccentHue ?? 250, isDark) }}
           >
             {accentHue === null && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
           </span>

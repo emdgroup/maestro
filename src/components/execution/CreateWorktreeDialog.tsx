@@ -34,7 +34,7 @@ export function CreateWorktreeDialog({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: branchData } = useProjectBranchesQuery(projectId);
-  const branches = branchData?.[0] ?? [];
+  const branches = branchData ? [...branchData[0].local, ...branchData[0].remote] : [];
   const currentBranch = branchData?.[1] ?? "main";
   const createMutation = useCreateWorktreeMutation();
 

@@ -48,8 +48,7 @@ export function TaskForm({
   });
 
   const { data: branchData } = useProjectBranchesQuery(projectId);
-  // branchData is [string[], string] (branches, currentBranch) — api proxy unwraps Result
-  const branches: string[] = branchData ? branchData[0] : [];
+  const branches: string[] = branchData ? [...branchData[0].local, ...branchData[0].remote] : [];
   const currentBranch: string = branchData ? branchData[1] : "";
 
   // Set default origin branch to the current checked-out branch when

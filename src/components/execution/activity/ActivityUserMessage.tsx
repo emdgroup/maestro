@@ -83,7 +83,7 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
 
   return (
     <div className="flex items-start gap-2.5">
-      <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex-shrink-0">
+      <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex-shrink-0 mt-[7px]">
         <div className="w-7 h-7 rounded-full bg-card flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-accent/70" />
         </div>

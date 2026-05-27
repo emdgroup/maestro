@@ -142,9 +142,9 @@ async getTasks(projectId: number) : Promise<Result<Task[], string>> {
 /**
  * Create a new task with validation
  */
-async createTask(projectId: number, title: string, description: string, skills: string[], baseBranch: string, agentId: string | null, priority: string | null, autoApprove: boolean, isolatedWorktree: boolean) : Promise<Result<Task, string>> {
+async createTask(request: CreateTaskRequest) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_task", { projectId, title, description, skills, baseBranch, agentId, priority, autoApprove, isolatedWorktree }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_task", { request }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -244,7 +244,7 @@ async addTaskInstruction(taskId: number, content: string, source: string) : Prom
  * Returns a tuple of (branches, current_branch).
  * Falls back to ([], "main") if the project is not a git repo or git is unavailable.
  */
-async listProjectBranches(projectId: number) : Promise<Result<[string[], string], string>> {
+async listProjectBranches(projectId: number) : Promise<Result<[BranchList, string], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_project_branches", { projectId }) };
 } catch (e) {
@@ -1575,10 +1575,12 @@ export type AppSettings = { theme_preference: string | null; auto_mode?: boolean
  * An Azure DevOps project option for combobox display.
  */
 export type AzureDevOpsProjectOption = { id: string; name: string; description: string | null }
+export type BranchList = { local: string[]; remote: string[] }
 /**
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
+export type CreateTaskRequest = { project_id: number; title: string; description: string; skills: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; isolated_worktree: boolean; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli"
 /**
  * Controls what get_worktree_diff compares against.

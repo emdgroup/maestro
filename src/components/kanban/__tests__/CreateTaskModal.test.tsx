@@ -4,7 +4,7 @@ import { describe, it, vi } from "vitest";
 vi.mock("@/services/task.service", () => ({
   useCreateTaskMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useProjectBranchesQuery: vi.fn(() => ({
-    data: [["main", "feature/foo", "develop"], "main"],
+    data: [{ local: ["main", "feature/foo", "develop"], remote: [] }, "main"],
     isFetching: false,
   })),
   useFetchRemoteIssuesQuery: vi.fn(() => ({

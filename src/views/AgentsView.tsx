@@ -74,11 +74,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       } else if (e.key === "h") {
         e.preventDefault();
         if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
+      } else if (e.key === "w") {
+        e.preventDefault();
+        const session = sessions.find((s) => s.session_key === selectedSessionKey);
+        if (session) handleCloseSession(session);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [discovery?.agents?.length]);
+  }, [discovery?.agents?.length, sessions, selectedSessionKey]);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 

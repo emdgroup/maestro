@@ -36,6 +36,7 @@ fn create_task_impl(
     priority: Option<String>,
     auto_approve: bool,
     isolated_worktree: bool,
+    model_override: Option<String>,
 ) -> Result<Task, String> {
     let trimmed_title = title.trim();
     if trimmed_title.is_empty() || trimmed_title.len() < 3 || trimmed_title.len() > 255 {
@@ -52,14 +53,15 @@ fn create_task_impl(
 
     conn.execute(
         "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
-         agent_id, priority, auto_approve, isolated_worktree, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         agent_id, priority, auto_approve, isolated_worktree, model_override, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             project_id, &title, &description, &skills_json, "Backlog", &base_branch,
             &agent_id,
             priority.as_deref().unwrap_or("Medium"),
             auto_approve,
             isolated_worktree,
+            &model_override,
             &now, &now
         ],
     )
@@ -71,25 +73,40 @@ fn create_task_impl(
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Deserialize, specta::Type)]
+pub struct CreateTaskRequest {
+    pub project_id: i32,
+    pub title: String,
+    pub description: String,
+    pub skills: Vec<String>,
+    pub base_branch: String,
+    pub agent_id: Option<String>,
+    pub priority: Option<String>,
+    pub auto_approve: bool,
+    pub isolated_worktree: bool,
+    pub model_override: Option<String>,
+}
+
 /// Create a new task with validation
 #[tauri::command]
 #[specta::specta]
 pub fn create_task(
     app_state: State<Arc<AppState>>,
-    project_id: i32,
-    title: String,
-    description: String,
-    skills: Vec<String>,
-    base_branch: String,
-    agent_id: Option<String>,
-    priority: Option<String>,
-    auto_approve: bool,
-    isolated_worktree: bool,
+    request: CreateTaskRequest,
 ) -> Result<Task, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let task = create_task_impl(
-        &conn, project_id, title, description, skills, base_branch,
-        agent_id, priority, auto_approve, isolated_worktree,
+        &conn,
+        request.project_id,
+        request.title,
+        request.description,
+        request.skills,
+        request.base_branch,
+        request.agent_id,
+        request.priority,
+        request.auto_approve,
+        request.isolated_worktree,
+        request.model_override,
     )?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
@@ -369,7 +386,7 @@ pub fn add_task_instruction(
 pub async fn list_project_branches(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-) -> Result<(Vec<String>, String), String> {
+) -> Result<(crate::git::BranchList, String), String> {
     // Look up the project to get its path
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -391,7 +408,7 @@ pub async fn list_project_branches(
         crate::git::list_branches(&git_conn),
         crate::git::get_current_branch(&git_conn),
     );
-    let branches = branches.unwrap_or_default();
+    let branches = branches.unwrap_or_else(|_| crate::git::BranchList { local: vec![], remote: vec![] });
     let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
 
     Ok((branches, current_branch))
@@ -587,7 +604,7 @@ mod tests {
             &conn, project_id, "ab".to_string(),
             "valid description here".to_string(),
             vec![], "main".to_string(),
-            None, None, false, true,
+            None, None, false, true, None,
         )
         .unwrap_err();
         assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
@@ -601,7 +618,7 @@ mod tests {
             &conn, project_id, "Valid Name".to_string(),
             "too short".to_string(),
             vec![], "main".to_string(),
-            None, None, false, true,
+            None, None, false, true, None,
         )
         .unwrap_err();
         assert!(err.contains("Description must be at least 10 characters"), "got: {err}");
@@ -616,7 +633,7 @@ mod tests {
             "Valid Task Name".to_string(),
             "This is a valid description.".to_string(),
             vec!["rust".to_string()], "main".to_string(),
-            None, None, false, true,
+            None, None, false, true, None,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -633,7 +650,7 @@ mod tests {
             "Task to Delete".to_string(),
             "This task will be deleted.".to_string(),
             vec![], "main".to_string(),
-            None, None, false, true,
+            None, None, false, true, None,
         )
         .unwrap();
 
