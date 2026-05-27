@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Action Bar — Filter Control Proposals</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #111118;
+    color: #e0e0e0;
+    padding: 40px;
+  }
+  h1 { font-size: 16px; margin-bottom: 32px; color: #666; font-weight: 400; }
+  h2 { font-size: 13px; margin-bottom: 4px; color: #aaa; font-weight: 500; }
+  .desc { font-size: 11px; color: #555; margin-bottom: 12px; }
+  .proposal { margin-bottom: 48px; }
+
+  .bar {
+    height: 48px;
+    border-bottom: 1px solid #222;
+    background: rgba(255,255,255,0.025);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    border-radius: 6px 6px 0 0;
+    position: relative;
+    overflow: visible;
+  }
+
+  .search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 0 10px;
+    height: 32px;
+    font-size: 13px;
+    color: #555;
+    min-width: 180px;
+  }
+  .search-wrap svg { width: 13px; height: 13px; stroke: #444; fill: none; flex-shrink: 0; }
+
+  /* ── A: Select ── */
+  .sel { position: relative; }
+  .sel-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 0 10px; height: 32px;
+    font-size: 13px; color: #bbb;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .sel-btn:hover { border-color: #444; }
+  .sel-btn.open, .sel-btn.on { border-color: #6366f1; color: #a5b4fc; background: rgba(99,102,241,0.08); }
+  .sel-btn .cv { font-size: 9px; color: #555; transition: transform .15s; }
+  .sel-btn.open .cv { transform: rotate(180deg); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  .sel-menu {
+    display: none; position: absolute;
+    top: calc(100% + 5px); left: 0; min-width: 150px;
+    background: #1c1c28; border: 1px solid #2e2e40;
+    border-radius: 8px; padding: 4px; z-index: 200;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  .sel-menu.open { display: block; }
+  .sel-opt {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 5px;
+    font-size: 13px; color: #bbb; cursor: pointer;
+  }
+  .sel-opt:hover { background: rgba(255,255,255,0.06); }
+  .sel-opt.picked { color: #a5b4fc; }
+  .sel-opt.picked::after { content: '✓'; margin-left: auto; font-size: 11px; color: #6366f1; }
+
+  /* ── B: Popover ── */
+  .pop { position: relative; }
+  .pop-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 0 10px; height: 32px;
+    font-size: 13px; color: #bbb;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .pop-btn:hover { border-color: #444; }
+  .pop-btn.open { border-color: #6366f1; background: rgba(99,102,241,0.08); }
+  .pop-btn .cv { font-size: 9px; color: #555; transition: transform .15s; }
+  .pop-btn.open .cv { transform: rotate(180deg); }
+  .badge {
+    background: #6366f1; color: #fff;
+    font-size: 10px; font-weight: 600;
+    border-radius: 10px; padding: 1px 6px;
+  }
+
+  .pop-menu {
+    display: none; position: absolute;
+    top: calc(100% + 5px); left: 0; min-width: 185px;
+    background: #1c1c28; border: 1px solid #2e2e40;
+    border-radius: 8px; padding: 6px 4px; z-index: 200;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  .pop-menu.open { display: block; }
+  .pop-head {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #555; padding: 0 10px 6px;
+  }
+  .chk-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 5px;
+    font-size: 13px; color: #bbb; cursor: pointer;
+  }
+  .chk-row:hover { background: rgba(255,255,255,0.06); }
+  .chk-box {
+    width: 15px; height: 15px; border-radius: 3px;
+    border: 1px solid #444; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: transparent;
+    transition: background .1s, border-color .1s;
+  }
+  .chk-row.on .chk-box { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .pop-foot {
+    border-top: 1px solid #222; margin-top: 6px;
+    padding: 6px 10px 2px;
+  }
+  .clear-btn { font-size: 11px; color: #555; cursor: pointer; }
+  .clear-btn:hover { color: #999; }
+
+  /* Board */
+  .board-preview {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 1px; background: #1a1a1a;
+    border-radius: 0 0 6px 6px; overflow: hidden;
+  }
+  .col { background: #111118; padding: 12px 8px; min-height: 100px; }
+  .col-header {
+    font-size: 10px; color: #555;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 10px; display: flex; justify-content: space-between;
+  }
+  .mini-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #1e1e2a;
+    border-radius: 4px; padding: 7px 8px;
+    margin-bottom: 5px; font-size: 11px; color: #888;
+  }
+  .chip {
+    display: inline-block; font-size: 9px;
+    padding: 1px 5px; border-radius: 3px;
+    margin-top: 3px; margin-right: 3px;
+  }
+</style>
+</head>
+<body>
+<h1>Phase 59 — Action Bar Filter Controls (clickable)</h1>
+
+<!-- ══ PROPOSAL A ══ -->
+<div class="proposal">
+  <h2>A. Dropdown Select (single-select)</h2>
+  <p class="desc">shadcn Select. One active value per filter. Click Priority or Label.</p>
+  <div class="bar">
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search tasks...</span>
+    </div>
+
+    <div class="sel" id="selA-p">
+      <div class="sel-btn" id="btnA-p">
+        <span id="lblA-p">Priority</span>
+        <span class="cv">▾</span>
+      </div>
+      <div class="sel-menu" id="menuA-p">
+        <div class="sel-opt picked" data-val="All">All priorities</div>
+        <div class="sel-opt" data-val="Urgent"><span class="dot" style="background:#ef4444"></span>Urgent</div>
+        <div class="sel-opt" data-val="High"><span class="dot" style="background:#f97316"></span>High</div>
+        <div class="sel-opt" data-val="Medium"><span class="dot" style="background:#eab308"></span>Medium</div>
+        <div class="sel-opt" data-val="Low"><span class="dot" style="background:#22c55e"></span>Low</div>
+        <div class="sel-opt" data-val="None"><span class="dot" style="background:#555"></span>None</div>
+      </div>
+    </div>
+
+    <div class="sel" id="selA-l">
+      <div class="sel-btn" id="btnA-l">
+        <span id="lblA-l">Label</span>
+        <span class="cv">▾</span>
+      </div>
+      <div class="sel-menu" id="menuA-l">
+        <div class="sel-opt picked" data-val="All">All labels</div>
+        <div class="sel-opt" data-val="bug">🐛 bug</div>
+        <div class="sel-opt" data-val="feat">✨ feat</div>
+        <div class="sel-opt" data-val="docs">📝 docs</div>
+        <div class="sel-opt" data-val="refactor">♻️ refactor</div>
+      </div>
+    </div>
+  </div>
+  <div class="board-preview">
+    <div class="col"><div class="col-header">Backlog <span>3</span></div><div class="mini-card">Setup auth flow<br><span class="chip" style="background:#ef444422;color:#ef4444">Urgent</span><span class="chip" style="background:#1e2a1e;color:#555">feat</span></div><div class="mini-card">Design landing<br><span class="chip" style="background:#1e2a1e;color:#555">docs</span></div></div>
+    <div class="col"><div class="col-header">Ready <span>2</span></div><div class="mini-card">API endpoints<br><span class="chip" style="background:#f9731622;color:#f97316">High</span></div><div class="mini-card">Write tests</div></div>
+    <div class="col"><div class="col-header">In Progress <span>1</span></div><div class="mini-card">Dashboard UI<br><span class="chip" style="background:#eab30822;color:#eab308">Medium</span></div></div>
+    <div class="col"><div class="col-header">Review <span>1</span></div><div class="mini-card">Fix login bug<br><span class="chip" style="background:#ef444422;color:#ef4444">Urgent</span><span class="chip" style="background:#1e2a1e;color:#555">bug</span></div></div>
+    <div class="col"><div class="col-header">Done <span>2</span></div><div class="mini-card">Init project</div><div class="mini-card">Setup CI</div></div>
+  </div>
+</div>
+
+<!-- ══ PROPOSAL B ══ -->
+<div class="proposal">
+  <h2>B. Popover with Checkboxes (multi-select)</h2>
+  <p class="desc">Multi-select per filter. Badge shows count. Click Priority or Label.</p>
+  <div class="bar">
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search tasks...</span>
+    </div>
+
+    <div class="pop" id="popB-p">
+      <div class="pop-btn" id="btnB-p">
+        Priority
+        <span class="badge" id="badgeB-p" style="display:none">0</span>
+        <span class="cv">▾</span>
+      </div>
+      <div class="pop-menu" id="menuB-p">
+        <div class="pop-head">Priority</div>
+        <div class="chk-row" data-field="p" data-val="Urgent"><div class="chk-box">✓</div><span class="dot" style="background:#ef4444"></span>Urgent</div>
+        <div class="chk-row" data-field="p" data-val="High"><div class="chk-box">✓</div><span class="dot" style="background:#f97316"></span>High</div>
+        <div class="chk-row" data-field="p" data-val="Medium"><div class="chk-box">✓</div><span class="dot" style="background:#eab308"></span>Medium</div>
+        <div class="chk-row" data-field="p" data-val="Low"><div class="chk-box">✓</div><span class="dot" style="background:#22c55e"></span>Low</div>
+        <div class="chk-row" data-field="p" data-val="None"><div class="chk-box">✓</div><span class="dot" style="background:#555"></span>None</div>
+        <div class="pop-foot"><span class="clear-btn" data-field="p">Clear</span></div>
+      </div>
+    </div>
+
+    <div class="pop" id="popB-l">
+      <div class="pop-btn" id="btnB-l">
+        Label
+        <span class="badge" id="badgeB-l" style="display:none">0</span>
+        <span class="cv">▾</span>
+      </div>
+      <div class="pop-menu" id="menuB-l">
+        <div class="pop-head">Label</div>
+        <div class="chk-row" data-field="l" data-val="bug"><div class="chk-box">✓</div>🐛 bug</div>
+        <div class="chk-row" data-field="l" data-val="feat"><div class="chk-box">✓</div>✨ feat</div>
+        <div class="chk-row" data-field="l" data-val="docs"><div class="chk-box">✓</div>📝 docs</div>
+        <div class="chk-row" data-field="l" data-val="refactor"><div class="chk-box">✓</div>♻️ refactor</div>
+        <div class="pop-foot"><span class="clear-btn" data-field="l">Clear</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="board-preview">
+    <div class="col"><div class="col-header">Backlog <span>3</span></div><div class="mini-card">Setup auth flow<br><span class="chip" style="background:#ef444422;color:#ef4444">Urgent</span><span class="chip" style="background:#1e2a1e;color:#555">feat</span></div><div class="mini-card">Design landing<br><span class="chip" style="background:#1e2a1e;color:#555">docs</span></div></div>
+    <div class="col"><div class="col-header">Ready <span>2</span></div><div class="mini-card">API endpoints<br><span class="chip" style="background:#f9731622;color:#f97316">High</span></div><div class="mini-card">Write tests</div></div>
+    <div class="col"><div class="col-header">In Progress <span>1</span></div><div class="mini-card">Dashboard UI<br><span class="chip" style="background:#eab30822;color:#eab308">Medium</span></div></div>
+    <div class="col"><div class="col-header">Review <span>1</span></div><div class="mini-card">Fix login bug<br><span class="chip" style="background:#ef444422;color:#ef4444">Urgent</span><span class="chip" style="background:#1e2a1e;color:#555">bug</span></div></div>
+    <div class="col"><div class="col-header">Done <span>2</span></div><div class="mini-card">Init project</div><div class="mini-card">Setup CI</div></div>
+  </div>
+</div>
+
+<script>
+// ── close all open menus ──
+function closeAll() {
+  document.querySelectorAll('.sel-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.sel-btn.open').forEach(b => b.classList.remove('open'));
+  document.querySelectorAll('.pop-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.pop-btn.open').forEach(b => b.classList.remove('open'));
+}
+
+// ── Proposal A: Select ──
+document.querySelectorAll('.sel-btn').forEach(btn => {
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const id = this.id; // e.g. "btnA-p"
+    const field = id.split('-')[1]; // "p" or "l"
+    const menu = document.getElementById('menuA-' + field);
+    const isOpen = menu.classList.contains('open');
+    closeAll();
+    if (!isOpen) {
+      menu.classList.add('open');
+      this.classList.add('open');
+    }
+  });
+});
+
+document.querySelectorAll('.sel-opt').forEach(opt => {
+  opt.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const menu = this.closest('.sel-menu');
+    const btn = menu.previousElementSibling;
+    const field = menu.id.split('-')[1];
+    const val = this.dataset.val;
+    const lbl = document.getElementById('lbl' + btn.id.replace('btn', ''));
+
+    menu.querySelectorAll('.sel-opt').forEach(o => o.classList.remove('picked'));
+    this.classList.add('picked');
+
+    lbl.textContent = val === 'All' ? (field === 'p' ? 'Priority' : 'Label') : val;
+    btn.classList.toggle('on', val !== 'All');
+    closeAll();
+  });
+});
+
+// ── Proposal B: Popover ──
+document.querySelectorAll('.pop-btn').forEach(btn => {
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const id = this.id; // "btnB-p" or "btnB-l"
+    const field = id.split('-')[1];
+    const menu = document.getElementById('menuB-' + field);
+    const isOpen = menu.classList.contains('open');
+    closeAll();
+    if (!isOpen) {
+      menu.classList.add('open');
+      this.classList.add('open');
+    }
+  });
+});
+
+document.querySelectorAll('.chk-row').forEach(row => {
+  row.addEventListener('click', function(e) {
+    e.stopPropagation();
+    this.classList.toggle('on');
+    const field = this.dataset.field;
+    const count = document.querySelectorAll(`#menuB-${field} .chk-row.on`).length;
+    const badge = document.getElementById('badgeB-' + field);
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline-block' : 'none';
+  });
+});
+
+document.querySelectorAll('.clear-btn').forEach(btn => {
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const field = this.dataset.field;
+    document.querySelectorAll(`#menuB-${field} .chk-row.on`).forEach(r => r.classList.remove('on'));
+    const badge = document.getElementById('badgeB-' + field);
+    badge.style.display = 'none';
+  });
+});
+
+// close on outside click
+document.addEventListener('click', closeAll);
+</script>
+</body>
+</html>

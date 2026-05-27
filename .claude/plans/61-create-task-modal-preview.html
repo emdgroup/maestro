@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 61 — CreateTaskModal Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f1117;
+    color: #e2e8f0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px;
+    gap: 48px;
+  }
+
+  h1 { font-size: 16px; color: #94a3b8; font-weight: 500; letter-spacing: 0.02em; }
+  h2 { font-size: 12px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+  /* Modal backdrop */
+  .modal-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .modal {
+    background: #1a1d27;
+    border: 1px solid #2d3148;
+    border-radius: 12px;
+    width: 100%;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+  }
+
+  .modal-header {
+    padding: 20px 24px 0;
+  }
+
+  .modal-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .modal-desc {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: 16px 24px 0;
+    border-bottom: 1px solid #2d3148;
+    margin-top: 16px;
+  }
+
+  .tab {
+    padding: 8px 16px;
+    font-size: 13px;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s;
+  }
+
+  .tab.active {
+    color: #f1f5f9;
+    border-bottom-color: #6366f1;
+  }
+
+  .tab-content {
+    padding: 20px 24px 24px;
+  }
+
+  /* Form fields */
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field:last-of-type { margin-bottom: 0; }
+  label { font-size: 12px; color: #94a3b8; font-weight: 500; }
+
+  input[type="text"], textarea, select {
+    background: #0f1117;
+    border: 1px solid #2d3148;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 13px;
+    padding: 8px 10px;
+    width: 100%;
+    outline: none;
+    font-family: inherit;
+  }
+  input[type="text"]:focus, textarea:focus {
+    border-color: #6366f1;
+  }
+  textarea { resize: vertical; min-height: 72px; }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  /* Toggle */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-top: 1px solid #1e2235;
+  }
+  .toggle-label { font-size: 12px; color: #94a3b8; }
+  .toggle-sublabel { font-size: 11px; color: #475569; margin-top: 1px; }
+  .toggle {
+    width: 36px; height: 20px;
+    background: #2d3148;
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .toggle.on { background: #6366f1; }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: white;
+    border-radius: 50%;
+    top: 3px; left: 3px;
+    transition: left 0.15s;
+  }
+  .toggle.on::after { left: 19px; }
+
+  /* Footer */
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-top: 1px solid #2d3148;
+    background: #141720;
+  }
+
+  .footer-left { display: flex; align-items: center; gap: 8px; }
+  .footer-right { display: flex; gap: 8px; }
+
+  .btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+  }
+  .btn-primary { background: #6366f1; color: white; }
+  .btn-primary:hover { background: #4f52d4; }
+  .btn-ghost { background: transparent; color: #64748b; border: 1px solid #2d3148; }
+
+  /* Checkbox */
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  .checkbox {
+    width: 14px; height: 14px;
+    background: #0f1117;
+    border: 1px solid #2d3148;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .checkbox-label { font-size: 12px; color: #94a3b8; }
+
+  /* ---- FROM ISSUE: Option A — Scrollable list ---- */
+  .issue-search {
+    position: relative;
+    margin-bottom: 12px;
+  }
+  .issue-search input {
+    padding-left: 32px;
+  }
+  .issue-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #475569;
+    font-size: 13px;
+  }
+
+  .issue-list {
+    border: 1px solid #2d3148;
+    border-radius: 8px;
+    overflow: hidden;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .issue-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid #1e2235;
+    transition: background 0.1s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .issue-item:last-child { border-bottom: none; }
+  .issue-item:hover { background: #1e2235; }
+  .issue-item.selected { background: #1e2040; border-left: 2px solid #6366f1; }
+
+  .issue-title { font-size: 13px; color: #e2e8f0; font-weight: 500; }
+  .issue-meta { font-size: 11px; color: #475569; display: flex; gap: 8px; align-items: center; }
+  .issue-label {
+    background: #1e2235;
+    border: 1px solid #2d3148;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  .issue-prefilled-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1a2540;
+    border: 1px solid #2d4270;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: #7aa2f7;
+  }
+
+  /* ---- FROM ISSUE: Option B — Combobox ---- */
+  .combobox-trigger {
+    background: #0f1117;
+    border: 1px solid #2d3148;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 13px;
+    padding: 8px 10px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+  .combobox-trigger:focus { border-color: #6366f1; outline: none; }
+  .combobox-chevron { color: #475569; font-size: 11px; }
+
+  .combobox-popover {
+    background: #1a1d27;
+    border: 1px solid #2d3148;
+    border-radius: 8px;
+    margin-top: 4px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .combobox-search {
+    padding: 8px 10px;
+    border-bottom: 1px solid #2d3148;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .combobox-search input {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    color: #e2e8f0;
+    flex: 1;
+  }
+  .combobox-items { max-height: 200px; overflow-y: auto; }
+  .combobox-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .combobox-item:hover { background: #1e2235; }
+  .combobox-item.selected { color: #818cf8; }
+  .combobox-item-sub { font-size: 11px; color: #475569; }
+
+  /* Divider label */
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #475569;
+    padding: 8px 0 4px;
+  }
+
+  .select-styled {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+  }
+
+  .badge-new {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    background: #1a2540;
+    border: 1px solid #2d4270;
+    border-radius: 4px;
+    font-size: 10px;
+    color: #7aa2f7;
+    font-weight: 500;
+  }
+
+  .annotation {
+    font-size: 11px;
+    color: #475569;
+    font-style: italic;
+    margin-top: 4px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>Phase 61 — CreateTaskModal: From Issue tab options</h1>
+
+<!-- ═══════════════════════════════════════════════════════════
+     OPTION A — Scrollable list with search
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal-wrapper">
+  <h2>Option A — Scrollable list with search (recommended)</h2>
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Task</div>
+      <div class="modal-desc">Create a task from a branch or provider issue</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab">From Branch</div>
+      <div class="tab active">From Issue</div>
+    </div>
+
+    <div class="tab-content">
+      <!-- Pre-filled banner (shown after picking an issue) -->
+      <div class="issue-prefilled-banner">
+        <span>✓</span>
+        <span><strong>GH-142</strong> pre-filled — edit below before creating</span>
+      </div>
+
+      <div class="issue-search">
+        <span class="issue-search-icon">⌕</span>
+        <input type="text" placeholder="Search issues..." value="">
+      </div>
+
+      <div class="issue-list">
+        <div class="issue-item selected">
+          <div class="issue-title">Fix token refresh race condition on concurrent requests</div>
+          <div class="issue-meta">
+            <span>#142</span>
+            <span>·</span>
+            <span class="issue-label">bug</span>
+            <span class="issue-label">auth</span>
+          </div>
+        </div>
+        <div class="issue-item">
+          <div class="issue-title">Add pagination to the project list endpoint</div>
+          <div class="issue-meta">
+            <span>#138</span>
+            <span>·</span>
+            <span class="issue-label">enhancement</span>
+          </div>
+        </div>
+        <div class="issue-item">
+          <div class="issue-title">Dark mode flash on initial load in Safari</div>
+          <div class="issue-meta">
+            <span>#135</span>
+            <span>·</span>
+            <span class="issue-label">bug</span>
+            <span class="issue-label">ui</span>
+          </div>
+        </div>
+        <div class="issue-item">
+          <div class="issue-title">Improve error messages when SSH key is rejected</div>
+          <div class="issue-meta">
+            <span>#131</span>
+            <span>·</span>
+            <span class="issue-label">ux</span>
+          </div>
+        </div>
+        <div class="issue-item">
+          <div class="issue-title">Worktree cleanup fails silently on Windows paths with spaces</div>
+          <div class="issue-meta">
+            <span>#128</span>
+            <span>·</span>
+            <span class="issue-label">bug</span>
+            <span class="issue-label">windows</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="annotation">Click issue to pre-fill title and description. Title editable after selection.</div>
+
+      <!-- Pre-filled form fields below list -->
+      <div style="margin-top: 16px;">
+        <div class="field">
+          <label>Title *</label>
+          <input type="text" value="Fix token refresh race condition on concurrent requests">
+        </div>
+        <div class="field">
+          <label>Description</label>
+          <textarea rows="3">When two requests expire simultaneously, both attempt token refresh. The second request fails with 401 because the first already rotated the token.</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="footer-left">
+        <div class="checkbox-row">
+          <div class="checkbox"></div>
+          <span class="checkbox-label">Create another</span>
+        </div>
+      </div>
+      <div class="footer-right">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Create Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     OPTION B — Combobox / Command palette
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal-wrapper">
+  <h2>Option B — Combobox (Command pattern)</h2>
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Task</div>
+      <div class="modal-desc">Create a task from a branch or provider issue</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab">From Branch</div>
+      <div class="tab active">From Issue</div>
+    </div>
+
+    <div class="tab-content">
+      <div class="field">
+        <label>Issue</label>
+        <div class="combobox-trigger" tabindex="0">
+          <span style="color: #64748b">Search and select an issue...</span>
+          <span class="combobox-chevron">▾</span>
+        </div>
+        <div class="combobox-popover">
+          <div class="combobox-search">
+            <span style="color:#475569">⌕</span>
+            <input type="text" placeholder="Search issues...">
+          </div>
+          <div class="combobox-items">
+            <div class="combobox-item">
+              <span>Fix token refresh race condition on concurrent requests</span>
+              <span class="combobox-item-sub">#142 · bug, auth</span>
+            </div>
+            <div class="combobox-item">
+              <span>Add pagination to the project list endpoint</span>
+              <span class="combobox-item-sub">#138 · enhancement</span>
+            </div>
+            <div class="combobox-item">
+              <span>Dark mode flash on initial load in Safari</span>
+              <span class="combobox-item-sub">#135 · bug, ui</span>
+            </div>
+            <div class="combobox-item">
+              <span>Improve error messages when SSH key is rejected</span>
+              <span class="combobox-item-sub">#131 · ux</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annotation" style="margin-bottom: 16px;">Selecting an issue pre-fills the fields below.</div>
+
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" placeholder="Title pre-fills on issue select" value="">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea rows="3" placeholder="Description pre-fills on issue select"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="footer-left">
+        <div class="checkbox-row">
+          <div class="checkbox"></div>
+          <span class="checkbox-label">Create another</span>
+        </div>
+      </div>
+      <div class="footer-right">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Create Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     BONUS — Full "From Branch" tab for context
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal-wrapper">
+  <h2>From Branch tab (for context)</h2>
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Task</div>
+      <div class="modal-desc">Create a task from a branch or provider issue</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active">From Branch</div>
+      <div class="tab">From Issue</div>
+    </div>
+
+    <div class="tab-content">
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" placeholder="Task title...">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea rows="3" placeholder="What should the agent do?"></textarea>
+      </div>
+
+      <div class="field-row" style="margin-bottom: 16px;">
+        <div class="field" style="margin-bottom:0">
+          <label>Base Branch *</label>
+          <select class="select-styled">
+            <option>main</option>
+            <option>develop</option>
+            <option>feat/auth-rework</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Priority</label>
+          <select class="select-styled">
+            <option>Medium</option>
+            <option>High</option>
+            <option>Urgent</option>
+            <option>Low</option>
+            <option>None</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Agent <span style="color:#475569; font-weight:400">(assignee)</span></label>
+        <select class="select-styled">
+          <option>claude-code (project default)</option>
+          <option>claude-code-experimental</option>
+        </select>
+      </div>
+
+      <div style="margin-top: 4px;">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Isolated Worktree</div>
+            <div class="toggle-sublabel">Run in a separate git worktree</div>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Auto-approve</div>
+            <div class="toggle-sublabel">Skip permission prompts</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="footer-left">
+        <div class="checkbox-row">
+          <div class="checkbox"></div>
+          <span class="checkbox-label">Create another</span>
+        </div>
+      </div>
+      <div class="footer-right">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Create Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

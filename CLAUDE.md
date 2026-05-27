@@ -68,60 +68,7 @@ This is a hard rule, not a suggestion. The graph has 1600+ indexed nodes with st
 
 Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e.g. searching for a specific string literal, reading a full file for context).
 
-When falling back to text search, prefer `ast-grep` over `grep`/`ripgrep`. It understands syntax — searches by AST pattern, not regex. Useful for finding usages by structure (e.g., all calls to a function, all `match` arms on a type).
-
-### Language flags for this project
-
-| File type | Flag |
-|-----------|------|
-| `.tsx` React components | `--lang tsx` |
-| `.ts` non-JSX files | `--lang typescript` |
-| `.rs` Rust files | `--lang rust` |
-
-### Working patterns
-
-```bash
-# Find all useState calls in React components
-ast-grep --pattern 'useState($$$)' --lang tsx src/
-
-# Find all for loops in Rust
-ast-grep --pattern 'for $VAR in $ITER { $$$BODY }' --lang rust maestro-server/src/
-
-# Find method calls in Rust
-ast-grep --pattern '$OBJ.map_err($$$)' --lang rust src-tauri/src/
-```
-
-### Known quirks
-
-**Language / file extension:**
-- **TSX not TypeScript for component files.** `.tsx` files need `--lang tsx`; `--lang typescript` only scans `.ts` files. Wrong lang = zero results, no error.
-- **`--lang typescript` scans `.ts` only; `--lang tsx` scans `.tsx` only.** Use the right one for the file extension. To search both, run two commands.
-
-**Rust function declarations:**
-- **`fn $NAME($$$)` fails with multi-line params.** Pattern requires params on one line. Workaround: search call-sites (`$EXPR.method($$$)`) or inner patterns (loops, `if let`, `match`) instead.
-- **`impl $TRAIT for $TYPE` works**, but only when the impl body fits (multi-line bodies match fine via `$$$BODY`).
-
-**TypeScript/TSX patterns that work reliably:**
-- `import $NAME from "$MOD"` — default imports
-- `import { $$$NAMES } from "$MOD"` — named imports
-- `function $NAME($$$PARAMS) { $$$BODY }` — function declarations (including destructured params like `{ $$$PARAMS }: $TYPE`)
-- `const { $$$FIELDS } = $EXPR` — object destructuring (single-line and multi-line both match)
-- `const [$A, $B] = $EXPR` — array destructuring
-- `await $EXPR` — await expressions
-- `type $NAME = $TYPE` — type aliases
-- `useState($$$)`, `useCallback($CB, [$$$DEPS])` — hook calls
-
-**TypeScript/TSX patterns that do NOT work:**
-- `const $NAME = ($$$PARAMS) => { $$$BODY }` — const arrow functions fail to match (even when they exist in the file)
-- `useQuery({ $$$OPTS })` — object literal arg with space after `{` doesn't match; `useQuery($$$)` works fine
-- `interface $NAME { $$$FIELDS }` — interfaces only match in `.ts` files, not `.tsx`; use `--lang typescript` on the right file
-
-**General:**
-- **Exit code 1 = no matches**, not an error. Don't treat non-zero exit as failure.
-- **Pattern must match the full AST node.** Partial or structural mismatches fail silently. Use `--debug-query=pattern` to inspect how ast-grep parses your pattern.
-- **Directory scans work** — pass a directory path, not just a file; ast-grep recurses.
-
-Use `Grep` tool only for plain string literals or when ast-grep patterns would be overly complex.
+When falling back to text search, prefer `ast-grep` over `grep`/`ripgrep`. Patterns, quirks, and language flags: @.claude/ast-grep.md
 
 ## Architecture
 
@@ -131,7 +78,7 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 - **Backend**: Tauri 2 (Rust), SQLite for persistence
 - **State Management**: Zustand with Immer middleware
 - **UI Components**: shadcn/ui components
-- **Data Fetching**: TanStack Query for all IPC operations (37+ hooks)
+- **Data Fetching**: TanStack Query for all IPC operations (100+ hooks co-located in service files)
 - **Type Safety**: ts-rs + tauri-specta for Rust → TypeScript type generation
 
 ### Code Structure
@@ -141,15 +88,15 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
 - `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
   - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
-- `services/` — IPC service layer wrapping `invoke()` calls (task.service, worktree.service, etc.)
+- `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, issue-tracking-lookup.service)
 - `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, sessionActivityStore)
 - `contexts/` — React contexts (ConnectionContext, KanbanContext)
 - `providers/` — Provider components (QueryProvider, ThemeProvider)
-- `utils/` — hooks/, helpers/, constants/
+- `utils/` — hooks/ (useExecuteTask, useKeyboardNavigation, usePathNavigation, etc.; not TanStack Query — those live in services/), helpers/, constants/
 
 **Rust backend (`src-tauri/src/`):**
 
-- `ipc/` — Tauri command handlers, one file per domain (`task_handlers.rs`, `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`, `review_handlers.rs`, `acp_handlers.rs`, `ssh_handlers.rs`, `integration_handlers.rs`, etc.)
+- `ipc/` — Tauri command handlers, one file per domain (`task_handlers.rs`, `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`, `review_handlers.rs`, `acp_handlers.rs`, `ssh_handlers.rs`, `integration_handlers.rs`, `issue_tracking_handlers.rs`, `issue_tracking_lookup_handlers.rs`, `filesystem_handlers.rs`, `sftp_handlers.rs`, `settings_handlers.rs`)
 - `models/` — Data models with ts-rs derive
 - `db/` — SQLite schema, storage, migrations
 - `acp/` — ACP session management (manager, registry, transport)
@@ -164,7 +111,7 @@ Use `Grep` tool only for plain string literals or when ast-grep patterns would b
 
 **maestro-server (`maestro-server/src/`):**
 
-Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout.
+Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry, message routing), `session_handler.rs` (ACP session lifecycle), `agent.rs` (subprocess spawn), `detection.rs` (agent discovery), `registry.rs` (session registry), `sessions.rs` (session types), `terminal.rs` (terminal I/O), `file_ops.rs` (file operations).
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
@@ -174,9 +121,9 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V18 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V19 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `session_aliases`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `session_aliases`
 
 ### IPC Communication
 
@@ -186,7 +133,31 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()`. Hooks in `src/utils/hooks/` wrap services via `useQuery`/`useMutation`. Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta`'s `collect_commands![]` in `lib.rs`.
+Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta`'s `collect_commands![]` in `lib.rs`.
+
+`src/types/bindings.ts` is fully generated — do not edit manually. It exports both TypeScript types (all Rust model structs/enums annotated with `#[derive(TS)]`) and a `commands` const object (typed wrappers for every registered IPC command). Import types with `import type { Task } from "@/types/bindings"`.
+
+### View Rendering
+
+`App.tsx` renders the four main views (`KanbanView`, `AgentsView`, `WorktreesView`, `SettingsView`) as lazily-loaded modules using `React.lazy()`. Only the active view is visible; tab transitions animate using `framer-motion`'s `useAnimationControls`. `navigationStore` drives `activeTab` and `slideDirection`.
+
+`KanbanView` renders either `<TaskDetailScreen>` (when `activeTaskId` is set) or the board + action bar. The `BoardView` inside renders all five columns and owns the `ReviewModal` and `ExecutionTerminal` drawer.
+
+### Zustand Stores — Roles
+
+| Store | Purpose |
+|---|---|
+| `boardStore` | `activeTerminalTaskId` and `isTerminalOpen` — drives the bottom terminal drawer in `BoardView` |
+| `navigationStore` | Tab routing (`activeTab`), view-to-view slide direction, `activeTaskId` for task detail screen, `pendingAgentId`/`pendingWorktreeId` for deep-link navigation |
+| `projectStore` | Selected project reference; `useSelectedProject()` is the canonical way to get `projectId`/`projectPath` |
+| `reviewStore` | Diff data, selected file, and loading state for `ReviewModal` |
+| `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel` |
+| `configStore` | App-wide settings (theme, model defaults) cached from Tauri |
+
+### Contexts
+
+- `KanbanContext` — provides `projectId`, `projectPath`, `onTaskClick` to the kanban component subtree (avoids prop-drilling through `BoardView → KanbanColumn → TaskCard`)
+- `ConnectionContext` — provides active `Connection` (local vs SSH vs WSL) and connection ID to the project picker subtree
 
 ## Key Patterns
 
@@ -201,6 +172,20 @@ Service functions in `src/services/` wrap `invoke()`. Hooks in `src/utils/hooks/
 - Rust functions return `Result<T, String>` for IPC commands
 - DB errors mapped to strings for Tauri serialization
 - Frontend shows errors in console (consider user-facing error UI)
+
+### base-ui Component Pitfall
+
+Tabs and Popover in `src/components/ui/` are from `@base-ui-components/react`, **not Radix UI**. The base-ui `Trigger` component has no `asChild` prop. To render a custom element as a trigger, use `buttonVariants()` directly on the element instead:
+
+```tsx
+// WRONG — asChild does not exist on base-ui Trigger
+<PopoverTrigger asChild><Button>Open</Button></PopoverTrigger>
+
+// CORRECT
+<PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+  Open
+</PopoverTrigger>
+```
 
 ### No Rust Logging
 
@@ -236,7 +221,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ### Import Conventions
 
 - Direct imports; barrel `index.ts` files removed from all domain dirs
-- Path aliases: `@/*` → `src/*`, `@/hooks` → `src/utils/hooks`, `@/lib` → `src/utils/helpers`, `@/ui` → `src/components/ui/*`
+- Path aliases: `@/*` → `src/*`, `@/hooks` → `src/utils/hooks`, `@/lib` → `src/utils/helpers` (e.g. `@/lib/ui-utils`), `@/ui` → `src/components/ui/*`
 
 ### Naming
 
@@ -260,7 +245,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Schema version: 18. Migration is destructive (drops all tables on version mismatch)
+- Schema version: 19. Migration is destructive (drops all tables on version mismatch)
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
@@ -270,34 +255,6 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 - Projects have three connection types: local, SSH (via `ssh_connections`), WSL (via `wsl_connections`)
 - Handlers needing both a `Project` and `GitConnection` use `get_project_with_git_conn()` from `db/connection.rs`
 - `AcpState` manages: active sessions, discovery cache, connection servers, agent cache, session pool, deploy locks, restorable sessions
-
-# Rust coding guidelines
-
-- Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.
-- Do not write organizational or comments that summarize the code. Comments should only be written in order to explain "why" the code is written in some way in the case there is a reason that is tricky / non-obvious.
-- Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
-- Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.
-- Be careful with operations like indexing which may panic if the indexes are out of bounds.
-- Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:
-  - Propagate errors with `?` when the calling function should handle them
-  - Use `.log_err()` or similar when you need to ignore errors but want visibility
-  - Use explicit error handling with `match` or `if let Err(...)` when you need custom logic
-  - Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead
-- When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
-- For new modules, prefer flat files (`src/some_module.rs`) over `src/some_module/mod.rs`. Existing `mod.rs` files in `ipc/`, `models/`, `db/` are legacy — don't refactor them, but don't add new ones.
-- When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
-- Avoid creative additions unless explicitly requested
-- Use full words for variable names (no abbreviations like "q" for "queue")
-- Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
-  Example:
-  ```rust
-  executor.spawn({
-      let task_ran = task_ran.clone();
-      async move {
-          *task_ran.borrow_mut() = true;
-      }
-  });
-  ```
 
 # Pull request hygiene
 

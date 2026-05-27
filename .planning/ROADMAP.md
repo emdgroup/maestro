@@ -133,7 +133,7 @@ See phase details below (archived after milestone close).
 - [x] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions (completed 2026-05-26)
 - [x] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components (completed 2026-05-27)
 - [x] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow (completed 2026-05-27)
-- [ ] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks
+- [x] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks (completed 2026-05-27)
 
 ## Phase Details
 
@@ -415,10 +415,10 @@ Plans:
   2. The archive modal has a search input that filters tasks by title and filter tabs for All, Done, and Cancelled; filters update the list in real time
   3. Clicking a row in the archive modal closes the modal and opens the task detail screen in read-only mode; no edit actions are available for archived tasks
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 
-- [ ] 63-01-PLAN.md — ArchiveModal component + KanbanView wiring + ArchiveView deletion
+- [x] 63-01-PLAN.md — ArchiveModal component + KanbanView wiring + ArchiveView deletion
 
 **UI hint**: yes
 
@@ -468,7 +468,7 @@ Plans:
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 2/2 | Complete   | 2026-05-27 |
 | 62 - Task Detail Screen | v1.7 | 2/2 | Complete   | 2026-05-27 |
-| 63 - Archive Modal | v1.7 | 0/1 | Planned | - |
+| 63 - Archive Modal | v1.7 | 1/1 | Complete   | 2026-05-27 |
 
 ---
 
