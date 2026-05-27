@@ -132,7 +132,7 @@ See phase details below (archived after milestone close).
 - [x] **Phase 59: Board View** — Unified 5-column board with search, priority filter, label filter (completed 2026-05-26)
 - [x] **Phase 60: Task Card Redesign** — Redesigned cards with priority/labels/agent/badges and per-column inline actions (completed 2026-05-26)
 - [x] **Phase 61: Create Task Modal** — Tabbed modal (From Branch / From Issue) replacing three legacy creation components (completed 2026-05-27)
-- [ ] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow
+- [x] **Phase 62: Task Detail Screen** — Dedicated full-screen detail with action bar, editable fields, attachments, interrupt flow (completed 2026-05-27)
 - [ ] **Phase 63: Archive Modal** — Modal dialog for browsing archived and cancelled tasks
 
 ## Phase Details
@@ -391,7 +391,7 @@ Plans:
   6. The right sidebar shows a status dropdown; changing it updates the task status without leaving the detail screen
   7. The action bar shows a delete button (trash icon) that removes the task; when status is Done the same button shows an archive icon and archives instead of deleting
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 
 **Wave 1**
@@ -400,7 +400,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 62-02-PLAN.md — Full TaskDetailScreen implementation + delete legacy TaskDetail.tsx
+- [x] 62-02-PLAN.md — Full TaskDetailScreen implementation + delete legacy TaskDetail.tsx
 
 **UI hint**: yes
 
@@ -468,7 +468,7 @@ Plans:
 | 59 - Board View | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 60 - Task Card Redesign | v1.7 | 2/2 | Complete    | 2026-05-26 |
 | 61 - Create Task Modal | v1.7 | 2/2 | Complete   | 2026-05-27 |
-| 62 - Task Detail Screen | v1.7 | 1/2 | In Progress|  |
+| 62 - Task Detail Screen | v1.7 | 2/2 | Complete   | 2026-05-27 |
 | 63 - Archive Modal | v1.7 | 0/TBD | Not started | - |
 
 ---
