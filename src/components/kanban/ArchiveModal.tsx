@@ -49,6 +49,7 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
 
   const archiveTasks = useMemo<Task[]>(() => {
     return (tasks ?? [])
+      // Include archived tasks and Cancelled tasks (cancel_task always sets archived_at, but guard by status too)
       .filter((t) => t.archived_at != null || t.status === "Cancelled")
       .filter((t) => filter === "all" || t.status === filter)
       .filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()))
