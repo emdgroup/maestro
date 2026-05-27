@@ -32,6 +32,10 @@ fn create_task_impl(
     description: String,
     skills: Vec<String>,
     base_branch: String,
+    agent_id: Option<String>,
+    priority: Option<String>,
+    auto_approve: bool,
+    isolated_worktree: bool,
 ) -> Result<Task, String> {
     let trimmed_title = title.trim();
     if trimmed_title.is_empty() || trimmed_title.len() < 3 || trimmed_title.len() > 255 {
@@ -47,9 +51,17 @@ fn create_task_impl(
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
-        "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        rusqlite::params![project_id, &title, &description, &skills_json, "Backlog", &base_branch, &now, &now],
+        "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
+         agent_id, priority, auto_approve, isolated_worktree, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![
+            project_id, &title, &description, &skills_json, "Backlog", &base_branch,
+            &agent_id,
+            priority.as_deref().unwrap_or("Medium"),
+            auto_approve,
+            isolated_worktree,
+            &now, &now
+        ],
     )
     .map_err(|e| e.to_string())?;
 
@@ -69,9 +81,16 @@ pub fn create_task(
     description: String,
     skills: Vec<String>,
     base_branch: String,
+    agent_id: Option<String>,
+    priority: Option<String>,
+    auto_approve: bool,
+    isolated_worktree: bool,
 ) -> Result<Task, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    let task = create_task_impl(&conn, project_id, title, description, skills, base_branch)?;
+    let task = create_task_impl(
+        &conn, project_id, title, description, skills, base_branch,
+        agent_id, priority, auto_approve, isolated_worktree,
+    )?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
@@ -89,6 +108,7 @@ pub fn update_task(
     priority: Option<String>,
     base_branch: Option<String>,
     skills: Option<Vec<String>>,
+    agent_id: Option<String>,
 ) -> Result<Task, String> {
     let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
@@ -124,6 +144,10 @@ pub fn update_task(
             .map_err(|e| format!("JSON serialization failed: {}", e))?;
         set_parts.push("skills = ?".to_string());
         params.push(Box::new(skills_json));
+    }
+    if let Some(ref v) = agent_id {
+        set_parts.push("agent_id = ?".to_string());
+        params.push(Box::new(v.clone()));
     }
 
     // Always update updated_at
@@ -563,6 +587,7 @@ mod tests {
             &conn, project_id, "ab".to_string(),
             "valid description here".to_string(),
             vec![], "main".to_string(),
+            None, None, false, true,
         )
         .unwrap_err();
         assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
@@ -576,6 +601,7 @@ mod tests {
             &conn, project_id, "Valid Name".to_string(),
             "too short".to_string(),
             vec![], "main".to_string(),
+            None, None, false, true,
         )
         .unwrap_err();
         assert!(err.contains("Description must be at least 10 characters"), "got: {err}");
@@ -590,6 +616,7 @@ mod tests {
             "Valid Task Name".to_string(),
             "This is a valid description.".to_string(),
             vec!["rust".to_string()], "main".to_string(),
+            None, None, false, true,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -606,6 +633,7 @@ mod tests {
             "Task to Delete".to_string(),
             "This task will be deleted.".to_string(),
             vec![], "main".to_string(),
+            None, None, false, true,
         )
         .unwrap();
 

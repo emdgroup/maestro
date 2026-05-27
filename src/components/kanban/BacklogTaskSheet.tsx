@@ -40,7 +40,17 @@ export function BacklogTaskSheet({
 
     if (mode === "create") {
       createTask(
-        { ...data },
+        {
+          project_id: data.project_id,
+          title: data.title,
+          description: data.description,
+          skills: data.skills,
+          base_branch: data.base_branch,
+          agent_id: data.agent_id ?? null,
+          priority: data.priority ?? "Medium",
+          auto_approve: data.auto_approve ?? false,
+          isolated_worktree: data.isolated_worktree ?? true,
+        },
         {
           onSuccess: () => {
             onClose();
