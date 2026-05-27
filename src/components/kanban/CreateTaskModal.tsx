@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type Control } from "react-hook-form";
 import type { SubmitHandler } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
@@ -28,10 +28,8 @@ import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
-import { PRIORITY_COLORS } from "@/utils/constants/priority";
+import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 import type { RemoteIssue, TaskPriority } from "@/types/bindings";
-
-const PRIORITIES: TaskPriority[] = ["Urgent", "High", "Medium", "Low", "None"];
 
 interface FormData {
   title: string;
@@ -75,12 +73,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [error, setError] = useState<string | null>(null);
   const [createAnother, setCreateAnother] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<RemoteIssue | null>(null);
-  const [branchPopoverOpen, setBranchPopoverOpen] = useState(false);
+  const [openPopover, setOpenPopover] = useState<"branch" | "priority" | "agent" | "issue" | null>(null);
   const [branchSearch, setBranchSearch] = useState("");
   const [branchTab, setBranchTab] = useState<"local" | "remote">("local");
-  const [priorityPopoverOpen, setPriorityPopoverOpen] = useState(false);
-  const [agentPopoverOpen, setAgentPopoverOpen] = useState(false);
-  const [issuePopoverOpen, setIssuePopoverOpen] = useState(false);
 
   const { data: remoteIssues, isFetching: issuesFetching } = useFetchRemoteIssuesQuery(
     hasProvider ? projectId : null,
@@ -128,6 +123,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       reset();
       setError(null);
       setSelectedIssue(null);
+      setOpenPopover(null);
       setBranchSearch("");
       setBranchTab("local");
     }
@@ -137,7 +133,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     setSelectedIssue(issue);
     setValue("title", issue.title);
     setValue("description", issue.body ?? "");
-    setIssuePopoverOpen(false);
+    setOpenPopover(null);
   };
 
   const onSubmit: SubmitHandler<FormData> = (data) => {
@@ -202,7 +198,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
             {/* Issue search — shown only when provider configured */}
             {hasProvider && (
               <div className="flex flex-col gap-1.5">
-                <Popover open={issuePopoverOpen} onOpenChange={setIssuePopoverOpen}>
+                <Popover open={openPopover === "issue"} onOpenChange={(v) => setOpenPopover(v ? "issue" : null)}>
                   <PopoverTrigger
                     className="flex items-center gap-2 w-full rounded-md border border-border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors text-left"
                   >
@@ -270,7 +266,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               </div>
             )}
 
-            {/* Seamless title */}
             <div>
               <Input
                 {...register("title", {
@@ -285,7 +280,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               )}
             </div>
 
-            {/* Seamless description */}
             <div>
               <Textarea
                 {...register("description", {
@@ -301,7 +295,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               )}
             </div>
 
-            {/* Branch selector */}
             <Controller
               name="baseBranch"
               control={control}
@@ -312,7 +305,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                     FROM BRANCH
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <Popover open={branchPopoverOpen} onOpenChange={setBranchPopoverOpen}>
+                    <Popover open={openPopover === "branch"} onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}>
                       <PopoverTrigger
                         className={cn(
                           "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
@@ -359,7 +352,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                           selected={value}
                           onSelect={(b) => {
                             onChange(b);
-                            setBranchPopoverOpen(false);
+                            setOpenPopover(null);
                             setBranchSearch("");
                           }}
                         />
@@ -386,10 +379,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               )}
             />
 
-            {/* Priority + Agent + Toggle pills */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Priority pill */}
-              <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
+              <Popover open={openPopover === "priority"} onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}>
                 <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors">
                   <span
                     className="size-2 rounded-full shrink-0"
@@ -409,7 +400,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                           className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
                           onClick={() => {
                             onChange(p);
-                            setPriorityPopoverOpen(false);
+                            setOpenPopover(null);
                           }}
                         >
                           <span
@@ -425,8 +416,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 </PopoverContent>
               </Popover>
 
-              {/* Agent pill */}
-              <Popover open={agentPopoverOpen} onOpenChange={setAgentPopoverOpen}>
+              <Popover open={openPopover === "agent"} onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}>
                 <PopoverTrigger
                   className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-[200px]"
                 >
@@ -448,7 +438,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                           className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
                           onClick={() => {
                             onChange("");
-                            setAgentPopoverOpen(false);
+                            setOpenPopover(null);
                           }}
                         >
                           <Bot className="size-3 text-muted-foreground shrink-0" />
@@ -462,7 +452,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                             className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
                             onClick={() => {
                               onChange(agent.id);
-                              setAgentPopoverOpen(false);
+                              setOpenPopover(null);
                             }}
                           >
                             <Sparkles className="size-3 text-muted-foreground shrink-0" />
@@ -476,49 +466,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 </PopoverContent>
               </Popover>
 
-              {/* Toggle pills */}
-              <Controller
-                name="isolatedWorktree"
-                control={control}
-                render={({ field: { value, onChange } }) => (
-                  <button
-                    type="button"
-                    onClick={() => onChange(!value)}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors",
-                      value
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
-                        : "border-border bg-transparent text-muted-foreground hover:bg-muted",
-                    )}
-                  >
-                    {value && <Check className="size-3 shrink-0" />}
-                    Isolate worktree
-                  </button>
-                )}
-              />
-
-              <Controller
-                name="autoApprove"
-                control={control}
-                render={({ field: { value, onChange } }) => (
-                  <button
-                    type="button"
-                    onClick={() => onChange(!value)}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors",
-                      value
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
-                        : "border-border bg-transparent text-muted-foreground hover:bg-muted",
-                    )}
-                  >
-                    {value && <Check className="size-3 shrink-0" />}
-                    Auto-approve
-                  </button>
-                )}
-              />
+              <TogglePill name="isolatedWorktree" label="Isolate worktree" control={control} />
+              <TogglePill name="autoApprove" label="Auto-approve" control={control} />
             </div>
 
-            {/* Footer */}
             <div className="flex items-center justify-between pt-2 border-t border-border">
               <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
                 <Switch
@@ -537,6 +488,36 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface TogglePillProps {
+  name: "isolatedWorktree" | "autoApprove";
+  label: string;
+  control: Control<FormData>;
+}
+
+function TogglePill({ name, label, control }: TogglePillProps) {
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field: { value, onChange } }) => (
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors",
+            value
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
+              : "border-border bg-transparent text-muted-foreground hover:bg-muted",
+          )}
+        >
+          {value && <Check className="size-3 shrink-0" />}
+          {label}
+        </button>
+      )}
+    />
   );
 }
 

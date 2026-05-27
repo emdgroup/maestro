@@ -1,5 +1,7 @@
 import type { TaskPriority } from "@/types/bindings";
 
+export const PRIORITIES: TaskPriority[] = ["Urgent", "High", "Medium", "Low", "None"];
+
 export const PRIORITY_COLORS: Record<TaskPriority, string> = {
   Urgent: "#f87171",
   High: "#fb923c",

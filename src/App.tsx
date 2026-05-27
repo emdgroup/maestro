@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense, useCallback } from "react";
+import { useEffect, useState, useRef, lazy, Suspense, useCallback, useMemo } from "react";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
@@ -39,9 +39,10 @@ const SettingsView = lazy(() =>
   import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
 
+const NOOP = () => {};
+
 function App() {
   const [showMissingDialog, setShowMissingDialog] = useState(false);
-  const [missingProvider, setMissingProvider] = useState<string | null>(null);
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
@@ -62,12 +63,12 @@ function App() {
   const settingsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
 
-  const viewControls = {
+  const viewControls = useMemo(() => ({
     kanban: kanbanControls,
     agents: agentsControls,
     worktrees: worktreesControls,
     settings: settingsControls,
-  } satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>;
+  } satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>), []);
 
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
@@ -139,12 +140,7 @@ function App() {
       return;
     }
     const integration = integrations?.find((i) => i.provider === issueTrackingConfig.provider);
-    if (!integration || !integration.connected) {
-      setMissingProvider(issueTrackingConfig.provider);
-      setShowMissingDialog(true);
-    } else {
-      setShowMissingDialog(false);
-    }
+    setShowMissingDialog(!integration || !integration.connected);
   }, [currentProject, integrations, issueTrackingConfig, integrationsLoading, issueTrackingLoading]);
 
   if (settingsLoading) {
@@ -215,7 +211,7 @@ function App() {
             <KanbanProvider
               projectId={currentProject.id}
               projectPath={currentProject.path}
-              onTaskClick={() => {}}
+              onTaskClick={NOOP}
             >
               <KanbanView />
             </KanbanProvider>
@@ -263,7 +259,7 @@ function App() {
       <IntegrationMissingDialog
         open={showMissingDialog}
         projectId={currentProject.id}
-        provider={missingProvider ?? ""}
+        provider={issueTrackingConfig?.provider ?? ""}
         onFixIntegration={clearSelectedProject}
         onDropConfig={() => setShowMissingDialog(false)}
       />

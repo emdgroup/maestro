@@ -5,7 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment } from "@/types/bindings";
+import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment, CreateTaskRequest } from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -77,30 +77,7 @@ export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: {
-      project_id: number;
-      title: string;
-      description: string;
-      skills: string[];
-      base_branch: string;
-      agent_id: string | null;
-      priority: string;
-      auto_approve: boolean;
-      isolated_worktree: boolean;
-      model_override: string | null;
-    }) =>
-      api.createTask({
-        project_id: request.project_id,
-        title: request.title,
-        description: request.description,
-        skills: request.skills,
-        base_branch: request.base_branch,
-        agent_id: request.agent_id,
-        priority: request.priority,
-        auto_approve: request.auto_approve,
-        isolated_worktree: request.isolated_worktree,
-        model_override: request.model_override,
-      }),
+    mutationFn: (request: CreateTaskRequest) => api.createTask(request),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },

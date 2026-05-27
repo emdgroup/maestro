@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Plus } from "lucide-react";
 import { BoardView } from "@/components/views/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -12,6 +12,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
 import type { TaskPriority } from "@/types/bindings";
+import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/CreateTaskModal";
 
 export const KanbanView: React.FC = () => {
@@ -22,8 +23,9 @@ export const KanbanView: React.FC = () => {
   const { data: tasks } = useTasksQuery(projectId);
   const taskList = tasks ?? [];
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
-  const worktreeTaskIds = new Set(
-    (worktrees ?? []).filter((w) => w.task_id != null).map((w) => w.task_id!),
+  const worktreeTaskIds = useMemo(
+    () => new Set((worktrees ?? []).filter((w) => w.task_id != null).map((w) => w.task_id!)),
+    [worktrees],
   );
 
   const [query, setQuery] = useState("");
@@ -31,7 +33,10 @@ export const KanbanView: React.FC = () => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const availableLabels = [...new Set(taskList.flatMap(t => t.labels))].sort();
+  const availableLabels = useMemo(
+    () => [...new Set(taskList.flatMap((t) => t.labels))].sort(),
+    [taskList],
+  );
 
   const filteredTasks = taskList.filter(t => {
     const matchesQuery =
@@ -69,7 +74,7 @@ export const KanbanView: React.FC = () => {
           </PopoverTrigger>
           <PopoverContent className="w-48 p-2" align="start">
             <div className="flex flex-col gap-1">
-              {(["Urgent", "High", "Medium", "Low", "None"] as TaskPriority[]).map(p => (
+              {PRIORITIES.map(p => (
                 <label key={p} className="flex items-center gap-2 cursor-pointer py-0.5">
                   <Checkbox
                     checked={selectedPriorities.includes(p)}

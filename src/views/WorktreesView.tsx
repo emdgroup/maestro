@@ -4,7 +4,7 @@ import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
-import { usePendingWorktreeId, useNavigationActions } from "@/store/navigationStore";
+import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
 import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
@@ -26,7 +26,8 @@ interface WorktreesViewProps {
  * A slide container animates between the card grid and the diff panel (Plan 03).
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
-  const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
+  const { data: worktrees = [], refetch: refetchWorktrees } = useWorktreesQuery(projectId, repoPath);
+  const activeTab = useActiveTab();
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();
 
@@ -37,6 +38,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
   const [worktreeToDelete, setWorktreeToDelete] = useState<WorktreeWithStatus | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  // Refresh when tab becomes active — always-mounted views don't remount on navigate so
+  // refetchOnMount never fires again; this replicates the prior behaviour.
+  useEffect(() => {
+    if (activeTab === "worktrees") {
+      void refetchWorktrees();
+    }
+  }, [activeTab, refetchWorktrees]);
 
   // Deep-link: pendingWorktreeId overrides selection on first mount
   useEffect(() => {

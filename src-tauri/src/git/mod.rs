@@ -413,7 +413,7 @@ pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>) -> BranchList
     remote.sort();
     remote.dedup();
     // Drop remote entries that already exist as local branches (same branch, no need to show twice)
-    remote.retain(|r| !local.contains(r));
+    remote.retain(|r| local.binary_search(r).is_err());
     BranchList { local, remote }
 }
 
