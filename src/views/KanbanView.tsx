@@ -152,16 +152,20 @@ export const KanbanView: React.FC = () => {
           </Button>
         </div>
       </div>
-      <CreateTaskModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        projectId={projectId ?? 0}
-      />
-      <ArchiveModal
-        isOpen={isArchiveModalOpen}
-        onClose={() => setIsArchiveModalOpen(false)}
-        projectId={projectId ?? 0}
-      />
+      {projectId !== null && (
+        <>
+          <CreateTaskModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            projectId={projectId}
+          />
+          <ArchiveModal
+            isOpen={isArchiveModalOpen}
+            onClose={() => setIsArchiveModalOpen(false)}
+            projectId={projectId}
+          />
+        </>
+      )}
       <div className="flex-1 min-h-0">
         <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} />
       </div>
