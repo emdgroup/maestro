@@ -40,13 +40,7 @@ const SettingsView = lazy(() =>
   import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
 
-// Lazy load modals for code splitting (performance optimization)
-const TaskModal = lazy(() =>
-  import("@/components/kanban/TaskModal").then((m) => ({ default: m.TaskModal })),
-);
-
 function App() {
-  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [showMissingDialog, setShowMissingDialog] = useState(false);
   const [missingProvider, setMissingProvider] = useState<string | null>(null);
 
@@ -213,7 +207,6 @@ function App() {
                   projectId={currentProject.id}
                   projectPath={currentProject.path}
                   onTaskClick={() => {}}
-                  onAddTask={() => setShowNewTaskModal(true)}
                 >
                   <KanbanView />
                 </KanbanProvider>
@@ -267,14 +260,6 @@ function App() {
           )}
         </AnimatePresence>
 
-        {/* Modals and Overlays - lazy loaded for performance */}
-        <Suspense fallback={null}>
-          <TaskModal
-            isOpen={showNewTaskModal}
-            onClose={() => setShowNewTaskModal(false)}
-            projectId={currentProject.id}
-          />
-        </Suspense>
       </main>
 
       {/* D-19 cascade check: block project access when issue tracking integration is missing */}

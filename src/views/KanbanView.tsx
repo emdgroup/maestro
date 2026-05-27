@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Plus } from "lucide-react";
 import { BoardView } from "@/components/views/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/components/task/TaskDetailScreen";
@@ -9,8 +10,9 @@ import { Input } from "@/ui/input";
 import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Checkbox } from "@/ui/checkbox";
-import { buttonVariants } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import type { TaskPriority } from "@/types/bindings";
+import { CreateTaskModal } from "@/components/kanban/CreateTaskModal";
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
@@ -27,6 +29,7 @@ export const KanbanView: React.FC = () => {
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const availableLabels = [...new Set(taskList.flatMap(t => t.labels))].sort();
 
@@ -129,7 +132,19 @@ export const KanbanView: React.FC = () => {
             </div>
           </PopoverContent>
         </Popover>
+
+        <div className="ml-auto">
+          <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
+            <Plus className="size-4" />
+            New Task
+          </Button>
+        </div>
       </div>
+      <CreateTaskModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        projectId={projectId ?? 0}
+      />
       <div className="flex-1 min-h-0">
         <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} />
       </div>
