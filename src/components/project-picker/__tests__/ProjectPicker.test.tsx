@@ -136,7 +136,7 @@ describe("ProjectPicker", () => {
             preflightResult: null,
             preflightStatus: "passed",
             preflightError: null,
-  
+
             startPreflight: vi.fn(),
             ignoreWarnings: vi.fn(),
             resetPreflight: vi.fn(),
@@ -161,7 +161,7 @@ describe("ProjectPicker", () => {
             preflightResult: null,
             preflightStatus: "passed",
             preflightError: null,
-  
+
             startPreflight: vi.fn(),
             ignoreWarnings: vi.fn(),
             resetPreflight: vi.fn(),
@@ -194,7 +194,7 @@ describe("ProjectPicker", () => {
             preflightResult: null,
             preflightStatus: "passed",
             preflightError: null,
-  
+
             startPreflight: vi.fn(),
             ignoreWarnings: vi.fn(),
             resetPreflight: vi.fn(),
@@ -215,11 +215,11 @@ describe("ProjectPicker", () => {
               setActiveConnection: vi.fn(),
               preflightResult: null,
               preflightStatus: "passed",
-            preflightError: null,
-  
-            startPreflight: vi.fn(),
-            ignoreWarnings: vi.fn(),
-            resetPreflight: vi.fn(),
+              preflightError: null,
+
+              startPreflight: vi.fn(),
+              ignoreWarnings: vi.fn(),
+              resetPreflight: vi.fn(),
             }}
           >
             <ProjectPicker />

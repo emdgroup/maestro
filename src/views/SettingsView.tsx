@@ -9,7 +9,14 @@ interface SettingsViewProps {
 
 export const SettingsView = forwardRef<SettingsPageHandle, SettingsViewProps>(
   ({ projectId, connectionId, wslConnectionId }, ref) => {
-    return <SettingsPage ref={ref} projectId={projectId} connectionId={connectionId} wslConnectionId={wslConnectionId} />;
+    return (
+      <SettingsPage
+        ref={ref}
+        projectId={projectId}
+        connectionId={connectionId}
+        wslConnectionId={wslConnectionId}
+      />
+    );
   },
 );
 

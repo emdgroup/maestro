@@ -41,9 +41,7 @@ export function LinearForm({ fields, onFieldsChange }: Props) {
         <ComboboxContent>
           <ComboboxList>
             {isLoading && <ComboboxEmpty>Loading…</ComboboxEmpty>}
-            {!isLoading && teams.length === 0 && (
-              <ComboboxEmpty>No teams found</ComboboxEmpty>
-            )}
+            {!isLoading && teams.length === 0 && <ComboboxEmpty>No teams found</ComboboxEmpty>}
             {filteredTeams.map((t) => (
               <ComboboxItem key={t.id} value={t.id}>
                 <span className="font-mono font-medium text-xs">{t.key}</span>

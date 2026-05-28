@@ -51,7 +51,9 @@ export function EffortSelector({ option, value, onChange, disabled }: SelectorPr
                   className={cn(
                     "w-1.25 rounded-[3px] shrink-0 transition origin-bottom",
                     filled ? "bg-accent/80" : "bg-muted-foreground/20",
-                    !disabled && i === displayIdx && "hover:bg-accent hover:scale-x-125 cursor-pointer",
+                    !disabled &&
+                      i === displayIdx &&
+                      "hover:bg-accent hover:scale-x-125 cursor-pointer",
                   )}
                 />
               );

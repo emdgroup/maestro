@@ -145,14 +145,14 @@ Service functions in `src/services/` wrap `invoke()` and export TanStack Query h
 
 ### Zustand Stores — Roles
 
-| Store | Purpose |
-|---|---|
-| `boardStore` | `activeTerminalTaskId` and `isTerminalOpen` — drives the bottom terminal drawer in `BoardView` |
-| `navigationStore` | Tab routing (`activeTab`), view-to-view slide direction, `activeTaskId` for task detail screen, `pendingAgentId`/`pendingWorktreeId` for deep-link navigation |
-| `projectStore` | Selected project reference; `useSelectedProject()` is the canonical way to get `projectId`/`projectPath` |
-| `reviewStore` | Diff data, selected file, and loading state for `ReviewModal` |
-| `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel` |
-| `configStore` | App-wide settings (theme, model defaults) cached from Tauri |
+| Store                  | Purpose                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `boardStore`           | `activeTerminalTaskId` and `isTerminalOpen` — drives the bottom terminal drawer in `BoardView`                                                                |
+| `navigationStore`      | Tab routing (`activeTab`), view-to-view slide direction, `activeTaskId` for task detail screen, `pendingAgentId`/`pendingWorktreeId` for deep-link navigation |
+| `projectStore`         | Selected project reference; `useSelectedProject()` is the canonical way to get `projectId`/`projectPath`                                                      |
+| `reviewStore`          | Diff data, selected file, and loading state for `ReviewModal`                                                                                                 |
+| `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel`                                                     |
+| `configStore`          | App-wide settings (theme, model defaults) cached from Tauri                                                                                                   |
 
 ### Contexts
 
@@ -202,6 +202,7 @@ When modifying Rust models:
 ### Project-Local Storage (`.maestro/`)
 
 Each project has a `.maestro/` folder in its root with:
+
 - `settings.json` — `ProjectConfig` (non-sensitive project settings)
 - `state.json` — `ProjectState` (runtime/cached state)
 - `bin/` — bundled `maestro-server` binary for that project

@@ -53,9 +53,7 @@ export function PreflightModal() {
             <IssueRow
               label="maestro-server"
               detail={
-                preflightError ??
-                preflightResult?.maestro_server.message ??
-                "Failed to start"
+                preflightError ?? preflightResult?.maestro_server.message ?? "Failed to start"
               }
               mandatory
             />

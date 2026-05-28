@@ -26,7 +26,10 @@ interface WorktreesViewProps {
  * A slide container animates between the card grid and the diff panel (Plan 03).
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
-  const { data: worktrees = [], refetch: refetchWorktrees } = useWorktreesQuery(projectId, repoPath);
+  const { data: worktrees = [], refetch: refetchWorktrees } = useWorktreesQuery(
+    projectId,
+    repoPath,
+  );
   const activeTab = useActiveTab();
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();

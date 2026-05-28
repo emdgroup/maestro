@@ -1,6 +1,11 @@
 import { Brain } from "lucide-react";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { BaseDropdownSelector, ITEM_CLASS, ITEM_TEXT_CLASS, DESC_CLASS } from "./BaseDropdownSelector";
+import {
+  BaseDropdownSelector,
+  ITEM_CLASS,
+  ITEM_TEXT_CLASS,
+  DESC_CLASS,
+} from "./BaseDropdownSelector";
 import type { SelectorProps } from "./BaseDropdownSelector";
 
 function extractCost(description?: string): string | null {

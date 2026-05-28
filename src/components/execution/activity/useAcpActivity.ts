@@ -149,7 +149,10 @@ function processEvent(
       // No parent — normal tool call. Check if any orphans were waiting for this id.
       if (newState.pendingOrphans.has(payload.toolCallId)) {
         const orphanIds = newState.pendingOrphans.get(payload.toolCallId)!;
-        const updatedTc = { ...tc, childToolCallIds: [...(tc.childToolCallIds ?? []), ...orphanIds] };
+        const updatedTc = {
+          ...tc,
+          childToolCallIds: [...(tc.childToolCallIds ?? []), ...orphanIds],
+        };
         newMap.set(payload.toolCallId, updatedTc);
         const newOrphans = new Map(newState.pendingOrphans);
         newOrphans.delete(payload.toolCallId);
@@ -180,13 +183,15 @@ function processEvent(
         if (payload.locations) updated.locations = payload.locations;
         if (payload.rawInput) updated.rawInput = payload.rawInput;
         const agentMeta = extractAgentMeta(raw);
-        const durationMs = agentMeta.totalDurationMs ?? (payload as Record<string, unknown>).totalDurationMs;
+        const durationMs =
+          agentMeta.totalDurationMs ?? (payload as Record<string, unknown>).totalDurationMs;
         if (typeof durationMs === "number") {
           updated.rawInput = {
             ...updated.rawInput,
             totalDurationMs: durationMs,
             totalTokens: agentMeta.totalTokens ?? (payload as Record<string, unknown>).totalTokens,
-            totalToolUseCount: agentMeta.totalToolUseCount ?? (payload as Record<string, unknown>).totalToolUseCount,
+            totalToolUseCount:
+              agentMeta.totalToolUseCount ?? (payload as Record<string, unknown>).totalToolUseCount,
           };
         }
         newMap.set(payload.toolCallId, updated);
@@ -230,7 +235,12 @@ function processEvent(
 
     case "plan": {
       const items = finalizeLastStreaming(newState.items);
-      return { ...newState, items, plan: payload.entries, planTitle: payload.title ?? state.planTitle };
+      return {
+        ...newState,
+        items,
+        plan: payload.entries,
+        planTitle: payload.title ?? state.planTitle,
+      };
     }
 
     case "user_message": {
@@ -257,7 +267,10 @@ function processEvent(
       const lastItem = items[items.length - 1];
       if (lastItem && lastItem.type === "userMessage") {
         const updated = { ...lastItem.item, content: lastItem.item.content + payload.content.text };
-        return { ...newState, items: [...items.slice(0, -1), { type: "userMessage", item: updated }] };
+        return {
+          ...newState,
+          items: [...items.slice(0, -1), { type: "userMessage", item: updated }],
+        };
       }
       const userMsg: UserMessageItem = {
         id: `user-${crypto.randomUUID()}`,
@@ -345,7 +358,7 @@ export function useAcpActivity(
         u5();
       });
     };
-  }, [logId]);
+  }, [logId, sessionUpdateRef]);
 
   return [state, dispatch];
 }

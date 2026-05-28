@@ -14,7 +14,12 @@ interface Props {
   onFieldsChange: (fields: Record<string, string>) => void;
 }
 
-export function IssueTrackingProviderForm({ provider, integration, fields, onFieldsChange }: Props) {
+export function IssueTrackingProviderForm({
+  provider,
+  integration,
+  fields,
+  onFieldsChange,
+}: Props) {
   switch (provider) {
     case "github":
       return (

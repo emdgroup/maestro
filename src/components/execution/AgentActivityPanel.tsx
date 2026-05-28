@@ -21,11 +21,7 @@ import { PermissionPrompt, isPlanPermission, extractBodyText } from "./activity/
 import { PermissionResponseCard } from "./activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
-import type {
-  PermissionResponseItem,
-  ElicitationSummaryItem,
-  UsageState,
-} from "./activity/types";
+import type { PermissionResponseItem, ElicitationSummaryItem, UsageState } from "./activity/types";
 import {
   isRejectOption,
   getOptionName,
@@ -53,11 +49,33 @@ interface AgentActivityPanelProps {
 }
 
 const WORKING_FILE_EXTENSIONS = new Set([
-  ".md", ".txt", ".svg", ".mmd", ".mermaid",
-  ".json", ".yaml", ".yml", ".toml", ".xml",
-  ".csv", ".tsv", ".html", ".css", ".sql",
-  ".sh", ".bash", ".py", ".js", ".ts", ".rs",
-  ".log", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+  ".md",
+  ".txt",
+  ".svg",
+  ".mmd",
+  ".mermaid",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".csv",
+  ".tsv",
+  ".html",
+  ".css",
+  ".sql",
+  ".sh",
+  ".bash",
+  ".py",
+  ".js",
+  ".ts",
+  ".rs",
+  ".log",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
 ]);
 
 function isWorkingFile(path: string): boolean {
@@ -91,8 +109,11 @@ export function AgentActivityPanel({
   onSessionChangedFilesChange,
   onOpenPanel,
 }: AgentActivityPanelProps) {
-  const { setActivity: setActivityStatus, markSeen, removeActivity: removeActivityStatus } =
-    useSessionActivityActions();
+  const {
+    setActivity: setActivityStatus,
+    markSeen,
+    removeActivity: removeActivityStatus,
+  } = useSessionActivityActions();
   const activityInfo = useSessionActivity(sessionKey);
   const activeTab = useActiveTab();
   const onUsageChangeRef = useRef(onUsageChange);
@@ -120,7 +141,9 @@ export function AgentActivityPanel({
     };
   }, [sessionKey]);
 
-  const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(undefined);
+  const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
+    undefined,
+  );
   const [liveState, liveDispatch] = useAcpActivity(sessionKey, sessionUpdateRef);
 
   const {
@@ -133,7 +156,13 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
-  } = useAcpSessionLifecycle(sessionKey, selectedProject?.id ?? null, agentId, onUsageChangeRef, sessionUpdateRef);
+  } = useAcpSessionLifecycle(
+    sessionKey,
+    selectedProject?.id ?? null,
+    agentId,
+    onUsageChangeRef,
+    sessionUpdateRef,
+  );
 
   const isReady = !liveState.isInitializing;
   const {
@@ -159,7 +188,15 @@ export function AgentActivityPanel({
     ) {
       markSeen(sessionKey);
     }
-  }, [isSelected, activeTab, hasUnread, activityInfo?.status, activityInfo?.seen, sessionKey, markSeen]);
+  }, [
+    isSelected,
+    activeTab,
+    hasUnread,
+    activityInfo?.status,
+    activityInfo?.seen,
+    sessionKey,
+    markSeen,
+  ]);
 
   const initItemCountRef = useRef<number | null>(null);
 
@@ -200,7 +237,13 @@ export function AgentActivityPanel({
         }
       }
     }
-  }, [liveState.items, liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivityStatus]);
+  }, [
+    liveState.items,
+    liveState.isInitializing,
+    liveState.sessionEnded,
+    sessionKey,
+    setActivityStatus,
+  ]);
 
   const agentItemsCountRef = useRef(0);
   agentItemsCountRef.current = liveState.items.length;
@@ -373,8 +416,7 @@ export function AgentActivityPanel({
 
   // Focus compose bar when panel becomes selected and is ready
   useEffect(() => {
-    if (liveState.isInitializing || pendingPermission || pendingElicitation)
-      return;
+    if (liveState.isInitializing || pendingPermission || pendingElicitation) return;
     if (!isSelected) return;
     const timer = setTimeout(() => composeBarRef.current?.focus(), 0);
     return () => clearTimeout(timer);
@@ -384,13 +426,7 @@ export function AgentActivityPanel({
   useEffect(() => {
     if (!isSelected || liveState.sessionEnded) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (
-        !focused ||
-        liveState.isInitializing ||
-        pendingPermission ||
-        pendingElicitation
-      )
-        return;
+      if (!focused || liveState.isInitializing || pendingPermission || pendingElicitation) return;
       requestAnimationFrame(() => composeBarRef.current?.focus());
     });
     return () => {
@@ -403,7 +439,6 @@ export function AgentActivityPanel({
     pendingPermission,
     pendingElicitation,
   ]);
-
 
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
@@ -485,7 +520,10 @@ export function AgentActivityPanel({
         />
       );
     } else if (pendingPermission) {
-      if (isPlanPermission(pendingPermission.payload) && extractBodyText(pendingPermission.payload) !== null) {
+      if (
+        isPlanPermission(pendingPermission.payload) &&
+        extractBodyText(pendingPermission.payload) !== null
+      ) {
         planOverlay = (
           <PermissionPrompt
             requestId={pendingPermission.requestId}
@@ -587,10 +625,11 @@ export function AgentActivityPanel({
                 })();
 
                 const children = items.map((gi, index) => {
-                  const hasSubsequentMessage = items
-                    .slice(index + 1)
-                    .some((later) => later.type === "solo" && later.item.type === "message")
-                    || nextSectionStartsWithMessage;
+                  const hasSubsequentMessage =
+                    items
+                      .slice(index + 1)
+                      .some((later) => later.type === "solo" && later.item.type === "message") ||
+                    nextSectionStartsWithMessage;
 
                   if (gi.type === "toolGroup") {
                     if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {
@@ -629,7 +668,10 @@ export function AgentActivityPanel({
                     const groupKey = `tg-${gi.items[0].toolCallId}`;
                     return (
                       <div key={groupKey} className="space-y-3">
-                        <ActivityToolCallGroup items={gi.items} hasSubsequentMessage={hasSubsequentMessage} />
+                        <ActivityToolCallGroup
+                          items={gi.items}
+                          hasSubsequentMessage={hasSubsequentMessage}
+                        />
                         {groupDone && uniqueWorkingFiles.length > 0 && (
                           <ActivityFileCard
                             variant="working-files"
@@ -652,7 +694,13 @@ export function AgentActivityPanel({
                   if (item.type === "message") {
                     return <ActivityMessageItem key={item.item.id} message={item.item} />;
                   } else if (item.type === "thinking") {
-                    return <ActivityThinkingBlock key={item.item.id} thinking={item.item} hasSubsequentMessage={hasSubsequentMessage} />;
+                    return (
+                      <ActivityThinkingBlock
+                        key={item.item.id}
+                        thinking={item.item}
+                        hasSubsequentMessage={hasSubsequentMessage}
+                      />
+                    );
                   } else if (item.type === "permissionResponse") {
                     return <PermissionResponseCard key={item.item.id} item={item.item} />;
                   } else if (item.type === "elicitationSummary") {
@@ -688,9 +736,10 @@ export function AgentActivityPanel({
                   transition={{ type: "spring", stiffness: 350, damping: 28 }}
                   className="transition-[width] duration-150 ease-out"
                   style={{
-                    width: centeredTextWidth !== null
-                      ? `clamp(36rem, ${centeredTextWidth + 80}px, calc(100% - 4rem))`
-                      : "36rem",
+                    width:
+                      centeredTextWidth !== null
+                        ? `clamp(36rem, ${centeredTextWidth + 80}px, calc(100% - 4rem))`
+                        : "36rem",
                   }}
                 >
                   <ComposeBar

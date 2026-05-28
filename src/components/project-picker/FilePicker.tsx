@@ -154,9 +154,7 @@ export function FilePicker({
           </p>
         )}
         {wslConnection && (
-          <p className="text-sm text-muted-foreground">
-            WSL: {wslConnection.distro_name}
-          </p>
+          <p className="text-sm text-muted-foreground">WSL: {wslConnection.distro_name}</p>
         )}
       </div>
 

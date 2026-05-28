@@ -137,7 +137,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
 
   const rawText = useMemo(() => {
     const textBlocks = item.content
-      .filter((c): c is { type: "content"; content: { type: "text"; text: string } } => c.type === "content")
+      .filter(
+        (c): c is { type: "content"; content: { type: "text"; text: string } } =>
+          c.type === "content",
+      )
       .map((c) => c.content.text);
     if (prompt && textBlocks.length > 0 && textBlocks[0].trim() === prompt.trim()) {
       return textBlocks.slice(1).join("");
@@ -149,7 +152,8 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
     const ms = item.rawInput?.totalDurationMs;
     const tokens = item.rawInput?.totalTokens;
     const tools = item.rawInput?.totalToolUseCount;
-    if (typeof ms !== "number" || typeof tokens !== "number" || typeof tools !== "number") return null;
+    if (typeof ms !== "number" || typeof tokens !== "number" || typeof tools !== "number")
+      return null;
     return {
       duration: formatElapsed(Math.floor(ms / 1000)),
       tokens: humanizeTokenCount(tokens),
@@ -251,7 +255,9 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             <div className="border-b border-border/40">
               <button
                 type="button"
-                onClick={() => { if (toolCallVisibility !== "show") setToolCallsOpen((v) => !v); }}
+                onClick={() => {
+                  if (toolCallVisibility !== "show") setToolCallsOpen((v) => !v);
+                }}
                 className="flex items-center gap-1.5 w-full px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-accent/55 bg-accent/[0.06] hover:text-accent hover:bg-accent/[0.09] transition-colors text-left"
               >
                 <ChevronRight

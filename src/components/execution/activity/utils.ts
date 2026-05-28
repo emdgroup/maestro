@@ -78,7 +78,6 @@ export function isSubagentToolCall(tc: ToolCallItem): boolean {
   return typeof tc.rawInput?.prompt === "string";
 }
 
-
 export function subagentName(tc: ToolCallItem): string {
   const desc = tc.rawInput?.description;
   if (typeof desc === "string" && desc.trim()) return desc.trim();

@@ -99,11 +99,13 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
 
   const allDone = items.every((i) => i.status === "completed" || i.status === "error");
   const isSingleItem = items.length === 1;
-  const singleItemHasContent = isSingleItem && (() => {
-    const tc = items[0];
-    const isReadFile = tc.kind === "read_file" || tc.kind === "read";
-    return !isReadFile && tc.content.length > 0;
-  })();
+  const singleItemHasContent =
+    isSingleItem &&
+    (() => {
+      const tc = items[0];
+      const isReadFile = tc.kind === "read_file" || tc.kind === "read";
+      return !isReadFile && tc.content.length > 0;
+    })();
   const userToggled = useRef(false);
 
   const [manualOpen, setManualOpen] = useState(() => {
@@ -171,7 +173,9 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
     >
       <button
         type="button"
-        onClick={() => { if (!isSingleItem || singleItemHasContent) setGroupOpen(!groupOpen); }}
+        onClick={() => {
+          if (!isSingleItem || singleItemHasContent) setGroupOpen(!groupOpen);
+        }}
         className={`flex items-center gap-2 w-full px-3 py-2 bg-card transition-colors text-left ${isSingleItem && !singleItemHasContent ? "cursor-default" : "hover:bg-muted/50"}`}
       >
         <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
@@ -193,17 +197,16 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
           {status === "in_progress" && <Loader2 className="w-3 h-3 animate-spin" />}
           {statusText}
         </span>
-        {(!isSingleItem || singleItemHasContent) && (
-          groupOpen ? (
+        {(!isSingleItem || singleItemHasContent) &&
+          (groupOpen ? (
             <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
           ) : (
             <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />
-          )
-        )}
+          ))}
       </button>
 
-      {groupOpen && (
-        isSingleItem ? (
+      {groupOpen &&
+        (isSingleItem ? (
           <ContentErrorBoundary>
             <div className="border-t border-border px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5">
               {items[0].content.map((c, i) => (
@@ -264,8 +267,7 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
               );
             })}
           </div>
-        )
-      )}
+        ))}
     </div>
   );
 }

@@ -528,7 +528,13 @@ function MarkdownAnchorComponent({ href, children }: { href?: string; children?:
 
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
 // so the forward reference is safe — MARKDOWN_COMPONENTS is initialized before any rendering.
-export const MarkdownBlock = memo(function MarkdownBlock({ text, breaks }: { text: string; breaks?: boolean }) {
+export const MarkdownBlock = memo(function MarkdownBlock({
+  text,
+  breaks,
+}: {
+  text: string;
+  breaks?: boolean;
+}) {
   return (
     <Markdown
       remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}

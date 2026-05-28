@@ -36,7 +36,10 @@ function applyAccentHue(hue: number): void {
   const isDark = document.documentElement.classList.contains("dark");
   const lightness = isDark ? 0.75 : 0.5;
   const chroma = 0.15;
-  document.documentElement.style.setProperty("--accent", `oklch(${lightness * 100}% ${chroma} ${hue})`);
+  document.documentElement.style.setProperty(
+    "--accent",
+    `oklch(${lightness * 100}% ${chroma} ${hue})`,
+  );
   document.documentElement.style.setProperty(
     "--accent-foreground",
     isDark ? "oklch(25% 0.01 250)" : "oklch(100% 0 0)",

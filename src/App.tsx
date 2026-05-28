@@ -15,10 +15,7 @@ import {
   useNavigationActions,
   type ViewType,
 } from "@/store/navigationStore";
-import {
-  PAGE_TRANSITION_DURATION,
-  PAGE_TRANSITION_EASING,
-} from "@/utils/constants/animations";
+import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { cn } from "@/lib/ui-utils";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
@@ -63,21 +60,24 @@ function App() {
   const settingsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
 
-  const viewControls = useMemo(() => ({
-    kanban: kanbanControls,
-    agents: agentsControls,
-    worktrees: worktreesControls,
-    settings: settingsControls,
-  } satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>), []);
+  const viewControls = useMemo(
+    () =>
+      ({
+        kanban: kanbanControls,
+        agents: agentsControls,
+        worktrees: worktreesControls,
+        settings: settingsControls,
+      }) satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>,
+    [kanbanControls, agentsControls, worktreesControls, settingsControls],
+  );
 
   // Zombie worktree cleanup on project open (REQ-36)
   const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
 
   // D-19 cascade check: verify issue tracking integration is still connected after project opens
   const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
-  const { data: issueTrackingConfig, isLoading: issueTrackingLoading } = useProjectIssueTrackingConfig(
-    currentProject?.id ?? 0,
-  );
+  const { data: issueTrackingConfig, isLoading: issueTrackingLoading } =
+    useProjectIssueTrackingConfig(currentProject?.id ?? 0);
 
   // Running agent count for header badge
   const { data: sessions = [] } = useActiveSessionsQuery();
@@ -103,17 +103,19 @@ function App() {
     if (prevTab === activeTab) return;
 
     const exitingTab = prevTab;
-    viewControls[exitingTab].start({
-      x: `${-100 * slideDirection}%`,
-      opacity: 0,
-      transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
-    }).then(() => {
-      // Reset x to 0 so stale percentage pixels don't affect layout on window resize.
-      // Guard: only reset if this tab is still inactive.
-      if (prevTabRef.current !== exitingTab) {
-        viewControls[exitingTab].set({ x: 0, opacity: 0 });
-      }
-    });
+    viewControls[exitingTab]
+      .start({
+        x: `${-100 * slideDirection}%`,
+        opacity: 0,
+        transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
+      })
+      .then(() => {
+        // Reset x to 0 so stale percentage pixels don't affect layout on window resize.
+        // Guard: only reset if this tab is still inactive.
+        if (prevTabRef.current !== exitingTab) {
+          viewControls[exitingTab].set({ x: 0, opacity: 0 });
+        }
+      });
 
     viewControls[activeTab].set({ x: `${100 * slideDirection}%`, opacity: 0 });
     viewControls[activeTab].start({
@@ -121,7 +123,7 @@ function App() {
       opacity: 1,
       transition: { duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING },
     });
-  }, [activeTab, slideDirection]);
+  }, [activeTab, slideDirection, viewControls]);
 
   useEffect(() => {
     if (currentProject) {
@@ -141,7 +143,13 @@ function App() {
     }
     const integration = integrations?.find((i) => i.provider === issueTrackingConfig.provider);
     setShowMissingDialog(!integration || !integration.connected);
-  }, [currentProject, integrations, issueTrackingConfig, integrationsLoading, issueTrackingLoading]);
+  }, [
+    currentProject,
+    integrations,
+    issueTrackingConfig,
+    integrationsLoading,
+    issueTrackingLoading,
+  ]);
 
   if (settingsLoading) {
     return (
@@ -252,7 +260,6 @@ function App() {
             </Suspense>
           </div>
         </motion.div>
-
       </main>
 
       {/* D-19 cascade check: block project access when issue tracking integration is missing */}

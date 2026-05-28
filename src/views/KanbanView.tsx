@@ -40,13 +40,12 @@ export const KanbanView: React.FC = () => {
     [taskList],
   );
 
-  const filteredTasks = taskList.filter(t => {
-    const matchesQuery =
-      query === "" || t.title.toLowerCase().includes(query.toLowerCase());
+  const filteredTasks = taskList.filter((t) => {
+    const matchesQuery = query === "" || t.title.toLowerCase().includes(query.toLowerCase());
     const matchesPriority =
       selectedPriorities.length === 0 || selectedPriorities.includes(t.priority);
     const matchesLabel =
-      selectedLabels.length === 0 || selectedLabels.some(l => t.labels.includes(l));
+      selectedLabels.length === 0 || selectedLabels.some((l) => t.labels.includes(l));
     return matchesQuery && matchesPriority && matchesLabel;
   });
 
@@ -62,7 +61,7 @@ export const KanbanView: React.FC = () => {
           placeholder="Search tasks..."
           className="h-8 w-48"
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
         />
 
         {/* Priority filter */}
@@ -76,13 +75,13 @@ export const KanbanView: React.FC = () => {
           </PopoverTrigger>
           <PopoverContent className="w-48 p-2" align="start">
             <div className="flex flex-col gap-1">
-              {PRIORITIES.map(p => (
+              {PRIORITIES.map((p) => (
                 <label key={p} className="flex items-center gap-2 cursor-pointer py-0.5">
                   <Checkbox
                     checked={selectedPriorities.includes(p)}
-                    onCheckedChange={checked => {
-                      setSelectedPriorities(prev =>
-                        checked ? [...prev, p] : prev.filter(x => x !== p),
+                    onCheckedChange={(checked) => {
+                      setSelectedPriorities((prev) =>
+                        checked ? [...prev, p] : prev.filter((x) => x !== p),
                       );
                     }}
                   />
@@ -115,13 +114,13 @@ export const KanbanView: React.FC = () => {
               {availableLabels.length === 0 && (
                 <span className="text-xs text-muted-foreground">No labels</span>
               )}
-              {availableLabels.map(label => (
+              {availableLabels.map((label) => (
                 <label key={label} className="flex items-center gap-2 cursor-pointer py-0.5">
                   <Checkbox
                     checked={selectedLabels.includes(label)}
-                    onCheckedChange={checked => {
-                      setSelectedLabels(prev =>
-                        checked ? [...prev, label] : prev.filter(x => x !== label),
+                    onCheckedChange={(checked) => {
+                      setSelectedLabels((prev) =>
+                        checked ? [...prev, label] : prev.filter((x) => x !== label),
                       );
                     }}
                   />

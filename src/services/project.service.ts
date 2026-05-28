@@ -90,8 +90,15 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ path, connectionId, wslConnectionId }: { path: string; connectionId: number | null; wslConnectionId?: number | null }) =>
-      api.createProject(path, connectionId, wslConnectionId ?? null),
+    mutationFn: ({
+      path,
+      connectionId,
+      wslConnectionId,
+    }: {
+      path: string;
+      connectionId: number | null;
+      wslConnectionId?: number | null;
+    }) => api.createProject(path, connectionId, wslConnectionId ?? null),
     onSuccess: (_data, { connectionId, wslConnectionId }) => {
       const key = wslConnectionId
         ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
@@ -208,4 +215,3 @@ export function useCreateNewProject() {
     },
   });
 }
-

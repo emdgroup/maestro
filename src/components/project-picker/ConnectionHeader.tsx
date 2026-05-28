@@ -158,7 +158,8 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
                         <span className="font-mono">{t.tool}</span> not found
                         {t.required_by.length > 0 && (
                           <span className="text-muted-foreground">
-                            {" "}— agents using this tool will be unavailable
+                            {" "}
+                            — agents using this tool will be unavailable
                           </span>
                         )}
                       </span>

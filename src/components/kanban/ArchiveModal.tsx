@@ -48,12 +48,14 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
   }, [isOpen]);
 
   const archiveTasks = useMemo<Task[]>(() => {
-    return (tasks ?? [])
-      // Include archived tasks and Cancelled tasks (cancel_task always sets archived_at, but guard by status too)
-      .filter((t) => t.archived_at != null || t.status === "Cancelled")
-      .filter((t) => filter === "all" || t.status === filter)
-      .filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    return (
+      (tasks ?? [])
+        // Include archived tasks and Cancelled tasks (cancel_task always sets archived_at, but guard by status too)
+        .filter((t) => t.archived_at != null || t.status === "Cancelled")
+        .filter((t) => filter === "all" || t.status === filter)
+        .filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    );
   }, [tasks, filter, search]);
 
   function handleTaskClick(task: Task) {
@@ -62,7 +64,12 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-2xl flex flex-col max-h-[80vh]">
         <DialogTitle>Archive</DialogTitle>
         <DialogDescription className="sr-only">

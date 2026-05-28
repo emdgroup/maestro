@@ -1,26 +1,26 @@
 import { useState } from "react";
-import { X, CircleDot } from "lucide-react";
-import { siGithub, siGitlab, siForgejo, siLinear, siJira, siGitea, siBitbucket, siGit } from "simple-icons";
+import { X, CircleDot, GitBranch } from "lucide-react";
 import { Button } from "@/ui/button";
-import { useListIntegrations, useDeleteIntegration, PROVIDER_NAMES, PROVIDER_CAPABILITIES } from "@/services/integration.service";
+import {
+  useListIntegrations,
+  useDeleteIntegration,
+  PROVIDER_NAMES,
+  PROVIDER_CAPABILITIES,
+} from "@/services/integration.service";
 import { IntegrationConnectDialog } from "@/components/project-picker/IntegrationConnectDialog";
+import { BrandIcon } from "@/components/common/BrandIcon";
 
 // Ordered as: row 1: Jira Cloud, Bitbucket | row 2: GitHub, GitLab | row 3: Gitea, Forgejo | row 4: Azure DevOps, Linear
-const ALL_PROVIDERS = ["jira_cloud", "bitbucket", "github", "gitlab", "gitea", "forgejo", "azuredevops", "linear"];
-
-const PROVIDER_SIMPLE_ICONS: Record<string, { path: string; viewBox?: string }> = {
-  github: siGithub,
-  gitlab: siGitlab,
-  forgejo: siForgejo,
-  gitea: siGitea,
-  linear: siLinear,
-  jira_cloud: siJira,
-  bitbucket: siBitbucket,
-  azuredevops: {
-    path: "M17,4v9.74l-4,3.28-6.2-2.26V17L3.29,12.41l10.23.8V4.44Zm-3.41.49L7.85,1V3.29L2.58,4.84,1,6.87v4.61l2.26,1V6.57Z",
-    viewBox: "0 0 18 18",
-  },
-};
+const ALL_PROVIDERS = [
+  "jira_cloud",
+  "bitbucket",
+  "github",
+  "gitlab",
+  "gitea",
+  "forgejo",
+  "azuredevops",
+  "linear",
+];
 
 function CapabilityTag({ capability }: { capability: string }) {
   return (
@@ -28,15 +28,7 @@ function CapabilityTag({ capability }: { capability: string }) {
       {capability === "issues" ? (
         <CircleDot className="w-2.5 h-2.5" />
       ) : (
-        <svg
-          role="img"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-2.5 h-2.5"
-          fill="currentColor"
-        >
-          <path d={siGit.path} />
-        </svg>
+        <GitBranch className="w-2.5 h-2.5" />
       )}
       {capability}
     </span>
@@ -44,20 +36,7 @@ function CapabilityTag({ capability }: { capability: string }) {
 }
 
 export function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
-  const icon = PROVIDER_SIMPLE_ICONS[provider];
-  if (!icon) return null;
-  return (
-    <svg
-      role="img"
-      viewBox={icon.viewBox ?? "0 0 24 24"}
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      fill="currentColor"
-      aria-label={PROVIDER_NAMES[provider]}
-    >
-      <path d={icon.path} />
-    </svg>
-  );
+  return <BrandIcon slug={provider} className={className} width={28} height={28} />;
 }
 
 export function IntegrationsTab() {
@@ -90,7 +69,7 @@ export function IntegrationsTab() {
                   onClick={!connected ? () => setConnectProvider(provider) : undefined}
                 >
                   <div className="relative shrink-0">
-                    <ProviderIcon provider={provider} className="w-7 h-7 text-muted-foreground" />
+                    <ProviderIcon provider={provider} className="w-7 h-7" />
                     <span
                       className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-background ${
                         connected ? "bg-emerald-500" : "bg-muted-foreground/40"
@@ -127,8 +106,13 @@ export function IntegrationsTab() {
                       size="icon"
                       className="shrink-0 h-6 w-6"
                       disabled={isGhCli}
-                      title={isGhCli ? "Managed by gh CLI" : `Disconnect ${PROVIDER_NAMES[provider]}`}
-                      onClick={(e) => { e.stopPropagation(); deleteIntegration(provider); }}
+                      title={
+                        isGhCli ? "Managed by gh CLI" : `Disconnect ${PROVIDER_NAMES[provider]}`
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteIntegration(provider);
+                      }}
                     >
                       <X className="w-3 h-3" />
                     </Button>

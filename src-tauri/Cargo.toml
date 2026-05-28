@@ -19,7 +19,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-octocrab = { version = "0.51", default-features = false, features = ["default-client", "rustls", "jwt-rust-crypto"] }
+octocrab = { version = "0.51", default-features = false, features = [
+  "default-client",
+  "rustls",
+  "jwt-rust-crypto",
+] }
 graphql_client = { version = "0.16", default-features = false }
 jc-adf = "0.2"
 htmd = "0.5.4"
@@ -36,7 +40,11 @@ rand = { version = "0.8", features = ["getrandom"] }
 portable-pty = "0.9.0"
 russh = { version = "0.60.0", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.1"
-keyring = { version = "3.6.3", features = ["windows-native", "apple-native", "linux-native-sync-persistent"] }
+keyring = { version = "3.6.3", features = [
+  "windows-native",
+  "apple-native",
+  "linux-native-sync-persistent",
+] }
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
 zeroize = { version = "1.8", features = ["derive"] }
 specta = { version = "2.0.0-rc.20", features = ["serde_json"] }

@@ -12,9 +12,7 @@ import { UntrackedFileDiffViewer } from "@/components/execution/UntrackedFileDif
 import { api } from "@/lib/tauri-utils";
 import type { DiffFileWithName } from "@/types/review";
 
-type DisplayItem =
-  | { kind: "diff"; file: DiffFileWithName }
-  | { kind: "untracked"; path: string };
+type DisplayItem = { kind: "diff"; file: DiffFileWithName } | { kind: "untracked"; path: string };
 
 interface ReviewChangesPanelProps {
   sessionKey: number;
@@ -22,7 +20,11 @@ interface ReviewChangesPanelProps {
   onClose: () => void;
 }
 
-export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }: ReviewChangesPanelProps) {
+export function ReviewChangesPanel({
+  sessionKey,
+  sessionChangedFiles,
+  onClose,
+}: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [search, setSearch] = useState("");
@@ -34,25 +36,29 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
   const [metaError, setMetaError] = useState(false);
 
   useEffect(() => {
-    api.getAcpSessionMeta(sessionKey).then((meta) => {
-      setProjectId(meta.project_id ?? null);
-      setCwd(meta.cwd);
-      setStartSha(meta.session_start_sha ?? null);
-    }).catch(() => {
-      setMetaError(true);
-    });
+    api
+      .getAcpSessionMeta(sessionKey)
+      .then((meta) => {
+        setProjectId(meta.project_id ?? null);
+        setCwd(meta.cwd);
+        setStartSha(meta.session_start_sha ?? null);
+      })
+      .catch(() => {
+        setMetaError(true);
+      });
   }, [sessionKey]);
 
   const diffTarget = useMemo(
-    () => (startSha ? ({ type: "Commit", branch: startSha } as const) : ({ type: "Head" } as const)),
+    () =>
+      startSha ? ({ type: "Commit", branch: startSha } as const) : ({ type: "Head" } as const),
     [startSha],
   );
 
-  const { data: diffResult, isLoading: diffLoading, error: diffError } = useWorktreeDiffQuery(
-    projectId,
-    cwd,
-    diffTarget,
-  );
+  const {
+    data: diffResult,
+    isLoading: diffLoading,
+    error: diffError,
+  } = useWorktreeDiffQuery(projectId, cwd, diffTarget);
 
   // Normalize agent tool-call paths (may be absolute) to repo-relative for matching
   const changedRelativePaths = useMemo(() => {
@@ -228,10 +234,14 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
                       />
                       <span className="flex-1 text-xs truncate text-foreground/80">{basename}</span>
                       {stats.insertions > 0 && (
-                        <span className="text-[10px] text-success shrink-0">+{stats.insertions}</span>
+                        <span className="text-[10px] text-success shrink-0">
+                          +{stats.insertions}
+                        </span>
                       )}
                       {stats.deletions > 0 && (
-                        <span className="text-[10px] text-destructive shrink-0">-{stats.deletions}</span>
+                        <span className="text-[10px] text-destructive shrink-0">
+                          -{stats.deletions}
+                        </span>
                       )}
                     </button>
                   );
@@ -261,7 +271,9 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
           {/* Stats footer */}
           {totalFileCount > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground shrink-0">
-              <span>{totalFileCount} {totalFileCount === 1 ? "file" : "files"}</span>
+              <span>
+                {totalFileCount} {totalFileCount === 1 ? "file" : "files"}
+              </span>
               {totalStats.insertions > 0 && (
                 <span className="text-success">+{totalStats.insertions}</span>
               )}
@@ -280,10 +292,18 @@ export function ReviewChangesPanel({ sessionKey, sessionChangedFiles, onClose }:
             </div>
           ) : selectedItem?.kind === "diff" ? (
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-              <DiffViewer diffFile={selectedItem.file} loading={false} diffViewMode={diffViewMode} />
+              <DiffViewer
+                diffFile={selectedItem.file}
+                loading={false}
+                diffViewMode={diffViewMode}
+              />
             </div>
           ) : selectedItem?.kind === "untracked" ? (
-            <UntrackedFileDiffViewer projectId={projectId} worktreePath={cwd} filePath={selectedUntrackedPath} />
+            <UntrackedFileDiffViewer
+              projectId={projectId}
+              worktreePath={cwd}
+              filePath={selectedUntrackedPath}
+            />
           ) : (
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
               <DiffViewer

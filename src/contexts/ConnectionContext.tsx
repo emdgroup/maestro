@@ -45,38 +45,36 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
   const [preflightError, setPreflightError] = useState<string | null>(null);
 
-  const startPreflight = useCallback(async (connection: Connection) => {
-    if (preflightStatus === "checking") return;
+  const startPreflight = useCallback(
+    async (connection: Connection) => {
+      if (preflightStatus === "checking") return;
 
-    const connectionId =
-      connection.type === "ssh" && connection.sshConnection
-        ? connection.sshConnection.id
-        : null;
+      const connectionId =
+        connection.type === "ssh" && connection.sshConnection ? connection.sshConnection.id : null;
 
-    const wslConnectionId =
-      connection.type === "wsl" && connection.wslConnection
-        ? connection.wslConnection.id
-        : null;
+      const wslConnectionId =
+        connection.type === "wsl" && connection.wslConnection ? connection.wslConnection.id : null;
 
-    setPreflightStatus("checking");
-    setPreflightResult(null);
-    setPreflightError(null);
+      setPreflightStatus("checking");
+      setPreflightResult(null);
+      setPreflightError(null);
 
-    const response = await commands.preflightConnection(connectionId, wslConnectionId);
-    if (response.status === "error") {
-      setPreflightError(response.error as string);
-      setPreflightStatus("failed");
-      return;
-    }
+      const response = await commands.preflightConnection(connectionId, wslConnectionId);
+      if (response.status === "error") {
+        setPreflightError(response.error as string);
+        setPreflightStatus("failed");
+        return;
+      }
 
-    const result = response.data;
-    useConfigStore.getState().setPreflightToolChecks(connectionId, result.tool_checks);
-    setPreflightResult(result);
+      const result = response.data;
+      useConfigStore.getState().setPreflightToolChecks(connectionId, result.tool_checks);
+      setPreflightResult(result);
 
-    const hasIssues =
-      !result.maestro_server.ok || result.tool_checks.some((t) => !t.available);
-    setPreflightStatus(hasIssues ? "failed" : "passed");
-  }, [preflightStatus]);
+      const hasIssues = !result.maestro_server.ok || result.tool_checks.some((t) => !t.available);
+      setPreflightStatus(hasIssues ? "failed" : "passed");
+    },
+    [preflightStatus],
+  );
 
   const ignoreWarnings = useCallback(() => {
     setPreflightStatus("failed-ignored");

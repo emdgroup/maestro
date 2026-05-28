@@ -15,9 +15,17 @@ export type AcpSessionLifecycleResult = {
   setPendingPermission: React.Dispatch<
     React.SetStateAction<{ requestId: string; payload: Record<string, unknown> } | null>
   >;
-  pendingElicitation: { requestId: string; message: string; payload: Record<string, unknown> } | null;
+  pendingElicitation: {
+    requestId: string;
+    message: string;
+    payload: Record<string, unknown>;
+  } | null;
   setPendingElicitation: React.Dispatch<
-    React.SetStateAction<{ requestId: string; message: string; payload: Record<string, unknown> } | null>
+    React.SetStateAction<{
+      requestId: string;
+      message: string;
+      payload: Record<string, unknown>;
+    } | null>
   >;
 };
 
@@ -66,10 +74,15 @@ export function useAcpSessionLifecycle(
     });
     setAvailableCommands((prev) => {
       if (prev.length > 0) return prev;
-      return agentCache.available_commands.map((c) => ({ name: c.name, description: c.description }));
+      return agentCache.available_commands.map((c) => ({
+        name: c.name,
+        description: c.description,
+      }));
     });
     if (agentCache.prompt_capabilities) {
-      setPromptCapabilities((prev) => prev ?? (agentCache.prompt_capabilities as AcpPromptCapabilities));
+      setPromptCapabilities(
+        (prev) => prev ?? (agentCache.prompt_capabilities as AcpPromptCapabilities),
+      );
     }
   }, [agentCache]);
 
@@ -100,17 +113,18 @@ export function useAcpSessionLifecycle(
   }, [sessionKey, setActivityStatus]);
 
   useEffect(() => {
-    const unlisten = listen<{ request_id: string; message: string; payload: Record<string, unknown> }>(
-      `acp://elicitation-request/${sessionKey}`,
-      (event) => {
-        setPendingElicitation({
-          requestId: event.payload.request_id,
-          message: event.payload.message,
-          payload: event.payload.payload,
-        });
-        setActivityStatus(sessionKey, "awaiting_input");
-      },
-    );
+    const unlisten = listen<{
+      request_id: string;
+      message: string;
+      payload: Record<string, unknown>;
+    }>(`acp://elicitation-request/${sessionKey}`, (event) => {
+      setPendingElicitation({
+        requestId: event.payload.request_id,
+        message: event.payload.message,
+        payload: event.payload.payload,
+      });
+      setActivityStatus(sessionKey, "awaiting_input");
+    });
     return () => {
       unlisten.then((fn) => fn());
     };
@@ -127,7 +141,10 @@ export function useAcpSessionLifecycle(
           if (!cancelled) setPromptCapabilities(event.payload);
         },
       );
-      if (cancelled) { unlistenFn(); return; }
+      if (cancelled) {
+        unlistenFn();
+        return;
+      }
       unlisten = unlistenFn;
     })();
 
@@ -164,7 +181,10 @@ export function useAcpSessionLifecycle(
         });
         setConfigValues((prev) => ({ ...prev, model: current_model_id }));
       });
-      if (cancelled) { unlistenFn(); return; }
+      if (cancelled) {
+        unlistenFn();
+        return;
+      }
       unlisten = unlistenFn;
     })();
 
@@ -211,7 +231,10 @@ export function useAcpSessionLifecycle(
         });
         setConfigValues((prev) => ({ ...prev, mode: current_mode_id }));
       });
-      if (cancelled) { unlistenFn(); return; }
+      if (cancelled) {
+        unlistenFn();
+        return;
+      }
       unlisten = unlistenFn;
     })();
 

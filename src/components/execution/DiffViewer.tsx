@@ -38,9 +38,7 @@ function HunkCheckboxOverlay({
     if (!wrapper) return;
 
     const syncCells = () => {
-      const cells = Array.from(
-        wrapper.querySelectorAll<HTMLElement>("td.diff-line-hunk-action"),
-      );
+      const cells = Array.from(wrapper.querySelectorAll<HTMLElement>("td.diff-line-hunk-action"));
       setHunkCells(cells);
     };
 
@@ -132,7 +130,10 @@ export function DiffViewer({
 
   return (
     <div className="min-h-0 flex flex-col h-full">
-      <div ref={wrapperRef} className={cn("flex-1 min-h-0", onHunkToggle && "hunk-selection-active")}>
+      <div
+        ref={wrapperRef}
+        className={cn("flex-1 min-h-0", onHunkToggle && "hunk-selection-active")}
+      >
         <DiffView
           data={diffFile}
           diffViewMode={diffViewMode ?? DiffModeEnum.Unified}

@@ -3,8 +3,6 @@ import type { UserMessageItem } from "./types";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { Paperclip } from "lucide-react";
 
-
-
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -65,7 +63,12 @@ export function parseUserContent(raw: string): ParsedUserContent {
         blocks.push({ type: "attachment", name: block.name });
       } else if (block.type === "image" && typeof block.data === "string") {
         const name = (block.uri as string | undefined)?.split("/").pop() ?? "image";
-        blocks.push({ type: "image", data: block.data, mimeType: (block.mimeType as string) ?? "image/png", name });
+        blocks.push({
+          type: "image",
+          data: block.data,
+          mimeType: (block.mimeType as string) ?? "image/png",
+          name,
+        });
       }
     }
     return { text: textParts.join(""), attachments, blocks };
@@ -77,8 +80,12 @@ export function parseUserContent(raw: string): ParsedUserContent {
 export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
   const parsed = parseUserContent(message.content);
   const hasAttachments = parsed.blocks.some((b) => b.type === "attachment");
-  const imageBlocks = parsed.blocks.filter((b): b is Extract<ParsedContentBlock, { type: "image" }> => b.type === "image");
-  const attachmentBlocks = parsed.blocks.filter((b): b is Extract<ParsedContentBlock, { type: "attachment" }> => b.type === "attachment");
+  const imageBlocks = parsed.blocks.filter(
+    (b): b is Extract<ParsedContentBlock, { type: "image" }> => b.type === "image",
+  );
+  const attachmentBlocks = parsed.blocks.filter(
+    (b): b is Extract<ParsedContentBlock, { type: "attachment" }> => b.type === "attachment",
+  );
   const hasExtras = imageBlocks.length > 0 || attachmentBlocks.length > 0;
 
   return (
@@ -92,7 +99,10 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
         <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
           <div className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words">
             {hasAttachments ? (
-              <MarkdownBlock text={preprocessUserMarkdown(buildTextMarkdown(parsed.blocks))} breaks />
+              <MarkdownBlock
+                text={preprocessUserMarkdown(buildTextMarkdown(parsed.blocks))}
+                breaks
+              />
             ) : (
               <MarkdownBlock text={preprocessUserMarkdown(parsed.text)} breaks />
             )}

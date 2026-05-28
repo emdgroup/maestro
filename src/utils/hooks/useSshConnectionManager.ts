@@ -141,7 +141,10 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     } else if (connection.type === "wsl") {
       setLoading(true);
       try {
-        const saved = await saveWslConnection({ distroName: connection.displayName, displayName: null });
+        const saved = await saveWslConnection({
+          distroName: connection.displayName,
+          displayName: null,
+        });
         const wslConn: Connection = { ...connection, wslConnection: saved };
         onConnectionSuccess(wslConn);
       } finally {

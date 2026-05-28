@@ -27,7 +27,12 @@ interface AgentsViewProps {
   wslConnectionId?: number | null;
 }
 
-export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connectionId, wslConnectionId }) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({
+  projectId,
+  repoPath,
+  connectionId,
+  wslConnectionId,
+}) => {
   const { data: sessions = [] } = useActiveSessionsQuery();
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
@@ -150,7 +155,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             </Button>
           )}
           <Popover>
-            <PopoverTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="Display settings">
+            <PopoverTrigger
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Display settings"
+            >
               <Settings2 className="size-3.5" />
             </PopoverTrigger>
             <PopoverContent align="end" className="w-60 gap-3">
@@ -160,7 +168,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 <Select value={thinkingVisibility} onValueChange={handleThinkingVisibilityChange}>
                   <SelectTrigger size="sm" className="w-full">
                     <SelectValue>
-                      {({ auto: "Auto", show: "Show expanded", collapse: "Collapsed", hide: "Hidden" })[thinkingVisibility]}
+                      {
+                        {
+                          auto: "Auto",
+                          show: "Show expanded",
+                          collapse: "Collapsed",
+                          hide: "Hidden",
+                        }[thinkingVisibility]
+                      }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -176,7 +191,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 <Select value={toolCallVisibility} onValueChange={handleToolCallVisibilityChange}>
                   <SelectTrigger size="sm" className="w-full">
                     <SelectValue>
-                      {({ auto: "Auto", show: "Show expanded", collapse: "Collapsed", hide: "Hidden" })[toolCallVisibility]}
+                      {
+                        {
+                          auto: "Auto",
+                          show: "Show expanded",
+                          collapse: "Collapsed",
+                          hide: "Hidden",
+                        }[toolCallVisibility]
+                      }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>

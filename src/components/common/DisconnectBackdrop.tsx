@@ -24,7 +24,7 @@ export function DisconnectBackdrop({
   onLeaveConnection,
 }: DisconnectBackdropProps) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-background/90 backdrop-blur-sm">
       {state === "failed" ? (
         <AlertTriangle className="h-8 w-8 text-destructive" />
       ) : state === "lost" ? (

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { X, Pencil, Check } from "lucide-react";
+import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import {
@@ -71,13 +72,11 @@ export function SessionHistoryPanel({
   const [selectedWorktreePath, setSelectedWorktreePath] = useState<string>(repoPath);
   const [worktreeFilter, setWorktreeFilter] = useState("");
 
-  const { data: sessions = [], isLoading, isError } = useSessionListQuery(
-    selectedAgentId,
-    repoPath,
-    connectionId,
-    projectId,
-    wslConnectionId,
-  );
+  const {
+    data: sessions = [],
+    isLoading,
+    isError,
+  } = useSessionListQuery(selectedAgentId, repoPath, connectionId, projectId, wslConnectionId);
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
 
@@ -145,7 +144,17 @@ export function SessionHistoryPanel({
         setPendingRestore({ sessionId, title });
       }
     },
-    [selectedAgentId, worktrees, repoPath, connectionId, projectId, loadMutation, onSessionLoaded, onClose],
+    [
+      selectedAgentId,
+      worktrees,
+      repoPath,
+      connectionId,
+      wslConnectionId,
+      projectId,
+      loadMutation,
+      onSessionLoaded,
+      onClose,
+    ],
   );
 
   const commitRestore = useCallback(() => {
@@ -170,14 +179,23 @@ export function SessionHistoryPanel({
         },
       },
     );
-  }, [pendingRestore, selectedAgentId, selectedWorktreePath, worktrees, connectionId, projectId, loadMutation, onSessionLoaded, onClose]);
+  }, [
+    pendingRestore,
+    selectedAgentId,
+    selectedWorktreePath,
+    worktrees,
+    connectionId,
+    wslConnectionId,
+    projectId,
+    loadMutation,
+    onSessionLoaded,
+    onClose,
+  ]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sessions;
-    return sessions.filter(
-      (s) => (s.title ?? s.session_id).toLowerCase().includes(q),
-    );
+    return sessions.filter((s) => (s.title ?? s.session_id).toLowerCase().includes(q));
   }, [sessions, search]);
 
   const grouped = useMemo(() => {
@@ -194,8 +212,7 @@ export function SessionHistoryPanel({
     const q = worktreeFilter.trim().toLowerCase();
     if (!q) return worktrees;
     return worktrees.filter(
-      (wt) =>
-        wt.branch_name.toLowerCase().includes(q) || wt.path.toLowerCase().includes(q),
+      (wt) => wt.branch_name.toLowerCase().includes(q) || wt.path.toLowerCase().includes(q),
     );
   }, [worktrees, worktreeFilter]);
 
@@ -229,14 +246,18 @@ export function SessionHistoryPanel({
                     : "border-border text-muted-foreground hover:text-foreground hover:border-border/80",
                 )}
               >
-                {agent.icon && (
-                  <img
-                    src={agent.icon}
-                    className="w-3 h-3 rounded-sm shrink-0 dark:[filter:invert(1)]"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                    }}
-                  />
+                {hasBrandIcon(agent.id) ? (
+                  <BrandIcon slug={agent.id} className="w-3 h-3 shrink-0" />
+                ) : (
+                  agent.icon && (
+                    <img
+                      src={agent.icon}
+                      className="w-3 h-3 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  )
                 )}
                 {agent.name}
               </button>
@@ -404,7 +425,9 @@ export function SessionHistoryPanel({
                 );
               })}
               {filteredWorktrees.length === 0 && (
-                <div className="text-xs text-muted-foreground py-4 text-center">No worktrees match</div>
+                <div className="text-xs text-muted-foreground py-4 text-center">
+                  No worktrees match
+                </div>
               )}
             </div>
 

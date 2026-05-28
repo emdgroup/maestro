@@ -95,18 +95,29 @@ export function DiffFilePanel({
           diffLoading ? (
             <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
           ) : untrackedFiles.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-8 text-center">
-              No untracked files
-            </div>
+            <div className="text-xs text-muted-foreground py-8 text-center">No untracked files</div>
           ) : fileListMode === "tree" ? (
             <FileTree
-              files={untrackedFiles.map((p) => ({ fileName: p, hunks: [] as string[], status: "A" as const }))}
-              selectedFile={selectedFileIndex !== null ? (untrackedFiles[selectedFileIndex] ?? null) : null}
+              files={untrackedFiles.map((p) => ({
+                fileName: p,
+                hunks: [] as string[],
+                status: "A" as const,
+              }))}
+              selectedFile={
+                selectedFileIndex !== null ? (untrackedFiles[selectedFileIndex] ?? null) : null
+              }
               onSelectFile={(fileName) => {
                 const idx = untrackedFiles.indexOf(fileName);
                 if (idx >= 0) onFileIndexChange(idx);
               }}
-              checkedFiles={new Map(untrackedFiles.map((p) => [p, stagedFiles.has(p) ? "checked" as const : "unchecked" as const]))}
+              checkedFiles={
+                new Map(
+                  untrackedFiles.map((p) => [
+                    p,
+                    stagedFiles.has(p) ? ("checked" as const) : ("unchecked" as const),
+                  ]),
+                )
+              }
               onToggleFile={onToggleUntrackedFile}
               onToggleFolder={(fileNames) => {
                 const allChecked = fileNames.every((f) => stagedFiles.has(f));
@@ -211,9 +222,7 @@ export function DiffFilePanel({
                     </CheckboxPrimitive.Indicator>
                   </CheckboxPrimitive.Root>
                   <span className={cn("text-xs font-medium shrink-0", statusColor)}>{status}</span>
-                  <span className="text-xs font-mono truncate flex-1 min-w-0">
-                    {basename}
-                  </span>
+                  <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
                 </div>
               </div>
             );
@@ -225,12 +234,7 @@ export function DiffFilePanel({
       {viewMode === "untracked"
         ? stagedFiles.size > 0 && (
             <div className="border-t border-border p-2 shrink-0">
-              <Button
-                size="sm"
-                className="w-full"
-                disabled={isStaging}
-                onClick={onStageUntracked}
-              >
+              <Button size="sm" className="w-full" disabled={isStaging} onClick={onStageUntracked}>
                 {isStaging ? "Staging..." : "Stage Selected"}
               </Button>
             </div>

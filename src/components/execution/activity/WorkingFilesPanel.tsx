@@ -14,7 +14,6 @@ interface WorkingFilesPanelProps {
 
 type FileViewType = "markdown" | "svg" | "mermaid" | "code" | "html" | "plain" | "image";
 
-
 function getFileViewType(path: string): FileViewType {
   const dot = path.lastIndexOf(".");
   const ext = dot !== -1 ? path.slice(dot).toLowerCase() : "";
@@ -27,7 +26,6 @@ function getFileViewType(path: string): FileViewType {
   if (langForExtension(path) !== undefined) return "code";
   return "plain";
 }
-
 
 const IFRAME_SCROLLBAR_CSS = `<style>
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -44,7 +42,15 @@ function injectIframeScrollbarCSS(html: string): string {
   return IFRAME_SCROLLBAR_CSS + html;
 }
 
-function FileContentView({ content, viewType, path }: { content: string; viewType: FileViewType; path: string }) {
+function FileContentView({
+  content,
+  viewType,
+  path,
+}: {
+  content: string;
+  viewType: FileViewType;
+  path: string;
+}) {
   const lang = langForExtension(path) ?? "text";
 
   // blob: URLs have their own opaque origin — not subject to parent CSP, so inline scripts execute
@@ -111,10 +117,15 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
   const [zoom, setZoom] = useState(100);
 
   useEffect(() => {
-    api.getAcpSessionMeta(sessionKey).then((meta) => setCwd(meta.cwd)).catch(console.error);
+    api
+      .getAcpSessionMeta(sessionKey)
+      .then((meta) => setCwd(meta.cwd))
+      .catch(console.error);
   }, [sessionKey]);
 
-  useEffect(() => { setZoom(100); }, [selectedFile]);
+  useEffect(() => {
+    setZoom(100);
+  }, [selectedFile]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -158,7 +169,9 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
   const absolutePath = selectedFile
     ? selectedFile.startsWith("/")
       ? selectedFile
-      : cwd ? `${cwd}/${selectedFile}` : null
+      : cwd
+        ? `${cwd}/${selectedFile}`
+        : null
     : null;
 
   const viewType = selectedFile ? getFileViewType(selectedFile) : null;
@@ -172,14 +185,16 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
     const loader = isBinary
       ? api.readSessionFileBinary(sessionKey, relativePath)
       : api.readSessionFile(sessionKey, relativePath);
-    loader.then((data) => {
-      setLoading(false);
-      setContent(data);
-    }).catch((err) => {
-      console.error(err);
-      setLoadError(String(err));
-      setLoading(false);
-    });
+    loader
+      .then((data) => {
+        setLoading(false);
+        setContent(data);
+      })
+      .catch((err) => {
+        console.error(err);
+        setLoadError(String(err));
+        setLoading(false);
+      });
   }, [relativePath, sessionKey, isBinary]);
 
   function copyPath() {
@@ -259,10 +274,12 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
 
         {/* Content viewer */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className={cn(
-            "flex-1 overflow-auto text-sm custom-scrollbar",
-            viewType === "html" ? "p-0" : "px-6 py-5",
-          )}>
+          <div
+            className={cn(
+              "flex-1 overflow-auto text-sm custom-scrollbar",
+              viewType === "html" ? "p-0" : "px-6 py-5",
+            )}
+          >
             {loading && (
               <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
             )}
@@ -278,7 +295,8 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
                   transform: zoom !== 100 ? `scale(${zoom / 100})` : undefined,
                   transformOrigin: "top left",
                   width: zoom !== 100 ? `${10000 / zoom}%` : undefined,
-                  height: viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
+                  height:
+                    viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
                 }}
               >
                 <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />

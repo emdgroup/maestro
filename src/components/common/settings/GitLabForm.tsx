@@ -38,7 +38,7 @@ export function GitLabForm({ fields, onFieldsChange }: Props) {
             ...fields,
             project_path: v ?? "",
             // Store numeric id in project_key — required by fetch_remote_issues
-            project_key: selected ? String(selected.id) : fields.project_key ?? "",
+            project_key: selected ? String(selected.id) : (fields.project_key ?? ""),
           });
         }}
         onInputValueChange={(v) => setSearch(v)}

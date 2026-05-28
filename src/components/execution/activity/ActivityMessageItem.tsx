@@ -17,7 +17,10 @@ interface ActivityMessageItemProps {
 
 export function TypingDots({ className }: { className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-[2px] align-middle${className ? ` ${className}` : ""}`} aria-label="typing">
+    <span
+      className={`inline-flex items-center gap-[2px] align-middle${className ? ` ${className}` : ""}`}
+      aria-label="typing"
+    >
       {[0, 1, 2].map((i) => (
         <span
           key={i}
@@ -65,7 +68,11 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
   const hasSvg = segments.some((s) => s.type === "svg");
 
   const renderedSegments = segments.map((seg, i) =>
-    seg.type === "svg" ? <SvgBlock key={i} code={seg.content} /> : <MarkdownBlock key={i} text={seg.content} />,
+    seg.type === "svg" ? (
+      <SvgBlock key={i} code={seg.content} />
+    ) : (
+      <MarkdownBlock key={i} text={seg.content} />
+    ),
   );
 
   return (
@@ -73,7 +80,13 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
       <div className="text-sm leading-relaxed text-foreground">
         {message.isStreaming && isActivelyStreaming ? (
           <>
-            {completedText ? (hasSvg ? renderedSegments : <MarkdownBlock text={completedText} />) : null}
+            {completedText ? (
+              hasSvg ? (
+                renderedSegments
+              ) : (
+                <MarkdownBlock text={completedText} />
+              )
+            ) : null}
             <TypingDots className="ml-1" />
           </>
         ) : hasSvg ? (

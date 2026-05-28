@@ -1,4 +1,5 @@
 import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -6,10 +7,7 @@ import { Button } from "@/ui/button";
 import { Bot, CircleDot } from "lucide-react";
 import { IssueTrackingProviderForm } from "@/components/common/settings/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
-import {
-  useAgentDiscoveryQuery,
-  useAgentCacheQuery,
-} from "@/services/execution.service";
+import { useAgentDiscoveryQuery, useAgentCacheQuery } from "@/services/execution.service";
 import {
   useListIntegrations,
   useProjectIssueTrackingConfig,
@@ -35,7 +33,6 @@ export interface SettingsPageHandle {
   resetToDefaults: () => void;
 }
 
-
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
   ({ projectId, connectionId, wslConnectionId }, ref) => {
     const { control, handleSubmit, watch, setValue, reset } = useForm<ProjectSettingsFormData>({
@@ -46,7 +43,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
-    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connectionId, wslConnectionId ?? null);
+    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(
+      connectionId,
+      wslConnectionId ?? null,
+    );
     const { data: agentCache, isLoading: cacheLoading } = useAgentCacheQuery(
       projectId,
       selectedAgent || null,
@@ -195,14 +195,19 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                           {agents.map((agent) => (
                             <SelectItem key={agent.id} value={agent.id}>
                               <div className="flex items-center gap-2">
-                                {agent.icon && (
-                                  <img
-                                    src={agent.icon}
-                                    className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    }}
-                                  />
+                                {hasBrandIcon(agent.id) ? (
+                                  <BrandIcon slug={agent.id} className="w-4 h-4 shrink-0" />
+                                ) : (
+                                  agent.icon && (
+                                    <img
+                                      src={agent.icon}
+                                      className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                                      onError={(e) => {
+                                        (e.currentTarget as HTMLImageElement).style.display =
+                                          "none";
+                                      }}
+                                    />
+                                  )
                                 )}
                                 {agent.name}
                               </div>
@@ -244,7 +249,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                             >
                               {field.value === ""
                                 ? "Agent default"
-                                : (availableModels.find((m) => m.value === field.value)?.name ?? field.value)}
+                                : (availableModels.find((m) => m.value === field.value)?.name ??
+                                  field.value)}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
@@ -327,7 +333,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         variant="outline"
                         size="sm"
                         onClick={async () => {
-                          await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: null });
+                          await saveIssueTrackingMutation.mutateAsync({
+                            projectId,
+                            issueTracking: null,
+                          });
                           setIssueTrackingConfigured(false);
                           setSelectedProvider(null);
                           setIssueTrackingFields({});
@@ -363,7 +372,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     {selectedProvider && (
                       <IssueTrackingProviderForm
                         provider={selectedProvider}
-                        integration={issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!}
+                        integration={
+                          issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!
+                        }
                         fields={issueTrackingFields}
                         onFieldsChange={setIssueTrackingFields}
                       />

@@ -37,8 +37,36 @@ interface ComposeBarProps {
   onContentChange?: (width: number | null) => void;
 }
 
-const CODE_EXTENSIONS = new Set(["ts", "tsx", "js", "jsx", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "cs", "swift", "kt"]);
-const TEXT_EXTENSIONS = new Set(["md", "txt", "toml", "yaml", "yml", "json", "html", "css", "sql", "sh", "graphql"]);
+const CODE_EXTENSIONS = new Set([
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "rs",
+  "py",
+  "go",
+  "rb",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "cs",
+  "swift",
+  "kt",
+]);
+const TEXT_EXTENSIONS = new Set([
+  "md",
+  "txt",
+  "toml",
+  "yaml",
+  "yml",
+  "json",
+  "html",
+  "css",
+  "sql",
+  "sh",
+  "graphql",
+]);
 
 function iconForFilePath(path: string, className: string) {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
@@ -51,7 +79,6 @@ function iconForFilePath(path: string, className: string) {
 export interface ComposeBarHandle {
   focus(): void;
 }
-
 
 export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function ComposeBar(
   {
@@ -234,7 +261,12 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
 
         setAttachments((prev) => [
           ...prev,
-          { id: `${Date.now()}-${Math.random()}`, displayName, localAbsPath: tempPath, isImage: true },
+          {
+            id: `${Date.now()}-${Math.random()}`,
+            displayName,
+            localAbsPath: tempPath,
+            isImage: true,
+          },
         ]);
       }
     },
@@ -362,7 +394,17 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     } finally {
       setIsSending(false);
     }
-  }, [value, mentions, attachments, isSending, logId, projectPath, embeddedContext, onSend, resetForm]);
+  }, [
+    value,
+    mentions,
+    attachments,
+    isSending,
+    logId,
+    projectPath,
+    embeddedContext,
+    onSend,
+    resetForm,
+  ]);
 
   const selectCommand = useCallback((cmd: AvailableCommand) => {
     const inserted = `/${cmd.name} `;
@@ -486,7 +528,6 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     const el = e.target;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-
   };
 
   const sendDisabled = isProcessing || isSending || !value.trim();
@@ -633,7 +674,13 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                     className="opacity-40 hover:opacity-100 transition-opacity"
                     onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
                   >
-                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg
+                      className="w-2.5 h-2.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
                       <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
                   </button>
@@ -695,7 +742,9 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
               onPaste={(e) => void handlePaste(e)}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              placeholder={logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"}
+              placeholder={
+                logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"
+              }
               rows={1}
               className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed custom-scrollbar"
             />

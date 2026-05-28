@@ -1,5 +1,13 @@
 const IMAGE_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp", ".ico", ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".tiff",
+  ".bmp",
+  ".ico",
+  ".svg",
 ]);
 
 const MIME_MAP: Record<string, string> = {

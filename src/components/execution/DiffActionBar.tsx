@@ -44,13 +44,15 @@ function getDialogContent(
   if (isDeleteMode) {
     return {
       title: "Delete files?",
-      description: "This will permanently delete the selected untracked files. This action cannot be undone.",
+      description:
+        "This will permanently delete the selected untracked files. This action cannot be undone.",
       actionLabel: "Delete",
     };
   }
   return {
     title: "Discard changes?",
-    description: "This will permanently discard the selected changes. This action cannot be undone.",
+    description:
+      "This will permanently discard the selected changes. This action cannot be undone.",
     actionLabel: "Discard",
   };
 }
@@ -252,10 +254,7 @@ export function DiffActionBar({
             size="sm"
             variant="outline"
             disabled={forceUnified}
-            className={cn(
-              "size-8 p-0",
-              forceUnified && "opacity-30 cursor-not-allowed",
-            )}
+            className={cn("size-8 p-0", forceUnified && "opacity-30 cursor-not-allowed")}
           >
             <Columns2 className="size-3.5" />
           </ToggleGroupItem>

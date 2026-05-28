@@ -6,13 +6,7 @@ import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Badge } from "@/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,13 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
@@ -47,10 +35,7 @@ import { useActiveSessionsQuery } from "@/services/execution.service";
 import { api } from "@/lib/tauri-utils";
 import { useSelectedProject } from "@/store/projectStore";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
-import {
-  PAGE_TRANSITION_DURATION,
-  PAGE_TRANSITION_EASING,
-} from "@/utils/constants/animations";
+import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 
 // ---------------------------------------------------------------------------
 // EditableField — seamless contenteditable with hover/focus ring
@@ -96,8 +81,7 @@ function EditableField({
       }}
       className={cn(
         "outline-none rounded px-1 min-h-[1.5em]",
-        isEditable &&
-          "hover:ring-1 hover:ring-border focus:ring-1 focus:ring-ring cursor-text",
+        isEditable && "hover:ring-1 hover:ring-border focus:ring-1 focus:ring-ring cursor-text",
         !isEditable && "cursor-default",
         "empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground",
         className,
@@ -363,11 +347,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsInterruptOpen(true)}
-                  >
+                  <Button variant="ghost" size="icon" onClick={() => setIsInterruptOpen(true)}>
                     <Pause className="size-4" />
                   </Button>
                 }
@@ -397,9 +377,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
           {/* Delete (status !== Done) — DeleteConfirmButton manages its own AlertDialog */}
           {task.status !== "Done" && (
             <Tooltip>
-              <TooltipTrigger
-                render={<span className="inline-flex items-center" />}
-              >
+              <TooltipTrigger render={<span className="inline-flex items-center" />}>
                 <DeleteConfirmButton
                   isPending={isPendingDeleteOrArchive}
                   onConfirm={() => {
@@ -575,9 +553,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                   ))}
                 </SelectContent>
               </Select>
-              {agentError && (
-                <p className="text-xs text-destructive mt-1">{agentError}</p>
-              )}
+              {agentError && <p className="text-xs text-destructive mt-1">{agentError}</p>}
             </div>
 
             {/* Priority */}
@@ -698,14 +674,10 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                     }
                     className="size-4 rounded border border-input"
                   />
-                  <span className="text-sm">
-                    {task.isolated_worktree ? "Isolated" : "Shared"}
-                  </span>
+                  <span className="text-sm">{task.isolated_worktree ? "Isolated" : "Shared"}</span>
                 </label>
               ) : (
-                <Badge variant="secondary">
-                  {task.isolated_worktree ? "Isolated" : "Shared"}
-                </Badge>
+                <Badge variant="secondary">{task.isolated_worktree ? "Isolated" : "Shared"}</Badge>
               )}
             </div>
           </div>

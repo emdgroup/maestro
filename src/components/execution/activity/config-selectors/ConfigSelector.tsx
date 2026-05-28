@@ -14,12 +14,18 @@ interface ConfigSelectorProps {
 export function ConfigSelector({ option, value, onChange, disabled }: ConfigSelectorProps) {
   switch (option.category) {
     case "model":
-      return <ModelSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
+      return (
+        <ModelSelector option={option} value={value} onChange={onChange} disabled={disabled} />
+      );
     case "mode":
       return <ModeSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
     case "effort":
-      return <EffortSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
+      return (
+        <EffortSelector option={option} value={value} onChange={onChange} disabled={disabled} />
+      );
     default:
-      return <GenericSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
+      return (
+        <GenericSelector option={option} value={value} onChange={onChange} disabled={disabled} />
+      );
   }
 }

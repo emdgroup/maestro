@@ -25,7 +25,8 @@ export function IntegrationMissingDialog({
   onFixIntegration,
   onDropConfig,
 }: IntegrationMissingDialogProps) {
-  const { mutateAsync: saveProjectIssueTrackingConfig, isPending } = useSaveProjectIssueTrackingConfig();
+  const { mutateAsync: saveProjectIssueTrackingConfig, isPending } =
+    useSaveProjectIssueTrackingConfig();
   const providerDisplayName = PROVIDER_NAMES[provider] ?? provider;
 
   async function handleDropConfig() {
@@ -42,8 +43,8 @@ export function IntegrationMissingDialog({
             <DialogTitle>Integration Unavailable</DialogTitle>
           </div>
           <DialogDescription>
-            This project uses {providerDisplayName} for issue tracking, but the integration is no longer
-            connected.
+            This project uses {providerDisplayName} for issue tracking, but the integration is no
+            longer connected.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

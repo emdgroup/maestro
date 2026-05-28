@@ -47,9 +47,7 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
             </span>
           ))}
           {task.labels.length > 3 && (
-            <span className="text-xs text-muted-foreground">
-              +{task.labels.length - 3}
-            </span>
+            <span className="text-xs text-muted-foreground">+{task.labels.length - 3}</span>
           )}
           {task.auto_approve && (
             <ShieldAlert className="h-3.5 w-3.5 text-amber-500 ml-auto shrink-0" />

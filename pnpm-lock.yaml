@@ -47,6 +47,9 @@ importers:
       '@tauri-apps/plugin-shell':
         specifier: ^2.3.5
         version: 2.3.5
+      '@thesvg/react':
+        specifier: ^3.0.10
+        version: 3.0.10(react@19.2.6)
       '@xterm/addon-attach':
         specifier: ^0.12.0
         version: 0.12.0
@@ -143,9 +146,6 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
-      simple-icons:
-        specifier: ^16.21.0
-        version: 16.21.0
       sonner:
         specifier: ^1.7.4
         version: 1.7.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1381,6 +1381,12 @@ packages:
     engines: {node: '>=12', npm: '>=6'}
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
+
+  '@thesvg/react@3.0.10':
+    resolution: {integrity: sha512-k/yVStPwcX18N0l65fnTCVEWkfyMWNX6Qx5mKmQ4zm+oVl3D934T43+dlvOMAPDUoKaDoH+2hFOM5Oc8mfpuMg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
 
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
@@ -2732,10 +2738,6 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
-  simple-icons@16.21.0:
-    resolution: {integrity: sha512-kH6LEx5yvBGVNaVrHnZ7D17G16CmmHiI8DD7MwIwgnWmDFTiFu4PhFZLNdV6bMGr61qbHMMTXLoo/T6C25dMGA==}
-    engines: {node: '>=0.12.18'}
-
   sirv@3.0.2:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
@@ -3909,6 +3911,10 @@ snapshots:
   '@testing-library/user-event@14.6.1(@testing-library/dom@10.4.1)':
     dependencies:
       '@testing-library/dom': 10.4.1
+
+  '@thesvg/react@3.0.10(react@19.2.6)':
+    dependencies:
+      react: 19.2.6
 
   '@tybys/wasm-util@0.10.2':
     dependencies:
@@ -5668,8 +5674,6 @@ snapshots:
   semver@6.3.1: {}
 
   siginfo@2.0.0: {}
-
-  simple-icons@16.21.0: {}
 
   sirv@3.0.2:
     dependencies:

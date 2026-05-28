@@ -41,7 +41,11 @@ export function ProjectList() {
   const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
   const { mutateAsync: gitInitProject } = useGitInitProject();
 
-  const handleProjectSelect = async (selectedPath: string, connectionId?: number, wslConnectionId?: number) => {
+  const handleProjectSelect = async (
+    selectedPath: string,
+    connectionId?: number,
+    wslConnectionId?: number,
+  ) => {
     setProjectLoading(true);
     try {
       if (!connectionId && !wslConnectionId) {
@@ -139,7 +143,8 @@ export function ProjectList() {
               <span className="text-sm text-muted-foreground">Warming up…</span>
             </div>
           )}
-          {!projectLoading && showProjects &&
+          {!projectLoading &&
+            showProjects &&
             (recentProjects.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No recent projects</p>
             ) : (

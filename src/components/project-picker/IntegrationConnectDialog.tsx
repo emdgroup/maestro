@@ -195,11 +195,16 @@ function ProviderInstructions({
           <ol className="space-y-1.5 text-xs text-muted-foreground list-decimal list-inside">
             {instructions.map((line, i) =>
               line.code ? (
-                <li key={i} className="font-mono text-foreground bg-muted rounded px-1.5 py-0.5 list-none ml-4">
+                <li
+                  key={i}
+                  className="font-mono text-foreground bg-muted rounded px-1.5 py-0.5 list-none ml-4"
+                >
                   {line.text}
                 </li>
               ) : (
-                <li key={i} className="leading-relaxed">{line.text}</li>
+                <li key={i} className="leading-relaxed">
+                  {line.text}
+                </li>
               ),
             )}
           </ol>
@@ -283,10 +288,14 @@ export function IntegrationConnectDialog({
         provider,
         token: token.trim(),
         instanceUrl: isBitbucket
-          ? bitbucketMode === "server" ? instanceUrl.trim() || null : null
+          ? bitbucketMode === "server"
+            ? instanceUrl.trim() || null
+            : null
           : instanceUrl.trim() || null,
         email: isBitbucket
-          ? bitbucketMode === "cloud" ? email.trim() || null : null
+          ? bitbucketMode === "cloud"
+            ? email.trim() || null
+            : null
           : email.trim() || null,
       });
       handleOpenChange(false);
@@ -300,9 +309,7 @@ export function IntegrationConnectDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Connect {providerName}</DialogTitle>
-          <DialogDescription>
-            Enter your credentials to connect {providerName}.
-          </DialogDescription>
+          <DialogDescription>Enter your credentials to connect {providerName}.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -348,7 +355,9 @@ export function IntegrationConnectDialog({
                 <Input
                   id="integration-token"
                   type="password"
-                  placeholder={bitbucketMode === "cloud" ? "Enter app password" : "Enter HTTP access token"}
+                  placeholder={
+                    bitbucketMode === "cloud" ? "Enter app password" : "Enter HTTP access token"
+                  }
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={isPending}

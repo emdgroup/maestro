@@ -10,7 +10,10 @@ interface ActivityThinkingBlockProps {
   hasSubsequentMessage: boolean;
 }
 
-export function ActivityThinkingBlock({ thinking, hasSubsequentMessage }: ActivityThinkingBlockProps) {
+export function ActivityThinkingBlock({
+  thinking,
+  hasSubsequentMessage,
+}: ActivityThinkingBlockProps) {
   const { data: settings } = useSettings();
   const visibility = settings?.thinking_visibility ?? "auto";
 
@@ -60,7 +63,12 @@ export function ActivityThinkingBlock({ thinking, hasSubsequentMessage }: Activi
 
   // Auto mode: collapse when a subsequent agent message arrives (unless user toggled manually)
   useEffect(() => {
-    if (visibility === "auto" && hasSubsequentMessage && !thinking.isStreaming && !userToggled.current) {
+    if (
+      visibility === "auto" &&
+      hasSubsequentMessage &&
+      !thinking.isStreaming &&
+      !userToggled.current
+    ) {
       setExpanded(false);
     }
   }, [visibility, hasSubsequentMessage, thinking.isStreaming]);

@@ -29,7 +29,35 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
-import type { RemoteIssue, TaskPriority } from "@/types/bindings";
+import type { RemoteIssue, TaskPriority, ProjectIssueTrackingConfig } from "@/types/bindings";
+import { BrandIcon } from "@/components/common/BrandIcon";
+
+function getIssueSearchPlaceholder(config: ProjectIssueTrackingConfig): string {
+  const { provider, owner, repo, project_path, project_key, team_id, project_name } = config;
+  let context: string;
+  switch (provider) {
+    case "github":
+    case "forgejo":
+    case "gitea":
+      context = owner && repo ? `${owner}/${repo}` : "";
+      break;
+    case "gitlab":
+      context = project_path ?? "";
+      break;
+    case "jira_cloud":
+      context = project_key ?? "";
+      break;
+    case "linear":
+      context = team_id ?? "";
+      break;
+    case "azuredevops":
+      context = project_name ?? "";
+      break;
+    default:
+      context = "";
+  }
+  return context ? `Search ${context} issues` : "Search issues...";
+}
 
 interface FormData {
   title: string;
@@ -58,6 +86,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const { data: branchData, isFetching: branchesFetching } = useProjectBranchesQuery(
     isOpen ? projectId : null,
   );
+  console.log(branchData);
   const localBranches: string[] = branchData?.[0].local ?? [];
   const remoteBranches: string[] = branchData?.[0].remote ?? [];
   const currentBranch: string = branchData?.[1] ?? "";
@@ -73,7 +102,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [error, setError] = useState<string | null>(null);
   const [createAnother, setCreateAnother] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<RemoteIssue | null>(null);
-  const [openPopover, setOpenPopover] = useState<"branch" | "priority" | "agent" | "issue" | null>(null);
+  const [openPopover, setOpenPopover] = useState<"branch" | "priority" | "agent" | "issue" | null>(
+    null,
+  );
   const [branchSearch, setBranchSearch] = useState("");
   const [branchTab, setBranchTab] = useState<"local" | "remote">("local");
 
@@ -180,12 +211,19 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const agentPillLabel = selectedAgent ? selectedAgent.name : "No agent";
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-[520px] overflow-y-auto custom-scrollbar">
         <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
           CREATE TASK
         </DialogTitle>
-        <DialogDescription className="sr-only">Create a new task for this project</DialogDescription>
+        <DialogDescription className="sr-only">
+          Create a new task for this project
+        </DialogDescription>
 
         {error && (
           <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded text-sm">
@@ -197,22 +235,29 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
           <div className="flex flex-col gap-4">
             {/* Issue search — shown only when provider configured */}
             {hasProvider && (
-              <div className="flex flex-col gap-1.5">
-                <Popover open={openPopover === "issue"} onOpenChange={(v) => setOpenPopover(v ? "issue" : null)}>
-                  <PopoverTrigger
-                    className="flex items-center gap-2 w-full rounded-md border border-border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors text-left"
+              <Popover
+                open={openPopover === "issue"}
+                onOpenChange={(v) => setOpenPopover(v ? "issue" : null)}
+              >
+                <PopoverTrigger className="flex items-center gap-2 w-full rounded-md border border-border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors text-left">
+                  <BrandIcon
+                    slug={issueConfig.provider}
+                    className="shrink-0 text-muted-foreground"
+                    width={14}
+                    height={14}
+                  />
+                  <span
+                    className={cn("flex-1 truncate", !selectedIssue && "text-muted-foreground")}
                   >
-                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className={cn("flex-1 truncate", !selectedIssue && "text-muted-foreground")}>
-                      {selectedIssue
-                        ? `#${selectedIssue.external_id} ${selectedIssue.title}`
-                        : "Search issues..."}
-                    </span>
-                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[var(--anchor-width)] p-0 gap-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search issues..." />
+                    {selectedIssue
+                      ? `#${selectedIssue.external_id} ${selectedIssue.title}`
+                      : getIssueSearchPlaceholder(issueConfig)}
+                  </span>
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--anchor-width)] p-0 gap-0" align="start">
+                  <Command>
+                    <CommandInput placeholder={getIssueSearchPlaceholder(issueConfig)} />
                       <CommandList className="custom-scrollbar">
                         <CommandEmpty>
                           {issuesFetching ? "Loading issues..." : "No issues found."}
@@ -258,12 +303,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       </CommandList>
                     </Command>
                   </PopoverContent>
-                </Popover>
-                <span className="text-[10px] text-emerald-500 flex items-center gap-1">
-                  <span className="size-1.5 rounded-full bg-emerald-500 inline-block" />
-                  Connected to {issueConfig.provider}
-                </span>
-              </div>
+              </Popover>
             )}
 
             <div>
@@ -276,7 +316,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 className="border-0 shadow-none bg-transparent dark:bg-transparent text-base px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-0"
               />
               {errors.title && (
-                <span className="text-destructive text-xs mt-0.5 block">{errors.title.message}</span>
+                <span className="text-destructive text-xs mt-0.5 block">
+                  {errors.title.message}
+                </span>
               )}
             </div>
 
@@ -305,7 +347,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                     FROM BRANCH
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <Popover open={openPopover === "branch"} onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}>
+                    <Popover
+                      open={openPopover === "branch"}
+                      onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}
+                    >
                       <PopoverTrigger
                         className={cn(
                           "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
@@ -313,7 +358,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                         )}
                       >
                         <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 text-left truncate">{value || "Select branch..."}</span>
+                        <span className="flex-1 text-left truncate">
+                          {value || "Select branch..."}
+                        </span>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                       </PopoverTrigger>
                       <PopoverContent className="w-[var(--anchor-width)] p-0 gap-0" align="start">
@@ -342,7 +389,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                                     : "text-muted-foreground hover:text-foreground/80",
                                 )}
                               >
-                                {tab === "local" ? `Local (${filteredLocal.length})` : `Remote (${filteredRemote.length})`}
+                                {tab === "local"
+                                  ? `Local (${filteredLocal.length})`
+                                  : `Remote (${filteredRemote.length})`}
                               </button>
                             ))}
                           </div>
@@ -380,7 +429,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
             />
 
             <div className="flex items-center gap-2 flex-wrap">
-              <Popover open={openPopover === "priority"} onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}>
+              <Popover
+                open={openPopover === "priority"}
+                onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
+              >
                 <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors">
                   <span
                     className="size-2 rounded-full shrink-0"
@@ -416,10 +468,11 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 </PopoverContent>
               </Popover>
 
-              <Popover open={openPopover === "agent"} onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}>
-                <PopoverTrigger
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-[200px]"
-                >
+              <Popover
+                open={openPopover === "agent"}
+                onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}
+              >
+                <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-[200px]">
                   {selectedAgent ? (
                     <Sparkles className="size-3 shrink-0 text-muted-foreground" />
                   ) : (

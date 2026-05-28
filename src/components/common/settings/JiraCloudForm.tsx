@@ -25,9 +25,7 @@ export function JiraCloudForm({ fields, onFieldsChange }: Props) {
 
   const q = search.toLowerCase();
   const filtered = q
-    ? projects.filter(
-        (p) => p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
-      )
+    ? projects.filter((p) => p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q))
     : projects;
   const favourites = filtered.filter((p) => p.is_favourite);
   const others = filtered.filter((p) => !p.is_favourite);

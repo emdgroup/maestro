@@ -5,7 +5,16 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { Task, TaskConfigRequest, TaskRelationship, TaskInstruction, RemoteIssue, TaskAttachment, CreateTaskRequest, UpdateTaskRequest } from "@/types/bindings";
+import type {
+  Task,
+  TaskConfigRequest,
+  TaskRelationship,
+  TaskInstruction,
+  RemoteIssue,
+  TaskAttachment,
+  CreateTaskRequest,
+  UpdateTaskRequest,
+} from "@/types/bindings";
 
 /**
  * Query key factory for task-related queries
@@ -359,8 +368,7 @@ export function useAddTaskInstructionMutation() {
 }
 
 export const issueTrackingQueryKeys = {
-  remoteIssues: (projectId: number) =>
-    ["issue_tracking", "remote-issues", projectId] as const,
+  remoteIssues: (projectId: number) => ["issue_tracking", "remote-issues", projectId] as const,
 };
 
 /**
@@ -368,10 +376,7 @@ export const issueTrackingQueryKeys = {
  * Only runs while the modal is open (enabled: isModalOpen).
  * Automatically refetches every 5 minutes while open; stops when closed.
  */
-export function useFetchRemoteIssuesQuery(
-  projectId: number | null,
-  isModalOpen: boolean,
-) {
+export function useFetchRemoteIssuesQuery(projectId: number | null, isModalOpen: boolean) {
   return useQuery({
     queryKey: issueTrackingQueryKeys.remoteIssues(projectId!),
     queryFn: () => api.fetchRemoteIssues(projectId!),
@@ -415,13 +420,8 @@ export function useUpdateTaskFromRemoteMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      taskId,
-      issue,
-    }: {
-      taskId: number;
-      issue: RemoteIssue;
-    }) => api.updateTaskFromRemote(taskId, issue),
+    mutationFn: ({ taskId, issue }: { taskId: number; issue: RemoteIssue }) =>
+      api.updateTaskFromRemote(taskId, issue),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -437,13 +437,8 @@ export function useDismissTaskChangeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      taskId,
-      remoteUpdatedAt,
-    }: {
-      taskId: number;
-      remoteUpdatedAt: string;
-    }) => api.dismissTaskChange(taskId, remoteUpdatedAt),
+    mutationFn: ({ taskId, remoteUpdatedAt }: { taskId: number; remoteUpdatedAt: string }) =>
+      api.dismissTaskChange(taskId, remoteUpdatedAt),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },

@@ -23,7 +23,8 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
     const trObj = tr as Record<string, unknown>;
     if (typeof trObj.totalDurationMs === "number") result.totalDurationMs = trObj.totalDurationMs;
     if (typeof trObj.totalTokens === "number") result.totalTokens = trObj.totalTokens;
-    if (typeof trObj.totalToolUseCount === "number") result.totalToolUseCount = trObj.totalToolUseCount;
+    if (typeof trObj.totalToolUseCount === "number")
+      result.totalToolUseCount = trObj.totalToolUseCount;
   }
 
   return result;

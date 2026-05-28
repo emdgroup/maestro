@@ -8,8 +8,12 @@ import { taskQueryKeys } from "@/services/task.service";
 
 export const executionQueryKeys = {
   activeSessions: ["activeSessions"] as const,
-  sessionList: (agentId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null) =>
-    ["sessionList", agentId, cwd, connectionId, wslConnectionId] as const,
+  sessionList: (
+    agentId: string,
+    cwd: string,
+    connectionId: number | null,
+    wslConnectionId: number | null,
+  ) => ["sessionList", agentId, cwd, connectionId, wslConnectionId] as const,
   agentDiscovery: (connectionId: number | null, wslConnectionId: number | null) =>
     ["agentDiscovery", connectionId, wslConnectionId] as const,
   projectAgents: (connectionId: number | null, wslConnectionId: number | null, cwd: string) =>
@@ -54,8 +58,14 @@ export function useSessionListQuery(
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connectionId, wslConnectionId),
-    queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connectionId, wslConnectionId, null),
+    queryKey: executionQueryKeys.sessionList(
+      agentId ?? "",
+      cwd ?? "",
+      connectionId,
+      wslConnectionId,
+    ),
+    queryFn: () =>
+      api.listAcpSessions(projectId!, agentId!, cwd!, connectionId, wslConnectionId, null),
     enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
   });
@@ -86,7 +96,16 @@ export function useLoadAcpSessionMutation() {
       projectId?: number | null;
       worktreeBranch?: string | null;
     }) => {
-      return await api.loadAcpSession(agentId, sessionId, cwd, connectionId, wslConnectionId ?? null, sessionName ?? null, projectId ?? null, worktreeBranch ?? null);
+      return await api.loadAcpSession(
+        agentId,
+        sessionId,
+        cwd,
+        connectionId,
+        wslConnectionId ?? null,
+        sessionName ?? null,
+        projectId ?? null,
+        worktreeBranch ?? null,
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
@@ -113,7 +132,13 @@ export function useCloseStoredAcpSessionMutation() {
       connectionId: number | null;
       wslConnectionId?: number | null;
     }) => {
-      return await api.closeAcpSession(agentId, sessionId, cwd, connectionId, wslConnectionId ?? null);
+      return await api.closeAcpSession(
+        agentId,
+        sessionId,
+        cwd,
+        connectionId,
+        wslConnectionId ?? null,
+      );
     },
     onError: createErrorToastHandler("Failed to close session"),
   });
@@ -187,7 +212,11 @@ export function useProjectAgentsQuery(
  * connectionId = number → remote SSH connection
  * 5-minute staleTime mirrors backend TTL.
  */
-export function useAgentDiscoveryQuery(connectionId: number | null, wslConnectionId: number | null = null, enabled: boolean = true) {
+export function useAgentDiscoveryQuery(
+  connectionId: number | null,
+  wslConnectionId: number | null = null,
+  enabled: boolean = true,
+) {
   return useQuery({
     queryKey: executionQueryKeys.agentDiscovery(connectionId, wslConnectionId),
     queryFn: () => api.discoverAgents(connectionId, wslConnectionId),
@@ -196,7 +225,6 @@ export function useAgentDiscoveryQuery(connectionId: number | null, wslConnectio
     gcTime: 10 * 60 * 1000,
   });
 }
-
 
 /** Full agent catalog (config options, commands, capabilities) from AgentCache. Available after first SpawnOk/PreInitialize. */
 export function useAgentCacheQuery(projectId: number | null, agentId: string | null) {
@@ -210,8 +238,12 @@ export function useAgentCacheQuery(projectId: number | null, agentId: string | n
           queryKey: ["agentCache", projectId, agentId],
         });
       }
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
   }, [queryClient, projectId, agentId]);
 
   return useQuery({

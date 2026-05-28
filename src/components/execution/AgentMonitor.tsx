@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
 import { Plus, Terminal, X, FileText, FileDiff } from "lucide-react";
+import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -8,7 +9,11 @@ import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
 import { WorkingFilesPanel } from "@/components/execution/activity/WorkingFilesPanel";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import type { ActiveSessionInfo } from "@/types/bindings";
-import { useSessionActivity, type SessionActivityStatus, type SessionActivityInfo } from "@/store/sessionActivityStore";
+import {
+  useSessionActivity,
+  type SessionActivityStatus,
+  type SessionActivityInfo,
+} from "@/store/sessionActivityStore";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
 
 const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
@@ -80,16 +85,30 @@ const ElapsedTime = memo(function ElapsedTime({
   );
 });
 
-function AgentIcon({ src, className }: { src: string; className: string }) {
-  return (
-    <img
-      src={src}
-      className={className}
-      onError={(e) => {
-        (e.currentTarget as HTMLImageElement).style.display = "none";
-      }}
-    />
-  );
+function AgentIcon({
+  agentId,
+  src,
+  className,
+}: {
+  agentId: string;
+  src?: string;
+  className: string;
+}) {
+  if (hasBrandIcon(agentId)) {
+    return <BrandIcon slug={agentId} className={className} />;
+  }
+  if (src) {
+    return (
+      <img
+        src={src}
+        className={cn(className, "dark:[filter:invert(1)]")}
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).style.display = "none";
+        }}
+      />
+    );
+  }
+  return null;
 }
 
 interface SessionRowProps {
@@ -126,25 +145,29 @@ const SessionRow = memo(function SessionRow({
           />
         )}
         <span className="session-item-name text-sm font-medium truncate">
-          {session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session"}
+          {session.session_name ??
+            session.task_name ??
+            session.branch_name ??
+            "Interactive session"}
         </span>
         <Badge
           variant="outline"
-          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1 ml-auto"
+          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1 ml-auto [&>svg]:size-4!"
         >
-          {session.execution_mode === "acp" && session.agent_id && agentIcons?.[session.agent_id] && (
+          {session.execution_mode === "acp" && session.agent_id && (
             <AgentIcon
-              src={agentIcons[session.agent_id]}
-              className="w-3 h-3 rounded-sm dark:[filter:invert(1)]"
+              agentId={session.agent_id}
+              src={agentIcons?.[session.agent_id]}
+              className="w-4 h-4 rounded-sm"
             />
           )}
           {session.execution_mode === "acp"
             ? session.agent_id
               ? (agentNames?.[session.agent_id] ??
-                  session.agent_id
-                    .split(/[-_]/)
-                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                    .join(" "))
+                session.agent_id
+                  .split(/[-_]/)
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(" "))
               : "ACP"
             : "Terminal"}
         </Badge>
@@ -155,7 +178,10 @@ const SessionRow = memo(function SessionRow({
             {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
           </span>
           {activityInfo && (
-            <ElapsedTime status={activityInfo.status} stateChangedAt={activityInfo.stateChangedAt} />
+            <ElapsedTime
+              status={activityInfo.status}
+              stateChangedAt={activityInfo.stateChangedAt}
+            />
           )}
         </div>
       )}
@@ -201,7 +227,8 @@ export function AgentMonitor({
   const handleWorkingFilesChange = useCallback((sessionKey: number, files: string[]) => {
     setSessionWorkingFiles((prev) => {
       const existing = prev.get(sessionKey);
-      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i])) return prev;
+      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i]))
+        return prev;
       const next = new Map(prev);
       next.set(sessionKey, files);
       return next;
@@ -211,7 +238,8 @@ export function AgentMonitor({
   const handleSessionChangedFilesChange = useCallback((sessionKey: number, files: string[]) => {
     setSessionChangedFiles((prev) => {
       const existing = prev.get(sessionKey);
-      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i])) return prev;
+      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i]))
+        return prev;
       const next = new Map(prev);
       next.set(sessionKey, files);
       return next;
@@ -224,7 +252,6 @@ export function AgentMonitor({
     if (openPanel !== null) setOpenPanel(null);
   }
 
-
   const commitRename = useCallback(
     (session: ActiveSessionInfo) => {
       if (renameCanceledRef.current) {
@@ -234,7 +261,13 @@ export function AgentMonitor({
       }
       const trimmed = renameValue.trim();
       const currentName = session.session_name ?? session.task_name ?? session.branch_name ?? "";
-      if (trimmed && trimmed !== currentName && projectId != null && session.agent_id && session.acp_session_id) {
+      if (
+        trimmed &&
+        trimmed !== currentName &&
+        projectId != null &&
+        session.agent_id &&
+        session.acp_session_id
+      ) {
         renameMutation.mutate({
           projectId,
           agentId: session.agent_id,
@@ -289,7 +322,6 @@ export function AgentMonitor({
                   key={session.session_key}
                   session={session}
                   isSelected={session.session_key === selectedSessionKey}
-
                   onSelect={onSelect}
                   agentIcons={agentIcons}
                   agentNames={agentNames}
@@ -313,16 +345,15 @@ export function AgentMonitor({
         {selectedSession && (
           <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
             <div className="flex items-center justify-between gap-2">
+              {selectedSession.execution_mode === "acp" && selectedSession.agent_id && (
+                <AgentIcon
+                  agentId={selectedSession.agent_id}
+                  src={agentIcons?.[selectedSession.agent_id]}
+                  className="w-10 h-10 rounded-sm shrink-0"
+                />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  {selectedSession.execution_mode === "acp" &&
-                    selectedSession.agent_id &&
-                    agentIcons?.[selectedSession.agent_id] && (
-                      <AgentIcon
-                        src={agentIcons[selectedSession.agent_id]}
-                        className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
-                      />
-                    )}
                   {selectedSession.execution_mode === "acp" && selectedSession.acp_session_id ? (
                     <input
                       ref={renameInputRef}
@@ -330,12 +361,20 @@ export function AgentMonitor({
                       value={
                         renamingKey === selectedSession.session_key
                           ? renameValue
-                          : (selectedSession.session_name ?? selectedSession.task_name ?? selectedSession.branch_name ?? "Interactive session")
+                          : (selectedSession.session_name ??
+                            selectedSession.task_name ??
+                            selectedSession.branch_name ??
+                            "Interactive session")
                       }
                       title="Click to rename"
                       onFocus={() => {
                         setRenamingKey(selectedSession.session_key);
-                        setRenameValue(selectedSession.session_name ?? selectedSession.task_name ?? selectedSession.branch_name ?? "");
+                        setRenameValue(
+                          selectedSession.session_name ??
+                            selectedSession.task_name ??
+                            selectedSession.branch_name ??
+                            "",
+                        );
                         requestAnimationFrame(() => renameInputRef.current?.select());
                       }}
                       onChange={(e) => setRenameValue(e.target.value)}
@@ -391,7 +430,9 @@ export function AgentMonitor({
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs"
-                      disabled={(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0}
+                      disabled={
+                        (sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0
+                      }
                       onClick={() => setOpenPanel("working-files")}
                     >
                       <FileText className="w-3.5 h-3.5 mr-1" />

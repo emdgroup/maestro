@@ -49,7 +49,7 @@ export function useSystemAccentColorQuery() {
  * Mutation hook for saving application settings
  * Invalidates settings cache after successful save
  */
-export function useSaveSettings({ successToast = true } : { successToast: boolean }) {
+export function useSaveSettings({ successToast = true }: { successToast: boolean }) {
   const queryClient = useQueryClient();
 
   return useMutation({

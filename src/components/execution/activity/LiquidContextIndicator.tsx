@@ -42,8 +42,14 @@ const LENS_GLOW: Record<FillState, string> = {
 const TIPS: Record<FillState, { icon: string; text: string }> = {
   normal: { icon: "✓", text: "Plenty of room. Agent has full context for complex reasoning." },
   amber: { icon: "→", text: "Filling up. Consider compacting if task will run longer." },
-  warning: { icon: "⚠", text: "Running low. Agent may lose early context soon. Compact recommended." },
-  critical: { icon: "⚡", text: "Near limit. Agent will auto-compact soon. Compact now to stay in control." },
+  warning: {
+    icon: "⚠",
+    text: "Running low. Agent may lose early context soon. Compact recommended.",
+  },
+  critical: {
+    icon: "⚡",
+    text: "Near limit. Agent will auto-compact soon. Compact now to stay in control.",
+  },
 };
 
 const TIP_STYLE: Record<FillState, string> = {
@@ -347,7 +353,9 @@ export function LiquidContextIndicator({
             <span className={cn("w-1.5 h-1.5 rounded-full inline-block", DOT_COLOR[fillState])} />
             Context Window
           </span>
-          <span className={cn("text-lg font-bold tabular-nums tracking-tight", PCT_COLOR[fillState])}>
+          <span
+            className={cn("text-lg font-bold tabular-nums tracking-tight", PCT_COLOR[fillState])}
+          >
             {pct}%
           </span>
         </div>
@@ -355,21 +363,29 @@ export function LiquidContextIndicator({
         {/* Progress bar */}
         <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
           <div
-            className={cn("h-full rounded-full transition-all duration-300", PROGRESS_COLOR[fillState])}
+            className={cn(
+              "h-full rounded-full transition-all duration-300",
+              PROGRESS_COLOR[fillState],
+            )}
             style={{ width: `${pct}%` }}
           />
         </div>
 
         {/* Token info */}
         <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span>{humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens</span>
-          {usage.cost && (
-            <span>${usage.cost.amount.toFixed(2)}</span>
-          )}
+          <span>
+            {humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens
+          </span>
+          {usage.cost && <span>${usage.cost.amount.toFixed(2)}</span>}
         </div>
 
         {/* Contextual tip */}
-        <div className={cn("flex gap-2 px-2.5 py-2 rounded-md text-[11px] leading-relaxed", TIP_STYLE[fillState])}>
+        <div
+          className={cn(
+            "flex gap-2 px-2.5 py-2 rounded-md text-[11px] leading-relaxed",
+            TIP_STYLE[fillState],
+          )}
+        >
           <span className="flex-shrink-0 mt-px">{TIPS[fillState].icon}</span>
           <span>{TIPS[fillState].text}</span>
         </div>
@@ -382,7 +398,8 @@ export function LiquidContextIndicator({
           size="sm"
           className={cn(
             "h-7 text-xs w-full",
-            fillState === "critical" && "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 font-semibold",
+            fillState === "critical" &&
+              "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 font-semibold",
           )}
           onClick={() => onCompact?.()}
         >
