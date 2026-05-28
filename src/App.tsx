@@ -219,6 +219,8 @@ function App() {
             <KanbanProvider
               projectId={currentProject.id}
               projectPath={currentProject.path}
+              connectionId={currentProject.connection_id}
+              wslConnectionId={currentProject.wsl_connection_id}
               onTaskClick={NOOP}
             >
               <KanbanView />

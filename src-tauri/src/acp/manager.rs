@@ -28,6 +28,7 @@ use maestro_protocol::{
 pub struct PooledSession {
     pub log_id: i32,
     pub session_id: String,
+    pub cwd: String,
 }
 
 /// Metadata captured for sessions that were active when the connection server died.

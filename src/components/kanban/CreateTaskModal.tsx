@@ -217,7 +217,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         if (!open) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-[520px] overflow-y-auto custom-scrollbar">
+      <DialogContent className="w-fit min-w-[520px] max-w-[90vw] overflow-y-auto custom-scrollbar">
         <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
           CREATE TASK
         </DialogTitle>
@@ -329,8 +329,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                   minLength: { value: 10, message: "Description must be at least 10 characters" },
                 })}
                 placeholder="Add description..."
-                rows={3}
-                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50"
+                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-[4.5rem] max-h-[40vh] overflow-y-auto"
               />
               {errors.description && (
                 <span className="text-destructive text-xs">{errors.description.message}</span>

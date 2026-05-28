@@ -11,7 +11,7 @@ import {
   ComboboxEmpty,
   ComboboxSeparator,
 } from "@/ui/combobox";
-import { useListJiraProjects } from "@/services/issue-tracking-lookup.service";
+import { useListJiraProjects } from "@/services/provider-lookup.service";
 
 interface Props {
   fields: Record<string, string>;

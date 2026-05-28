@@ -39,6 +39,7 @@ pub async fn list_integrations(
                     connected: true,
                     display_name: creds.display_name,
                     source: Some(creds.source),
+                    instance_url: creds.instance_url,
                 });
             }
             Ok(KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None)) => {
@@ -52,6 +53,7 @@ pub async fn list_integrations(
                             connected: true,
                             display_name,
                             source: Some(CredentialSource::GhCli),
+                            instance_url: None,
                         });
                         continue;
                     }
@@ -61,6 +63,7 @@ pub async fn list_integrations(
                     connected: false,
                     display_name: None,
                     source: None,
+                    instance_url: None,
                 });
             }
             Err(_) => {
@@ -69,6 +72,7 @@ pub async fn list_integrations(
                     connected: false,
                     display_name: None,
                     source: None,
+                    instance_url: None,
                 });
             }
         }

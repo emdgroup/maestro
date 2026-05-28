@@ -132,7 +132,7 @@ pub async fn spawn_pooled_session(
     if matches!(spawned, Ok(true)) {
         app_state.acp.session_pool.lock().await.insert(
             (project_id, agent_id.to_string()),
-            PooledSession { log_id, session_id },
+            PooledSession { log_id, session_id, cwd: cwd.to_string() },
         );
     }
 }
@@ -165,6 +165,8 @@ pub async fn spawn_acp_session(
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
     worktree_branch: Option<String>,
+    task_id: Option<i32>,
+    task_name: Option<String>,
 ) -> Result<i32, String> {
     // Resolve branch_name from worktree path if not provided
     let branch_name: Option<String> = worktree_branch.or_else(|| {
@@ -181,28 +183,37 @@ pub async fn spawn_acp_session(
             })
     });
 
-    // Pool claim: if a session was pre-warmed for this agent, reuse it instantly.
+    // Pool claim: if a session was pre-warmed for this agent at the same cwd, reuse it instantly.
+    // Worktree sessions have a different cwd than the pooled project-root session, so they skip
+    // this path and proceed to a cold or connection-server spawn.
     {
         let mut pool = app_state.acp.session_pool.lock().await;
         if let Some(pooled) = pool.remove(&(project_id, agent_id.clone())) {
-            // Update metadata that wasn't known at warmup time.
-            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&pooled.log_id) {
-                proc.session_name = session_name;
-                proc.branch_name = branch_name;
+            if pooled.cwd == cwd {
+                // Update metadata that wasn't known at warmup time.
+                if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&pooled.log_id) {
+                    proc.session_name = session_name;
+                    proc.branch_name = branch_name;
+                    proc.task_id = task_id;
+                    proc.task_name = task_name;
+                }
+                drop(pool);
+
+                // Replenish pool in background using the pooled cwd (project root, not the claimed cwd).
+                let state = Arc::clone(&*app_state);
+                let aid = agent_id.clone();
+                let pool_cwd = pooled.cwd.clone();
+                let pool_connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
+                tokio::spawn(async move {
+                    spawn_pooled_session(&state, project_id, pool_connection_key, &aid, &pool_cwd).await;
+                });
+
+                app_state.app_handle.emit("sessions-changed", ()).ok();
+                return Ok(pooled.log_id);
+            } else {
+                // cwd mismatch (worktree task) — put the pooled session back and fall through.
+                pool.insert((project_id, agent_id.clone()), pooled);
             }
-            drop(pool);
-
-            // Replenish pool in background using the warmup cwd (same project root).
-            let state = Arc::clone(&*app_state);
-            let aid = agent_id.clone();
-            let pool_cwd = cwd.clone();
-            let pool_connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
-            tokio::spawn(async move {
-                spawn_pooled_session(&state, project_id, pool_connection_key, &aid, &pool_cwd).await;
-            });
-
-            app_state.app_handle.emit("sessions-changed", ()).ok();
-            return Ok(pooled.log_id);
         }
     }
 
@@ -240,7 +251,7 @@ pub async fn spawn_acp_session(
     };
     if crate::acp::try_spawn_via_connection_server(
         &session_id,
-        TaskMetadata { task_id: None, task_name: None, branch_name: branch_name.clone(), session_start_sha: session_start_sha.clone() },
+        TaskMetadata { task_id, task_name: task_name.clone(), branch_name: branch_name.clone(), session_start_sha: session_start_sha.clone() },
         &req,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -266,7 +277,7 @@ pub async fn spawn_acp_session(
             crate::acp::spawn_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
                 &session_id,
-                TaskMetadata { task_id: None, task_name: None, branch_name, session_start_sha },
+                TaskMetadata { task_id, task_name: task_name.clone(), branch_name, session_start_sha },
                 &req,
             ).await?;
         }
@@ -298,7 +309,7 @@ pub async fn spawn_acp_session(
                     crate::acp::spawn_acp_session_cold(
                         crate::acp::TransportTarget::Wsl { distro: &distro, server_path: &maestro_path },
                         &session_id,
-                        TaskMetadata { task_id: None, task_name: None, branch_name, session_start_sha },
+                        TaskMetadata { task_id, task_name: task_name.clone(), branch_name, session_start_sha },
                         &req,
                     ).await?;
                 }
@@ -311,7 +322,7 @@ pub async fn spawn_acp_session(
                 crate::acp::spawn_acp_session_cold(
                     crate::acp::TransportTarget::Local,
                     &session_id,
-                    TaskMetadata { task_id: None, task_name: None, branch_name, session_start_sha },
+                    TaskMetadata { task_id, task_name, branch_name, session_start_sha },
                     &req,
                 ).await?;
             }

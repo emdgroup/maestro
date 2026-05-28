@@ -8,7 +8,7 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "@/ui/combobox";
-import { useListAzureDevOpsProjects } from "@/services/issue-tracking-lookup.service";
+import { useListAzureDevOpsProjects } from "@/services/provider-lookup.service";
 
 interface Props {
   fields: Record<string, string>;

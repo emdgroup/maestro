@@ -106,6 +106,7 @@ pub struct BitbucketConfig {
 pub struct RepoOption {
     pub name: String,
     pub description: Option<String>,
+    pub clone_url: Option<String>,
 }
 
 /// A Jira Cloud project option for combobox display.
@@ -126,6 +127,7 @@ pub struct GitLabProjectOption {
     pub id: i64,
     pub path_with_namespace: String,
     pub name: String,
+    pub clone_url: Option<String>,
 }
 
 /// An Azure DevOps project option for combobox display.
@@ -135,6 +137,34 @@ pub struct AzureDevOpsProjectOption {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+}
+
+/// An Azure DevOps git repository option for clone combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AzureDevOpsRepoOption {
+    pub id: String,
+    pub name: String,
+    pub project_name: String,
+    pub clone_url: Option<String>,
+}
+
+/// A Bitbucket repository option for clone combobox display.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct BitbucketRepoOption {
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub clone_url: Option<String>,
+}
+
+/// A Bitbucket Server/DC project option for project key dropdown.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct BitbucketProjectOption {
+    pub key: String,
+    pub name: String,
 }
 
 /// A remote issue fetched from a ticketing provider, ready for import as a Task.

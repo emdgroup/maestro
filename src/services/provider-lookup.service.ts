@@ -10,6 +10,9 @@ export const lookupQueryKeys = {
   forgejoRepos: (owner: string) => ["lookup", "forgejo-repos", owner] as const,
   giteaRepos: (owner: string) => ["lookup", "gitea-repos", owner] as const,
   azureDevOpsProjects: () => ["lookup", "azuredevops-projects"] as const,
+  azureDevOpsRepos: (project: string) => ["lookup", "azuredevops-repos", project] as const,
+  bitbucketRepos: (workspace: string) => ["lookup", "bitbucket-repos", workspace] as const,
+  bitbucketProjects: () => ["lookup", "bitbucket-projects"] as const,
 };
 
 export function useCheckGithubOwner(owner: string) {
@@ -88,6 +91,35 @@ export function useListAzureDevOpsProjects() {
   });
 }
 
+export function useListAzureDevOpsRepos(project: string, enabled: boolean) {
+  return useQuery({
+    queryKey: lookupQueryKeys.azureDevOpsRepos(project),
+    queryFn: () => api.listAzuredevopsRepos(project),
+    enabled: enabled && project.length >= 1,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useListBitbucketRepos(workspace: string, enabled: boolean) {
+  return useQuery({
+    queryKey: lookupQueryKeys.bitbucketRepos(workspace),
+    queryFn: () => api.listBitbucketRepos(workspace),
+    enabled: enabled && workspace.length >= 1,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useListBitbucketProjects() {
+  return useQuery({
+    queryKey: lookupQueryKeys.bitbucketProjects(),
+    queryFn: () => api.listBitbucketProjects(),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 function useRefreshByKey(queryKey: readonly unknown[]) {
   const queryClient = useQueryClient();
   return () => void queryClient.invalidateQueries({ queryKey });
@@ -103,4 +135,16 @@ export function useRefreshForgejoRepos(owner: string) {
 
 export function useRefreshGiteaRepos(owner: string) {
   return useRefreshByKey(lookupQueryKeys.giteaRepos(owner));
+}
+
+export function useRefreshAzureDevOpsRepos(project: string) {
+  return useRefreshByKey(lookupQueryKeys.azureDevOpsRepos(project));
+}
+
+export function useRefreshBitbucketRepos(workspace: string) {
+  return useRefreshByKey(lookupQueryKeys.bitbucketRepos(workspace));
+}
+
+export function useRefreshBitbucketProjects() {
+  return useRefreshByKey(lookupQueryKeys.bitbucketProjects());
 }

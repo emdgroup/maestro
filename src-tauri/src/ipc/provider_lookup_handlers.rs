@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use base64::Engine as _;
 use tauri::State;
 
 use crate::db::AppState;
 use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
 use crate::models::issue_tracking::{
-    AzureDevOpsProjectOption, GitLabProjectOption, JiraProjectOption, RepoOption,
+    AzureDevOpsProjectOption, AzureDevOpsRepoOption, BitbucketProjectOption, BitbucketRepoOption,
+    GitLabProjectOption, JiraProjectOption, RepoOption,
 };
 use crate::issue_tracking::linear::LinearTeam;
 use super::issue_tracking_handlers::get_integration_creds;
@@ -77,6 +79,7 @@ pub async fn list_github_repos(
     struct GhRepo {
         name: String,
         description: Option<String>,
+        clone_url: Option<String>,
     }
 
     let repos: Vec<GhRepo> = response
@@ -86,7 +89,7 @@ pub async fn list_github_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description })
+        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
         .collect())
 }
 
@@ -214,6 +217,7 @@ pub async fn list_gitlab_projects(
         id: i64,
         path_with_namespace: String,
         name: String,
+        http_url_to_repo: Option<String>,
     }
 
     let projects: Vec<GitLabProject> = response
@@ -227,6 +231,7 @@ pub async fn list_gitlab_projects(
             id: p.id,
             path_with_namespace: p.path_with_namespace,
             name: p.name,
+            clone_url: p.http_url_to_repo,
         })
         .collect())
 }
@@ -266,6 +271,7 @@ pub async fn list_forgejo_repos(
     struct ForgejoRepo {
         name: String,
         description: Option<String>,
+        clone_url: Option<String>,
     }
 
     let repos: Vec<ForgejoRepo> = response
@@ -275,7 +281,7 @@ pub async fn list_forgejo_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description })
+        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
         .collect())
 }
 
@@ -314,6 +320,7 @@ pub async fn list_gitea_repos(
     struct GiteaRepo {
         name: String,
         description: Option<String>,
+        clone_url: Option<String>,
     }
 
     let repos: Vec<GiteaRepo> = response
@@ -323,7 +330,7 @@ pub async fn list_gitea_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description })
+        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
         .collect())
 }
 
@@ -381,5 +388,276 @@ pub async fn list_azuredevops_projects(
         .value
         .into_iter()
         .map(|p| AzureDevOpsProjectOption { id: p.id, name: p.name, description: p.description })
+        .collect())
+}
+
+/// List git repositories within an Azure DevOps project.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_azuredevops_repos(
+    app_state: State<'_, Arc<AppState>>,
+    project: String,
+) -> Result<Vec<AzureDevOpsRepoOption>, String> {
+    let creds = get_integration_creds("azuredevops", &app_state)?;
+    let org_url = creds
+        .instance_url
+        .as_deref()
+        .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
+    let base = crate::issue_tracking::normalize_instance_url(org_url);
+
+    use base64::Engine as _;
+    let auth = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD
+            .encode(format!(":{}", creds.token).as_bytes())
+    );
+
+    let client = crate::issue_tracking::build_http_client()?;
+    let url = format!(
+        "{}/{}/_apis/git/repositories?api-version=7.1",
+        base,
+        urlencoding::encode(&project),
+    );
+    let response = client
+        .get(&url)
+        .header("Authorization", auth)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Azure DevOps API error {}", response.status().as_u16()));
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AzdoRepo {
+        id: String,
+        name: String,
+        remote_url: Option<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AzdoReposResponse {
+        value: Vec<AzdoRepo>,
+    }
+
+    let result: AzdoReposResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Azure DevOps repositories response: {}", e))?;
+
+    Ok(result
+        .value
+        .into_iter()
+        .map(|r| AzureDevOpsRepoOption {
+            id: r.id,
+            name: r.name.clone(),
+            project_name: project.clone(),
+            clone_url: r.remote_url,
+        })
+        .collect())
+}
+
+/// List repositories for a Bitbucket workspace (Cloud) or project key (Server/DC).
+///
+/// Cloud:  GET api.bitbucket.org/2.0/repositories/{workspace} — Basic auth (email:app_password)
+/// Server: GET {instance_url}/rest/api/latest/projects/{project_key}/repos — Bearer token
+#[tauri::command]
+#[specta::specta]
+pub async fn list_bitbucket_repos(
+    app_state: State<'_, Arc<AppState>>,
+    workspace: String,
+) -> Result<Vec<BitbucketRepoOption>, String> {
+    let creds = get_integration_creds("bitbucket", &app_state)?;
+    let client = crate::issue_tracking::build_http_client()?;
+
+    match creds.instance_url {
+        Some(base_url) => {
+            // Bitbucket Server / Data Center
+            #[derive(serde::Deserialize)]
+            struct BbServerCloneLink {
+                href: String,
+                name: String,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbServerLinks {
+                #[serde(rename = "clone")]
+                clone: Option<Vec<BbServerCloneLink>>,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbServerRepo {
+                slug: String,
+                name: String,
+                links: Option<BbServerLinks>,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbServerReposResponse {
+                values: Vec<BbServerRepo>,
+            }
+
+            let url = format!(
+                "{}/rest/api/latest/projects/{}/repos?limit=100",
+                base_url.trim_end_matches('/'),
+                urlencoding::encode(&workspace),
+            );
+            let response = client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", creds.token))
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+
+            if !response.status().is_success() {
+                return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+            }
+
+            let result: BbServerReposResponse = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse Bitbucket Server repositories response: {}", e))?;
+
+            Ok(result
+                .values
+                .into_iter()
+                .map(|r| {
+                    let clone_url = r
+                        .links
+                        .as_ref()
+                        .and_then(|l| l.clone.as_ref())
+                        .and_then(|links| links.iter().find(|l| l.name == "http"))
+                        .map(|l| l.href.clone());
+                    BitbucketRepoOption {
+                        slug: r.slug,
+                        name: r.name,
+                        description: None,
+                        clone_url,
+                    }
+                })
+                .collect())
+        }
+        None => {
+            // Bitbucket Cloud
+            let email = creds.email.ok_or_else(|| "Bitbucket Cloud credentials missing email".to_string())?;
+            let auth = format!(
+                "Basic {}",
+                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", email, creds.token).as_bytes()),
+            );
+
+            #[derive(serde::Deserialize)]
+            struct BbCloudCloneLink {
+                href: String,
+                name: String,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbCloudCloneLinks {
+                #[serde(rename = "clone")]
+                clone: Option<Vec<BbCloudCloneLink>>,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbCloudRepo {
+                slug: String,
+                name: String,
+                description: Option<String>,
+                links: Option<BbCloudCloneLinks>,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct BbCloudReposResponse {
+                values: Vec<BbCloudRepo>,
+            }
+
+            let url = format!(
+                "https://api.bitbucket.org/2.0/repositories/{}?pagelen=50&sort=-updated_on",
+                urlencoding::encode(&workspace),
+            );
+            let response = client
+                .get(&url)
+                .header("Authorization", auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+
+            if !response.status().is_success() {
+                return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+            }
+
+            let result: BbCloudReposResponse = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse Bitbucket repositories response: {}", e))?;
+
+            Ok(result
+                .values
+                .into_iter()
+                .map(|r| {
+                    let clone_url = r
+                        .links
+                        .as_ref()
+                        .and_then(|l| l.clone.as_ref())
+                        .and_then(|links| links.iter().find(|l| l.name == "https"))
+                        .map(|l| l.href.clone());
+                    BitbucketRepoOption {
+                        slug: r.slug,
+                        name: r.name,
+                        description: r.description,
+                        clone_url,
+                    }
+                })
+                .collect())
+        }
+    }
+}
+
+/// List projects in a Bitbucket Server / Data Center instance.
+/// Returns an error for Bitbucket Cloud (no instance URL configured).
+#[tauri::command]
+#[specta::specta]
+pub async fn list_bitbucket_projects(
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<Vec<BitbucketProjectOption>, String> {
+    let creds = get_integration_creds("bitbucket", &app_state)?;
+    let base_url = creds.instance_url.ok_or_else(|| {
+        "list_bitbucket_projects is only available for Bitbucket Server/DC".to_string()
+    })?;
+    let client = crate::issue_tracking::build_http_client()?;
+
+    #[derive(serde::Deserialize)]
+    struct BbProject {
+        key: String,
+        name: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct BbProjectsResponse {
+        values: Vec<BbProject>,
+    }
+
+    let url = format!("{}/rest/api/latest/projects?limit=100", base_url.trim_end_matches('/'));
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+    }
+
+    let result: BbProjectsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Bitbucket projects response: {}", e))?;
+
+    Ok(result
+        .values
+        .into_iter()
+        .map(|p| BitbucketProjectOption { key: p.key, name: p.name })
         .collect())
 }

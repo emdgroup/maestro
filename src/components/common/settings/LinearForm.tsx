@@ -8,7 +8,7 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "@/ui/combobox";
-import { useListLinearTeams } from "@/services/issue-tracking-lookup.service";
+import { useListLinearTeams } from "@/services/provider-lookup.service";
 
 interface Props {
   fields: Record<string, string>;

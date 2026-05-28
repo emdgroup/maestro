@@ -269,6 +269,8 @@ export function useSpawnAcpSessionMutation() {
       connectionId,
       wslConnectionId,
       worktreeBranch,
+      taskId,
+      taskName,
     }: {
       agentId: string;
       cwd: string;
@@ -277,6 +279,8 @@ export function useSpawnAcpSessionMutation() {
       connectionId: number | null;
       wslConnectionId?: number | null;
       worktreeBranch?: string | null;
+      taskId?: number | null;
+      taskName?: string | null;
     }) => {
       return await api.spawnAcpSession(
         agentId,
@@ -286,6 +290,8 @@ export function useSpawnAcpSessionMutation() {
         connectionId,
         wslConnectionId ?? null,
         worktreeBranch ?? null,
+        taskId ?? null,
+        taskName ?? null,
       );
     },
     onSuccess: () => {

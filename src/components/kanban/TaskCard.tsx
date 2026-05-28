@@ -1,8 +1,8 @@
 import { Task } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
-import { useExecuteTask } from "@/hooks/useExecuteTask";
+import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
-import { useNavigationActions } from "@/store/navigationStore";
+import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
 import { PRIORITY_COLORS } from "@/utils/constants/priority";
 
@@ -13,11 +13,18 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps) {
-  const { projectId, projectPath } = useKanban();
+  const { projectId, projectPath, connectionId, wslConnectionId } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
-  const { execute: handleExecute, isExecuting } = useExecuteTask(projectId, projectPath);
+  const navigate = useNavigate();
+  const { execute: handleExecute, isExecuting } = useExecuteTask(
+    projectId,
+    projectPath,
+    connectionId,
+    wslConnectionId,
+  );
   const interruptTask = useInterruptTaskMutation();
   const archiveTask = useArchiveTaskMutation();
+  const activeSession = useTaskActiveSession(task.status === "InProgress" ? task.id : null);
 
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
 
@@ -65,7 +72,7 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
             </span>
           )}
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-1">
           {task.status === "Ready" && (
             <button
               onClick={(e) => {
@@ -79,15 +86,28 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
             </button>
           )}
           {task.status === "InProgress" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                interruptTask.mutate(task.id);
-              }}
-              className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
-            >
-              ⏹ Interrupt
-            </button>
+            <>
+              {activeSession && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate({ agentId: String(task.id) });
+                  }}
+                  className="text-xs px-2 py-1 rounded bg-accent text-accent-foreground hover:bg-accent/90"
+                >
+                  Join
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  interruptTask.mutate(task.id);
+                }}
+                className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
+              >
+                ⏹ Interrupt
+              </button>
+            </>
           )}
           {task.status === "Review" && (
             <button

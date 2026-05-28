@@ -9,6 +9,9 @@ pub struct IntegrationStatus {
     pub connected: bool,
     pub display_name: Option<String>,
     pub source: Option<CredentialSource>,
+    /// Instance URL for self-hosted providers (e.g. Bitbucket Server, GitLab self-managed).
+    /// None for cloud-hosted variants.
+    pub instance_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

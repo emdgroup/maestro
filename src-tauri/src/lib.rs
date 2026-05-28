@@ -145,6 +145,9 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_forgejo_repos,
             crate::ipc::list_gitea_repos,
             crate::ipc::list_azuredevops_projects,
+            crate::ipc::list_azuredevops_repos,
+            crate::ipc::list_bitbucket_repos,
+            crate::ipc::list_bitbucket_projects,
             // Task attachments + interrupt (Phase 57)
             crate::ipc::get_task_attachments,
             crate::ipc::add_task_attachment,
