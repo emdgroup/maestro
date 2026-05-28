@@ -34,8 +34,10 @@ pub struct WslConnection {
 pub fn is_wsl_available() -> bool {
     #[cfg(windows)]
     {
+        use crate::command_ext::NoConsoleWindow;
         std::process::Command::new("wsl.exe")
             .arg("--version")
+            .no_console_window()
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -51,8 +53,10 @@ pub fn is_wsl_available() -> bool {
 pub fn list_distros() -> Result<Vec<WslDistro>, String> {
     #[cfg(windows)]
     {
+        use crate::command_ext::NoConsoleWindow;
         let output = std::process::Command::new("wsl.exe")
             .args(["--list", "--quiet"])
+            .no_console_window()
             .output()
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
@@ -72,8 +76,10 @@ pub fn list_distros() -> Result<Vec<WslDistro>, String> {
 pub fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String> {
     #[cfg(windows)]
     {
+        use crate::command_ext::NoConsoleWindow;
         let output = std::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "ls", "-1aF", path])
+            .no_console_window()
             .output()
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
@@ -100,8 +106,10 @@ pub fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String>
 pub fn get_home_dir(distro: &str) -> Result<String, String> {
     #[cfg(windows)]
     {
+        use crate::command_ext::NoConsoleWindow;
         let output = std::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "sh", "-c", "echo $HOME"])
+            .no_console_window()
             .output()
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 

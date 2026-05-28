@@ -1,3 +1,4 @@
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 //! Maestro Remote Server
 //!
 //! Headless binary that runs on remote SSH hosts. Receives MaestroRpcMessage
@@ -8,6 +9,7 @@
 //! Architecture: Adapted from Zed's remote_server (GPL-3.0).
 
 mod agent;
+mod command_ext;
 mod detection;
 mod file_ops;
 mod registry;
@@ -98,9 +100,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let registry: AcpRegistry = tokio::task::spawn_blocking(registry::load_registry)
         .await
         .unwrap_or_else(|_| registry::load_registry());
-    let agents_with_spawn: Vec<registry::DiscoveredAgentWithSpawn> = registry::discover_agents(&registry);
 
     // Validate the protocol version handshake before entering the main dispatch loop.
+    // Agent discovery (which::which PATH scanning) runs AFTER handshake so the client
+    // does not time out waiting on slow PATH scans on Windows.
     let first_msg = match read_message(&mut stdin).await {
         Ok(msg) => msg,
         Err(_) => return Ok(()),
@@ -139,6 +142,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     }
+
+    let agents_with_spawn: Vec<registry::DiscoveredAgentWithSpawn> = registry::discover_agents(&registry);
 
     // Break the loop if stdout write fails — server can't communicate, no point continuing.
     macro_rules! send_or_break {
@@ -714,12 +719,16 @@ async fn probe_tool(tool: &str) -> (bool, Option<String>) {
     // On Windows, tools like npx/uvx are .cmd batch files — CreateProcess won't find them
     // without going through cmd.exe. Check exit code too since cmd.exe always launches.
     #[cfg(windows)]
-    let result = tokio::process::Command::new("cmd")
-        .args(["/c", tool, "--version"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await;
+    let result = {
+        use crate::command_ext::NoConsoleWindow;
+        tokio::process::Command::new("cmd")
+            .args(["/c", tool, "--version"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .no_console_window()
+            .output()
+            .await
+    };
     #[cfg(not(windows))]
     let result = tokio::process::Command::new(tool)
         .arg("--version")

@@ -100,6 +100,7 @@ pub async fn ensure_wsl_server(
 ) -> Result<DeployResult, String> {
     use tokio::io::AsyncWriteExt;
 
+    use crate::command_ext::NoConsoleWindow;
     let probe_out = tokio::process::Command::new("wsl.exe")
         .args([
             "-d", distro, "--",
@@ -109,6 +110,7 @@ pub async fn ensure_wsl_server(
                 REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
             ),
         ])
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
@@ -140,6 +142,7 @@ pub async fn ensure_wsl_server(
             &format!("mkdir -p '{}' && cat > '{}' && chmod +x '{}'", abs_dir, abs_path, abs_path),
         ])
         .stdin(std::process::Stdio::piped())
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn WSL deploy shell: {}", e))?;
 

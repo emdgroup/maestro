@@ -20,6 +20,7 @@ export function ConfigSelector({ option, value, onChange, disabled }: ConfigSele
     case "mode":
       return <ModeSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
     case "effort":
+    case "thought_level":
       return (
         <EffortSelector option={option} value={value} onChange={onChange} disabled={disabled} />
       );

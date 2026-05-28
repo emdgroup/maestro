@@ -753,7 +753,7 @@ pub async fn preflight_connection(
                 }
             }
             ConnectionKey::Local => {
-                crate::acp::resolve::resolve_server_path_standalone()
+                crate::acp::resolve::resolve_server_path(&app_state.app_handle)
                     .map_err(|e| format!("maestro-server not found: {}", e))?;
                 crate::acp::spawn_connection_server(
                     ConnectionKey::Local,
@@ -1043,7 +1043,7 @@ pub async fn prefetch_agent_discovery(
             }
         }
         ConnectionKey::Local => {
-            let maestro_server_available = crate::acp::resolve::resolve_server_path_standalone().is_ok();
+            let maestro_server_available = crate::acp::resolve::resolve_server_path(&app_state.app_handle).is_ok();
             if !maestro_server_available {
                 app_state.acp.discovery_cache.lock().await.insert(ConnectionKey::Local, AgentDiscoveryCacheEntry {
                     result: AgentDiscoveryResult { maestro_server_available: false, agents: Vec::new(), error: None },

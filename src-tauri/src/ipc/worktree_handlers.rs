@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::{Emitter, State};
+use crate::command_ext::NoConsoleWindow;
 use chrono::{Duration, Utc};
 
 use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult};
@@ -380,6 +381,7 @@ pub async fn delete_worktree(
                 let output = tokio::process::Command::new("git")
                     .args(["branch", "-d", &branch_name])
                     .current_dir(path)
+                    .no_console_window()
                     .output()
                     .await;
                 match output {
@@ -401,6 +403,7 @@ pub async fn delete_worktree(
             crate::models::GitConnection::Wsl { distro, path } => {
                 let _ = tokio::process::Command::new("wsl.exe")
                     .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", &branch_name])
+                    .no_console_window()
                     .output()
                     .await;
             }
@@ -506,6 +509,7 @@ pub async fn cleanup_zombie_worktrees(
                 let _ = tokio::process::Command::new("git")
                     .args(["branch", "-d", branch_name])
                     .current_dir(path)
+                    .no_console_window()
                     .output()
                     .await;
             }
@@ -520,6 +524,7 @@ pub async fn cleanup_zombie_worktrees(
             crate::models::GitConnection::Wsl { distro, path } => {
                 let _ = tokio::process::Command::new("wsl.exe")
                     .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", branch_name])
+                    .no_console_window()
                     .output()
                     .await;
             }

@@ -1,4 +1,5 @@
 use tokio::process::Command as TokioCommand;
+use crate::command_ext::NoConsoleWindow;
 use crate::models::issue_tracking::{GitHubConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project_config::now_rfc3339;
 use crate::issue_tracking::token_manager::StoredToken;
@@ -29,6 +30,7 @@ struct GitHubLabel {
 pub async fn try_gh_cli_display_name() -> Option<String> {
     let output = TokioCommand::new("gh")
         .args(["api", "user", "--jq", ".login"])
+        .no_console_window()
         .output()
         .await
         .ok()?;
@@ -48,6 +50,7 @@ pub async fn try_gh_cli_token() -> Option<String> {
     }
     let output = TokioCommand::new("gh")
         .args(["auth", "token"])
+        .no_console_window()
         .output()
         .await
         .ok()?;

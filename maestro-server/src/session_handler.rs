@@ -643,6 +643,15 @@ async fn bootstrap_agent_transport(
             return None;
         }
     };
+    if let Some(stderr_pipe) = child.stderr.take() {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(stderr_pipe).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("[agent-stderr] {line}");
+            }
+        });
+    }
     let child_stdin = child.stdin.take().expect("child stdin must be piped");
     let child_stdout = child.stdout.take().expect("child stdout must be piped");
     let transport = acp::ByteStreams::new(child_stdin.compat_write(), child_stdout.compat());

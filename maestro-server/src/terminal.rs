@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::process::Stdio;
+use crate::command_ext::NoConsoleWindow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -60,6 +61,7 @@ pub(crate) async fn handle_create_terminal(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.kill_on_drop(true);
+    cmd.no_console_window();
 
     let mut child = cmd
         .spawn()

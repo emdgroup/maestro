@@ -1,3 +1,4 @@
+pub mod command_ext;
 pub mod db;
 pub mod error;
 pub mod models;

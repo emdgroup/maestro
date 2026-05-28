@@ -72,6 +72,14 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
             args.extend(extra.iter().cloned());
         }
         let env = npx.env.clone().unwrap_or_default();
+        // On Windows, npx is a .cmd batch file — CreateProcess can't find it without cmd.exe
+        #[cfg(windows)]
+        {
+            let mut cmd_args = vec!["/c".to_string(), "npx".to_string()];
+            cmd_args.extend(args);
+            return Some(("cmd".to_string(), cmd_args, env, vec!["npx".to_string()]));
+        }
+        #[cfg(not(windows))]
         return Some(("npx".to_string(), args, env, vec!["npx".to_string()]));
     }
     let key = current_platform_key();
@@ -92,6 +100,14 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
         if let Some(extra) = &uvx.args {
             args.extend(extra.iter().cloned());
         }
+        // On Windows, uvx is a .cmd batch file — CreateProcess can't find it without cmd.exe
+        #[cfg(windows)]
+        {
+            let mut cmd_args = vec!["/c".to_string(), "uvx".to_string()];
+            cmd_args.extend(args);
+            return Some(("cmd".to_string(), cmd_args, Default::default(), vec!["uvx".to_string()]));
+        }
+        #[cfg(not(windows))]
         return Some(("uvx".to_string(), args, Default::default(), vec!["uvx".to_string()]));
     }
     None

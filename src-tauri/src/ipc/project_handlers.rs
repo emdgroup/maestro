@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
+use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 use rusqlite::{params, ToSql};
 use serde_json;
@@ -332,6 +333,7 @@ pub async fn git_init_project(
                 .args(["init", "-b", "main", &path])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to spawn git: {}", e))?;
@@ -373,6 +375,7 @@ pub async fn clone_project(
                 .args(["clone", &url, &target_path])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to spawn git: {}", e))?;
@@ -441,6 +444,7 @@ pub async fn create_new_project(
                 .args(["init", "-b", "main", &full_path_str])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to spawn git: {}", e))?;

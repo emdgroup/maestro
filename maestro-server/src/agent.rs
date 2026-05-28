@@ -1,4 +1,5 @@
 use std::path::Path;
+use crate::command_ext::NoConsoleWindow;
 
 /// Spawn an ACP agent as a child subprocess with piped stdin/stdout.
 ///
@@ -35,8 +36,9 @@ pub async fn spawn_agent_subprocess(
         .envs(env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()) // suppress agent stderr noise
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
+        .no_console_window()
         .spawn()
         .map_err(|e| {
             eprintln!("[agent] spawn FAILED: command={command:?} error={e}");

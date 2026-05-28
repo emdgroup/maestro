@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
+import { issueTrackingQueryKeys } from "@/services/task.service";
 import type { IntegrationStatus, ProjectIssueTrackingConfig } from "@/types/bindings";
 
 export type { IntegrationStatus, ProjectIssueTrackingConfig };
@@ -97,6 +98,9 @@ export function useSaveProjectIssueTrackingConfig() {
     onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: integrationQueryKeys.projectIssueTracking(projectId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: issueTrackingQueryKeys.remoteIssues(projectId),
       });
     },
     onError: createErrorToastHandler("Failed to save issue tracking config"),

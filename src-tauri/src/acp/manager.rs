@@ -392,11 +392,13 @@ async fn open_local_transport(
         .map(Stdio::from)
         .unwrap_or_else(|_| Stdio::inherit());
 
+    use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new(server_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(stderr)
         .kill_on_drop(true)
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn maestro-server: {}", e))?;
 
@@ -456,12 +458,14 @@ async fn open_wsl_transport(
     server_path: &str,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
+    use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new("wsl.exe")
         .args(["-d", distro, "--", "bash", "-lc", server_path])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn WSL maestro-server in {}: {}", distro, e))?;
 

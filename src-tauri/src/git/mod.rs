@@ -1,6 +1,7 @@
 /// Remote git operations module
 pub mod remote;
 
+use crate::command_ext::NoConsoleWindow;
 use crate::models::GitConnection;
 use crate::models::MergeResult;
 use tokio::process::Command as TokioCommand;
@@ -24,6 +25,7 @@ async fn run_wsl_git(distro: &str, path: &str, args: &[&str], ignore_exit_code: 
     cmd_args.extend_from_slice(args);
     let output = TokioCommand::new("wsl.exe")
         .args(&cmd_args)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to spawn wsl.exe for git: {}", e))?;
@@ -45,6 +47,7 @@ async fn run_git_in_dir_inner(
             let output = TokioCommand::new("git")
                 .args(args)
                 .current_dir(abs_path)
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("git failed: {}", e))?;
@@ -255,6 +258,7 @@ pub async fn list_worktrees_local(repo_path: &str) -> Result<Vec<ParsedWorktree>
     let output = TokioCommand::new("git")
         .args(["worktree", "list", "--porcelain"])
         .current_dir(repo_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git worktree list: {}", e))?;
@@ -300,6 +304,7 @@ pub async fn get_worktree_status_local(worktree_abs_path: &str) -> Result<String
     let output = TokioCommand::new("git")
         .args(["status", "--porcelain"])
         .current_dir(worktree_abs_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git status in {}: {}", worktree_abs_path, e))?;
@@ -329,6 +334,7 @@ async fn create_worktree_local(
     let output = TokioCommand::new("git")
         .args(&args)
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git worktree add: {}", e))?;
@@ -347,6 +353,7 @@ async fn delete_worktree_local(
     let output = TokioCommand::new("git")
         .args(["worktree", "remove", worktree_name, "--force"])
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git worktree remove: {}", e))?;
@@ -366,6 +373,7 @@ async fn git_diff_local(
     let output = TokioCommand::new("git")
         .args(["diff", "--unified=6", &format!("{}...{}", base_branch, branch)])
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git diff: {}", e))?;
@@ -384,6 +392,7 @@ async fn git_status_local(
     let output = TokioCommand::new("git")
         .args(["status", "--porcelain"])
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git status: {}", e))?;
@@ -423,6 +432,7 @@ async fn list_branches_local(
     let output = TokioCommand::new("git")
         .args(["branch", "-a", "--format=%(refname:short)"])
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git branch: {}", e))?;
@@ -444,6 +454,7 @@ async fn get_current_branch_local(
     let output = TokioCommand::new("git")
         .args(["symbolic-ref", "--short", "HEAD"])
         .current_dir(path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git symbolic-ref: {}", e))?;
@@ -484,6 +495,7 @@ pub async fn squash_merge_to_main(
     let output = TokioCommand::new("git")
         .args(["checkout", "main"])
         .current_dir(repo_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git checkout: {}", e))?;
@@ -496,6 +508,7 @@ pub async fn squash_merge_to_main(
     let _output = TokioCommand::new("git")
         .args(["merge", branch_name, "--squash", "--no-commit"])
         .current_dir(repo_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git merge: {}", e))?;
@@ -504,6 +517,7 @@ pub async fn squash_merge_to_main(
     let status_output = TokioCommand::new("git")
         .args(["status", "--porcelain"])
         .current_dir(repo_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git status: {}", e))?;
@@ -515,6 +529,7 @@ pub async fn squash_merge_to_main(
         let _ = TokioCommand::new("git")
             .args(["merge", "--abort"])
             .current_dir(repo_path)
+            .no_console_window()
             .output()
             .await;
         return Ok(MergeResult {
@@ -537,6 +552,7 @@ pub async fn squash_merge_to_main(
     let output = TokioCommand::new("git")
         .args(["commit", "-m", &commit_msg])
         .current_dir(repo_path)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run git commit: {}", e))?;

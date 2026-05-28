@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
+use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 
 use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult};
@@ -279,6 +280,7 @@ pub(crate) async fn finalize_successful_merge(
                     let _ = tokio::process::Command::new("git")
                         .args(["branch", "-D", branch_name])
                         .current_dir(path)
+                        .no_console_window()
                         .output()
                         .await;
                 }
@@ -293,6 +295,7 @@ pub(crate) async fn finalize_successful_merge(
                 crate::models::GitConnection::Wsl { distro, path } => {
                     let _ = tokio::process::Command::new("wsl.exe")
                         .args(["-d", distro, "--", "git", "-C", path, "branch", "-D", branch_name])
+                        .no_console_window()
                         .output()
                         .await;
                 }

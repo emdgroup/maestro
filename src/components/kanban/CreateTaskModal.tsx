@@ -217,7 +217,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         if (!open) onClose();
       }}
     >
-      <DialogContent className="w-fit min-w-[520px] max-w-[90vw] overflow-y-auto custom-scrollbar">
+      <DialogContent className="sm:w-fit sm:min-w-[520px] sm:max-w-[90vw] overflow-y-auto custom-scrollbar">
         <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
           CREATE TASK
         </DialogTitle>
