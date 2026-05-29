@@ -346,6 +346,38 @@ pub async fn git_init_project(
     }
 }
 
+fn build_provider_auth_header(
+    provider: &str,
+    app_state: &AppState,
+) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+
+    let creds = crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
+
+    let header = match provider {
+        "bitbucket" => match creds.instance_url {
+            Some(_) => format!("Authorization: Bearer {}", creds.token),
+            None => {
+                let email = creds.email.ok_or("Bitbucket Cloud credentials missing email")?;
+                let basic = base64::engine::general_purpose::STANDARD
+                    .encode(format!("{}:{}", email, creds.token).as_bytes());
+                format!("Authorization: Basic {}", basic)
+            }
+        },
+        "github" | "gitlab" | "forgejo" | "gitea" => {
+            format!("Authorization: Bearer {}", creds.token)
+        }
+        "azuredevops" => {
+            let basic = base64::engine::general_purpose::STANDARD
+                .encode(format!(":{}", creds.token).as_bytes());
+            format!("Authorization: Basic {}", basic)
+        }
+        _ => return Ok(None),
+    };
+
+    Ok(Some(header))
+}
+
 /// Clone a git repository and register it as a project
 #[tauri::command]
 #[specta::specta]
@@ -354,7 +386,15 @@ pub async fn clone_project(
     url: String,
     target_path: String,
     connection_id: Option<i32>,
+    provider: Option<String>,
 ) -> Result<Project, String> {
+    let auth_header = match provider.as_deref() {
+        Some(provider_key) if url.starts_with("http://") || url.starts_with("https://") => {
+            build_provider_auth_header(provider_key, &app_state)?
+        }
+        _ => None,
+    };
+
     // Step 1: git clone (local or remote)
     match connection_id {
         Some(conn_id) => {
@@ -362,8 +402,17 @@ pub async fn clone_project(
                 .ssh.get_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            let git_cmd = match &auth_header {
+                Some(header) => format!(
+                    "git -c {} clone {} {}",
+                    shell_quote(&format!("http.extraHeader={}", header)),
+                    shell_quote(&url),
+                    shell_quote(&target_path),
+                ),
+                None => format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)),
+            };
             let output = session
-                .execute_command(&format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)))
+                .execute_command(&git_cmd)
                 .await
                 .map_err(|e| format!("SSH git clone failed: {}", e))?;
             if output.contains("error:") || output.contains("fatal:") {
@@ -371,8 +420,14 @@ pub async fn clone_project(
             }
         }
         None => {
+            let header_value = auth_header.map(|h| format!("http.extraHeader={}", h));
+            let mut args: Vec<&str> = Vec::new();
+            if let Some(ref hv) = header_value {
+                args.extend(["-c", hv.as_str()]);
+            }
+            args.extend(["clone", &url, &target_path]);
             let output = tokio::process::Command::new("git")
-                .args(["clone", &url, &target_path])
+                .args(&args)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .no_console_window()

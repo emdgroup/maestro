@@ -109,9 +109,9 @@ async gitInitProject(path: string, connectionId: number | null) : Promise<Result
 /**
  * Clone a git repository and register it as a project
  */
-async cloneProject(url: string, targetPath: string, connectionId: number | null) : Promise<Result<Project, string>> {
+async cloneProject(url: string, targetPath: string, connectionId: number | null, provider: string | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath, connectionId, provider }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

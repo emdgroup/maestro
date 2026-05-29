@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Checkbox } from "@/ui/checkbox";
+import { Spinner } from "@/ui/spinner";
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
@@ -35,7 +36,7 @@ export function DeleteWorktreeDialog({
     <AlertDialog
       open={worktree != null}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !deleteMutation.isPending) onClose();
       }}
     >
       <AlertDialogContent>
@@ -64,8 +65,9 @@ export function DeleteWorktreeDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleteMutation.isPending} onClick={onClose}>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            disabled={deleteMutation.isPending}
             onClick={() => {
               if (worktree == null) return;
               deleteMutation.mutate(
@@ -85,7 +87,14 @@ export function DeleteWorktreeDialog({
               );
             }}
           >
-            Delete
+            {deleteMutation.isPending ? (
+              <>
+                <Spinner className="size-3.5" />
+                Deleting...
+              </>
+            ) : (
+              "Delete"
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -36,7 +36,7 @@ import {
 } from "@/services/provider-lookup.service";
 
 interface ProviderRepoPickerProps {
-  onRepoSelected: (cloneUrl: string, repoName: string) => void;
+  onRepoSelected: (cloneUrl: string, repoName: string, provider?: string) => void;
   disabled?: boolean;
 }
 
@@ -127,41 +127,43 @@ export function ProviderRepoPicker({ onRepoSelected, disabled }: ProviderRepoPic
 interface ProviderFormProps {
   provider: string;
   integration: { display_name?: string | null; instance_url?: string | null } | null;
-  onRepoSelected: (cloneUrl: string, repoName: string) => void;
+  onRepoSelected: (cloneUrl: string, repoName: string, provider?: string) => void;
   disabled?: boolean;
 }
 
 function ProviderForm({ provider, integration, onRepoSelected, disabled }: ProviderFormProps) {
+  const withProvider = (url: string, name: string) => onRepoSelected(url, name, provider);
+
   switch (provider) {
     case "github":
       return (
         <GitHubRepoForm
           defaultOwner={integration?.display_name ?? undefined}
-          onRepoSelected={onRepoSelected}
+          onRepoSelected={withProvider}
           disabled={disabled}
         />
       );
     case "gitlab":
-      return <GitLabRepoForm onRepoSelected={onRepoSelected} disabled={disabled} />;
+      return <GitLabRepoForm onRepoSelected={withProvider} disabled={disabled} />;
     case "forgejo":
       return (
         <OwnerRepoForm
           provider="forgejo"
-          onRepoSelected={onRepoSelected}
+          onRepoSelected={withProvider}
           disabled={disabled}
         />
       );
     case "gitea":
       return (
-        <OwnerRepoForm provider="gitea" onRepoSelected={onRepoSelected} disabled={disabled} />
+        <OwnerRepoForm provider="gitea" onRepoSelected={withProvider} disabled={disabled} />
       );
     case "azuredevops":
-      return <AzureDevOpsRepoForm onRepoSelected={onRepoSelected} disabled={disabled} />;
+      return <AzureDevOpsRepoForm onRepoSelected={withProvider} disabled={disabled} />;
     case "bitbucket":
       return (
         <BitbucketRepoForm
           instanceUrl={integration?.instance_url ?? null}
-          onRepoSelected={onRepoSelected}
+          onRepoSelected={withProvider}
           disabled={disabled}
         />
       );

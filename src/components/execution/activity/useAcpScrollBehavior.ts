@@ -4,6 +4,7 @@ export type AcpScrollBehaviorResult = {
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
   chatContentRef: React.RefObject<HTMLDivElement | null>;
   lastUserMsgRef: React.RefObject<HTMLDivElement | null>;
+  atBottomRef: React.RefObject<boolean>;
   showScrollFab: boolean;
   hasUnread: boolean;
   isLastUserMsgPinned: boolean;
@@ -119,6 +120,7 @@ export function useAcpScrollBehavior(
     chatScrollRef,
     chatContentRef,
     lastUserMsgRef,
+    atBottomRef,
     showScrollFab,
     hasUnread,
     isLastUserMsgPinned,

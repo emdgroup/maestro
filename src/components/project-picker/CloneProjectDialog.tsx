@@ -30,6 +30,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
   const [targetPath, setTargetPath] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState("");
+  const [provider, setProvider] = useState<string | null>(null);
   const { mutateAsync: cloneProject, isPending } = useCloneProject();
   const { setSelectedProject } = useSelectedProjectActions();
 
@@ -39,9 +40,10 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
     setShowDirPicker(false);
   };
 
-  const handleRepoSelected = (cloneUrl: string, repoName: string) => {
+  const handleRepoSelected = (cloneUrl: string, repoName: string, selectedProvider?: string) => {
     setUrl(cloneUrl);
     setSelectedRepoName(repoName);
+    setProvider(selectedProvider ?? null);
     if (targetPath) {
       const parent = targetPath.includes("/")
         ? targetPath.substring(0, targetPath.lastIndexOf("/"))
@@ -57,6 +59,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         url: url.trim(),
         targetPath: targetPath.trim(),
         connectionId: connection?.id ?? null,
+        provider: provider ?? null,
       });
       const project = await api.openProject(created.id);
       api.primeProjectServer(created.id).catch(() => {});
@@ -64,6 +67,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
       setUrl("");
       setTargetPath("");
       setSelectedRepoName("");
+      setProvider(null);
       onOpenChange(false);
     } catch {
       // Error handled by mutation hook
@@ -76,6 +80,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         setUrl("");
         setTargetPath("");
         setSelectedRepoName("");
+        setProvider(null);
       }
       onOpenChange(nextOpen);
     }

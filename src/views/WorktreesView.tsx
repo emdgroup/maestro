@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { ChevronsUpDown, Group, LayoutGrid, Plus, SearchIcon } from "lucide-react";
+import { ChevronsUpDown, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
@@ -26,10 +27,12 @@ interface WorktreesViewProps {
  * A slide container animates between the card grid and the diff panel (Plan 03).
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
-  const { data: worktrees = [], refetch: refetchWorktrees } = useWorktreesQuery(
-    projectId,
-    repoPath,
-  );
+  const {
+    data: worktrees = [],
+    refetch: refetchWorktrees,
+    isLoading,
+    isFetching,
+  } = useWorktreesQuery(projectId, repoPath);
   const activeTab = useActiveTab();
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();
@@ -146,6 +149,16 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                 </ToggleGroup>
               </div>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8"
+                  title="Refresh worktrees"
+                  disabled={isFetching}
+                  onClick={() => void refetchWorktrees()}
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+                </Button>
                 {viewMode === "grouped" && (
                   <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
                     <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
@@ -179,22 +192,29 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               </div>
             </div>
 
-            <WorktreeCardGrid
-              viewMode={viewMode}
-              flatWorktrees={flatWorktrees}
-              groups={groupedWorktrees}
-              collapsedGroups={collapsedGroups}
-              onToggleGroup={toggleGroup}
-              onSelectWorktree={setSelectedWorktreePath}
-              onDeleteWorktree={(path) => {
-                const wt = worktrees.find((w) => w.path === path);
-                setWorktreeToDelete(wt ?? null);
-              }}
-              repoPath={repoPath ?? ""}
-              emptyMessage={
-                worktrees.length === 0 ? "No worktrees yet" : "No worktrees match your filter"
-              }
-            />
+            {isLoading ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                <Spinner className="size-5" />
+                <span>Loading worktrees...</span>
+              </div>
+            ) : (
+              <WorktreeCardGrid
+                viewMode={viewMode}
+                flatWorktrees={flatWorktrees}
+                groups={groupedWorktrees}
+                collapsedGroups={collapsedGroups}
+                onToggleGroup={toggleGroup}
+                onSelectWorktree={setSelectedWorktreePath}
+                onDeleteWorktree={(path) => {
+                  const wt = worktrees.find((w) => w.path === path);
+                  setWorktreeToDelete(wt ?? null);
+                }}
+                repoPath={repoPath ?? ""}
+                emptyMessage={
+                  worktrees.length === 0 ? "No worktrees yet" : "No worktrees match your filter"
+                }
+              />
+            )}
           </div>
 
           {/* Screen 2 — Diff panel */}

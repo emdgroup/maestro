@@ -123,6 +123,7 @@ export function AgentActivityPanel({
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
   const [centeredTextWidth, setCenteredTextWidth] = useState<number | null>(null);
   const composeBarRef = useRef<ComposeBarHandle>(null);
+  const composeBarWrapperRef = useRef<HTMLDivElement>(null);
   const selectedProject = useSelectedProject();
 
   useEffect(() => {
@@ -168,6 +169,7 @@ export function AgentActivityPanel({
   const {
     chatScrollRef,
     chatContentRef,
+    atBottomRef,
     showScrollFab,
     hasUnread,
     lastUserMsgRef,
@@ -462,6 +464,23 @@ export function AgentActivityPanel({
   const isCenteredCompose =
     !liveState.isInitializing && displayItems.length === 0 && !hasSentFirstMessage;
 
+  // When compose bar grows (multiline input) and auto-scroll is active, keep stream tail visible
+  useEffect(() => {
+    const el = composeBarWrapperRef.current;
+    const scrollEl = chatScrollRef.current;
+    if (!el || !scrollEl) return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  // isReady: re-run when initialization completes (refs become available)
+  // isCenteredCompose: re-run when compose bar mounts/unmounts
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, isCenteredCompose]);
+
   const handleSendWithTransition = useCallback(
     (content: string, contentBlocks?: JsonValue) => {
       if (isCenteredCompose) setHasSentFirstMessage(true);
@@ -551,6 +570,7 @@ export function AgentActivityPanel({
     } else if (!isCenteredCompose) {
       bottomBar = (
         <motion.div
+          ref={composeBarWrapperRef}
           className="sticky bottom-0 z-10 px-16 pb-2.5 pt-1"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

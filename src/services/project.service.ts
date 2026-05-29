@@ -170,11 +170,13 @@ export function useCloneProject() {
       url,
       targetPath,
       connectionId,
+      provider,
     }: {
       url: string;
       targetPath: string;
       connectionId: number | null;
-    }) => api.cloneProject(url, targetPath, connectionId),
+      provider?: string | null;
+    }) => api.cloneProject(url, targetPath, connectionId, provider ?? null),
     onSuccess: (_, { connectionId }) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
