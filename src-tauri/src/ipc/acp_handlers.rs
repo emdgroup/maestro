@@ -1268,12 +1268,13 @@ pub async fn get_acp_session_meta(
     })
 }
 
-/// Get all currently active sessions (ACP + PTY) as a flat list.
+/// Get currently active sessions (ACP + PTY) as a flat list, filtered by project.
 /// Used by the Agents sidebar to display live sessions.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_active_sessions(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
 
@@ -1286,7 +1287,10 @@ pub async fn get_active_sessions(
     let acp_session_data: Vec<_> = {
         let acp = app_state.acp.sessions.lock().await;
         acp.iter()
-            .filter(|(key, _)| !pooled_log_ids.contains(key))
+            .filter(|(key, proc)| {
+                !pooled_log_ids.contains(key)
+                    && proc.project_id == Some(project_id)
+            })
             .map(|(key, proc)| {
                 let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
                 (*key, proc.session_name.clone(), proc.agent_id_meta.clone(),
@@ -1296,8 +1300,8 @@ pub async fn get_active_sessions(
     };
     {
         let agent_cache = app_state.acp.agent_cache.lock().await;
-        for (key, session_name, agent_id, started_at, task_id, task_name, branch_name, native_id, project_id) in acp_session_data {
-            let caps = project_id
+        for (key, session_name, agent_id, started_at, task_id, task_name, branch_name, native_id, proc_project_id) in acp_session_data {
+            let caps = proc_project_id
                 .and_then(|pid| agent_cache.get(&(pid, agent_id.clone())))
                 .map(|e| e.session_capabilities.clone())
                 .unwrap_or_default();
@@ -1314,6 +1318,7 @@ pub async fn get_active_sessions(
                 supports_session_list: caps.supports_session_list,
                 supports_session_load: caps.supports_session_load,
                 supports_session_close: caps.supports_session_close,
+                project_id: proc_project_id,
             });
         }
     }
@@ -1322,6 +1327,9 @@ pub async fn get_active_sessions(
     {
         let pty_meta = app_state.pty.session_meta.lock().await;
         for (key, meta) in pty_meta.iter() {
+            if meta.project_id != Some(project_id) {
+                continue;
+            }
             sessions.push(ActiveSessionInfo {
                 session_key: *key,
                 session_name: meta.session_name.clone(),
@@ -1335,6 +1343,7 @@ pub async fn get_active_sessions(
                 supports_session_list: false,
                 supports_session_load: false,
                 supports_session_close: false,
+                project_id: meta.project_id,
             });
         }
     }

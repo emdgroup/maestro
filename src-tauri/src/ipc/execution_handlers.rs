@@ -761,6 +761,7 @@ pub async fn spawn_interactive_execution(
             task_name: None,
             branch_name: Some(branch_name.clone()),
             cwd: worktree_abs_path.clone(),
+            project_id: Some(project_id),
         };
         app_state.pty.session_meta.lock().await.insert(log_id, meta);
     }

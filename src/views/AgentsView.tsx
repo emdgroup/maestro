@@ -33,7 +33,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
   connectionId,
   wslConnectionId,
 }) => {
-  const { data: sessions = [] } = useActiveSessionsQuery();
+  const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
   const [selectedSessionKey, setSelectedSessionKey] = useState<number | null>(null);

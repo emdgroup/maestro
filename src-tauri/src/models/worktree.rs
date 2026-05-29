@@ -76,6 +76,7 @@ pub struct ActiveSessionInfo {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
+    pub project_id: Option<i32>,
 }
 
 /// TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
@@ -96,4 +97,5 @@ pub struct PtySessionMeta {
     pub task_name: Option<String>,
     pub branch_name: Option<String>,
     pub cwd: String,
+    pub project_id: Option<i32>,
 }

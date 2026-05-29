@@ -24,7 +24,7 @@ export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps
   );
   const interruptTask = useInterruptTaskMutation();
   const archiveTask = useArchiveTaskMutation();
-  const activeSession = useTaskActiveSession(task.status === "InProgress" ? task.id : null);
+  const activeSession = useTaskActiveSession(task.status === "InProgress" ? task.id : null, projectId);
 
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
 

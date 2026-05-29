@@ -7,7 +7,7 @@ import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 
 export const executionQueryKeys = {
-  activeSessions: ["activeSessions"] as const,
+  activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
   sessionList: (
     agentId: string,
     cwd: string,
@@ -24,24 +24,26 @@ export const executionQueryKeys = {
  * Event-driven active session list. Refreshes on "sessions-changed" Tauri event.
  * No polling — sidebar stays in sync without DB queries.
  */
-export function useActiveSessionsQuery() {
+export function useActiveSessionsQuery(projectId: number | undefined) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    if (projectId === undefined) return;
     let unlisten: (() => void) | undefined;
     listen("sessions-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
     }).then((fn) => {
       unlisten = fn;
     });
     return () => {
       unlisten?.();
     };
-  }, [queryClient]);
+  }, [queryClient, projectId]);
 
   return useQuery({
-    queryKey: executionQueryKeys.activeSessions,
-    queryFn: () => api.getActiveSessions(),
+    queryKey: projectId !== undefined ? executionQueryKeys.activeSessions(projectId) : ["activeSessions-disabled"],
+    queryFn: () => api.getActiveSessions(projectId!),
+    enabled: projectId !== undefined,
   });
 }
 
@@ -108,7 +110,7 @@ export function useLoadAcpSessionMutation() {
       );
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
     onError: createErrorToastHandler("Failed to load session"),
   });
@@ -179,7 +181,7 @@ export function useSpawnInteractiveExecutionMutation() {
       );
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to spawn interactive session"),
@@ -295,7 +297,7 @@ export function useSpawnAcpSessionMutation() {
       );
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
     onError: createErrorToastHandler("Failed to spawn ACP session"),
   });
@@ -322,7 +324,7 @@ export function useRenameAcpSessionMutation() {
       return await api.renameAcpSession(projectId, agentId, acpSessionId, displayName);
     },
     onSuccess: (_data, { agentId }) => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
       void queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
       });
@@ -359,7 +361,7 @@ export function useCancelActiveSessionMutation() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions });
+      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
     onError: createErrorToastHandler("Failed to close session"),
   });

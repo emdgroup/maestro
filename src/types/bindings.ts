@@ -1094,12 +1094,12 @@ async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, str
 }
 },
 /**
- * Get all currently active sessions (ACP + PTY) as a flat list.
+ * Get currently active sessions (ACP + PTY) as a flat list, filtered by project.
  * Used by the Agents sidebar to display live sessions.
  */
-async getActiveSessions() : Promise<Result<ActiveSessionInfo[], string>> {
+async getActiveSessions(projectId: number) : Promise<Result<ActiveSessionInfo[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_active_sessions") };
+    return { status: "ok", data: await TAURI_INVOKE("get_active_sessions", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1602,7 +1602,7 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean }
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean; project_id: number | null }
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
 export type AgentCatalogCommand = { name: string; description: string }

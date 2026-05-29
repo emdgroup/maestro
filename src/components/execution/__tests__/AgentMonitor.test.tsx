@@ -24,6 +24,7 @@ const baseSession = {
   supports_session_list: false,
   supports_session_load: false,
   supports_session_close: false,
+  project_id: null,
 };
 
 const defaultProps = {

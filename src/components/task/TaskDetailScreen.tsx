@@ -103,7 +103,8 @@ interface InterruptModalProps {
 function InterruptModal({ open, onClose, taskId }: InterruptModalProps) {
   const interruptTask = useInterruptTaskMutation();
   const cancelTask = useCancelTaskMutation();
-  const { data: sessions = [] } = useActiveSessionsQuery();
+  const selectedProject = useSelectedProject();
+  const { data: sessions = [] } = useActiveSessionsQuery(selectedProject?.id);
 
   function handleResume() {
     const session = sessions.find((s) => s.task_id === taskId);

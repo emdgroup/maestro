@@ -80,7 +80,7 @@ function App() {
     useProjectIssueTrackingConfig(currentProject?.id ?? 0);
 
   // Running agent count for header badge
-  const { data: sessions = [] } = useActiveSessionsQuery();
+  const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
   const runningAgentCount = sessions.length;
 
   // SSH connection health monitoring — only active for SSH projects

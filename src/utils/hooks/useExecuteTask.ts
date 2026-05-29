@@ -153,8 +153,8 @@ export function useExecuteTask(
   return { execute, isExecuting };
 }
 
-export function useTaskActiveSession(taskId: number | null) {
-  const { data: sessions = [] } = useActiveSessionsQuery();
+export function useTaskActiveSession(taskId: number | null, projectId: number | null) {
+  const { data: sessions = [] } = useActiveSessionsQuery(projectId ?? undefined);
   if (taskId === null) return null;
   return sessions.find((s) => s.task_id === taskId) ?? null;
 }
