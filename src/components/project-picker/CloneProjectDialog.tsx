@@ -67,7 +67,6 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
       setUrl("");
       setTargetPath("");
       setSelectedRepoName("");
-      setProvider(null);
       onOpenChange(false);
     } catch {
       // Error handled by mutation hook

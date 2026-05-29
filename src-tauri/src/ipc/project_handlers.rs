@@ -364,9 +364,8 @@ fn build_provider_auth_header(
                 format!("Authorization: Basic {}", basic)
             }
         },
-        "github" | "gitlab" | "forgejo" | "gitea" => {
-            format!("Authorization: Bearer {}", creds.token)
-        }
+        "github" | "gitlab" => format!("Authorization: Bearer {}", creds.token),
+        "forgejo" | "gitea" => format!("Authorization: token {}", creds.token),
         "azuredevops" => {
             let basic = base64::engine::general_purpose::STANDARD
                 .encode(format!(":{}", creds.token).as_bytes());
@@ -420,12 +419,12 @@ pub async fn clone_project(
             }
         }
         None => {
-            let header_value = auth_header.map(|h| format!("http.extraHeader={}", h));
-            let mut args: Vec<&str> = Vec::new();
-            if let Some(ref hv) = header_value {
-                args.extend(["-c", hv.as_str()]);
+            let mut args: Vec<String> = Vec::new();
+            if let Some(header) = auth_header {
+                args.push("-c".to_string());
+                args.push(format!("http.extraHeader={}", header));
             }
-            args.extend(["clone", &url, &target_path]);
+            args.extend(["clone".to_string(), url.clone(), target_path.clone()]);
             let output = tokio::process::Command::new("git")
                 .args(&args)
                 .stdout(std::process::Stdio::piped())
