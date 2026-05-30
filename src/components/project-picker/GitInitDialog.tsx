@@ -8,6 +8,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { GitBranch, Loader2 } from "lucide-react";
+import { getFolderName } from "@/utils/helpers/path-utils";
 
 interface GitInitDialogProps {
   open: boolean;
@@ -26,7 +27,7 @@ export function GitInitDialog({
   onSkip,
   loading,
 }: GitInitDialogProps) {
-  const folderName = path.split("/").pop() ?? path;
+  const folderName = getFolderName(path);
 
   return (
     <Dialog open={open} onOpenChange={loading ? undefined : onOpenChange}>

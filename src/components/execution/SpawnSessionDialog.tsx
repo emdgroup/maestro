@@ -100,7 +100,7 @@ export function SpawnSessionDialog({
     }
   }
 
-  const canSpawn = sessionType === "terminal" ? !!selectedWorktree : true;
+  const canSpawn = sessionType === "terminal" ? !!selectedWorktree : (!isGitRepo || !!selectedWorktree);
 
   const isPending = spawnMutation.isPending || spawnAcpMutation.isPending;
 

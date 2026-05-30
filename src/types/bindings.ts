@@ -17,11 +17,11 @@ async getProjects() : Promise<Result<Project[], string>> {
 }
 },
 /**
- * Get list of all projects per connections
+ * Get list of all projects per connection
  */
-async getConnectionProjects(connectionId: number | null) : Promise<Result<Project[], string>> {
+async getConnectionProjects(connectionKey: ConnectionKey) : Promise<Result<Project[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_connection_projects", { connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_connection_projects", { connectionKey }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -98,9 +98,9 @@ async removeProject(projectId: number) : Promise<Result<null, string>> {
 /**
  * Initialize git in an existing directory (no-op if already a git repo)
  */
-async gitInitProject(path: string, connectionId: number | null) : Promise<Result<null, string>> {
+async gitInitProject(path: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("git_init_project", { path, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("git_init_project", { path, connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -117,9 +117,9 @@ async checkIsGitRepo(path: string, connectionId: number | null, wslConnectionId:
 /**
  * Clone a git repository and register it as a project
  */
-async cloneProject(url: string, targetPath: string, connectionId: number | null, provider: string | null) : Promise<Result<Project, string>> {
+async cloneProject(url: string, targetPath: string, connectionId: number | null, wslConnectionId: number | null, provider: string | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath, connectionId, provider }) };
+    return { status: "ok", data: await TAURI_INVOKE("clone_project", { url, targetPath, connectionId, wslConnectionId, provider }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -128,9 +128,9 @@ async cloneProject(url: string, targetPath: string, connectionId: number | null,
 /**
  * Create a new project directory, git init it, and register as a project
  */
-async createNewProject(parentDir: string, folderName: string, connectionId: number | null) : Promise<Result<Project, string>> {
+async createNewProject(parentDir: string, folderName: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_new_project", { parentDir, folderName, connectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_new_project", { parentDir, folderName, connectionId, wslConnectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

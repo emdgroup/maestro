@@ -8,7 +8,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useGitInitProject } from "@/services/project.service";
-import { useIsGitRepo, useSelectedProjectActions } from "@/store/projectStore";
+import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
 import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
 import { DeleteWorktreeDialog } from "@/components/execution/DeleteWorktreeDialog";
@@ -32,6 +32,7 @@ interface WorktreesViewProps {
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
   const isGitRepo = useIsGitRepo();
+  const selectedProject = useSelectedProject();
   const { mutateAsync: gitInitProject, isPending: isInitializing } = useGitInitProject();
   const { setSelectedProject } = useSelectedProjectActions();
   const {
@@ -118,7 +119,11 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     const handleInitGit = async () => {
       if (!repoPath || !projectId) return;
       try {
-        await gitInitProject({ path: repoPath, connectionId: null });
+        await gitInitProject({
+          path: repoPath,
+          connectionId: selectedProject?.connection_id ?? null,
+          wslConnectionId: selectedProject?.wsl_connection_id ?? null,
+        });
         const project = await api.openProject(projectId);
         setSelectedProject(project, true);
         toast.success("Git initialized successfully");

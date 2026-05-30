@@ -12,19 +12,19 @@ use crate::acp::ConnectionKey;
 
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
-///
-/// Uses `connection_id IS ?` for nullable column comparison (SQLite NULL semantics).
 fn register_project_in_db(
     app_state: &Arc<AppState>,
     path: &str,
     name: &str,
-    connection_id: Option<i32>,
+    connection_key: ConnectionKey,
 ) -> Result<Project, String> {
+    let connection_id = connection_key.ssh_id();
+    let wsl_connection_id = connection_key.wsl_id();
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ?",
-            rusqlite::params![path, connection_id],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ?",
+            params![path, connection_id, wsl_connection_id],
             |row| row.get(0),
         ).ok();
         match existing {
@@ -32,16 +32,16 @@ fn register_project_in_db(
             None => {
                 let now = chrono::Utc::now().to_rfc3339();
                 conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![name, path, now, now, connection_id, now],
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    params![name, path, now, now, connection_id, wsl_connection_id, now],
                 ).map_err(|e| format!("Failed to insert project: {}", e))?;
                 conn.last_insert_rowid() as i32
             }
         }
     };
 
-    // Init .maestro folder (local only — remote projects have no local filesystem path)
-    if connection_id.is_none() {
+    // Init .maestro folder for local projects only — SSH/WSL have no local filesystem path.
+    if matches!(connection_key, ConnectionKey::Local) {
         crate::db::project_storage::create_project_maestro_folder(path)
             .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
     }
@@ -50,7 +50,7 @@ fn register_project_in_db(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
         "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
-        rusqlite::params![project_id],
+        params![project_id],
         Project::from_row,
     ).map_err(|e| e.to_string())
 }
@@ -60,22 +60,43 @@ fn register_project_in_db(
 /// before the caller proceeds to async SSH I/O.
 fn fetch_projects_from_db(
     conn: &rusqlite::Connection,
-    connection_id: Option<i32>,
+    connection_key: ConnectionKey,
 ) -> Result<Vec<Project>, String> {
+    let select = "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects";
+    let order = "ORDER BY last_opened DESC NULLS LAST, created_at DESC";
 
-    let (query, params): (&str, &[&dyn ToSql]) = match connection_id {
-        Some(id) => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE connection_id = ? ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![id.clone()]),
-        None => ("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE connection_id IS NULL ORDER BY last_opened DESC NULLS LAST, created_at DESC", params![])
-    };
-    let mut stmt = conn.prepare(query)
-        .map_err(|e| e.to_string())?;
-
-    let projects = stmt
-        .query_map(params, Project::from_row)
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(projects)
+    match connection_key {
+        ConnectionKey::Ssh { id } => {
+            let query = format!("{} WHERE connection_id = ? {}", select, order);
+            let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+            let projects: Vec<Project> = stmt
+                .query_map([id], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e: rusqlite::Error| e.to_string())?;
+            Ok(projects)
+        }
+        ConnectionKey::Wsl { id } => {
+            let query = format!("{} WHERE wsl_connection_id = ? {}", select, order);
+            let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+            let projects: Vec<Project> = stmt
+                .query_map([id], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e: rusqlite::Error| e.to_string())?;
+            Ok(projects)
+        }
+        ConnectionKey::Local => {
+            let query = format!("{} WHERE connection_id IS NULL AND wsl_connection_id IS NULL {}", select, order);
+            let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+            let projects: Vec<Project> = stmt
+                .query_map([], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e: rusqlite::Error| e.to_string())?;
+            Ok(projects)
+        }
+    }
 }
 
 /// Get list of all projects
@@ -97,19 +118,19 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     Ok(projects)
 }
 
-/// Get list of all projects per connections
+/// Get list of all projects per connection
 #[tauri::command]
 #[specta::specta]
-pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_id: Option<i32>) -> Result<Vec<Project>, String> {
+pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_key: ConnectionKey) -> Result<Vec<Project>, String> {
     // ── Step 1: fetch projects (db lock acquired and released in this block) ─
     let projects: Vec<Project> = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        fetch_projects_from_db(&conn, connection_id)?
+        fetch_projects_from_db(&conn, connection_key)?
         // conn drops here — lock released before async work below
     };
 
     // ── Step 2: validate paths ───────────────────────────────────────────────
-    let stale_ids = collect_stale_project_ids(&projects, connection_id, &app_state).await;
+    let stale_ids = collect_stale_project_ids(&projects, connection_key, &app_state).await;
 
     // ── Step 3: delete stale projects and return filtered list ───────────────
     if !stale_ids.is_empty() {
@@ -124,31 +145,23 @@ pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connec
 }
 
 /// Returns the IDs of projects whose paths no longer exist.
-/// - Local connections: checks path existence with std::fs.
-/// - SSH connections: runs `test -d` via the active SSH session.
-///   If no session is found (should not happen in normal flow), skips validation.
 async fn collect_stale_project_ids(
     projects: &[Project],
-    connection_id: Option<i32>,
+    connection_key: ConnectionKey,
     app_state: &Arc<AppState>,
 ) -> Vec<i32> {
-    match connection_id {
-        // ── Local: synchronous filesystem check ─────────────────────────────
-        None => projects
+    match connection_key {
+        ConnectionKey::Local => projects
             .iter()
             .filter(|p| !std::path::Path::new(&p.path).exists())
             .map(|p| p.id)
             .collect(),
 
-        // ── SSH: check via active session ────────────────────────────────────
-        Some(conn_id) => {
+        ConnectionKey::Ssh { id: conn_id } => {
             let session = match app_state.ssh.get_session(conn_id).await {
                 Some(s) => s,
-                None => {
-                    return vec![];
-                }
+                None => return vec![],
             };
-
             let mut stale = Vec::new();
             for project in projects {
                 let cmd = format!("test -d {} && echo ok || echo missing", shell_quote(&project.path));
@@ -158,9 +171,40 @@ async fn collect_stale_project_ids(
                             stale.push(project.id);
                         }
                     }
-                    Err(_) => {
-                        // On command error, err on the side of caution: keep the project
-                    }
+                    Err(_) => {}
+                }
+            }
+            stale
+        }
+
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = {
+                let db = match app_state.db.lock() {
+                    Ok(d) => d,
+                    Err(_) => return vec![],
+                };
+                match db.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    params![wsl_id],
+                    |row| row.get(0),
+                ) {
+                    Ok(d) => d,
+                    Err(_) => return vec![],
+                }
+            };
+            let mut stale = Vec::new();
+            for project in projects {
+                let output = tokio::process::Command::new("wsl.exe")
+                    .args(["-d", &distro, "--", "test", "-d", &project.path])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .no_console_window()
+                    .output()
+                    .await;
+                match output {
+                    Ok(out) if !out.status.success() => stale.push(project.id),
+                    Err(_) => {} // On error, keep the project
+                    _ => {}
                 }
             }
             stale
@@ -299,50 +343,83 @@ pub async fn git_init_project(
     app_state: State<'_, Arc<AppState>>,
     path: String,
     connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
 ) -> Result<(), String> {
-    match connection_id {
-        Some(conn_id) => {
-            let session = app_state
-                .ssh.get_session(conn_id)
-                .await
-                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            // No-op if already a git repo
-            let check = session
-                .execute_command(&format!("test -d {}/.git && echo yes || echo no", shell_quote(&path)))
-                .await
-                .map_err(|e| format!("SSH check failed: {}", e))?;
-            if check.trim() == "yes" {
-                return Ok(());
-            }
-            let output = session
-                .execute_command(&format!("git init -b main {}", shell_quote(&path)))
-                .await
-                .map_err(|e| format!("SSH git init failed: {}", e))?;
-            if output.contains("Initialized") || output.contains("Reinitialized") {
-                Ok(())
-            } else {
-                Err(format!("git init failed: {}", output))
-            }
+    if let Some(conn_id) = connection_id {
+        let session = app_state
+            .ssh.get_session(conn_id)
+            .await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        // No-op if already a git repo
+        let check = session
+            .execute_command(&format!("test -d {}/.git && echo yes || echo no", shell_quote(&path)))
+            .await
+            .map_err(|e| format!("SSH check failed: {}", e))?;
+        if check.trim() == "yes" {
+            return Ok(());
         }
-        None => {
-            let git_dir = std::path::Path::new(&path).join(".git");
-            if git_dir.exists() {
-                return Ok(()); // Already a git repo, nothing to do
-            }
-            let output = tokio::process::Command::new("git")
-                .args(["init", "-b", "main", &path])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn git: {}", e))?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
-            }
+        let output = session
+            .execute_command(&format!("git init -b main {}", shell_quote(&path)))
+            .await
+            .map_err(|e| format!("SSH git init failed: {}", e))?;
+        if output.contains("Initialized") || output.contains("Reinitialized") {
+            return Ok(());
         }
+        return Err(format!("git init failed: {}", output));
+    }
+
+    if let Some(wsl_id) = wsl_connection_id {
+        let distro: String = {
+            let db = app_state.db.lock().map_err(|e| e.to_string())?;
+            db.query_row(
+                "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                params![wsl_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("WSL connection not found: {}", e))?
+        };
+        // No-op if already a git repo
+        let check = tokio::process::Command::new("wsl.exe")
+            .args(["-d", &distro, "--", "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .no_console_window()
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+        if check.status.success() {
+            return Ok(());
+        }
+        let output = tokio::process::Command::new("wsl.exe")
+            .args(["-d", &distro, "--", "git", "init", "-b", "main", &path])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .no_console_window()
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    let git_dir = std::path::Path::new(&path).join(".git");
+    if git_dir.exists() {
+        return Ok(());
+    }
+    let output = tokio::process::Command::new("git")
+        .args(["init", "-b", "main", &path])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .no_console_window()
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
     }
 }
 
@@ -404,29 +481,48 @@ pub async fn check_is_git_repo(
     }
 }
 
-fn build_provider_auth_header(
+async fn build_provider_auth_header(
     provider: &str,
     app_state: &AppState,
 ) -> Result<Option<String>, String> {
     use base64::Engine as _;
 
-    let creds = crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
+    // GitHub supports a fallback to the `gh` CLI token when no keychain entry exists.
+    let token_result = if provider == "github" {
+        match crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state) {
+            Ok(creds) => Ok(creds.token),
+            Err(_) => crate::issue_tracking::github::try_gh_cli_token()
+                .await
+                .ok_or_else(|| "No GitHub credentials found".to_string()),
+        }
+    } else {
+        crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)
+            .map(|creds| creds.token)
+    };
 
     let header = match provider {
-        "bitbucket" => match creds.instance_url {
-            Some(_) => format!("Authorization: Bearer {}", creds.token),
-            None => {
-                let email = creds.email.ok_or("Bitbucket Cloud credentials missing email")?;
-                let basic = base64::engine::general_purpose::STANDARD
-                    .encode(format!("{}:{}", email, creds.token).as_bytes());
-                format!("Authorization: Basic {}", basic)
+        "github" => {
+            let basic = base64::engine::general_purpose::STANDARD
+                .encode(format!("x-access-token:{}", token_result?).as_bytes());
+            format!("Authorization: Basic {}", basic)
+        }
+        "gitlab" => format!("Authorization: Bearer {}", token_result?),
+        "bitbucket" => {
+            let creds = crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
+            match creds.instance_url {
+                Some(_) => format!("Authorization: Bearer {}", creds.token),
+                None => {
+                    let email = creds.email.ok_or("Bitbucket Cloud credentials missing email")?;
+                    let basic = base64::engine::general_purpose::STANDARD
+                        .encode(format!("{}:{}", email, creds.token).as_bytes());
+                    format!("Authorization: Basic {}", basic)
+                }
             }
-        },
-        "github" | "gitlab" => format!("Authorization: Bearer {}", creds.token),
-        "forgejo" | "gitea" => format!("Authorization: token {}", creds.token),
+        }
+        "forgejo" | "gitea" => format!("Authorization: token {}", token_result?),
         "azuredevops" => {
             let basic = base64::engine::general_purpose::STANDARD
-                .encode(format!(":{}", creds.token).as_bytes());
+                .encode(format!(":{}", token_result?).as_bytes());
             format!("Authorization: Basic {}", basic)
         }
         _ => return Ok(None),
@@ -443,18 +539,19 @@ pub async fn clone_project(
     url: String,
     target_path: String,
     connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
     provider: Option<String>,
 ) -> Result<Project, String> {
+    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
     let auth_header = match provider.as_deref() {
         Some(provider_key) if url.starts_with("http://") || url.starts_with("https://") => {
-            build_provider_auth_header(provider_key, &app_state)?
+            build_provider_auth_header(provider_key, &app_state).await?
         }
         _ => None,
     };
 
-    // Step 1: git clone (local or remote)
-    match connection_id {
-        Some(conn_id) => {
+    match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
             let session = app_state
                 .ssh.get_session(conn_id)
                 .await
@@ -476,7 +573,35 @@ pub async fn clone_project(
                 return Err(format!("git clone failed: {}", output));
             }
         }
-        None => {
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
+                    .map_err(|e| format!("WSL connection not found: {}", e))?
+            };
+            let mut wsl_args = vec!["-d".to_string(), distro, "--".to_string(), "git".to_string()];
+            // WSL has its own certificate store separate from Windows; disable SSL verification
+            // so clones from internal servers with self-signed certs work out of the box.
+            wsl_args.push("-c".to_string());
+            wsl_args.push("http.sslVerify=false".to_string());
+            if let Some(ref header) = auth_header {
+                wsl_args.push("-c".to_string());
+                wsl_args.push(format!("http.extraHeader={}", header));
+            }
+            wsl_args.extend(["clone".to_string(), url.clone(), target_path.clone()]);
+            let output = tokio::process::Command::new("wsl.exe")
+                .args(&wsl_args)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .no_console_window()
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
+        ConnectionKey::Local => {
             let mut args: Vec<String> = Vec::new();
             if let Some(header) = auth_header {
                 args.push("-c".to_string());
@@ -497,14 +622,13 @@ pub async fn clone_project(
         }
     }
 
-    // Step 2: Register in DB and init .maestro folder
     let name = std::path::Path::new(&target_path)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Untitled")
         .to_string();
 
-    register_project_in_db(app_state.inner(), &target_path, &name, connection_id)
+    register_project_in_db(app_state.inner(), &target_path, &name, connection_key)
 }
 
 /// Create a new project directory, git init it, and register as a project
@@ -515,17 +639,18 @@ pub async fn create_new_project(
     parent_dir: String,
     folder_name: String,
     connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
 ) -> Result<Project, String> {
+    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
     // Build full path string (works for both local and remote — remote paths are POSIX)
     let full_path_str = format!("{}/{}", parent_dir.trim_end_matches('/'), folder_name);
 
-    match connection_id {
-        Some(conn_id) => {
+    match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
             let session = app_state
                 .ssh.get_session(conn_id)
                 .await
                 .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            // Step 1: Check existence
             let exists = session
                 .execute_command(&format!("test -d {} && echo yes || echo no", shell_quote(&full_path_str)))
                 .await
@@ -533,7 +658,6 @@ pub async fn create_new_project(
             if exists.trim() == "yes" {
                 return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
             }
-            // Step 2: Create dir + git init
             let output = session
                 .execute_command(&format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str)))
                 .await
@@ -542,16 +666,42 @@ pub async fn create_new_project(
                 return Err(format!("Remote create failed: {}", output));
             }
         }
-        None => {
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
+                    .map_err(|e| format!("WSL connection not found: {}", e))?
+            };
+            let exists_out = tokio::process::Command::new("wsl.exe")
+                .args(["-d", &distro, "--", "test", "-d", &full_path_str])
+                .no_console_window()
+                .status()
+                .await
+                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+            if exists_out.success() {
+                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+            }
+            let script = format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str));
+            let output = tokio::process::Command::new("wsl.exe")
+                .args(["-d", &distro, "--", "sh", "-c", &script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .no_console_window()
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("error:") || stderr.contains("fatal:") || !output.status.success() {
+                return Err(format!("WSL create failed: {}", stderr));
+            }
+        }
+        ConnectionKey::Local => {
             let full_path = std::path::Path::new(&parent_dir).join(&folder_name);
-            // Step 1: Check if directory already exists
             if full_path.exists() {
                 return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
             }
-            // Step 2: Create directory
             std::fs::create_dir_all(&full_path)
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
-            // Step 3: git init
             let output = tokio::process::Command::new("git")
                 .args(["init", "-b", "main", &full_path_str])
                 .stdout(std::process::Stdio::piped())
@@ -566,8 +716,7 @@ pub async fn create_new_project(
         }
     }
 
-    // Register in DB and init .maestro folder
-    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_id)
+    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_key)
 }
 
 /// Create a new project
@@ -608,10 +757,11 @@ pub fn create_project(
         }
     };
 
-    // Initialize .maestro folder structure for project-local storage
-    // (Phase 18 architectural change: state stored locally, not in global database)
-    project_storage::create_project_maestro_folder(&path)
-        .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    // .maestro folder is local-only; SSH and WSL projects have no accessible local path.
+    if matches!(connection, ConnectionKey::Local) {
+        project_storage::create_project_maestro_folder(&path)
+            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    }
 
     let project = get_project(app_state, project_id).map_err(|e| e.to_string())?;
     Ok(project)
@@ -624,26 +774,49 @@ pub async fn get_project_settings(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<crate::models::ProjectConfigResponse, String> {
-    let (path, connection_id) = {
+    let (path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id FROM projects WHERE id = ?",
+            "SELECT path, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_ids(row.get(1)?, row.get(2)?))),
         ).map_err(|_| format!("Project {} not found", project_id))?
     };
 
-    let config = if let Some(conn_id) = connection_id {
-        let session = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-        let settings_path = format!("{}/.maestro/settings.json", path);
-        match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
-            Ok(output) => serde_json::from_str::<crate::models::ProjectConfig>(&output)
-                .unwrap_or_default(),
-            Err(_) => crate::models::ProjectConfig::default(),
+    let settings_path = format!("{}/.maestro/settings.json", path);
+    let config = match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
+            let session = app_state.ssh.get_session(conn_id).await
+                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
+                Ok(output) => serde_json::from_str::<crate::models::ProjectConfig>(&output).unwrap_or_default(),
+                Err(_) => crate::models::ProjectConfig::default(),
+            }
         }
-    } else {
-        crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default()
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
+                    .map_err(|e| format!("WSL connection not found: {}", e))?
+            };
+            let output = tokio::process::Command::new("wsl.exe")
+                .args(["-d", &distro, "--", "cat", &settings_path])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .no_console_window()
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                serde_json::from_str::<crate::models::ProjectConfig>(&text).unwrap_or_default()
+            } else {
+                crate::models::ProjectConfig::default()
+            }
+        }
+        ConnectionKey::Local => {
+            crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default()
+        }
     };
 
     Ok(crate::models::ProjectConfigResponse {
@@ -659,12 +832,12 @@ pub async fn update_project_settings(
     project_id: i32,
     settings: crate::models::ProjectConfigRequest,
 ) -> Result<(), String> {
-    let (path, connection_id) = {
+    let (path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id FROM projects WHERE id = ?",
+            "SELECT path, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_ids(row.get(1)?, row.get(2)?))),
         ).map_err(|_| format!("Project {} not found", project_id))?
     };
 
@@ -674,21 +847,51 @@ pub async fn update_project_settings(
         issue_tracking: None,
     };
 
-    if let Some(conn_id) = connection_id {
-        let session = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-        let maestro_dir = format!("{}/.maestro", path);
-        let settings_path = format!("{}/settings.json", maestro_dir);
-        let json = serde_json::to_string_pretty(&config)
-            .map_err(|e| format!("Serialization failed: {}", e))?;
-        session.execute_command(&format!(
-            "mkdir -p {} && printf '%s' {} > {}",
-            shell_quote(&maestro_dir),
-            shell_quote(&json),
-            shell_quote(&settings_path),
-        )).await.map_err(|e| format!("SSH write failed: {}", e))?;
-    } else {
-        config.save_to_project(&path)?;
+    let maestro_dir = format!("{}/.maestro", path);
+    let settings_path = format!("{}/settings.json", maestro_dir);
+
+    match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
+            let session = app_state.ssh.get_session(conn_id).await
+                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+            let json = serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("Serialization failed: {}", e))?;
+            session.execute_command(&format!(
+                "mkdir -p {} && printf '%s' {} > {}",
+                shell_quote(&maestro_dir),
+                shell_quote(&json),
+                shell_quote(&settings_path),
+            )).await.map_err(|e| format!("SSH write failed: {}", e))?;
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
+                    .map_err(|e| format!("WSL connection not found: {}", e))?
+            };
+            let json = serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("Serialization failed: {}", e))?;
+            let script = format!(
+                "mkdir -p {} && printf '%s' {} > {}",
+                shell_quote(&maestro_dir),
+                shell_quote(&json),
+                shell_quote(&settings_path),
+            );
+            let output = tokio::process::Command::new("wsl.exe")
+                .args(["-d", &distro, "--", "sh", "-c", &script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .no_console_window()
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("WSL settings write failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
+        ConnectionKey::Local => {
+            config.save_to_project(&path)?;
+        }
     }
 
     Ok(())
@@ -707,97 +910,160 @@ pub async fn prime_project_server(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<(), String> {
-    let (project_path, connection_id) = {
+    let (project_path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id FROM projects WHERE id = ?",
+            "SELECT path, connection_id, wsl_connection_id FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i32>>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_ids(row.get(1)?, row.get(2)?))),
         )
         .map_err(|_| format!("Project {} not found", project_id))?
     };
 
-    if let Some(conn_id) = connection_id {
-        let ssh = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
+    match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
+            let ssh = app_state.ssh.get_session(conn_id).await
+                .ok_or_else(|| format!("No active SSH session for connection_id {}", conn_id))?;
 
-        let deploy_lock = {
-            let mut locks = app_state.acp.deploy_locks.lock().await;
-            locks.entry(conn_id).or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))).clone()
-        };
-        let _deploy_guard = deploy_lock.lock().await;
-        // Re-check cache after acquiring lock: preflight or prefetch may have populated it.
-        let cached_path = {
-            let cache = app_state.acp.discovery_cache.lock().await;
-            cache.get(&ConnectionKey::Ssh { id: conn_id }).and_then(|e| e.maestro_server_path.clone())
-        };
-        let maestro_path = match cached_path {
-            Some(p) => p,
-            None => {
-                let deploy = crate::acp::deploy::ensure_remote_server(
-                    &ssh, &app_state.app_handle, conn_id,
-                ).await?;
-                deploy.path
+            let deploy_lock = {
+                let mut locks = app_state.acp.deploy_locks.lock().await;
+                locks.entry(conn_id).or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))).clone()
+            };
+            let _deploy_guard = deploy_lock.lock().await;
+            let cached_path = {
+                let cache = app_state.acp.discovery_cache.lock().await;
+                cache.get(&ConnectionKey::Ssh { id: conn_id }).and_then(|e| e.maestro_server_path.clone())
+            };
+            let maestro_path = match cached_path {
+                Some(p) => p,
+                None => {
+                    let deploy = crate::acp::deploy::ensure_remote_server(
+                        &ssh, &app_state.app_handle, conn_id,
+                    ).await?;
+                    deploy.path
+                }
+            };
+
+            crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
+
+            let (_, default_agent) = tokio::join!(
+                crate::ipc::acp_handlers::prefetch_agent_discovery(
+                    Arc::clone(&*app_state),
+                    ConnectionKey::Ssh { id: conn_id },
+                    Some(maestro_path.clone()),
+                ),
+                async {
+                    let settings_path = format!("{}/.maestro/settings.json", project_path);
+                    ssh.execute_command(&format!("cat {}", shell_quote(&settings_path))).await
+                        .ok()
+                        .and_then(|output| serde_json::from_str::<crate::models::ProjectConfig>(&output).ok())
+                        .and_then(|c| c.default_agent)
+                }
+            );
+            if let Some(agent_id) = default_agent {
+                crate::acp::pre_initialize_via_connection_server(
+                    ConnectionKey::Ssh { id: conn_id },
+                    &agent_id,
+                    &project_path,
+                    &app_state,
+                )
+                .await?;
+                crate::ipc::acp_handlers::spawn_pooled_session(
+                    &*app_state,
+                    project_id,
+                    ConnectionKey::Ssh { id: conn_id },
+                    &agent_id,
+                    &project_path,
+                )
+                .await;
             }
-        };
-
-        crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
-
-        // Run discovery and settings read in parallel. Discovery reuses the already-known
-        // maestro_path so ensure_remote_server is not called a second time.
-        let (_, default_agent) = tokio::join!(
-            crate::ipc::acp_handlers::prefetch_agent_discovery(
-                Arc::clone(&*app_state),
-                crate::acp::ConnectionKey::Ssh { id: conn_id },
-                Some(maestro_path.clone()),
-            ),
-            async {
-                let settings_path = format!("{}/.maestro/settings.json", project_path);
-                ssh.execute_command(&format!("cat {}", shell_quote(&settings_path))).await
-                    .ok()
-                    .and_then(|output| serde_json::from_str::<crate::models::ProjectConfig>(&output).ok())
-                    .and_then(|c| c.default_agent)
-            }
-        );
-        if let Some(agent_id) = default_agent {
-            crate::acp::pre_initialize_via_connection_server(
-                ConnectionKey::Ssh { id: conn_id },
-                &agent_id,
-                &project_path,
-                &app_state,
-            )
-            .await?;
-            crate::ipc::acp_handlers::spawn_pooled_session(
-                &*app_state,
-                project_id,
-                ConnectionKey::Ssh { id: conn_id },
-                &agent_id,
-                &project_path,
-            )
-            .await;
         }
-    } else {
-        crate::acp::spawn_connection_server(ConnectionKey::Local, crate::acp::TransportTarget::Local, &app_state).await?;
 
-        let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
-            .ok()
-            .and_then(|c| c.default_agent);
-        if let Some(agent_id) = default_agent {
-            crate::acp::pre_initialize_via_connection_server(
-                ConnectionKey::Local,
-                &agent_id,
-                &project_path,
-                &app_state,
-            )
-            .await?;
-            crate::ipc::acp_handlers::spawn_pooled_session(
-                &*app_state,
-                project_id,
-                ConnectionKey::Local,
-                &agent_id,
-                &project_path,
-            )
-            .await;
+        ConnectionKey::Wsl { id: wsl_id } => {
+            #[cfg(windows)]
+            {
+                let distro: String = {
+                    let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    db.query_row(
+                        "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                        params![wsl_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| format!("WSL connection not found: {}", e))?
+                };
+                let maestro_path = crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle).await?.path;
+                crate::acp::spawn_connection_server(
+                    ConnectionKey::Wsl { id: wsl_id },
+                    crate::acp::TransportTarget::Wsl { distro: &distro, server_path: &maestro_path },
+                    &app_state,
+                ).await?;
+                let (_, default_agent) = tokio::join!(
+                    crate::ipc::acp_handlers::prefetch_agent_discovery(
+                        Arc::clone(&*app_state),
+                        ConnectionKey::Wsl { id: wsl_id },
+                        Some(maestro_path.clone()),
+                    ),
+                    async {
+                        let settings_path = format!("{}/.maestro/settings.json", project_path);
+                        tokio::process::Command::new("wsl.exe")
+                            .args(["-d", &distro, "--", "cat", &settings_path])
+                            .stdout(std::process::Stdio::piped())
+                            .no_console_window()
+                            .output()
+                            .await
+                            .ok()
+                            .filter(|out| out.status.success())
+                            .and_then(|out| serde_json::from_slice::<crate::models::ProjectConfig>(&out.stdout).ok())
+                            .and_then(|c| c.default_agent)
+                    }
+                );
+                if let Some(agent_id) = default_agent {
+                    crate::acp::pre_initialize_via_connection_server(
+                        ConnectionKey::Wsl { id: wsl_id },
+                        &agent_id,
+                        &project_path,
+                        &app_state,
+                    )
+                    .await?;
+                    crate::ipc::acp_handlers::spawn_pooled_session(
+                        &*app_state,
+                        project_id,
+                        ConnectionKey::Wsl { id: wsl_id },
+                        &agent_id,
+                        &project_path,
+                    )
+                    .await;
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = wsl_id;
+            }
+        }
+
+        ConnectionKey::Local => {
+            crate::acp::spawn_connection_server(ConnectionKey::Local, crate::acp::TransportTarget::Local, &app_state).await?;
+
+            let default_agent = crate::models::ProjectConfig::load_from_project(&project_path)
+                .ok()
+                .and_then(|c| c.default_agent);
+            if let Some(agent_id) = default_agent {
+                crate::acp::pre_initialize_via_connection_server(
+                    ConnectionKey::Local,
+                    &agent_id,
+                    &project_path,
+                    &app_state,
+                )
+                .await?;
+                crate::ipc::acp_handlers::spawn_pooled_session(
+                    &*app_state,
+                    project_id,
+                    ConnectionKey::Local,
+                    &agent_id,
+                    &project_path,
+                )
+                .await;
+            }
         }
     }
 
@@ -828,7 +1094,7 @@ mod tests {
     #[test]
     fn fetch_projects_empty_returns_empty_vec() {
         let conn = test_db();
-        let result = fetch_projects_from_db(&conn, None).unwrap();
+        let result = fetch_projects_from_db(&conn, ConnectionKey::Local).unwrap();
         assert!(result.is_empty());
     }
 
@@ -836,7 +1102,7 @@ mod tests {
     fn fetch_projects_returns_local_projects() {
         let conn = test_db();
         insert_project(&conn, "My Project", "/home/user/my-project", None);
-        let projects = fetch_projects_from_db(&conn, None).unwrap();
+        let projects = fetch_projects_from_db(&conn, ConnectionKey::Local).unwrap();
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "My Project");
         assert_eq!(projects[0].path, "/home/user/my-project");
@@ -857,11 +1123,11 @@ mod tests {
         insert_project(&conn, "Local Project", "/local/path", None);
         insert_project(&conn, "Remote Project", "/remote/path", Some(ssh_conn_id));
 
-        let local = fetch_projects_from_db(&conn, None).unwrap();
+        let local = fetch_projects_from_db(&conn, ConnectionKey::Local).unwrap();
         assert_eq!(local.len(), 1);
         assert_eq!(local[0].name, "Local Project");
 
-        let remote = fetch_projects_from_db(&conn, Some(ssh_conn_id)).unwrap();
+        let remote = fetch_projects_from_db(&conn, ConnectionKey::Ssh { id: ssh_conn_id }).unwrap();
         assert_eq!(remote.len(), 1);
         assert_eq!(remote[0].name, "Remote Project");
     }

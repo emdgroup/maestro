@@ -36,13 +36,16 @@ export function useProjects() {
   });
 }
 
-/**
- * Hook for fetching projects for a specific SSH connection
- */
-export function useRecentProjects(connectionId: number | undefined | null) {
+export function connectionQueryKey(connection: ConnectionKey): number | string {
+  if (connection.type === "wsl") return `wsl-${connection.id}`;
+  if (connection.type === "ssh") return connection.id;
+  return localConnectionId;
+}
+
+export function useRecentProjects(connection: ConnectionKey) {
   return useQuery({
-    queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
-    queryFn: () => api.getConnectionProjects(connectionId || null),
+    queryKey: projectQueryKeys.listByConnection(connectionQueryKey(connection)),
+    queryFn: () => api.getConnectionProjects(connection),
     staleTime: Infinity,
   });
 }
@@ -151,8 +154,8 @@ export function useUpdateProjectSettings() {
  */
 export function useGitInitProject() {
   return useMutation({
-    mutationFn: ({ path, connectionId }: { path: string; connectionId: number | null }) =>
-      api.gitInitProject(path, connectionId),
+    mutationFn: ({ path, connectionId, wslConnectionId }: { path: string; connectionId: number | null; wslConnectionId: number | null }) =>
+      api.gitInitProject(path, connectionId, wslConnectionId),
     // No cache invalidation needed — this is a pre-step before createProject
     // No toast on success — this is a silent auto-init
     onError: createErrorToastHandler("Failed to initialize git"),
@@ -180,17 +183,20 @@ export function useCloneProject() {
       url,
       targetPath,
       connectionId,
+      wslConnectionId,
       provider,
     }: {
       url: string;
       targetPath: string;
       connectionId: number | null;
+      wslConnectionId: number | null;
       provider?: string | null;
-    }) => api.cloneProject(url, targetPath, connectionId, provider ?? null),
-    onSuccess: (_, { connectionId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
-      });
+    }) => api.cloneProject(url, targetPath, connectionId, wslConnectionId, provider ?? null),
+    onSuccess: (_, { connectionId, wslConnectionId }) => {
+      const key = wslConnectionId != null
+        ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
+        : projectQueryKeys.listByConnection(connectionId ?? "local");
+      void queryClient.invalidateQueries({ queryKey: key });
       toast.success("Project cloned successfully");
     },
     onError: createErrorToastHandler("Clone failed"),
@@ -209,20 +215,21 @@ export function useCreateNewProject() {
       parentDir,
       folderName,
       connectionId,
+      wslConnectionId,
     }: {
       parentDir: string;
       folderName: string;
       connectionId: number | null;
-    }) => api.createNewProject(parentDir, folderName, connectionId),
-    onSuccess: (_, { connectionId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection(connectionId ?? "local"),
-      });
+      wslConnectionId: number | null;
+    }) => api.createNewProject(parentDir, folderName, connectionId, wslConnectionId),
+    onSuccess: (_, { connectionId, wslConnectionId }) => {
+      const key = wslConnectionId != null
+        ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
+        : projectQueryKeys.listByConnection(connectionId ?? "local");
+      void queryClient.invalidateQueries({ queryKey: key });
       toast.success("Project created successfully");
     },
     onError: (error) => {
-      // Don't toast here — Create dialog shows inline errors
-      // The caller catches the error and displays it in the form
       console.error("Create project failed:", error);
     },
   });

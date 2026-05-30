@@ -75,7 +75,7 @@ export function useAcpSessionLifecycle(
       if (Object.keys(prev).length > 0) return prev;
       const seeded: Record<string, string> = {};
       for (const o of agentCache.config_options) {
-        if (o.default_value) seeded[o.id] = o.default_value;
+        if (o.default_value != null) seeded[o.id] = o.default_value;
       }
       return Object.keys(seeded).length > 0 ? seeded : prev;
     });
@@ -307,12 +307,9 @@ export function useAcpSessionLifecycle(
         }
       } else if (p.sessionUpdate === "config_option_update") {
         if (Array.isArray(p.configOptions)) {
-          setConfigOptions((prev) => {
-            if (prev.length > 0) return prev;
-            return p.configOptions!;
-          });
+          setConfigOptions(p.configOptions!);
           // config_option_update carries live currentValue from the active session.
-          // Always merge — don't let cached defaults block live session values.
+          // Always replace options and merge values — don't let cached defaults block live session values.
           setConfigValues((prev) => {
             const incoming = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
             const hasChange = Object.entries(incoming).some(([k, v]) => prev[k] !== v);

@@ -14,16 +14,17 @@ import { FilePicker } from "@/components/project-picker/FilePicker";
 import { useCreateNewProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
-import type { SshConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
 
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   connection: SshConnection | null;
+  wslConnection?: WslConnection | null;
 }
 
-export function CreateProjectDialog({ open, onOpenChange, connection }: CreateProjectDialogProps) {
+export function CreateProjectDialog({ open, onOpenChange, connection, wslConnection }: CreateProjectDialogProps) {
   const [parentDir, setParentDir] = useState("");
   const [folderName, setFolderName] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -44,6 +45,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection }: CreatePr
         parentDir: parentDir.trim(),
         folderName: folderName.trim(),
         connectionId: connection?.id ?? null,
+        wslConnectionId: wslConnection?.id ?? null,
       });
       const project = await api.openProject(created.id);
       api.primeProjectServer(created.id).catch(() => {});
@@ -143,6 +145,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection }: CreatePr
         <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
           <FilePicker
             connection={connection}
+            wslConnection={wslConnection}
             onProjectSelect={(path) => handleBrowse(path)}
             loading={false}
           />

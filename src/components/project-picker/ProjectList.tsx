@@ -12,12 +12,13 @@ import {
   useRemoveProject,
   useGitInitProject,
   useCheckIsGitRepo,
+  connectionQueryKey,
 } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { Folder, Loader2 } from "lucide-react";
+import { Folder, Loader2, Terminal } from "lucide-react";
 import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";
 import { FilePicker } from "@/components/project-picker/FilePicker";
 import { GitInitDialog } from "@/components/project-picker/GitInitDialog";
@@ -27,9 +28,12 @@ import { useMemo, useState } from "react";
 export function ProjectList() {
   const { activeConnection, preflightStatus } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const { data: recentProjects = [], isLoading: projectsLoading } = useRecentProjects(
-    activeConnection?.sshConnection?.id,
-  );
+  const activeConnectionKey: import("@/types/bindings").ConnectionKey = activeConnection?.wslConnection
+    ? { type: "wsl", id: activeConnection.wslConnection.id }
+    : activeConnection?.sshConnection
+      ? { type: "ssh", id: activeConnection.sshConnection.id }
+      : { type: "local" };
+  const { data: recentProjects = [], isLoading: projectsLoading } = useRecentProjects(activeConnectionKey);
   const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
   const { data: lockedProjectIds = [] } = useProjectLocks(projectIds);
   const lockedSet = useMemo(() => new Set(lockedProjectIds), [lockedProjectIds]);
@@ -41,7 +45,7 @@ export function ProjectList() {
   const { setSelectedProject } = useSelectedProjectActions();
 
   const { mutateAsync: createProject } = useCreateProject();
-  const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
+  const { mutate: removeProject } = useRemoveProject(connectionQueryKey(activeConnectionKey));
   const { mutateAsync: gitInitProject } = useGitInitProject();
   const { mutateAsync: checkIsGitRepo } = useCheckIsGitRepo();
 
@@ -112,6 +116,7 @@ export function ProjectList() {
       await gitInitProject({
         path: pendingSelection.path,
         connectionId: pendingSelection.connectionId ?? null,
+        wslConnectionId: pendingSelection.wslConnectionId ?? null,
       });
       setShowGitInitDialog(false);
       setProjectLoading(true);
@@ -200,6 +205,11 @@ export function ProjectList() {
                 connectionId={activeConnection.sshConnection.id}
                 onDelete={navigateToConnections}
               />
+            ) : activeConnection.type === "wsl" && activeConnection.wslConnection ? (
+              <>
+                <Terminal className="w-5 h-5 text-muted-foreground" />
+                <h2 className="text-lg font-semibold">WSL — {activeConnection.wslConnection.distro_name}</h2>
+              </>
             ) : (
               <>
                 <Folder className="w-5 h-5 text-muted-foreground" />
@@ -262,12 +272,14 @@ export function ProjectList() {
           open={showCloneDialog}
           onOpenChange={setShowCloneDialog}
           connection={activeConnection?.sshConnection ?? null}
+          wslConnection={activeConnection?.wslConnection ?? null}
         />
 
         <CreateProjectDialog
           open={showCreateDialog}
           onOpenChange={setShowCreateDialog}
           connection={activeConnection?.sshConnection ?? null}
+          wslConnection={activeConnection?.wslConnection ?? null}
         />
 
         <GitInitDialog

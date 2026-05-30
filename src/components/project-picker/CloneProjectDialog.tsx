@@ -16,16 +16,17 @@ import { ProviderRepoPicker } from "@/components/project-picker/ProviderRepoPick
 import { useCloneProject } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
-import type { SshConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Check, Globe, Link, Loader2 } from "lucide-react";
 
 interface CloneProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   connection: SshConnection | null;
+  wslConnection?: WslConnection | null;
 }
 
-export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProjectDialogProps) {
+export function CloneProjectDialog({ open, onOpenChange, connection, wslConnection }: CloneProjectDialogProps) {
   const [url, setUrl] = useState("");
   const [targetPath, setTargetPath] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -36,20 +37,23 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
 
   const handleBrowse = (selectedPath: string) => {
     const repoName = deriveRepoName(url);
-    setTargetPath(repoName ? `${selectedPath}/${repoName}` : selectedPath);
+    const normalized = selectedPath.replace(/\/+$/, "");
+    setTargetPath(repoName ? `${normalized}/${repoName}` : normalized);
     setShowDirPicker(false);
   };
 
   const handleRepoSelected = (cloneUrl: string, repoName: string, selectedProvider?: string) => {
     setUrl(cloneUrl);
-    setSelectedRepoName(repoName);
     setProvider(selectedProvider ?? null);
     if (targetPath) {
-      const parent = targetPath.includes("/")
+      // If a repo name was previously appended, strip it before appending the new one.
+      // If targetPath is a pure parent dir (no repo appended yet), append directly.
+      const parent = selectedRepoName
         ? targetPath.substring(0, targetPath.lastIndexOf("/"))
-        : targetPath;
+        : targetPath.replace(/\/+$/, "");
       setTargetPath(`${parent}/${repoName}`);
     }
+    setSelectedRepoName(repoName);
   };
 
   const handleSubmit = async () => {
@@ -59,6 +63,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         url: url.trim(),
         targetPath: targetPath.trim(),
         connectionId: connection?.id ?? null,
+        wslConnectionId: wslConnection?.id ?? null,
         provider: provider ?? null,
       });
       const project = await api.openProject(created.id);
@@ -185,6 +190,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection }: CloneProj
         <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">
           <FilePicker
             connection={connection}
+            wslConnection={wslConnection}
             onProjectSelect={(path) => handleBrowse(path)}
             loading={false}
           />

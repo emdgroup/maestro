@@ -21,7 +21,9 @@ pub struct ParsedWorktree {
 }
 
 async fn run_wsl_git(distro: &str, path: &str, args: &[&str], ignore_exit_code: bool) -> Result<String, String> {
-    let mut cmd_args = vec!["-d", distro, "--", "git", "-C", path];
+    // Disable SSL verification so git operations against internal servers with
+    // self-signed certs work. WSL has a separate cert store from Windows.
+    let mut cmd_args = vec!["-d", distro, "--", "git", "-c", "http.sslVerify=false", "-C", path];
     cmd_args.extend_from_slice(args);
     let output = TokioCommand::new("wsl.exe")
         .args(&cmd_args)

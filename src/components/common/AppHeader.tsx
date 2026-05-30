@@ -49,7 +49,12 @@ export function AppHeader({
   onAutoModeChange,
 }: AppHeaderProps) {
   // Load recent projects on-demand (only when header is rendered)
-  const { data: recentProjects = [] } = useRecentProjects(currentProject?.connection_id);
+  const headerConnection = currentProject?.wsl_connection_id != null
+    ? { type: "wsl" as const, id: currentProject.wsl_connection_id }
+    : currentProject?.connection_id != null
+      ? { type: "ssh" as const, id: currentProject.connection_id }
+      : { type: "local" as const };
+  const { data: recentProjects = [] } = useRecentProjects(headerConnection);
 
   // Internal auto mode state (used when no external state is provided)
   const [internalAutoMode, setInternalAutoMode] = useState(false);
