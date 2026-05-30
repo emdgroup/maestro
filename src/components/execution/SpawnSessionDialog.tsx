@@ -15,6 +15,7 @@ import {
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { usePreflightToolChecks } from "@/store/configStore";
+import { useIsGitRepo } from "@/store/projectStore";
 import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
 
 interface SpawnSessionDialogProps {
@@ -44,6 +45,7 @@ export function SpawnSessionDialog({
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
+  const isGitRepo = useIsGitRepo();
   const toolChecks = usePreflightToolChecks(connection);
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
@@ -60,8 +62,8 @@ export function SpawnSessionDialog({
   }, [open]);
 
   function handleSpawn() {
-    if (!selectedWorktree) return;
     if (sessionType === "terminal") {
+      if (!selectedWorktree) return;
       spawnMutation.mutate(
         {
           projectId,
@@ -78,14 +80,15 @@ export function SpawnSessionDialog({
         },
       );
     } else {
+      const cwd = selectedWorktree?.path ?? repoPath;
       spawnAcpMutation.mutate(
         {
           agentId: sessionType,
-          cwd: selectedWorktree.path,
+          cwd,
           sessionName: sessionName.trim() || generateSessionName(),
           projectId,
           connection,
-          worktreeBranch: selectedWorktree.branch_name,
+          worktreeBranch: selectedWorktree?.branch_name ?? null,
         },
         {
           onSuccess: (sessionKey) => {
@@ -97,6 +100,8 @@ export function SpawnSessionDialog({
     }
   }
 
+  const canSpawn = sessionType === "terminal" ? !!selectedWorktree : true;
+
   const isPending = spawnMutation.isPending || spawnAcpMutation.isPending;
 
   return (
@@ -105,13 +110,13 @@ export function SpawnSessionDialog({
         <DialogHeader>
           <DialogTitle>New Session</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            Choose an agent and worktree to get started.
+            {isGitRepo ? "Choose an agent and worktree to get started." : "Choose an agent to get started."}
           </p>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (selectedWorktree && !isPending) handleSpawn();
+            if (canSpawn && !isPending) handleSpawn();
           }}
         >
           <div className="space-y-5 py-1">
@@ -237,51 +242,53 @@ export function SpawnSessionDialog({
             </div>
 
             {/* Worktree */}
-            <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                Worktree
-              </p>
-              <Select
-                value={selectedWorktree?.branch_name ?? ""}
-                onValueChange={(v) =>
-                  setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
-                }
-              >
-                <SelectTrigger id="spawn-worktree" className="w-full">
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                    {selectedWorktree ? (
-                      <>
-                        <span className="font-mono text-sm truncate flex-1">
-                          {selectedWorktree.branch_name}
+            {isGitRepo && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                  Worktree
+                </p>
+                <Select
+                  value={selectedWorktree?.branch_name ?? ""}
+                  onValueChange={(v) =>
+                    setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
+                  }
+                >
+                  <SelectTrigger id="spawn-worktree" className="w-full">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                      {selectedWorktree ? (
+                        <>
+                          <span className="font-mono text-sm truncate flex-1">
+                            {selectedWorktree.branch_name}
+                          </span>
+                          {selectedWorktree.path === repoPath && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
+                              default
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">Select a worktree</span>
+                      )}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {worktrees.map((wt) => (
+                      <SelectItem key={wt.branch_name} value={wt.branch_name}>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono">{wt.branch_name}</span>
+                          {wt.path === repoPath && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium">
+                              default
+                            </span>
+                          )}
                         </span>
-                        {selectedWorktree.path === repoPath && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
-                            default
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">Select a worktree</span>
-                    )}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  {worktrees.map((wt) => (
-                    <SelectItem key={wt.branch_name} value={wt.branch_name}>
-                      <span className="flex items-center gap-2">
-                        <span className="font-mono">{wt.branch_name}</span>
-                        {wt.path === repoPath && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium">
-                            default
-                          </span>
-                        )}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
 
             {/* Session name */}
@@ -312,7 +319,7 @@ export function SpawnSessionDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!selectedWorktree || isPending}>
+            <Button type="submit" disabled={!canSpawn || isPending}>
               {isPending ? "Starting..." : "Start Session"}
             </Button>
           </DialogFooter>

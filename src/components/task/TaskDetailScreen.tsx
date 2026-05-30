@@ -35,7 +35,8 @@ import {
 import { useActiveSessionsQuery, useAgentCacheQuery } from "@/services/execution.service";
 import { api } from "@/lib/tauri-utils";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
-import { useSelectedProject } from "@/store/projectStore";
+import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
+import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS } from "@/store/configStore";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 
@@ -228,6 +229,7 @@ interface TaskDetailScreenProps {
 
 export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) => {
   const selectedProject = useSelectedProject();
+  const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
 
   const { data: tasks } = useTasksQuery(projectId);
@@ -680,13 +682,93 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
               );
             })()}
 
-            {/* Base Branch */}
+            {/* MCP Allowlist */}
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Base Branch</label>
-              <p className="text-sm text-muted-foreground font-mono truncate">
-                {task.base_branch ?? "None"}
-              </p>
+              <label className="text-xs text-muted-foreground font-medium">MCP Servers</label>
+              {isEditable ? (
+                <div className="flex flex-col gap-1">
+                  {AVAILABLE_MCP_SERVERS.map((srv) => {
+                    const enabled = task.mcp_allowlist?.includes(srv) ?? false;
+                    return (
+                      <label key={srv} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => {
+                            const current = task.mcp_allowlist ?? [];
+                            const next = e.target.checked
+                              ? [...current, srv]
+                              : current.filter((s) => s !== srv);
+                            updateTaskSettings.mutate({
+                              taskId: task.id,
+                              config: { mcp_allowlist: next.length > 0 ? next : null },
+                            });
+                          }}
+                          className="accent-primary"
+                        />
+                        <span className="text-foreground font-mono">{srv}</span>
+                      </label>
+                    );
+                  })}
+                  {!task.mcp_allowlist && (
+                    <p className="text-xs text-muted-foreground">All allowed (project default)</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {task.mcp_allowlist?.join(", ") ?? "All (project default)"}
+                </p>
+              )}
             </div>
+
+            {/* Skills Override */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Skills</label>
+              {isEditable ? (
+                <div className="flex flex-col gap-1">
+                  {AVAILABLE_SKILLS.map((skill) => {
+                    const enabled = task.skills_override?.includes(skill) ?? false;
+                    return (
+                      <label key={skill} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => {
+                            const current = task.skills_override ?? [];
+                            const next = e.target.checked
+                              ? [...current, skill]
+                              : current.filter((s) => s !== skill);
+                            updateTaskSettings.mutate({
+                              taskId: task.id,
+                              config: { skills_override: next.length > 0 ? next : null },
+                            });
+                          }}
+                          className="accent-primary"
+                        />
+                        <span className="text-foreground font-mono">{skill}</span>
+                      </label>
+                    );
+                  })}
+                  {!task.skills_override && (
+                    <p className="text-xs text-muted-foreground">None overridden (project default)</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {task.skills_override?.join(", ") ?? "None (project default)"}
+                </p>
+              )}
+            </div>
+
+            {/* Base Branch */}
+            {isGitRepo && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Base Branch</label>
+                <p className="text-sm text-muted-foreground font-mono truncate">
+                  {task.base_branch ?? "None"}
+                </p>
+              </div>
+            )}
 
             {/* Labels */}
             <div className="space-y-1.5">
@@ -744,27 +826,29 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
             </div>
 
             {/* Worktree */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Worktree</label>
-              {isEditable ? (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={task.isolated_worktree}
-                    onChange={(e) =>
-                      updateTask.mutate({
-                        taskId: task.id,
-                        updates: { isolated_worktree: e.target.checked },
-                      })
-                    }
-                    className="size-4 rounded border border-input"
-                  />
-                  <span className="text-sm">{task.isolated_worktree ? "Isolated" : "Shared"}</span>
-                </label>
-              ) : (
-                <Badge variant="secondary">{task.isolated_worktree ? "Isolated" : "Shared"}</Badge>
-              )}
-            </div>
+            {isGitRepo && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Worktree</label>
+                {isEditable ? (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={task.isolated_worktree}
+                      onChange={(e) =>
+                        updateTask.mutate({
+                          taskId: task.id,
+                          updates: { isolated_worktree: e.target.checked },
+                        })
+                      }
+                      className="size-4 rounded border border-input"
+                    />
+                    <span className="text-sm">{task.isolated_worktree ? "Isolated" : "Shared"}</span>
+                  </label>
+                ) : (
+                  <Badge variant="secondary">{task.isolated_worktree ? "Isolated" : "Shared"}</Badge>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

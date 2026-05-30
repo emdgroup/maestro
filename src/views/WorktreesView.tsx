@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { ChevronsUpDown, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
+import { ChevronsUpDown, GitBranch, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
@@ -7,11 +7,15 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
+import { useGitInitProject } from "@/services/project.service";
+import { useIsGitRepo, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
 import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
 import { DeleteWorktreeDialog } from "@/components/execution/DeleteWorktreeDialog";
 import { CreateWorktreeDialog } from "@/components/execution/CreateWorktreeDialog";
 import type { WorktreeWithStatus } from "@/types/bindings";
+import { api } from "@/lib/tauri-utils";
+import { toast } from "sonner";
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -27,12 +31,15 @@ interface WorktreesViewProps {
  * A slide container animates between the card grid and the diff panel (Plan 03).
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
+  const isGitRepo = useIsGitRepo();
+  const { mutateAsync: gitInitProject, isPending: isInitializing } = useGitInitProject();
+  const { setSelectedProject } = useSelectedProjectActions();
   const {
     data: worktrees = [],
     refetch: refetchWorktrees,
     isLoading,
     isFetching,
-  } = useWorktreesQuery(projectId, repoPath);
+  } = useWorktreesQuery(isGitRepo ? projectId : undefined, isGitRepo ? repoPath : undefined);
   const activeTab = useActiveTab();
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();
@@ -106,6 +113,38 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   };
 
   const selectedWorktree = worktrees.find((w) => w.path === selectedWorktreePath) ?? null;
+
+  if (!isGitRepo) {
+    const handleInitGit = async () => {
+      if (!repoPath || !projectId) return;
+      try {
+        await gitInitProject({ path: repoPath, connectionId: null });
+        const project = await api.openProject(projectId);
+        setSelectedProject(project, true);
+        toast.success("Git initialized successfully");
+      } catch (error) {
+        toast.error(`Failed to initialize git: ${String(error)}`);
+      }
+    };
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+        <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center">
+          <GitBranch className="w-6 h-6 text-muted-foreground" />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-sm font-medium">Git Repository Required</h3>
+          <p className="text-xs text-muted-foreground max-w-sm">
+            Worktree isolation requires a git repository. Initialize git in this project to enable
+            branch management, worktree isolation, and code review features.
+          </p>
+        </div>
+        <Button onClick={handleInitGit} disabled={isInitializing} size="sm">
+          {isInitializing ? "Initializing..." : "Initialize Git"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">

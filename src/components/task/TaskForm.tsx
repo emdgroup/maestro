@@ -7,6 +7,7 @@ import { Textarea } from "@/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import type { Task } from "@/types/bindings";
 import { useProjectBranchesQuery } from "@/services/task.service";
+import { useIsGitRepo } from "@/store/projectStore";
 
 export interface TaskFormData {
   title: string;
@@ -32,6 +33,7 @@ export function TaskForm({
   initialValues,
   submitLabel = "Create Task",
 }: TaskFormProps) {
+  const isGitRepo = useIsGitRepo();
   const {
     register,
     handleSubmit,
@@ -147,31 +149,33 @@ export function TaskForm({
         />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="baseBranch">Base Branch *</Label>
-        <Controller
-          name="baseBranch"
-          control={control}
-          rules={{ required: "Base branch is required" }}
-          render={({ field: { value, onChange } }) => (
-            <Select value={value} onValueChange={onChange}>
-              <SelectTrigger id="baseBranch" className="w-full">
-                <SelectValue placeholder="Select branch..." />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((branch) => (
-                  <SelectItem key={branch} value={branch}>
-                    {branch}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {isGitRepo && (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="baseBranch">Base Branch *</Label>
+          <Controller
+            name="baseBranch"
+            control={control}
+            rules={{ required: isGitRepo ? "Base branch is required" : false }}
+            render={({ field: { value, onChange } }) => (
+              <Select value={value} onValueChange={onChange}>
+                <SelectTrigger id="baseBranch" className="w-full">
+                  <SelectValue placeholder="Select branch..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          {errors.baseBranch && (
+            <span className="text-destructive text-xs mt-1">{errors.baseBranch.message}</span>
           )}
-        />
-        {errors.baseBranch && (
-          <span className="text-destructive text-xs mt-1">{errors.baseBranch.message}</span>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex gap-4 mt-4 justify-end">
         <Button type="submit" disabled={isLoading}>

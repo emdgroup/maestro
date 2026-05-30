@@ -159,10 +159,20 @@ export function useGitInitProject() {
   });
 }
 
-/**
- * Mutation hook for cloning a git repo and registering it as a project.
- * Returns the created Project on success.
- */
+export function useCheckIsGitRepo() {
+  return useMutation({
+    mutationFn: ({
+      path,
+      connectionId,
+      wslConnectionId,
+    }: {
+      path: string;
+      connectionId: number | null;
+      wslConnectionId: number | null;
+    }) => api.checkIsGitRepo(path, connectionId, wslConnectionId),
+  });
+}
+
 export function useCloneProject() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -32,6 +32,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::check_project_locks,
             crate::ipc::remove_project,
             crate::ipc::git_init_project,
+            crate::ipc::check_is_git_repo,
             crate::ipc::clone_project,
             crate::ipc::create_new_project,
             crate::ipc::get_tasks,

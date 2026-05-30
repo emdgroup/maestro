@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { api } from "@/lib/tauri-utils";
-import { getTerminalTheme } from "@/utils/helpers/terminalTheme";
+import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import "@xterm/xterm/css/xterm.css";
 
@@ -113,7 +113,14 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
     };
-  }, [taskId, terminalColorMode]);
+  }, [taskId]);
+
+  // Update theme in-place when color mode changes — no PTY detach/reattach needed.
+  useEffect(() => {
+    const terminal = xtermRef.current;
+    if (!terminal) return;
+    terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
+  }, [terminalColorMode]);
 
   return (
     <div className="pt-2 pl-2 h-full w-full">

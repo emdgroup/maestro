@@ -11,6 +11,7 @@ import {
   useCreateProject,
   useRemoveProject,
   useGitInitProject,
+  useCheckIsGitRepo,
 } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
@@ -19,6 +20,7 @@ import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2 } from "lucide-react";
 import { ConnectionHeader } from "@/components/project-picker/ConnectionHeader";
 import { FilePicker } from "@/components/project-picker/FilePicker";
+import { GitInitDialog } from "@/components/project-picker/GitInitDialog";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { useMemo, useState } from "react";
 
@@ -41,6 +43,37 @@ export function ProjectList() {
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useRemoveProject(activeConnection?.id);
   const { mutateAsync: gitInitProject } = useGitInitProject();
+  const { mutateAsync: checkIsGitRepo } = useCheckIsGitRepo();
+
+  const [pendingSelection, setPendingSelection] = useState<{
+    path: string;
+    connectionId?: number;
+    wslConnectionId?: number;
+  } | null>(null);
+  const [showGitInitDialog, setShowGitInitDialog] = useState(false);
+  const [gitInitLoading, setGitInitLoading] = useState(false);
+
+  const finalizeProjectOpen = async (
+    selectedPath: string,
+    connectionId?: number,
+    wslConnectionId?: number,
+    isGitRepo = true,
+  ) => {
+    const connection: ConnectionKey = wslConnectionId != null
+      ? { type: "wsl", id: wslConnectionId }
+      : connectionId != null
+        ? { type: "ssh", id: connectionId }
+        : { type: "local" };
+    const created = await createProject({ path: selectedPath, connection });
+    const project = await api.openProject(created.id);
+    try {
+      await api.primeProjectServer(created.id);
+    } catch {
+      // Warmup failure is non-fatal — agent cache won't be pre-populated
+    }
+    setSelectedProject(project, isGitRepo);
+    setShowFilePickerModal(false);
+  };
 
   const handleProjectSelect = async (
     selectedPath: string,
@@ -49,23 +82,17 @@ export function ProjectList() {
   ) => {
     setProjectLoading(true);
     try {
-      const connection: ConnectionKey = wslConnectionId != null
-        ? { type: "wsl", id: wslConnectionId }
-        : connectionId != null
-          ? { type: "ssh", id: connectionId }
-          : { type: "local" };
-      if (connection.type === "local") {
-        await gitInitProject({ path: selectedPath, connectionId: null });
+      const isGitRepo = await checkIsGitRepo({
+        path: selectedPath,
+        connectionId: connectionId ?? null,
+        wslConnectionId: wslConnectionId ?? null,
+      });
+      if (isGitRepo) {
+        await finalizeProjectOpen(selectedPath, connectionId, wslConnectionId);
+      } else {
+        setPendingSelection({ path: selectedPath, connectionId, wslConnectionId });
+        setShowGitInitDialog(true);
       }
-      const created = await createProject({ path: selectedPath, connection });
-      const project = await api.openProject(created.id);
-      try {
-        await api.primeProjectServer(created.id);
-      } catch {
-        // Warmup failure is non-fatal — agent cache won't be pre-populated
-      }
-      setSelectedProject(project);
-      setShowFilePickerModal(false);
     } catch (error) {
       const msg = String(error);
       if (msg.includes("PROJECT_LOCKED:")) {
@@ -78,6 +105,54 @@ export function ProjectList() {
     }
   };
 
+  const handleGitInit = async () => {
+    if (!pendingSelection) return;
+    setGitInitLoading(true);
+    try {
+      await gitInitProject({
+        path: pendingSelection.path,
+        connectionId: pendingSelection.connectionId ?? null,
+      });
+      setShowGitInitDialog(false);
+      setProjectLoading(true);
+      await finalizeProjectOpen(
+        pendingSelection.path,
+        pendingSelection.connectionId,
+        pendingSelection.wslConnectionId,
+      );
+    } catch (error) {
+      toast.error(`Failed to initialize git: ${String(error)}`);
+    } finally {
+      setGitInitLoading(false);
+      setProjectLoading(false);
+      setPendingSelection(null);
+    }
+  };
+
+  const handleSkipGitInit = async () => {
+    if (!pendingSelection) return;
+    setShowGitInitDialog(false);
+    setProjectLoading(true);
+    try {
+      await finalizeProjectOpen(
+        pendingSelection.path,
+        pendingSelection.connectionId,
+        pendingSelection.wslConnectionId,
+        false,
+      );
+    } catch (error) {
+      const msg = String(error);
+      if (msg.includes("PROJECT_LOCKED:")) {
+        toast.error("Project already open in another Maestro instance");
+      } else {
+        toast.error(`Failed to open project: ${msg}`);
+      }
+    } finally {
+      setProjectLoading(false);
+      setPendingSelection(null);
+    }
+  };
+
   const handleProjectClick = async (projectId: number) => {
     setProjectLoading(true);
     try {
@@ -87,7 +162,12 @@ export function ProjectList() {
       } catch {
         // Warmup failure is non-fatal — agent cache won't be pre-populated
       }
-      setSelectedProject(project);
+      const isGitRepo = await checkIsGitRepo({
+        path: project.path,
+        connectionId: project.connection_id,
+        wslConnectionId: project.wsl_connection_id,
+      });
+      setSelectedProject(project, isGitRepo);
     } catch (error) {
       const msg = String(error);
       if (msg.includes("PROJECT_LOCKED:")) {
@@ -188,6 +268,20 @@ export function ProjectList() {
           open={showCreateDialog}
           onOpenChange={setShowCreateDialog}
           connection={activeConnection?.sshConnection ?? null}
+        />
+
+        <GitInitDialog
+          open={showGitInitDialog}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowGitInitDialog(false);
+              setPendingSelection(null);
+            }
+          }}
+          path={pendingSelection?.path ?? ""}
+          onInitGit={handleGitInit}
+          onSkip={handleSkipGitInit}
+          loading={gitInitLoading}
         />
       </>
     )

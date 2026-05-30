@@ -80,6 +80,13 @@ function App() {
   const { data: issueTrackingConfig, isLoading: issueTrackingLoading } =
     useProjectIssueTrackingConfig(currentProject?.id ?? 0);
 
+  // Stable connection key — memoized so downstream hooks don't churn on every render.
+  const connection = useMemo(
+    () => currentProject ? connectionKeyFromProject(currentProject) : { type: "local" as const },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentProject?.id, currentProject?.connection_id, currentProject?.wsl_connection_id],
+  );
+
   // Running agent count for header badge
   const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
   const runningAgentCount = sessions.length;
@@ -202,7 +209,7 @@ function App() {
             <AgentsView
               projectId={currentProject.id}
               repoPath={currentProject.path}
-              connection={connectionKeyFromProject(currentProject)}
+              connection={connection}
             />
           </Suspense>
         </motion.div>
@@ -219,7 +226,7 @@ function App() {
             <KanbanProvider
               projectId={currentProject.id}
               projectPath={currentProject.path}
-              connection={connectionKeyFromProject(currentProject)}
+              connection={connection}
               onTaskClick={NOOP}
             >
               <KanbanView />
@@ -255,7 +262,7 @@ function App() {
               <SettingsView
                 ref={settingsPageRef}
                 projectId={currentProject.id}
-                connection={connectionKeyFromProject(currentProject)}
+                connection={connection}
               />
             </Suspense>
           </div>

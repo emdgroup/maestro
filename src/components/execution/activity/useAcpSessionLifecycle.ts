@@ -311,11 +311,12 @@ export function useAcpSessionLifecycle(
             if (prev.length > 0) return prev;
             return p.configOptions!;
           });
-          // Only seed configValues if nothing set yet (no cache was available).
-          // After seeding, only model-changed / current_model_update should change selection.
+          // config_option_update carries live currentValue from the active session.
+          // Always merge — don't let cached defaults block live session values.
           setConfigValues((prev) => {
-            if (Object.keys(prev).length > 0) return prev;
-            return Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+            const incoming = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+            const hasChange = Object.entries(incoming).some(([k, v]) => prev[k] !== v);
+            return hasChange ? { ...prev, ...incoming } : prev;
           });
         }
       } else if (p.sessionUpdate === "current_model_update") {

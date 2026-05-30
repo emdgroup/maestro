@@ -6,7 +6,7 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import type { ConnectionKey } from "@/types/bindings";
-import { connectionKeysEqual } from "@/lib/connection-utils";
+import { connectionKeysEqual, connectionKeyStr } from "@/lib/connection-utils";
 
 export const executionQueryKeys = {
   activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
@@ -96,8 +96,10 @@ export function useLoadAcpSessionMutation() {
         worktreeBranch ?? null,
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: projectId != null ? executionQueryKeys.activeSessions(projectId) : ["activeSessions"],
+      });
     },
     onError: createErrorToastHandler("Failed to load session"),
   });
@@ -159,8 +161,8 @@ export function useSpawnInteractiveExecutionMutation() {
         taskDescription ?? null,
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to spawn interactive session"),
@@ -209,6 +211,9 @@ export function useAgentCacheQuery(
   connection: ConnectionKey,
 ) {
   const queryClient = useQueryClient();
+  // Serialize to a string so the effect dep is stable across renders even
+  // when callers construct a new ConnectionKey object reference each render.
+  const connStr = connectionKeyStr(connection);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -220,7 +225,7 @@ export function useAgentCacheQuery(
           connectionKeysEqual(event.payload, connection)
         ) {
           void queryClient.invalidateQueries({
-            queryKey: ["agentCache", connection, agentId],
+            queryKey: ["agentCache", connStr, agentId],
           });
         }
       },
@@ -230,10 +235,11 @@ export function useAgentCacheQuery(
     return () => {
       unlisten?.();
     };
-  }, [queryClient, agentId, connection]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryClient, agentId, connStr]);
 
   return useQuery({
-    queryKey: ["agentCache", connection, agentId] as const,
+    queryKey: ["agentCache", connStr, agentId] as const,
     queryFn: () => api.getAgentCache(agentId!, connection),
     enabled: agentId != null,
     staleTime: Infinity,
@@ -277,8 +283,8 @@ export function useSpawnAcpSessionMutation() {
         taskName ?? null,
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
     },
     onError: createErrorToastHandler("Failed to spawn ACP session"),
   });
@@ -304,8 +310,8 @@ export function useRenameAcpSessionMutation() {
     }) => {
       return await api.renameAcpSession(projectId, agentId, acpSessionId, displayName);
     },
-    onSuccess: (_data, { agentId }) => {
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+    onSuccess: (_data, { agentId, projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
       void queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
       });
@@ -342,6 +348,7 @@ export function useCancelActiveSessionMutation() {
       }
     },
     onSuccess: () => {
+      // projectId not available here; prefix match intentionally invalidates all projects.
       void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
     onError: createErrorToastHandler("Failed to close session"),

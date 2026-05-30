@@ -82,9 +82,15 @@ export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
         onDragOver={(event) => {
           const { source } = event.operation;
           if (source?.type !== "item") return;
-          const newItems = move(liveDndRef.current, event);
-          liveDndRef.current = newItems;
-          setDndItems({ ...newItems });
+          const taskId = source.id as number;
+          const tentative = move(liveDndRef.current, event);
+          // Only update state for cross-column moves — prevents false visual
+          // reorder affordance within the same column (no persistence on same-col drops).
+          const wasInBacklog = liveDndRef.current.Backlog.includes(taskId);
+          const nowInBacklog = tentative.Backlog.includes(taskId);
+          if (wasInBacklog === nowInBacklog) return;
+          liveDndRef.current = tentative;
+          setDndItems({ ...tentative });
         }}
         onDragEnd={(event) => {
           setIsDragActive(false);

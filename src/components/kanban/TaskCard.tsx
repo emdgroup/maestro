@@ -41,7 +41,14 @@ export function TaskCard({ task, index, onReviewClick, worktreeTaskIds }: TaskCa
 
   const dragOccurredRef = useRef(false);
   useEffect(() => {
-    if (isDragging) dragOccurredRef.current = true;
+    if (isDragging) {
+      dragOccurredRef.current = true;
+    } else {
+      // Drag ended: schedule reset after any pending click event fires.
+      // On drag-cancel (Escape) no click fires, so the rAF clears the flag.
+      const raf = requestAnimationFrame(() => { dragOccurredRef.current = false; });
+      return () => cancelAnimationFrame(raf);
+    }
   }, [isDragging]);
 
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;

@@ -11,3 +11,9 @@ export function connectionKeysEqual(a: ConnectionKey, b: ConnectionKey): boolean
   if (a.type === "local") return true;
   return (a as { id: number }).id === (b as { id: number }).id;
 }
+
+/** Stable string key for use in useEffect dep arrays and query keys. */
+export function connectionKeyStr(key: ConnectionKey): string {
+  if (key.type === "local") return "local";
+  return `${key.type}:${key.id}`;
+}

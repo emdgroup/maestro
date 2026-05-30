@@ -106,6 +106,14 @@ async gitInitProject(path: string, connectionId: number | null) : Promise<Result
     else return { status: "error", error: e  as any };
 }
 },
+async checkIsGitRepo(path: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_is_git_repo", { path, connectionId, wslConnectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Clone a git repository and register it as a project
  */

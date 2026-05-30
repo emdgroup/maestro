@@ -27,7 +27,7 @@ import {
 import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
-import { useSelectedProject } from "@/store/projectStore";
+import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 import type { RemoteIssue, TaskPriority, ProjectIssueTrackingConfig } from "@/types/bindings";
@@ -78,6 +78,7 @@ interface CreateTaskModalProps {
 
 export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalProps) {
   const selectedProject = useSelectedProject();
+  const isGitRepo = useIsGitRepo();
 
   const { data: issueConfig } = useProjectIssueTrackingConfig(projectId);
   const hasProvider = issueConfig != null;
@@ -336,10 +337,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               )}
             </div>
 
-            <Controller
+            {isGitRepo && <Controller
               name="baseBranch"
               control={control}
-              rules={{ required: "Base branch is required" }}
+              rules={{ required: isGitRepo ? "Base branch is required" : false }}
               render={({ field: { value, onChange } }) => (
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
@@ -425,7 +426,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                   )}
                 </div>
               )}
-            />
+            />}
 
             <div className="flex items-center gap-2 flex-wrap">
               <Popover
@@ -518,7 +519,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 </PopoverContent>
               </Popover>
 
-              <TogglePill name="isolatedWorktree" label="Isolate worktree" control={control} />
+              {isGitRepo && <TogglePill name="isolatedWorktree" label="Isolate worktree" control={control} />}
               <TogglePill name="autoApprove" label="Auto-approve" control={control} />
             </div>
 

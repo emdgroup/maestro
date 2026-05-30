@@ -346,6 +346,64 @@ pub async fn git_init_project(
     }
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn check_is_git_repo(
+    app_state: State<'_, Arc<AppState>>,
+    path: String,
+    connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
+) -> Result<bool, String> {
+    if let Some(conn_id) = connection_id {
+        let session = app_state
+            .ssh.get_session(conn_id)
+            .await
+            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
+        let check = session
+            .execute_command(&format!(
+                "git -C {} rev-parse --is-inside-work-tree 2>/dev/null && echo yes || echo no",
+                shell_quote(&path)
+            ))
+            .await
+            .map_err(|e| format!("SSH check failed: {}", e))?;
+        return Ok(check.trim().ends_with("yes"));
+    }
+
+    if let Some(wsl_id) = wsl_connection_id {
+        let distro: String = {
+            let db = app_state.db.lock().map_err(|e| e.to_string())?;
+            db.query_row(
+                "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                params![wsl_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("WSL connection not found: {}", e))?
+        };
+        let output = tokio::process::Command::new("wsl.exe")
+            .args(["-d", &distro, "--", "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .no_console_window()
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
+        return Ok(output.status.success());
+    }
+
+    // Use `git rev-parse` to detect both root repos and subdirectories within a git tree
+    let output = tokio::process::Command::new("git")
+        .args(["-C", &path, "rev-parse", "--is-inside-work-tree"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .no_console_window()
+        .output()
+        .await;
+    match output {
+        Ok(out) => Ok(out.status.success()),
+        Err(_) => Ok(false), // git not installed → not a git repo
+    }
+}
+
 fn build_provider_auth_header(
     provider: &str,
     app_state: &AppState,
