@@ -7,7 +7,7 @@ allowed-tools:
   - Bash
   - Grep
   - Glob
-  - Task
+  - Agent
   - AskUserQuestion
 ---
 <objective>
@@ -15,7 +15,7 @@ Open-ended Socratic ideation session. Guides the developer through exploring an 
 probing questions, optionally spawns research, then routes outputs to the appropriate GSD
 artifacts (notes, todos, seeds, research questions, requirements, or new phases).
 
-Accepts an optional topic argument: `/gsd-explore authentication strategy`
+Accepts an optional topic argument: `/gsd:explore authentication strategy`
 </objective>
 
 <execution_context>
@@ -23,5 +23,5 @@ Accepts an optional topic argument: `/gsd-explore authentication strategy`
 </execution_context>
 
 <process>
-Execute the explore workflow from @/home/m306213/workspace/maestro/.claude/get-shit-done/workflows/explore.md end-to-end.
+Execute end-to-end.
 </process>

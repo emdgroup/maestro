@@ -145,8 +145,8 @@ export const KanbanView: React.FC = () => {
         </Button>
 
         <div className="ml-auto">
-          <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="size-4" />
+          <Button variant="accent" size="sm" className="h-8 text-xs" onClick={() => setIsCreateModalOpen(true)}>
+            <Plus className="size-3.5 mr-1" />
             New Task
           </Button>
         </div>

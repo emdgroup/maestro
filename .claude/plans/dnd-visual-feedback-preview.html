@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kanban DnD Visual Feedback Proposals</title>
+<style>
+  :root {
+    /* App accent color (oklch 50% 0.15 250 ≈ this hex in sRGB) */
+    --accent: #4d5cd6;
+    --accent-rgb: 77, 92, 214;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0b; color: #e4e4e7; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 8px; color: #fafafa; }
+  .subtitle { font-size: 13px; color: #71717a; margin-bottom: 32px; }
+  .proposal { margin-bottom: 48px; }
+  .proposal-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .proposal-header h2 { font-size: 16px; color: #fafafa; }
+  .proposal-header .tag { font-size: 11px; padding: 2px 8px; border-radius: 9999px; }
+  .tag-recommended { background: rgba(77,92,214,0.2); color: var(--accent); border: 1px solid rgba(77,92,214,0.3); }
+  .tag-alt { background: #27272a; color: #a1a1aa; }
+  .proposal-desc { font-size: 13px; color: #a1a1aa; margin-bottom: 16px; line-height: 1.5; }
+
+  .board { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 0; max-width: 960px; }
+  .board-3col { grid-template-columns: 1fr 1fr 1fr; max-width: 720px; }
+  .column { border: 1px solid #27272a; background: #18181b; padding: 0; overflow: hidden; min-height: 240px; display: flex; flex-direction: column; transition: all 0.2s; }
+  .column:first-child { border-radius: 8px 0 0 8px; }
+  .column:last-child { border-radius: 0 8px 8px 0; }
+  .col-header { padding: 10px 14px; border-bottom: 1px solid #27272a; background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center; transition: all 0.2s; }
+  .col-header h3 { font-size: 13px; font-weight: 600; }
+  .col-header .count { font-size: 11px; padding: 1px 7px; border-radius: 9999px; }
+  .col-cards { padding: 10px; flex: 1; display: flex; flex-direction: column; gap: 8px; transition: all 0.2s; border-radius: 0 0 7px 7px; }
+  .card { border: 1px solid #27272a; background: #18181b; border-radius: 8px; padding: 10px 12px; cursor: grab; transition: all 0.2s; }
+  .card .title { font-size: 13px; font-weight: 500; }
+  .card .meta { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .card .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .card .label { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #27272a; color: #a1a1aa; }
+  .card .action { font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: auto; border: none; cursor: pointer; }
+
+  /* Column top-border colors */
+  .col-backlog { border-top: 3px solid #94a3b8; }
+  .col-backlog .count { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  .col-ready { border-top: 3px solid #3b82f6; }
+  .col-ready .count { background: rgba(59,130,246,0.15); color: #3b82f6; }
+  .col-inprogress { border-top: 3px solid #f59e0b; }
+  .col-inprogress .count { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .col-review { border-top: 3px solid #a855f7; }
+  .col-review .count { background: rgba(168,85,247,0.15); color: #a855f7; }
+  .col-done { border-top: 3px solid #22c55e; }
+  .col-done .count { background: rgba(34,197,94,0.15); color: #22c55e; }
+
+  .state-label { font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600; }
+  .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .state-panel { }
+
+  .divider { height: 1px; background: #27272a; margin: 48px 0; }
+
+  /* ===== COMBINED PROPOSAL: Column-color ring + Accent ghost + Disabled Dim ===== */
+  .proposal-combined .card.dragging {
+    opacity: 0.3;
+    border-style: dashed;
+    border-color: #3f3f46;
+  }
+  /* Target column highlighted with its own column color */
+  .proposal-combined .column.drop-target.col-ready .col-cards {
+    background: rgba(59,130,246,0.05);
+    box-shadow: inset 0 0 0 1.5px rgba(59,130,246,0.3);
+  }
+  .proposal-combined .column.drop-target.col-backlog .col-cards {
+    background: rgba(148,163,184,0.05);
+    box-shadow: inset 0 0 0 1.5px rgba(148,163,184,0.3);
+  }
+  /* Ghost placeholder uses accent color */
+  .proposal-combined .card.ghost {
+    border: 1.5px dashed rgba(var(--accent-rgb), 0.45);
+    background: rgba(var(--accent-rgb), 0.06);
+    min-height: 52px;
+  }
+  .proposal-combined .card.ghost .title,
+  .proposal-combined .card.ghost .meta { visibility: hidden; }
+  .proposal-combined .card.overlay {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(var(--accent-rgb), 0.2);
+    transform: rotate(-1.5deg) scale(1.03);
+    border-color: rgba(var(--accent-rgb), 0.5);
+  }
+  .proposal-combined .column.disabled {
+    opacity: 0.35;
+    filter: saturate(0.3);
+  }
+
+  /* ===== PROPOSAL A: Subtle Ring (no dim) ===== */
+  .proposal-a .card.dragging { opacity: 0.35; border-style: dashed; border-color: #3f3f46; }
+  .proposal-a .column.drop-target .col-cards { background: rgba(59,130,246,0.04); box-shadow: inset 0 0 0 1.5px rgba(59,130,246,0.25); }
+  .proposal-a .card.ghost { border: 1.5px dashed rgba(59,130,246,0.4); background: rgba(59,130,246,0.06); min-height: 52px; }
+  .proposal-a .card.ghost .title, .proposal-a .card.ghost .meta { visibility: hidden; }
+  .proposal-a .card.overlay { box-shadow: 0 8px 24px rgba(0,0,0,0.4); transform: rotate(-1.5deg) scale(1.03); border-color: #3b82f6; }
+
+  /* ===== PROPOSAL C: Minimal ===== */
+  .proposal-c .card.dragging { opacity: 0.2; }
+  .proposal-c .column.drop-target .col-cards { background: rgba(255,255,255,0.02); }
+  .proposal-c .card.overlay { box-shadow: 0 4px 12px rgba(0,0,0,0.5); transform: scale(1.02); }
+
+  /* ===== PROPOSAL D: Color-coded + Dim ===== */
+  .proposal-d .card.dragging { opacity: 0.3; border-color: transparent; }
+  .proposal-d .column.drop-target.col-ready .col-cards { background: rgba(59,130,246,0.06); box-shadow: inset 0 0 0 1.5px rgba(59,130,246,0.2); }
+  .proposal-d .column.drop-target.col-backlog .col-cards { background: rgba(148,163,184,0.06); box-shadow: inset 0 0 0 1.5px rgba(148,163,184,0.2); }
+  .proposal-d .column.disabled { opacity: 0.4; }
+  .proposal-d .card.overlay { box-shadow: 0 8px 24px rgba(0,0,0,0.4); border-left: 3px solid #3b82f6; }
+  .proposal-d .card.ghost { height: 48px; border: 1.5px dashed rgba(59,130,246,0.3); background: transparent; border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Kanban DnD — Visual Feedback Proposals</h1>
+<p class="subtitle">Drag between Backlog ↔ Ready only. InProgress, Review, Done columns are non-droppable and dimmed during drag.</p>
+
+<!-- ======================== COMBINED PROPOSAL ======================== -->
+<div class="proposal proposal-combined">
+  <div class="proposal-header">
+    <h2>Combined — Accent Ring + Ghost + Disabled Dim</h2>
+    <span class="tag tag-recommended">Recommended</span>
+  </div>
+  <p class="proposal-desc">
+    Target column highlighted with its own color (blue for Ready, slate for Backlog). Ghost placeholder uses app accent color.<br>
+    Non-droppable columns dimmed + desaturated. Overlay card rotated with accent border.
+  </p>
+
+  <div class="side-by-side">
+    <div class="state-panel">
+      <div class="state-label">Resting state</div>
+      <div class="board">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Refactor auth module</div><div class="meta"><span class="dot" style="background:#f59e0b"></span></div></div>
+          </div>
+        </div>
+        <div class="column col-review">
+          <div class="col-header"><h3>Review</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+        <div class="column col-done">
+          <div class="col-header"><h3>Done</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Update dependencies</div><div class="meta"><span class="label">chore</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-panel">
+      <div class="state-label">Dragging "Set up CI pipeline" → Ready</div>
+      <div class="board">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card dragging"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready drop-target">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+            <div class="card ghost"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress disabled">
+          <div class="col-header"><h3>In Progress</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Refactor auth module</div><div class="meta"><span class="dot" style="background:#f59e0b"></span></div></div>
+          </div>
+        </div>
+        <div class="column col-review disabled">
+          <div class="col-header"><h3>Review</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+        <div class="column col-done disabled">
+          <div class="col-header"><h3>Done</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Update dependencies</div><div class="meta"><span class="label">chore</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="card overlay" style="max-width:200px;position:relative;left:220px;margin-top:-50px;"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reverse direction -->
+  <div style="margin-top: 24px;">
+    <div class="state-label">Dragging "Fix auth token refresh" Ready → Backlog</div>
+    <div class="board" style="max-width: 960px;">
+      <div class="column col-backlog drop-target">
+        <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+        <div class="col-cards">
+          <div class="card"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+          <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          <div class="card ghost"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span></div></div>
+        </div>
+      </div>
+      <div class="column col-ready">
+        <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+        <div class="col-cards">
+          <div class="card dragging"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+        </div>
+      </div>
+      <div class="column col-inprogress disabled">
+        <div class="col-header"><h3>In Progress</h3><span class="count">1</span></div>
+        <div class="col-cards">
+          <div class="card"><div class="title">Refactor auth module</div><div class="meta"><span class="dot" style="background:#f59e0b"></span></div></div>
+        </div>
+      </div>
+      <div class="column col-review disabled">
+        <div class="col-header"><h3>Review</h3><span class="count">0</span></div>
+        <div class="col-cards"></div>
+      </div>
+      <div class="column col-done disabled">
+        <div class="col-header"><h3>Done</h3><span class="count">1</span></div>
+        <div class="col-cards">
+          <div class="card"><div class="title">Update dependencies</div><div class="meta"><span class="label">chore</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ======================== COMPARISON: OTHER PROPOSALS ======================== -->
+<h2 style="font-size:15px; margin-bottom: 20px; color: #a1a1aa;">Other proposals for comparison</h2>
+
+<!-- PROPOSAL A -->
+<div class="proposal proposal-a">
+  <div class="proposal-header">
+    <h2>A — Subtle Ring (no column dim)</h2>
+    <span class="tag tag-alt">Alternative</span>
+  </div>
+  <p class="proposal-desc">Same ring + ghost, but non-droppable columns stay at full opacity. Less dramatic, harder to tell what's droppable.</p>
+  <div class="side-by-side">
+    <div class="state-panel">
+      <div class="state-label">Resting</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+    </div>
+    <div class="state-panel">
+      <div class="state-label">Dragging → Ready</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card dragging"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready drop-target">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+            <div class="card ghost"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROPOSAL C -->
+<div class="proposal proposal-c">
+  <div class="proposal-header">
+    <h2>C — Minimal (opacity only)</h2>
+    <span class="tag tag-alt">Alternative</span>
+  </div>
+  <p class="proposal-desc">Source nearly invisible. Target barely tinted. No ghost, no ring, no dim. Cleanest but least guidance.</p>
+  <div class="side-by-side">
+    <div class="state-panel">
+      <div class="state-label">Resting</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+    </div>
+    <div class="state-panel">
+      <div class="state-label">Dragging → Ready</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card dragging"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready drop-target">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="card overlay" style="max-width:200px;position:relative;left:180px;margin-top:-40px;"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROPOSAL D -->
+<div class="proposal proposal-d">
+  <div class="proposal-header">
+    <h2>D — Column-colored Ring + Dim</h2>
+    <span class="tag tag-alt">Alternative</span>
+  </div>
+  <p class="proposal-desc">Target ring matches column's own accent color (blue for Ready, slate for Backlog) instead of app accent. Empty ghost outline. Overlay has colored left border.</p>
+  <div class="side-by-side">
+    <div class="state-panel">
+      <div class="state-label">Resting</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+          </div>
+        </div>
+        <div class="column col-inprogress">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+    </div>
+    <div class="state-panel">
+      <div class="state-label">Dragging → Ready (InProgress dimmed)</div>
+      <div class="board board-3col">
+        <div class="column col-backlog">
+          <div class="col-header"><h3>Backlog</h3><span class="count">2</span></div>
+          <div class="col-cards">
+            <div class="card dragging"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+            <div class="card"><div class="title">Write API documentation</div><div class="meta"><span class="label">docs</span></div></div>
+          </div>
+        </div>
+        <div class="column col-ready drop-target">
+          <div class="col-header"><h3>Ready</h3><span class="count">1</span></div>
+          <div class="col-cards">
+            <div class="card"><div class="title">Fix auth token refresh</div><div class="meta"><span class="dot" style="background:#ef4444"></span><span class="label">bug</span><span class="action" style="background:#27272a;color:#a1a1aa;">▶ Execute</span></div></div>
+            <div class="card ghost"></div>
+          </div>
+        </div>
+        <div class="column col-inprogress disabled">
+          <div class="col-header"><h3>In Progress</h3><span class="count">0</span></div>
+          <div class="col-cards"></div>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="card overlay" style="max-width:200px;position:relative;left:180px;margin-top:-40px;"><div class="title">Set up CI pipeline</div><div class="meta"><span class="dot" style="background:#f59e0b"></span><span class="label">infra</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:32px; padding: 16px; border: 1px solid #27272a; border-radius: 8px; background: #18181b;">
+  <h2 style="font-size:14px; margin-bottom: 8px;">Comparison</h2>
+  <table style="font-size:13px; width:100%; border-collapse:collapse;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #27272a;">
+        <th style="padding:6px 8px;">Proposal</th>
+        <th style="padding:6px 8px;">Source card</th>
+        <th style="padding:6px 8px;">Target ring color</th>
+        <th style="padding:6px 8px;">Placeholder</th>
+        <th style="padding:6px 8px;">Overlay</th>
+        <th style="padding:6px 8px;">Disabled cols</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #27272a; background: rgba(77,92,214,0.05);">
+        <td style="padding:6px 8px; font-weight:600; color: var(--accent);">Combined ★</td>
+        <td style="padding:6px 8px;">Fade + dashed</td>
+        <td style="padding:6px 8px;">Column's own color</td>
+        <td style="padding:6px 8px;">Dashed ghost (accent)</td>
+        <td style="padding:6px 8px;">Rotated + accent border</td>
+        <td style="padding:6px 8px; color:#f59e0b;">Dimmed + desaturated</td>
+      </tr>
+      <tr style="border-bottom:1px solid #27272a;">
+        <td style="padding:6px 8px;">A — Subtle Ring</td>
+        <td style="padding:6px 8px;">Fade + dashed</td>
+        <td style="padding:6px 8px;">Blue</td>
+        <td style="padding:6px 8px;">Dashed ghost</td>
+        <td style="padding:6px 8px;">Rotated + shadow</td>
+        <td style="padding:6px 8px;">No change</td>
+      </tr>
+      <tr style="border-bottom:1px solid #27272a;">
+        <td style="padding:6px 8px;">C — Minimal</td>
+        <td style="padding:6px 8px;">Very faded</td>
+        <td style="padding:6px 8px;">None</td>
+        <td style="padding:6px 8px;">None</td>
+        <td style="padding:6px 8px;">Subtle shadow</td>
+        <td style="padding:6px 8px;">No change</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 8px;">D — Column-colored</td>
+        <td style="padding:6px 8px;">Faded</td>
+        <td style="padding:6px 8px;">Column's own color</td>
+        <td style="padding:6px 8px;">Empty outline</td>
+        <td style="padding:6px 8px;">Colored left border</td>
+        <td style="padding:6px 8px; color:#f59e0b;">Dimmed</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

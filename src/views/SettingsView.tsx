@@ -1,20 +1,19 @@
 import { forwardRef } from "react";
 import { SettingsPage, SettingsPageHandle } from "@/components/common/SettingsPage";
+import type { ConnectionKey } from "@/types/bindings";
 
 interface SettingsViewProps {
   projectId: number;
-  connectionId: number | null;
-  wslConnectionId?: number | null;
+  connection: ConnectionKey;
 }
 
 export const SettingsView = forwardRef<SettingsPageHandle, SettingsViewProps>(
-  ({ projectId, connectionId, wslConnectionId }, ref) => {
+  ({ projectId, connection }, ref) => {
     return (
       <SettingsPage
         ref={ref}
         projectId={projectId}
-        connectionId={connectionId}
-        wslConnectionId={wslConnectionId}
+        connection={connection}
       />
     );
   },

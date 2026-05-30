@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 
-pub const SCHEMA_V19: &str = r#"
+pub const SCHEMA_V20: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     auto_approve INTEGER NOT NULL DEFAULT 0,
     isolated_worktree INTEGER NOT NULL DEFAULT 1,
     agent_id TEXT,
+    permission_mode_override TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -209,7 +210,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V19)?;
+        conn.execute_batch(SCHEMA_V20)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],

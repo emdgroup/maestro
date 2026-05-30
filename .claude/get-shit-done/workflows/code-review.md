@@ -35,7 +35,7 @@ fi
 **Phase validation (before config gate):**
 If `phase_found` is false, report error and exit:
 ```
-Error: Phase ${PHASE_ARG} not found. Run /gsd-progress to see available phases.
+Error: Phase ${PHASE_ARG} not found. Run /gsd:progress to see available phases.
 ```
 
 This runs BEFORE config gate check so user errors are surfaced immediately regardless of config state.
@@ -172,9 +172,15 @@ if [ -z "$FILES_OVERRIDE" ]; then
         for (const line of yaml.split('\n')) {
           if (/^\s+created:/.test(line)) { inSection = 'created'; continue; }
           if (/^\s+modified:/.test(line)) { inSection = 'modified'; continue; }
-          if (/^\s*\w+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
+          if (/^\s*[\w-]+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
           if (inSection && /^\s+-\s+(.+)/.test(line)) {
-            files.push(line.match(/^\s+-\s+(.+)/)[1].trim());
+            let raw = line.match(/^\s+-\s+(.+)/)[1].trim();
+            raw = raw.replace(/^['"]|['"]$/g, '');
+            raw = raw.replace(/\s+\([^)]*\)\s*$/, '');
+            raw = raw.split(/\s+—\s/)[0].trim();
+            if (/\//.test(raw) && /\.[A-Za-z0-9]+$/.test(raw)) {
+              files.push(raw);
+            }
           }
         }
         if (files.length) console.log(files.join('\n'));
@@ -227,7 +233,7 @@ if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
   else
     # Fail closed — no reliable diff base found. Do not use arbitrary HEAD~N.
     echo "Warning: No phase commits found for '${PADDED_PHASE}'. Cannot determine reliable diff scope."
-    echo "Use --files flag to specify files explicitly: /gsd-code-review ${PHASE_ARG} --files=file1,file2,..."
+    echo "Use --files flag to specify files explicitly: /gsd:code-review ${PHASE_ARG} --files=file1,file2,..."
   fi
 fi
 ```
@@ -312,6 +318,78 @@ No source files changed in phase ${PHASE_ARG}. Skipping review.
 Exit workflow. Do NOT spawn agent or create REVIEW.md.
 </step>
 
+<step name="structural_pre_pass">
+Optional structural cross-module pass powered by fallow.
+
+Read fallow config gates:
+```bash
+FALLOW_ENABLED=$(gsd-sdk query config-get code_quality.fallow.enabled 2>/dev/null || echo "false")
+FALLOW_SCOPE=$(gsd-sdk query config-get code_quality.fallow.scope 2>/dev/null || echo "phase")
+FALLOW_PROFILE=$(gsd-sdk query config-get code_quality.fallow.profile 2>/dev/null || echo "standard")
+FALLOW_MCP=$(gsd-sdk query config-get code_quality.fallow.mcp 2>/dev/null || echo "false")
+```
+
+Defaults are fail-closed and opt-in:
+- `enabled=false` (skip entirely)
+- `scope=phase`
+- `profile=standard`
+- `mcp=false`
+
+When `FALLOW_ENABLED=true`:
+
+1) Resolve binary via PATH first, then `node_modules/.bin/fallow`.
+```bash
+FALLOW_BIN=$(FALLOW_CWD="$(pwd)" node -e "
+const { resolveFallowBinary } = require('./get-shit-done/bin/lib/fallow-runner.cjs');
+const resolved = resolveFallowBinary({ cwd: process.env.FALLOW_CWD });
+if (resolved) process.stdout.write(resolved);
+")
+```
+
+2) If binary is missing, fail with actionable message:
+```bash
+if [ -z \"$FALLOW_BIN\" ]; then
+  echo \"Error: fallow is enabled but no binary was found.\"
+  echo \"Install fallow via \`npm install -D fallow\` or \`cargo install fallow\`.\"
+  # Exit workflow
+fi
+```
+
+3) Execute structural pass and persist JSON (bounded at 120s; on timeout, behaves as a fallow crash):
+```bash
+FALLOW_JSON_PATH="${PHASE_DIR}/FALLOW.json"
+FALLOW_STDERR_TMP=$(mktemp)
+if [ \"$FALLOW_SCOPE\" = \"repo\" ]; then
+  timeout 120 \"$FALLOW_BIN\" audit --json --profile \"$FALLOW_PROFILE\" > \"${FALLOW_JSON_PATH}.tmp\" 2>\"$FALLOW_STDERR_TMP\"
+  FALLOW_EXIT=$?
+else
+  # phase scope: pass the already-computed review file set
+  printf '%s\n' \"${REVIEW_FILES[@]}\" | timeout 120 \"$FALLOW_BIN\" audit --json --profile \"$FALLOW_PROFILE\" --stdin-files > \"${FALLOW_JSON_PATH}.tmp\" 2>\"$FALLOW_STDERR_TMP\"
+  FALLOW_EXIT=$?
+fi
+if [ $FALLOW_EXIT -ne 0 ]; then
+  FALLOW_STDERR_SUMMARY=$(head -5 \"$FALLOW_STDERR_TMP\")
+  rm -f \"${FALLOW_JSON_PATH}.tmp\" \"$FALLOW_STDERR_TMP\"
+  echo \"WARNING: fallow structural pre-pass failed: ${FALLOW_STDERR_SUMMARY}\"
+  FALLOW_JSON_PATH=""
+else
+  mv \"${FALLOW_JSON_PATH}.tmp\" \"$FALLOW_JSON_PATH\"
+  rm -f \"$FALLOW_STDERR_TMP\"
+fi
+```
+
+On any failure of the structural pre-pass (binary missing, non-zero exit, timeout, or JSON parse error), the workflow continues with no `<structural_findings>` injection; the reviewer agent receives a normal review request.
+
+4) Optional MCP bridge path (runtime-dependent):
+- If `FALLOW_MCP=true`, set reviewer input mode to MCP-backed structural findings.
+- Otherwise pass static JSON findings from `FALLOW.json`.
+
+When disabled, set:
+```bash
+FALLOW_JSON_PATH=""
+```
+</step>
+
 <step name="spawn_reviewer">
 Compute the review output path:
 ```bash
@@ -344,13 +422,31 @@ for file in "${REVIEW_FILES[@]}"; do
 done
 ```
 
+Build structural findings block for agent:
+```bash
+STRUCTURAL_FINDINGS_BLOCK=""
+MAX_FINDINGS_SIZE=50000
+if [ -n "$FALLOW_JSON_PATH" ] && [ -f "$FALLOW_JSON_PATH" ]; then
+  FALLOW_JSON_SIZE=$(wc -c < "$FALLOW_JSON_PATH" | tr -d '[:space:]')
+  if [ "$FALLOW_JSON_SIZE" -le "$MAX_FINDINGS_SIZE" ]; then
+    # Escape any literal closing tag before embedding; the closing tag literal is escaped to prevent prompt-structure breakage if a fallow finding's file path or message contains the sequence.
+    SAFE_FALLOW_JSON=$(sed 's#</structural_findings>#<\/structural_findings>#g' "$FALLOW_JSON_PATH")
+    STRUCTURAL_FINDINGS_BLOCK=$(printf '<structural_findings>\n%s\n</structural_findings>\n' "$SAFE_FALLOW_JSON")
+  else
+    echo "Warning: skipping structural findings embed (${FALLOW_JSON_SIZE} bytes > ${MAX_FINDINGS_SIZE} bytes). Re-run with narrower scope/profile if needed."
+  fi
+fi
+```
+
 Spawn the gsd-code-reviewer agent:
 
 ```
-Task(subagent_type="gsd-code-reviewer", prompt="
+Agent(subagent_type="gsd-code-reviewer", prompt="
 <files_to_read>
 ${FILES_TO_READ}
 </files_to_read>
+
+${STRUCTURAL_FINDINGS_BLOCK}
 
 <config>
 depth: ${REVIEW_DEPTH}
@@ -366,15 +462,15 @@ Do NOT commit the output — the orchestrator handles that.
 ")
 ```
 
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Task() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
+> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
 
 **Agent failure handling:**
 
-If the Task() call fails (agent error, timeout, or exception):
+If the Agent() call fails (agent error, timeout, or exception):
 ```
 Error: Code review agent failed: ${error_message}
 
-No REVIEW.md created. You can retry with /gsd-code-review ${PHASE_ARG} or check agent logs.
+No REVIEW.md created. You can retry with /gsd:code-review ${PHASE_ARG} or check agent logs.
 ```
 
 Do NOT proceed to commit_review step. Do NOT create a partial or empty REVIEW.md. Exit workflow.
@@ -407,7 +503,7 @@ if [ -f "${REVIEW_PATH}" ]; then
   fi
 else
   echo "Warning: Agent completed but REVIEW.md not found at ${REVIEW_PATH}. This may indicate an agent issue."
-  echo "No REVIEW.md to commit. Please retry with /gsd-code-review ${PHASE_ARG}"
+  echo "No REVIEW.md to commit. Please retry with /gsd:code-review ${PHASE_ARG}"
 fi
 ```
 </step>
@@ -429,7 +525,7 @@ FRONTMATTER=$(REVIEW_PATH="${REVIEW_PATH}" node -e "
 # Parse fields from frontmatter only (not full file)
 STATUS=$(echo "$FRONTMATTER" | grep "^status:" | cut -d: -f2 | xargs)
 FILES_REVIEWED=$(echo "$FRONTMATTER" | grep "^files_reviewed:" | cut -d: -f2 | xargs)
-CRITICAL=$(echo "$FRONTMATTER" | grep "critical:" | head -1 | cut -d: -f2 | xargs)
+CRITICAL=$(echo "$FRONTMATTER" | grep -E "^[[:space:]]*(critical|blocker):" | head -1 | cut -d: -f2 | xargs)
 WARNING=$(echo "$FRONTMATTER" | grep "warning:" | head -1 | cut -d: -f2 | xargs)
 INFO=$(echo "$FRONTMATTER" | grep "info:" | head -1 | cut -d: -f2 | xargs)
 TOTAL=$(echo "$FRONTMATTER" | grep "total:" | head -1 | cut -d: -f2 | xargs)
@@ -471,14 +567,14 @@ If total findings > 0:
 Full report: ${REVIEW_PATH}
 
 Next steps:
-  /gsd-code-review ${PHASE_NUMBER} --fix  — Auto-fix issues
+  /gsd:code-review ${PHASE_NUMBER} --fix  — Auto-fix issues
   cat ${REVIEW_PATH}                     — View full report
 ```
 
 If critical > 0 or warning > 0, list top 3 issues inline:
 ```bash
 echo "Top issues:"
-grep -A 3 "^### CR-\|^### WR-" "${REVIEW_PATH}" | head -n 12
+grep -A 3 "^### CR-\|^### BL-\|^### WR-" "${REVIEW_PATH}" | head -n 12
 ```
 
 **Note on tests:** Automated tests for this command and workflow are planned for Phase 4 (Pipeline Integration & Testing, requirement INFR-03). Phase 2 focuses on correct implementation; Phase 4 adds regression coverage across platforms.

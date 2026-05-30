@@ -4,28 +4,27 @@ import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
-import { Bot, CircleDot } from "lucide-react";
+import { Bot, CircleDot, Monitor } from "lucide-react";
 import { IssueTrackingProviderForm } from "@/components/common/settings/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
-import { useAgentDiscoveryQuery, useAgentCacheQuery } from "@/services/execution.service";
+import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import {
   useListIntegrations,
   useProjectIssueTrackingConfig,
   useSaveProjectIssueTrackingConfig,
   PROVIDER_NAMES,
 } from "@/services/integration.service";
-import type { ProjectIssueTrackingConfig } from "@/types/bindings";
+import { useSettings, useSaveSettings } from "@/services/settings.service";
+import type { ConnectionKey, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
   projectId: number;
-  connectionId: number | null;
-  wslConnectionId?: number | null;
+  connection: ConnectionKey;
 }
 
 interface ProjectSettingsFormData {
   default_agent: string;
-  default_model: string;
 }
 
 export interface SettingsPageHandle {
@@ -34,27 +33,31 @@ export interface SettingsPageHandle {
 }
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
-  ({ projectId, connectionId, wslConnectionId }, ref) => {
-    const { control, handleSubmit, watch, setValue, reset } = useForm<ProjectSettingsFormData>({
-      defaultValues: { default_agent: "", default_model: "" },
+  ({ projectId, connection }, ref) => {
+    const { control, handleSubmit, reset } = useForm<ProjectSettingsFormData>({
+      defaultValues: { default_agent: "" },
     });
-
-    const selectedAgent = watch("default_agent");
 
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
-    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(
-      connectionId,
-      wslConnectionId ?? null,
-    );
-    const { data: agentCache, isLoading: cacheLoading } = useAgentCacheQuery(
-      projectId,
-      selectedAgent || null,
-    );
+    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connection);
 
     const { data: integrations } = useListIntegrations();
     const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
     const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
+
+    const { data: appSettings } = useSettings();
+    const saveAppSettings = useSaveSettings({ successToast: false });
+    const terminalColorMode = appSettings?.terminal_color_mode ?? "follow_theme";
+
+    function handleTerminalColorModeChange(value: string | null) {
+      if (!appSettings || !value) return;
+      saveAppSettings.mutate({
+        ...appSettings,
+        terminal_color_mode: value as TerminalColorMode,
+        updated_at: new Date().toISOString(),
+      });
+    }
 
     const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
     const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
@@ -63,10 +66,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
-      const { default_agent, default_model } = projectSettingsQuery.data;
+      const { default_agent } = projectSettingsQuery.data;
       reset({
         default_agent: default_agent ?? "",
-        default_model: default_model ?? "",
       });
     }, [projectSettingsQuery.data, reset]);
 
@@ -90,21 +92,12 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       });
     }, [projectIssueTrackingQuery.data]);
 
-    // When agent changes, clear model selection
-    const handleAgentChange = (value: string | null) => {
-      setValue("default_agent", value ?? "");
-      setValue("default_model", "");
-    };
-
-    const availableModels = agentCache?.config_options.find((o) => o.id === "model")?.options ?? [];
-
     const onSubmit = async (data: ProjectSettingsFormData) => {
       try {
         await updateProjectSettingsMutation.mutateAsync({
           projectId,
           config: {
             default_agent: data.default_agent || null,
-            default_model: data.default_model || null,
           },
         });
         if (selectedProvider) {
@@ -130,7 +123,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         await handleSubmit(onSubmit)();
       },
       resetToDefaults: () => {
-        reset({ default_agent: "", default_model: "" });
+        reset({ default_agent: "" });
       },
     }));
 
@@ -164,7 +157,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
               <div className="bg-card border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                   <Bot className="w-4 h-4 text-muted-foreground" />
-                  Agent &amp; Model
+                  Default Agent
                 </h3>
 
                 {/* Default Agent */}
@@ -176,7 +169,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     render={({ field }) => (
                       <Select
                         value={field.value}
-                        onValueChange={handleAgentChange}
+                        onValueChange={(v) => field.onChange(v ?? "")}
                         disabled={agentsLoading}
                       >
                         <SelectTrigger className="w-full bg-muted">
@@ -222,59 +215,30 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   </p>
                 </div>
 
-                {/* Default Model */}
+              </div>
+
+              {/* Appearance Card */}
+              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Monitor className="w-4 h-4 text-muted-foreground" />
+                  Appearance
+                </h3>
+
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Default Model</Label>
-                  <div className="flex gap-2">
-                    <Controller
-                      name="default_model"
-                      control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={!selectedAgent || cacheLoading || availableModels.length === 0}
-                        >
-                          <SelectTrigger className="flex-1 bg-muted">
-                            <SelectValue
-                              placeholder={
-                                !selectedAgent
-                                  ? "Select an agent first"
-                                  : cacheLoading
-                                    ? "Loading…"
-                                    : availableModels.length === 0
-                                      ? "No models cached yet"
-                                      : "Select a model"
-                              }
-                            >
-                              {field.value === ""
-                                ? "Agent default"
-                                : (availableModels.find((m) => m.value === field.value)?.name ??
-                                  field.value)}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="">Agent default</SelectItem>
-                            {availableModels.map((model) => (
-                              <SelectItem key={model.value} value={model.value}>
-                                {model.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </div>
-                  {!selectedAgent && (
-                    <p className="text-xs text-muted-foreground">
-                      Select an agent to enable model selection
-                    </p>
-                  )}
-                  {selectedAgent && availableModels.length === 0 && !cacheLoading && (
-                    <p className="text-xs text-muted-foreground">
-                      Spawn a session with this agent to populate the model list
-                    </p>
-                  )}
+                  <Label className="text-sm font-medium">Terminal Colors</Label>
+                  <Select value={terminalColorMode} onValueChange={handleTerminalColorModeChange}>
+                    <SelectTrigger className="w-full bg-muted">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="follow_theme">Follow app theme</SelectItem>
+                      <SelectItem value="default">Default (black background)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Whether the terminal background matches your app theme or uses standard xterm
+                    colors
+                  </p>
                 </div>
               </div>
 

@@ -47,7 +47,7 @@ export function AccentColorPicker() {
           }`}
         >
           <span
-            className="h-5 w-5 rounded-full shrink-0 flex items-center justify-center"
+            className="h-7 w-7 rounded-full shrink-0 flex items-center justify-center"
             style={{ background: swatchColor(systemAccentHue ?? 250, isDark) }}
           >
             {accentHue === null && <Check className="h-3 w-3 text-white" strokeWidth={3} />}

@@ -137,6 +137,9 @@ export function useUpdateTaskSettingsMutation() {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.settingsByTask(variables.taskId),
       });
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.lists(),
+      });
     },
     onError: createErrorToastHandler("Failed to update task settings"),
   });

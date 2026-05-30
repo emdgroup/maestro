@@ -263,8 +263,8 @@ pub fn update_task_settings(
         .map_err(|e| format!("Failed to serialize skills_override: {}", e))?;
 
     conn.execute(
-        "UPDATE tasks SET model_override = ?, mcp_allowlist = ?, skills_override = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&settings.model_override, &mcp_allowlist_value, &skills_override_value, &now, task_id],
+        "UPDATE tasks SET model_override = ?, mcp_allowlist = ?, skills_override = ?, permission_mode_override = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&settings.model_override, &mcp_allowlist_value, &skills_override_value, &settings.permission_mode_override, &now, task_id],
     )
     .map_err(|e| format!("Failed to update task settings: {}", e))?;
 

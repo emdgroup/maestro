@@ -4,31 +4,38 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
-const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, stripShippedMilestones, extractCurrentMilestone, normalizePhaseName, toPosixPath, output, error, checkAgentsInstalled, phaseTokenMatches } = require('./core.cjs');
+const { execGit, platformWriteSync, platformReadSync } = require('./shell-command-projection.cjs');
+const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, gitWorktreeInfoInternal, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, stripShippedMilestones, extractCurrentMilestone, normalizePhaseName, toPosixPath, output, error, checkAgentsInstalled, phaseTokenMatches } = require('./core.cjs');
 const { planningPaths, planningDir, planningRoot } = require('./planning-workspace.cjs');
 const { maskIfSecret } = require('./secrets.cjs');
+const scanPhasePlans = require('./plan-scan.cjs');
+const { stateExtractField } = require('./state-document.cjs');
+const { determinePhaseStatus } = require('./commands.cjs');
 
 // Accept all bold/colon variants of the Requirements header (#2769):
 // **Requirements:** / **Requirements**: / **Requirements** : render the
 // same in markdown but differ textually.
 const REQUIREMENTS_HEADER_RE = /^\*\*Requirements:?\*\*[^\S\n]*:?[^\S\n]*([^\n]*)$/m;
 
+function listPhaseSummaryFiles(phaseDir) {
+  return scanPhasePlans(phaseDir).summaryFiles;
+}
+
+function listPhasePlanFiles(phaseDir) {
+  return scanPhasePlans(phaseDir).planFiles;
+}
+
 function getLatestCompletedMilestone(cwd) {
   const milestonesPath = path.join(planningRoot(cwd), 'MILESTONES.md');
-  if (!fs.existsSync(milestonesPath)) return null;
+  const content = platformReadSync(milestonesPath);
+  if (content === null) return null;
 
-  try {
-    const content = fs.readFileSync(milestonesPath, 'utf-8');
-    const match = content.match(/^##\s+(v[\d.]+)\s+(.+?)\s+\(Shipped:/m);
-    if (!match) return null;
-    return {
-      version: match[1],
-      name: match[2].trim(),
-    };
-  } catch {
-    return null;
-  }
+  const match = content.match(/^##\s+(v[\d.]+)\s+(.+?)\s+\(Shipped:/m);
+  if (!match) return null;
+  return {
+    version: match[1],
+    name: match[2].trim(),
+  };
 }
 
 /**
@@ -58,15 +65,13 @@ function withProjectRoot(cwd, result) {
   }
   // Extract project title from PROJECT.md first H1 heading.
   const projectMdPath = path.join(planningDir(cwd), 'PROJECT.md');
-  try {
-    if (fs.existsSync(projectMdPath)) {
-      const content = fs.readFileSync(projectMdPath, 'utf8');
-      const h1Match = content.match(/^#\s+(.+)$/m);
-      if (h1Match) {
-        result.project_title = h1Match[1].trim();
-      }
+  const content = platformReadSync(projectMdPath);
+  if (content) {
+    const h1Match = content.match(/^#\s+(.+)$/m);
+    if (h1Match) {
+      result.project_title = h1Match[1].trim();
     }
-  } catch { /* intentionally empty */ }
+  }
   return result;
 }
 
@@ -176,20 +181,16 @@ function cmdInitExecutePhase(cwd, phase, raw, options = {}) {
   // Optional --validate: run state validation and include warnings (#1627)
   if (options.validate) {
     try {
-      const { cmdStateValidate } = require('./state.cjs');
-      // Capture validate output by temporarily redirecting
       const statePath = path.join(planningDir(cwd), 'STATE.md');
-      if (fs.existsSync(statePath)) {
-        const stateContent = fs.readFileSync(statePath, 'utf-8');
-        const { stateExtractField } = require('./state.cjs');
+      const stateContent = platformReadSync(statePath);
+      if (stateContent !== null) {
         const status = stateExtractField(stateContent, 'Status') || '';
         result.state_validation_ran = true;
         // Simple inline validation — check for obvious drift
         const warnings = [];
         const phasesPath = planningPaths(cwd).phases;
         if (phaseInfo && phaseInfo.directory && fs.existsSync(path.join(cwd, phaseInfo.directory))) {
-          const files = fs.readdirSync(path.join(cwd, phaseInfo.directory));
-          const diskPlans = files.filter(f => f.match(/-PLAN\.md$/i)).length;
+          const diskPlans = listPhasePlanFiles(path.join(cwd, phaseInfo.directory)).length;
           const totalPlansRaw = stateExtractField(stateContent, 'Total Plans in Phase');
           const totalPlansInPhase = totalPlansRaw ? parseInt(totalPlansRaw, 10) : null;
           if (totalPlansInPhase !== null && diskPlans !== totalPlansInPhase) {
@@ -248,6 +249,23 @@ function cmdInitPlanPhase(cwd, phase, raw, options = {}) {
     : null;
   const phase_req_ids = (reqExtracted && reqExtracted !== 'TBD') ? reqExtracted : null;
 
+  // #3287: compute the canonical directory name with project_code prefix so
+  // the first-touch mkdir in /gsd:plan-phase stays consistent with phase.add.
+  const phaseDirPlan = phaseInfo?.directory || null;
+  const phaseNumberPlan = phaseInfo?.phase_number || null;
+  const phaseNamePlan = phaseInfo?.phase_name || null;
+  const rawProjectCodePlan = config.project_code || '';
+  let expectedPhaseDirPlan = null;
+  if (!phaseDirPlan && phaseNumberPlan && phaseNamePlan) {
+    const paddedNum = normalizePhaseName(phaseNumberPlan);
+    const slug = generateSlugInternal(phaseNamePlan).substring(0, 60);
+    if (slug) {
+      const prefix = rawProjectCodePlan ? `${rawProjectCodePlan}-` : '';
+      const dirName = `${prefix}${paddedNum}-${slug}`;
+      expectedPhaseDirPlan = toPosixPath(path.relative(cwd, path.join(planningPaths(cwd).phases, dirName)));
+    }
+  }
+
   const result = {
     // Models
     researcher_model: resolveModelInternal(cwd, 'gsd-phase-researcher'),
@@ -270,12 +288,27 @@ function cmdInitPlanPhase(cwd, phase, raw, options = {}) {
 
     // Phase info
     phase_found: !!phaseInfo,
-    phase_dir: phaseInfo?.directory || null,
-    phase_number: phaseInfo?.phase_number || null,
-    phase_name: phaseInfo?.phase_name || null,
+    phase_dir: phaseDirPlan,
+    expected_phase_dir: expectedPhaseDirPlan,
+    phase_number: phaseNumberPlan,
+    phase_name: phaseNamePlan,
     phase_slug: phaseInfo?.phase_slug || null,
-    padded_phase: phaseInfo?.phase_number ? normalizePhaseName(phaseInfo.phase_number) : null,
+    padded_phase: phaseNumberPlan ? normalizePhaseName(phaseNumberPlan) : null,
     phase_req_ids,
+
+    // #3569: surface phase lifecycle status so /gsd:plan-phase can short-circuit
+    // on closed (Complete) phases instead of silently replanning over shipped
+    // code. Reuses determinePhaseStatus — the project-wide vocabulary
+    // (Pending | Planned | In Progress | Executed | Complete | Needs Review).
+    // No directory yet → Pending (phase has not been started).
+    phase_status: phaseDirPlan
+      ? determinePhaseStatus(
+          phaseInfo?.plans?.length || 0,
+          phaseInfo?.summaries?.length || 0,
+          path.join(cwd, phaseDirPlan),
+          'Pending',
+        )
+      : 'Pending',
 
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
@@ -333,9 +366,8 @@ function cmdInitPlanPhase(cwd, phase, raw, options = {}) {
   if (options.validate) {
     try {
       const statePath = path.join(planningDir(cwd), 'STATE.md');
-      if (fs.existsSync(statePath)) {
-        const { stateExtractField } = require('./state.cjs');
-        const stateContent = fs.readFileSync(statePath, 'utf-8');
+      const stateContent = platformReadSync(statePath);
+      if (stateContent !== null) {
         const warnings = [];
         result.state_validation_ran = true;
         const totalPlansRaw = stateExtractField(stateContent, 'Total Plans in Phase');
@@ -441,8 +473,17 @@ function cmdInitNewProject(cwd, raw) {
     is_brownfield: hasCode || hasPackageFile,
     needs_codebase_map: (hasCode || hasPackageFile) && !pathExistsInternal(cwd, '.planning/codebase'),
 
-    // Git state
-    has_git: pathExistsInternal(cwd, '.git'),
+    // Git state (Bug #3491: detect parent worktree to avoid nested .git init)
+    ...(() => {
+      const info = gitWorktreeInfoInternal(cwd);
+      const worktreeRoot = info.worktreeRoot;
+      const inNestedSubdir = info.inside && worktreeRoot !== null && worktreeRoot !== cwd;
+      return {
+        has_git: info.inside,
+        git_worktree_root: worktreeRoot,
+        in_nested_subdir: inNestedSubdir,
+      };
+    })(),
 
     // Enhanced search
     brave_search_available: hasBraveSearch,
@@ -576,7 +617,17 @@ function cmdInitIngestDocs(cwd, raw) {
   const result = {
     project_exists: pathExistsInternal(cwd, '.planning/PROJECT.md'),
     planning_exists: fs.existsSync(planningRoot(cwd)),
-    has_git: fs.existsSync(path.join(cwd, '.git')),
+    ...(() => {
+      // Bug #3491 — see cmdInitNewProject above. Same shallow-check bug.
+      const info = gitWorktreeInfoInternal(cwd);
+      const worktreeRoot = info.worktreeRoot;
+      const inNestedSubdir = info.inside && worktreeRoot !== null && worktreeRoot !== cwd;
+      return {
+        has_git: info.inside,
+        git_worktree_root: worktreeRoot,
+        in_nested_subdir: inNestedSubdir,
+      };
+    })(),
     project_path: '.planning/PROJECT.md',
     commit_docs: config.commit_docs,
   };
@@ -588,9 +639,8 @@ function cmdInitResume(cwd, raw) {
 
   // Check for interrupted agent
   let interruptedAgentId = null;
-  try {
-    interruptedAgentId = fs.readFileSync(path.join(planningRoot(cwd), 'current-agent-id.txt'), 'utf-8').trim();
-  } catch { /* intentionally empty */ }
+  const agentIdRaw = platformReadSync(path.join(planningRoot(cwd), 'current-agent-id.txt'));
+  if (agentIdRaw !== null) interruptedAgentId = agentIdRaw.trim();
 
   const result = {
     // File existence
@@ -723,6 +773,23 @@ function cmdInitPhaseOp(cwd, phase, raw) {
     }
   }
 
+  // #3287: compute the canonical directory name with project_code prefix so
+  // the first-touch mkdir in /gsd:discuss-phase stays consistent with phase.add.
+  const phaseDir = phaseInfo?.directory || null;
+  const phaseNumber = phaseInfo?.phase_number || null;
+  const phaseName = phaseInfo?.phase_name || null;
+  const rawProjectCode = config.project_code || '';
+  let expectedPhaseDir = null;
+  if (!phaseDir && phaseNumber && phaseName) {
+    const paddedNum = normalizePhaseName(phaseNumber);
+    const slug = generateSlugInternal(phaseName).substring(0, 60);
+    if (slug) {
+      const prefix = rawProjectCode ? `${rawProjectCode}-` : '';
+      const dirName = `${prefix}${paddedNum}-${slug}`;
+      expectedPhaseDir = toPosixPath(path.relative(cwd, path.join(planningPaths(cwd).phases, dirName)));
+    }
+  }
+
   const result = {
     // Config
     commit_docs: config.commit_docs,
@@ -736,11 +803,12 @@ function cmdInitPhaseOp(cwd, phase, raw) {
 
     // Phase info
     phase_found: !!phaseInfo,
-    phase_dir: phaseInfo?.directory || null,
-    phase_number: phaseInfo?.phase_number || null,
-    phase_name: phaseInfo?.phase_name || null,
+    phase_dir: phaseDir,
+    expected_phase_dir: expectedPhaseDir,
+    phase_number: phaseNumber,
+    phase_name: phaseName,
     phase_slug: phaseInfo?.phase_slug || null,
-    padded_phase: phaseInfo?.phase_number ? normalizePhaseName(phaseInfo.phase_number) : null,
+    padded_phase: phaseNumber ? normalizePhaseName(phaseNumber) : null,
 
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
@@ -802,8 +870,9 @@ function cmdInitTodos(cwd, area, raw) {
   try {
     const files = fs.readdirSync(pendingDir).filter(f => f.endsWith('.md'));
     for (const file of files) {
+      const content = platformReadSync(path.join(pendingDir, file));
+      if (content === null) continue;
       try {
-        const content = fs.readFileSync(path.join(pendingDir, file), 'utf-8');
         const createdMatch = content.match(/^created:\s*(.+)$/m);
         const titleMatch = content.match(/^title:\s*(.+)$/m);
         const areaMatch = content.match(/^area:\s*(.+)$/m);
@@ -901,8 +970,7 @@ function cmdInitMilestoneOp(cwd, raw) {
       const dirName = diskPhaseDirs.get(canonicalizePhase(num));
       if (!dirName) continue;
       try {
-        const phaseFiles = fs.readdirSync(path.join(phasesDir, dirName));
-        const hasSummary = phaseFiles.some(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md');
+        const hasSummary = listPhaseSummaryFiles(path.join(phasesDir, dirName)).length > 0;
         if (hasSummary) completedPhases++;
       } catch { /* intentionally empty */ }
     }
@@ -914,8 +982,7 @@ function cmdInitMilestoneOp(cwd, raw) {
       phaseCount = dirs.length;
       for (const dir of dirs) {
         try {
-          const phaseFiles = fs.readdirSync(path.join(phasesDir, dir));
-          const hasSummary = phaseFiles.some(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md');
+          const hasSummary = listPhaseSummaryFiles(path.join(phasesDir, dir)).length > 0;
           if (hasSummary) completedPhases++;
         } catch { /* intentionally empty */ }
       }
@@ -1009,10 +1076,10 @@ function cmdInitManager(cwd, raw) {
 
   // Validate prerequisites
   if (!fs.existsSync(paths.roadmap)) {
-    error('No ROADMAP.md found. Run /gsd-new-milestone first.');
+    error('No ROADMAP.md found. Run /gsd:new-milestone first.');
   }
   if (!fs.existsSync(paths.state)) {
-    error('No STATE.md found. Run /gsd-new-milestone first.');
+    error('No STATE.md found. Run /gsd:new-milestone first.');
   }
   const rawContent = fs.readFileSync(paths.roadmap, 'utf-8');
   const content = extractCurrentMilestone(rawContent, cwd);
@@ -1072,8 +1139,8 @@ function cmdInitManager(cwd, raw) {
       if (dirMatch) {
         const fullDir = path.join(phasesDir, dirMatch);
         const phaseFiles = fs.readdirSync(fullDir);
-        planCount = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').length;
-        summaryCount = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').length;
+        planCount = listPhasePlanFiles(fullDir).length;
+        summaryCount = listPhaseSummaryFiles(fullDir).length;
         hasContext = phaseFiles.some(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
         hasResearch = phaseFiles.some(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
 
@@ -1173,8 +1240,9 @@ function cmdInitManager(cwd, raw) {
   let waitingSignal = null;
   try {
     const waitingPath = path.join(cwd, '.planning', 'WAITING.json');
-    if (fs.existsSync(waitingPath)) {
-      waitingSignal = JSON.parse(fs.readFileSync(waitingPath, 'utf-8'));
+    const waitingRaw = platformReadSync(waitingPath);
+    if (waitingRaw !== null) {
+      waitingSignal = JSON.parse(waitingRaw);
     }
   } catch { /* intentionally empty */ }
 
@@ -1191,7 +1259,7 @@ function cmdInitManager(cwd, raw) {
         phase_name: phase.name,
         action: 'execute',
         reason: `${phase.plan_count} plans ready, dependencies met`,
-        command: `/gsd-execute-phase ${phase.number}`,
+        command: `/gsd:execute-phase ${phase.number}`,
       });
     } else if (phase.disk_status === 'discussed' || phase.disk_status === 'researched') {
       recommendedActions.push({
@@ -1199,7 +1267,7 @@ function cmdInitManager(cwd, raw) {
         phase_name: phase.name,
         action: 'plan',
         reason: 'Context gathered, ready for planning',
-        command: `/gsd-plan-phase ${phase.number}`,
+        command: `/gsd:plan-phase ${phase.number}`,
       });
     } else if ((phase.disk_status === 'empty' || phase.disk_status === 'no_directory') && phase.is_next_to_discuss) {
       recommendedActions.push({
@@ -1207,7 +1275,7 @@ function cmdInitManager(cwd, raw) {
         phase_name: phase.name,
         action: 'discuss',
         reason: 'Unblocked, ready to gather context',
-        command: `/gsd-discuss-phase ${phase.number}`,
+        command: `/gsd:discuss-phase ${phase.number}`,
       });
     }
   }
@@ -1353,8 +1421,8 @@ function cmdInitProgress(cwd, raw) {
       const phasePath = path.join(phasesDir, dir);
       const phaseFiles = fs.readdirSync(phasePath);
 
-      const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md');
-      const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md');
+      const plans = listPhasePlanFiles(phasePath);
+      const summaries = listPhaseSummaryFiles(phasePath);
       const hasResearch = phaseFiles.some(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
 
       const status = summaries.length >= plans.length && plans.length > 0 ? 'complete' :
@@ -1414,11 +1482,11 @@ function cmdInitProgress(cwd, raw) {
 
   // Check for paused work
   let pausedAt = null;
-  try {
-    const state = fs.readFileSync(path.join(planningDir(cwd), 'STATE.md'), 'utf-8');
+  const state = platformReadSync(path.join(planningDir(cwd), 'STATE.md'));
+  if (state !== null) {
     const pauseMatch = state.match(/\*\*Paused At:\*\*\s*(.+)/);
     if (pauseMatch) pausedAt = pauseMatch[1].trim();
-  } catch { /* intentionally empty */ }
+  }
 
   const result = {
     // Models
@@ -1472,11 +1540,8 @@ function detectChildRepos(dir) {
     const fullPath = path.join(dir, entry.name);
     const gitDir = path.join(fullPath, '.git');
     if (fs.existsSync(gitDir)) {
-      let hasUncommitted = false;
-      try {
-        const status = execSync('git status --porcelain', { cwd: fullPath, encoding: 'utf8', timeout: 5000 });
-        hasUncommitted = status.trim().length > 0;
-      } catch { /* best-effort */ }
+      const statusResult = execGit(['status', '--porcelain'], { cwd: fullPath, timeout: 5000 });
+      const hasUncommitted = statusResult.exitCode === 0 && statusResult.stdout.length > 0;
       repos.push({ name: entry.name, path: fullPath, has_uncommitted: hasUncommitted });
     }
   }
@@ -1491,11 +1556,8 @@ function cmdInitNewWorkspace(cwd, raw) {
   const childRepos = detectChildRepos(cwd);
 
   // Check if git worktree is available
-  let worktreeAvailable = false;
-  try {
-    execSync('git --version', { encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
-    worktreeAvailable = true;
-  } catch { /* no git at all */ }
+  const gitVersion = execGit(['--version'], { timeout: 5000 });
+  const worktreeAvailable = gitVersion.exitCode === 0;
 
   const result = {
     default_workspace_base: defaultBase,
@@ -1526,14 +1588,14 @@ function cmdInitListWorkspaces(cwd, raw) {
       let repoCount = 0;
       let hasProject = false;
       let strategy = 'unknown';
-      try {
-        const manifest = fs.readFileSync(manifestPath, 'utf8');
+      const manifest = platformReadSync(manifestPath);
+      if (manifest !== null) {
         const strategyMatch = manifest.match(/^Strategy:\s*(.+)$/m);
         if (strategyMatch) strategy = strategyMatch[1].trim();
         // Count table rows (lines starting with |, excluding header and separator)
         const tableRows = manifest.split('\n').filter(l => l.match(/^\|\s*\w/) && !l.includes('Repo') && !l.includes('---'));
         repoCount = tableRows.length;
-      } catch { /* best-effort */ }
+      }
       hasProject = fs.existsSync(path.join(wsPath, '.planning', 'PROJECT.md'));
 
       workspaces.push({
@@ -1573,9 +1635,10 @@ function cmdInitRemoveWorkspace(cwd, name, raw) {
   // Parse manifest for repo info
   const repos = [];
   let strategy = 'unknown';
-  if (fs.existsSync(manifestPath)) {
+  const manifestContent = platformReadSync(manifestPath);
+  if (manifestContent !== null) {
     try {
-      const manifest = fs.readFileSync(manifestPath, 'utf8');
+      const manifest = manifestContent;
       const strategyMatch = manifest.match(/^Strategy:\s*(.+)$/m);
       if (strategyMatch) strategy = strategyMatch[1].trim();
 
@@ -1595,12 +1658,10 @@ function cmdInitRemoveWorkspace(cwd, name, raw) {
   for (const repo of repos) {
     const repoPath = path.join(wsPath, repo.name);
     if (!fs.existsSync(repoPath)) continue;
-    try {
-      const status = execSync('git status --porcelain', { cwd: repoPath, encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
-      if (status.trim().length > 0) {
-        dirtyRepos.push(repo.name);
-      }
-    } catch { /* best-effort */ }
+    const statusResult = execGit(['status', '--porcelain'], { cwd: repoPath, timeout: 5000 });
+    if (statusResult.exitCode === 0 && statusResult.stdout.length > 0) {
+      dirtyRepos.push(repo.name);
+    }
   }
 
   const result = {
@@ -1632,7 +1693,9 @@ function cmdInitRemoveWorkspace(cwd, name, raw) {
 function buildAgentSkillsBlock(config, agentType, projectRoot) {
   const { validatePath } = require('./security.cjs');
   const os = require('os');
-  const globalSkillsBase = path.join(os.homedir(), '.claude', 'skills');
+  const { getGlobalSkillDir, getGlobalSkillDisplayPath } = require('./runtime-homes.cjs');
+  const runtime = (config && config.runtime) || 'claude';
+  const globalSkillsBase = require('./runtime-homes.cjs').getGlobalSkillsBase(runtime);
 
   if (!config || !config.agent_skills || !agentType) return '';
 
@@ -1647,7 +1710,7 @@ function buildAgentSkillsBlock(config, agentType, projectRoot) {
   for (const skillPath of skillPaths) {
     if (typeof skillPath !== 'string') continue;
 
-    // Support global: prefix for skills installed at ~/.claude/skills/ (#1992)
+    // Support global: prefix for skills installed at the runtime's global skills directory (#1992, #3126)
     if (skillPath.startsWith('global:')) {
       const skillName = skillPath.slice(7);
       // Explicit empty-name guard before regex for clearer error message
@@ -1660,10 +1723,16 @@ function buildAgentSkillsBlock(config, agentType, projectRoot) {
         process.stderr.write(`[agent-skills] WARNING: Invalid global skill name "${skillName}" — skipping\n`);
         continue;
       }
-      const globalSkillDir = path.join(globalSkillsBase, skillName);
+      // Cline is rules-based and has no global skills directory
+      if (globalSkillsBase === null) {
+        process.stderr.write(`[agent-skills] WARNING: Runtime "${runtime}" does not use a skills directory — "global:${skillName}" is not supported on this runtime\n`);
+        continue;
+      }
+      const globalSkillDir = getGlobalSkillDir(runtime, skillName);
       const globalSkillMd = path.join(globalSkillDir, 'SKILL.md');
+      const displayPath = getGlobalSkillDisplayPath(runtime, skillName);
       if (!fs.existsSync(globalSkillMd)) {
-        process.stderr.write(`[agent-skills] WARNING: Global skill not found at "~/.claude/skills/${skillName}/SKILL.md" — skipping\n`);
+        process.stderr.write(`[agent-skills] WARNING: Global skill not found at "${displayPath}/SKILL.md" — skipping\n`);
         continue;
       }
       // Symlink escape guard: validatePath resolves symlinks and enforces
@@ -1674,7 +1743,7 @@ function buildAgentSkillsBlock(config, agentType, projectRoot) {
         process.stderr.write(`[agent-skills] WARNING: Global skill "${skillName}" failed path check (symlink escape?) — skipping\n`);
         continue;
       }
-      validPaths.push({ ref: `${globalSkillDir}/SKILL.md`, display: `~/.claude/skills/${skillName}` });
+      validPaths.push({ ref: `${globalSkillDir}/SKILL.md`, display: displayPath });
       continue;
     }
 
@@ -1740,6 +1809,7 @@ function cmdAgentSkills(cwd, agentType, raw) {
  */
 function buildSkillManifest(cwd, skillsDir = null) {
   const { extractFrontmatter } = require('./frontmatter.cjs');
+  const { getGlobalSkillsBase } = require('./runtime-homes.cjs');
   const os = require('os');
 
   const canonicalRoots = skillsDir ? [{
@@ -1781,13 +1851,13 @@ function buildSkillManifest(cwd, skillsDir = null) {
     },
     {
       root: '~/.claude/skills',
-      path: path.join(os.homedir(), '.claude', 'skills'),
+      path: getGlobalSkillsBase('claude'),
       scope: 'global',
       kind: 'skills',
     },
     {
       root: '~/.codex/skills',
-      path: path.join(os.homedir(), '.codex', 'skills'),
+      path: getGlobalSkillsBase('codex'),
       scope: 'global',
       kind: 'skills',
     },
@@ -1854,14 +1924,8 @@ function buildSkillManifest(cwd, skillsDir = null) {
       if (!entry.isDirectory()) continue;
 
       const skillMdPath = path.join(rootPath, entry.name, 'SKILL.md');
-      if (!fs.existsSync(skillMdPath)) continue;
-
-      let content;
-      try {
-        content = fs.readFileSync(skillMdPath, 'utf-8');
-      } catch {
-        continue;
-      }
+      const content = platformReadSync(skillMdPath);
+      if (content === null) continue;
 
       const frontmatter = extractFrontmatter(content);
       const name = frontmatter.name || entry.name;
@@ -1940,7 +2004,7 @@ function cmdSkillManifest(cwd, args, raw) {
     const planningDir = path.join(cwd, '.planning');
     if (fs.existsSync(planningDir)) {
       const manifestPath = path.join(planningDir, 'skill-manifest.json');
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+      platformWriteSync(manifestPath, JSON.stringify(manifest, null, 2));
     }
   }
 

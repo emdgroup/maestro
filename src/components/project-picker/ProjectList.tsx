@@ -13,6 +13,7 @@ import {
   useGitInitProject,
 } from "@/services/project.service";
 import { useSelectedProjectActions } from "@/store/projectStore";
+import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2 } from "lucide-react";
@@ -48,14 +49,15 @@ export function ProjectList() {
   ) => {
     setProjectLoading(true);
     try {
-      if (!connectionId && !wslConnectionId) {
+      const connection: ConnectionKey = wslConnectionId != null
+        ? { type: "wsl", id: wslConnectionId }
+        : connectionId != null
+          ? { type: "ssh", id: connectionId }
+          : { type: "local" };
+      if (connection.type === "local") {
         await gitInitProject({ path: selectedPath, connectionId: null });
       }
-      const created = await createProject({
-        path: selectedPath,
-        connectionId: connectionId ?? null,
-        wslConnectionId: wslConnectionId ?? null,
-      });
+      const created = await createProject({ path: selectedPath, connection });
       const project = await api.openProject(created.id);
       try {
         await api.primeProjectServer(created.id);

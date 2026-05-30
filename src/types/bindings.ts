@@ -30,9 +30,9 @@ async getConnectionProjects(connectionId: number | null) : Promise<Result<Projec
 /**
  * Create a new project
  */
-async createProject(path: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<Project, string>> {
+async createProject(path: string, connection: ConnectionKey) : Promise<Result<Project, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connectionId, wslConnectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -863,9 +863,9 @@ async getUntrackedFileContent(projectId: number, worktreePath: string, filePath:
  * Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
  * cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
  */
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connectionId: number | null, wslConnectionId: number | null, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connectionId, wslConnectionId, worktreeBranch, taskId, taskName }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -972,9 +972,9 @@ async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
  * Idempotent: if the server is already running the spawn step is skipped and only
  * agent discovery + tool checks are refreshed. The server process lives until app quit.
  */
-async preflightConnection(connectionId: number | null, wslConnectionId: number | null) : Promise<Result<PreflightResult, string>> {
+async preflightConnection(connection: ConnectionKey) : Promise<Result<PreflightResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connectionId, wslConnectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -985,9 +985,9 @@ async preflightConnection(connectionId: number | null, wslConnectionId: number |
  * Used to suggest a default agent when opening a project.
  * Requires the connection server to be running (call `preflight_connection` first).
  */
-async detectProjectAgents(connectionId: number | null, wslConnectionId: number | null, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
+async detectProjectAgents(connection: ConnectionKey, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connectionId, wslConnectionId, cwd }) };
+    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connection, cwd }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -998,9 +998,9 @@ async detectProjectAgents(connectionId: number | null, wslConnectionId: number |
  * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
  * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
  */
-async discoverAgents(connectionId: number | null, wslConnectionId: number | null) : Promise<Result<AgentDiscoveryResult, string>> {
+async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connectionId, wslConnectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1110,9 +1110,9 @@ async getActiveSessions(projectId: number) : Promise<Result<ActiveSessionInfo[],
  * Applies user-defined aliases over agent-provided titles. When the full list is returned
  * (no next page), prunes stale aliases for sessions the agent no longer knows about.
  */
-async listAcpSessions(projectId: number, agentId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
+async listAcpSessions(projectId: number, agentId: string, cwd: string, connection: ConnectionKey, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connectionId, wslConnectionId, cursor }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connection, cursor }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1121,9 +1121,9 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
  */
-async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connection: ConnectionKey, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connectionId, wslConnectionId, sessionName, projectId, worktreeBranch }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connection, sessionName, projectId, worktreeBranch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1165,9 +1165,9 @@ async saveClipboardImage(base64Data: string, mimeType: string) : Promise<Result<
 /**
  * Close an ACP session stored on the agent server (not a live Tauri session).
  */
-async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectionId: number | null, wslConnectionId: number | null) : Promise<Result<null, string>> {
+async closeAcpSession(agentId: string, sessionId: string, cwd: string, connection: ConnectionKey) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connectionId, wslConnectionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1217,9 +1217,9 @@ async sftpDownload(connectionId: number, remotePath: string, localPath: string, 
  * Returns None if the agent has not been warmed up or spawned yet.
  * Populated from PreInitialize/SpawnOk/SessionLoadOk/config_option_update.
  */
-async getAgentCache(projectId: number, agentId: string) : Promise<Result<AgentCacheResponse | null, string>> {
+async getAgentCache(agentId: string, connection: ConnectionKey) : Promise<Result<AgentCacheResponse | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_agent_cache", { projectId, agentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_agent_cache", { agentId, connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1606,7 +1606,7 @@ export type ActiveSessionInfo = { session_key: number; session_name: string | nu
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
 export type AgentCatalogCommand = { name: string; description: string }
-export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string; options: AgentCatalogOptionValue[] }
+export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string; options: AgentCatalogOptionValue[]; default_value: string | null }
 export type AgentCatalogOptionValue = { name: string; value: string; description: string | null }
 /**
  * Unified discovery result returned to the frontend via IPC.
@@ -1618,7 +1618,7 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; updated_at: string }
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; updated_at: string }
 /**
  * An Azure DevOps project option for combobox display.
  */
@@ -1636,6 +1636,10 @@ export type BitbucketProjectOption = { key: string; name: string }
  */
 export type BitbucketRepoOption = { slug: string; name: string; description: string | null; clone_url: string | null }
 export type BranchList = { local: string[]; remote: string[] }
+/**
+ * Identifies which connection server (or local instance) owns a session or cache entry.
+ */
+export type ConnectionKey = { type: "local" } | { type: "ssh"; id: number } | { type: "wsl"; id: number }
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -1695,8 +1699,8 @@ export type Project = { id: number; name: string; path: string; created_at: stri
  * Project-level agent detection: which agent tools have config markers in the project dir.
  */
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
-export type ProjectConfigRequest = { default_agent: string | null; default_model: string | null }
-export type ProjectConfigResponse = { default_agent: string | null; default_model: string | null }
+export type ProjectConfigRequest = { default_agent: string | null }
+export type ProjectConfigResponse = { default_agent: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
@@ -1735,13 +1739,14 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null }
+export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
-export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null }
+export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
+export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 
 /**
  * Agent IDs that require this tool to spawn.

@@ -12,26 +12,24 @@ import {
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
-import type { ActiveSessionInfo } from "@/types/bindings";
+import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { History, SearchIcon, Settings2 } from "lucide-react";
+import { History, Plus, SearchIcon, Settings2 } from "lucide-react";
 import type { ActivityVisibility } from "@/types/bindings";
 
 interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
-  connectionId?: number | null;
-  wslConnectionId?: number | null;
+  connection: ConnectionKey;
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({
   projectId,
   repoPath,
-  connectionId,
-  wslConnectionId,
+  connection,
 }) => {
   const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   const pendingAgentId = usePendingAgentId();
@@ -66,7 +64,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
   }
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
-  const { data: discovery } = useAgentDiscoveryQuery(connectionId ?? null, wslConnectionId ?? null);
+  const { data: discovery } = useAgentDiscoveryQuery(connection);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -211,6 +209,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
               </div>
             </PopoverContent>
           </Popover>
+          <Button
+            variant="accent"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setShowSpawnDialog(true)}
+          >
+            <Plus className="size-3.5 mr-1" />
+            New Session
+          </Button>
         </div>
       </div>
 
@@ -221,7 +228,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
           selectedSessionKey={selectedSessionKey}
           onSelect={setSelectedSessionKey}
           search={search}
-          onSpawn={() => setShowSpawnDialog(true)}
           agentIcons={agentIcons}
           agentNames={agentNames}
           onClose={handleCloseSession}
@@ -247,8 +253,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
             agents={visibleAgents}
             defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
             repoPath={repoPath ?? ""}
-            connectionId={connectionId ?? null}
-            wslConnectionId={wslConnectionId ?? null}
+            connection={connection}
             projectId={projectId ?? 0}
             worktrees={worktrees}
             onClose={() => setShowHistory(false)}
@@ -265,8 +270,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
         onOpenChange={setShowSpawnDialog}
         projectId={projectId ?? 0}
         repoPath={repoPath ?? ""}
-        connectionId={connectionId ?? null}
-        wslConnectionId={wslConnectionId ?? null}
+        connection={connection}
         worktrees={worktrees}
         onSuccess={setSelectedSessionKey}
       />

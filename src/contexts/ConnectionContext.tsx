@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
-import type { SshConnection, WslConnection, PreflightResult } from "@/types/bindings";
+import type { ConnectionKey, SshConnection, WslConnection, PreflightResult } from "@/types/bindings";
 import { commands } from "@/types/bindings";
 import { useConfigStore } from "@/store/configStore";
 
@@ -49,17 +49,18 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
     async (connection: Connection) => {
       if (preflightStatus === "checking") return;
 
-      const connectionId =
-        connection.type === "ssh" && connection.sshConnection ? connection.sshConnection.id : null;
-
-      const wslConnectionId =
-        connection.type === "wsl" && connection.wslConnection ? connection.wslConnection.id : null;
+      const connectionKey: ConnectionKey =
+        connection.type === "wsl" && connection.wslConnection
+          ? { type: "wsl", id: connection.wslConnection.id }
+          : connection.type === "ssh" && connection.sshConnection
+            ? { type: "ssh", id: connection.sshConnection.id }
+            : { type: "local" };
 
       setPreflightStatus("checking");
       setPreflightResult(null);
       setPreflightError(null);
 
-      const response = await commands.preflightConnection(connectionId, wslConnectionId);
+      const response = await commands.preflightConnection(connectionKey);
       if (response.status === "error") {
         setPreflightError(response.error as string);
         setPreflightStatus("failed");
@@ -67,7 +68,7 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
       }
 
       const result = response.data;
-      useConfigStore.getState().setPreflightToolChecks(connectionId, result.tool_checks);
+      useConfigStore.getState().setPreflightToolChecks(connectionKey, result.tool_checks);
       setPreflightResult(result);
 
       const hasIssues = !result.maestro_server.ok || result.tool_checks.some((t) => !t.available);

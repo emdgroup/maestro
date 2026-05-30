@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { X, Pencil, Check } from "lucide-react";
+import { X, Pencil, Check, RefreshCw } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -8,14 +8,13 @@ import {
   useLoadAcpSessionMutation,
   useRenameAcpSessionMutation,
 } from "@/services/execution.service";
-import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
+import type { ConnectionKey, DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 
 interface SessionHistoryPanelProps {
   agents: DiscoveredAgent[];
   defaultAgentId: string | null;
   repoPath: string;
-  connectionId: number | null;
-  wslConnectionId: number | null;
+  connection: ConnectionKey;
   projectId: number;
   worktrees: WorktreeWithStatus[];
   onClose: () => void;
@@ -53,8 +52,7 @@ export function SessionHistoryPanel({
   agents,
   defaultAgentId,
   repoPath,
-  connectionId,
-  wslConnectionId,
+  connection,
   projectId,
   worktrees,
   onClose,
@@ -76,7 +74,9 @@ export function SessionHistoryPanel({
     data: sessions = [],
     isLoading,
     isError,
-  } = useSessionListQuery(selectedAgentId, repoPath, connectionId, projectId, wslConnectionId);
+    isFetching,
+    refetch,
+  } = useSessionListQuery(selectedAgentId, repoPath, connection, projectId);
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
 
@@ -125,8 +125,7 @@ export function SessionHistoryPanel({
             agentId: selectedAgentId,
             sessionId,
             cwd: repoPath,
-            connectionId,
-            wslConnectionId,
+            connection,
             sessionName: title,
             projectId,
             worktreeBranch: mainBranch,
@@ -148,8 +147,7 @@ export function SessionHistoryPanel({
       selectedAgentId,
       worktrees,
       repoPath,
-      connectionId,
-      wslConnectionId,
+      connection,
       projectId,
       loadMutation,
       onSessionLoaded,
@@ -165,8 +163,7 @@ export function SessionHistoryPanel({
         agentId: selectedAgentId,
         sessionId: pendingRestore.sessionId,
         cwd: selectedWorktreePath,
-        connectionId,
-        wslConnectionId,
+        connection,
         sessionName: pendingRestore.title,
         projectId,
         worktreeBranch: selectedWt?.branch_name ?? null,
@@ -184,8 +181,7 @@ export function SessionHistoryPanel({
     selectedAgentId,
     selectedWorktreePath,
     worktrees,
-    connectionId,
-    wslConnectionId,
+    connection,
     projectId,
     loadMutation,
     onSessionLoaded,
@@ -219,7 +215,7 @@ export function SessionHistoryPanel({
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
   return (
-    <div className="absolute top-2 right-2 bottom-2 z-30 flex flex-col w-[300px] rounded-lg border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.4),-2px_0_16px_rgba(0,0,0,0.2)] overflow-hidden">
+    <div className="absolute top-0 right-0 bottom-0 z-50 flex flex-col w-[380px] border-l border-border bg-card shadow-lg overflow-hidden">
       {/* header */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border shrink-0">
         <span className="text-xs font-semibold">Session History</span>
@@ -240,19 +236,19 @@ export function SessionHistoryPanel({
                 key={agent.id}
                 onClick={() => setSelectedAgentId(agent.id)}
                 className={cn(
-                  "h-6 px-2 rounded text-[10px] font-medium flex items-center gap-1.5 border transition-colors",
+                  "h-[30px] px-3 rounded-md text-xs font-medium flex items-center gap-2 border transition-colors",
                   selectedAgentId === agent.id
                     ? "bg-primary/10 border-primary/30 text-primary"
                     : "border-border text-muted-foreground hover:text-foreground hover:border-border/80",
                 )}
               >
                 {hasBrandIcon(agent.id) ? (
-                  <BrandIcon slug={agent.id} className="w-3 h-3 shrink-0" />
+                  <BrandIcon slug={agent.id} className="w-4 h-4 shrink-0" />
                 ) : (
                   agent.icon && (
                     <img
                       src={agent.icon}
-                      className="w-3 h-3 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                      className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
                       onError={(e) => {
                         (e.currentTarget as HTMLImageElement).style.display = "none";
                       }}
@@ -266,15 +262,23 @@ export function SessionHistoryPanel({
         </div>
       )}
 
-      {/* search */}
-      <div className="px-2 py-2 border-b border-border shrink-0">
+      {/* action row */}
+      <div className="px-2 py-2 border-b border-border shrink-0 flex items-center gap-1.5">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={`Search ${selectedAgent?.name ?? ""} sessions...`}
-          className="w-full h-7 bg-muted/30 border border-border rounded px-2.5 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
+          className="flex-1 min-w-0 h-[30px] bg-muted/30 border border-border rounded px-2.5 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
         />
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="h-[30px] w-[30px] flex items-center justify-center border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors shrink-0 disabled:opacity-50"
+          title="Refresh sessions"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+        </button>
       </div>
 
       {/* list */}

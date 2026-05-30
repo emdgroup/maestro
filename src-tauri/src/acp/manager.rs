@@ -113,8 +113,6 @@ pub struct CatalogOptionValue {
     pub description: Option<String>,
 }
 
-/// Session-agnostic catalog entry for a config option (model, mode, effort, etc.).
-/// Does NOT store current_value — that is per-session state.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CatalogOption {
     pub id: String,
@@ -123,6 +121,9 @@ pub struct CatalogOption {
     pub description: Option<String>,
     pub category: String,
     pub options: Vec<CatalogOptionValue>,
+    // Agent's default value from initial SpawnOk — used as starting selection for new sessions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
 }
 
 /// A slash command available for an agent.
@@ -151,7 +152,7 @@ pub struct AgentCache {
     pub session_capabilities: SessionCapabilitiesInfo,
 }
 
-pub type AgentCacheMap = HashMap<(i32, String), AgentCache>;
+pub type AgentCacheMap = HashMap<(crate::acp::ConnectionKey, String), AgentCache>;
 
 /// Describes where to open a new maestro-server connection: local subprocess, remote SSH channel, or WSL distro.
 pub enum TransportTarget<'a> {
@@ -517,9 +518,7 @@ pub async fn try_spawn_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    if let Some(pid) = req.project_id {
-        emit_cached_capabilities(&acp_process, Some(pid), &req.agent_id, req.log_id, &req.app_state).await;
-    }
+    emit_cached_capabilities(&acp_process, req.connection_key, &req.agent_id, req.log_id, &req.app_state).await;
     req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
     Ok(true)
 }
@@ -530,13 +529,12 @@ pub async fn try_spawn_via_connection_server(
 /// as a best-guess; real current values arrive via SpawnOk/config_option_update.
 pub async fn emit_cached_capabilities(
     acp_process: &AcpProcess,
-    project_id: Option<i32>,
+    connection_key: crate::acp::ConnectionKey,
     agent_id: &str,
     log_id: i32,
     app_state: &Arc<crate::db::AppState>,
 ) {
-    let pid = match project_id { Some(p) => p, None => return };
-    let cache = match app_state.acp.agent_cache.lock().await.get(&(pid, agent_id.to_string())).cloned() {
+    let cache = match app_state.acp.agent_cache.lock().await.get(&(connection_key, agent_id.to_string())).cloned() {
         Some(c) => c,
         None => return,
     };
@@ -712,6 +710,7 @@ pub struct ReaderTaskContext {
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
+    pub connection_key: crate::acp::ConnectionKey,
 }
 
 impl AcpProcess {
@@ -744,6 +743,7 @@ impl AcpProcess {
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
+            connection_key: params.connection_key,
         };
         let process = Self {
             writer: params.writer,
@@ -781,7 +781,7 @@ pub(crate) fn spawn_reader_task(
         current_model_id, current_mode_id,
         pending_file_search, pending_file_read,
         acp_session_id_cache, replay_buffer, initialized,
-        session_name, agent_id, project_id,
+        session_name, agent_id, project_id, connection_key,
     } = ctx;
     tokio::spawn(async move {
         let mut source = source;
@@ -796,10 +796,8 @@ pub(crate) fn spawn_reader_task(
                     None => break,
                 },
             };
-            if let Some(pid) = project_id {
-                update_agent_cache_from_response(&msg, &app_state).await;
-                update_agent_cache_from_session_update(&msg, pid, &agent_id, &app_state).await;
-            }
+            update_agent_cache_from_response(&msg, &app_state).await;
+            update_agent_cache_from_session_update(&msg, connection_key, &agent_id, &app_state).await;
             let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
                 ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
             ));
@@ -830,6 +828,40 @@ pub(crate) fn spawn_reader_task(
         app_state.app_handle.emit("sessions-changed", ()).ok();
         let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
     });
+}
+
+/// Push a synthetic `config_option_update` session-update into the replay buffer so that
+/// model/mode config reaches the frontend via the safely-drained buffer path rather than a
+/// directly-emitted event that may race with listener registration in `useAcpSessionLifecycle`.
+/// `sessionUpdateRef.current` in that hook is set synchronously (not in a useEffect), so it is
+/// always ready when drain fires — unlike the async `listen()` calls for `session-models`.
+fn push_config_init_to_buffer(
+    models: Option<&SessionModelState>,
+    modes: Option<&SessionModeState>,
+    replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+) {
+    let mut buf_guard = match replay_buffer.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let vec = match buf_guard.as_mut() {
+        Some(v) => v,
+        None => return,
+    };
+    // Push value-only updates — don't send options list from load response because
+    // it's degraded compared to the catalog from SpawnOk.
+    if let Some(m) = models {
+        vec.push(serde_json::json!({
+            "sessionUpdate": "current_model_update",
+            "modelId": m.current_model_id,
+        }));
+    }
+    if let Some(m) = modes {
+        vec.push(serde_json::json!({
+            "sessionUpdate": "current_mode_update",
+            "modeId": m.current_mode_id,
+        }));
+    }
 }
 
 fn emit_session_init_events(
@@ -927,6 +959,7 @@ fn handle_server_message(
                 load_ok.prompt_capabilities.as_ref(),
                 log_id, app_handle, current_model_id, current_mode_id,
             );
+            push_config_init_to_buffer(load_ok.models.as_ref(), load_ok.modes.as_ref(), replay_buffer);
             if let Ok(mut init) = initialized.lock() { *init = true; }
             let _ = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ());
         }
@@ -1031,8 +1064,9 @@ fn model_state_to_catalog_option(state: &SessionModelState) -> CatalogOption {
         options: state.available_models.iter().map(|m| CatalogOptionValue {
             name: m.name.clone(),
             value: m.model_id.clone(),
-            description: None,
+            description: m.description.clone(),
         }).collect(),
+        default_value: Some(state.current_model_id.clone()),
     }
 }
 
@@ -1045,8 +1079,9 @@ fn mode_state_to_catalog_option(state: &SessionModeState) -> CatalogOption {
         options: state.available_modes.iter().map(|m| CatalogOptionValue {
             name: m.name.clone(),
             value: m.mode_id.clone(),
-            description: None,
+            description: m.description.clone(),
         }).collect(),
+        default_value: Some(state.current_mode_id.clone()),
     }
 }
 
@@ -1112,7 +1147,9 @@ async fn update_agent_cache_from_response(
             (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), spawn_caps)
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), None)
+            // Don't update cached model/mode options from load responses — they return a
+            // degraded list that would overwrite the correct catalog from SpawnOk.
+            (None, None, r.prompt_capabilities.as_ref(), None)
         }
         _ => return,
     };
@@ -1121,13 +1158,10 @@ async fn update_agent_cache_from_response(
         return;
     }
 
-    let (agent_id, project_id) = if let Some(log_id) = extract_session_log_id(msg) {
+    let (agent_id, connection_key) = if let Some(log_id) = extract_session_log_id(msg) {
         let sessions = app_state.acp.sessions.lock().await;
         match sessions.get(&log_id) {
-            Some(s) => match s.project_id {
-                Some(pid) => (s.agent_id_meta.clone(), pid),
-                None => return,
-            },
+            Some(s) => (s.agent_id_meta.clone(), s.connection_key),
             None => return,
         }
     } else {
@@ -1137,7 +1171,7 @@ async fn update_agent_cache_from_response(
     {
         let mut cache_map = app_state.acp.agent_cache.lock().await;
         let entry = cache_map
-            .entry((project_id, agent_id.clone()))
+            .entry((connection_key, agent_id.clone()))
             .or_insert_with(AgentCache::default);
         if let Some(m) = models {
             upsert_catalog_option(&mut entry.config_options, model_state_to_catalog_option(m));
@@ -1152,17 +1186,16 @@ async fn update_agent_cache_from_response(
             entry.session_capabilities = sc;
         }
     }
-    app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
-        "project_id": project_id,
-        "agent_id": agent_id,
-    })).ok();
+    let mut payload = serde_json::to_value(&connection_key).unwrap_or_default();
+    payload["agent_id"] = serde_json::json!(agent_id);
+    app_state.app_handle.emit("agent-cache-updated", payload).ok();
 }
 
 /// Update the agent-level catalog cache from config_option_update or available_commands_update
 /// SessionUpdate events. Called from the reader task loop alongside update_agent_cache_from_response.
 async fn update_agent_cache_from_session_update(
     msg: &MaestroRpcMessage,
-    project_id: i32,
+    connection_key: crate::acp::ConnectionKey,
     agent_id: &str,
     app_state: &Arc<crate::db::AppState>,
 ) {
@@ -1180,19 +1213,45 @@ async fn update_agent_cache_from_session_update(
 
     if update_type == "config_option_update" {
         if let Some(options_val) = payload.get("configOptions") {
-            // Deserialize directly into CatalogOption; unknown fields (e.g. currentValue) are ignored.
-            if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(options_val.clone()) {
+            if let Ok(mut options) = serde_json::from_value::<Vec<CatalogOption>>(options_val.clone()) {
+                // Extract currentValue from raw JSON per option (not in CatalogOption struct).
+                let raw_options = options_val.as_array();
                 let mut cache_map = app_state.acp.agent_cache.lock().await;
-                let entry = cache_map.entry((project_id, agent_id.to_string())).or_insert_with(AgentCache::default);
-                entry.config_options = options;
-                updated = true;
+                let entry = cache_map.entry((connection_key, agent_id.to_string())).or_insert_with(AgentCache::default);
+                for (idx, incoming) in options.iter_mut().enumerate() {
+                    // Filter out "default" pseudo-option — it means "use agent default" which
+                    // adds no information to the selector.
+                    incoming.options.retain(|o| o.value != "default");
+
+                    if let Some(existing) = entry.config_options.iter_mut().find(|o| o.id == incoming.id) {
+                        for inc_opt in &incoming.options {
+                            if let Some(cached_opt) = existing.options.iter_mut().find(|o| o.value == inc_opt.value) {
+                                if cached_opt.description.is_none() && inc_opt.description.is_some() {
+                                    cached_opt.description = inc_opt.description.clone();
+                                }
+                            }
+                        }
+                        updated = true;
+                    } else {
+                        // Extract currentValue from raw JSON to use as default_value.
+                        if incoming.default_value.is_none() {
+                            if let Some(raw) = raw_options.and_then(|arr| arr.get(idx)) {
+                                if let Some(cv) = raw.get("currentValue").and_then(|v| v.as_str()) {
+                                    incoming.default_value = Some(cv.to_string());
+                                }
+                            }
+                        }
+                        entry.config_options.push(incoming.clone());
+                        updated = true;
+                    }
+                }
             }
         }
     } else if update_type == "available_commands_update" {
         if let Some(commands_val) = payload.get("availableCommands") {
             if let Ok(commands) = serde_json::from_value::<Vec<CatalogCommand>>(commands_val.clone()) {
                 let mut cache_map = app_state.acp.agent_cache.lock().await;
-                let entry = cache_map.entry((project_id, agent_id.to_string())).or_insert_with(AgentCache::default);
+                let entry = cache_map.entry((connection_key, agent_id.to_string())).or_insert_with(AgentCache::default);
                 entry.available_commands = commands;
                 updated = true;
             }
@@ -1200,10 +1259,9 @@ async fn update_agent_cache_from_session_update(
     }
 
     if updated {
-        app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
-            "project_id": project_id,
-            "agent_id": agent_id,
-        })).ok();
+        let mut event_payload = serde_json::to_value(&connection_key).unwrap_or_default();
+        event_payload["agent_id"] = serde_json::json!(agent_id);
+        app_state.app_handle.emit("agent-cache-updated", event_payload).ok();
     }
 }
 
@@ -1224,10 +1282,10 @@ async fn handle_shared_server_message(
         update_agent_cache_from_response(&msg, app_state).await;
         let session_identity = {
             let sessions = app_state.acp.sessions.lock().await;
-            sessions.get(&log_id).and_then(|s| s.project_id.map(|pid| (s.agent_id_meta.clone(), pid)))
+            sessions.get(&log_id).map(|s| (s.agent_id_meta.clone(), s.connection_key))
         };
-        if let Some((ref agent_id, pid)) = session_identity {
-            update_agent_cache_from_session_update(&msg, pid, agent_id, app_state).await;
+        if let Some((ref agent_id, conn_key)) = session_identity {
+            update_agent_cache_from_session_update(&msg, conn_key, agent_id, app_state).await;
         }
 
         let caches = {
@@ -1544,7 +1602,7 @@ fn spawn_shared_reader_task(
             let sessions = app_state.acp.sessions.lock().await;
             let mut restorable: Vec<RestorableSession> = Vec::new();
             let mut unrestorable: Vec<i32> = Vec::new();
-            let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh(_));
+            let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. });
             for (log_id, s) in sessions.iter().filter(|(_, s)| s.connection_key == connection_key) {
                 if pool_log_ids.contains(log_id) {
                     // Pre-warmed pool entry — drop silently, no session-ended event needed.
@@ -1590,7 +1648,7 @@ fn spawn_shared_reader_task(
         // SSH connections only: park restorable sessions for the reconnect handler.
         // Local and WSL have no reconnect path — end immediately.
         match &connection_key {
-            crate::acp::ConnectionKey::Ssh(conn_id) if !to_restore.is_empty() => {
+            crate::acp::ConnectionKey::Ssh { id: conn_id } if !to_restore.is_empty() => {
                 app_state.acp.restorable_sessions.lock().await.insert(*conn_id, to_restore);
                 // Don't emit session-ended — the reconnect handler will do so if restore fails.
             }
@@ -1811,7 +1869,6 @@ pub async fn spawn_connection_server(
 /// running before calling this (use `spawn_connection_server` first).
 pub async fn pre_initialize_via_connection_server(
     connection_key: crate::acp::ConnectionKey,
-    project_id: Option<i32>,
     agent_id: &str,
     cwd: &str,
     app_state: &Arc<crate::db::AppState>,
@@ -1848,29 +1905,26 @@ pub async fn pre_initialize_via_connection_server(
     // Populate agent-level catalog cache from the warm session's models/modes/capabilities.
     // session_capabilities are not provided by PreInitialize (no SpawnOk), so they are
     // left at default until the first SpawnOk/SessionLoadOk updates the cache entry.
-    if let Some(pid) = project_id {
-        if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
-            let mut cache_entry = AgentCache::default();
-            if let Some(m) = &response.models {
-                upsert_catalog_option(&mut cache_entry.config_options, model_state_to_catalog_option(m));
-            }
-            if let Some(m) = &response.modes {
-                upsert_catalog_option(&mut cache_entry.config_options, mode_state_to_catalog_option(m));
-            }
-            if let Some(c) = &response.prompt_capabilities {
-                cache_entry.prompt_capabilities = Some(c.clone());
-            }
-            app_state
-                .acp
-                .agent_cache
-                .lock()
-                .await
-                .insert((pid, agent_id.to_string()), cache_entry);
-            app_state.app_handle.emit("agent-cache-updated", serde_json::json!({
-                "project_id": pid,
-                "agent_id": agent_id,
-            })).ok();
+    if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
+        let mut cache_entry = AgentCache::default();
+        if let Some(m) = &response.models {
+            upsert_catalog_option(&mut cache_entry.config_options, model_state_to_catalog_option(m));
         }
+        if let Some(m) = &response.modes {
+            upsert_catalog_option(&mut cache_entry.config_options, mode_state_to_catalog_option(m));
+        }
+        if let Some(c) = &response.prompt_capabilities {
+            cache_entry.prompt_capabilities = Some(c.clone());
+        }
+        app_state
+            .acp
+            .agent_cache
+            .lock()
+            .await
+            .insert((connection_key, agent_id.to_string()), cache_entry);
+        let mut event_payload = serde_json::to_value(&connection_key).unwrap_or_default();
+        event_payload["agent_id"] = serde_json::json!(agent_id);
+        app_state.app_handle.emit("agent-cache-updated", event_payload).ok();
     }
 
     Ok(response)
@@ -1887,7 +1941,7 @@ pub async fn resolve_remote_context(
         .discovery_cache
         .lock()
         .await
-        .get(&crate::acp::ConnectionKey::Ssh(conn_id))
+        .get(&crate::acp::ConnectionKey::Ssh { id: conn_id })
         .and_then(|e| e.maestro_server_path.clone())
         .ok_or_else(|| {
             format!("maestro-server path not cached for connection {conn_id}. Reconnect to refresh.")
@@ -1943,7 +1997,7 @@ pub async fn try_session_load_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    emit_cached_capabilities(&acp_process, req.project_id, &req.agent_id, req.log_id, &req.app_state).await;
+    emit_cached_capabilities(&acp_process, req.connection_key, &req.agent_id, req.log_id, &req.app_state).await;
     req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
 
     if writer_tx.send(bytes).await.is_err() {
@@ -1963,7 +2017,7 @@ pub async fn restore_acp_sessions(
     let (ssh, server_path) = resolve_remote_context(app_state, connection_id).await?;
 
     spawn_connection_server(
-        crate::acp::ConnectionKey::Ssh(connection_id),
+        crate::acp::ConnectionKey::Ssh { id: connection_id },
         TransportTarget::Remote { ssh: &ssh, server_path: &server_path },
         app_state,
     ).await?;
@@ -1988,7 +2042,7 @@ pub async fn restore_acp_sessions(
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let req = SessionRequest {
-            connection_key: crate::acp::ConnectionKey::Ssh(connection_id),
+            connection_key: crate::acp::ConnectionKey::Ssh { id: connection_id },
             agent_id: s.agent_id.clone(),
             cwd: s.cwd.clone(),
             log_id: new_log_id,

@@ -181,7 +181,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                   </span>
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="accent"
                   size="sm"
                   className="h-8 text-xs"
                   onClick={() => setShowCreateDialog(true)}

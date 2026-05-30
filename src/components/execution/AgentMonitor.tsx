@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
-import { Plus, Terminal, X, FileText, FileDiff } from "lucide-react";
+import { Terminal, X, FileText, FileDiff } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
@@ -194,7 +194,6 @@ interface AgentMonitorProps {
   selectedSessionKey: number | null;
   onSelect: (sessionKey: number) => void;
   search: string;
-  onSpawn?: () => void;
   onOpenTerminal?: (session: ActiveSessionInfo) => void;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
@@ -207,7 +206,6 @@ export function AgentMonitor({
   selectedSessionKey,
   onSelect,
   search,
-  onSpawn,
   onOpenTerminal,
   onClose,
   agentIcons,
@@ -330,14 +328,6 @@ export function AgentMonitor({
             </div>
           ))}
         </div>
-        {onSpawn && (
-          <div className="px-3 py-2 border-t border-border">
-            <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={onSpawn}>
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              New Session
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Content pane */}

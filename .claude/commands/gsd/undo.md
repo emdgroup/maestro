@@ -8,6 +8,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+requires: [phase]
 ---
 
 <objective>
@@ -30,5 +31,5 @@ $ARGUMENTS
 </context>
 
 <process>
-Execute the undo workflow from @/home/m306213/workspace/maestro/.claude/get-shit-done/workflows/undo.md end-to-end.
+Execute end-to-end.
 </process>

@@ -81,10 +81,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const customHue = savedAccent != null ? Number(savedAccent) : null;
     setAccentHueState(customHue);
 
+    void getSystemAccentHue().then((hue) => {
+      if (customHue == null) applyAccentHue(hue);
+    });
     if (customHue != null) {
       applyAccentHue(customHue);
-    } else {
-      void getSystemAccentHue().then((hue) => applyAccentHue(hue));
     }
 
     setIsReady(true);

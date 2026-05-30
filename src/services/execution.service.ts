@@ -5,19 +5,16 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
+import type { ConnectionKey } from "@/types/bindings";
+import { connectionKeysEqual } from "@/lib/connection-utils";
 
 export const executionQueryKeys = {
   activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
-  sessionList: (
-    agentId: string,
-    cwd: string,
-    connectionId: number | null,
-    wslConnectionId: number | null,
-  ) => ["sessionList", agentId, cwd, connectionId, wslConnectionId] as const,
-  agentDiscovery: (connectionId: number | null, wslConnectionId: number | null) =>
-    ["agentDiscovery", connectionId, wslConnectionId] as const,
-  projectAgents: (connectionId: number | null, wslConnectionId: number | null, cwd: string) =>
-    ["projectAgents", connectionId, wslConnectionId, cwd] as const,
+  sessionList: (agentId: string, cwd: string, connection: ConnectionKey) =>
+    ["sessionList", agentId, cwd, connection] as const,
+  agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
+  projectAgents: (connection: ConnectionKey, cwd: string) =>
+    ["projectAgents", connection, cwd] as const,
 };
 
 /**
@@ -54,20 +51,13 @@ export function useActiveSessionsQuery(projectId: number | undefined) {
 export function useSessionListQuery(
   agentId: string | null,
   cwd: string | null,
-  connectionId: number | null,
+  connection: ConnectionKey,
   projectId: number | null,
-  wslConnectionId: number | null = null,
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionList(
-      agentId ?? "",
-      cwd ?? "",
-      connectionId,
-      wslConnectionId,
-    ),
-    queryFn: () =>
-      api.listAcpSessions(projectId!, agentId!, cwd!, connectionId, wslConnectionId, null),
+    queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connection),
+    queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connection, null),
     enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
   });
@@ -83,8 +73,7 @@ export function useLoadAcpSessionMutation() {
       agentId,
       sessionId,
       cwd,
-      connectionId,
-      wslConnectionId,
+      connection,
       sessionName,
       projectId,
       worktreeBranch,
@@ -92,8 +81,7 @@ export function useLoadAcpSessionMutation() {
       agentId: string;
       sessionId: string;
       cwd: string;
-      connectionId: number | null;
-      wslConnectionId?: number | null;
+      connection: ConnectionKey;
       sessionName?: string | null;
       projectId?: number | null;
       worktreeBranch?: string | null;
@@ -102,8 +90,7 @@ export function useLoadAcpSessionMutation() {
         agentId,
         sessionId,
         cwd,
-        connectionId,
-        wslConnectionId ?? null,
+        connection,
         sessionName ?? null,
         projectId ?? null,
         worktreeBranch ?? null,
@@ -125,22 +112,14 @@ export function useCloseStoredAcpSessionMutation() {
       agentId,
       sessionId,
       cwd,
-      connectionId,
-      wslConnectionId,
+      connection,
     }: {
       agentId: string;
       sessionId: string;
       cwd: string;
-      connectionId: number | null;
-      wslConnectionId?: number | null;
+      connection: ConnectionKey;
     }) => {
-      return await api.closeAcpSession(
-        agentId,
-        sessionId,
-        cwd,
-        connectionId,
-        wslConnectionId ?? null,
-      );
+      return await api.closeAcpSession(agentId, sessionId, cwd, connection);
     },
     onError: createErrorToastHandler("Failed to close session"),
   });
@@ -194,14 +173,13 @@ export function useSpawnInteractiveExecutionMutation() {
  * Requires preflight to have run for this connection.
  */
 export function useProjectAgentsQuery(
-  connectionId: number | null,
-  wslConnectionId: number | null,
+  connection: ConnectionKey,
   cwd: string | null,
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.projectAgents(connectionId, wslConnectionId, cwd ?? ""),
-    queryFn: () => api.detectProjectAgents(connectionId, wslConnectionId, cwd!),
+    queryKey: executionQueryKeys.projectAgents(connection, cwd ?? ""),
+    queryFn: () => api.detectProjectAgents(connection, cwd!),
     enabled: enabled && cwd != null,
     staleTime: 60_000,
     gcTime: 5 * 60 * 1000,
@@ -210,18 +188,15 @@ export function useProjectAgentsQuery(
 
 /**
  * Unified agent discovery hook — works for both local and remote connections.
- * connectionId = null → local maestro-server
- * connectionId = number → remote SSH connection
  * 5-minute staleTime mirrors backend TTL.
  */
 export function useAgentDiscoveryQuery(
-  connectionId: number | null,
-  wslConnectionId: number | null = null,
+  connection: ConnectionKey,
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.agentDiscovery(connectionId, wslConnectionId),
-    queryFn: () => api.discoverAgents(connectionId, wslConnectionId),
+    queryKey: executionQueryKeys.agentDiscovery(connection),
+    queryFn: () => api.discoverAgents(connection),
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -229,30 +204,39 @@ export function useAgentDiscoveryQuery(
 }
 
 /** Full agent catalog (config options, commands, capabilities) from AgentCache. Available after first SpawnOk/PreInitialize. */
-export function useAgentCacheQuery(projectId: number | null, agentId: string | null) {
+export function useAgentCacheQuery(
+  agentId: string | null,
+  connection: ConnectionKey,
+) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen<{ project_id: number; agent_id: string }>("agent-cache-updated", (event) => {
-      if (event.payload.project_id === projectId && event.payload.agent_id === agentId) {
-        void queryClient.invalidateQueries({
-          queryKey: ["agentCache", projectId, agentId],
-        });
-      }
-    }).then((fn) => {
+    listen<ConnectionKey & { agent_id: string }>(
+      "agent-cache-updated",
+      (event) => {
+        if (
+          event.payload.agent_id === agentId &&
+          connectionKeysEqual(event.payload, connection)
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: ["agentCache", connection, agentId],
+          });
+        }
+      },
+    ).then((fn) => {
       unlisten = fn;
     });
     return () => {
       unlisten?.();
     };
-  }, [queryClient, projectId, agentId]);
+  }, [queryClient, agentId, connection]);
 
   return useQuery({
-    queryKey: ["agentCache", projectId, agentId] as const,
-    queryFn: () => api.getAgentCache(projectId!, agentId!),
-    enabled: projectId != null && agentId != null,
-    staleTime: 5_000,
+    queryKey: ["agentCache", connection, agentId] as const,
+    queryFn: () => api.getAgentCache(agentId!, connection),
+    enabled: agentId != null,
+    staleTime: Infinity,
     gcTime: Infinity,
   });
 }
@@ -268,8 +252,7 @@ export function useSpawnAcpSessionMutation() {
       cwd,
       sessionName,
       projectId,
-      connectionId,
-      wslConnectionId,
+      connection,
       worktreeBranch,
       taskId,
       taskName,
@@ -278,8 +261,7 @@ export function useSpawnAcpSessionMutation() {
       cwd: string;
       sessionName: string | null;
       projectId: number;
-      connectionId: number | null;
-      wslConnectionId?: number | null;
+      connection: ConnectionKey;
       worktreeBranch?: string | null;
       taskId?: number | null;
       taskName?: string | null;
@@ -289,8 +271,7 @@ export function useSpawnAcpSessionMutation() {
         cwd,
         sessionName,
         projectId,
-        connectionId,
-        wslConnectionId ?? null,
+        connection,
         worktreeBranch ?? null,
         taskId ?? null,
         taskName ?? null,

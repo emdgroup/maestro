@@ -10,6 +10,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 4. Define success criteria. Loop until verified.
 
+## Tool Selection Priority (MANDATORY)
+
+Before exploring code with Grep, Glob, Read, or LSP — STOP. Use code-review-graph MCP tools first. This applies to ALL code understanding tasks: finding definitions, tracing callers, understanding impact, reviewing changes.
+
+**Decision gate:**
+1. Can the graph answer this? → Use `semantic_search_nodes`, `query_graph`, `get_impact_radius`, `detect_changes`
+2. Need precise type info or jump-to-definition? → Use LSP tool
+3. Code pattern search? → Use `ast-grep` (see `.claude/ast-grep.md`)
+4. String literals, config files, full file reads? → Fall back to Grep/Glob/Read
+
+**Why this matters:** The graph resolves structural queries in 1 call that take 5+ text searches. Using Grep first wastes tokens and misses transitive dependencies.
+
 ## Project Overview
 
 **Maestro** - Tauri desktop app orchestrating autonomous AI coding agents. Users manage tasks on Kanban board, agents execute in isolated git worktrees with real-time monitoring. React + TypeScript frontend, Rust backend.
@@ -50,25 +62,6 @@ cargo build           # Build Rust backend
 cargo test            # Run Rust tests
 cargo check           # Check compilation without building
 ```
-
-## Code Search: Use the Knowledge Graph FIRST
-
-**MANDATORY: Before using Grep, Glob, or Read to explore code, FIRST use code-review-graph MCP tools.**
-
-This is a hard rule, not a suggestion. The graph has 1600+ indexed nodes with structural relationships — it finds callers, dependents, and test coverage in one call that would take 5+ Grep/Glob calls to reconstruct.
-
-| Task                    | Use this tool                           |
-| ----------------------- | --------------------------------------- |
-| Find a function/class   | `semantic_search_nodes`                 |
-| Trace callers / callees | `query_graph` (callers_of / callees_of) |
-| Understand blast radius | `get_impact_radius`                     |
-| Code review             | `detect_changes` → `get_review_context` |
-| Architecture overview   | `get_architecture_overview`             |
-| Find tests for a symbol | `query_graph` pattern="tests_for"       |
-
-Fall back to Grep/Glob/Read **only** when the graph can't answer the question (e.g. searching for a specific string literal, reading a full file for context).
-
-When falling back to text search, prefer `ast-grep` over `grep`/`ripgrep`. Patterns, quirks, and language flags: @.claude/ast-grep.md
 
 ## Architecture
 

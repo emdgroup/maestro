@@ -1,11 +1,10 @@
 import { createContext, useContext, ReactNode } from "react";
-import type { Task } from "@/types/bindings";
+import type { ConnectionKey, Task } from "@/types/bindings";
 
 interface KanbanContextValue {
   projectId: number;
   projectPath: string;
-  connectionId: number | null;
-  wslConnectionId: number | null;
+  connection: ConnectionKey;
   onTaskClick: (task: Task) => void;
 }
 
@@ -15,8 +14,7 @@ interface KanbanProviderProps {
   children: ReactNode;
   projectId: number;
   projectPath: string;
-  connectionId: number | null;
-  wslConnectionId: number | null;
+  connection: ConnectionKey;
   onTaskClick: (task: Task) => void;
 }
 
@@ -24,13 +22,12 @@ export function KanbanProvider({
   children,
   projectId,
   projectPath,
-  connectionId,
-  wslConnectionId,
+  connection,
   onTaskClick,
 }: KanbanProviderProps) {
   return (
     <KanbanContext.Provider
-      value={{ projectId, projectPath, connectionId, wslConnectionId, onTaskClick }}
+      value={{ projectId, projectPath, connection, onTaskClick }}
     >
       {children}
     </KanbanContext.Provider>

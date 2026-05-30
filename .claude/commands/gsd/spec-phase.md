@@ -9,6 +9,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+requires: [discuss-phase, execute-phase, phase, plan-phase]
 ---
 
 <objective>
@@ -47,7 +48,7 @@ Context files are resolved in-workflow using `init phase-op`.
 </context>
 
 <process>
-Execute the spec-phase workflow from @/home/m306213/workspace/maestro/.claude/get-shit-done/workflows/spec-phase.md end-to-end.
+Execute end-to-end.
 
 **MANDATORY:** Read the workflow file BEFORE taking any action. The workflow contains the complete step-by-step process including the Socratic interview loop, ambiguity scoring gate, and SPEC.md generation. Do not improvise from the objective summary above.
 </process>
@@ -58,5 +59,5 @@ Execute the spec-phase workflow from @/home/m306213/workspace/maestro/.claude/ge
 - Gate passed: ambiguity ≤ 0.20 AND all dimension minimums met
 - SPEC.md written with falsifiable requirements, explicit boundaries, and acceptance criteria
 - SPEC.md committed atomically
-- User knows they can now run /gsd-discuss-phase which will load SPEC.md automatically
+- User knows they can now run /gsd:discuss-phase which will load SPEC.md automatically
 </success_criteria>

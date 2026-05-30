@@ -17,6 +17,7 @@ import {
 } from "@/store/navigationStore";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
+import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { cn } from "@/lib/ui-utils";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/components/project-picker/IntegrationMissingDialog";
@@ -201,8 +202,7 @@ function App() {
             <AgentsView
               projectId={currentProject.id}
               repoPath={currentProject.path}
-              connectionId={currentProject.connection_id}
-              wslConnectionId={currentProject.wsl_connection_id}
+              connection={connectionKeyFromProject(currentProject)}
             />
           </Suspense>
         </motion.div>
@@ -219,8 +219,7 @@ function App() {
             <KanbanProvider
               projectId={currentProject.id}
               projectPath={currentProject.path}
-              connectionId={currentProject.connection_id}
-              wslConnectionId={currentProject.wsl_connection_id}
+              connection={connectionKeyFromProject(currentProject)}
               onTaskClick={NOOP}
             >
               <KanbanView />
@@ -256,8 +255,7 @@ function App() {
               <SettingsView
                 ref={settingsPageRef}
                 projectId={currentProject.id}
-                connectionId={currentProject.connection_id}
-                wslConnectionId={currentProject.wsl_connection_id}
+                connection={connectionKeyFromProject(currentProject)}
               />
             </Suspense>
           </div>

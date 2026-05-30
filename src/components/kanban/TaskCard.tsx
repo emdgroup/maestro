@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react";
 import { Task } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
@@ -5,33 +6,60 @@ import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/tas
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
 import { PRIORITY_COLORS } from "@/utils/constants/priority";
+import { useSortable } from "@dnd-kit/react/sortable";
 
 interface TaskCardProps {
   task: Task;
+  index: number;
   onReviewClick?: (taskId: number, taskName: string) => void;
   worktreeTaskIds: Set<number>;
 }
 
-export function TaskCard({ task, onReviewClick, worktreeTaskIds }: TaskCardProps) {
-  const { projectId, projectPath, connectionId, wslConnectionId } = useKanban();
+export function TaskCard({ task, index, onReviewClick, worktreeTaskIds }: TaskCardProps) {
+  const { projectId, projectPath, connection } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
   const { execute: handleExecute, isExecuting } = useExecuteTask(
     projectId,
     projectPath,
-    connectionId,
-    wslConnectionId,
+    connection,
   );
   const interruptTask = useInterruptTaskMutation();
   const archiveTask = useArchiveTaskMutation();
   const activeSession = useTaskActiveSession(task.status === "InProgress" ? task.id : null, projectId);
 
+  const isDraggable = task.status === "Backlog" || task.status === "Ready";
+
+  const { ref, isDragging } = useSortable({
+    id: task.id,
+    index,
+    type: "item",
+    accept: ["item"],
+    group: task.status,
+    disabled: !isDraggable,
+  });
+
+  const dragOccurredRef = useRef(false);
+  useEffect(() => {
+    if (isDragging) dragOccurredRef.current = true;
+  }, [isDragging]);
+
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve;
 
   return (
     <div
-      className="rounded-lg border border-border bg-card shadow-sm p-3 mb-3 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-ring"
-      onClick={() => setActiveTaskId(task.id)}
+      ref={ref}
+      className={`rounded-lg border bg-card shadow-sm p-3 mb-3 transition-all duration-200 hover:shadow-md hover:border-ring
+        ${isDragging ? "opacity-30 border-dashed border-accent/40 bg-accent/5" : "border-border"}
+        ${isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}
+      `}
+      onClick={() => {
+        if (dragOccurredRef.current) {
+          dragOccurredRef.current = false;
+          return;
+        }
+        setActiveTaskId(task.id);
+      }}
     >
       {/* Row 1: Title */}
       <p className="text-sm font-medium text-foreground line-clamp-2">{task.title}</p>

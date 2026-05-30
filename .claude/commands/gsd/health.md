@@ -7,6 +7,7 @@ allowed-tools:
   - Bash
   - Write
   - AskUserQuestion
+requires: [thread]
 ---
 <objective>
 Validate `.planning/` directory integrity and report actionable issues. Checks for missing files, invalid configurations, inconsistent state, and orphaned plans.
@@ -16,7 +17,7 @@ Validate `.planning/` directory integrity and report actionable issues. Checks f
 | Utilization | State    | Action                                                |
 |-------------|----------|-------------------------------------------------------|
 | < 60%       | healthy  | no action — context is comfortable                    |
-| 60% – 70%   | warning  | recommend `/gsd-thread` to start fresh                |
+| 60% – 70%   | warning  | recommend `/gsd:thread` to start fresh                |
 | ≥ 70%       | critical | reasoning quality may degrade past the fracture point |
 </objective>
 
@@ -25,6 +26,6 @@ Validate `.planning/` directory integrity and report actionable issues. Checks f
 </execution_context>
 
 <process>
-Execute the health workflow from @/home/m306213/workspace/maestro/.claude/get-shit-done/workflows/health.md end-to-end.
+Execute end-to-end.
 Parse `--repair` and `--context` flags from arguments and pass to workflow.
 </process>

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ProjectConfigRequest } from "@/types/bindings";
+import type { ConnectionKey, ProjectConfigRequest } from "@/types/bindings";
 import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
@@ -92,17 +92,17 @@ export function useCreateProject() {
   return useMutation({
     mutationFn: ({
       path,
-      connectionId,
-      wslConnectionId,
+      connection,
     }: {
       path: string;
-      connectionId: number | null;
-      wslConnectionId?: number | null;
-    }) => api.createProject(path, connectionId, wslConnectionId ?? null),
-    onSuccess: (_data, { connectionId, wslConnectionId }) => {
-      const key = wslConnectionId
-        ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
-        : projectQueryKeys.listByConnection(connectionId ?? "local");
+      connection: ConnectionKey;
+    }) => api.createProject(path, connection),
+    onSuccess: (_data, { connection }) => {
+      const key = connection.type === "wsl"
+        ? projectQueryKeys.listByConnection(`wsl-${connection.id}`)
+        : connection.type === "ssh"
+          ? projectQueryKeys.listByConnection(connection.id)
+          : projectQueryKeys.listByConnection("local");
       void queryClient.invalidateQueries({ queryKey: key });
     },
     onError: createErrorToastHandler("Failed to create project"),

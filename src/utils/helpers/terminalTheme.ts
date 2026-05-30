@@ -1,10 +1,6 @@
 import type { ITerminalOptions } from "@xterm/xterm";
+import type { TerminalColorMode } from "@/types/bindings";
 
-/**
- * Resolve a CSS custom property to its computed RGB value by temporarily
- * appending an invisible div to the document body and reading getComputedStyle.
- * The browser handles oklch → rgb conversion automatically.
- */
 function cssVar(varName: string): string {
   const el = document.createElement("div");
   el.style.display = "none";
@@ -15,15 +11,18 @@ function cssVar(varName: string): string {
   return color;
 }
 
-/**
- * Build xterm.js terminal options that match the app's current CSS variable
- * theme. Call this inside a useEffect (after DOM + theme class are applied)
- * so that computed styles resolve correctly for both light and dark mode.
- */
-export function getTerminalTheme(): ITerminalOptions {
-  return {
+export function getTerminalTheme(colorMode?: TerminalColorMode): ITerminalOptions {
+  const base: ITerminalOptions = {
     fontFamily: '"FiraCode Nerd Font Mono", "Fira Code", monospace',
     fontSize: 13,
+  };
+
+  if (colorMode === "default") {
+    return base;
+  }
+
+  return {
+    ...base,
     theme: {
       background: cssVar("--background"),
       foreground: cssVar("--foreground"),

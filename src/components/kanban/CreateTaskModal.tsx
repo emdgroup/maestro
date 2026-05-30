@@ -28,6 +28,7 @@ import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
+import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 import type { RemoteIssue, TaskPriority, ProjectIssueTrackingConfig } from "@/types/bindings";
 import { BrandIcon } from "@/components/common/BrandIcon";
@@ -77,8 +78,6 @@ interface CreateTaskModalProps {
 
 export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalProps) {
   const selectedProject = useSelectedProject();
-  const connectionId = selectedProject?.connection_id ?? null;
-  const wslConnectionId = selectedProject?.wsl_connection_id ?? null;
 
   const { data: issueConfig } = useProjectIssueTrackingConfig(projectId);
   const hasProvider = issueConfig != null;
@@ -91,7 +90,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const remoteBranches: string[] = branchData?.[0].remote ?? [];
   const currentBranch: string = branchData?.[1] ?? "";
 
-  const { data: discovery } = useAgentDiscoveryQuery(connectionId, wslConnectionId);
+  const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
+  const { data: discovery } = useAgentDiscoveryQuery(connection);
   const agents = discovery?.agents ?? [];
 
   const { data: projectSettings } = useProjectSettings(projectId);

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
-import type { Task, JsonValue } from "@/types/bindings";
+import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import {
   useSpawnAcpSessionMutation,
@@ -15,8 +15,7 @@ import { useDefaultAgent } from "@/store/configStore";
 export function useExecuteTask(
   projectId: number | null,
   projectPath: string,
-  connectionId: number | null,
-  wslConnectionId: number | null,
+  connection: ConnectionKey,
 ) {
   const queryClient = useQueryClient();
   const defaultAgent = useDefaultAgent();
@@ -78,8 +77,7 @@ export function useExecuteTask(
         cwd,
         sessionName: task.title,
         projectId,
-        connectionId,
-        wslConnectionId,
+        connection,
         worktreeBranch: branchName ?? null,
         taskId: task.id,
         taskName: task.title,
@@ -108,6 +106,15 @@ export function useExecuteTask(
           await api.setAcpModel(logId, task.model_override);
         } catch (err) {
           console.warn("Failed to set model override:", err);
+        }
+      }
+
+      // Set permission mode if overridden
+      if (task.permission_mode_override) {
+        try {
+          await api.setAcpMode(logId, task.permission_mode_override);
+        } catch (err) {
+          console.warn("Failed to set permission mode override:", err);
         }
       }
 

@@ -30,9 +30,11 @@ import {
   useAddTaskAttachmentMutation,
   useRemoveTaskAttachmentMutation,
   useTaskAttachmentsQuery,
+  useUpdateTaskSettingsMutation,
 } from "@/services/task.service";
-import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useActiveSessionsQuery, useAgentCacheQuery } from "@/services/execution.service";
 import { api } from "@/lib/tauri-utils";
+import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject } from "@/store/projectStore";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
@@ -234,10 +236,14 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
 
   const updateTask = useUpdateTask();
+  const updateTaskSettings = useUpdateTaskSettingsMutation();
   const deleteTask = useDeleteTaskMutation();
   const archiveTask = useArchiveTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
   const removeAttachment = useRemoveTaskAttachmentMutation();
+
+  const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
+  const { data: agentCache } = useAgentCacheQuery(task?.agent_id ?? null, connection);
 
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
@@ -595,6 +601,84 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                 {task.agent_id ?? "Not assigned"}
               </p>
             </div>
+
+            {/* Model override */}
+            {(() => {
+              const modelOptions =
+                agentCache?.config_options.find((o) => o.id === "model")?.options ?? [];
+              return (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Model</label>
+                  {isEditable && modelOptions.length > 0 ? (
+                    <Select
+                      value={task.model_override ?? ""}
+                      onValueChange={(v) =>
+                        updateTaskSettings.mutate({
+                          taskId: task.id,
+                          config: { model_override: v === "" ? null : v },
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue placeholder="Agent default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Agent default</SelectItem>
+                        {modelOptions.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-muted-foreground truncate">
+                      {task.model_override ?? "Agent default"}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Permission mode override */}
+            {(() => {
+              const modeOptions =
+                agentCache?.config_options.find((o) => o.id === "mode")?.options ?? [];
+              return (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">
+                    Permission Mode
+                  </label>
+                  {isEditable && modeOptions.length > 0 ? (
+                    <Select
+                      value={task.permission_mode_override ?? ""}
+                      onValueChange={(v) =>
+                        updateTaskSettings.mutate({
+                          taskId: task.id,
+                          config: { permission_mode_override: v === "" ? null : v },
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue placeholder="Agent default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Agent default</SelectItem>
+                        {modeOptions.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-muted-foreground truncate">
+                      {task.permission_mode_override ?? "Agent default"}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Base Branch */}
             <div className="space-y-1.5">

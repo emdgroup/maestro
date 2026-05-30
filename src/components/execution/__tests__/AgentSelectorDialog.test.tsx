@@ -57,13 +57,13 @@ const mockWorktrees: WorktreeWithStatus[] = [
   },
 ];
 
-function renderView(connectionId?: number | null) {
+function renderView() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
-      <AgentsView projectId={1} repoPath="/tmp/repo" connectionId={connectionId} />
+      <AgentsView projectId={1} repoPath="/tmp/repo" connection={{ type: "local" }} />
     </QueryClientProvider>,
   );
 }
@@ -103,7 +103,7 @@ describe("New Session dialog — agent type selector", () => {
 
   it("shows agent options from registry for local connections", async () => {
     const user = userEvent.setup();
-    renderView(null);
+    renderView();
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
 

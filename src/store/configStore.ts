@@ -1,46 +1,37 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import type { ToolCheckEntry } from "@/types/bindings";
+import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 
 // These constants are used by TaskSettingsModal for per-task overrides.
-// They remain hardcoded until task-level model/MCP discovery is implemented.
 export const AVAILABLE_MCP_SERVERS = ["filesystem", "web", "git"];
 export const AVAILABLE_SKILLS = ["javascript", "python", "react", "rust"];
-export const AVAILABLE_MODELS = [
-  "claude-opus-4-7",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5-20251001",
-];
 
 export interface ConfigState {
   default_agent: string | null;
-  default_model: string | null;
   isLoading: boolean;
   error: string | null;
-  // keyed by String(connectionId ?? "local")
   preflightToolChecks: Record<string, ToolCheckEntry[]>;
 
   // Actions
   setState: (
-    config: Partial<Pick<ConfigState, "default_agent" | "default_model" | "isLoading" | "error">>,
+    config: Partial<Pick<ConfigState, "default_agent" | "isLoading" | "error">>,
   ) => void;
   setDefaultAgent: (agent: string | null) => void;
-  setDefaultModel: (model: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
   resetConfig: () => void;
-  setPreflightToolChecks: (connectionId: number | null, toolChecks: ToolCheckEntry[]) => void;
+  setPreflightToolChecks: (connection: ConnectionKey, toolChecks: ToolCheckEntry[]) => void;
 }
 
-function connectionKey(connectionId: number | null): string {
-  return connectionId === null ? "local" : String(connectionId);
+function connectionKeyStr(connection: ConnectionKey): string {
+  if (connection.type === "local") return "local";
+  return `${connection.type}:${connection.id}`;
 }
 
 function applyReset(state: ConfigState) {
   state.default_agent = null;
-  state.default_model = null;
   state.isLoading = false;
   state.error = null;
 }
@@ -48,7 +39,6 @@ function applyReset(state: ConfigState) {
 export const useConfigStore = create<ConfigState>()(
   immer((set) => ({
     default_agent: null,
-    default_model: null,
     isLoading: false,
     error: null,
     preflightToolChecks: {},
@@ -56,7 +46,6 @@ export const useConfigStore = create<ConfigState>()(
     setState: (config) =>
       set((state) => {
         if (config.default_agent !== undefined) state.default_agent = config.default_agent ?? null;
-        if (config.default_model !== undefined) state.default_model = config.default_model ?? null;
         if (config.isLoading !== undefined) state.isLoading = config.isLoading;
         if (config.error !== undefined) state.error = config.error ?? null;
       }),
@@ -64,11 +53,6 @@ export const useConfigStore = create<ConfigState>()(
     setDefaultAgent: (agent) =>
       set((state) => {
         state.default_agent = agent;
-      }),
-
-    setDefaultModel: (model) =>
-      set((state) => {
-        state.default_model = model;
       }),
 
     setLoading: (loading) =>
@@ -88,15 +72,14 @@ export const useConfigStore = create<ConfigState>()(
 
     resetConfig: () => set(applyReset),
 
-    setPreflightToolChecks: (connectionId, toolChecks) =>
+    setPreflightToolChecks: (connection, toolChecks) =>
       set((state) => {
-        state.preflightToolChecks[connectionKey(connectionId)] = toolChecks;
+        state.preflightToolChecks[connectionKeyStr(connection)] = toolChecks;
       }),
   })),
 );
 
 export const useDefaultAgent = () => useConfigStore((s) => s.default_agent);
-export const useDefaultModel = () => useConfigStore((s) => s.default_model);
 export const useConfigIsLoading = () => useConfigStore((s) => s.isLoading);
 export const useConfigError = () => useConfigStore((s) => s.error);
 export const useConfigActions = () =>
@@ -104,7 +87,6 @@ export const useConfigActions = () =>
     useShallow((s) => ({
       setState: s.setState,
       setDefaultAgent: s.setDefaultAgent,
-      setDefaultModel: s.setDefaultModel,
       setLoading: s.setLoading,
       setError: s.setError,
       clearError: s.clearError,
@@ -113,5 +95,5 @@ export const useConfigActions = () =>
     })),
   );
 
-export const usePreflightToolChecks = (connectionId: number | null) =>
-  useConfigStore((s) => s.preflightToolChecks[connectionKey(connectionId)] ?? []);
+export const usePreflightToolChecks = (connection: ConnectionKey) =>
+  useConfigStore((s) => s.preflightToolChecks[connectionKeyStr(connection)] ?? []);

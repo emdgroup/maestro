@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { api } from "@/lib/tauri-utils";
 import { getTerminalTheme } from "@/utils/helpers/terminalTheme";
+import { useSettings } from "@/services/settings.service";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
@@ -15,6 +16,8 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const channelRef = useRef<Channel<string> | null>(null);
+  const { data: settings } = useSettings();
+  const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -24,7 +27,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       cursorBlink: true,
       scrollback: 1000,
       allowProposedApi: true,
-      ...getTerminalTheme(),
+      ...getTerminalTheme(terminalColorMode),
     });
 
     // Create and load FitAddon for auto-sizing
@@ -110,7 +113,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
     };
-  }, [taskId]);
+  }, [taskId, terminalColorMode]);
 
   return (
     <div className="pt-2 pl-2 h-full w-full">

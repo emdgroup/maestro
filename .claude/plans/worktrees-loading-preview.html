@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Worktrees View — Loading &amp; Refresh Proposal</title>
+  <style>
+    :root {
+      --bg: #0f0f11;
+      --surface: #18181b;
+      --border: #27272a;
+      --muted: #71717a;
+      --fg: #fafafa;
+      --accent: #3b82f6;
+      --accent-dim: #1e3a5f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--fg); padding: 24px; }
+    h1 { font-size: 18px; margin-bottom: 8px; font-weight: 600; }
+    h2 { font-size: 14px; color: var(--muted); margin-bottom: 24px; font-weight: 400; }
+    .scenarios { display: flex; flex-direction: column; gap: 40px; }
+    .scenario { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .scenario-label { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px; font-size: 13px; color: var(--muted); font-weight: 500; }
+    .view { background: var(--bg); }
+
+    /* Action bar */
+    .action-bar {
+      height: 48px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(39,39,42,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      gap: 8px;
+    }
+    .action-left, .action-right { display: flex; align-items: center; gap: 8px; }
+    .search-input {
+      height: 32px; width: 180px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0 8px 0 30px; font-size: 12px; color: var(--fg);
+      position: relative;
+    }
+    .search-wrap { position: relative; }
+    .search-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; }
+    .filter-group { display: flex; gap: 2px; }
+    .filter-btn {
+      height: 28px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
+    }
+    .filter-btn.active { background: var(--surface); color: var(--fg); border-color: var(--accent); }
+    .btn {
+      height: 32px; padding: 0 12px; border-radius: 6px; font-size: 12px;
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border: none;
+    }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { background: var(--surface); color: var(--fg); }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+    .btn-outline:hover { background: var(--surface); }
+
+    /* Refresh button — the key new element */
+    .btn-refresh {
+      height: 32px; width: 32px; padding: 0; border-radius: 6px;
+      background: transparent; border: 1px solid var(--border); color: var(--muted);
+      display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-refresh:hover { background: var(--surface); color: var(--fg); border-color: var(--accent); }
+    .btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+
+    /* Spinner animation */
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* Content area */
+    .content { padding: 16px; min-height: 200px; display: flex; flex-direction: column; }
+
+    /* Loading skeleton */
+    .loading-center {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; color: var(--muted); font-size: 13px;
+    }
+    .spinner-svg { width: 20px; height: 20px; animation: spin 1s linear infinite; color: var(--muted); }
+
+    /* Fetching overlay bar */
+    .fetch-bar {
+      height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: slide 1.5s ease-in-out infinite;
+      position: absolute; top: 0; left: 0; right: 0;
+    }
+    @keyframes slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    /* Cards */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .card-branch { font-size: 13px; font-weight: 500; color: var(--fg); }
+    .card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 12px; }
+    .card-stat { display: inline-flex; align-items: center; gap: 3px; }
+    .stat-green { color: #22c55e; }
+    .stat-red { color: #ef4444; }
+
+    /* Scenario position wrapper */
+    .view-wrap { position: relative; overflow: hidden; }
+
+    /* Tooltip */
+    .tooltip-demo {
+      position: absolute; top: 52px; right: 120px;
+      background: var(--fg); color: var(--bg); font-size: 11px;
+      padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+      pointer-events: none;
+    }
+    .tooltip-demo::after {
+      content: ''; position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+      border-left: 4px solid transparent; border-right: 4px solid transparent;
+      border-bottom: 4px solid var(--fg);
+    }
+
+    .annotation {
+      margin: 12px 16px; padding: 10px 14px; background: rgba(59,130,246,0.08);
+      border: 1px solid rgba(59,130,246,0.2); border-radius: 6px;
+      font-size: 12px; color: #93c5fd; line-height: 1.5;
+    }
+    .annotation strong { color: #bfdbfe; }
+  </style>
+</head>
+<body>
+  <h1>Worktrees View — Loading &amp; Refresh Indicator</h1>
+  <h2>Three states: initial load, background refresh (isFetching), and manual trigger</h2>
+
+  <div class="scenarios">
+
+    <!-- Scenario 1: Initial Loading -->
+    <div class="scenario">
+      <div class="scenario-label">State 1: Initial Load (isLoading = true, no cached data)</div>
+      <div class="view">
+        <div class="action-bar">
+          <div class="action-left">
+            <div class="search-wrap">
+              <span class="search-icon">&#128269;</span>
+              <input class="search-input" placeholder="Search branches..." disabled>
+            </div>
+            <div class="filter-group">
+              <button class="filter-btn active">All</button>
+              <button class="filter-btn">Active</button>
+              <button class="filter-btn">Modified</button>
+              <button class="filter-btn">Idle</button>
+            </div>
+          </div>
+          <div class="action-right">
+            <button class="btn-refresh spinning" disabled title="Refreshing...">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M21 21v-5h-5"/>
+              </svg>
+            </button>
+            <button class="btn btn-ghost">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              <span>Grouped view</span>
+            </button>
+            <button class="btn btn-outline">+ New Worktree</button>
+          </div>
+        </div>
+        <div class="content">
+          <div class="loading-center">
+            <svg class="spinner-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+            </svg>
+            <span>Loading worktrees...</span>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Behavior:</strong> Centered spinner + text replaces card grid. Refresh button shows spinning icon (disabled). Appears only on first load when no cached data exists.
+      </div>
+    </div>
+
+    <!-- Scenario 2: Background Refresh -->
+    <div class="scenario">
+      <div class="scenario-label">State 2: Background Refresh (isFetching = true, has cached data)</div>
+      <div class="view">
+        <div class="view-wrap">
+          <div class="fetch-bar"></div>
+          <div class="action-bar">
+            <div class="action-left">
+              <div class="search-wrap">
+                <span class="search-icon">&#128269;</span>
+                <input class="search-input" placeholder="Search branches...">
+              </div>
+              <div class="filter-group">
+                <button class="filter-btn active">All</button>
+                <button class="filter-btn">Active</button>
+                <button class="filter-btn">Modified</button>
+                <button class="filter-btn">Idle</button>
+              </div>
+            </div>
+            <div class="action-right">
+              <button class="btn-refresh spinning" title="Refreshing...">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M21 21v-5h-5"/>
+                </svg>
+              </button>
+              <button class="btn btn-ghost">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                <span>Grouped view</span>
+              </button>
+              <button class="btn btn-outline">+ New Worktree</button>
+            </div>
+          </div>
+          <div class="content">
+            <div class="card-grid">
+              <div class="card">
+                <div class="card-branch">feature/auth-flow</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+42</span>
+                  <span class="card-stat stat-red">-8</span>
+                  <span>2h ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">fix/sidebar-overflow</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+12</span>
+                  <span class="card-stat stat-red">-3</span>
+                  <span>5h ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">refactor/db-layer</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+156</span>
+                  <span class="card-stat stat-red">-89</span>
+                  <span>1d ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">chore/deps-update</div>
+                <div class="card-meta">
+                  <span>No changes</span>
+                  <span>3d ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Behavior:</strong> Stale data remains visible (no layout shift). Thin animated progress bar at top of content area. Refresh button spins. User can still interact with cards during fetch.
+      </div>
+    </div>
+
+    <!-- Scenario 3: Idle with Refresh Button -->
+    <div class="scenario">
+      <div class="scenario-label">State 3: Idle — manual refresh available (isFetching = false)</div>
+      <div class="view">
+        <div class="action-bar">
+          <div class="action-left">
+            <div class="search-wrap">
+              <span class="search-icon">&#128269;</span>
+              <input class="search-input" placeholder="Search branches...">
+            </div>
+            <div class="filter-group">
+              <button class="filter-btn active">All</button>
+              <button class="filter-btn">Active</button>
+              <button class="filter-btn">Modified</button>
+              <button class="filter-btn">Idle</button>
+            </div>
+          </div>
+          <div class="action-right">
+            <button class="btn-refresh" title="Refresh worktrees">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M21 21v-5h-5"/>
+              </svg>
+            </button>
+            <button class="btn btn-ghost">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                <span>Grouped view</span>
+              </button>
+            <button class="btn btn-outline">+ New Worktree</button>
+          </div>
+        </div>
+        <div class="view-wrap" style="position:relative">
+          <div class="tooltip-demo">Refresh worktrees</div>
+          <div class="content">
+            <div class="card-grid">
+              <div class="card">
+                <div class="card-branch">feature/auth-flow</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+42</span>
+                  <span class="card-stat stat-red">-8</span>
+                  <span>2h ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">fix/sidebar-overflow</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+12</span>
+                  <span class="card-stat stat-red">-3</span>
+                  <span>5h ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">refactor/db-layer</div>
+                <div class="card-meta">
+                  <span class="card-stat stat-green">+156</span>
+                  <span class="card-stat stat-red">-89</span>
+                  <span>1d ago</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-branch">chore/deps-update</div>
+                <div class="card-meta">
+                  <span>No changes</span>
+                  <span>3d ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Behavior:</strong> Refresh button is static (no spin). Click triggers <code>refetchWorktrees()</code>. Tooltip on hover says "Refresh worktrees". Keyboard shortcut: <code>Ctrl+R</code> / <code>Cmd+R</code> could also trigger it (optional enhancement).
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 32px; padding: 16px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border);">
+    <h3 style="font-size: 14px; margin-bottom: 8px;">Implementation Summary</h3>
+    <ul style="font-size: 12px; color: var(--muted); line-height: 2; padding-left: 16px;">
+      <li>Destructure <code>isLoading</code> and <code>isFetching</code> from <code>useWorktreesQuery()</code></li>
+      <li>Add <code>RefreshCw</code> icon button in action bar (right side, before view toggle)</li>
+      <li>Button <code>onClick</code> calls <code>refetchWorktrees()</code>; spins when <code>isFetching</code></li>
+      <li>When <code>isLoading</code> (no cached data): show centered <code>&lt;Spinner /&gt;</code> + text instead of card grid</li>
+      <li>When <code>isFetching &amp;&amp; !isLoading</code>: show thin animated bar at top of content (optional, can omit for simplicity)</li>
+      <li>Uses existing <code>&lt;Spinner /&gt;</code> component and <code>RefreshCw</code> from lucide-react</li>
+      <li>Follows same pattern as <code>CreateTaskModal</code> branch picker refresh button</li>
+    </ul>
+  </div>
+</body>
+</html>

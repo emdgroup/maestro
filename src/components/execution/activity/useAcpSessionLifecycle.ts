@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useAgentCacheQuery } from "@/services/execution.service";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
-import type { AcpPromptCapabilities } from "@/types/bindings";
+import type { AcpPromptCapabilities, ConnectionKey } from "@/types/bindings";
 
 export type AcpSessionLifecycleResult = {
   configOptions: ConfigOption[];
@@ -31,8 +31,8 @@ export type AcpSessionLifecycleResult = {
 
 export function useAcpSessionLifecycle(
   sessionKey: number,
-  projectId: number | null,
   agentId: string | null,
+  connection: ConnectionKey,
   onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): AcpSessionLifecycleResult {
@@ -54,23 +54,30 @@ export function useAcpSessionLifecycle(
   } | null>(null);
 
   // Seed configOptions catalog from agent cache (available before any session events arrive)
-  const { data: agentCache } = useAgentCacheQuery(projectId, agentId);
+  const { data: agentCache } = useAgentCacheQuery(agentId, connection);
   useEffect(() => {
     if (!agentCache) return;
     setConfigOptions((prev) => {
-      // Don't overwrite if config_option_update already populated (has current_value semantics)
       if (prev.length > 0) return prev;
       return agentCache.config_options.map((o) => ({
         id: o.id,
         name: o.name,
         category: o.category,
-        currentValue: o.options[0]?.value ?? "",
+        currentValue: o.default_value ?? o.options[0]?.value ?? "",
         options: o.options.map((v) => ({
           name: v.name,
           value: v.value,
           description: v.description ?? undefined,
         })),
       }));
+    });
+    setConfigValues((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const seeded: Record<string, string> = {};
+      for (const o of agentCache.config_options) {
+        if (o.default_value) seeded[o.id] = o.default_value;
+      }
+      return Object.keys(seeded).length > 0 ? seeded : prev;
     });
     setAvailableCommands((prev) => {
       if (prev.length > 0) return prev;
@@ -277,6 +284,8 @@ export function useAcpSessionLifecycle(
         cost?: { amount: number; currency: string };
         availableCommands?: AvailableCommand[];
         configOptions?: ConfigOption[];
+        modelId?: string;
+        currentModelId?: string;
         modeId?: string;
         currentModeId?: string;
       };
@@ -298,18 +307,21 @@ export function useAcpSessionLifecycle(
         }
       } else if (p.sessionUpdate === "config_option_update") {
         if (Array.isArray(p.configOptions)) {
-          setConfigOptions(p.configOptions);
-          setConfigValues((prev) => {
-            const next = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
-            const keys = Object.keys(next);
-            if (
-              keys.length === Object.keys(prev).length &&
-              keys.every((k) => prev[k] === next[k])
-            ) {
-              return prev;
-            }
-            return next;
+          setConfigOptions((prev) => {
+            if (prev.length > 0) return prev;
+            return p.configOptions!;
           });
+          // Only seed configValues if nothing set yet (no cache was available).
+          // After seeding, only model-changed / current_model_update should change selection.
+          setConfigValues((prev) => {
+            if (Object.keys(prev).length > 0) return prev;
+            return Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+          });
+        }
+      } else if (p.sessionUpdate === "current_model_update") {
+        const modelId = p.modelId ?? p.currentModelId;
+        if (modelId) {
+          setConfigValues((prev) => ({ ...prev, model: modelId }));
         }
       } else if (p.sessionUpdate === "current_mode_update") {
         const modeId = p.modeId ?? p.currentModeId;

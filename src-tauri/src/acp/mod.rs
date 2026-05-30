@@ -5,37 +5,39 @@ pub mod resolve;
 pub mod transport;
 
 /// Identifies which connection server (or local instance) owns a session or cache entry.
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(tag = "type")]
+#[specta(export)]
 pub enum ConnectionKey {
+    #[serde(rename = "local")]
     Local,
-    Ssh(i32),
-    Wsl(i32),
+    #[serde(rename = "ssh")]
+    Ssh { id: i32 },
+    #[serde(rename = "wsl")]
+    Wsl { id: i32 },
 }
 
 impl ConnectionKey {
     pub fn from_ids(ssh_id: Option<i32>, wsl_id: Option<i32>) -> Self {
-        if let Some(wsl) = wsl_id {
-            ConnectionKey::Wsl(wsl)
-        } else if let Some(ssh) = ssh_id {
-            ConnectionKey::Ssh(ssh)
+        if let Some(id) = wsl_id {
+            ConnectionKey::Wsl { id }
+        } else if let Some(id) = ssh_id {
+            ConnectionKey::Ssh { id }
         } else {
             ConnectionKey::Local
         }
     }
 
-    /// Returns the SSH connection_id if this is an SSH connection.
     pub fn ssh_id(&self) -> Option<i32> {
-        match self { ConnectionKey::Ssh(id) => Some(*id), _ => None }
+        match self { ConnectionKey::Ssh { id } => Some(*id), _ => None }
     }
 
-    /// Returns the WSL connection_id if this is a WSL connection.
     pub fn wsl_id(&self) -> Option<i32> {
-        match self { ConnectionKey::Wsl(id) => Some(*id), _ => None }
+        match self { ConnectionKey::Wsl { id } => Some(*id), _ => None }
     }
 
-    /// Returns true if this connection key represents a remote (SSH or WSL) connection.
     pub fn is_remote(&self) -> bool {
-        matches!(self, ConnectionKey::Ssh(_) | ConnectionKey::Wsl(_))
+        matches!(self, ConnectionKey::Ssh { .. } | ConnectionKey::Wsl { .. })
     }
 }
 

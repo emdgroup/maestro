@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon, GitBranch } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { generateSessionName } from "@/lib/generateSessionName";
-import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/ui-utils";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -16,15 +15,14 @@ import {
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { usePreflightToolChecks } from "@/store/configStore";
-import type { WorktreeWithStatus } from "@/types/bindings";
+import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
 
 interface SpawnSessionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: number;
   repoPath: string;
-  connectionId: number | null;
-  wslConnectionId: number | null;
+  connection: ConnectionKey;
   worktrees: WorktreeWithStatus[];
   onSuccess: (sessionKey: number) => void;
 }
@@ -34,25 +32,19 @@ export function SpawnSessionDialog({
   onOpenChange,
   projectId,
   repoPath,
-  connectionId,
-  wslConnectionId,
+  connection,
   worktrees,
   onSuccess,
 }: SpawnSessionDialogProps) {
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("terminal");
-  const [selectedModel, setSelectedModel] = useState<string>("");
-
   const { data: projectSettings } = useProjectSettings(projectId);
-  const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(
-    connectionId,
-    wslConnectionId,
-  );
+  const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(connection);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
-  const toolChecks = usePreflightToolChecks(connectionId);
+  const toolChecks = usePreflightToolChecks(connection);
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
 
@@ -64,9 +56,6 @@ export function SpawnSessionDialog({
     const defaultAgent = projectSettings?.default_agent;
     const agentExists = defaultAgent && visibleAgents.some((a) => a.id === defaultAgent);
     setSessionType(agentExists ? defaultAgent : "terminal");
-    setSelectedModel(
-      agentExists && projectSettings?.default_model ? projectSettings.default_model : "",
-    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -95,15 +84,11 @@ export function SpawnSessionDialog({
           cwd: selectedWorktree.path,
           sessionName: sessionName.trim() || generateSessionName(),
           projectId,
-          connectionId,
-          wslConnectionId,
+          connection,
           worktreeBranch: selectedWorktree.branch_name,
         },
         {
           onSuccess: (sessionKey) => {
-            if (selectedModel) {
-              api.setAcpModel(sessionKey, selectedModel).catch(() => {});
-            }
             onOpenChange(false);
             onSuccess(sessionKey);
           },
@@ -140,7 +125,6 @@ export function SpawnSessionDialog({
                   type="button"
                   onClick={() => {
                     setSessionType("terminal");
-                    setSelectedModel("");
                   }}
                   className={cn(
                     "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
@@ -186,8 +170,7 @@ export function SpawnSessionDialog({
                       disabled={disabled}
                       onClick={() => {
                         setSessionType(agent.id);
-                        setSelectedModel("");
-                      }}
+                          }}
                       title={
                         disabled
                           ? `Requires ${missingDeps.join(", ")} (not available on this connection)`
@@ -299,6 +282,7 @@ export function SpawnSessionDialog({
                 </SelectContent>
               </Select>
             </div>
+
 
             {/* Session name */}
             <div className="space-y-1.5">

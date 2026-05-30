@@ -8,6 +8,7 @@ import { useAcpActivity } from "./activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
+import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { ActivityMessageItem } from "./activity/ActivityMessageItem";
 import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
 import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
@@ -147,6 +148,7 @@ export function AgentActivityPanel({
   );
   const [liveState, liveDispatch] = useAcpActivity(sessionKey, sessionUpdateRef);
 
+  const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
   const {
     configOptions,
     configValues,
@@ -159,8 +161,8 @@ export function AgentActivityPanel({
     setPendingElicitation,
   } = useAcpSessionLifecycle(
     sessionKey,
-    selectedProject?.id ?? null,
     agentId,
+    connection,
     onUsageChangeRef,
     sessionUpdateRef,
   );

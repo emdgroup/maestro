@@ -37,13 +37,6 @@ async fn finalize_ssh_connection(
     }
     drop(conn);
 
-    // Fire-and-forget: check maestro-server + agent availability in background.
-    // Results are cached in AppState so the New Session dialog reads them instantly.
-    let state_clone = Arc::clone(app_state);
-    tokio::spawn(async move {
-        super::acp_handlers::prefetch_agent_discovery(state_clone, Some(connection_id), None, None).await;
-    });
-
     Ok(())
 }
 

@@ -9,6 +9,7 @@ allowed-tools:
   - Bash
   - Grep
   - Glob
+requires: [phase, progress, update]
 ---
 
 <objective>
@@ -36,7 +37,7 @@ Output: Forensic report saved to `.planning/forensics/`, presented inline, with 
 </context>
 
 <process>
-Read and execute the forensics workflow from @/home/m306213/workspace/maestro/.claude/get-shit-done/workflows/forensics.md end-to-end.
+Execute end-to-end.
 </process>
 
 <success_criteria>

@@ -11,7 +11,6 @@ use specta::Type;
 #[specta(export)]
 pub struct ProjectConfig {
     pub default_agent: Option<String>,
-    pub default_model: Option<String>,
     pub updated_at: String,
     pub issue_tracking: Option<ProjectIssueTrackingConfig>,
 }

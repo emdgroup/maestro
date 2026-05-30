@@ -417,6 +417,39 @@ pub(crate) fn convert_acp_modes(
     })
 }
 
+/// Used on session load when the agent provides config_options but no legacy models field.
+fn models_from_config_options(config_options: &[SessionConfigOption]) -> Option<ProtocolSessionModelState> {
+    let model_opt = config_options.iter().find(|o| o.id.0.as_ref() == "model")?;
+    let SessionConfigKind::Select(select) = &model_opt.kind else {
+        return None;
+    };
+    let available_models = match &select.options {
+        SessionConfigSelectOptions::Ungrouped(vals) => vals
+            .iter()
+            .map(|v| ProtocolModelInfo {
+                model_id: v.value.0.to_string(),
+                name: v.name.clone(),
+                description: v.description.clone(),
+            })
+            .collect(),
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|g| {
+                g.options.iter().map(|v| ProtocolModelInfo {
+                    model_id: v.value.0.to_string(),
+                    name: v.name.clone(),
+                    description: v.description.clone(),
+                })
+            })
+            .collect(),
+        _ => return None,
+    };
+    Some(ProtocolSessionModelState {
+        current_model_id: select.current_value.0.to_string(),
+        available_models,
+    })
+}
+
 /// Used on session load when the agent provides config_options but no legacy modes field.
 fn modes_from_config_options(config_options: &[SessionConfigOption]) -> Option<ProtocolSessionModeState> {
     let mode_opt = config_options.iter().find(|o| o.id.0.as_ref() == "mode")?;
@@ -821,7 +854,8 @@ pub(crate) async fn load_acp_session(
                         return Ok(());
                     }
                 };
-                let models = convert_acp_models(load_response.models.as_ref());
+                let models = convert_acp_models(load_response.models.as_ref())
+                    .or_else(|| load_response.config_options.as_deref().and_then(models_from_config_options));
                 let modes = load_response.config_options.as_deref()
                     .and_then(modes_from_config_options)
                     .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
@@ -1165,7 +1199,8 @@ pub(crate) async fn load_session_on_connection(
         }
     };
 
-    let models = convert_acp_models(load_response.models.as_ref());
+    let models = convert_acp_models(load_response.models.as_ref())
+        .or_else(|| load_response.config_options.as_deref().and_then(models_from_config_options));
     let modes = load_response.config_options.as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
