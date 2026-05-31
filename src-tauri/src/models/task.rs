@@ -22,7 +22,8 @@ pub struct Task {
     pub id: i32,
     pub project_id: i32,
     pub title: String,
-    pub description: String,
+    #[specta(optional)]
+    pub description: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub base_branch: String,
@@ -167,7 +168,8 @@ impl Task {
 pub struct CreateTaskRequest {
     pub project_id: i32,
     pub title: String,
-    pub description: String,
+    #[specta(optional)]
+    pub description: Option<String>,
     pub skills: Vec<String>,
 }
 

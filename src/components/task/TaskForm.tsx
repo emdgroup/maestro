@@ -72,7 +72,7 @@ export function TaskForm({
         updated_at: "",
         project_id: projectId,
         title: data.title,
-        description: data.description,
+        description: data.description || null,
         skills: [],
         labels: [],
         auto_approve: false,
@@ -109,22 +109,13 @@ export function TaskForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="description">Description *</Label>
+        <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
-          placeholder="Task description (min 10 characters)"
+          placeholder="Task description"
           rows={4}
-          {...register("description", {
-            required: "Description is required",
-            minLength: {
-              value: 10,
-              message: "Description must be at least 10 characters",
-            },
-          })}
+          {...register("description")}
         />
-        {errors.description && (
-          <span className="text-destructive text-xs mt-1">{errors.description.message}</span>
-        )}
       </div>
 
       <div className="flex flex-col gap-2">

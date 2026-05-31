@@ -871,7 +871,7 @@ async getUntrackedFileContent(projectId: number, worktreePath: string, filePath:
  * Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
  * cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
  */
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<number, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<SpawnSessionResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };
 } catch (e) {
@@ -1547,9 +1547,9 @@ async getTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], stri
 /**
  * Add an attachment record for a task
  */
-async addTaskAttachment(taskId: number, filename: string, filePath: string, fileSize: number) : Promise<Result<TaskAttachment, string>> {
+async addTaskAttachment(taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { taskId, filename, filePath, fileSize }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { taskId, filename, filePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1652,7 +1652,7 @@ export type ConnectionKey = { type: "local" } | { type: "ssh"; id: number } | { 
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
-export type CreateTaskRequest = { project_id: number; title: string; description: string; skills: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; isolated_worktree: boolean; model_override: string | null }
+export type CreateTaskRequest = { project_id: number; title: string; description: string | null; skills: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; isolated_worktree: boolean; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli"
 /**
  * Controls what get_worktree_diff compares against.
@@ -1726,6 +1726,7 @@ export type ReviewResult = { success: boolean; review_id: number; task_status: s
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null }
+export type SpawnSessionResult = { log_id: number; ready: boolean }
 /**
  * SSH authentication method configuration
  */
@@ -1747,7 +1748,7 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; title: string; description: string; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null }
+export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }

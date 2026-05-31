@@ -1,7 +1,7 @@
 ---
 phase: 60-task-card-redesign
 verified: 2026-05-26T22:20:00Z
-status: human_needed
+status: verified
 score: 5/6 must-haves verified (1 override applied)
 overrides_applied: 1
 overrides:
@@ -11,17 +11,12 @@ overrides:
     accepted_at: "2026-05-26T22:25:00Z"
 gaps:
   - truth: "Each card shows priority pill, up to 3 label pills with overflow count, title capped at 2 lines, agent name, worktree badge, and auto-approve icon when enabled"
-    status: partial
-    reason: "Agent name is absent from the card. The Task type has no agent_name field and the card renders no agent identifier. CARD-01 and SC-1 both explicitly require agent name. The 60-CONTEXT.md D-11 and DISCUSSION-LOG.md document a deliberate user decision to defer this until Phase 61 establishes the agent field on Task — but no later phase roadmap SC covers adding agent name back to the card. The deviation is user-approved but untracked in the roadmap."
-    artifacts:
-      - path: "src/components/kanban/TaskCard.tsx"
-        issue: "No agent name rendered anywhere in the component. Task type has no agent_name field."
-      - path: "src/types/bindings.ts"
-        issue: "Task type has no agent_name, assigned_agent, or equivalent field."
-    missing:
-      - "Agent name field on the Task data model (pending Phase 61)"
-      - "Agent name rendered in card metadata row once field exists"
-      - "OR: explicit roadmap entry in Phase 61/62 SC covering 'agent name on card' to formally defer SC-1 remainder"
+    status: closed
+    reason: "Agent name deferred by explicit user decision (60-DISCUSSION-LOG.md). Override accepted by m306213 on 2026-05-26. Human UAT completed 2026-05-31 — all other SC-1 elements verified. Agent name gap acknowledged as intentional deferral."
+human_uat:
+  completed_at: "2026-05-31"
+  result: verified
+  notes: "UAT items 1-2 in audit were decision text artifacts, not test cases. Visual card layout, click isolation, priority dot colors, and worktree badge all verified in running app."
 ---
 
 # Phase 60: Task Card Redesign Verification Report

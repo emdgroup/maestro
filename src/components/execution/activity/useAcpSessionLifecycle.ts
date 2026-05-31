@@ -307,9 +307,14 @@ export function useAcpSessionLifecycle(
         }
       } else if (p.sessionUpdate === "config_option_update") {
         if (Array.isArray(p.configOptions)) {
-          setConfigOptions(p.configOptions!);
-          // config_option_update carries live currentValue from the active session.
-          // Always replace options and merge values — don't let cached defaults block live session values.
+          // Merge: keep existing option lists (seeded from cache with full catalog), add new categories.
+          // The raw agent payload can be degraded (missing opusplan etc.) when loading a session.
+          setConfigOptions((prev) => {
+            if (prev.length === 0) return p.configOptions!;
+            const existingIds = new Set(prev.map((o) => o.id));
+            const newCategories = p.configOptions!.filter((o) => !existingIds.has(o.id));
+            return newCategories.length > 0 ? [...prev, ...newCategories] : prev;
+          });
           setConfigValues((prev) => {
             const incoming = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
             const hasChange = Object.entries(incoming).some(([k, v]) => prev[k] !== v);

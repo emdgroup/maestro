@@ -268,7 +268,7 @@ pub async fn import_tasks(
             rusqlite::params![
                 project_id,
                 &issue.title,
-                issue.body.as_deref().unwrap_or(""),
+                issue.body.as_deref(),
                 priority_str,
                 &base_branch,
                 &import_source,
@@ -316,7 +316,7 @@ pub fn update_task_from_remote(
          external_updated_at = ?, updated_at = ? WHERE id = ?",
         rusqlite::params![
             &issue.title,
-            issue.body.as_deref().unwrap_or(""),
+            issue.body.as_deref(),
             labels_json,
             &issue.updated_at,
             &now,

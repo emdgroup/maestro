@@ -169,8 +169,10 @@ fn build_claude_code_command(
     let mut cmd = format!("cd {} && claude-code", worktree_path);
 
     // Add task details
-    let escaped_desc = task.description.replace('"', "\\\"");
-    cmd.push_str(&format!(" --task=\"{}\"", escaped_desc));
+    if let Some(ref desc) = task.description {
+        let escaped_desc = desc.replace('"', "\\\"");
+        cmd.push_str(&format!(" --task=\"{}\"", escaped_desc));
+    }
 
     // Add configuration overrides
     if let Some(ref model) = config.model_override {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
-use rusqlite::{params, ToSql};
+use rusqlite::params;
 use serde_json;
 use crate::models::Project;
 use crate::db::{AppState, project_storage};

@@ -300,7 +300,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
       const filename = filePath.slice(
         Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1,
       );
-      addAttachment.mutate({ taskId: task!.id, filename, filePath, fileSize: 0 });
+      addAttachment.mutate({ taskId: task!.id, filename, filePath });
     }
   }
 
@@ -312,7 +312,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
         setIsDragOver(false);
         for (const filePath of event.payload.paths) {
           const filename = filePath.split(/[/\\]/).pop() ?? filePath;
-          addAttachment.mutate({ taskId, filename, filePath, fileSize: 0 });
+          addAttachment.mutate({ taskId, filename, filePath });
         }
       }
       if (event.payload.type === "leave") {

@@ -174,7 +174,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       {
         project_id: projectId,
         title: data.title,
-        description: data.description,
+        description: data.description || null,
         skills: [],
         base_branch: data.baseBranch,
         agent_id: data.agentId || null,
@@ -325,16 +325,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
             <div>
               <Textarea
-                {...register("description", {
-                  required: "Description is required",
-                  minLength: { value: 10, message: "Description must be at least 10 characters" },
-                })}
+                {...register("description")}
                 placeholder="Add description..."
                 className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-[4.5rem] max-h-[40vh] overflow-y-auto"
               />
-              {errors.description && (
-                <span className="text-destructive text-xs">{errors.description.message}</span>
-              )}
             </div>
 
             {isGitRepo && <Controller

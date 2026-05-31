@@ -91,9 +91,9 @@ export function SpawnSessionDialog({
           worktreeBranch: selectedWorktree?.branch_name ?? null,
         },
         {
-          onSuccess: (sessionKey) => {
+          onSuccess: (result) => {
             onOpenChange(false);
-            onSuccess(sessionKey);
+            onSuccess(result.log_id);
           },
         },
       );

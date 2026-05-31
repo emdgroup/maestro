@@ -470,13 +470,11 @@ export function useAddTaskAttachmentMutation() {
       taskId,
       filename,
       filePath,
-      fileSize,
     }: {
       taskId: number;
       filename: string;
       filePath: string;
-      fileSize: number;
-    }) => api.addTaskAttachment(taskId, filename, filePath, fileSize),
+    }) => api.addTaskAttachment(taskId, filename, filePath),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.attachments(variables.taskId),

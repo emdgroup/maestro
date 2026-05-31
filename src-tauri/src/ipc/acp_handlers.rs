@@ -106,6 +106,13 @@ async fn session_file_rpc<T>(
         .map_err(|_| "File operation response channel closed".to_string())?
 }
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[specta(export)]
+pub struct SpawnSessionResult {
+    pub log_id: i32,
+    pub ready: bool,
+}
+
 /// Spawn a pooled session for the given agent using the running connection server.
 /// The session is stored in `app_state.acp.session_pool` and hidden from the active
 /// sessions list until claimed by the user creating a session for that agent.
@@ -167,7 +174,7 @@ pub async fn spawn_acp_session(
     worktree_branch: Option<String>,
     task_id: Option<i32>,
     task_name: Option<String>,
-) -> Result<i32, String> {
+) -> Result<SpawnSessionResult, String> {
     let connection_id = connection.ssh_id();
     let wsl_connection_id = connection.wsl_id();
 
@@ -212,7 +219,7 @@ pub async fn spawn_acp_session(
                 });
 
                 app_state.app_handle.emit("sessions-changed", ()).ok();
-                return Ok(pooled.log_id);
+                return Ok(SpawnSessionResult { log_id: pooled.log_id, ready: true });
             } else {
                 // cwd mismatch (worktree task) — put the pooled session back and fall through.
                 pool.insert((project_id, agent_id.clone()), pooled);
@@ -258,7 +265,7 @@ pub async fn spawn_acp_session(
         &req,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
-        return Ok(log_id);
+        return Ok(SpawnSessionResult { log_id, ready: false });
     }
 
     // Cold path: spawn dedicated maestro-server subprocess.
@@ -333,7 +340,7 @@ pub async fn spawn_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    Ok(log_id)
+    Ok(SpawnSessionResult { log_id, ready: false })
 }
 
 async fn send_prompt_impl(

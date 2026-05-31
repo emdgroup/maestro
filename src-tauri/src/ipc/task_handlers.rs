@@ -29,7 +29,7 @@ fn create_task_impl(
     conn: &rusqlite::Connection,
     project_id: i32,
     title: String,
-    description: String,
+    description: Option<String>,
     skills: Vec<String>,
     base_branch: String,
     agent_id: Option<String>,
@@ -42,10 +42,11 @@ fn create_task_impl(
     if trimmed_title.is_empty() || trimmed_title.len() < 3 || trimmed_title.len() > 255 {
         return Err("Title must be 3-255 characters".to_string());
     }
-    let trimmed_description = description.trim();
-    if trimmed_description.is_empty() || trimmed_description.len() < 10 {
-        return Err("Description must be at least 10 characters".to_string());
-    }
+
+    let description = description.and_then(|d| {
+        let trimmed = d.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    });
 
     let now = Utc::now().to_rfc3339();
     let skills_json = serde_json::to_string(&skills)
@@ -77,7 +78,7 @@ fn create_task_impl(
 pub struct CreateTaskRequest {
     pub project_id: i32,
     pub title: String,
-    pub description: String,
+    pub description: Option<String>,
     pub skills: Vec<String>,
     pub base_branch: String,
     pub agent_id: Option<String>,
@@ -502,8 +503,10 @@ pub fn add_task_attachment(
     task_id: i32,
     filename: String,
     file_path: String,
-    file_size: i64,
 ) -> Result<TaskAttachment, String> {
+    let file_size = std::fs::metadata(&file_path)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     conn.execute(
@@ -649,7 +652,7 @@ mod tests {
         let project_id = insert_project(&conn);
         let err = create_task_impl(
             &conn, project_id, "ab".to_string(),
-            "valid description here".to_string(),
+            Some("valid description here".to_string()),
             vec![], "main".to_string(),
             None, None, false, true, None,
         )
@@ -658,17 +661,18 @@ mod tests {
     }
 
     #[test]
-    fn create_task_rejects_short_description() {
+    fn create_task_succeeds_without_description() {
         let conn = test_db();
         let project_id = insert_project(&conn);
-        let err = create_task_impl(
-            &conn, project_id, "Valid Name".to_string(),
-            "too short".to_string(),
+        let task = create_task_impl(
+            &conn, project_id, "Valid Task Name".to_string(),
+            None,
             vec![], "main".to_string(),
             None, None, false, true, None,
         )
-        .unwrap_err();
-        assert!(err.contains("Description must be at least 10 characters"), "got: {err}");
+        .unwrap();
+        assert_eq!(task.title, "Valid Task Name");
+        assert!(task.description.is_none());
     }
 
     #[test]
@@ -678,7 +682,7 @@ mod tests {
         let task = create_task_impl(
             &conn, project_id,
             "Valid Task Name".to_string(),
-            "This is a valid description.".to_string(),
+            Some("This is a valid description.".to_string()),
             vec!["rust".to_string()], "main".to_string(),
             None, None, false, true, None,
         )
@@ -695,7 +699,7 @@ mod tests {
         let task = create_task_impl(
             &conn, project_id,
             "Task to Delete".to_string(),
-            "This task will be deleted.".to_string(),
+            Some("This task will be deleted.".to_string()),
             vec![], "main".to_string(),
             None, None, false, true, None,
         )

@@ -72,7 +72,7 @@ export function useExecuteTask(
       }
 
       // Spawn ACP session
-      logId = await spawnAcpSessionMutation.mutateAsync({
+      const spawnResult = await spawnAcpSessionMutation.mutateAsync({
         agentId,
         cwd,
         sessionName: task.title,
@@ -82,23 +82,27 @@ export function useExecuteTask(
         taskId: task.id,
         taskName: task.title,
       });
+      logId = spawnResult.log_id;
 
-      // Wait for spawn-ok (30s timeout)
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          unlisten();
-          reject(new Error("Agent spawn timed out after 30s"));
-        }, 30_000);
+      // Pool-claimed sessions are already initialized — skip the wait.
+      // Cold spawns need to wait for the agent process to start.
+      if (!spawnResult.ready) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            unlisten();
+            reject(new Error("Agent spawn timed out after 30s"));
+          }, 30_000);
 
-        let unlisten: () => void = () => {};
-        listen<null>(`acp://spawn-ok/${logId}`, () => {
-          clearTimeout(timer);
-          unlisten();
-          resolve();
-        }).then((fn) => {
-          unlisten = fn;
+          let unlisten: () => void = () => {};
+          listen<null>(`acp://spawn-ok/${logId}`, () => {
+            clearTimeout(timer);
+            unlisten();
+            resolve();
+          }).then((fn) => {
+            unlisten = fn;
+          });
         });
-      });
+      }
 
       // Set model if overridden (non-critical — log warning on failure)
       if (task.model_override) {
