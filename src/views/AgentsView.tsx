@@ -212,7 +212,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
             <Button
               variant="accent"
               size="sm"
-              className="h-8 text-xs"
+              className="h-8 text-xs bg-clip-border"
               onClick={() => setShowSpawnDialog(true)}
             >
               <Plus className="size-3.5 mr-1" />

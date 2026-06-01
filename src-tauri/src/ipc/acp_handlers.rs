@@ -133,6 +133,7 @@ pub async fn spawn_pooled_session(
         log_id,
         session_name: None,
         project_id: Some(project_id),
+        task_id: None,
         app_state: Arc::clone(app_state),
     };
     let spawned = crate::acp::try_spawn_via_connection_server(&session_id, TaskMetadata::default(), &req).await;
@@ -257,6 +258,7 @@ pub async fn spawn_acp_session(
         log_id,
         session_name: session_name.clone(),
         project_id: Some(project_id),
+        task_id: None,
         app_state: Arc::clone(&*app_state),
     };
     if crate::acp::try_spawn_via_connection_server(
@@ -1174,7 +1176,7 @@ pub async fn read_session_file_binary(
     const MAX_BINARY_SIZE: u64 = 5 * 1024 * 1024;
 
     let bytes = match connection_key {
-        ConnectionKey::Local | ConnectionKey::Wsl { .. } => {
+        ConnectionKey::Local => {
             let full_path = std::path::Path::new(&cwd).join(&relative_path);
             let metadata = tokio::fs::metadata(&full_path)
                 .await
@@ -1183,6 +1185,29 @@ pub async fn read_session_file_binary(
                 return Err(format!("File too large ({} bytes, max 5 MB)", metadata.len()));
             }
             tokio::fs::read(&full_path)
+                .await
+                .map_err(|e| format!("Cannot read file: {e}"))?
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            // cwd is a Linux path — translate to UNC path accessible from Windows
+            let distro = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    [wsl_id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
+            };
+            let linux_path = format!("{}/{}", cwd, relative_path);
+            let unc_path = format!(r"\\wsl$\{}\{}", distro, linux_path.trim_start_matches('/'));
+            let full_path = std::path::Path::new(&unc_path);
+            let metadata = tokio::fs::metadata(full_path)
+                .await
+                .map_err(|e| format!("Cannot stat file: {e}"))?;
+            if metadata.len() > MAX_BINARY_SIZE {
+                return Err(format!("File too large ({} bytes, max 5 MB)", metadata.len()));
+            }
+            tokio::fs::read(full_path)
                 .await
                 .map_err(|e| format!("Cannot read file: {e}"))?
         }
@@ -1520,6 +1545,7 @@ pub async fn load_acp_session(
         log_id,
         session_name: session_name.clone(),
         project_id,
+        task_id: None,
         app_state: Arc::clone(&*app_state),
     };
 

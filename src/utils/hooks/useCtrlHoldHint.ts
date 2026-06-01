@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useShortcutStore } from "@/store/shortcutStore";
 
-const HOLD_DELAY_MS = 2000;
+const HOLD_DELAY_MS = 1000;
 
 export function useCtrlHoldHint(): void {
   const setHintVisible = useShortcutStore((s) => s.setHintVisible);
@@ -12,6 +12,8 @@ export function useCtrlHoldHint(): void {
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Control" || ctrlDown) return;
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       ctrlDown = true;
       timerId = setTimeout(() => setHintVisible(true), HOLD_DELAY_MS);
     }

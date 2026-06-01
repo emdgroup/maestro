@@ -82,6 +82,7 @@ export function KanbanColumn({
             key={task.id}
             task={task}
             index={index}
+            dndGroup={isDndColumn ? status : undefined}
             onReviewClick={onReviewClick}
             worktreeTaskIds={worktreeTaskIds}
           />

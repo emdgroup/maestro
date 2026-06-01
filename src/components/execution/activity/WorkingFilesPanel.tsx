@@ -119,7 +119,7 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
   useEffect(() => {
     api
       .getAcpSessionMeta(sessionKey)
-      .then((meta) => setCwd(meta.cwd))
+      .then((meta) => setCwd(meta.cwd.replace(/\/+$/, "")))
       .catch(console.error);
   }, [sessionKey]);
 
@@ -282,6 +282,9 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
           >
             {loading && (
               <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
+            )}
+            {!loading && selectedFile && !relativePath && !loadError && (
+              <div className="text-xs text-muted-foreground animate-pulse">Resolving path...</div>
             )}
             {!loading && !selectedFile && (
               <div className="text-xs text-muted-foreground">No file selected</div>

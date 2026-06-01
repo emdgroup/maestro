@@ -316,7 +316,16 @@ export function useAcpSessionLifecycle(
             return newCategories.length > 0 ? [...prev, ...newCategories] : prev;
           });
           setConfigValues((prev) => {
-            const incoming = Object.fromEntries(p.configOptions!.map((o) => [o.id, o.currentValue]));
+            // model/mode have dedicated authoritative events (model-changed, mode-changed).
+            // config_option_update reflects agent's internal resolution which may differ
+            // from user's selection (e.g., "opusplan" resolves to "sonnet" internally).
+            const AUTHORITATIVE_KEYS = new Set(["model", "mode"]);
+            const incoming = Object.fromEntries(
+              p.configOptions!
+                .filter((o) => !AUTHORITATIVE_KEYS.has(o.id) || !(o.id in prev))
+                .map((o) => [o.id, o.currentValue]),
+            );
+            if (Object.keys(incoming).length === 0) return prev;
             const hasChange = Object.entries(incoming).some(([k, v]) => prev[k] !== v);
             return hasChange ? { ...prev, ...incoming } : prev;
           });

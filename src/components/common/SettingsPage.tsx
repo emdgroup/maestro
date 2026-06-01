@@ -239,7 +239,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   <Label className="text-sm font-medium">Terminal Colors</Label>
                   <Select value={terminalColorMode} onValueChange={handleTerminalColorModeChange}>
                     <SelectTrigger className="w-full bg-muted">
-                      <SelectValue />
+                      <SelectValue>
+                        {terminalColorMode === "follow_theme"
+                          ? "Follow app theme"
+                          : "Default (black background)"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="follow_theme">Follow app theme</SelectItem>
@@ -256,7 +260,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   <Label className="text-sm font-medium">Enter Key Behavior</Label>
                   <Select value={enterKeyBehavior} onValueChange={handleEnterKeyBehaviorChange}>
                     <SelectTrigger className="w-full bg-muted">
-                      <SelectValue />
+                      <SelectValue>
+                        {enterKeyBehavior === "send_prompt"
+                          ? "Send prompt (Shift+Enter for new line)"
+                          : "New line (Ctrl+Enter to send)"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="send_prompt">Send prompt (Shift+Enter for new line)</SelectItem>

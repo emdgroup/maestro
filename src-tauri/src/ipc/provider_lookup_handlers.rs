@@ -345,7 +345,7 @@ pub async fn list_azuredevops_projects(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(org_url);
+    let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(org_url);
 
     use base64::Engine as _;
     let auth = format!(
@@ -355,7 +355,7 @@ pub async fn list_azuredevops_projects(
     );
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!("{}/_apis/projects?api-version=7.1&$top=50", base);
+    let url = format!("{}/_apis/projects?api-version={}&$top=50", base, crate::issue_tracking::azure_devops::AZDO_API_VERSION);
     let response = client
         .get(&url)
         .header("Authorization", auth)
@@ -364,7 +364,10 @@ pub async fn list_azuredevops_projects(
         .map_err(|e| format!("Network error: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Azure DevOps API error {}", response.status().as_u16()));
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
     }
 
     #[derive(serde::Deserialize)]
@@ -403,7 +406,7 @@ pub async fn list_azuredevops_repos(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(org_url);
+    let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(org_url);
 
     use base64::Engine as _;
     let auth = format!(
@@ -414,9 +417,10 @@ pub async fn list_azuredevops_repos(
 
     let client = crate::issue_tracking::build_http_client()?;
     let url = format!(
-        "{}/{}/_apis/git/repositories?api-version=7.1",
+        "{}/{}/_apis/git/repositories?api-version={}",
         base,
         urlencoding::encode(&project),
+        crate::issue_tracking::azure_devops::AZDO_API_VERSION,
     );
     let response = client
         .get(&url)
@@ -426,7 +430,10 @@ pub async fn list_azuredevops_repos(
         .map_err(|e| format!("Network error: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Azure DevOps API error {}", response.status().as_u16()));
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
     }
 
     #[derive(serde::Deserialize)]

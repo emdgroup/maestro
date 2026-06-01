@@ -28,6 +28,7 @@ import { Copy, Check } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
 import { useTheme } from "@/providers/ThemeProvider";
+import { toast } from "sonner";
 import SmilesDrawerLib from "smiles-drawer";
 
 const sanitizeSchema = {
@@ -317,22 +318,36 @@ export function MermaidBlock({ code }: { code: string }) {
     let cancelled = false;
     setSvg(null);
     setError(false);
-    import("mermaid").then((m) => {
-      if (cancelled) return;
-      m.default.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        theme: isDark ? "dark" : "default",
-      });
-      m.default
-        .render(elId, code)
-        .then(({ svg: rendered }) => {
-          if (!cancelled) setSvg(rendered);
-        })
-        .catch(() => {
-          if (!cancelled) setError(true);
+    import("mermaid")
+      .then((m) => {
+        if (cancelled) return;
+        m.default.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: isDark ? "dark" : "default",
         });
-    });
+        m.default
+          .render(elId, code)
+          .then(({ svg: rendered }) => {
+            if (!cancelled) setSvg(rendered);
+          })
+          .catch((err: unknown) => {
+            if (!cancelled) {
+              setError(true);
+              toast.error("Mermaid diagram syntax error", {
+                id: elId,
+                description:
+                  err instanceof Error ? err.message : "Failed to render diagram",
+              });
+            }
+          });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+          toast.error("Failed to load mermaid renderer");
+        }
+      });
     return () => {
       cancelled = true;
     };

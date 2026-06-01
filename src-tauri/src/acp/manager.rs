@@ -41,6 +41,7 @@ pub struct RestorableSession {
     pub cwd: String,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
+    pub task_id: Option<i32>,
 }
 
 /// Write transport for a live ACP session.
@@ -252,6 +253,7 @@ pub struct SessionRequest {
     pub log_id: i32,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
+    pub task_id: Option<i32>,
     pub app_state: Arc<crate::db::AppState>,
 }
 
@@ -805,6 +807,16 @@ pub(crate) fn spawn_reader_task(
                 if let Some(tid) = task_id {
                     if try_auto_approve_permission(&app_state, tid, log_id, perm_req).await {
                         continue;
+                    }
+                }
+            }
+
+            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+                if turn_ended.stop_reason == "end_turn" {
+                    if let Some(tid) = task_id {
+                        if try_complete_task(&app_state, tid) {
+                            app_state.app_handle.emit("tasks-changed", ()).ok();
+                        }
                     }
                 }
             }
@@ -1398,6 +1410,16 @@ async fn handle_shared_server_message(
                 }
             }
 
+            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+                if turn_ended.stop_reason == "end_turn" {
+                    if let Some(tid) = task_id {
+                        if try_complete_task(app_state, tid) {
+                            app_state.app_handle.emit("tasks-changed", ()).ok();
+                        }
+                    }
+                }
+            }
+
             let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
                 ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
             ));
@@ -1725,6 +1747,7 @@ fn spawn_shared_reader_task(
                         cwd: s.cwd.clone(),
                         session_name: s.session_name.clone(),
                         project_id: s.project_id,
+                        task_id: s.task_id,
                     });
                 } else {
                     unrestorable.push(*log_id);
@@ -2104,7 +2127,7 @@ pub async fn try_session_load_via_connection_server(
             agent_id: req.agent_id.clone(),
             project_id: req.project_id,
             connection_key: req.connection_key,
-            task: TaskMetadata::default(),
+            task: TaskMetadata { task_id: req.task_id, ..TaskMetadata::default() },
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
@@ -2163,6 +2186,7 @@ pub async fn restore_acp_sessions(
             log_id: new_log_id,
             session_name: s.session_name.clone(),
             project_id: s.project_id,
+            task_id: s.task_id,
             app_state: Arc::clone(app_state),
         };
         match try_session_load_via_connection_server(acp_session_id, &req).await {

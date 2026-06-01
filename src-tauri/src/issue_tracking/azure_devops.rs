@@ -4,6 +4,30 @@ use crate::issue_tracking::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
 
+pub(crate) const AZDO_API_VERSION: &str = "7.0";
+
+/// Normalize an Azure DevOps organization URL.
+/// For cloud URLs (dev.azure.com), strips an accidental project segment:
+/// `https://dev.azure.com/myorg/MyProject` → `https://dev.azure.com/myorg`
+/// On-prem URLs are left intact (collection path is required and we can't
+/// distinguish it from a project path without a network call).
+pub(crate) fn normalize_azdo_org_url(url: &str) -> String {
+    let base = normalize_instance_url(url);
+    let prefix = if base.starts_with("https://dev.azure.com/") {
+        "https://dev.azure.com/"
+    } else if base.starts_with("http://dev.azure.com/") {
+        "http://dev.azure.com/"
+    } else {
+        return base;
+    };
+    let after_host = &base[prefix.len()..];
+    if let Some(slash_pos) = after_host.find('/') {
+        format!("{}{}", prefix, &after_host[..slash_pos])
+    } else {
+        base
+    }
+}
+
 fn html_to_markdown(html: &str) -> String {
     htmd::convert(html).unwrap_or_else(|_| html.to_string())
 }
@@ -70,7 +94,7 @@ struct WorkItemFields {
     changed_date: Option<String>,
     #[serde(rename = "System.Tags")]
     tags: Option<String>,
-    #[serde(rename = "Microsoft.VSTO.Priority")]
+    #[serde(rename = "Microsoft.VSTS.Common.Priority")]
     priority: Option<i32>,
 }
 
@@ -81,7 +105,7 @@ const WIQL_FIELDS: &[&str] = &[
     "System.WorkItemType",
     "System.ChangedDate",
     "System.Tags",
-    "Microsoft.VSTO.Priority",
+    "Microsoft.VSTS.Common.Priority",
 ];
 
 /// Validate an Azure DevOps PAT against the connectionData endpoint, save the
@@ -95,13 +119,13 @@ pub async fn validate_and_store(
     project_path: &str,
     app_state: &crate::db::AppState,
 ) -> Result<String, String> {
-    let base = normalize_instance_url(org_url);
+    let base = normalize_azdo_org_url(org_url);
     let auth = make_azdo_auth(token);
 
     let client = super::build_http_client()?;
 
     let response = client
-        .get(format!("{}/_apis/connectionData?api-version=7.1", base))
+        .get(format!("{}/_apis/connectionData?api-version={}", base, AZDO_API_VERSION))
         .header("Authorization", auth)
         .send()
         .await
@@ -109,14 +133,12 @@ pub async fn validate_and_store(
 
     if !response.status().is_success() {
         let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
         if status.as_u16() == 401 {
-            return Err("Azure DevOps: bad credentials".to_string());
+            return Err("Azure DevOps: invalid or expired credentials".to_string());
         }
-        return Err(format!(
-            "Azure DevOps API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
+        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
     }
 
     let conn_data: AzdoConnectionDataResponse = response
@@ -163,7 +185,7 @@ pub async fn fetch_issues(
     project: &str,
     token: &str,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let base = normalize_instance_url(org_url);
+    let base = normalize_azdo_org_url(org_url);
     let auth = make_azdo_auth(token);
 
     let client = super::build_http_client()?;
@@ -176,7 +198,7 @@ pub async fn fetch_issues(
         escaped_project
     );
     let encoded_project = urlencoding::encode(project);
-    let wiql_url = format!("{}/{}/_apis/wit/wiql?api-version=7.1", base, encoded_project);
+    let wiql_url = format!("{}/{}/_apis/wit/wiql?api-version={}", base, encoded_project, AZDO_API_VERSION);
     let wiql_response = client
         .post(&wiql_url)
         .header("Authorization", auth.clone())
@@ -187,14 +209,12 @@ pub async fn fetch_issues(
 
     if !wiql_response.status().is_success() {
         let status = wiql_response.status();
+        let body = wiql_response.text().await.unwrap_or_default();
+        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
         if status.as_u16() == 401 {
-            return Err("Azure DevOps: bad credentials".to_string());
+            return Err("Azure DevOps: invalid or expired credentials".to_string());
         }
-        return Err(format!(
-            "Azure DevOps API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
+        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
     }
 
     let wiql_result: WiqlResponse = wiql_response
@@ -209,7 +229,7 @@ pub async fn fetch_issues(
     }
 
     // Step 2: Batch fetch work item details in chunks of 200
-    let batch_url = format!("{}/{}/_apis/wit/workitemsbatch?api-version=7.1", base, encoded_project);
+    let batch_url = format!("{}/{}/_apis/wit/workitemsbatch?api-version={}", base, encoded_project, AZDO_API_VERSION);
     let mut results: Vec<RemoteIssue> = Vec::new();
 
     for chunk in ids.chunks(200) {
@@ -223,14 +243,12 @@ pub async fn fetch_issues(
 
         if !batch_response.status().is_success() {
             let status = batch_response.status();
+            let body = batch_response.text().await.unwrap_or_default();
+            let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
             if status.as_u16() == 401 {
-                return Err("Azure DevOps: bad credentials".to_string());
+                return Err("Azure DevOps: invalid or expired credentials".to_string());
             }
-            return Err(format!(
-                "Azure DevOps API error {}: {}",
-                status.as_u16(),
-                status.canonical_reason().unwrap_or("Unknown")
-            ));
+            return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
         }
 
         let batch_result: BatchResponse = batch_response
@@ -294,9 +312,41 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_url_strips_slash() {
+    fn test_normalize_azdo_strips_trailing_slash() {
         assert_eq!(
-            normalize_instance_url("https://dev.azure.com/myorg/"),
+            normalize_azdo_org_url("https://dev.azure.com/myorg/"),
+            "https://dev.azure.com/myorg"
+        );
+    }
+
+    #[test]
+    fn test_normalize_azdo_strips_project_segment() {
+        assert_eq!(
+            normalize_azdo_org_url("https://dev.azure.com/myorg/MyProject"),
+            "https://dev.azure.com/myorg"
+        );
+    }
+
+    #[test]
+    fn test_normalize_azdo_preserves_clean_cloud_url() {
+        assert_eq!(
+            normalize_azdo_org_url("https://dev.azure.com/myorg"),
+            "https://dev.azure.com/myorg"
+        );
+    }
+
+    #[test]
+    fn test_normalize_azdo_preserves_onprem_collection_path() {
+        assert_eq!(
+            normalize_azdo_org_url("https://tfs.company.com/tfs/DefaultCollection"),
+            "https://tfs.company.com/tfs/DefaultCollection"
+        );
+    }
+
+    #[test]
+    fn test_normalize_azdo_adds_scheme() {
+        assert_eq!(
+            normalize_azdo_org_url("dev.azure.com/myorg"),
             "https://dev.azure.com/myorg"
         );
     }

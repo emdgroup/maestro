@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { motion } from "framer-motion";
@@ -92,6 +93,87 @@ function EditableField({
         className,
       )}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DescriptionField — shows rendered markdown, switches to textarea on edit
+// ---------------------------------------------------------------------------
+
+interface DescriptionFieldProps {
+  value: string;
+  onSave: (v: string) => void;
+  isEditable: boolean;
+  placeholder?: string;
+}
+
+function DescriptionField({ value, onSave, isEditable, placeholder = "" }: DescriptionFieldProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  useEffect(() => {
+    if (editing) textareaRef.current?.focus();
+  }, [editing]);
+
+  const commit = useCallback(() => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed !== value) onSave(trimmed);
+  }, [draft, value, onSave]);
+
+  if (editing) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        className={cn(
+          "w-full min-h-[120px] resize-none outline-none rounded px-1 py-0.5",
+          "text-sm text-muted-foreground leading-relaxed",
+          "ring-1 ring-ring bg-transparent",
+        )}
+      />
+    );
+  }
+
+  if (value) {
+    return (
+      <div
+        onClick={() => isEditable && setEditing(true)}
+        className={cn(
+          "rounded px-1 py-0.5 min-h-[1.5em] text-sm leading-relaxed",
+          isEditable && "hover:ring-1 hover:ring-border cursor-text",
+          !isEditable && "cursor-default",
+        )}
+      >
+        <MarkdownBlock text={value} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={() => isEditable && setEditing(true)}
+      className={cn(
+        "rounded px-1 py-0.5 min-h-[1.5em] text-sm text-muted-foreground leading-relaxed",
+        isEditable && "hover:ring-1 hover:ring-border cursor-text",
+        !isEditable && "cursor-default",
+      )}
+    >
+      {isEditable ? placeholder : ""}
+    </div>
   );
 }
 
@@ -482,12 +564,11 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
             />
 
             {/* Description */}
-            <EditableField
+            <DescriptionField
               value={task.description ?? ""}
               onSave={handleDescriptionSave}
               isEditable={isEditable}
               placeholder="Add a description..."
-              className="min-h-[100px] text-sm text-muted-foreground leading-relaxed"
             />
 
             {/* Attachments */}

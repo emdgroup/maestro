@@ -379,7 +379,7 @@ async fn validate_credentials(
                 subject_descriptor: Option<String>,
             }
 
-            let base = normalize_instance_url(
+            let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(
                 instance_url.ok_or_else(|| "azuredevops: instance_url required".to_string())?,
             );
             let credentials = format!(":{}", token);
@@ -388,18 +388,20 @@ async fn validate_credentials(
                 base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
             );
             let response = client
-                .get(format!("{}/_apis/connectionData?api-version=7.1", base))
+                .get(format!("{}/_apis/connectionData?api-version={}", base, crate::issue_tracking::azure_devops::AZDO_API_VERSION))
                 .header("Authorization", auth)
                 .send()
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
 
             if response.status().as_u16() == 401 {
-                return Err("azuredevops: bad credentials".to_string());
+                return Err("Azure DevOps: invalid or expired credentials".to_string());
             }
             if !response.status().is_success() {
                 let status = response.status();
-                return Err(format!("azuredevops: API error {}", status.as_u16()));
+                let body = response.text().await.unwrap_or_default();
+                let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+                return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
             }
             let conn_data: AzdoConnectionDataResponse = response
                 .json()

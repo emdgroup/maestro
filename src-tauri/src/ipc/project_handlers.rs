@@ -18,6 +18,7 @@ fn register_project_in_db(
     name: &str,
     connection_key: ConnectionKey,
 ) -> Result<Project, String> {
+    let path = path.trim_end_matches('/');
     let connection_id = connection_key.ssh_id();
     let wsl_connection_id = connection_key.wsl_id();
     let project_id = {
@@ -40,10 +41,27 @@ fn register_project_in_db(
         }
     };
 
-    // Init .maestro folder for local projects only — SSH/WSL have no local filesystem path.
-    if matches!(connection_key, ConnectionKey::Local) {
-        crate::db::project_storage::create_project_maestro_folder(path)
-            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    // Init .maestro folder for local and WSL projects.
+    // WSL paths are accessible from Windows via \\wsl$\ UNC paths.
+    match connection_key {
+        ConnectionKey::Local => {
+            crate::db::project_storage::create_project_maestro_folder(path)
+                .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    [wsl_id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
+            };
+            let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
+            crate::db::project_storage::create_project_maestro_folder(&unc_path)
+                .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
+        }
+        ConnectionKey::Ssh { .. } => {}
     }
 
     // Read back full project row
@@ -727,6 +745,7 @@ pub fn create_project(
     path: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<Project, String> {
+    let path = path.trim_end_matches('/').to_string();
     let connection_id = connection.ssh_id();
     let wsl_connection_id = connection.wsl_id();
     // NOTE: This older handler has similar logic to register_project_in_db but also
@@ -757,10 +776,25 @@ pub fn create_project(
         }
     };
 
-    // .maestro folder is local-only; SSH and WSL projects have no accessible local path.
-    if matches!(connection, ConnectionKey::Local) {
-        project_storage::create_project_maestro_folder(&path)
-            .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+    match connection {
+        ConnectionKey::Local => {
+            project_storage::create_project_maestro_folder(&path)
+                .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    [wsl_id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
+            };
+            let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
+            project_storage::create_project_maestro_folder(&unc_path)
+                .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
+        }
+        ConnectionKey::Ssh { .. } => {}
     }
 
     let project = get_project(app_state, project_id).map_err(|e| e.to_string())?;

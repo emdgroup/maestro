@@ -19,6 +19,9 @@ export function useShortcuts(scope: ShortcutScope, handlers: ShortcutHandlers): 
     const defs = getShortcutsForScope(scope);
 
     function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+
       const { activeTab: tab, activeTaskId: taskId } = stateRef.current;
       if (!isScopeActive(scope, tab, taskId)) return;
 

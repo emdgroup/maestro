@@ -7,6 +7,8 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Switch } from "@/ui/switch";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/ui/tooltip";
+import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import {
@@ -17,7 +19,7 @@ import {
   ComboboxEmpty,
 } from "@/ui/combobox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
-import { GitBranch, RefreshCw, Check, ChevronDown, Sparkles, Bot, Search } from "lucide-react";
+import { GitBranch, RefreshCw, Check, ChevronDown, Bot, BotOff, Shield, ShieldOff, Search } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import {
   useCreateTaskMutation,
@@ -32,7 +34,13 @@ import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 import type { RemoteIssue, TaskPriority, ProjectIssueTrackingConfig } from "@/types/bindings";
-import { BrandIcon } from "@/components/common/BrandIcon";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+
+function stripProviderPrefix(externalId: string): string {
+  const colon = externalId.indexOf(":");
+  return colon >= 0 ? externalId.slice(colon + 1) : externalId;
+}
 
 function getIssueSearchPlaceholder(config: ProjectIssueTrackingConfig): string {
   const { provider, owner, repo, project_path, project_key, team_id, project_name } = config;
@@ -87,7 +95,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const { data: branchData, isFetching: branchesFetching } = useProjectBranchesQuery(
     isOpen ? projectId : null,
   );
-  console.log(branchData);
   const localBranches: string[] = branchData?.[0].local ?? [];
   const remoteBranches: string[] = branchData?.[0].remote ?? [];
   const currentBranch: string = branchData?.[1] ?? "";
@@ -128,7 +135,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       title: "",
       description: "",
       baseBranch: "",
-      priority: "Medium",
+      priority: "None",
       agentId: "",
       isolatedWorktree: true,
       autoApprove: false,
@@ -137,6 +144,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
   const selectedPriority = watch("priority");
   const selectedAgentId = watch("agentId");
+  const titleValue = watch("title");
 
   useEffect(() => {
     if (currentBranch && isOpen) {
@@ -224,7 +232,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         if (!open) onClose();
       }}
     >
-      <DialogContent className="sm:w-fit sm:min-w-[520px] sm:max-w-[90vw] overflow-y-auto custom-scrollbar">
+      <DialogContent className="sm:w-fit sm:min-w-130 sm:max-w-[90vw] overflow-y-auto custom-scrollbar">
         <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
           CREATE TASK
         </DialogTitle>
@@ -239,11 +247,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         )}
 
         <form onSubmit={handleSubmit(onSubmit)}>
+          <TooltipProvider delay={400}>
           <div className="flex flex-col gap-4">
             {/* Issue search — shown only when provider configured */}
             {hasProvider && (
               <Combobox
-                value={selectedIssue ? `#${selectedIssue.external_id} ${selectedIssue.title}` : null}
+                value={selectedIssue ? `#${stripProviderPrefix(selectedIssue.external_id)}` : null}
                 onValueChange={(val) => {
                   if (!val) {
                     setSelectedIssue(null);
@@ -275,58 +284,109 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                     <Search className="size-3.5 opacity-50" />
                   </InputGroupAddon>
                 </InputGroup>
-                <ComboboxContent className="min-w-[var(--anchor-width)]" sideOffset={4}>
-                  <ComboboxList className="custom-scrollbar">
+                <ComboboxContent className="min-w-(--anchor-width)" sideOffset={4}>
+                  <ComboboxList className="custom-scrollbar space-y-1">
                     {issuesFetching && <ComboboxEmpty>Loading issues...</ComboboxEmpty>}
                     {!issuesFetching && filteredIssues.length === 0 && (
                       <ComboboxEmpty>No issues found.</ComboboxEmpty>
                     )}
+                    <TooltipPrimitive.Provider delay={400}>
                     {filteredIssues.map((issue) => (
-                      <ComboboxItem
-                        key={issue.external_id}
-                        value={`#${issue.external_id} ${issue.title}`}
-                        className="flex items-center gap-2 py-2"
-                      >
-                        <span
-                          className="size-2 rounded-full shrink-0"
-                          style={{
-                            backgroundColor: issue.priority
-                              ? (PRIORITY_COLORS[issue.priority as TaskPriority] ?? "#4b5563")
-                              : "#4b5563",
-                          }}
-                        />
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          #{issue.external_id}
-                        </span>
-                        <span className="flex-1 text-sm truncate">{issue.title}</span>
-                        {issue.labels.length > 0 && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            {issue.labels.slice(0, 2).map((label) => (
-                              <span
-                                key={label}
-                                className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground"
+                      <TooltipPrimitive.Root key={issue.external_id}>
+                        <ComboboxItem
+                          value={`#${issue.external_id} ${issue.title}`}
+                          className="p-0 px-1 rounded-md focus:outline-none hover:bg-transparent data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:**:text-inherit not-data-[variant=destructive]:data-highlighted:**:text-inherit"
+                        >
+                          <TooltipPrimitive.Trigger
+                            render={<div />}
+                            className="w-full rounded-md p-2 bg-muted/60 hover:bg-muted transition-colors cursor-default"
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  void openUrl(issue.url);
+                                }}
+                                className="text-[11px] !text-accent hover:underline shrink-0 cursor-pointer"
                               >
-                                {label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </ComboboxItem>
+                                #{stripProviderPrefix(issue.external_id)}
+                              </button>
+                              {issue.priority && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span
+                                    className="size-2 rounded-full"
+                                    style={{
+                                      backgroundColor:
+                                        PRIORITY_COLORS[issue.priority as TaskPriority] ?? "#4b5563",
+                                    }}
+                                  />
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {issue.priority}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-sm truncate">{issue.title}</p>
+                            {issue.labels.length > 0 && (
+                              <div className="flex items-center gap-1 overflow-hidden mt-1 mask-[linear-gradient(to_right,black_80%,transparent_100%)]">
+                                {issue.labels.map((label) => (
+                                  <span
+                                    key={label}
+                                    className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground shrink-0"
+                                  >
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </TooltipPrimitive.Trigger>
+                        </ComboboxItem>
+                        <TooltipPrimitive.Portal>
+                          <TooltipPrimitive.Positioner side="right" sideOffset={8} className="z-50">
+                            <TooltipPrimitive.Popup className="w-72 p-3 bg-popover text-popover-foreground rounded-lg shadow-md ring-1 ring-foreground/10 origin-(--transform-origin) data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+                              <p className="text-sm font-medium leading-snug mb-2">{issue.title}</p>
+                              {issue.labels.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {issue.labels.map((label) => (
+                                    <span
+                                      key={label}
+                                      className="rounded px-1.5 py-0.5 text-[10px] border border-border text-muted-foreground"
+                                    >
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </TooltipPrimitive.Popup>
+                          </TooltipPrimitive.Positioner>
+                        </TooltipPrimitive.Portal>
+                      </TooltipPrimitive.Root>
                     ))}
+                    </TooltipPrimitive.Provider>
                   </ComboboxList>
                 </ComboboxContent>
               </Combobox>
             )}
 
             <div>
-              <Input
-                {...register("title", {
-                  required: "Title is required",
-                  minLength: { value: 3, message: "Title must be at least 3 characters" },
-                })}
-                placeholder="Task title"
-                className="border-0 shadow-none bg-transparent dark:bg-transparent text-base px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-0"
-              />
+              <div className="inline-grid min-w-full">
+                <span
+                  aria-hidden
+                  className="col-start-1 row-start-1 pointer-events-none select-none invisible whitespace-pre text-base"
+                >
+                  {titleValue || "Task title"}
+                </span>
+                <Input
+                  {...register("title", {
+                    required: "Title is required",
+                    minLength: { value: 3, message: "Title must be at least 3 characters" },
+                  })}
+                  placeholder="Task title"
+                  className="col-start-1 row-start-1 border-0 shadow-none bg-transparent dark:bg-transparent text-base px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-0"
+                />
+              </div>
               {errors.title && (
                 <span className="text-destructive text-xs mt-0.5 block">
                   {errors.title.message}
@@ -338,7 +398,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               <Textarea
                 {...register("description")}
                 placeholder="Add description..."
-                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-[4.5rem] max-h-[40vh] overflow-y-auto"
+                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-18 max-h-[40vh] overflow-y-auto"
               />
             </div>
 
@@ -356,6 +416,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       open={openPopover === "branch"}
                       onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}
                     >
+                      <Tooltip>
+                      <TooltipTrigger render={<div className="flex-1 contents" />}>
                       <PopoverTrigger
                         className={cn(
                           "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
@@ -368,7 +430,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                         </span>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                       </PopoverTrigger>
-                      <PopoverContent className="w-[var(--anchor-width)] p-0 gap-0" align="start">
+                      </TooltipTrigger>
+                      <TooltipContent>Branch used as base for the task execution</TooltipContent>
+                      </Tooltip>
+                      <PopoverContent className="w-(--anchor-width) p-0 gap-0" align="start">
                         <div className="p-2 border-b border-border">
                           <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
                             <Search className="size-3.5 text-muted-foreground shrink-0" />
@@ -438,6 +503,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 open={openPopover === "priority"}
                 onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
               >
+                <Tooltip>
+                <TooltipTrigger render={<div className="contents" />}>
                 <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors">
                   <span
                     className="size-2 rounded-full shrink-0"
@@ -445,6 +512,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                   />
                   {selectedPriority}
                 </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Board ordering priority</TooltipContent>
+                </Tooltip>
                 <PopoverContent className="w-36 p-1" align="start">
                   {PRIORITIES.map((p) => (
                     <Controller
@@ -477,14 +547,25 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 open={openPopover === "agent"}
                 onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}
               >
-                <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-[200px]">
+                <Tooltip>
+                <TooltipTrigger render={<div className="contents" />}>
+                <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-50">
                   {selectedAgent ? (
-                    <Sparkles className="size-3 shrink-0 text-muted-foreground" />
+                    hasBrandIcon(selectedAgent.id) ? (
+                      <BrandIcon slug={selectedAgent.id} className="size-3 shrink-0" />
+                    ) : selectedAgent.icon ? (
+                      <img src={selectedAgent.icon} className="size-3 shrink-0 dark:[filter:invert(1)]" />
+                    ) : (
+                      <Bot className="size-3 shrink-0 text-muted-foreground" />
+                    )
                   ) : (
-                    <Bot className="size-3 shrink-0 text-muted-foreground" />
+                    <BotOff className="size-3 shrink-0 text-muted-foreground" />
                   )}
                   <span className="truncate">{agentPillLabel}</span>
                 </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>AI agent assigned to this task</TooltipContent>
+                </Tooltip>
                 <PopoverContent className="w-52 p-1" align="start">
                   <Controller
                     name="agentId"
@@ -513,7 +594,11 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                               setOpenPopover(null);
                             }}
                           >
-                            <Sparkles className="size-3 text-muted-foreground shrink-0" />
+                            {hasBrandIcon(agent.id) ? (
+                              <BrandIcon slug={agent.id} className="size-3 shrink-0" />
+                            ) : (
+                              <Bot className="size-3 text-muted-foreground shrink-0" />
+                            )}
                             <span className="truncate flex-1 text-left">{agent.name}</span>
                             {selectedAgentId === agent.id && <Check className="size-3 shrink-0" />}
                           </button>
@@ -524,8 +609,23 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 </PopoverContent>
               </Popover>
 
-              {isGitRepo && <TogglePill name="isolatedWorktree" label="Isolate worktree" control={control} />}
-              <TogglePill name="autoApprove" label="Auto-approve" control={control} />
+              {isGitRepo && (
+                <TogglePill
+                  name="isolatedWorktree"
+                  label="Worktree"
+                  control={control}
+                  tooltip="Create dedicated branch + worktree. Off = work on selected branch directly."
+                  icon={<GitBranch className="size-3 shrink-0" />}
+                />
+              )}
+              <TogglePill
+                name="autoApprove"
+                label="Auto-approve"
+                control={control}
+                tooltip="Skip manual approval for file changes and tool calls"
+                icon={<Shield className="size-3 shrink-0" />}
+                activeIcon={<ShieldOff className="size-3 shrink-0" />}
+              />
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-border">
@@ -543,6 +643,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               </Button>
             </div>
           </div>
+          </TooltipProvider>
         </form>
       </DialogContent>
     </Dialog>
@@ -553,28 +654,42 @@ interface TogglePillProps {
   name: "isolatedWorktree" | "autoApprove";
   label: string;
   control: Control<FormData>;
+  tooltip?: string;
+  icon: React.ReactNode;
+  activeIcon?: React.ReactNode;
 }
 
-function TogglePill({ name, label, control }: TogglePillProps) {
+function TogglePill({ name, label, control, tooltip, icon, activeIcon }: TogglePillProps) {
   return (
     <Controller
       name={name}
       control={control}
-      render={({ field: { value, onChange } }) => (
-        <button
-          type="button"
-          onClick={() => onChange(!value)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors",
-            value
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
-              : "border-border bg-transparent text-muted-foreground hover:bg-muted",
-          )}
-        >
-          {value && <Check className="size-3 shrink-0" />}
-          {label}
-        </button>
-      )}
+      render={({ field: { value, onChange } }) => {
+        const button = (
+          <button
+            type="button"
+            onClick={() => onChange(!value)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors",
+              value
+                ? "border-accent/40 bg-accent/10 text-accent hover:bg-accent/15"
+                : "border-border bg-transparent text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {value && activeIcon ? activeIcon : icon}
+            {label}
+          </button>
+        );
+        if (!tooltip) return button;
+        return (
+          <Tooltip>
+            <TooltipTrigger render={<div className="contents" />}>
+              {button}
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        );
+      }}
     />
   );
 }

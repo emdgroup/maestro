@@ -490,6 +490,12 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       return;
     }
 
+    if (e.key === "Escape") {
+      e.preventDefault();
+      textareaRef.current?.blur();
+      return;
+    }
+
     if (enterKeyBehavior === "new_line") {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
