@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
@@ -179,8 +180,8 @@ export function AppHeader({
               const Icon = view.icon;
               const isActive = activeView === view.id;
               return (
+                <ShortcutHint key={view.id} shortcutId={{ kanban: "tab-board", agents: "tab-agents", worktrees: "tab-worktrees", settings: "tab-settings" }[view.id]} placement="below">
                 <button
-                  key={view.id}
                   onClick={() => onViewChange(view.id)}
                   className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
                 >
@@ -200,6 +201,7 @@ export function AppHeader({
                     {view.label}
                   </motion.span>
                 </button>
+                </ShortcutHint>
               );
             })}
           </div>

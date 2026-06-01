@@ -155,6 +155,9 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      smiles-drawer:
+        specifier: ^2.3.0
+        version: 2.3.0
       sonner:
         specifier: ^1.7.4
         version: 1.7.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1714,6 +1717,9 @@ packages:
   character-reference-invalid@2.0.1:
     resolution: {integrity: sha512-iBZ4F4wRbyORVsu0jPV7gXkOsGYjGHPmAyv+HiHG8gi5PtC9KI2j1+v8/tlibRvjoWX027ypmG/n0HtO5t7unw==}
 
+  chroma-js@2.6.0:
+    resolution: {integrity: sha512-BLHvCB9s8Z1EV4ethr6xnkl/P2YRFOGqfgvuMG/MyCbZPrTA+NeiByY6XvgF0zP4/2deU2CXnWyMa3zu1LqQ3A==}
+
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
@@ -2777,6 +2783,9 @@ packages:
   sirv@3.0.2:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
+
+  smiles-drawer@2.3.0:
+    resolution: {integrity: sha512-2A7SZXC0Ms5v/qyFUKOcMMdlIjT6qP9v6yvvGxTMzgzVwcoGTut4dgM4RM7fdnOE++nY2FyNS65uDIr6S4a+sw==}
 
   sonner@1.7.4:
     resolution: {integrity: sha512-DIS8z4PfJRbIyfVFDVnK9rO3eYDtse4Omcm6bt0oEr5/jtLgysmjuBl1frJ9E/EQZrFmKx2A8m/s5s9CRXIzhw==}
@@ -4307,6 +4316,8 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
+  chroma-js@2.6.0: {}
+
   class-variance-authority@0.7.1:
     dependencies:
       clsx: 2.1.1
@@ -5762,6 +5773,10 @@ snapshots:
       '@polka/url': 1.0.0-next.29
       mrmime: 2.0.1
       totalist: 3.0.1
+
+  smiles-drawer@2.3.0:
+    dependencies:
+      chroma-js: 2.6.0
 
   sonner@1.7.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:

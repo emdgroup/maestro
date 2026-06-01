@@ -15,7 +15,7 @@ use crate::acp::transport::{
     read_message, write_message, FileSearchResponse, FileReadResponse,
     PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
     SessionListOkResponse, SessionCloseRequest,
-    CheckToolsRequest, CheckToolsResponse, SetModeRequest,
+    CheckToolsRequest, CheckToolsResponse, SetModeRequest, PermissionResponse,
 };
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse,
@@ -710,6 +710,7 @@ pub struct ReaderTaskContext {
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
+    pub task_id: Option<i32>,
     pub connection_key: crate::acp::ConnectionKey,
 }
 
@@ -743,6 +744,7 @@ impl AcpProcess {
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
+            task_id: params.task.task_id,
             connection_key: params.connection_key,
         };
         let process = Self {
@@ -781,7 +783,7 @@ pub(crate) fn spawn_reader_task(
         current_model_id, current_mode_id,
         pending_file_search, pending_file_read,
         acp_session_id_cache, replay_buffer, initialized,
-        session_name, agent_id, project_id, connection_key,
+        session_name, agent_id, project_id, task_id, connection_key,
     } = ctx;
     tokio::spawn(async move {
         let mut source = source;
@@ -798,6 +800,15 @@ pub(crate) fn spawn_reader_task(
             };
             update_agent_cache_from_response(&msg, &app_state).await;
             update_agent_cache_from_session_update(&msg, connection_key, &agent_id, &app_state).await;
+
+            if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) = msg {
+                if let Some(tid) = task_id {
+                    if try_auto_approve_permission(&app_state, tid, log_id, perm_req).await {
+                        continue;
+                    }
+                }
+            }
+
             let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
                 ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
             ));
@@ -825,9 +836,82 @@ pub(crate) fn spawn_reader_task(
         }
 
         app_state.acp.sessions.lock().await.remove(&log_id);
+        if let Some(tid) = task_id {
+            if try_complete_task(&app_state, tid) {
+                app_state.app_handle.emit("tasks-changed", ()).ok();
+            }
+        }
         app_state.app_handle.emit("sessions-changed", ()).ok();
         let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
     });
+}
+
+fn try_complete_task(app_state: &crate::db::AppState, task_id: i32) -> bool {
+    let Ok(conn) = app_state.db.lock() else { return false };
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE tasks SET status = 'Review', updated_at = ? WHERE id = ? AND status = 'InProgress'",
+        rusqlite::params![&now, task_id],
+    )
+    .unwrap_or(0) > 0
+}
+
+async fn try_auto_approve_permission(
+    app_state: &Arc<crate::db::AppState>,
+    task_id: i32,
+    log_id: i32,
+    perm_req: &crate::acp::transport::PermissionRequest,
+) -> bool {
+    let auto_approve = app_state.db.lock().ok()
+        .and_then(|conn| conn.query_row(
+            "SELECT auto_approve FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get::<_, bool>(0),
+        ).ok())
+        .unwrap_or(false);
+
+    if !auto_approve {
+        return false;
+    }
+
+    let option_id = perm_req.payload.get("options")
+        .and_then(|v| v.as_array())
+        .and_then(|opts| {
+            opts.iter().find_map(|opt| {
+                let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                if kind == "allow_always" {
+                    return opt.get("optionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                None
+            })
+            .or_else(|| opts.iter().find_map(|opt| {
+                let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                if kind == "allow_once" {
+                    return opt.get("optionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                None
+            }))
+            .or_else(|| opts.iter().find_map(|opt| {
+                let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                if kind.contains("allow") {
+                    return opt.get("optionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                None
+            }))
+        });
+
+    let Some(oid) = option_id else { return false };
+
+    let session_id = format!("session-{}", log_id);
+    let response = MaestroRpcMessage::Request(
+        ServerRequest::PermitResponse(PermissionResponse {
+            session_id,
+            request_id: perm_req.request_id.clone(),
+            option_id: Some(oid),
+        })
+    );
+    let _ = crate::acp::write_to_acp_session(app_state, log_id, &response).await;
+    true
 }
 
 /// Push a synthetic `config_option_update` session-update into the replay buffer so that
@@ -1301,10 +1385,19 @@ async fn handle_shared_server_message(
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
+                s.task_id,
             ))
         };
         if let Some((current_model_id, current_mode_id, pfs, pfr, acp_sid, replay, initialized,
-                      session_name, agent_id, pid)) = caches {
+                      session_name, agent_id, pid, task_id)) = caches {
+            if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) = msg {
+                if let Some(tid) = task_id {
+                    if try_auto_approve_permission(app_state, tid, log_id, perm_req).await {
+                        return;
+                    }
+                }
+            }
+
             let is_init_ok = matches!(&msg, MaestroRpcMessage::Response(
                 ServerResponse::SessionLoadOk(_) | ServerResponse::SpawnOk(_)
             ));
@@ -1394,11 +1487,25 @@ async fn handle_shared_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
+            let mut task_ids: Vec<i32> = Vec::new();
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {
+                    let tid = {
+                        let sessions = app_state.acp.sessions.lock().await;
+                        sessions.get(&log_id).and_then(|s| s.task_id)
+                    };
+                    if let Some(tid) = tid {
+                        task_ids.push(tid);
+                    }
                     app_state.acp.sessions.lock().await.remove(&log_id);
                     let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
                 }
+            }
+            for tid in task_ids {
+                try_complete_task(app_state, tid);
+            }
+            if !lost.affected_session_ids.is_empty() {
+                app_state.app_handle.emit("tasks-changed", ()).ok();
             }
             app_state.app_handle.emit("sessions-changed", ()).ok();
         }
@@ -1598,18 +1705,18 @@ fn spawn_shared_reader_task(
         // Sessions without an acp_session_id haven't received SpawnOk yet and cannot
         // be restored — emit session-ended for those immediately.
         // Pool sessions (pre-warmed, no user work) are silently dropped.
-        let (to_restore, to_end_now): (Vec<RestorableSession>, Vec<i32>) = {
+        // Collect task_ids for sessions that will end now (not parked for SSH restore).
+        let (to_restore, to_end_now, end_now_task_ids): (Vec<RestorableSession>, Vec<i32>, Vec<i32>) = {
             let sessions = app_state.acp.sessions.lock().await;
             let mut restorable: Vec<RestorableSession> = Vec::new();
             let mut unrestorable: Vec<i32> = Vec::new();
+            let mut task_ids: Vec<i32> = Vec::new();
             let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. });
             for (log_id, s) in sessions.iter().filter(|(_, s)| s.connection_key == connection_key) {
                 if pool_log_ids.contains(log_id) {
-                    // Pre-warmed pool entry — drop silently, no session-ended event needed.
                     continue;
                 }
                 let acp_session_id = s.acp_session_id.lock().ok().and_then(|g| g.clone());
-                // Only SSH connections can restore sessions after reconnect.
                 if acp_session_id.is_some() && is_ssh {
                     restorable.push(RestorableSession {
                         log_id: *log_id,
@@ -1621,9 +1728,12 @@ fn spawn_shared_reader_task(
                     });
                 } else {
                     unrestorable.push(*log_id);
+                    if let Some(tid) = s.task_id {
+                        task_ids.push(tid);
+                    }
                 }
             }
-            (restorable, unrestorable)
+            (restorable, unrestorable, task_ids)
         };
 
         // Remove all affected sessions from the map (including pool entries).
@@ -1641,8 +1751,11 @@ fn spawn_shared_reader_task(
         }
 
         // Immediately end unrestorable sessions (no acp_session_id yet, or non-SSH).
-        for log_id in to_end_now {
+        for log_id in &to_end_now {
             let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
+        }
+        for tid in &end_now_task_ids {
+            try_complete_task(&app_state, *tid);
         }
 
         // SSH connections only: park restorable sessions for the reconnect handler.
@@ -1650,13 +1763,15 @@ fn spawn_shared_reader_task(
         match &connection_key {
             crate::acp::ConnectionKey::Ssh { id: conn_id } if !to_restore.is_empty() => {
                 app_state.acp.restorable_sessions.lock().await.insert(*conn_id, to_restore);
-                // Don't emit session-ended — the reconnect handler will do so if restore fails.
             }
             _ => {
-                for s in to_restore {
+                for s in &to_restore {
                     let _ = app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
                 }
             }
+        }
+        if !end_now_task_ids.is_empty() {
+            app_state.app_handle.emit("tasks-changed", ()).ok();
         }
 
         app_state.app_handle.emit("sessions-changed", ()).ok();

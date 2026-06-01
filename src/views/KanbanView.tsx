@@ -1,5 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Plus, Archive } from "lucide-react";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { BoardView } from "@/components/views/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/components/task/TaskDetailScreen";
@@ -34,6 +36,12 @@ export const KanbanView: React.FC = () => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useShortcuts("board", {
+    "board-new":    () => setIsCreateModalOpen(true),
+    "focus-search": () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+  });
 
   const availableLabels = useMemo(
     () => [...new Set(taskList.flatMap((t) => t.labels))].sort(),
@@ -57,12 +65,15 @@ export const KanbanView: React.FC = () => {
     <div className="flex flex-col h-full">
       <div className="h-12 border-b border-border bg-muted/30 flex items-center px-4 gap-2 shrink-0">
         {/* Search */}
-        <Input
-          placeholder="Search tasks..."
-          className="h-8 w-48"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <ShortcutHint shortcutId="focus-search">
+          <Input
+            ref={searchInputRef}
+            placeholder="Search tasks..."
+            className="h-8 w-48"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </ShortcutHint>
 
         {/* Priority filter */}
         <Popover>
@@ -145,10 +156,12 @@ export const KanbanView: React.FC = () => {
         </Button>
 
         <div className="ml-auto">
-          <Button variant="accent" size="sm" className="h-8 text-xs" onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="size-3.5 mr-1" />
-            New Task
-          </Button>
+          <ShortcutHint shortcutId="board-new">
+            <Button variant="accent" size="sm" className="h-8 text-xs" onClick={() => setIsCreateModalOpen(true)}>
+              <Plus className="size-3.5 mr-1" />
+              New Task
+            </Button>
+          </ShortcutHint>
         </div>
       </div>
       {projectId !== null && (

@@ -1,5 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Terminal, X, FileText, FileDiff } from "lucide-react";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
@@ -250,6 +252,18 @@ export function AgentMonitor({
     if (openPanel !== null) setOpenPanel(null);
   }
 
+  useShortcuts("agents", {
+    "agents-working":     () => {
+      if (selectedSessionKey != null) setOpenPanel("working-files");
+    },
+    "agents-review":      () => {
+      if (selectedSessionKey != null) setOpenPanel("review-changes");
+    },
+    "agents-close-panel": () => {
+      if (openPanel !== null) setOpenPanel(null);
+    },
+  });
+
   const commitRename = useCallback(
     (session: ActiveSessionInfo) => {
       if (renameCanceledRef.current) {
@@ -416,32 +430,36 @@ export function AgentMonitor({
               <div className="flex items-center gap-2 shrink-0">
                 {selectedSession.execution_mode === "acp" && (
                   <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      disabled={
-                        (sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0
-                      }
-                      onClick={() => setOpenPanel("working-files")}
-                    >
-                      <FileText className="w-3.5 h-3.5 mr-1" />
-                      Working Files
-                      {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) > 0 && (
-                        <span className="ml-1.5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground leading-4">
-                          {sessionWorkingFiles.get(selectedSession.session_key)!.length}
-                        </span>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => setOpenPanel("review-changes")}
-                    >
-                      <FileDiff className="w-3.5 h-3.5 mr-1" />
-                      Review Changes
-                    </Button>
+                    <ShortcutHint shortcutId="agents-working">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        disabled={
+                          (sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0
+                        }
+                        onClick={() => setOpenPanel("working-files")}
+                      >
+                        <FileText className="w-3.5 h-3.5 mr-1" />
+                        Working Files
+                        {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) > 0 && (
+                          <span className="ml-1.5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground leading-4">
+                            {sessionWorkingFiles.get(selectedSession.session_key)!.length}
+                          </span>
+                        )}
+                      </Button>
+                    </ShortcutHint>
+                    <ShortcutHint shortcutId="agents-review">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setOpenPanel("review-changes")}
+                      >
+                        <FileDiff className="w-3.5 h-3.5 mr-1" />
+                        Review Changes
+                      </Button>
+                    </ShortcutHint>
                   </>
                 )}
                 {selectedSession.execution_mode === "acp" && onOpenTerminal && (

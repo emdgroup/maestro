@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Tasks UX Rework
-status: executing
-stopped_at: context exhaustion at 79% (2026-05-27)
-last_updated: "2026-05-27T15:27:37.961Z"
-last_activity: 2026-05-27 -- Phase 63 execution started
+status: complete
+stopped_at: UAT closed 2026-05-31
+last_updated: "2026-05-31"
+last_activity: 2026-05-31 -- Phase 63 UAT closed; v1.7 all phases complete
 progress:
-  total_phases: 14
+  total_phases: 7
   completed_phases: 7
   total_plans: 13
-  completed_plans: 27
-  percent: 50
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State: v1.7 — Tasks UX Rework
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-20)
 
 **Core value:** Orchestrate multiple AI coding agents in parallel with isolation, visibility, and control
-**Current focus:** Phase 63 — archive-modal
+**Current focus:** v1.7 complete — uncommitted bug fixes pending commit; next milestone TBD
 
 ## Current Position
 
-Phase: 63 (archive-modal) — EXECUTING
+Phase: 63 (archive-modal) — COMPLETE (UAT passed 2026-05-31)
 Plan: 1 of 1
-Status: Executing Phase 63
+Status: All phases complete
 Last activity: 2026-05-27 -- Phase 63 execution started
 
 Progress bar: ███░░░░░░░ 30% (3/7 phases complete, 6/6 plans through Phase 59)
@@ -75,6 +75,10 @@ Key v1.7 decisions locked in at roadmap creation:
 - [Phase ?]: TooltipTrigger uses render prop not asChild — base-ui pattern; no asChild on Trigger elements
 - [Phase ?]: Dialog.onOpenChange signature: (open: boolean, eventDetails) — first arg is boolean, not event (plan context error corrected)
 - [Phase ?]: [Phase 62]: TaskDetailScreen replaces TaskDetail.tsx modal with full-screen view; isEditable only in Backlog status
+
+### Roadmap Evolution
+
+- Phase 64 added: Complete task workflow - detect execution completion and move task from InProgress to Done
 
 ### Pending Todos
 

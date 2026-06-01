@@ -23,10 +23,12 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
 import "katex/dist/katex.min.css";
+import "katex/contrib/mhchem";
 import { Copy, Check } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
 import { useTheme } from "@/providers/ThemeProvider";
+import SmilesDrawerLib from "smiles-drawer";
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -380,6 +382,44 @@ export function SvgBlock({ code }: { code: string }) {
   );
 }
 
+export function SmilesBlock({ code }: { code: string }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { theme, systemTheme } = useTheme();
+  const [error, setError] = useState<string | null>(null);
+  const resolvedTheme = theme === "system" ? systemTheme : theme;
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    setError(null);
+
+    SmilesDrawerLib.parse(
+      code.trim(),
+      (tree) => {
+        const drawer = new SmilesDrawerLib.SvgDrawer({ width: 400, height: 300, padding: 20 });
+        drawer.draw(tree, svgEl, resolvedTheme);
+      },
+      (err) => {
+        setError(String(err));
+      },
+    );
+  }, [code, resolvedTheme]);
+
+  if (error) {
+    return (
+      <pre className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs text-destructive">
+        Invalid SMILES: {code}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="my-2 flex justify-start">
+      <svg ref={svgRef} width={400} height={300} />
+    </div>
+  );
+}
+
 type Segment = { type: "text"; content: string } | { type: "svg"; content: string };
 
 export function getCompleteBlocksText(text: string): string {
@@ -498,6 +538,7 @@ function MarkdownCodeComponent({
   if (isBlock) {
     if (lang === "markdown") return <MarkdownBlock text={rawCode} />;
     if (lang === "svg") return <SvgBlock code={rawCode} />;
+    if (lang === "smiles") return <SmilesBlock code={rawCode} />;
     if (lang === "mermaid") return <MermaidBlock code={rawCode} />;
     return <CodeBlockWrapper code={rawCode} lang={lang} />;
   }

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/ui-utils";
 import { AgentMonitor } from "@/components/execution/AgentMonitor";
 import { SessionHistoryPanel } from "@/components/execution/SessionHistoryPanel";
@@ -18,6 +19,7 @@ import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { History, Plus, SearchIcon, Settings2 } from "lucide-react";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import type { ActivityVisibility } from "@/types/bindings";
 
 interface AgentsViewProps {
@@ -36,6 +38,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
   const { clearPendingAgent } = useNavigationActions();
   const [selectedSessionKey, setSelectedSessionKey] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
 
@@ -66,26 +69,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const { data: discovery } = useAgentDiscoveryQuery(connection);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!e.ctrlKey) return;
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "n") {
-        e.preventDefault();
-        setShowSpawnDialog(true);
-      } else if (e.key === "h") {
-        e.preventDefault();
-        if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
-      } else if (e.key === "w") {
-        e.preventDefault();
-        const session = sessions.find((s) => s.session_key === selectedSessionKey);
-        if (session) handleCloseSession(session);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [discovery?.agents?.length, sessions, selectedSessionKey]);
+  useShortcuts("agents", {
+    "agents-new":     () => setShowSpawnDialog(true),
+    "focus-search":   () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+    "agents-history": () => {
+      if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
+    },
+    "agents-close":   () => {
+      const session = sessions.find((s) => s.session_key === selectedSessionKey);
+      if (session) handleCloseSession(session);
+    },
+  });
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
@@ -127,30 +121,35 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
       {/* Action bar */}
       <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <InputGroup>
-            <InputGroupInput
-              type="text"
-              placeholder="Search sessions..."
-              value={search}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-              className="h-8 w-48 text-sm"
-            />
-            <InputGroupAddon align="inline-start">
-              <SearchIcon className="text-muted-foreground" />
-            </InputGroupAddon>
-          </InputGroup>
+          <ShortcutHint shortcutId="focus-search">
+            <InputGroup>
+              <InputGroupInput
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search sessions..."
+                value={search}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                className="h-8 w-48 text-sm"
+              />
+              <InputGroupAddon align="inline-start">
+                <SearchIcon className="text-muted-foreground" />
+              </InputGroupAddon>
+            </InputGroup>
+          </ShortcutHint>
         </div>
         <div className="flex items-center gap-2">
           {(discovery?.agents?.length ?? 0) > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
-              onClick={() => setShowHistory((v) => !v)}
-            >
-              <History className="size-3.5 mr-1" />
-              History
-            </Button>
+            <ShortcutHint shortcutId="agents-history">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
+                onClick={() => setShowHistory((v) => !v)}
+              >
+                <History className="size-3.5 mr-1" />
+                History
+              </Button>
+            </ShortcutHint>
           )}
           <Popover>
             <PopoverTrigger
@@ -209,15 +208,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
               </div>
             </PopoverContent>
           </Popover>
-          <Button
-            variant="accent"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setShowSpawnDialog(true)}
-          >
-            <Plus className="size-3.5 mr-1" />
-            New Session
-          </Button>
+          <ShortcutHint shortcutId="agents-new">
+            <Button
+              variant="accent"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setShowSpawnDialog(true)}
+            >
+              <Plus className="size-3.5 mr-1" />
+              New Session
+            </Button>
+          </ShortcutHint>
         </div>
       </div>
 

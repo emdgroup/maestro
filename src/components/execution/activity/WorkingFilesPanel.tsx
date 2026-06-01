@@ -53,7 +53,7 @@ function FileContentView({
 }) {
   const lang = langForExtension(path) ?? "text";
 
-  // blob: URLs have their own opaque origin — not subject to parent CSP, so inline scripts execute
+  // blob: URLs render in sandboxed iframe — CSP from tauri.conf.json still applies at webview level
   const blobUrl = useMemo(() => {
     if (viewType !== "html") return null;
     const html = injectIframeScrollbarCSS(content);

@@ -7,15 +7,16 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Switch } from "@/ui/switch";
+import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from "@/ui/command";
+  Combobox,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+} from "@/ui/combobox";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { GitBranch, RefreshCw, Check, ChevronDown, Sparkles, Bot, Search } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import {
@@ -103,11 +104,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [error, setError] = useState<string | null>(null);
   const [createAnother, setCreateAnother] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<RemoteIssue | null>(null);
-  const [openPopover, setOpenPopover] = useState<"branch" | "priority" | "agent" | "issue" | null>(
-    null,
-  );
+  const [openPopover, setOpenPopover] = useState<"branch" | "priority" | "agent" | null>(null);
   const [branchSearch, setBranchSearch] = useState("");
   const [branchTab, setBranchTab] = useState<"local" | "remote">("local");
+  const [issueSearch, setIssueSearch] = useState("");
 
   const { data: remoteIssues, isFetching: issuesFetching } = useFetchRemoteIssuesQuery(
     hasProvider ? projectId : null,
@@ -158,6 +158,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       setOpenPopover(null);
       setBranchSearch("");
       setBranchTab("local");
+      setIssueSearch("");
     }
   }, [isOpen, reset]);
 
@@ -165,7 +166,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     setSelectedIssue(issue);
     setValue("title", issue.title);
     setValue("description", issue.body ?? "");
-    setOpenPopover(null);
   };
 
   const onSubmit: SubmitHandler<FormData> = (data) => {
@@ -209,6 +209,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     b.toLowerCase().includes(branchSearch.toLowerCase()),
   );
 
+  const filteredIssues = (remoteIssues ?? []).filter(
+    (i) =>
+      !issueSearch ||
+      `#${i.external_id} ${i.title}`.toLowerCase().includes(issueSearch.toLowerCase()),
+  );
+
   const agentPillLabel = selectedAgent ? selectedAgent.name : "No agent";
 
   return (
@@ -236,75 +242,80 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
           <div className="flex flex-col gap-4">
             {/* Issue search — shown only when provider configured */}
             {hasProvider && (
-              <Popover
-                open={openPopover === "issue"}
-                onOpenChange={(v) => setOpenPopover(v ? "issue" : null)}
+              <Combobox
+                value={selectedIssue ? `#${selectedIssue.external_id} ${selectedIssue.title}` : null}
+                onValueChange={(val) => {
+                  if (!val) {
+                    setSelectedIssue(null);
+                    setValue("title", "");
+                    setValue("description", "");
+                    return;
+                  }
+                  const externalId = val.replace(/^#/, "").split(" ")[0];
+                  const issue = (remoteIssues ?? []).find((i) => i.external_id === externalId);
+                  if (issue) handleIssueSelect(issue);
+                }}
+                filter={null}
+                onInputValueChange={setIssueSearch}
               >
-                <PopoverTrigger className="flex items-center gap-2 w-full rounded-md border border-border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors text-left">
-                  <BrandIcon
-                    slug={issueConfig.provider}
-                    className="shrink-0 text-muted-foreground"
-                    width={14}
-                    height={14}
+                <InputGroup className="w-full">
+                  <InputGroupAddon align="inline-start">
+                    <BrandIcon
+                      slug={issueConfig.provider}
+                      className="text-muted-foreground"
+                      width={14}
+                      height={14}
+                    />
+                  </InputGroupAddon>
+                  <ComboboxPrimitive.Input
+                    render={<InputGroupInput />}
+                    placeholder={getIssueSearchPlaceholder(issueConfig)}
                   />
-                  <span
-                    className={cn("flex-1 truncate", !selectedIssue && "text-muted-foreground")}
-                  >
-                    {selectedIssue
-                      ? `#${selectedIssue.external_id} ${selectedIssue.title}`
-                      : getIssueSearchPlaceholder(issueConfig)}
-                  </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--anchor-width)] p-0 gap-0" align="start">
-                  <Command>
-                    <CommandInput placeholder={getIssueSearchPlaceholder(issueConfig)} />
-                      <CommandList className="custom-scrollbar">
-                        <CommandEmpty>
-                          {issuesFetching ? "Loading issues..." : "No issues found."}
-                        </CommandEmpty>
-                        <CommandGroup>
-                          {(remoteIssues ?? []).map((issue) => (
-                            <CommandItem
-                              key={issue.external_id}
-                              value={`${issue.external_id} ${issue.title}`}
-                              onSelect={() => handleIssueSelect(issue)}
-                              className="flex items-center gap-2 py-2"
-                            >
+                  <InputGroupAddon align="inline-end">
+                    <Search className="size-3.5 opacity-50" />
+                  </InputGroupAddon>
+                </InputGroup>
+                <ComboboxContent className="min-w-[var(--anchor-width)]" sideOffset={4}>
+                  <ComboboxList className="custom-scrollbar">
+                    {issuesFetching && <ComboboxEmpty>Loading issues...</ComboboxEmpty>}
+                    {!issuesFetching && filteredIssues.length === 0 && (
+                      <ComboboxEmpty>No issues found.</ComboboxEmpty>
+                    )}
+                    {filteredIssues.map((issue) => (
+                      <ComboboxItem
+                        key={issue.external_id}
+                        value={`#${issue.external_id} ${issue.title}`}
+                        className="flex items-center gap-2 py-2"
+                      >
+                        <span
+                          className="size-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor: issue.priority
+                              ? (PRIORITY_COLORS[issue.priority as TaskPriority] ?? "#4b5563")
+                              : "#4b5563",
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          #{issue.external_id}
+                        </span>
+                        <span className="flex-1 text-sm truncate">{issue.title}</span>
+                        {issue.labels.length > 0 && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            {issue.labels.slice(0, 2).map((label) => (
                               <span
-                                className="size-2 rounded-full shrink-0"
-                                style={{
-                                  backgroundColor: issue.priority
-                                    ? (PRIORITY_COLORS[issue.priority as TaskPriority] ?? "#4b5563")
-                                    : "#4b5563",
-                                }}
-                              />
-                              <span className="text-xs text-muted-foreground shrink-0">
-                                #{issue.external_id}
+                                key={label}
+                                className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground"
+                              >
+                                {label}
                               </span>
-                              <span className="flex-1 text-sm truncate">{issue.title}</span>
-                              {issue.labels.length > 0 && (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {issue.labels.slice(0, 2).map((label) => (
-                                    <span
-                                      key={label}
-                                      className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground"
-                                    >
-                                      {label}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {selectedIssue?.external_id === issue.external_id && (
-                                <Check className="size-3.5 shrink-0" />
-                              )}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-              </Popover>
+                            ))}
+                          </div>
+                        )}
+                      </ComboboxItem>
+                    ))}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
             )}
 
             <div>

@@ -15,7 +15,7 @@ import {
   PROVIDER_NAMES,
 } from "@/services/integration.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
-import type { ConnectionKey, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
+import type { ConnectionKey, EnterKeyBehavior, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
 import { showSuccessToast } from "./ErrorToast";
 
 interface SettingsPageProps {
@@ -55,6 +55,17 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       saveAppSettings.mutate({
         ...appSettings,
         terminal_color_mode: value as TerminalColorMode,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
+
+    function handleEnterKeyBehaviorChange(value: string | null) {
+      if (!appSettings || !value) return;
+      saveAppSettings.mutate({
+        ...appSettings,
+        enter_key_behavior: value as EnterKeyBehavior,
         updated_at: new Date().toISOString(),
       });
     }
@@ -238,6 +249,22 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   <p className="text-xs text-muted-foreground">
                     Whether the terminal background matches your app theme or uses standard xterm
                     colors
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Enter Key Behavior</Label>
+                  <Select value={enterKeyBehavior} onValueChange={handleEnterKeyBehaviorChange}>
+                    <SelectTrigger className="w-full bg-muted">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="send_prompt">Send prompt (Shift+Enter for new line)</SelectItem>
+                      <SelectItem value="new_line">New line (Ctrl+Enter to send)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Controls what happens when you press Enter in the compose bar
                   </p>
                 </div>
               </div>

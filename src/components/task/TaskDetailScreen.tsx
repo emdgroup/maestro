@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { motion } from "framer-motion";
 import { Sparkles, Pause, Zap, Trash2, Archive, X, Paperclip, Upload } from "lucide-react";
 import type { TaskStatus, TaskAttachment } from "@/types/bindings";
@@ -171,12 +173,12 @@ function formatFileSize(bytes: number): string {
 
 interface DeleteConfirmButtonProps {
   isPending: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
 
-function DeleteConfirmButton({ isPending, onConfirm }: DeleteConfirmButtonProps) {
-  const [open, setOpen] = useState(false);
-
+function DeleteConfirmButton({ isPending, open, onOpenChange, onConfirm }: DeleteConfirmButtonProps) {
   return (
     <>
       <Button
@@ -184,22 +186,22 @@ function DeleteConfirmButton({ isPending, onConfirm }: DeleteConfirmButtonProps)
         size="icon"
         className="text-destructive hover:text-destructive"
         disabled={isPending}
-        onClick={() => setOpen(true)}
+        onClick={() => onOpenChange(true)}
       >
         <Trash2 className="size-4" />
       </Button>
-      <AlertDialog open={open} onOpenChange={(isOpen) => setOpen(isOpen)}>
+      <AlertDialog open={open} onOpenChange={onOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this task?</AlertDialogTitle>
             <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setOpen(false)}>Keep Task</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => onOpenChange(false)}>Keep Task</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                setOpen(false);
+                onOpenChange(false);
                 onConfirm();
               }}
             >
@@ -253,6 +255,20 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const [isInterruptOpen, setIsInterruptOpen] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  useShortcuts("taskDetail", {
+    "task-back": () => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      setActiveTaskId(null);
+    },
+    "task-delete": () => {
+      if (task !== null && task.status !== "Done") setDeleteOpen(true);
+    },
+    "task-save": () => {
+      (document.activeElement as HTMLElement)?.blur();
+    },
+  });
 
   if (task === null) {
     return (
@@ -389,6 +405,8 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
               <TooltipTrigger render={<span className="inline-flex items-center" />}>
                 <DeleteConfirmButton
                   isPending={isPendingDeleteOrArchive}
+                  open={deleteOpen}
+                  onOpenChange={setDeleteOpen}
                   onConfirm={() => {
                     deleteTask.mutate(task.id, {
                       onSuccess: () => setActiveTaskId(null),
@@ -425,16 +443,18 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
           )}
 
           {/* Close */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="ghost" size="icon" onClick={() => setActiveTaskId(null)}>
-                  <X className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipContent>Back to board</TooltipContent>
-          </Tooltip>
+          <ShortcutHint shortcutId="task-back">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="ghost" size="icon" onClick={() => setActiveTaskId(null)}>
+                    <X className="size-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Back to board</TooltipContent>
+            </Tooltip>
+          </ShortcutHint>
         </div>
 
         {/* ---------------------------------------------------------------- */}

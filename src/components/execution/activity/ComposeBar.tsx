@@ -16,6 +16,7 @@ import type { JsonValue, AcpPromptCapabilities } from "@/types/bindings";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { MentionEntry } from "./MentionEntry";
 import type { ExternalAttachment } from "./ExternalAttachment";
+import { useSettings } from "@/services/settings.service";
 import { LiquidContextIndicator } from "./LiquidContextIndicator";
 import { ConfigSelector } from "./config-selectors/ConfigSelector";
 import { isImageExtension, mimeForExtension } from "./file-type-utils";
@@ -127,6 +128,9 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       textareaRef.current?.focus();
     },
   }));
+
+  const { data: appSettings } = useSettings();
+  const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
 
   const filteredCommands = commands.filter((cmd) =>
     cmd.name.toLowerCase().startsWith(commandFilter.toLowerCase()),
@@ -486,10 +490,19 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
       return;
     }
 
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!isProcessing && !isSending && value.trim()) {
-        void handleSend();
+    if (enterKeyBehavior === "new_line") {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (!isProcessing && !isSending && value.trim()) {
+          void handleSend();
+        }
+      }
+    } else {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (!isProcessing && !isSending && value.trim()) {
+          void handleSend();
+        }
       }
     }
   };

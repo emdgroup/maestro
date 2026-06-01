@@ -25,6 +25,15 @@ pub enum TerminalColorMode {
     Default,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[specta(export)]
+pub enum EnterKeyBehavior {
+    #[default]
+    SendPrompt,
+    NewLine,
+}
+
 impl std::fmt::Display for ActivityVisibility {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -69,6 +78,26 @@ impl std::str::FromStr for TerminalColorMode {
     }
 }
 
+impl std::fmt::Display for EnterKeyBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SendPrompt => write!(f, "send_prompt"),
+            Self::NewLine => write!(f, "new_line"),
+        }
+    }
+}
+
+impl std::str::FromStr for EnterKeyBehavior {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "send_prompt" => Ok(Self::SendPrompt),
+            "new_line" => Ok(Self::NewLine),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct AppSettings {
@@ -85,6 +114,8 @@ pub struct AppSettings {
     pub accent_color: Option<String>,
     #[serde(default)]
     pub terminal_color_mode: TerminalColorMode,
+    #[serde(default)]
+    pub enter_key_behavior: EnterKeyBehavior,
     pub updated_at: String,
 }
 
@@ -98,6 +129,7 @@ impl Default for AppSettings {
             tool_call_visibility: ActivityVisibility::Auto,
             accent_color: None,
             terminal_color_mode: TerminalColorMode::FollowTheme,
+            enter_key_behavior: EnterKeyBehavior::SendPrompt,
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
     }

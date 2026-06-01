@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback, useMemo } from "react";
+import { ShortcutHintProvider } from "@/components/common/ShortcutHintProvider";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
@@ -54,6 +56,13 @@ function App() {
   const activeTab = useActiveTab();
   const slideDirection = useSlideDirection();
   const { setActiveTab } = useNavigationActions();
+
+  useShortcuts("global", {
+    "tab-board":     () => setActiveTab("kanban"),
+    "tab-agents":    () => setActiveTab("agents"),
+    "tab-worktrees": () => setActiveTab("worktrees"),
+    "tab-settings":  () => setActiveTab("settings"),
+  });
 
   const agentsControls = useAnimationControls();
   const kanbanControls = useAnimationControls();
@@ -186,6 +195,7 @@ function App() {
   );
 
   return (
+    <ShortcutHintProvider>
     <div className="app flex flex-col h-screen bg-background">
       <AppHeader
         currentProject={currentProject}
@@ -288,6 +298,7 @@ function App() {
         />
       )}
     </div>
+    </ShortcutHintProvider>
   );
 }
 

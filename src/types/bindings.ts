@@ -1626,7 +1626,7 @@ export type AgentSessionCapabilities = { supports_session_list: boolean; support
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; updated_at: string }
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; enter_key_behavior?: EnterKeyBehavior; updated_at: string }
 /**
  * An Azure DevOps project option for combobox display.
  */
@@ -1667,6 +1667,7 @@ export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } |
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
 export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_deps?: string[] }
+export type EnterKeyBehavior = "send_prompt" | "new_line"
 /**
  * How a session is executed: via the Agent Control Protocol or a raw PTY.
  */

@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{AppSettings, ActivityVisibility, TerminalColorMode};
+use crate::models::{AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
 
 /// Load application settings from the database
 ///
@@ -67,6 +67,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<TerminalColorMode>().ok())
         .unwrap_or_default();
 
+    let enter_key_behavior = settings_map
+        .get("enter_key_behavior")
+        .and_then(|v| v.parse::<EnterKeyBehavior>().ok())
+        .unwrap_or_default();
+
     Ok(AppSettings {
         theme_preference,
         auto_mode,
@@ -75,6 +80,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         tool_call_visibility,
         accent_color,
         terminal_color_mode,
+        enter_key_behavior,
         updated_at,
     })
 }
@@ -92,6 +98,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let tool_call_vis = settings.tool_call_visibility.to_string();
     let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
     let terminal_color_mode_str = settings.terminal_color_mode.to_string();
+    let enter_key_behavior_str = settings.enter_key_behavior.to_string();
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -100,6 +107,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("tool_call_visibility", tool_call_vis.as_str()),
         ("accent_color", accent_color_str.as_str()),
         ("terminal_color_mode", terminal_color_mode_str.as_str()),
+        ("enter_key_behavior", enter_key_behavior_str.as_str()),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -147,6 +155,7 @@ mod tests {
             tool_call_visibility: crate::models::ActivityVisibility::Auto,
             accent_color: None,
             terminal_color_mode: crate::models::TerminalColorMode::FollowTheme,
+            enter_key_behavior: crate::models::EnterKeyBehavior::SendPrompt,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
 

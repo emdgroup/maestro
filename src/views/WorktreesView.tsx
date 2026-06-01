@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useShortcuts } from "@/utils/hooks/useShortcuts";
+import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -52,6 +54,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
   const [worktreeToDelete, setWorktreeToDelete] = useState<WorktreeWithStatus | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useShortcuts("worktrees", {
+    "wt-new":       () => setShowCreateDialog(true),
+    "wt-refresh":   () => { void refetchWorktrees(); },
+    "wt-close-diff": () => { if (selectedWorktreePath !== null) setSelectedWorktreePath(null); },
+    "focus-search": () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+  });
 
   // Refresh when tab becomes active — always-mounted views don't remount on navigate so
   // refetchOnMount never fires again; this replicates the prior behaviour.
@@ -166,18 +176,21 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
             {/* Action bar */}
             <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
               <div className="flex items-center gap-2">
-                <InputGroup>
-                  <InputGroupInput
-                    type="text"
-                    placeholder="Search branches..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="h-8 w-48 text-sm"
-                  />
-                  <InputGroupAddon align="inline-start">
-                    <SearchIcon className="text-muted-foreground" />
-                  </InputGroupAddon>
-                </InputGroup>
+                <ShortcutHint shortcutId="focus-search">
+                  <InputGroup>
+                    <InputGroupInput
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Search branches..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="h-8 w-48 text-sm"
+                    />
+                    <InputGroupAddon align="inline-start">
+                      <SearchIcon className="text-muted-foreground" />
+                    </InputGroupAddon>
+                  </InputGroup>
+                </ShortcutHint>
                 <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
                   {STATUS_FILTERS.map((f) => (
                     <ToggleGroupItem
@@ -193,16 +206,18 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                 </ToggleGroup>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8"
-                  title="Refresh worktrees"
-                  disabled={isFetching}
-                  onClick={() => void refetchWorktrees()}
-                >
-                  <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-                </Button>
+                <ShortcutHint shortcutId="wt-refresh">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-8 w-8"
+                    title="Refresh worktrees"
+                    disabled={isFetching}
+                    onClick={() => void refetchWorktrees()}
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+                  </Button>
+                </ShortcutHint>
                 {viewMode === "grouped" && (
                   <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
                     <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
@@ -224,15 +239,17 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                     {viewMode === "grouped" ? "Grid view" : "Grouped view"}
                   </span>
                 </Button>
-                <Button
-                  variant="accent"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setShowCreateDialog(true)}
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  New Worktree
-                </Button>
+                <ShortcutHint shortcutId="wt-new">
+                  <Button
+                    variant="accent"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setShowCreateDialog(true)}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    New Worktree
+                  </Button>
+                </ShortcutHint>
               </div>
             </div>
 

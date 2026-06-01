@@ -470,6 +470,16 @@ Plans:
 | 62 - Task Detail Screen | v1.7 | 2/2 | Complete   | 2026-05-27 |
 | 63 - Archive Modal | v1.7 | 1/1 | Complete   | 2026-05-27 |
 
+### Phase 64: Complete task workflow - detect execution completion and move task from InProgress to Done
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 63
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 64 to break down)
+
 ---
 
 *Roadmap created: 2026-02-09*

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
+import { connectionKeyStr } from "@/utils/helpers/connection-utils";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import {
@@ -119,6 +120,28 @@ export function useExecuteTask(
           await api.setAcpMode(logId, task.permission_mode_override);
         } catch (err) {
           console.warn("Failed to set permission mode override:", err);
+        }
+      } else {
+        try {
+          const cache = await queryClient.fetchQuery({
+            queryKey: ["agentCache", connectionKeyStr(connection), agentId],
+            queryFn: () => api.getAgentCache(agentId, connection),
+          });
+          const modeOption = cache?.config_options.find((o) => o.category === "mode");
+          const availableModeIds = modeOption?.options.map((o) => o.value) ?? [];
+
+          const priorities = task.auto_approve
+            ? ["bypassPermissions", "full-access", "auto"]
+            : ["acceptEdits", "auto", "build"];
+
+          const resolvedMode = priorities.find((m) => availableModeIds.includes(m))
+            ?? availableModeIds.find((m) => m !== "readonly" && m !== "plan");
+
+          if (resolvedMode) {
+            await api.setAcpMode(logId, resolvedMode);
+          }
+        } catch (err) {
+          console.warn("Failed to resolve permission mode:", err);
         }
       }
 

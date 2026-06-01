@@ -1,164 +1,152 @@
-# Non-Git Project Support — Discussion Plan
+# Plan: Git Init Dialog for Non-Git Projects
 
 ## Context
 
-Users opening a non-git folder hit a wall: preflight blocks them, worktrees useless, interactive execution requires worktree. But ACP session spawning (core agent workflow) has **no hard git requirement** — maestro-server, ACP protocol, and session spawn are all git-agnostic.
+When user opens a folder as a project in Maestro, `ProjectList.tsx:57-58` silently calls `gitInitProject()` before creating the project — but only for local connections. SSH/WSL skip it. If git isn't installed or folder has issues, user gets a generic "Failed to open project" error with no explanation.
 
-## Recommendation: Flag-based approach
-
-Don't force git init. Detect `is_git_repo` at project open, gate git features behind it.
+**Goal:** Replace silent auto-init with explicit user choice via modal dialog.
 
 ---
 
-## COMPLETE INVENTORY: Every Location Needing the Flag
+## Implementation
 
-### Backend Changes (Rust)
+### 1. New backend command: `check_is_git_repo`
 
-#### 1. Preflight — `src-tauri/src/ipc/acp_handlers.rs:781-789`
-**Current:** Hardcodes `mandatory_tools = ["git"]`
-**Change:** Make git non-mandatory (warning only) when `is_git_repo = false`
+**File:** `src-tauri/src/ipc/project_handlers.rs`
 
-#### 2. Project creation — `src-tauri/src/ipc/project_handlers.rs`
-**Current:** `git_init_project` (line 318), `create_new_project` (line 480) both run `git init -b main`
-**Change:** Make `git_init_project` a user-opt-in action, not auto-called. `create_new_project` should skip git init if user declines.
+Add new IPC command that checks if a path is inside a git work tree. Works for local, SSH, and WSL connections.
 
-#### 3. Worktree handlers — `src-tauri/src/ipc/worktree_handlers.rs` (ALL commands)
-**Current:** Every command calls `crate::git::*` — hard-errors without git
-**Commands affected:**
-- `list_worktrees_with_status` (line 14) — returns Err
-- `get_worktree_diff` (line 203) — returns Err
-- `create_worktree` (line 244) — returns Err
-- `create_worktree_for_task` (line 303) — returns Err
-- `delete_worktree` (line 363) — soft-fail (discards error)
-- `cleanup_zombie_worktrees` (line 429) — returns Err
-- `stage_worktree_files` (line 558) — returns Err
-- `commit_worktree` (line 604) — returns Err
-- `discard_worktree_changes` (line 623) — returns Err
-- `shelve_worktree_changes` (line 675) — returns Err
-- `delete_untracked_files` (line 700) — returns Err
-- `get_untracked_file_content` (line 722) — returns Err
-- `delete_worktree_for_task` (line 739) — soft-fail
-**Change:** No code changes needed here. These just won't be called when UI gates them. Frontend handles the flag.
+```rust
+#[tauri::command]
+pub async fn check_is_git_repo(
+    app_state: State<'_, Arc<AppState>>,
+    path: String,
+    connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
+) -> Result<bool, String> {
+    // For local: check Path::new(&path).join(".git").exists()
+    //   OR run `git -C <path> rev-parse --is-inside-work-tree`
+    // For SSH: run via session.execute_command
+    // For WSL: run via wsl.exe -d <distro> -- git -C <path> rev-parse --is-inside-work-tree
+    // Return true/false, never error (missing git = false)
+}
+```
 
-#### 4. Execution handlers — `src-tauri/src/ipc/execution_handlers.rs:585-771`
-**Current:** `spawn_interactive_execution` calls `list_worktrees` (line 628) and `create_worktree` (line 647) when `worktree_id` is `None`
-**Change:** Add a fallback path: if no git, spawn PTY directly in `project.path` (skip worktree creation entirely). OR: disable interactive execution for non-git projects in frontend.
+Register in `src-tauri/src/lib.rs` `collect_commands![]`.
 
-#### 5. Review handlers — `src-tauri/src/ipc/review_handlers.rs`
-**Commands affected:**
-- `get_diff_for_review` (line 49) — JOINs `worktrees` table, calls `git_diff`. Hard-error.
-- `approve_task_and_merge` (line 177) — calls `squash_merge_to_main`. Hard-error.
-- `finalize_successful_merge` (line 239) — calls `delete_worktree`. Partial soft-fail.
-**Change:** No backend changes needed — frontend gates Review button/flow behind git flag.
+### 2. New frontend component: `GitInitDialog`
 
-#### 6. Task handlers — `src-tauri/src/ipc/task_handlers.rs:433-462`
-**Current:** `list_project_branches` calls `list_branches` + `get_current_branch`. Already graceful — returns `([], "main")` on failure.
-**Change:** None needed. Already handles missing git.
+**File:** `src/components/project-picker/GitInitDialog.tsx` (new)
 
-#### 7. App.tsx zombie cleanup — fires `cleanupZombieWorktrees` on every project open
-**Current:** Silent error if git missing (mutation has no error handler)
-**Change:** Skip call when `is_git_repo = false` (frontend gate)
+Simple confirmation dialog:
+- Title: "Not a Git Repository"
+- Body: "This folder is not a git repository. Git enables worktree isolation, branch management, and code review features. Initialize git in this project?"
+- Buttons: **"Initialize Git"** (primary) | **"Continue Without Git"** (secondary/outline)
 
----
+Props:
+```tsx
+interface GitInitDialogProps {
+  open: boolean;
+  path: string;
+  onInitGit: () => void;      // user chose to init
+  onSkip: () => void;         // user chose to continue without
+  onCancel: () => void;       // user closed dialog
+  loading?: boolean;
+}
+```
 
-### Frontend Changes
+Use existing `Dialog`/`DialogContent`/`DialogHeader`/`DialogFooter` from `@/ui/dialog` — same pattern as `CreateProjectDialog.tsx`.
 
-#### 8. Project creation — `src/components/project-picker/ProjectList.tsx:58`
-**Current:** Unconditionally calls `gitInitProject({ path, connectionId: null })` for local connections before `createProject`
-**Change:** Remove unconditional call. Either skip entirely or show prompt: "Initialize git repository? (enables worktree isolation)"
+### 3. Modify `ProjectList.tsx` — replace silent init with dialog flow
 
-#### 9. PreflightModal — `src/components/project-picker/PreflightModal.tsx:44`
-**Current:** `hasMandatoryFail = failedTools.some((t) => t.mandatory)` — blocks user
-**Change:** With backend change (#1), git won't be mandatory anymore. Shows as warning instead. User can proceed with "Ignore".
+**File:** `src/components/project-picker/ProjectList.tsx`
 
-#### 10. CreateTaskModal — `src/components/kanban/CreateTaskModal.tsx:342-420`
-**Current:** Branch picker is a **required field**. Uses `useProjectBranchesQuery`. Empty dropdown + validation fail without git.
-**Change:** Make branch field optional (or hidden) when `is_git_repo = false`. Task can be created without base_branch.
+Current flow (lines 45-79):
+```
+handleProjectSelect → gitInitProject() → createProject → openProject
+```
 
-#### 11. TaskForm — `src/components/task/TaskForm.tsx:155-164`
-**Current:** "Base branch" select is required field. Uses `useProjectBranchesQuery`.
-**Change:** Same as #10 — hide or make optional when no git.
+New flow:
+```
+handleProjectSelect
+  → checkIsGitRepo(path, connectionId)
+  → if true: proceed (createProject → openProject)
+  → if false: show GitInitDialog
+    → "Initialize Git": gitInitProject() → createProject → openProject
+    → "Continue Without Git": createProject → openProject (skip git init)
+    → Cancel: abort, close file picker
+```
 
-#### 12. WorktreesView — `src/views/WorktreesView.tsx`
-**Current:** Renders empty state "No worktrees yet" + "New Worktree" button
-**Change:** When `is_git_repo = false`, show different empty state: "Git repository required for worktree isolation" + "Initialize Git" button. Hide "New Worktree" button.
+Changes:
+1. Add state: `const [pendingPath, setPendingPath] = useState<{path, connectionId, wslConnectionId} | null>(null)`
+2. Add state: `const [showGitInitDialog, setShowGitInitDialog] = useState(false)`
+3. In `handleProjectSelect`: call `checkIsGitRepo` first. If false, stash path and show dialog. If true, proceed directly.
+4. Dialog callbacks call the actual project creation logic (extract to helper fn).
+5. Remove unconditional `gitInitProject()` call from line 58.
 
-#### 13. CreateWorktreeDialog — `src/components/execution/CreateWorktreeDialog.tsx`
-**Current:** Fetches branches via `useProjectBranchesQuery`, shows branch picker
-**Change:** Don't need to change — just won't be openable when button is hidden (#12)
+### 4. Add `useCheckIsGitRepo` hook
 
-#### 14. SpawnSessionDialog — `src/components/execution/SpawnSessionDialog.tsx:239-283`
-**Current:** Shows worktree picker (GitBranch icon + Select by branch_name). Empty list = can't select = can't spawn.
-**Change:** When `is_git_repo = false`, hide worktree picker entirely. Spawn ACP session directly in project root (already works — `branch_name` is Optional).
+**File:** `src/services/project.service.ts`
 
-#### 15. AgentsView "Open Terminal" — `src/views/AgentsView.tsx:236-248`
-**Current:** `onOpenTerminal` finds worktree by branch_name, spawns interactive execution. No-ops if no worktree found.
-**Change:** When `is_git_repo = false`, either disable "Open Terminal" button or spawn PTY directly in project root (requires backend change #4).
+```tsx
+export function useCheckIsGitRepo() {
+  return useMutation({
+    mutationFn: ({ path, connectionId, wslConnectionId }) =>
+      api.checkIsGitRepo(path, connectionId ?? null, wslConnectionId ?? null),
+  });
+}
+```
 
-#### 16. KanbanView worktree badges — `src/views/KanbanView.tsx:26-29`
-**Current:** `useWorktreesQuery` builds `worktreeTaskIds` for green dot badges on TaskCards
-**Change:** No change needed. Returns empty set → badges don't show. Already graceful.
+### 5. Store `isGitRepo` flag on project open
 
-#### 17. TaskDetailScreen — `src/components/task/TaskDetailScreen.tsx:684-688, 746-767`
-**Current:** Shows `task.base_branch ?? "None"` and "Isolated/Shared worktree" toggle
-**Change:** When `is_git_repo = false`, hide both fields (or show base_branch as "None" read-only, hide toggle).
+**Where:** `projectStore.ts` or return it from `openProject` response.
 
-#### 18. ReviewModal — `src/components/common/ReviewModal.tsx`
-**Current:** Fetches diff via `useDiffForReviewQuery(taskId)`. Errors without git.
-**Change:** When `is_git_repo = false`, hide the "Review" action on task cards entirely. Or show "Review requires git" message.
+**Option A (simpler):** Add `is_git_repo: bool` field to the `Project` struct returned by `open_project`. Backend checks at open time, stores in runtime state.
 
-#### 19. ApprovalForm — `src/components/common/ApprovalForm.tsx`
-**Current:** "Commit + Merge", "Commit + Push", "Commit Only" radio buttons
-**Change:** Won't be reachable if ReviewModal is gated (#18). No change needed.
+**Option B (no model change):** Frontend calls `checkIsGitRepo` after open and stores result in Zustand.
 
-#### 20. WorktreeDiffPanel — `src/components/execution/WorktreeDiffPanel.tsx`
-**Current:** Full diff viewer with stage/commit/discard/shelve
-**Change:** Won't be reachable without worktrees. No change needed.
+**Recommendation:** Option A — backend detects at open time, frontend gets it from project data. This also handles re-opening existing projects (from recent list) that may not be git repos.
 
-#### 21. ReviewChangesPanel — `src/components/execution/activity/ReviewChangesPanel.tsx`
-**Current:** Inline diff in AgentMonitor. Uses `useWorktreeDiffQuery` with `session_start_sha`
-**Change:** When `is_git_repo = false`, hide this panel or show "No diff available (no git)".
+If Option A: modify `open_project` in `project_handlers.rs` to run git check and include result in response. Add `is_git_repo: bool` to `Project` model (or to a separate `ProjectRuntime` struct returned alongside).
 
-#### 22. useExecuteTask hook — `src/utils/hooks/useExecuteTask.ts:45-67`
-**Current:** If `task.isolated_worktree = true`, creates worktree before spawning session
-**Change:** When `is_git_repo = false`, skip worktree creation, spawn directly in project root. Ignore `isolated_worktree` flag.
+### 6. Handle re-opening existing projects (from recent list)
 
-#### 23. App.tsx — `src/App.tsx:131-133`
-**Current:** Calls `cleanupZombieWorktrees` on project open
-**Change:** Skip when `is_git_repo = false`
+`handleProjectClick` (line 81) opens already-registered projects. These bypass `handleProjectSelect` entirely — no git init dialog shown. This is correct behavior: project already exists, user already made their choice. The `is_git_repo` flag from `openProject` response handles downstream UI gating.
 
 ---
 
-### Where the Flag Lives
+## Files Modified
 
-**Detection:** On project open, run `git rev-parse --is-inside-work-tree` in project path. Store result as `is_git_repo: bool` in frontend state (e.g., `projectStore` or `configStore`).
+| File | Change |
+|------|--------|
+| `src-tauri/src/ipc/project_handlers.rs` | Add `check_is_git_repo` command. Optionally add git check to `open_project`. |
+| `src-tauri/src/lib.rs` | Register new command |
+| `src/components/project-picker/GitInitDialog.tsx` | **New file** — confirmation dialog |
+| `src/components/project-picker/ProjectList.tsx` | Replace silent `gitInitProject` with check + dialog flow |
+| `src/services/project.service.ts` | Add `useCheckIsGitRepo` hook |
+| `src/types/bindings.ts` | Auto-regenerated via `pnpm tauri:gen` |
 
-**Backend:** Add a lightweight IPC command `check_is_git_repo(projectId) -> bool` or include it in project load response.
-
-**Frontend consumption:** Expose via store hook like `useIsGitRepo()`. Components check this before rendering git-dependent UI.
-
-**Re-detection:** Re-check when user clicks "Initialize Git" button or returns to project from settings.
-
----
-
-## Summary: Scope of Work
-
-| Category | Count | Effort |
-|---|---|---|
-| Backend Rust changes | 2-3 files (preflight, execution fallback, new check command) | Low |
-| Frontend conditional UI | ~10 components need `is_git_repo` check | Medium |
-| Frontend removal | 1 file (forced git init in ProjectList) | Trivial |
-| No changes needed (already graceful) | ~6 locations | — |
-| No changes needed (gated by parent) | ~5 locations | — |
-
-**Total: ~15 locations need the flag check.** Most are simple conditional renders (hide element or show alternative empty state). The only non-trivial logic change is the execution fallback path (#4 + #22) for spawning sessions without worktree isolation.
+Optional (for downstream flag gating — separate phase):
+| `src-tauri/src/models/project.rs` | Add `is_git_repo` field |
+| `src/store/projectStore.ts` | Store and expose flag |
 
 ---
 
-## My Three Questions (Explicit)
+## Verification
 
-1. **Interactive execution fallback:** When user has no git, and they click "Open Terminal" on an agent session — should we spawn a PTY shell directly in the project root folder (no isolation, agent works on live files)? Or should we just disable that button entirely for non-git projects?
+1. Open Maestro dev (`pnpm tauri:dev`)
+2. Select a folder **without** `.git` → dialog appears with two choices
+3. Click "Initialize Git" → `.git` created, project opens with full features
+4. Repeat with new non-git folder, click "Continue Without Git" → project opens (git-dependent features will degrade, but that's a separate phase)
+5. Select a folder **with** `.git` → no dialog, opens directly (same as current behavior)
+6. Test SSH connection path — dialog should also appear for remote non-git folders
+7. Re-open existing project from recent list — no dialog, goes straight to open
 
-2. **Project creation flow:** When user selects a non-git folder to open as a project — should we show a one-time prompt "Initialize git? (recommended)" with Yes/No? Or just silently open it without git, and let them discover the "Initialize Git" button later in the Worktrees tab?
+---
 
-3. **Task creation without branch:** Currently branch is required to create a task. For non-git projects, should tasks simply have no branch (nullable), or should we still require some label/name for organizational purposes?
+## Out of Scope (future phases)
+
+- UI gating of git-dependent features when `is_git_repo = false` (the 15 locations from earlier analysis)
+- "Initialize Git" button in WorktreesView empty state
+- Making branch field optional in task creation
+- Execution fallback (PTY spawn without worktree)
