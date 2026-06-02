@@ -3,7 +3,7 @@ import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
-import { FileTree } from "@/components/execution/FileTree";
+import { FileTree } from "./FileTree";
 
 export interface DiffFile {
   fileName: string;

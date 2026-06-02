@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
-import { DiffViewer } from "@/components/execution/DiffViewer";
+import { DiffViewer } from "./DiffViewer";
 import { useUntrackedFileContentQuery } from "@/services/worktree.service";
 
 interface UntrackedFileDiffViewerProps {

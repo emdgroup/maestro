@@ -4,25 +4,25 @@ import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { Skeleton } from "@/ui/skeleton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { useAcpActivity } from "./activity/useAcpActivity";
-import { useAcpSessionLifecycle } from "./activity/useAcpSessionLifecycle";
-import { useAcpScrollBehavior } from "./activity/useAcpScrollBehavior";
+import { useAcpActivity } from "../activity/useAcpActivity";
+import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
+import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
-import { ActivityMessageItem } from "./activity/ActivityMessageItem";
-import { ActivityUserMessage, parseUserContent } from "./activity/ActivityUserMessage";
-import { ActivityThinkingBlock } from "./activity/ActivityThinkingBlock";
-import { ActivityToolCallGroup } from "./activity/ActivityToolCallGroup";
-import { ActivityFileCard } from "./activity/ActivityFileCard";
-import { SubagentCard } from "./activity/SubagentCard";
-import { ActivityPlanPanel } from "./activity/ActivityPlanPanel";
-import { ComposeBar } from "./activity/ComposeBar";
-import type { ComposeBarHandle } from "./activity/ComposeBar";
-import { PermissionPrompt, isPlanPermission, extractBodyText } from "./activity/PermissionPrompt";
-import { PermissionResponseCard } from "./activity/PermissionResponseCard";
-import { ElicitationPrompt, parseElicitationFields } from "./activity/ElicitationPrompt";
-import { ActivityElicitationSummary } from "./activity/ActivityElicitationSummary";
-import type { PermissionResponseItem, ElicitationSummaryItem, UsageState } from "./activity/types";
+import { ActivityMessageItem } from "../activity/ActivityMessageItem";
+import { ActivityUserMessage, parseUserContent } from "../activity/ActivityUserMessage";
+import { ActivityThinkingBlock } from "../activity/ActivityThinkingBlock";
+import { ActivityToolCallGroup } from "../activity/ActivityToolCallGroup";
+import { ActivityFileCard } from "../activity/ActivityFileCard";
+import { SubagentCard } from "../activity/SubagentCard";
+import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
+import { ComposeBar } from "../activity/ComposeBar";
+import type { ComposeBarHandle } from "../activity/ComposeBar";
+import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import { PermissionResponseCard } from "../activity/PermissionResponseCard";
+import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
+import { ActivityElicitationSummary } from "../activity/ActivityElicitationSummary";
+import type { PermissionResponseItem, ElicitationSummaryItem, UsageState } from "../activity/types";
 import {
   isRejectOption,
   getOptionName,
@@ -32,8 +32,8 @@ import {
   makeElicitationSummary,
   formatElicitationAnswer,
   isSubagentToolCall,
-} from "./activity/utils";
-import { AgentResponseSection } from "./activity/AgentResponseSection";
+} from "../activity/utils";
+import { AgentResponseSection } from "../activity/AgentResponseSection";
 import type { JsonValue } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";

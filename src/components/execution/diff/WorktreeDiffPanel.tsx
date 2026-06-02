@@ -2,11 +2,11 @@ import { useState, useMemo } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
 import { cn } from "@/lib/ui-utils";
-import { DiffViewer } from "@/components/execution/DiffViewer";
-import { DiffActionBar } from "@/components/execution/DiffActionBar";
-import { DiffFilePanel } from "@/components/execution/DiffFilePanel";
-import { useStagingState } from "@/components/execution/useStagingState";
-import { UntrackedFileDiffViewer } from "@/components/execution/UntrackedFileDiffViewer";
+import { DiffViewer } from "./DiffViewer";
+import { DiffActionBar } from "./DiffActionBar";
+import { DiffFilePanel } from "./DiffFilePanel";
+import { useStagingState } from "../worktree-card/useStagingState";
+import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import {
   useWorktreeDiffQuery,
   useStageWorktreeFilesMutation,

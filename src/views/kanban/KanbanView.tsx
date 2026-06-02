@@ -15,8 +15,8 @@ import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
 import type { TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
-import { CreateTaskModal } from "@/components/kanban/CreateTaskModal";
-import { ArchiveModal } from "@/components/kanban/ArchiveModal";
+import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
+import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();

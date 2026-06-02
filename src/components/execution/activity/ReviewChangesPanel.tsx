@@ -4,11 +4,11 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { cn } from "@/lib/ui-utils";
 import { Input } from "@/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { DiffViewer } from "@/components/execution/DiffViewer";
-import { FileTree } from "@/components/execution/FileTree";
+import { DiffViewer } from "@/components/execution/diff/DiffViewer";
+import { FileTree } from "@/components/execution/diff/FileTree";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
-import { UntrackedFileDiffViewer } from "@/components/execution/UntrackedFileDiffViewer";
+import { UntrackedFileDiffViewer } from "@/components/execution/diff/UntrackedFileDiffViewer";
 import { api } from "@/lib/tauri-utils";
 import type { DiffFileWithName } from "@/types/review";
 

@@ -3,9 +3,9 @@ import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
 import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
-import { KanbanColumn } from "@/components/kanban/KanbanColumn";
+import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
 import { ReviewModal } from "@/views/kanban/review-modal/ReviewModal";
-import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
+import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
 import { useUpdateTask } from "@/services/task.service";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];

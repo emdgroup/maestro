@@ -1,5 +1,5 @@
 import { Task, TaskStatus } from "@/types/bindings";
-import { TaskCard } from "./TaskCard";
+import { TaskCard } from "../task-card/TaskCard";
 import { Badge } from "@/ui/badge";
 import { useDroppable } from "@dnd-kit/react";
 import { CollisionPriority } from "@dnd-kit/abstract";

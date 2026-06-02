@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/ui-utils";
-import { AgentMonitor } from "@/components/execution/AgentMonitor";
-import { SessionHistoryPanel } from "@/components/execution/SessionHistoryPanel";
-import { SpawnSessionDialog } from "@/components/execution/SpawnSessionDialog";
+import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
+import { SessionHistoryPanel } from "@/components/execution/session-history/SessionHistoryPanel";
+import { SpawnSessionDialog } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
 import {
   useActiveSessionsQuery,

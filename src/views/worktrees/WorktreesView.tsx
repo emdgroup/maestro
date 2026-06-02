@@ -11,10 +11,10 @@ import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/stor
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
-import { WorktreeCardGrid } from "@/components/execution/WorktreeCardGrid";
-import { WorktreeDiffPanel } from "@/components/execution/WorktreeDiffPanel";
-import { DeleteWorktreeDialog } from "@/components/execution/DeleteWorktreeDialog";
-import { CreateWorktreeDialog } from "@/components/execution/CreateWorktreeDialog";
+import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
+import { WorktreeDiffPanel } from "@/components/execution/diff/WorktreeDiffPanel";
+import { DeleteWorktreeDialog } from "@/components/execution/worktree-dialog/DeleteWorktreeDialog";
+import { CreateWorktreeDialog } from "@/components/execution/worktree-dialog/CreateWorktreeDialog";
 import type { WorktreeWithStatus } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { toast } from "sonner";

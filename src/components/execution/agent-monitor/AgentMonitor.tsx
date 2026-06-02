@@ -6,8 +6,8 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { TerminalComponent } from "@/components/execution/Terminal";
-import { AgentActivityPanel } from "@/components/execution/AgentActivityPanel";
+import { TerminalComponent } from "@/components/execution/terminal/Terminal";
+import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
 import { WorkingFilesPanel } from "@/components/execution/activity/WorkingFilesPanel";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import type { ActiveSessionInfo } from "@/types/bindings";

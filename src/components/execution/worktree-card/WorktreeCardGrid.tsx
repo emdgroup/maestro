@@ -1,5 +1,5 @@
-import { WorktreeCard } from "@/components/execution/WorktreeCard";
-import { WorktreeCardGroup } from "@/components/execution/WorktreeCardGroup";
+import { WorktreeCard } from "./WorktreeCard";
+import { WorktreeCardGroup } from "./WorktreeCardGroup";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 interface WorktreeCardGridProps {
