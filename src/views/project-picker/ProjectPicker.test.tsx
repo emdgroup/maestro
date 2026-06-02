@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProjectPicker } from "../ProjectPicker.tsx";
+import { ProjectPicker } from "./ProjectPicker";
 import { ConnectionContext } from "@/contexts/ConnectionContext.tsx";
 
 // Mock child components
-vi.mock("@/components/project-picker/ConnectionList", () => ({
+vi.mock("./ConnectionList", () => ({
   ConnectionList: () => <div data-testid="connection-list">ConnectionList</div>,
 }));
 
-vi.mock("@/components/project-picker/ProjectList", () => ({
+vi.mock("./ProjectList", () => ({
   ProjectList: () => <div data-testid="project-list">ProjectList</div>,
 }));
 
@@ -16,7 +16,7 @@ vi.mock("@/components/common/ThemeToggle", () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">ThemeToggle</div>,
 }));
 
-vi.mock("@/components/project-picker/IntegrationsTab", () => ({
+vi.mock("./IntegrationsTab", () => ({
   IntegrationsTab: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
 }));
 

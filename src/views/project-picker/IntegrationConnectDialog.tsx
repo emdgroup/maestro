@@ -131,11 +131,10 @@ function getProviderInstructions(provider: string): InstructionLine[] | null {
       ];
     case "azuredevops":
       return [
-        { text: "Sign in to dev.azure.com → click your avatar → Personal access tokens" },
+        { text: "Sign in to dev.azure.com → click user settings, left of user avatar → Personal access tokens" },
         { text: "Click New Token → select your Organization" },
         { text: "Under Scopes, select Work Items (Read)" },
-        { text: "Click Create and copy the token immediately" },
-        { text: "Organization URL format: https://dev.azure.com/yourorgname", code: true },
+        { text: "Click Create and copy the token immediately" }
       ];
     case "gitea":
       return [

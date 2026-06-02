@@ -4,8 +4,8 @@ import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/common/AppHeader";
-import type { SettingsPageHandle } from "@/components/common/SettingsPage";
-import { ProjectPickerView } from "@/views/ProjectPickerView";
+import type { SettingsPageHandle } from "@/views/settings/settings-page/SettingsPage";
+import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
@@ -22,21 +22,21 @@ import { KanbanProvider } from "@/contexts/KanbanContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { cn } from "@/lib/ui-utils";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
-import { IntegrationMissingDialog } from "@/components/project-picker/IntegrationMissingDialog";
+import { IntegrationMissingDialog } from "@/views/project-picker/IntegrationMissingDialog";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
 const KanbanView = lazy(() =>
-  import("@/views/KanbanView").then((m) => ({ default: m.KanbanView })),
+  import("@/views/kanban/KanbanView").then((m) => ({ default: m.KanbanView })),
 );
 const AgentsView = lazy(() =>
-  import("@/views/AgentsView").then((m) => ({ default: m.AgentsView })),
+  import("@/views/agents/AgentsView").then((m) => ({ default: m.AgentsView })),
 );
 const WorktreesView = lazy(() =>
-  import("@/views/WorktreesView").then((m) => ({ default: m.WorktreesView })),
+  import("@/views/worktrees/WorktreesView").then((m) => ({ default: m.WorktreesView })),
 );
 const SettingsView = lazy(() =>
-  import("@/views/SettingsView").then((m) => ({ default: m.SettingsView })),
+  import("@/views/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
 
 const NOOP = () => {};
@@ -58,10 +58,13 @@ function App() {
   const { setActiveTab } = useNavigationActions();
 
   useShortcuts("global", {
-    "tab-board":     () => setActiveTab("kanban"),
-    "tab-agents":    () => setActiveTab("agents"),
-    "tab-worktrees": () => setActiveTab("worktrees"),
-    "tab-settings":  () => setActiveTab("settings"),
+    "tab-board":             () => setActiveTab("kanban"),
+    "tab-agents":            () => setActiveTab("agents"),
+    "tab-worktrees":         () => setActiveTab("worktrees"),
+    "tab-settings":          () => setActiveTab("settings"),
+    "prevent-reload":        () => {},
+    "prevent-reload-shift":  () => {},
+    "prevent-reload-f5":     () => {},
   });
 
   const agentsControls = useAnimationControls();

@@ -1,4 +1,4 @@
-import { ProjectPicker } from "@/components/project-picker/ProjectPicker";
+import { ProjectPicker } from "./ProjectPicker";
 import React from "react";
 import { ConnectionProvider } from "@/contexts/ConnectionContext";
 

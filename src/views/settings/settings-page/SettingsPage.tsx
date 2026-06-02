@@ -5,7 +5,7 @@ import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
 import { Bot, CircleDot, Monitor } from "lucide-react";
-import { IssueTrackingProviderForm } from "@/components/common/settings/IssueTrackingProviderForm";
+import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/services/integration.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey, EnterKeyBehavior, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
-import { showSuccessToast } from "./ErrorToast";
+import { showSuccessToast } from "@/components/common/ErrorToast";
 
 interface SettingsPageProps {
   projectId: number;

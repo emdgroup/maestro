@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
 import { Cable, Server } from "lucide-react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { ConnectionList } from "@/components/project-picker/ConnectionList";
-import { ProjectList } from "@/components/project-picker/ProjectList";
-import { IntegrationsTab } from "@/components/project-picker/IntegrationsTab";
+import { ConnectionList } from "./ConnectionList";
+import { ProjectList } from "./ProjectList";
+import { IntegrationsTab } from "./IntegrationsTab";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {

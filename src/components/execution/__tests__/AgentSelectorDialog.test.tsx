@@ -34,7 +34,7 @@ import {
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
-import { AgentsView } from "@/views/AgentsView";
+import { AgentsView } from "@/views/agents/AgentsView";
 import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 
 const mockAgents: DiscoveredAgent[] = [{ id: "claude-code", name: "Claude Code", icon: "" }];

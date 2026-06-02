@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { CreateProjectDialog } from "../CreateProjectDialog";
+import { CloneProjectDialog } from "./CloneProjectDialog";
 
 vi.mock("@/services/project.service", () => ({
-  useCreateNewProject: () => ({
+  useCloneProject: () => ({
     mutateAsync: vi.fn(),
     isPending: false,
   }),
@@ -20,36 +21,40 @@ vi.mock("../FilePicker", () => ({
   FilePicker: () => <div data-testid="file-picker">FilePicker</div>,
 }));
 
+vi.mock("../ProviderRepoPicker", () => ({
+  ProviderRepoPicker: () => <div data-testid="provider-repo-picker">ProviderRepoPicker</div>,
+}));
+
 function renderDialog(open = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <CreateProjectDialog open={open} onOpenChange={vi.fn()} connection={null} />
+      <CloneProjectDialog open={open} onOpenChange={vi.fn()} connection={null} />
     </QueryClientProvider>,
   );
 }
 
-describe("CreateProjectDialog", () => {
-  it("renders parent directory and folder name inputs when open", () => {
+describe("CloneProjectDialog", () => {
+  it("renders Parent Directory input and Provider tab by default", () => {
     renderDialog(true);
     expect(screen.getByLabelText("Parent Directory")).toBeInTheDocument();
-    expect(screen.getByLabelText("Folder Name")).toBeInTheDocument();
+    expect(screen.getByTestId("provider-repo-picker")).toBeInTheDocument();
   });
 
-  it("renders Create and Cancel buttons", () => {
+  it("shows Git URL input when URL tab clicked", async () => {
     renderDialog(true);
-    expect(screen.getByText("Create")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: /URL/i }));
+    expect(screen.getByLabelText("Git URL")).toBeInTheDocument();
+  });
+
+  it("renders Clone and Cancel buttons", () => {
+    renderDialog(true);
+    expect(screen.getByText("Clone")).toBeInTheDocument();
     expect(screen.getByText("Cancel")).toBeInTheDocument();
   });
 
   it("does not render when closed", () => {
     renderDialog(false);
     expect(screen.queryByLabelText("Parent Directory")).not.toBeInTheDocument();
-  });
-
-  it("has error display mechanism using text-destructive class", () => {
-    renderDialog(true);
-    // No error initially visible
-    expect(screen.queryByText(/Directory already exists/)).not.toBeInTheDocument();
   });
 });

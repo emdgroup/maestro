@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { SettingsPage, SettingsPageHandle } from "@/components/common/SettingsPage";
+import { SettingsPage, SettingsPageHandle } from "@/views/settings/settings-page/SettingsPage";
 import type { ConnectionKey } from "@/types/bindings";
 
 interface SettingsViewProps {

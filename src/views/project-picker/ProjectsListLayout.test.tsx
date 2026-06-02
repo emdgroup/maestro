@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ProjectsListLayout } from "../ProjectsListLayout";
+import { ProjectsListLayout } from "./ProjectsListLayout";
 
 const defaultProps = {
   headerContent: <div>Header</div>,
