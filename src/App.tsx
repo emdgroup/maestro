@@ -22,7 +22,7 @@ import { KanbanProvider } from "@/contexts/KanbanContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { cn } from "@/lib/ui-utils";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
-import { IntegrationMissingDialog } from "@/views/project-picker/IntegrationMissingDialog";
+import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)

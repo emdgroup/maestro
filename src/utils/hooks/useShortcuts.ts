@@ -30,12 +30,11 @@ export function useShortcuts(scope: ShortcutScope, handlers: ShortcutHandlers): 
           def.key === "Escape"
             ? e.key === "Escape"
             : e.key.toLowerCase() === def.key.toLowerCase();
-        if (keyMatch && def.ctrl === e.ctrlKey) {
+        const shiftMatch = def.shift ? e.shiftKey : !e.shiftKey;
+        if (keyMatch && def.ctrl === e.ctrlKey && shiftMatch) {
+          e.preventDefault();
           const handler = handlersRef.current[def.id];
-          if (handler) {
-            e.preventDefault();
-            handler();
-          }
+          if (handler) handler();
           return;
         }
       }

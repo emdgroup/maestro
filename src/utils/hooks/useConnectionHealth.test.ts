@@ -17,7 +17,7 @@ function emitMockEvent(event: string, payload: unknown) {
   mockListeners[event]?.forEach((handler) => handler({ payload }));
 }
 
-import { useConnectionHealth } from "../useConnectionHealth";
+import { useConnectionHealth } from "./useConnectionHealth";
 
 describe("useConnectionHealth", () => {
   beforeEach(() => {

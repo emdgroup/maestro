@@ -13,7 +13,7 @@ import {
   useWslConnections,
   useSaveWslConnection,
 } from "@/services/connection.service";
-import type { AuthSubmission } from "@/views/project-picker/SshAuthModal";
+import type { AuthSubmission } from "@/views/project-picker/ssh-auth-modal/SshAuthModal";
 
 interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;

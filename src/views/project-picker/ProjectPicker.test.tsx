@@ -4,11 +4,11 @@ import { ProjectPicker } from "./ProjectPicker";
 import { ConnectionContext } from "@/contexts/ConnectionContext.tsx";
 
 // Mock child components
-vi.mock("./ConnectionList", () => ({
+vi.mock("./connection-list/ConnectionList", () => ({
   ConnectionList: () => <div data-testid="connection-list">ConnectionList</div>,
 }));
 
-vi.mock("./ProjectList", () => ({
+vi.mock("./project-list/ProjectList", () => ({
   ProjectList: () => <div data-testid="project-list">ProjectList</div>,
 }));
 
@@ -16,7 +16,7 @@ vi.mock("@/components/common/theme-toggle/ThemeToggle", () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">ThemeToggle</div>,
 }));
 
-vi.mock("./IntegrationsTab", () => ({
+vi.mock("./integrations-tab/IntegrationsTab", () => ({
   IntegrationsTab: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
 }));
 

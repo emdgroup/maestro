@@ -1,8 +1,8 @@
 import { toast } from "sonner";
 import { ProjectListItem } from "./ProjectListItem";
 import { ProjectsListLayout } from "./ProjectsListLayout";
-import { CloneProjectDialog } from "./CloneProjectDialog";
-import { CreateProjectDialog } from "./CreateProjectDialog";
+import { CloneProjectDialog } from "../clone-project-dialog/CloneProjectDialog";
+import { CreateProjectDialog } from "../create-project-dialog/CreateProjectDialog";
 import { PreflightModal } from "./PreflightModal";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import {
@@ -19,8 +19,8 @@ import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2, Terminal } from "lucide-react";
-import { ConnectionHeader } from "./ConnectionHeader";
-import { FilePicker } from "./FilePicker";
+import { ConnectionHeader } from "../connection-list/ConnectionHeader";
+import { FilePicker } from "../file-picker/FilePicker";
 import { GitInitDialog } from "./GitInitDialog";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { useMemo, useState } from "react";

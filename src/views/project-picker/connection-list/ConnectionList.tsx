@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Folder, Server, ChevronRight, Zap, Terminal } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { SshAuthModal } from "./SshAuthModal.tsx";
+import { SshAuthModal } from "../ssh-auth-modal/SshAuthModal";
 import { useSshConnectionManager } from "@/utils/hooks/useSshConnectionManager";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import { useSshConnectionStatus } from "@/services/connection.service";
