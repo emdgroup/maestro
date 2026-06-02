@@ -390,21 +390,24 @@ export function LiquidContextIndicator({
           <span>{TIPS[fillState].text}</span>
         </div>
 
-        <div className="h-px bg-border/50" />
+        {onCompact && (
+          <>
+            <div className="h-px bg-border/50" />
 
-        {/* Compact button — always visible */}
-        <Button
-          variant="outline"
-          size="sm"
-          className={cn(
-            "h-7 text-xs w-full",
-            fillState === "critical" &&
-              "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 font-semibold",
-          )}
-          onClick={() => onCompact?.()}
-        >
-          {fillState === "critical" ? "Compact now" : "Compact context"}
-        </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-7 text-xs w-full",
+                fillState === "critical" &&
+                  "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 font-semibold",
+              )}
+              onClick={onCompact}
+            >
+              {fillState === "critical" ? "Compact now" : "Compact context"}
+            </Button>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );

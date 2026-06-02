@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Plus, Archive } from "lucide-react";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/views/kanban/task-detail/TaskDetailScreen";

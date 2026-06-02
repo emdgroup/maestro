@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Terminal, X, FileText, FileDiff } from "lucide-react";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";

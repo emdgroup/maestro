@@ -26,6 +26,7 @@ import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 import { Copy, Check } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { commands } from "@/types/bindings";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
 import { useTheme } from "@/providers/ThemeProvider";
 import { toast } from "sonner";
@@ -584,24 +585,81 @@ function MarkdownAnchorComponent({ href, children }: { href?: string; children?:
 
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
 // so the forward reference is safe — MARKDOWN_COMPONENTS is initialized before any rendering.
+const ImageProxyContext = createContext<number | undefined>(undefined);
+
 export const MarkdownBlock = memo(function MarkdownBlock({
   text,
   breaks,
+  projectId,
 }: {
   text: string;
   breaks?: boolean;
+  projectId?: number;
 }) {
-  return (
+  const components = useMemo(() => {
+    if (!projectId) return MARKDOWN_COMPONENTS;
+    return { ...MARKDOWN_COMPONENTS, img: ProxiedImage };
+  }, [projectId]);
+
+  const content = (
     <Markdown
       remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}
       rehypePlugins={MARKDOWN_PLUGINS.rehype}
       // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
-      components={MARKDOWN_COMPONENTS as any}
+      components={components as any}
     >
       {text}
     </Markdown>
   );
+
+  if (!projectId) return content;
+  return (
+    <ImageProxyContext.Provider value={projectId}>
+      {content}
+    </ImageProxyContext.Provider>
+  );
 });
+
+const imageProxyCache = new Map<string, string>();
+
+function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
+  const projectId = useContext(ImageProxyContext);
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!src || !projectId || src.startsWith("data:") || src.startsWith("blob:")) {
+      setResolvedSrc(src);
+      return;
+    }
+
+    const cacheKey = `${projectId}:${src}`;
+    const cached = imageProxyCache.get(cacheKey);
+    if (cached) {
+      setResolvedSrc(cached);
+      return;
+    }
+
+    setLoading(true);
+    commands.proxyImage(projectId, src).then((result) => {
+      if (result.status === "ok") {
+        imageProxyCache.set(cacheKey, result.data);
+        setResolvedSrc(result.data);
+      } else {
+        setResolvedSrc(src);
+      }
+      setLoading(false);
+    });
+  }, [src, projectId]);
+
+  if (loading) {
+    return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;
+  }
+
+  return (
+    <img src={resolvedSrc} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+  );
+}
 
 export const MARKDOWN_COMPONENTS = {
   code: MarkdownCodeComponent,

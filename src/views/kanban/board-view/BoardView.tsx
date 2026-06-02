@@ -4,7 +4,7 @@ import { move } from "@dnd-kit/helpers";
 import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
-import { ReviewModal } from "@/components/common/ReviewModal";
+import { ReviewModal } from "@/views/kanban/review-modal/ReviewModal";
 import { ExecutionTerminal } from "@/components/execution/ExecutionTerminal";
 import { useUpdateTask } from "@/services/task.service";
 

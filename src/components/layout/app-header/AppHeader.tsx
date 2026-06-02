@@ -1,9 +1,9 @@
 import React, { useState, useRef } from "react";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
-import { AccentColorPicker } from "@/components/common/AccentColorPicker";
+import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
+import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import {
   Select,
   SelectContent,

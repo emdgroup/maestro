@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon, GitBranch } from "lucide-react";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { generateSessionName } from "@/lib/generateSessionName";
 import { cn } from "@/lib/ui-utils";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";

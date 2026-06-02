@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";

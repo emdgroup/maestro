@@ -1,5 +1,5 @@
 import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -16,7 +16,7 @@ import {
 } from "@/services/integration.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey, EnterKeyBehavior, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
-import { showSuccessToast } from "@/components/common/ErrorToast";
+import { showSuccessToast } from "@/components/common/error-toast/ErrorToast";
 
 interface SettingsPageProps {
   projectId: number;

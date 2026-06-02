@@ -4,7 +4,7 @@ import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { ConnectionList } from "./ConnectionList";
 import { ProjectList } from "./ProjectList";
 import { IntegrationsTab } from "./IntegrationsTab";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
   slideVariants,

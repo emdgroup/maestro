@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { X, Pencil, Check, RefreshCw } from "lucide-react";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import {

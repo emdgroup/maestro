@@ -11,7 +11,7 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "@/ui/combobox";
-import { BrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import {
   useListIntegrations,
   PROVIDER_NAMES,

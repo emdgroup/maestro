@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "@/App";
 import "./index.css";
 import { QueryProvider } from "@/providers/QueryProvider";
-import { ToasterRoot } from "@/components/common/ErrorToast";
+import { ToasterRoot } from "@/components/common/error-toast/ErrorToast";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 

@@ -35,7 +35,7 @@ import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 import type { RemoteIssue, TaskPriority, ProjectIssueTrackingConfig } from "@/types/bindings";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 
 function stripProviderPrefix(externalId: string): string {
   const colon = externalId.indexOf(":");

@@ -19,7 +19,7 @@ import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { History, Plus, SearchIcon, Settings2 } from "lucide-react";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import type { ActivityVisibility } from "@/types/bindings";
 
 interface AgentsViewProps {

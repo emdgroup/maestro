@@ -8,7 +8,7 @@ import {
   PROVIDER_CAPABILITIES,
 } from "@/services/integration.service";
 import { IntegrationConnectDialog } from "./IntegrationConnectDialog";
-import { BrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 
 // Ordered as: row 1: Jira Cloud, Bitbucket | row 2: GitHub, GitLab | row 3: Gitea, Forgejo | row 4: Azure DevOps, Linear
 const ALL_PROVIDERS = [

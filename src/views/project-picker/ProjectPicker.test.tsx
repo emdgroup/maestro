@@ -12,7 +12,7 @@ vi.mock("./ProjectList", () => ({
   ProjectList: () => <div data-testid="project-list">ProjectList</div>,
 }));
 
-vi.mock("@/components/common/ThemeToggle", () => ({
+vi.mock("@/components/common/theme-toggle/ThemeToggle", () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">ThemeToggle</div>,
 }));
 

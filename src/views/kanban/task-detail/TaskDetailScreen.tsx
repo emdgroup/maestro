@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { ShortcutHint } from "@/components/common/ShortcutHint";
+import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion } from "framer-motion";
 import { Sparkles, Pause, Zap, Trash2, Archive, X, Paperclip, Upload } from "lucide-react";
 import { commands } from "@/types/bindings";

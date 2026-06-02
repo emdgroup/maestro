@@ -1,16 +1,16 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback, useMemo } from "react";
-import { ShortcutHintProvider } from "@/components/common/ShortcutHintProvider";
+import { ShortcutHintProvider } from "@/components/common/shortcut-hint/ShortcutHintProvider";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
-import { AppHeader } from "@/components/common/AppHeader";
+import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import type { SettingsPageHandle } from "@/views/settings/settings-page/SettingsPage";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
-import { DisconnectBackdrop } from "@/components/common/DisconnectBackdrop";
+import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
   useActiveTab,
   useSlideDirection,

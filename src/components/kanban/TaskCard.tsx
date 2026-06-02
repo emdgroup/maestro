@@ -9,7 +9,7 @@ import { PRIORITY_COLORS } from "@/utils/constants/priority";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { cn } from "@/lib/ui-utils";
 import { useSessionActivity, type SessionActivityStatus, type SessionActivityInfo } from "@/store/sessionActivityStore";
-import { BrandIcon, hasBrandIcon } from "@/components/common/BrandIcon";
+import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 
 interface TaskCardProps {
   task: Task;
