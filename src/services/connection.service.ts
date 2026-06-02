@@ -30,7 +30,7 @@ export const connectionQueryKeys = {
 export function useSshConnections() {
   return useQuery({
     queryKey: connectionQueryKeys.list(),
-    queryFn: () => api.getSshConnections(),
+    queryFn: () => api.listSshConnections(),
   });
 }
 
@@ -56,7 +56,7 @@ export function useCreateSshConnection() {
     }: {
       connectionString: string;
       authMethod: SshAuthMethod;
-    }) => api.saveSshConnection(connectionString, authMethod),
+    }) => api.createSshConnection(connectionString, authMethod),
     onError: createErrorToastHandler("Failed to create SSH connection"),
   });
 }
@@ -286,7 +286,7 @@ export function useWslDistros() {
 export function useWslConnections() {
   return useQuery({
     queryKey: wslQueryKeys.connections(),
-    queryFn: () => api.getWslConnections(),
+    queryFn: () => api.listWslConnections(),
     staleTime: 30_000,
   });
 }

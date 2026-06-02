@@ -273,7 +273,7 @@ export function useDeleteTaskMutation() {
 export function useTaskRelationshipsQuery(taskId: number | null) {
   return useQuery<TaskRelationship[]>({
     queryKey: taskQueryKeys.relationships(taskId!),
-    queryFn: () => api.getTaskRelationships(taskId!),
+    queryFn: () => api.listTaskRelationships(taskId!),
     enabled: taskId !== null,
   });
 }
@@ -304,14 +304,14 @@ export function useAddTaskRelationshipMutation() {
 }
 
 /**
- * Mutation hook for removing a task relationship
+ * Mutation hook for deleting a task relationship
  */
-export function useRemoveTaskRelationshipMutation() {
+export function useDeleteTaskRelationshipMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ relationshipId }: { relationshipId: number; taskId: number }) =>
-      api.removeTaskRelationship(relationshipId),
+      api.deleteTaskRelationship(relationshipId),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.relationships(variables.taskId),
@@ -327,7 +327,7 @@ export function useRemoveTaskRelationshipMutation() {
 export function useTaskInstructionsQuery(taskId: number | null) {
   return useQuery<TaskInstruction[]>({
     queryKey: taskQueryKeys.instructions(taskId!),
-    queryFn: () => api.getTaskInstructions(taskId!),
+    queryFn: () => api.listTaskInstructions(taskId!),
     enabled: taskId !== null,
   });
 }
@@ -379,10 +379,10 @@ export const issueTrackingQueryKeys = {
  * Only runs while the modal is open (enabled: isModalOpen).
  * Automatically refetches every 5 minutes while open; stops when closed.
  */
-export function useFetchRemoteIssuesQuery(projectId: number | null, isModalOpen: boolean) {
+export function useListRemoteIssuesQuery(projectId: number | null, isModalOpen: boolean) {
   return useQuery({
     queryKey: issueTrackingQueryKeys.remoteIssues(projectId!),
-    queryFn: () => api.fetchRemoteIssues(projectId!),
+    queryFn: () => api.listRemoteIssues(projectId!),
     enabled: isModalOpen && projectId !== null,
     staleTime: 60_000,
     refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
@@ -455,7 +455,7 @@ export function useDismissTaskChangeMutation() {
 export function useTaskAttachmentsQuery(taskId: number | null) {
   return useQuery<TaskAttachment[]>({
     queryKey: taskQueryKeys.attachments(taskId!),
-    queryFn: () => api.getTaskAttachments(taskId!),
+    queryFn: () => api.listTaskAttachments(taskId!),
     enabled: taskId !== null,
   });
 }
@@ -485,13 +485,13 @@ export function useAddTaskAttachmentMutation() {
 }
 
 /**
- * Mutation hook for removing an attachment record from a task
+ * Mutation hook for deleting an attachment record from a task
  */
-export function useRemoveTaskAttachmentMutation() {
+export function useDeleteTaskAttachmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ attachmentId }: { attachmentId: number; taskId: number }) =>
-      api.removeTaskAttachment(attachmentId),
+      api.deleteTaskAttachment(attachmentId),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.attachments(variables.taskId),

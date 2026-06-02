@@ -24,7 +24,7 @@ import { cn } from "@/lib/ui-utils";
 import {
   useCreateTaskMutation,
   useProjectBranchesQuery,
-  useFetchRemoteIssuesQuery,
+  useListRemoteIssuesQuery,
   taskQueryKeys,
 } from "@/services/task.service";
 import { useProjectIssueTrackingConfig } from "@/services/integration.service";
@@ -116,7 +116,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [branchTab, setBranchTab] = useState<"local" | "remote">("local");
   const [issueSearch, setIssueSearch] = useState("");
 
-  const { data: remoteIssues, isFetching: issuesFetching } = useFetchRemoteIssuesQuery(
+  const { data: remoteIssues, isFetching: issuesFetching } = useListRemoteIssuesQuery(
     hasProvider ? projectId : null,
     isOpen && hasProvider,
   );
@@ -417,19 +417,21 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}
                     >
                       <Tooltip>
-                      <TooltipTrigger render={<div className="flex-1 contents" />}>
-                      <PopoverTrigger
-                        className={cn(
-                          "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
-                          errors.baseBranch ? "border-destructive" : "border-border",
-                        )}
+                      <TooltipTrigger
+                        render={
+                          <PopoverTrigger
+                            className={cn(
+                              "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
+                              errors.baseBranch ? "border-destructive" : "border-border",
+                            )}
+                          />
+                        }
                       >
                         <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="flex-1 text-left truncate">
                           {value || "Select branch..."}
                         </span>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                      </PopoverTrigger>
                       </TooltipTrigger>
                       <TooltipContent>Branch used as base for the task execution</TooltipContent>
                       </Tooltip>
@@ -504,14 +506,16 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
               >
                 <Tooltip>
-                <TooltipTrigger render={<div className="contents" />}>
-                <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors">
+                <TooltipTrigger
+                  render={
+                    <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors" />
+                  }
+                >
                   <span
                     className="size-2 rounded-full shrink-0"
                     style={{ backgroundColor: PRIORITY_COLORS[selectedPriority] }}
                   />
                   {selectedPriority}
-                </PopoverTrigger>
                 </TooltipTrigger>
                 <TooltipContent>Board ordering priority</TooltipContent>
                 </Tooltip>
@@ -548,8 +552,11 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                 onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}
               >
                 <Tooltip>
-                <TooltipTrigger render={<div className="contents" />}>
-                <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-50">
+                <TooltipTrigger
+                  render={
+                    <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-50" />
+                  }
+                >
                   {selectedAgent ? (
                     hasBrandIcon(selectedAgent.id) ? (
                       <BrandIcon slug={selectedAgent.id} className="size-3 shrink-0" />
@@ -562,7 +569,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                     <BotOff className="size-3 shrink-0 text-muted-foreground" />
                   )}
                   <span className="truncate">{agentPillLabel}</span>
-                </PopoverTrigger>
                 </TooltipTrigger>
                 <TooltipContent>AI agent assigned to this task</TooltipContent>
                 </Tooltip>
@@ -580,7 +586,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                             setOpenPopover(null);
                           }}
                         >
-                          <Bot className="size-3 text-muted-foreground shrink-0" />
+                          <BotOff className="size-3 text-muted-foreground shrink-0" />
                           <span className="flex-1 text-left">No agent</span>
                           {!selectedAgentId && <Check className="size-3 ml-auto shrink-0" />}
                         </button>
@@ -683,7 +689,7 @@ function TogglePill({ name, label, control, tooltip, icon, activeIcon }: ToggleP
         if (!tooltip) return button;
         return (
           <Tooltip>
-            <TooltipTrigger render={<div className="contents" />}>
+            <TooltipTrigger render={<span className="inline-flex" />}>
               {button}
             </TooltipTrigger>
             <TooltipContent>{tooltip}</TooltipContent>

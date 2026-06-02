@@ -14,12 +14,12 @@ import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
 import type { JsonValue, AcpPromptCapabilities } from "@/types/bindings";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
-import type { MentionEntry } from "./MentionEntry";
-import type { ExternalAttachment } from "./ExternalAttachment";
+import type { MentionEntry } from "./mentionEntry";
+import type { ExternalAttachment } from "./externalAttachment";
 import { useSettings } from "@/services/settings.service";
 import { LiquidContextIndicator } from "./LiquidContextIndicator";
 import { ConfigSelector } from "./config-selectors/ConfigSelector";
-import { isImageExtension, mimeForExtension } from "./file-type-utils";
+import { isImageExtension, mimeForExtension } from "./fileTypeUtils";
 
 interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;

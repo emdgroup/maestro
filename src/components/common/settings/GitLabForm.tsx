@@ -8,7 +8,7 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "@/ui/combobox";
-import { useListGitlabProjects } from "@/services/provider-lookup.service";
+import { useListGitlabProjects } from "@/services/integration-lookup.service";
 
 interface Props {
   fields: Record<string, string>;

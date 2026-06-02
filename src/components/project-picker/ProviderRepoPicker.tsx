@@ -33,7 +33,7 @@ import {
   useRefreshBitbucketRepos,
   useListBitbucketProjects,
   useRefreshBitbucketProjects,
-} from "@/services/provider-lookup.service";
+} from "@/services/integration-lookup.service";
 
 interface ProviderRepoPickerProps {
   onRepoSelected: (cloneUrl: string, repoName: string, provider?: string) => void;

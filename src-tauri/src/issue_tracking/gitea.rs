@@ -1,5 +1,5 @@
 use crate::models::issue_tracking::{GiteaConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project_config::now_rfc3339;
+use crate::models::project::now_rfc3339;
 use crate::issue_tracking::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
@@ -46,6 +46,16 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Network error: {}", e))?;
 
+    if response.status().as_u16() == 401 {
+        return Err("Gitea: invalid or expired token".to_string());
+    }
+    if response.status().as_u16() == 403 {
+        return Err(
+            "Gitea: token is valid but missing the required 'read:user' scope. \
+             Regenerate your token with 'read:user' permission enabled."
+                .to_string(),
+        );
+    }
     if !response.status().is_success() {
         let status = response.status();
         return Err(format!(

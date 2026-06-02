@@ -4,7 +4,7 @@ import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
 import { MarkdownBlock, SvgBlock, MermaidBlock, CodeBlockWrapper } from "./MarkdownBlock";
 import { Slider } from "@/ui/slider";
-import { isImageExtension, imageMimeForExtension, langForExtension } from "./file-type-utils";
+import { isImageExtension, imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 
 interface WorkingFilesPanelProps {
   files: string[];

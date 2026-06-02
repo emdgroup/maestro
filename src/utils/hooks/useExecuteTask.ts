@@ -146,7 +146,7 @@ export function useExecuteTask(
       }
 
       // Build initial prompt content blocks
-      const attachments = await api.getTaskAttachments(task.id);
+      const attachments = await api.listTaskAttachments(task.id);
       const contentBlocks: JsonValue[] = [];
 
       const promptText = task.description

@@ -326,7 +326,7 @@ pub fn check_project_locks(
 /// remove project by id
 #[tauri::command]
 #[specta::specta]
-pub fn remove_project(
+pub fn delete_project(
     app_state: State<Arc<AppState>>,
     project_id: i32,
 ) -> Result<(), String> {

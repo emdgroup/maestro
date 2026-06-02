@@ -12,6 +12,57 @@ use crate::models::issue_tracking::{
 use crate::issue_tracking::linear::LinearTeam;
 use super::issue_tracking_handlers::get_integration_creds;
 
+/// Paginated fetch for APIs returning a flat JSON array with page-based pagination.
+/// Loops from page 1 until an empty response, appending `{limit_param}=N&{page_param}=N`
+/// to `base_url` each iteration.
+async fn fetch_all_pages<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    base_url: &str,
+    headers: &[(&str, &str)],
+    page_param: &str,
+    limit_param: &str,
+    limit_value: u32,
+    provider_name: &str,
+) -> Result<Vec<T>, String> {
+    let mut all_items = Vec::new();
+    let mut page = 1u32;
+    let joiner = if base_url.contains('?') { '&' } else { '?' };
+
+    loop {
+        let url = format!(
+            "{}{}{page_param}={page}&{limit_param}={limit_value}",
+            base_url, joiner,
+        );
+
+        let mut request = client.get(&url);
+        for &(name, value) in headers {
+            request = request.header(name, value);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("{} API error {}", provider_name, response.status().as_u16()));
+        }
+
+        let items: Vec<T> = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse {} response: {}", provider_name, e))?;
+
+        if items.is_empty() {
+            break;
+        }
+        all_items.extend(items);
+        page += 1;
+    }
+
+    Ok(all_items)
+}
+
 async fn get_github_token(app_state: &AppState) -> Result<String, String> {
     match KeychainStore::get_integration("github", &app_state.app_data_dir)? {
         KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
@@ -59,21 +110,11 @@ pub async fn list_github_repos(
 ) -> Result<Vec<RepoOption>, String> {
     let token = get_github_token(&app_state).await?;
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!(
-        "https://api.github.com/users/{}/repos?per_page=100&sort=updated",
+    let auth = format!("Bearer {}", token);
+    let base_url = format!(
+        "https://api.github.com/users/{}/repos?sort=updated",
         urlencoding::encode(&owner),
     );
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "maestro/1.0")
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("GitHub API error {}", response.status().as_u16()));
-    }
 
     #[derive(serde::Deserialize)]
     struct GhRepo {
@@ -82,10 +123,16 @@ pub async fn list_github_repos(
         clone_url: Option<String>,
     }
 
-    let repos: Vec<GhRepo> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitHub repos response: {}", e))?;
+    let repos: Vec<GhRepo> = fetch_all_pages(
+        &client,
+        &base_url,
+        &[("Authorization", auth.as_str()), ("User-Agent", "maestro/1.0")],
+        "page",
+        "per_page",
+        100,
+        "GitHub",
+    )
+    .await?;
 
     Ok(repos
         .into_iter()
@@ -119,21 +166,7 @@ pub async fn list_jira_projects(
     );
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!(
-        "{}/rest/api/3/project/search?maxResults=50&orderBy=name&expand=insight",
-        base
-    );
-    let response = client
-        .get(&url)
-        .header("Authorization", auth)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Jira Cloud API error {}", response.status().as_u16()));
-    }
+    let max_results = 50u32;
 
     #[derive(serde::Deserialize)]
     struct JiraAvatarUrls {
@@ -156,13 +189,39 @@ pub async fn list_jira_projects(
         values: Vec<JiraProject>,
     }
 
-    let result: JiraSearchResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Jira projects response: {}", e))?;
+    let mut all_projects = Vec::new();
+    let mut start_at = 0u32;
 
-    Ok(result
-        .values
+    loop {
+        let url = format!(
+            "{}/rest/api/3/project/search?maxResults={}&startAt={}&orderBy=name&expand=insight",
+            base, max_results, start_at,
+        );
+        let response = client
+            .get(&url)
+            .header("Authorization", &auth)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Jira Cloud API error {}", response.status().as_u16()));
+        }
+
+        let result: JiraSearchResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Jira projects response: {}", e))?;
+
+        if result.values.is_empty() {
+            break;
+        }
+        start_at += result.values.len() as u32;
+        all_projects.extend(result.values);
+    }
+
+    Ok(all_projects
         .into_iter()
         .map(|p| JiraProjectOption {
             key: p.key,
@@ -197,20 +256,10 @@ pub async fn list_gitlab_projects(
     let base = crate::issue_tracking::normalize_instance_url(instance_url);
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!(
-        "{}/api/v4/projects?membership=true&per_page=50&order_by=last_activity_at",
+    let base_url = format!(
+        "{}/api/v4/projects?membership=true&order_by=last_activity_at",
         base
     );
-    let response = client
-        .get(&url)
-        .header("PRIVATE-TOKEN", &creds.token)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("GitLab API error {}", response.status().as_u16()));
-    }
 
     #[derive(serde::Deserialize)]
     struct GitLabProject {
@@ -220,10 +269,16 @@ pub async fn list_gitlab_projects(
         http_url_to_repo: Option<String>,
     }
 
-    let projects: Vec<GitLabProject> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitLab projects response: {}", e))?;
+    let projects: Vec<GitLabProject> = fetch_all_pages(
+        &client,
+        &base_url,
+        &[("PRIVATE-TOKEN", creds.token.as_str())],
+        "page",
+        "per_page",
+        50,
+        "GitLab",
+    )
+    .await?;
 
     Ok(projects
         .into_iter()
@@ -251,21 +306,12 @@ pub async fn list_forgejo_repos(
     let base = crate::issue_tracking::normalize_instance_url(instance_url);
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!(
-        "{}/api/v1/users/{}/repos?limit=50",
+    let auth = format!("token {}", creds.token);
+    let base_url = format!(
+        "{}/api/v1/users/{}/repos?sort=updated",
         base,
         urlencoding::encode(&owner),
     );
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("token {}", creds.token))
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Forgejo API error {}", response.status().as_u16()));
-    }
 
     #[derive(serde::Deserialize)]
     struct ForgejoRepo {
@@ -274,10 +320,16 @@ pub async fn list_forgejo_repos(
         clone_url: Option<String>,
     }
 
-    let repos: Vec<ForgejoRepo> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Forgejo repos response: {}", e))?;
+    let repos: Vec<ForgejoRepo> = fetch_all_pages(
+        &client,
+        &base_url,
+        &[("Authorization", auth.as_str())],
+        "page",
+        "limit",
+        50,
+        "Forgejo",
+    )
+    .await?;
 
     Ok(repos
         .into_iter()
@@ -300,21 +352,12 @@ pub async fn list_gitea_repos(
     let base = crate::issue_tracking::normalize_instance_url(instance_url);
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!(
-        "{}/api/v1/users/{}/repos?limit=50",
+    let auth = format!("token {}", creds.token);
+    let base_url = format!(
+        "{}/api/v1/users/{}/repos?sort=updated",
         base,
         urlencoding::encode(&owner),
     );
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("token {}", creds.token))
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Gitea API error {}", response.status().as_u16()));
-    }
 
     #[derive(serde::Deserialize)]
     struct GiteaRepo {
@@ -323,10 +366,16 @@ pub async fn list_gitea_repos(
         clone_url: Option<String>,
     }
 
-    let repos: Vec<GiteaRepo> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Gitea repos response: {}", e))?;
+    let repos: Vec<GiteaRepo> = fetch_all_pages(
+        &client,
+        &base_url,
+        &[("Authorization", auth.as_str())],
+        "page",
+        "limit",
+        50,
+        "Gitea",
+    )
+    .await?;
 
     Ok(repos
         .into_iter()
@@ -355,20 +404,7 @@ pub async fn list_azuredevops_projects(
     );
 
     let client = crate::issue_tracking::build_http_client()?;
-    let url = format!("{}/_apis/projects?api-version={}&$top=50", base, crate::issue_tracking::azure_devops::AZDO_API_VERSION);
-    let response = client
-        .get(&url)
-        .header("Authorization", auth)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
-        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
-    }
+    let top = 50u32;
 
     #[derive(serde::Deserialize)]
     struct AzdoProject {
@@ -382,13 +418,41 @@ pub async fn list_azuredevops_projects(
         value: Vec<AzdoProject>,
     }
 
-    let result: AzdoProjectsResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Azure DevOps projects response: {}", e))?;
+    let mut all_projects = Vec::new();
+    let mut skip = 0u32;
 
-    Ok(result
-        .value
+    loop {
+        let url = format!(
+            "{}/_apis/projects?api-version={}&$top={}&$skip={}",
+            base, crate::issue_tracking::azure_devops::AZDO_API_VERSION, top, skip,
+        );
+        let response = client
+            .get(&url)
+            .header("Authorization", &auth)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+            return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+        }
+
+        let result: AzdoProjectsResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Azure DevOps projects response: {}", e))?;
+
+        if result.value.is_empty() {
+            break;
+        }
+        skip += result.value.len() as u32;
+        all_projects.extend(result.value);
+    }
+
+    Ok(all_projects
         .into_iter()
         .map(|p| AzureDevOpsProjectOption { id: p.id, name: p.name, description: p.description })
         .collect())
@@ -481,7 +545,7 @@ pub async fn list_bitbucket_repos(
 
     match creds.instance_url {
         Some(base_url) => {
-            // Bitbucket Server / Data Center
+            // Bitbucket Server / Data Center — uses isLastPage + nextPageStart
             #[derive(serde::Deserialize)]
             struct BbServerCloneLink {
                 href: String,
@@ -502,33 +566,53 @@ pub async fn list_bitbucket_repos(
             }
 
             #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
             struct BbServerReposResponse {
                 values: Vec<BbServerRepo>,
+                #[serde(default)]
+                is_last_page: bool,
+                next_page_start: Option<u32>,
             }
 
-            let url = format!(
-                "{}/rest/api/latest/projects/{}/repos?limit=100",
-                base_url.trim_end_matches('/'),
-                urlencoding::encode(&workspace),
-            );
-            let response = client
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", creds.token))
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
+            let auth = format!("Bearer {}", creds.token);
+            let base = base_url.trim_end_matches('/');
+            let mut all_repos = Vec::new();
+            let mut start = 0u32;
 
-            if !response.status().is_success() {
-                return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+            loop {
+                let url = format!(
+                    "{}/rest/api/latest/projects/{}/repos?limit=100&start={}",
+                    base,
+                    urlencoding::encode(&workspace),
+                    start,
+                );
+                let response = client
+                    .get(&url)
+                    .header("Authorization", &auth)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Network error: {}", e))?;
+
+                if !response.status().is_success() {
+                    return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+                }
+
+                let result: BbServerReposResponse = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse Bitbucket Server repositories response: {}", e))?;
+
+                let is_last = result.is_last_page;
+                let next_start = result.next_page_start;
+                all_repos.extend(result.values);
+
+                if is_last || next_start.is_none() {
+                    break;
+                }
+                start = next_start.expect("checked above");
             }
 
-            let result: BbServerReposResponse = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse Bitbucket Server repositories response: {}", e))?;
-
-            Ok(result
-                .values
+            Ok(all_repos
                 .into_iter()
                 .map(|r| {
                     let clone_url = r
@@ -547,7 +631,7 @@ pub async fn list_bitbucket_repos(
                 .collect())
         }
         None => {
-            // Bitbucket Cloud
+            // Bitbucket Cloud — follows `next` URL
             let email = creds.email.ok_or_else(|| "Bitbucket Cloud credentials missing email".to_string())?;
             let auth = format!(
                 "Basic {}",
@@ -577,30 +661,42 @@ pub async fn list_bitbucket_repos(
             #[derive(serde::Deserialize)]
             struct BbCloudReposResponse {
                 values: Vec<BbCloudRepo>,
+                next: Option<String>,
             }
 
-            let url = format!(
+            let mut all_repos = Vec::new();
+            let mut url = format!(
                 "https://api.bitbucket.org/2.0/repositories/{}?pagelen=50&sort=-updated_on",
                 urlencoding::encode(&workspace),
             );
-            let response = client
-                .get(&url)
-                .header("Authorization", auth)
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
 
-            if !response.status().is_success() {
-                return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+            loop {
+                let response = client
+                    .get(&url)
+                    .header("Authorization", &auth)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Network error: {}", e))?;
+
+                if !response.status().is_success() {
+                    return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+                }
+
+                let result: BbCloudReposResponse = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse Bitbucket repositories response: {}", e))?;
+
+                let next_url = result.next;
+                all_repos.extend(result.values);
+
+                match next_url {
+                    Some(next) => url = next,
+                    None => break,
+                }
             }
 
-            let result: BbCloudReposResponse = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse Bitbucket repositories response: {}", e))?;
-
-            Ok(result
-                .values
+            Ok(all_repos
                 .into_iter()
                 .map(|r| {
                     let clone_url = r
@@ -633,6 +729,7 @@ pub async fn list_bitbucket_projects(
         "list_bitbucket_projects is only available for Bitbucket Server/DC".to_string()
     })?;
     let client = crate::issue_tracking::build_http_client()?;
+    let auth = format!("Bearer {}", creds.token);
 
     #[derive(serde::Deserialize)]
     struct BbProject {
@@ -641,29 +738,47 @@ pub async fn list_bitbucket_projects(
     }
 
     #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
     struct BbProjectsResponse {
         values: Vec<BbProject>,
+        #[serde(default)]
+        is_last_page: bool,
+        next_page_start: Option<u32>,
     }
 
-    let url = format!("{}/rest/api/latest/projects?limit=100", base_url.trim_end_matches('/'));
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", creds.token))
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
+    let base = base_url.trim_end_matches('/');
+    let mut all_projects = Vec::new();
+    let mut start = 0u32;
 
-    if !response.status().is_success() {
-        return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+    loop {
+        let url = format!("{}/rest/api/latest/projects?limit=100&start={}", base, start);
+        let response = client
+            .get(&url)
+            .header("Authorization", &auth)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+        }
+
+        let result: BbProjectsResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Bitbucket projects response: {}", e))?;
+
+        let is_last = result.is_last_page;
+        let next_start = result.next_page_start;
+        all_projects.extend(result.values);
+
+        if is_last || next_start.is_none() {
+            break;
+        }
+        start = next_start.expect("checked above");
     }
 
-    let result: BbProjectsResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Bitbucket projects response: {}", e))?;
-
-    Ok(result
-        .values
+    Ok(all_projects
         .into_iter()
         .map(|p| BitbucketProjectOption { key: p.key, name: p.name })
         .collect())

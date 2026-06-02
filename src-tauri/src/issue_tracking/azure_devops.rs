@@ -1,5 +1,5 @@
 use crate::models::issue_tracking::{AzureDevOpsConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project_config::now_rfc3339;
+use crate::models::project::now_rfc3339;
 use crate::issue_tracking::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;

@@ -5,7 +5,7 @@ use tauri::{Emitter, State};
 
 use crate::db::AppState;
 use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
-use crate::models::project_config::now_rfc3339;
+use crate::models::project::now_rfc3339;
 use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
 use crate::issue_tracking::normalize_instance_url;
 
@@ -235,6 +235,13 @@ async fn validate_credentials(
             if response.status().as_u16() == 401 {
                 return Err("forgejo: bad credentials".to_string());
             }
+            if response.status().as_u16() == 403 {
+                return Err(
+                    "forgejo: token is valid but missing the required 'read:user' scope. \
+                     Regenerate your token with 'read:user' permission enabled."
+                        .to_string(),
+                );
+            }
             if !response.status().is_success() {
                 let status = response.status();
                 return Err(format!("forgejo: API error {}", status.as_u16()));
@@ -432,6 +439,13 @@ async fn validate_credentials(
 
             if response.status().as_u16() == 401 {
                 return Err("gitea: bad credentials".to_string());
+            }
+            if response.status().as_u16() == 403 {
+                return Err(
+                    "gitea: token is valid but missing the required 'read:user' scope. \
+                     Regenerate your token with 'read:user' permission enabled."
+                        .to_string(),
+                );
             }
             if !response.status().is_success() {
                 let status = response.status();

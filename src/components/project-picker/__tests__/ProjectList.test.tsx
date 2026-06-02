@@ -32,7 +32,7 @@ vi.mock("@/services/project.service", () => ({
     mutateAsync: vi.fn(),
     isPending: false,
   }),
-  useRemoveProject: () => ({
+  useDeleteProject: () => ({
     mutate: vi.fn(),
     isPending: false,
   }),

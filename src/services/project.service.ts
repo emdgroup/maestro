@@ -113,20 +113,20 @@ export function useCreateProject() {
 }
 
 /**
- * Mutation hook for removing a project
+ * Mutation hook for deleting a project
  */
-export function useRemoveProject(connectionId: number | string | null | undefined) {
+export function useDeleteProject(connectionId: number | string | null | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (projectId: number) => api.removeProject(projectId),
+    mutationFn: (projectId: number) => api.deleteProject(projectId),
     onSuccess: (_data, projectId) => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.details(projectId) });
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
       });
     },
-    onError: createErrorToastHandler("Failed to remove project"),
+    onError: createErrorToastHandler("Failed to delete project"),
   });
 }
 

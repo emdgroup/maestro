@@ -3,7 +3,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { useIsMobile } from "@/utils/hooks/use-mobile";
+import { useIsMobile } from "@/utils/hooks/useMobile";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";

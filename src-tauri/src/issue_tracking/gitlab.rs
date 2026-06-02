@@ -1,5 +1,5 @@
 use crate::models::issue_tracking::{GitLabConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project_config::now_rfc3339;
+use crate::models::project::now_rfc3339;
 use crate::issue_tracking::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
@@ -148,18 +148,39 @@ pub async fn fetch_issues(
 
     let remote_issues = issues
         .into_iter()
-        .map(|issue| RemoteIssue {
-            external_id: format!("gitlab:{}/{}", project_id, issue.iid),
-            title: issue.title,
-            body: issue.description,
-            url: issue.web_url,
-            labels: issue.labels,
-            updated_at: issue.updated_at,
-            priority: None,
+        .map(|issue| {
+            let project_base = extract_project_base_from_web_url(&issue.web_url, &base);
+            RemoteIssue {
+                external_id: format!("gitlab:{}/{}", project_id, issue.iid),
+                title: issue.title,
+                body: issue.description.map(|desc| {
+                    normalize_gitlab_upload_urls(&desc, &project_base)
+                }),
+                url: issue.web_url,
+                labels: issue.labels,
+                updated_at: issue.updated_at,
+                priority: None,
+            }
         })
         .collect();
 
     Ok(remote_issues)
+}
+
+// Extracts the project base URL from a GitLab issue web_url.
+// e.g. "https://gitlab.com/group/project/-/issues/7" → "https://gitlab.com/group/project"
+fn extract_project_base_from_web_url(web_url: &str, fallback_base: &str) -> String {
+    if let Some(pos) = web_url.find("/-/") {
+        web_url[..pos].to_string()
+    } else {
+        fallback_base.to_string()
+    }
+}
+
+// Replaces relative /uploads/ refs with absolute URLs so the image proxy can fetch them.
+// "](/uploads/abc/img.png)" → "](https://gitlab.com/group/project/uploads/abc/img.png)"
+fn normalize_gitlab_upload_urls(body: &str, project_base_url: &str) -> String {
+    body.replace("](/uploads/", &format!("]({}/uploads/", project_base_url))
 }
 
 #[cfg(test)]
@@ -218,5 +239,38 @@ mod tests {
         let json = r#"{"iid":1,"id":1,"title":"T","description":null,"web_url":"","labels":["bug","help wanted"],"updated_at":null}"#;
         let issue: GitLabIssueResponse = serde_json::from_str(json).unwrap();
         assert_eq!(issue.labels, vec!["bug", "help wanted"]);
+    }
+
+    #[test]
+    fn test_extract_project_base_from_web_url() {
+        assert_eq!(
+            extract_project_base_from_web_url("https://gitlab.com/mygroup/myproject/-/issues/7", "https://gitlab.com"),
+            "https://gitlab.com/mygroup/myproject"
+        );
+    }
+
+    #[test]
+    fn test_extract_project_base_fallback() {
+        assert_eq!(
+            extract_project_base_from_web_url("https://gitlab.com/weird-url", "https://gitlab.com"),
+            "https://gitlab.com"
+        );
+    }
+
+    #[test]
+    fn test_normalize_gitlab_upload_urls() {
+        let body = "Some text ![diagram](/uploads/abc123/arch.png) more text";
+        let result = normalize_gitlab_upload_urls(body, "https://gitlab.com/group/project");
+        assert_eq!(
+            result,
+            "Some text ![diagram](https://gitlab.com/group/project/uploads/abc123/arch.png) more text"
+        );
+    }
+
+    #[test]
+    fn test_normalize_gitlab_upload_urls_no_uploads() {
+        let body = "No images here";
+        let result = normalize_gitlab_upload_urls(body, "https://gitlab.com/g/p");
+        assert_eq!(result, "No images here");
     }
 }

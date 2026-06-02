@@ -309,7 +309,7 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
 /// Get relationships for a task
 #[tauri::command]
 #[specta::specta]
-pub fn get_task_relationships(
+pub fn list_task_relationships(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<TaskRelationship>, String> {
@@ -362,7 +362,7 @@ pub fn add_task_relationship(
 /// Remove a task relationship
 #[tauri::command]
 #[specta::specta]
-pub fn remove_task_relationship(
+pub fn delete_task_relationship(
     app_state: State<Arc<AppState>>,
     relationship_id: i32,
 ) -> Result<(), String> {
@@ -375,7 +375,7 @@ pub fn remove_task_relationship(
 /// Get instructions log for a task
 #[tauri::command]
 #[specta::specta]
-pub fn get_task_instructions(
+pub fn list_task_instructions(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<TaskInstruction>, String> {
@@ -465,7 +465,7 @@ pub async fn list_project_branches(
 /// Get attachments for a task
 #[tauri::command]
 #[specta::specta]
-pub fn get_task_attachments(
+pub fn list_task_attachments(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<TaskAttachment>, String> {
@@ -522,7 +522,7 @@ pub fn add_task_attachment(
 /// Remove an attachment record by id
 #[tauri::command]
 #[specta::specta]
-pub fn remove_task_attachment(
+pub fn delete_task_attachment(
     app_state: State<Arc<AppState>>,
     attachment_id: i32,
 ) -> Result<(), String> {

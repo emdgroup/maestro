@@ -87,9 +87,9 @@ async checkProjectLocks(projectIds: number[]) : Promise<number[]> {
 /**
  * remove project by id
  */
-async removeProject(projectId: number) : Promise<Result<null, string>> {
+async deleteProject(projectId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("remove_project", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_project", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -194,9 +194,9 @@ async deleteTask(taskId: number) : Promise<Result<null, string>> {
 /**
  * Get relationships for a task
  */
-async getTaskRelationships(taskId: number) : Promise<Result<TaskRelationship[], string>> {
+async listTaskRelationships(taskId: number) : Promise<Result<TaskRelationship[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_relationships", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -216,9 +216,9 @@ async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType
 /**
  * Remove a task relationship
  */
-async removeTaskRelationship(relationshipId: number) : Promise<Result<null, string>> {
+async deleteTaskRelationship(relationshipId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("remove_task_relationship", { relationshipId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { relationshipId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -227,9 +227,9 @@ async removeTaskRelationship(relationshipId: number) : Promise<Result<null, stri
 /**
  * Get instructions log for a task
  */
-async getTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], string>> {
+async listTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_instructions", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -630,9 +630,9 @@ async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<
 /**
  * Get all saved SSH connections
  */
-async getSshConnections() : Promise<Result<SshConnection[], string>> {
+async listSshConnections() : Promise<Result<SshConnection[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_ssh_connections") };
+    return { status: "ok", data: await TAURI_INVOKE("list_ssh_connections") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -663,9 +663,9 @@ async getSshConnectionStatus(connectionId: number) : Promise<Result<ConnectionSt
 /**
  * Save a new SSH connection to the database
  */
-async saveSshConnection(connectionString: string, authMethod: SshAuthMethod) : Promise<Result<number, string>> {
+async createSshConnection(connectionString: string, authMethod: SshAuthMethod) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_ssh_connection", { connectionString, authMethod }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_ssh_connection", { connectionString, authMethod }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1280,9 +1280,9 @@ async saveWslConnection(distroName: string, displayName: string | null) : Promis
 /**
  * List all saved WSL connections from the database.
  */
-async getWslConnections() : Promise<Result<WslConnection[], string>> {
+async listWslConnections() : Promise<Result<WslConnection[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_wsl_connections") };
+    return { status: "ok", data: await TAURI_INVOKE("list_wsl_connections") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1363,9 +1363,9 @@ async saveProjectIssueTrackingConfig(projectId: number, issueTracking: ProjectIs
  * Fetch remote issues using the global keychain for credentials and per-project
  * ticketing config for provider-specific fields (repo, project_key, etc.).
  */
-async fetchRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string>> {
+async listRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_remote_issues", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_remote_issues", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1536,9 +1536,9 @@ async listBitbucketProjects() : Promise<Result<BitbucketProjectOption[], string>
 /**
  * Get attachments for a task
  */
-async getTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], string>> {
+async listTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_attachments", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_attachments", { taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1558,9 +1558,17 @@ async addTaskAttachment(taskId: number, filename: string, filePath: string) : Pr
 /**
  * Remove an attachment record by id
  */
-async removeTaskAttachment(attachmentId: number) : Promise<Result<null, string>> {
+async deleteTaskAttachment(attachmentId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("remove_task_attachment", { attachmentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { attachmentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("proxy_image", { projectId, imageUrl }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

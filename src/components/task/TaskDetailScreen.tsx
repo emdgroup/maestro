@@ -4,6 +4,7 @@ import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/ShortcutHint";
 import { motion } from "framer-motion";
 import { Sparkles, Pause, Zap, Trash2, Archive, X, Paperclip, Upload } from "lucide-react";
+import { commands } from "@/types/bindings";
 import type { TaskStatus, TaskAttachment } from "@/types/bindings";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -31,7 +32,7 @@ import {
   useArchiveTaskMutation,
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
-  useRemoveTaskAttachmentMutation,
+  useDeleteTaskAttachmentMutation,
   useTaskAttachmentsQuery,
   useUpdateTaskSettingsMutation,
 } from "@/services/task.service";
@@ -97,6 +98,39 @@ function EditableField({
 }
 
 // ---------------------------------------------------------------------------
+// Attachment helpers
+// ---------------------------------------------------------------------------
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"]);
+
+function isImageAttachment(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+function AttachmentThumbnail({ attachment, projectId }: { attachment: TaskAttachment; projectId: number }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    commands.proxyImage(projectId, attachment.file_path).then((result) => {
+      if (result.status === "ok") setSrc(result.data);
+    });
+  }, [projectId, attachment.file_path]);
+
+  if (!src) {
+    return <span className="w-20 h-20 bg-muted rounded-md animate-pulse" />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={attachment.filename}
+      className="w-20 h-20 object-cover rounded-md border border-border"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // DescriptionField — shows rendered markdown, switches to textarea on edit
 // ---------------------------------------------------------------------------
 
@@ -105,9 +139,10 @@ interface DescriptionFieldProps {
   onSave: (v: string) => void;
   isEditable: boolean;
   placeholder?: string;
+  projectId?: number;
 }
 
-function DescriptionField({ value, onSave, isEditable, placeholder = "" }: DescriptionFieldProps) {
+function DescriptionField({ value, onSave, isEditable, placeholder = "", projectId }: DescriptionFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -158,7 +193,7 @@ function DescriptionField({ value, onSave, isEditable, placeholder = "" }: Descr
           !isEditable && "cursor-default",
         )}
       >
-        <MarkdownBlock text={value} />
+        <MarkdownBlock text={value} projectId={projectId} />
       </div>
     );
   }
@@ -326,7 +361,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const deleteTask = useDeleteTaskMutation();
   const archiveTask = useArchiveTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
-  const removeAttachment = useRemoveTaskAttachmentMutation();
+  const removeAttachment = useDeleteTaskAttachmentMutation();
 
   const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
   const { data: agentCache } = useAgentCacheQuery(task?.agent_id ?? null, connection);
@@ -569,6 +604,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
               onSave={handleDescriptionSave}
               isEditable={isEditable}
               placeholder="Add a description..."
+              projectId={projectId ?? undefined}
             />
 
             {/* Attachments */}
@@ -582,37 +618,64 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                 <p className="text-xs text-muted-foreground">No attachments</p>
               )}
 
-              {attachments.length > 0 && (
-                <ul className="space-y-1">
-                  {attachments.map((att: TaskAttachment) => (
-                    <li
-                      key={att.id}
-                      className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
-                    >
-                      <span className="flex-1 truncate text-foreground">{att.filename}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatFileSize(att.file_size)}
-                      </span>
-                      {isEditable && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          onClick={() =>
-                            removeAttachment.mutate({
-                              attachmentId: att.id,
-                              taskId: att.task_id,
-                            })
-                          }
-                          disabled={removeAttachment.isPending}
-                        >
-                          <X className="size-3" />
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {attachments.length > 0 && (() => {
+                const imageAtts = attachments.filter((a: TaskAttachment) => isImageAttachment(a.filename));
+                const fileAtts = attachments.filter((a: TaskAttachment) => !isImageAttachment(a.filename));
+                return (
+                  <div className="space-y-2">
+                    {imageAtts.length > 0 && projectId && (
+                      <div className="flex flex-wrap gap-2">
+                        {imageAtts.map((att: TaskAttachment) => (
+                          <div key={att.id} className="relative group">
+                            <AttachmentThumbnail attachment={att} projectId={projectId} />
+                            {isEditable && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() =>
+                                  removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                                }
+                                disabled={removeAttachment.isPending}
+                              >
+                                <X className="size-3" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {fileAtts.length > 0 && (
+                      <ul className="space-y-1">
+                        {fileAtts.map((att: TaskAttachment) => (
+                          <li
+                            key={att.id}
+                            className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                          >
+                            <span className="flex-1 truncate text-foreground">{att.filename}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {formatFileSize(att.file_size)}
+                            </span>
+                            {isEditable && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0"
+                                onClick={() =>
+                                  removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                                }
+                                disabled={removeAttachment.isPending}
+                              >
+                                <X className="size-3" />
+                              </Button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Dropzone — Backlog only */}
               {isEditable && (

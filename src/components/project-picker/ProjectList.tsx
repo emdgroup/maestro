@@ -9,7 +9,7 @@ import {
   useRecentProjects,
   useProjectLocks,
   useCreateProject,
-  useRemoveProject,
+  useDeleteProject,
   useGitInitProject,
   useCheckIsGitRepo,
   connectionQueryKey,
@@ -45,7 +45,7 @@ export function ProjectList() {
   const { setSelectedProject } = useSelectedProjectActions();
 
   const { mutateAsync: createProject } = useCreateProject();
-  const { mutate: removeProject } = useRemoveProject(connectionQueryKey(activeConnectionKey));
+  const { mutate: removeProject } = useDeleteProject(connectionQueryKey(activeConnectionKey));
   const { mutateAsync: gitInitProject } = useGitInitProject();
   const { mutateAsync: checkIsGitRepo } = useCheckIsGitRepo();
 

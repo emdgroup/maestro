@@ -18,7 +18,7 @@ import {
   useCheckGithubOwner,
   useListGithubRepos,
   useRefreshGithubRepos,
-} from "@/services/provider-lookup.service";
+} from "@/services/integration-lookup.service";
 
 interface Props {
   integration: IntegrationStatus;

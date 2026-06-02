@@ -43,7 +43,7 @@ async fn finalize_ssh_connection(
 /// Get all saved SSH connections
 #[tauri::command]
 #[specta::specta]
-pub fn get_ssh_connections(
+pub fn list_ssh_connections(
     app_state: State<Arc<AppState>>,
 ) -> Result<Vec<SshConnection>, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -82,7 +82,7 @@ pub fn get_ssh_connection(
 /// Save a new SSH connection to the database
 #[tauri::command]
 #[specta::specta]
-pub fn save_ssh_connection(
+pub fn create_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_string: String,
     auth_method: SshAuthMethod,
