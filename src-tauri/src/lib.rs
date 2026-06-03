@@ -7,6 +7,7 @@ pub mod task;
 pub mod connectivity;
 pub mod execution;
 pub mod integration;
+pub mod settings;
 pub mod ipc;
 pub mod git;
 pub mod acp;

@@ -1,6 +1,5 @@
-pub mod settings;
-
 // Re-export from new domain modules for backwards compatibility
+pub use crate::settings::models as settings;
 pub use crate::project::models as project;
 pub use crate::task::models as task;
 pub use crate::connectivity::models as connection;
