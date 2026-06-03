@@ -1,6 +1,6 @@
 use maestro_protocol::{AcpRegistry, AgentDistribution};
 
-const REGISTRY_JSON: &str = include_str!("assets/registry.json");
+const REGISTRY_JSON: &str = include_str!("../assets/registry.json");
 
 #[derive(Clone)]
 pub struct DiscoveredAgentWithSpawn {

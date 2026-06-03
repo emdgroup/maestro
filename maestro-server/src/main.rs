@@ -10,10 +10,8 @@
 
 mod agent;
 mod command_ext;
-mod detection;
 mod file_ops;
-mod registry;
-mod session_handler;
+mod session;
 mod sessions;
 mod terminal;
 
@@ -33,16 +31,16 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use file_ops::{handle_file_read, handle_file_search};
-use session_handler::{
-    create_session_on_connection, load_acp_session,
-    load_session_on_connection, pre_initialize_agent, run_session_close, run_session_list,
-    session_close_on_connection, session_list_on_connection, spawn_acp_session,
+use session::{
+    create_session_on_connection, load_acp_session, load_session_on_connection,
+    pre_initialize_agent, run_session_close, run_session_list, session_close_on_connection,
+    session_list_on_connection, spawn_acp_session,
 };
 use sessions::{AgentConnectionMap, SessionCommand, SessionMap};
 
 async fn resolve_agent_spawn_params(
     agent_id: &str,
-    agents: &[registry::DiscoveredAgentWithSpawn],
+    agents: &[agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
     eprintln!("[main] resolve_agent_spawn_params: agent_id={agent_id:?}");
@@ -97,9 +95,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sessions: SessionMap = HashMap::new();
     let mut agent_connections: AgentConnectionMap = HashMap::new();
 
-    let registry: AcpRegistry = tokio::task::spawn_blocking(registry::load_registry)
+    let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
         .await
-        .unwrap_or_else(|_| registry::load_registry());
+        .unwrap_or_else(|_| agent::load_registry());
 
     // Validate the protocol version handshake before entering the main dispatch loop.
     // Agent discovery (which::which PATH scanning) runs AFTER handshake so the client
@@ -143,7 +141,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let agents_with_spawn: Vec<registry::DiscoveredAgentWithSpawn> = registry::discover_agents(&registry);
+    let agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> = agent::discover_agents(&registry);
 
     // Break the loop if stdout write fails — server can't communicate, no point continuing.
     macro_rules! send_or_break {
@@ -679,7 +677,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
-                let response = detection::detect_installed_agents().await;
+                let response = agent::detection::detect_installed_agents().await;
                 send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
@@ -690,7 +688,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(req)) => {
-                let response = detection::detect_project_agents(&req.cwd).await;
+                let response = agent::detection::detect_project_agents(&req.cwd).await;
                 send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(
