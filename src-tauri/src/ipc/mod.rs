@@ -1,5 +1,3 @@
-pub mod acp_handlers;
-
 // Re-export all handlers for use in lib.rs collect_commands!
 pub use crate::project::handlers::*;
 pub use crate::task::handlers::*;
@@ -14,4 +12,8 @@ pub use crate::integration::handlers::*;
 pub use crate::integration::lookup_handlers::*;
 pub use crate::integration::issue_tracking_handlers::*;
 pub use crate::settings::handlers::*;
-pub use acp_handlers::*;
+pub use crate::acp::session_handlers::*;
+pub use crate::acp::prompt_handlers::*;
+pub use crate::acp::discovery_handlers::*;
+pub use crate::acp::file_handlers::*;
+pub use crate::acp::meta_handlers::*;

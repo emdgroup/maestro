@@ -981,7 +981,7 @@ pub async fn prime_project_server(
             crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
             let (_, default_agent) = tokio::join!(
-                crate::ipc::acp_handlers::prefetch_agent_discovery(
+                crate::acp::discovery_handlers::prefetch_agent_discovery(
                     Arc::clone(&*app_state),
                     ConnectionKey::Ssh { id: conn_id },
                     Some(maestro_path.clone()),
@@ -1002,7 +1002,7 @@ pub async fn prime_project_server(
                     &app_state,
                 )
                 .await?;
-                crate::ipc::acp_handlers::spawn_pooled_session(
+                crate::acp::session_handlers::spawn_pooled_session(
                     &*app_state,
                     project_id,
                     ConnectionKey::Ssh { id: conn_id },
@@ -1032,7 +1032,7 @@ pub async fn prime_project_server(
                     &app_state,
                 ).await?;
                 let (_, default_agent) = tokio::join!(
-                    crate::ipc::acp_handlers::prefetch_agent_discovery(
+                    crate::acp::discovery_handlers::prefetch_agent_discovery(
                         Arc::clone(&*app_state),
                         ConnectionKey::Wsl { id: wsl_id },
                         Some(maestro_path.clone()),
@@ -1059,7 +1059,7 @@ pub async fn prime_project_server(
                         &app_state,
                     )
                     .await?;
-                    crate::ipc::acp_handlers::spawn_pooled_session(
+                    crate::acp::session_handlers::spawn_pooled_session(
                         &*app_state,
                         project_id,
                         ConnectionKey::Wsl { id: wsl_id },
@@ -1089,7 +1089,7 @@ pub async fn prime_project_server(
                     &app_state,
                 )
                 .await?;
-                crate::ipc::acp_handlers::spawn_pooled_session(
+                crate::acp::session_handlers::spawn_pooled_session(
                     &*app_state,
                     project_id,
                     ConnectionKey::Local,

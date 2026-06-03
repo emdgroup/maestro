@@ -3,6 +3,15 @@ pub mod manager;
 pub mod registry;
 pub mod resolve;
 pub mod transport;
+pub mod session_handlers;
+pub mod prompt_handlers;
+pub mod discovery_handlers;
+pub mod file_handlers;
+pub mod meta_handlers;
+
+pub(crate) fn session_id_for(log_id: i32) -> String {
+    format!("session-{}", log_id)
+}
 
 /// Identifies which connection server (or local instance) owns a session or cache entry.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
