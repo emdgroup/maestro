@@ -37,7 +37,7 @@ pub async fn validate_and_store(
     email: &str,
     token: &str,
     project_root: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let client = super::build_http_client()?;
 

@@ -117,7 +117,7 @@ pub async fn validate_and_store(
     project: &str,
     token: &str,
     project_path: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_azdo_org_url(org_url);
     let auth = make_azdo_auth(token);

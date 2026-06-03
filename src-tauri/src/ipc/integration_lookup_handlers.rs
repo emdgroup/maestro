@@ -3,7 +3,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use tauri::State;
 
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
 use crate::models::issue_tracking::{
     AzureDevOpsProjectOption, AzureDevOpsRepoOption, BitbucketProjectOption, BitbucketRepoOption,

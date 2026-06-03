@@ -74,7 +74,7 @@ pub async fn validate_and_store(
     repo: &str,
     token: Option<String>,
     project_path: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let resolved_token = match token {
         Some(t) => t,

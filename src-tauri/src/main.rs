@@ -1,7 +1,7 @@
 // Tauri build script marker
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
-use maestro::db::{init_db, AppState};
+use maestro::core::{init_db, AppState};
 use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;

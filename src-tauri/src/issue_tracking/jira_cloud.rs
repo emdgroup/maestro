@@ -53,7 +53,7 @@ pub async fn validate_and_store(
     api_token: &str,
     project_key: &str,
     project_path: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_instance_url(site_url);
     let auth = make_basic_auth(email, api_token);

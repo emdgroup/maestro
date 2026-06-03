@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn test_load_settings_empty() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::db::initialize_schema(&conn).unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
 
         let _settings = load_settings(&conn).unwrap();
     }
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_save_and_load_settings() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::db::initialize_schema(&conn).unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
 
         let settings = AppSettings {
             theme_preference: Some("dark".to_string()),

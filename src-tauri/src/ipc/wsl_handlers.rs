@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tauri::State;
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::wsl::{WslConnection, WslDistro};
 
 /// List installed WSL distros. Returns empty vec on non-Windows.

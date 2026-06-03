@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use std::collections::HashSet;
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::acp::{PooledSession, SessionRequest, TaskMetadata, ConnectionKey};
 use crate::models::worktree::{ActiveSessionInfo, ExecutionMode, SessionListEntryDto};
 

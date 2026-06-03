@@ -3,7 +3,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use tauri::{Emitter, State};
 
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
 use crate::models::project::now_rfc3339;
 use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};

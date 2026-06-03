@@ -254,7 +254,7 @@ pub struct SessionRequest {
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
     pub task_id: Option<i32>,
-    pub app_state: Arc<crate::db::AppState>,
+    pub app_state: Arc<crate::core::AppState>,
 }
 
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
@@ -383,7 +383,7 @@ async fn handshake_local_child(
 /// Spawn a local maestro-server subprocess and perform handshake.
 /// Returns (stdin_writer, read_source, child) ready for the caller to use.
 async fn open_local_transport(
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
     let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
@@ -534,7 +534,7 @@ pub async fn emit_cached_capabilities(
     connection_key: crate::acp::ConnectionKey,
     agent_id: &str,
     log_id: i32,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) {
     let cache = match app_state.acp.agent_cache.lock().await.get(&(connection_key, agent_id.to_string())).cloned() {
         Some(c) => c,
@@ -701,7 +701,7 @@ pub async fn load_acp_session_cold(
 pub struct ReaderTaskContext {
     pub log_id: i32,
     pub app_handle: tauri::AppHandle,
-    pub app_state: Arc<crate::db::AppState>,
+    pub app_state: Arc<crate::core::AppState>,
     pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
     pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
     pub pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
@@ -721,7 +721,7 @@ impl AcpProcess {
         params: AcpProcessParams,
         log_id: i32,
         app_handle: tauri::AppHandle,
-        app_state: Arc<crate::db::AppState>,
+        app_state: Arc<crate::core::AppState>,
     ) -> (Self, ReaderTaskContext) {
         let current_model_id = Arc::new(std::sync::Mutex::new(None));
         let current_mode_id = Arc::new(std::sync::Mutex::new(None));
@@ -858,7 +858,7 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-fn try_complete_task(app_state: &crate::db::AppState, task_id: i32) -> bool {
+fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
     let Ok(conn) = app_state.db.lock() else { return false };
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
@@ -869,7 +869,7 @@ fn try_complete_task(app_state: &crate::db::AppState, task_id: i32) -> bool {
 }
 
 async fn try_auto_approve_permission(
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
     task_id: i32,
     log_id: i32,
     perm_req: &crate::acp::transport::PermissionRequest,
@@ -1116,7 +1116,7 @@ fn handle_server_message(
 
 /// Write a message to an active ACP session's transport by log_id.
 pub async fn write_to_acp_session(
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
     log_id: i32,
     msg: &MaestroRpcMessage,
 ) -> Result<(), String> {
@@ -1231,7 +1231,7 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
 /// (SpawnOk only) session_capabilities in the agent cache.
 async fn update_agent_cache_from_response(
     msg: &MaestroRpcMessage,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) {
     let (models, modes, caps, spawn_caps) = match msg {
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
@@ -1293,7 +1293,7 @@ async fn update_agent_cache_from_session_update(
     msg: &MaestroRpcMessage,
     connection_key: crate::acp::ConnectionKey,
     agent_id: &str,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) {
     let payload = match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => &upd.payload,
@@ -1367,7 +1367,7 @@ async fn handle_shared_server_message(
     msg: MaestroRpcMessage,
     connection_key: crate::acp::ConnectionKey,
     app_handle: &tauri::AppHandle,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
     pending: &PendingChannels,
 ) {
     eprintln!("[maestro] handle_shared_server_message: log_id={:?} msg={msg:?}", extract_session_log_id(&msg));
@@ -1683,7 +1683,7 @@ fn spawn_shared_reader_task(
     source: AcpReadSource,
     connection_key: crate::acp::ConnectionKey,
     app_handle: tauri::AppHandle,
-    app_state: Arc<crate::db::AppState>,
+    app_state: Arc<crate::core::AppState>,
     pending: PendingChannels,
 ) {
     tokio::spawn(async move {
@@ -1804,7 +1804,7 @@ fn spawn_shared_reader_task(
 /// Generic helper: lock→insert→send→await pattern shared by all connection-server query functions.
 async fn query_via_server<T: Send + 'static>(
     connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
     not_found_err: &str,
     get_pending: impl FnOnce(&ConnectionServer) -> Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
     already_in_progress_err: &str,
@@ -1837,7 +1837,7 @@ async fn query_via_server<T: Send + 'static>(
 /// Much faster than `one_shot_rpc` — reuses the existing process and registry cache.
 pub async fn query_list_agents_via_connection_server(
     connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<Vec<crate::acp::registry::DiscoveredAgent>, String> {
     query_via_server(
         connection_key, app_state,
@@ -1853,7 +1853,7 @@ pub async fn query_list_agents_via_connection_server(
 pub async fn query_session_list_via_server(
     connection_key: crate::acp::ConnectionKey,
     request: crate::acp::transport::SessionListRequest,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<SessionListOkResponse, String> {
     query_via_server(
         connection_key, app_state,
@@ -1869,7 +1869,7 @@ pub async fn query_session_list_via_server(
 pub async fn query_session_close_via_server(
     connection_key: crate::acp::ConnectionKey,
     request: SessionCloseRequest,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
     query_via_server(
         connection_key, app_state,
@@ -1885,7 +1885,7 @@ pub async fn query_session_close_via_server(
 pub async fn query_check_tools_via_server(
     connection_key: crate::acp::ConnectionKey,
     tools: Vec<String>,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<CheckToolsResponse, String> {
     query_via_server(
         connection_key, app_state,
@@ -1900,7 +1900,7 @@ pub async fn query_check_tools_via_server(
 /// Send `DetectInstalledAgents` through the running connection server and return the result.
 pub async fn query_detect_installed_via_server(
     connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<DetectInstalledAgentsResponse, String> {
     query_via_server(
         connection_key, app_state,
@@ -1916,7 +1916,7 @@ pub async fn query_detect_installed_via_server(
 pub async fn query_detect_project_agents_via_server(
     connection_key: crate::acp::ConnectionKey,
     cwd: String,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<DetectProjectAgentsResponse, String> {
     query_via_server(
         connection_key, app_state,
@@ -1949,7 +1949,7 @@ fn spawn_stdin_writer_task(mut stdin_writer: BufWriter<ChildStdin>) -> tokio::sy
 pub async fn spawn_connection_server(
     connection_key: crate::acp::ConnectionKey,
     target: TransportTarget<'_>,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
     {
         let servers = app_state.acp.connection_servers.lock().await;
@@ -2009,7 +2009,7 @@ pub async fn pre_initialize_via_connection_server(
     connection_key: crate::acp::ConnectionKey,
     agent_id: &str,
     cwd: &str,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<PreInitializeResponse, String> {
     let (writer_tx, pre_init_pending) = {
         let servers = app_state.acp.connection_servers.lock().await;
@@ -2071,7 +2071,7 @@ pub async fn pre_initialize_via_connection_server(
 /// Retrieve the SSH session and cached maestro-server path for a remote connection.
 /// Used by IPC handlers and the session restore path.
 pub async fn resolve_remote_context(
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
     conn_id: i32,
 ) -> Result<(crate::ssh::RemoteSshSession, String), String> {
     let maestro_path = app_state
@@ -2150,7 +2150,7 @@ pub async fn try_session_load_via_connection_server(
 /// Emits `acp://session-ended/{log_id}` for any session that cannot be restored.
 pub async fn restore_acp_sessions(
     connection_id: i32,
-    app_state: &Arc<crate::db::AppState>,
+    app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
     let (ssh, server_path) = resolve_remote_context(app_state, connection_id).await?;
 

@@ -5,7 +5,7 @@ use crate::command_ext::NoConsoleWindow;
 use chrono::{Duration, Utc};
 
 use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult};
-use crate::db::AppState;
+use crate::core::AppState;
 
 // ============================================================================
 // list_worktrees_with_status — REQ-06
@@ -27,7 +27,7 @@ pub async fn list_worktrees_with_status(
             crate::models::Project::from_row,
         ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
     };
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await
+    let git_conn = crate::core::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: repo_path.clone() });
 
     // Step 1: Get on-disk worktrees
@@ -208,7 +208,7 @@ pub async fn get_worktree_diff(
     worktree_path: String,
     diff_target: DiffTarget,
 ) -> Result<WorktreeDiffResult, String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     let diff_output = match &diff_target {
         DiffTarget::Head => {
@@ -259,7 +259,7 @@ pub async fn create_worktree(
     };
 
     // Resolve project and git connection (local vs remote SSH)
-    let (project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // Step 2: Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
@@ -307,7 +307,7 @@ pub async fn create_worktree_for_task(
     repo_path: &str,
 ) -> Result<(i32, String), String> {
     // Resolve project and git connection (local vs remote SSH)
-    let (project, git_conn) = crate::db::get_project_with_git_conn(app_state, project_id).await?;
+    let (project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // For local projects only, canonicalize to resolve symlinks/relative paths
@@ -369,7 +369,7 @@ pub async fn delete_worktree(
     delete_branch: bool,
 ) -> Result<(), String> {
     // Resolve project and git connection (local vs remote SSH)
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     // Call git worktree remove via dispatcher (best effort — don't fail if already gone)
     let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
@@ -472,7 +472,7 @@ pub async fn cleanup_zombie_worktrees(
     }
 
     // Resolve project and git connection (local vs remote SSH)
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     // Get on-disk worktree paths to confirm existence before deleting
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
@@ -562,7 +562,7 @@ pub async fn stage_worktree_files(
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let worktree_abs = worktree_path;
 
     if !file_paths.is_empty() {
@@ -608,7 +608,7 @@ pub async fn commit_worktree(
     worktree_path: String,
     message: String,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["commit", "-m", &message]).await?;
     app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
@@ -627,7 +627,7 @@ pub async fn discard_worktree_changes(
     file_paths: Vec<String>,
     patch: Option<String>,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let worktree_abs = worktree_path;
 
     if !file_paths.is_empty() {
@@ -679,7 +679,7 @@ pub async fn shelve_worktree_changes(
     stash_name: String,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let worktree_abs = worktree_path;
 
     let mut args = vec!["stash", "push", "-m", &stash_name];
@@ -705,7 +705,7 @@ pub async fn delete_untracked_files(
     worktree_path: String,
     file_paths: Vec<String>,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let mut args = vec!["clean", "-f", "--"];
     let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
     args.extend(refs);
@@ -725,7 +725,7 @@ pub async fn get_untracked_file_content(
     worktree_path: String,
     file_path: String,
 ) -> Result<String, String> {
-    let (_project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     crate::git::run_git_in_dir_lossy(
         &git_conn,
         &worktree_path,
@@ -754,7 +754,7 @@ pub async fn delete_worktree_for_task(
 
     if let Some(project) = project {
         // Best-effort: if SSH session is gone, fall back to local path for cleanup
-        let git_conn = crate::db::get_git_connection(&project, app_state).await
+        let git_conn = crate::core::get_git_connection(&project, app_state).await
             .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
         let _ = crate::git::delete_worktree(&git_conn, worktree_path).await;
     }

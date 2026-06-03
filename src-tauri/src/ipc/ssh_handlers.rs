@@ -3,7 +3,7 @@ use tauri::State;
 use chrono::Utc;
 
 use crate::models::{ConnectionStatus};
-use crate::db::AppState;
+use crate::core::AppState;
 use super::project_handlers::remove_projects_by_connection_id;
 use crate::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::ssh::session::{SshAuthMethod, SshConnection};

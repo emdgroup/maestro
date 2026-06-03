@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::{State, Emitter};
 
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::ssh::SshWriteOp;
 
 /// Find the best available shell on Windows.
@@ -69,7 +69,7 @@ pub async fn drain_ready_queue(
     // Load settings in a block so the sync MutexGuard drops before the async lock below
     let settings = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        crate::db::settings::load_settings(&conn)
+        crate::core::settings::load_settings(&conn)
             .map_err(|e| format!("Failed to load settings: {}", e))?
     };
 
@@ -595,7 +595,7 @@ pub async fn spawn_interactive_execution(
 ) -> Result<i32, String> {
 
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
-    let (project, git_conn) = crate::db::get_project_with_git_conn(&app_state, project_id).await?;
+    let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // For local projects only, canonicalize to resolve symlinks/relative paths

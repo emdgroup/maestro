@@ -4,7 +4,7 @@ use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 
 use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult};
-use crate::db::{AppState, get_git_connection, get_project_with_git_conn};
+use crate::core::{AppState, get_git_connection, get_project_with_git_conn};
 use crate::git;
 
 /// Insert (or replace) a review record with optional per-file comments.

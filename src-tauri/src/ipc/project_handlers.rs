@@ -6,7 +6,7 @@ use chrono::Utc;
 use rusqlite::params;
 use serde_json;
 use crate::models::Project;
-use crate::db::{AppState, project_storage};
+use crate::core::{AppState, project_storage};
 use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
 
@@ -45,7 +45,7 @@ fn register_project_in_db(
     // WSL paths are accessible from Windows via \\wsl$\ UNC paths.
     match connection_key {
         ConnectionKey::Local => {
-            crate::db::project_storage::create_project_maestro_folder(path)
+            crate::core::project_storage::create_project_maestro_folder(path)
                 .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
         }
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -58,7 +58,7 @@ fn register_project_in_db(
                 ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
             };
             let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
-            crate::db::project_storage::create_project_maestro_folder(&unc_path)
+            crate::core::project_storage::create_project_maestro_folder(&unc_path)
                 .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
         }
         ConnectionKey::Ssh { .. } => {}
@@ -1108,7 +1108,7 @@ pub async fn prime_project_server(
 mod tests {
     use super::*;
     use rusqlite::Connection;
-    use crate::db::schema::initialize_schema;
+    use crate::core::schema::initialize_schema;
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

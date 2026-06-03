@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
 
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::ssh::sftp;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

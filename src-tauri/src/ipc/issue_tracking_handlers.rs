@@ -5,7 +5,7 @@ use base64::Engine as _;
 use tauri::{Emitter, State};
 use chrono::Utc;
 
-use crate::db::AppState;
+use crate::core::AppState;
 use crate::models::project::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
 use crate::models::issue_tracking::RemoteIssue;
 use crate::models::{Project, Task, TASK_SELECT};

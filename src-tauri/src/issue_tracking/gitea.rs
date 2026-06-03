@@ -33,7 +33,7 @@ pub async fn validate_and_store(
     repo: &str,
     token: &str,
     project_root: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 

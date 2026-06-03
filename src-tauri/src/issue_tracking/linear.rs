@@ -107,7 +107,7 @@ pub async fn validate_and_store(
     project_id: i32,
     api_key: &str,
     project_path: &str,
-    app_state: &crate::db::AppState,
+    app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let client = super::build_http_client()?;
 

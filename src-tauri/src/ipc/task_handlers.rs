@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 use chrono::Utc;
 use crate::models::{Task, TaskRelationship, TaskInstruction, TaskAttachment, TASK_SELECT};
-use crate::db::AppState;
+use crate::core::AppState;
 
 /// Get list of all tasks for a project
 #[tauri::command]
@@ -449,7 +449,7 @@ pub async fn list_project_branches(
     // Uses get_git_connection directly (not get_project_with_git_conn) because
     // branch listing should fall back to local path when SSH is disconnected,
     // rather than failing entirely.
-    let git_conn = crate::db::get_git_connection(&project, &app_state).await
+    let git_conn = crate::core::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
 
     let (branches, current_branch) = tokio::join!(
@@ -628,7 +628,7 @@ pub async fn interrupt_task(
 mod tests {
     use super::*;
     use rusqlite::Connection;
-    use crate::db::schema::initialize_schema;
+    use crate::core::schema::initialize_schema;
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
