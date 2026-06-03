@@ -714,7 +714,7 @@ pub async fn spawn_interactive_execution(
         let windows_cwd = std::env::var("USERPROFILE")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
-        let pty_session = crate::process::spawn_agent_cli_pty(
+        let pty_session = crate::execution::spawn_agent_cli_pty(
             log_id,
             shell,
             args,
@@ -734,7 +734,7 @@ pub async fn spawn_interactive_execution(
         let shell = resolve_windows_shell();
         #[cfg(not(windows))]
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        let pty_session = crate::process::spawn_agent_cli_pty(
+        let pty_session = crate::execution::spawn_agent_cli_pty(
             log_id,
             shell,
             vec![],

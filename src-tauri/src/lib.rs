@@ -5,16 +5,15 @@ pub mod models;
 pub mod project;
 pub mod task;
 pub mod connectivity;
+pub mod execution;
 pub mod ipc;
-pub mod process;
 pub mod git;
-pub mod streaming;
 pub mod acp;
 pub mod issue_tracking;
 
 pub use core::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
 pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, TaskAttachment, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, IssueTrackingConfig, RemoteIssue, IntegrationStatus, CredentialSource, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
-pub use process::{ProcessOutput, spawn_agent_cli_pty, PtySession};
+pub use execution::{ProcessOutput, spawn_agent_cli_pty, PtySession};
 
 use tauri_specta::{collect_commands, Builder};
 

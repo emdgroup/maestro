@@ -10,7 +10,7 @@ use crate::project::lock as project_lock;
 use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, RestorableSession, ConnectionKey};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::core::schema::{initialize_schema};
-use crate::process::PtySession;
+use crate::execution::PtySession;
 use crate::connectivity::ssh::{RemoteSshSession, SshPtyHandle};
 use crate::models::{Project, GitConnection};
 

@@ -1,10 +1,17 @@
-pub mod spawner;
-pub mod pty;
-pub mod remote;
+use super::remote;
 
-pub use spawner::ProcessOutput;
-pub use pty::{spawn_agent_cli_pty, PtySession};
-pub use remote::{spawn_remote_agent_execution, RemoteProcessHandle, ExecutionConfig};
+pub use super::pty::{spawn_agent_cli_pty, PtySession};
+pub use super::remote::{spawn_remote_agent_execution, RemoteProcessHandle, ExecutionConfig};
+
+#[derive(Debug, Clone)]
+pub struct ProcessOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+    pub success: bool,
+    pub remote_pid: Option<u32>,
+    pub is_remote: bool,
+}
 
 use crate::models::{GitConnection, Task, Worktree};
 

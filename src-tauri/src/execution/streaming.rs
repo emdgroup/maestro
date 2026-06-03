@@ -1,4 +1,4 @@
-use crate::process::remote::RemoteProcessHandle;
+use crate::execution::remote::RemoteProcessHandle;
 
 /// Attach listener to remote PTY channel and forward bytes to WebSocket broadcaster
 ///
@@ -24,7 +24,7 @@ pub async fn attach_remote_stream_listener(
     let ssh = handle.ssh_session.clone();
     let pid = handle.remote_pid;
     tokio::task::spawn(async move {
-        crate::process::remote::poll_remote_log(&ssh, pid, broadcast_sender).await;
+        crate::execution::remote::poll_remote_log(&ssh, pid, broadcast_sender).await;
     });
     Ok(())
 }
@@ -44,5 +44,5 @@ pub async fn stop_remote_stream(
 ) -> Result<(), String> {
     // Kill the remote process — the poll loop in attach_remote_stream_listener
     // will detect the process exit and stop naturally.
-    crate::process::remote::kill_remote_process(handle).await
+    crate::execution::remote::kill_remote_process(handle).await
 }
