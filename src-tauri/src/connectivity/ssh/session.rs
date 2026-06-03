@@ -13,9 +13,8 @@ use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::ChannelMsg;
 use russh::keys::PrivateKeyWithHashAlg;
-use crate::connectivity::ssh::error::{SshError, is_transient_error};
+use crate::connectivity::ssh::error::SshError;
 use crate::connectivity::ssh::PasswordManager;
-use tauri::Emitter;
 
 /// Operation sent to the SSH PTY writer task
 pub enum SshWriteOp {
@@ -164,9 +163,9 @@ pub struct ReconnectingPayload {
 pub struct RemoteSshSession {
     handle: Arc<Mutex<Option<Handle<SshClientHandler>>>>,
     ssh_connection: SshConnection,
-    state: Arc<Mutex<SshConnectionState>>,
-    reconnect_attempts: Arc<AtomicUsize>,
-    session_password: Arc<Mutex<Option<Zeroizing<String>>>>,
+    pub(crate) state: Arc<Mutex<SshConnectionState>>,
+    pub(crate) reconnect_attempts: Arc<AtomicUsize>,
+    pub(crate) session_password: Arc<Mutex<Option<Zeroizing<String>>>>,
     key_passphrase: Arc<Mutex<Option<String>>>,
 }
 
@@ -902,204 +901,6 @@ impl RemoteSshSession {
 
         Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained, clear_screen_count })
     }
-}
-
-/// Clean up all SSH PTY sessions associated with a given connection_id.
-///
-/// Signals reader tasks to stop, removes handles from the in-memory map,
-/// and removes PTY session metadata. Called from `spawn_heartbeat_task` on
-/// connection loss.
-async fn cleanup_pty_sessions_for_connection(
-    app_state: &Arc<crate::core::AppState>,
-    _connection_id: i32,
-) {
-    let mut log_ids_to_cleanup: Vec<i32> = Vec::new();
-
-    {
-        let sessions = app_state.ssh.pty_sessions.lock().await;
-        for (log_id, handle) in sessions.iter() {
-            log_ids_to_cleanup.push(*log_id);
-            // Signal reader task to stop
-            handle.process_ended.store(true, Ordering::Release);
-            handle.notify.notify_one();
-        }
-    }
-
-    if log_ids_to_cleanup.is_empty() {
-        return;
-    }
-
-    // Remove handles from the sessions map
-    {
-        let mut sessions = app_state.ssh.pty_sessions.lock().await;
-        for log_id in &log_ids_to_cleanup {
-            sessions.remove(log_id);
-        }
-    }
-
-    // Remove PTY metadata entries
-    {
-        let mut meta = app_state.pty.session_meta.lock().await;
-        for log_id in &log_ids_to_cleanup {
-            meta.remove(log_id);
-        }
-    }
-
-    app_state.app_handle.emit("sessions-changed", ()).ok();
-}
-
-/// Spawn a background heartbeat task for an SSH connection.
-///
-/// The task probes the connection every 30 seconds with a lightweight `true` command.
-/// On failure it emits `ssh-connection-lost`, cleans up running PTY sessions
-/// (marking them as failed in the DB), attempts reconnection with exponential
-/// backoff (emitting `ssh-reconnecting` per attempt), and emits `ssh-reconnected` on
-/// success or `ssh-connection-failed` after all attempts are exhausted.
-/// The task exits cleanly when the session is removed or explicitly disconnected.
-pub fn spawn_heartbeat_task(
-    session: RemoteSshSession,
-    app_handle: tauri::AppHandle,
-    connection_id: i32,
-    app_state: Arc<crate::core::AppState>,
-) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        // Skip the first immediate tick — just connected, no need to probe
-        interval.tick().await;
-
-        loop {
-            interval.tick().await;
-
-            // Stop if connection was removed from the session map (user disconnected or deleted)
-            {
-                let sessions = app_state.ssh.sessions.lock().await;
-                if !sessions.contains_key(&connection_id) {
-                    break;
-                }
-            }
-
-            // Check if explicitly disconnected
-            let state = session.get_state().await;
-            if state == SshConnectionState::Disconnected {
-                break;
-            }
-
-            // Probe: lightweight SSH command with timeout to detect silent TCP drops fast
-            let probe = tokio::time::timeout(
-                Duration::from_secs(8),
-                session.execute_command("true"),
-            ).await;
-            match probe {
-                Ok(Ok(_)) => {
-                    // Still alive — reset reconnect counter on successful probe
-                    session.reconnect_attempts.store(0, Ordering::SeqCst);
-                }
-                Ok(Err(ref e)) if !is_transient_error(e) => {
-                    // Permanent error (auth failure etc.) — stop heartbeat
-                    break;
-                }
-                _ => {
-                    // Transient error or timeout — treat as connection loss
-
-                    // Connection lost — emit event and clean up PTY sessions before reconnecting
-                    let _ = app_handle.emit("ssh-connection-lost", connection_id);
-
-                    // Clean up PTY sessions — they are dead now
-                    cleanup_pty_sessions_for_connection(&app_state, connection_id).await;
-
-                    // Mark state as Reconnecting
-                    *session.state.lock().await = SshConnectionState::Reconnecting;
-
-                    let max_attempts: usize = 5;
-                    // Delays tuned for network transitions (ethernet→wifi): give the
-                    // new network interface time to come up before each attempt.
-                    const RETRY_DELAYS_SECS: [u64; 5] = [3, 6, 12, 24, 45];
-                    let mut reconnected = false;
-
-                    for attempt in 1..=max_attempts {
-                        let _ = app_handle.emit("ssh-reconnecting", ReconnectingPayload {
-                            connection_id,
-                            attempt,
-                            max_attempts,
-                        });
-
-                        let delay = Duration::from_secs(RETRY_DELAYS_SECS[attempt - 1]);
-                        tokio::time::sleep(delay).await;
-
-                        // Check if removed while we were sleeping
-                        {
-                            let sessions = app_state.ssh.sessions.lock().await;
-                            if !sessions.contains_key(&connection_id) {
-                                return;
-                            }
-                        }
-
-                        // Attempt reconnect via connect() — reuses stored credentials
-                        let password = session.session_password.lock().await.as_ref().map(|p| p.to_string());
-                        match session.connect(password).await {
-                            Ok(()) => {
-                                let _ = app_handle.emit("ssh-reconnected", connection_id);
-                                reconnected = true;
-
-                                // Restore any ACP sessions that were active when the
-                                // connection dropped. Runs in background; emits
-                                // acp-sessions-restored when done (success or failure)
-                                // so the frontend can drop the DisconnectBackdrop.
-                                let restore_state = Arc::clone(&app_state);
-                                let restore_handle = app_handle.clone();
-                                tokio::spawn(async move {
-                                    if let Err(_) = crate::acp::restore_acp_sessions(connection_id, &restore_state).await {
-                                        // Finalize any remaining restorable sessions as ended.
-                                        let remaining: Vec<crate::acp::RestorableSession> = restore_state
-                                            .acp
-                                            .restorable_sessions
-                                            .lock()
-                                            .await
-                                            .remove(&connection_id)
-                                            .unwrap_or_default();
-                                        for s in remaining {
-                                            let _ = restore_state.app_handle.emit(
-                                                &format!("acp://session-ended/{}", s.log_id), ()
-                                            );
-                                        }
-                                        restore_state.app_handle.emit("sessions-changed", ()).ok();
-                                    }
-                                    let _ = restore_handle.emit("acp-sessions-restored", connection_id);
-                                });
-
-                                break;
-                            }
-                            Err(_) => {
-                                // Will try again on next iteration
-                            }
-                        }
-                    }
-
-                    if !reconnected {
-                        // All attempts exhausted — emit final failure event and stop.
-                        // Finalize any restorable sessions as permanently ended.
-                        let remaining: Vec<crate::acp::RestorableSession> = app_state
-                            .acp
-                            .restorable_sessions
-                            .lock()
-                            .await
-                            .remove(&connection_id)
-                            .unwrap_or_default();
-                        let had_restorable = !remaining.is_empty();
-                        for s in remaining {
-                            let _ = app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
-                        }
-                        if had_restorable {
-                            app_state.app_handle.emit("sessions-changed", ()).ok();
-                        }
-                        let _ = app_handle.emit("ssh-connection-failed", connection_id);
-                        *session.state.lock().await = SshConnectionState::Disconnected;
-                        break;
-                    }
-                }
-            }
-        }
-    });
 }
 
 impl std::fmt::Debug for RemoteSshSession {
