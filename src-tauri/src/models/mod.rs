@@ -1,7 +1,5 @@
 pub mod worktree;
 pub mod settings;
-pub mod review;
-pub mod diff;
 pub mod issue_tracking;
 pub mod integration;
 
@@ -9,12 +7,13 @@ pub mod integration;
 pub use crate::project::models as project;
 pub use crate::task::models as task;
 pub use crate::connectivity::models as connection;
+pub use crate::git::review_models as review;
+pub use crate::git::diff_models as diff;
 pub use crate::project::{Project, ProjectStatus, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, TaskSnapshot, WorktreeSnapshot, now_rfc3339};
 pub use crate::task::{Task, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, TaskAttachment, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, TASK_SELECT};
 pub use crate::connectivity::{GitConnection, ConnectionStatus};
 pub use worktree::{Worktree, WorktreeWithStatus, AheadBehind, ActiveSessionInfo, ExecutionMode, SessionListEntryDto, PtySessionMeta, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
 pub use settings::{AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
-pub use review::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};
-pub use diff::{DiffTarget, WorktreeDiffResult};
+pub use crate::git::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult, DiffTarget, WorktreeDiffResult};
 pub use issue_tracking::{IssueTrackingConfig, RemoteIssue};
 pub use integration::{IntegrationStatus, CredentialSource};

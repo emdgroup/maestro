@@ -1,9 +1,14 @@
-/// Remote git operations module
 pub mod remote;
+pub mod worktree_handlers;
+pub mod review_handlers;
+pub mod review_models;
+pub mod diff_models;
+
+pub use review_models::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};
+pub use diff_models::{DiffTarget, WorktreeDiffResult};
 
 use crate::command_ext::NoConsoleWindow;
 use crate::models::GitConnection;
-use crate::models::MergeResult;
 use tokio::process::Command as TokioCommand;
 
 #[derive(serde::Serialize, specta::Type)]
