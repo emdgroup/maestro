@@ -507,14 +507,14 @@ async fn build_provider_auth_header(
 
     // GitHub supports a fallback to the `gh` CLI token when no keychain entry exists.
     let token_result = if provider == "github" {
-        match crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state) {
+        match crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state) {
             Ok(creds) => Ok(creds.token),
-            Err(_) => crate::issue_tracking::github::try_gh_cli_token()
+            Err(_) => crate::integration::github::try_gh_cli_token()
                 .await
                 .ok_or_else(|| "No GitHub credentials found".to_string()),
         }
     } else {
-        crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)
+        crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state)
             .map(|creds| creds.token)
     };
 
@@ -526,7 +526,7 @@ async fn build_provider_auth_header(
         }
         "gitlab" => format!("Authorization: Bearer {}", token_result?),
         "bitbucket" => {
-            let creds = crate::ipc::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
+            let creds = crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
             match creds.instance_url {
                 Some(_) => format!("Authorization: Bearer {}", creds.token),
                 None => {

@@ -1,31 +1,31 @@
-use crate::models::issue_tracking::{GiteaConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
+use crate::models::issue_tracking::{ForgejoConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project::now_rfc3339;
-use crate::issue_tracking::token_manager::StoredToken;
+use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
-struct GiteaUserResponse {
+struct ForgejoUserResponse {
     login: String,
 }
 
 #[derive(serde::Deserialize)]
-struct GiteaIssueResponse {
+struct ForgejoIssueResponse {
     number: u64,
     title: String,
     body: Option<String>,
     html_url: String,
-    labels: Vec<GiteaLabel>,
+    labels: Vec<ForgejoLabel>,
     updated_at: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-struct GiteaLabel {
+struct ForgejoLabel {
     name: String,
 }
 
 use super::normalize_instance_url;
 
-/// Validate a Gitea API token, save the IssueTrackingConfig, and store the token.
-/// Returns the authenticated Gitea login name on success.
+/// Validate a Forgejo API token, save the IssueTrackingConfig, and store the token.
+/// Returns the authenticated Forgejo login name on success.
 pub async fn validate_and_store(
     project_id: i32,
     instance_url: &str,
@@ -47,11 +47,11 @@ pub async fn validate_and_store(
         .map_err(|e| format!("Network error: {}", e))?;
 
     if response.status().as_u16() == 401 {
-        return Err("Gitea: invalid or expired token".to_string());
+        return Err("Forgejo: invalid or expired token".to_string());
     }
     if response.status().as_u16() == 403 {
         return Err(
-            "Gitea: token is valid but missing the required 'read:user' scope. \
+            "Forgejo: token is valid but missing the required 'read:user' scope. \
              Regenerate your token with 'read:user' permission enabled."
                 .to_string(),
         );
@@ -59,19 +59,19 @@ pub async fn validate_and_store(
     if !response.status().is_success() {
         let status = response.status();
         return Err(format!(
-            "Gitea API error {}: {}",
+            "Forgejo API error {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
         ));
     }
 
-    let user: GiteaUserResponse = response
+    let user: ForgejoUserResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Gitea user response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Forgejo user response: {}", e))?;
 
     let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Gitea(GiteaConfig {
+        provider: Some(ProviderConfig::Forgejo(ForgejoConfig {
             instance_url: base,
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -84,7 +84,7 @@ pub async fn validate_and_store(
         access_token: token.to_string(),
         refresh_token: None,
         expires_at: None,
-        provider: "gitea".to_string(),
+        provider: "forgejo".to_string(),
     };
     app_state.token_manager.store_token(
         project_id,
@@ -96,7 +96,7 @@ pub async fn validate_and_store(
     Ok(user.login)
 }
 
-/// Fetch open issues (excluding PRs, filtered server-side) from a Gitea repository.
+/// Fetch open issues (excluding PRs, filtered server-side) from a Forgejo repository.
 pub async fn fetch_issues(
     instance_url: &str,
     owner: &str,
@@ -124,21 +124,21 @@ pub async fn fetch_issues(
     if !response.status().is_success() {
         let status = response.status();
         return Err(format!(
-            "Gitea API error {}: {}",
+            "Forgejo API error {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
         ));
     }
 
-    let issues: Vec<GiteaIssueResponse> = response
+    let issues: Vec<ForgejoIssueResponse> = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Gitea issues response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Forgejo issues response: {}", e))?;
 
     let remote_issues = issues
         .into_iter()
         .map(|issue| RemoteIssue {
-            external_id: format!("gitea:{}", issue.number),
+            external_id: format!("forgejo:{}", issue.number),
             title: issue.title,
             body: issue.body,
             url: issue.html_url,
@@ -158,30 +158,46 @@ mod tests {
     #[test]
     fn test_normalize_instance_url_strips_trailing_slash() {
         assert_eq!(
-            normalize_instance_url("https://gitea.example.com/"),
-            "https://gitea.example.com"
+            normalize_instance_url("https://codeberg.org/"),
+            "https://codeberg.org"
         );
     }
 
     #[test]
     fn test_normalize_instance_url_adds_https_when_scheme_absent() {
         assert_eq!(
-            normalize_instance_url("gitea.myco.com"),
-            "https://gitea.myco.com"
+            normalize_instance_url("forgejo.myco.com"),
+            "https://forgejo.myco.com"
         );
     }
 
     #[test]
-    fn test_gitea_external_id_format() {
-        let number: u64 = 42;
-        assert_eq!(format!("gitea:{}", number), "gitea:42");
+    fn test_normalize_instance_url_preserves_existing_https() {
+        assert_eq!(
+            normalize_instance_url("https://codeberg.org"),
+            "https://codeberg.org"
+        );
     }
 
     #[test]
-    fn test_gitea_issue_deserialization() {
-        let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://gitea.example.com/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
-        let issue: GiteaIssueResponse = serde_json::from_str(json).unwrap();
+    fn test_forgejo_external_id_format() {
+        let number: u64 = 42;
+        assert_eq!(format!("forgejo:{}", number), "forgejo:42");
+    }
+
+    #[test]
+    fn test_forgejo_issue_deserialization() {
+        let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://codeberg.org/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
+        let issue: ForgejoIssueResponse = serde_json::from_str(json).unwrap();
         assert_eq!(issue.number, 42);
         assert_eq!(issue.labels[0].name, "enhancement");
+    }
+
+    #[test]
+    fn test_forgejo_label_deserialization() {
+        let json = r#"{"number":1,"title":"T","body":null,"html_url":"","labels":[{"name":"bug"},{"name":"good first issue"}],"updated_at":null}"#;
+        let issue: ForgejoIssueResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(issue.labels.len(), 2);
+        assert_eq!(issue.labels[0].name, "bug");
     }
 }

@@ -2,7 +2,7 @@ use tokio::process::Command as TokioCommand;
 use crate::command_ext::NoConsoleWindow;
 use crate::models::issue_tracking::{GitHubConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project::now_rfc3339;
-use crate::issue_tracking::token_manager::StoredToken;
+use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
 struct GitHubUserResponse {

@@ -6,8 +6,8 @@ use tauri::{Emitter, State};
 use crate::core::AppState;
 use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
 use crate::models::project::now_rfc3339;
-use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
-use crate::issue_tracking::normalize_instance_url;
+use crate::integration::keychain::{KeychainOutcome, KeychainStore};
+use crate::integration::normalize_instance_url;
 
 const KNOWN_PROVIDERS: &[&str] = &[
     "github",
@@ -46,8 +46,8 @@ pub async fn list_integrations(
                 if provider == "github" {
                     // gh CLI is an ephemeral credential source — re-probed each call,
                     // never stored in keyring (per D-18 and RESEARCH.md Pitfall 3).
-                    if let Some(_token) = crate::issue_tracking::github::try_gh_cli_token().await {
-                        let display_name = crate::issue_tracking::github::try_gh_cli_display_name().await;
+                    if let Some(_token) = crate::integration::github::try_gh_cli_token().await {
+                        let display_name = crate::integration::github::try_gh_cli_display_name().await;
                         statuses.push(IntegrationStatus {
                             provider: provider.to_string(),
                             connected: true,
@@ -155,7 +155,7 @@ async fn validate_credentials(
     instance_url: Option<&str>,
     email: Option<&str>,
 ) -> Result<String, String> {
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
 
     match provider {
         "github" => {
@@ -386,7 +386,7 @@ async fn validate_credentials(
                 subject_descriptor: Option<String>,
             }
 
-            let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(
+            let base = crate::integration::azure_devops::normalize_azdo_org_url(
                 instance_url.ok_or_else(|| "azuredevops: instance_url required".to_string())?,
             );
             let credentials = format!(":{}", token);
@@ -395,7 +395,7 @@ async fn validate_credentials(
                 base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
             );
             let response = client
-                .get(format!("{}/_apis/connectionData?api-version={}", base, crate::issue_tracking::azure_devops::AZDO_API_VERSION))
+                .get(format!("{}/_apis/connectionData?api-version={}", base, crate::integration::azure_devops::AZDO_API_VERSION))
                 .header("Authorization", auth)
                 .send()
                 .await

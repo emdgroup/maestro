@@ -1,6 +1,6 @@
 use crate::models::issue_tracking::{GitLabConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project::now_rfc3339;
-use crate::issue_tracking::token_manager::StoredToken;
+use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
 struct GitLabUserResponse {

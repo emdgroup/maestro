@@ -9,7 +9,7 @@ use crate::core::AppState;
 use crate::models::project::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
 use crate::models::issue_tracking::RemoteIssue;
 use crate::models::{Project, Task, TASK_SELECT};
-use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
+use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 
 fn extract_project_path(app_state: &AppState, project_id: i32) -> Result<String, String> {
     let conn = app_state
@@ -77,7 +77,7 @@ pub async fn list_remote_issues(
                     creds.token
                 }
                 KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
-                    crate::issue_tracking::github::try_gh_cli_token()
+                    crate::integration::github::try_gh_cli_token()
                         .await
                         .ok_or_else(|| "No GitHub credentials found".to_string())?
                 }
@@ -90,7 +90,7 @@ pub async fn list_remote_issues(
                 .repo
                 .as_deref()
                 .ok_or_else(|| "GitHub: repo required in project ticketing config".to_string())?;
-            crate::issue_tracking::github::fetch_issues(owner, repo, &token).await
+            crate::integration::github::fetch_issues(owner, repo, &token).await
         }
 
         "gitlab" => {
@@ -106,7 +106,7 @@ pub async fn list_remote_issues(
                 .ok_or_else(|| "GitLab: project_key (numeric id) required in project ticketing config".to_string())?
                 .parse()
                 .map_err(|_| "GitLab: project_key must be a numeric project id".to_string())?;
-            crate::issue_tracking::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
+            crate::integration::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
         }
 
         "forgejo" => {
@@ -123,12 +123,12 @@ pub async fn list_remote_issues(
                 .repo
                 .as_deref()
                 .ok_or_else(|| "Forgejo: repo required in project ticketing config".to_string())?;
-            crate::issue_tracking::forgejo::fetch_issues(instance_url, owner, repo, &creds.token).await
+            crate::integration::forgejo::fetch_issues(instance_url, owner, repo, &creds.token).await
         }
 
         "linear" => {
             let creds = get_integration_creds("linear", &app_state)?;
-            crate::issue_tracking::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
+            crate::integration::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
         }
 
         "jira_cloud" => {
@@ -145,7 +145,7 @@ pub async fn list_remote_issues(
                 .project_key
                 .as_deref()
                 .ok_or_else(|| "Jira Cloud: project_key required in project ticketing config".to_string())?;
-            crate::issue_tracking::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
+            crate::integration::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
         }
 
         "jira_server" => Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string()),
@@ -160,7 +160,7 @@ pub async fn list_remote_issues(
                 .project_name
                 .as_deref()
                 .ok_or_else(|| "Azure DevOps: project_name required in project ticketing config".to_string())?;
-            crate::issue_tracking::azure_devops::fetch_issues(org_url, project_name, &creds.token).await
+            crate::integration::azure_devops::fetch_issues(org_url, project_name, &creds.token).await
         }
 
         "gitea" => {
@@ -177,7 +177,7 @@ pub async fn list_remote_issues(
                 .repo
                 .as_deref()
                 .ok_or_else(|| "Gitea: repo required in project ticketing config".to_string())?;
-            crate::issue_tracking::gitea::fetch_issues(instance_url, owner, repo, &creds.token).await
+            crate::integration::gitea::fetch_issues(instance_url, owner, repo, &creds.token).await
         }
 
         "bitbucket" => Err("Bitbucket does not support issue tracking".to_string()),
@@ -398,7 +398,7 @@ async fn fetch_image_with_auth(
     project_id: i32,
     url: &str,
 ) -> Result<Vec<u8>, String> {
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
 
     let path = extract_project_path(app_state, project_id)?;
     let config = ProjectConfig::load_from_project(&path).ok();
@@ -482,7 +482,7 @@ async fn fetch_jira_attachment(
     let credentials = format!("{}:{}", email, creds.token);
     let auth = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let response = client
         .get(&url)
         .header("Authorization", format!("Basic {}", auth))

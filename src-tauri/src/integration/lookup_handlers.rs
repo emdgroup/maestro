@@ -4,12 +4,12 @@ use base64::Engine as _;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::issue_tracking::keychain::{KeychainOutcome, KeychainStore};
+use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 use crate::models::issue_tracking::{
     AzureDevOpsProjectOption, AzureDevOpsRepoOption, BitbucketProjectOption, BitbucketRepoOption,
     GitLabProjectOption, JiraProjectOption, RepoOption,
 };
-use crate::issue_tracking::linear::LinearTeam;
+use crate::integration::linear::LinearTeam;
 use super::issue_tracking_handlers::get_integration_creds;
 
 /// Paginated fetch for APIs returning a flat JSON array with page-based pagination.
@@ -69,7 +69,7 @@ async fn get_github_token(app_state: &AppState) -> Result<String, String> {
             Ok(creds.token)
         }
         KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
-            crate::issue_tracking::github::try_gh_cli_token()
+            crate::integration::github::try_gh_cli_token()
                 .await
                 .ok_or_else(|| "No GitHub credentials found".to_string())
         }
@@ -84,7 +84,7 @@ pub async fn check_github_owner(
     owner: String,
 ) -> Result<bool, String> {
     let token = get_github_token(&app_state).await?;
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let url = format!("https://api.github.com/users/{}", urlencoding::encode(&owner));
     let response = client
         .get(&url)
@@ -109,7 +109,7 @@ pub async fn list_github_repos(
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
     let token = get_github_token(&app_state).await?;
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let auth = format!("Bearer {}", token);
     let base_url = format!(
         "https://api.github.com/users/{}/repos?sort=updated",
@@ -156,7 +156,7 @@ pub async fn list_jira_projects(
         .email
         .as_deref()
         .ok_or_else(|| "Jira Cloud: email missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(site_url);
+    let base = crate::integration::normalize_instance_url(site_url);
 
     use base64::Engine as _;
     let auth = format!(
@@ -165,7 +165,7 @@ pub async fn list_jira_projects(
             .encode(format!("{}:{}", email, creds.token).as_bytes())
     );
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let max_results = 50u32;
 
     #[derive(serde::Deserialize)]
@@ -239,7 +239,7 @@ pub async fn list_linear_teams(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<LinearTeam>, String> {
     let creds = get_integration_creds("linear", &app_state)?;
-    crate::issue_tracking::linear::list_teams(&creds.token).await
+    crate::integration::linear::list_teams(&creds.token).await
 }
 
 /// List GitLab projects the authenticated user is a member of.
@@ -253,9 +253,9 @@ pub async fn list_gitlab_projects(
         .instance_url
         .as_deref()
         .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(instance_url);
+    let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let base_url = format!(
         "{}/api/v4/projects?membership=true&order_by=last_activity_at",
         base
@@ -303,9 +303,9 @@ pub async fn list_forgejo_repos(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Forgejo: instance_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(instance_url);
+    let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",
@@ -349,9 +349,9 @@ pub async fn list_gitea_repos(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Gitea: instance_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::normalize_instance_url(instance_url);
+    let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",
@@ -394,7 +394,7 @@ pub async fn list_azuredevops_projects(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(org_url);
+    let base = crate::integration::azure_devops::normalize_azdo_org_url(org_url);
 
     use base64::Engine as _;
     let auth = format!(
@@ -403,7 +403,7 @@ pub async fn list_azuredevops_projects(
             .encode(format!(":{}", creds.token).as_bytes())
     );
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let top = 50u32;
 
     #[derive(serde::Deserialize)]
@@ -424,7 +424,7 @@ pub async fn list_azuredevops_projects(
     loop {
         let url = format!(
             "{}/_apis/projects?api-version={}&$top={}&$skip={}",
-            base, crate::issue_tracking::azure_devops::AZDO_API_VERSION, top, skip,
+            base, crate::integration::azure_devops::AZDO_API_VERSION, top, skip,
         );
         let response = client
             .get(&url)
@@ -470,7 +470,7 @@ pub async fn list_azuredevops_repos(
         .instance_url
         .as_deref()
         .ok_or_else(|| "Azure DevOps: org_url missing from stored credentials".to_string())?;
-    let base = crate::issue_tracking::azure_devops::normalize_azdo_org_url(org_url);
+    let base = crate::integration::azure_devops::normalize_azdo_org_url(org_url);
 
     use base64::Engine as _;
     let auth = format!(
@@ -479,12 +479,12 @@ pub async fn list_azuredevops_repos(
             .encode(format!(":{}", creds.token).as_bytes())
     );
 
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let url = format!(
         "{}/{}/_apis/git/repositories?api-version={}",
         base,
         urlencoding::encode(&project),
-        crate::issue_tracking::azure_devops::AZDO_API_VERSION,
+        crate::integration::azure_devops::AZDO_API_VERSION,
     );
     let response = client
         .get(&url)
@@ -541,7 +541,7 @@ pub async fn list_bitbucket_repos(
     workspace: String,
 ) -> Result<Vec<BitbucketRepoOption>, String> {
     let creds = get_integration_creds("bitbucket", &app_state)?;
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
 
     match creds.instance_url {
         Some(base_url) => {
@@ -728,7 +728,7 @@ pub async fn list_bitbucket_projects(
     let base_url = creds.instance_url.ok_or_else(|| {
         "list_bitbucket_projects is only available for Bitbucket Server/DC".to_string()
     })?;
-    let client = crate::issue_tracking::build_http_client()?;
+    let client = crate::integration::build_http_client()?;
     let auth = format!("Bearer {}", creds.token);
 
     #[derive(serde::Deserialize)]
