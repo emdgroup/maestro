@@ -158,7 +158,7 @@ pub type AgentCacheMap = HashMap<(crate::acp::ConnectionKey, String), AgentCache
 /// Describes where to open a new maestro-server connection: local subprocess, remote SSH channel, or WSL distro.
 pub enum TransportTarget<'a> {
     Local,
-    Remote { ssh: &'a crate::ssh::RemoteSshSession, server_path: &'a str },
+    Remote { ssh: &'a crate::connectivity::ssh::RemoteSshSession, server_path: &'a str },
     /// WSL distro: spawns `wsl.exe -d <distro> -- <server_path>`.
     /// Uses the same read/write types as Local (wsl.exe is a local subprocess).
     #[cfg(windows)]
@@ -411,7 +411,7 @@ async fn open_local_transport(
 /// Open an SSH exec channel to a remote maestro-server, perform handshake, and spawn
 /// a writer task. Returns (mpsc_sender, read_source) ready for the caller to use.
 async fn open_remote_transport(
-    ssh_session: &crate::ssh::RemoteSshSession,
+    ssh_session: &crate::connectivity::ssh::RemoteSshSession,
     maestro_server_path: &str,
 ) -> Result<(tokio::sync::mpsc::Sender<Vec<u8>>, AcpReadSource), String> {
     let channel = ssh_session
@@ -2073,7 +2073,7 @@ pub async fn pre_initialize_via_connection_server(
 pub async fn resolve_remote_context(
     app_state: &Arc<crate::core::AppState>,
     conn_id: i32,
-) -> Result<(crate::ssh::RemoteSshSession, String), String> {
+) -> Result<(crate::connectivity::ssh::RemoteSshSession, String), String> {
     let maestro_path = app_state
         .acp
         .discovery_cache

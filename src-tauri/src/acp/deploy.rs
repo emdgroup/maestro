@@ -19,7 +19,7 @@ pub struct DeployResult {
 /// Ensure maestro-server exists on remote with the correct protocol version.
 /// Deploys via SFTP if missing or outdated. Returns the absolute path to use for spawning.
 pub async fn ensure_remote_server(
-    ssh: &crate::ssh::RemoteSshSession,
+    ssh: &crate::connectivity::ssh::RemoteSshSession,
     app_handle: &AppHandle,
     connection_id: i32,
 ) -> Result<DeployResult, String> {
@@ -74,7 +74,7 @@ pub async fn ensure_remote_server(
         .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
 
     let transfer_id = format!("deploy-maestro-server-{}", connection_id);
-    crate::ssh::sftp::upload_file(ssh, &local_binary, &abs_remote_path, &transfer_id, app_handle)
+    crate::connectivity::ssh::sftp::upload_file(ssh, &local_binary, &abs_remote_path, &transfer_id, app_handle)
         .await
         .map_err(|e| format!("SFTP upload failed: {}", e))?;
 
@@ -115,7 +115,7 @@ pub async fn ensure_wsl_server(
         .await
         .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
 
-    let text = crate::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
+    let text = crate::connectivity::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
     let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
     if parts.len() != 2 {
         return Err(format!("Unexpected WSL probe output: {}", text.trim()));

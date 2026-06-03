@@ -13,8 +13,8 @@ use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::ChannelMsg;
 use russh::keys::PrivateKeyWithHashAlg;
-use crate::ssh::error::{SshError, is_transient_error};
-use crate::ssh::PasswordManager;
+use crate::connectivity::ssh::error::{SshError, is_transient_error};
+use crate::connectivity::ssh::PasswordManager;
 use tauri::Emitter;
 
 /// Operation sent to the SSH PTY writer task

@@ -5,8 +5,8 @@ use chrono::Utc;
 use crate::models::{ConnectionStatus};
 use crate::core::AppState;
 use crate::project::handlers::remove_projects_by_connection_id;
-use crate::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
-use crate::ssh::session::{SshAuthMethod, SshConnection};
+use crate::connectivity::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
+use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
 
 /// Store SSH session in AppState, update DB timestamps, and kick off a background
 /// remote-agent availability check so the result is ready before the user opens a dialog.

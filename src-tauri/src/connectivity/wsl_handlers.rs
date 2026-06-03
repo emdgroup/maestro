@@ -1,27 +1,27 @@
 use std::sync::Arc;
 use tauri::State;
 use crate::core::AppState;
-use crate::wsl::{WslConnection, WslDistro};
+use crate::connectivity::wsl::{WslConnection, WslDistro};
 
 /// List installed WSL distros. Returns empty vec on non-Windows.
 #[tauri::command]
 #[specta::specta]
 pub fn list_wsl_distros() -> Result<Vec<WslDistro>, String> {
-    crate::wsl::list_distros()
+    crate::connectivity::wsl::list_distros()
 }
 
 /// List entries in a WSL distro directory.
 #[tauri::command]
 #[specta::specta]
 pub fn list_wsl_directories(distro: String, path: String) -> Result<Vec<String>, String> {
-    crate::wsl::list_directories(&distro, &path)
+    crate::connectivity::wsl::list_directories(&distro, &path)
 }
 
 /// Get the home directory for the default user in a WSL distro.
 #[tauri::command]
 #[specta::specta]
 pub fn get_wsl_home(distro: String) -> Result<String, String> {
-    crate::wsl::get_home_dir(&distro)
+    crate::connectivity::wsl::get_home_dir(&distro)
 }
 
 /// Upsert a WSL connection record and return the saved row.

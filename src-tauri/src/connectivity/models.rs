@@ -1,4 +1,4 @@
-use crate::ssh::RemoteSshSession;
+use crate::connectivity::ssh::RemoteSshSession;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use specta::Type;

@@ -1,4 +1,4 @@
-use crate::ssh::{RemoteSshSession, SshError};
+use crate::connectivity::ssh::{RemoteSshSession, SshError};
 use std::sync::Arc;
 
 /// Shell-safe quoting for paths used in SSH commands.

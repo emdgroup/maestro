@@ -1,5 +1,5 @@
 use crate::models::Task;
-use crate::ssh::RemoteSshSession;
+use crate::connectivity::ssh::RemoteSshSession;
 use std::sync::Arc;
 
 /// Configuration for agent execution (model, mcp_allowlist, skills)

@@ -11,7 +11,7 @@ use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, Res
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::core::schema::{initialize_schema};
 use crate::process::PtySession;
-use crate::ssh::{RemoteSshSession, SshPtyHandle};
+use crate::connectivity::ssh::{RemoteSshSession, SshPtyHandle};
 use crate::models::{Project, GitConnection};
 
 /// Initialize the SQLite database

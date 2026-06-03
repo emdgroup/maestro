@@ -6,7 +6,7 @@ use specta::Type;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::ssh::sftp;
+use crate::connectivity::ssh::sftp;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct FileTransferResult {

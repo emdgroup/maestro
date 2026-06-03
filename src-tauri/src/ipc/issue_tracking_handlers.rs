@@ -562,7 +562,7 @@ async fn read_local_or_remote_image(
         }
 
         let transfer_id = format!("proxy-image-{}-{}", project_id, path_hash);
-        crate::ssh::sftp::download_file(
+        crate::connectivity::ssh::sftp::download_file(
             &session,
             &full_path,
             &cache_path,

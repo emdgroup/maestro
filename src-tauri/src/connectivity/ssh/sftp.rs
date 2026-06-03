@@ -6,7 +6,7 @@ use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::ssh::{RemoteSshSession, SshError};
+use crate::connectivity::ssh::{RemoteSshSession, SshError};
 
 const TRANSFER_CHUNK_SIZE: usize = 32 * 1024;
 

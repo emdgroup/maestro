@@ -1245,7 +1245,7 @@ pub async fn read_session_file_binary(
                     .await
                     .map_err(|e| format!("Cannot create cache directory: {e}"))?;
                 let transfer_id = format!("working-file-{log_id}-{path_hash}");
-                crate::ssh::sftp::download_file(
+                crate::connectivity::ssh::sftp::download_file(
                     &session,
                     &remote_path,
                     &cache_path,
@@ -1886,7 +1886,7 @@ pub async fn prepare_external_attachments(
 
                     let remote_path = format!("{attachments_dir}/{display_name}");
                     let transfer_id = format!("attach-{log_id}-{display_name}");
-                    crate::ssh::sftp::upload_file(
+                    crate::connectivity::ssh::sftp::upload_file(
                         &session,
                         local_path,
                         &remote_path,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::{State, Emitter};
 
 use crate::core::AppState;
-use crate::ssh::SshWriteOp;
+use crate::connectivity::ssh::SshWriteOp;
 
 /// Find the best available shell on Windows.
 ///
@@ -696,7 +696,7 @@ pub async fn spawn_interactive_execution(
         let escaped_path = worktree_abs_path.replace('\'', "'\\''");
         let init_cmd = format!("cd '{}' && clear\n", escaped_path);
         pty_handle.write_tx
-            .send(crate::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
+            .send(crate::connectivity::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
             .await
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
