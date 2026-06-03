@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
 use tauri::AppHandle;
-use crate::project_lock;
+use crate::project::lock as project_lock;
 
 use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, PooledSession, RestorableSession, ConnectionKey};
 use crate::acp::registry::AgentDiscoveryCacheEntry;

@@ -319,7 +319,7 @@ pub fn check_project_locks(
 ) -> Vec<i32> {
     project_ids
         .into_iter()
-        .filter(|&id| crate::project_lock::is_project_locked(&app_state.app_data_dir, id))
+        .filter(|&id| crate::project::lock::is_project_locked(&app_state.app_data_dir, id))
         .collect()
 }
 

@@ -1,7 +1,5 @@
 // Domain-specific handler modules
 pub mod ssh_handlers;
-pub mod project_handlers;
-pub mod task_handlers;
 pub mod worktree_handlers;
 pub mod execution_handlers;
 pub mod review_handlers;
@@ -14,9 +12,9 @@ pub mod integration_lookup_handlers;
 pub mod integration_handlers;
 pub mod wsl_handlers;
 
-// Re-export all handlers for use in main.rs
-pub use project_handlers::*;
-pub use task_handlers::*;
+// Re-export all handlers for use in lib.rs collect_commands!
+pub use crate::project::handlers::*;
+pub use crate::task::handlers::*;
 pub use worktree_handlers::*;
 pub use execution_handlers::*;
 pub use review_handlers::*;

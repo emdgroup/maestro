@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use crate::models::{ConnectionStatus};
 use crate::core::AppState;
-use super::project_handlers::remove_projects_by_connection_id;
+use crate::project::handlers::remove_projects_by_connection_id;
 use crate::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::ssh::session::{SshAuthMethod, SshConnection};
 
