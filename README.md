@@ -2,41 +2,63 @@
   <img src="public/maestro-logo.png" alt="Maestro" width="200" />
 </p>
 
-# Maestro
+<p align="center">
+  <strong>Run multiple AI coding agents in parallel — without losing control.</strong>
+</p>
 
-**Run multiple AI coding agents in parallel — without losing control.**
-
-Maestro is a desktop app that turns your backlog into shipped code. Queue tasks, watch agents work in real-time, review diffs, and merge — all without leaving a single window.
+<p align="center">
+  <a href="https://github.com/m306213/maestro/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platform" />
+  <img src="https://img.shields.io/badge/built%20with-Tauri%202-orange" alt="Tauri" />
+</p>
 
 ---
 
-## What it does
+Maestro is a desktop app that turns your backlog into shipped code. Drop tasks onto a Kanban board, let agents execute them in parallel, then review and merge — all without leaving a single window.
 
-### Queue tasks, agents execute
-Drop tasks onto the Kanban board. Maestro spins up an AI agent per task, each working in its own isolated git worktree. No conflicts. No shared state. Just parallel progress.
+---
 
-### Watch every move in real-time
-Live terminal output, structured activity feed, and file tree navigation — all updating as your agents work. You're never flying blind.
+## How it works
 
-### Review before it lands
-When an agent finishes, the task moves to Review. You get an inline diff viewer with hunk-level staging: accept what you want, revert what you don't, then commit in one click.
+```
+Backlog  →  Ready  →  In Progress  →  Review  →  Done
+              ↓             ↓              ↓
+           assign        agent runs     diff viewer
+           model         in isolated    hunk staging
+                         worktree       one-click commit
+```
 
-### Work on any machine
-SSH into a remote server or WSL distro and run agents there. Password, key, and passphrase auth all supported. Your local machine stays fast; the heavy lifting happens where you point it.
+Each task gets its own agent, its own git worktree, and its own terminal. They run in parallel. Nothing conflicts.
+
+---
+
+## Features
+
+### Parallel agents, zero conflicts
+Each task runs in an isolated git worktree. Agents don't step on each other, and you can have as many in flight as you want.
+
+### Real-time visibility
+Live terminal output, a structured activity feed, and a file tree — all updating as agents work. You see exactly what's happening at every step.
+
+### Surgical diff review
+When an agent finishes, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
+
+### Any machine, any location
+Runs natively on macOS and Linux. On Windows, connect to a WSL distro or SSH into a remote Linux server — agents execute there while you work locally. Password, key, and passphrase auth all supported.
 
 ### Pull work from your tracker
-Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, and hand it to an agent — no copy-pasting.
+Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
 
-### Control which model does what
-Pick the model per task. Configure MCP allowlists. Maestro gets out of the way and lets you run the stack you want.
+### Your stack, your models
+Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
 
 ---
 
-## Features at a glance
+## At a glance
 
-| | |
+| Capability | Detail |
 |---|---|
-| Kanban workflow | Backlog → Ready → In Progress → Review → Done with drag-and-drop |
+| Kanban workflow | Backlog → Ready → In Progress → Review → Done, drag-and-drop |
 | Parallel agents | Multiple agents run simultaneously in isolated git worktrees |
 | Live monitoring | Real-time terminal, ACP activity feed, file tree |
 | Diff review | Inline viewer with hunk-level staging, revert, and commit |
@@ -47,27 +69,25 @@ Pick the model per task. Configure MCP allowlists. Maestro gets out of the way a
 
 ---
 
----
-
 ## For contributors
 
 ### Tech stack
 
-| Layer    | Technology                                               |
-| -------- | -------------------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui    |
-| State    | Zustand + Immer, TanStack Query                          |
-| Terminal | xterm.js                                                 |
-| Desktop  | Tauri 2 (Rust)                                           |
-| Database | SQLite (rusqlite)                                        |
-| SSH      | russh                                                    |
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui |
+| State | Zustand + Immer, TanStack Query |
+| Terminal | xterm.js |
+| Desktop | Tauri 2 (Rust) |
+| Database | SQLite (rusqlite) |
+| SSH | russh |
 | Protocol | ACP (Agent Client Protocol) via `maestro-server` sidecar |
-| Type gen | ts-rs + tauri-specta                                     |
+| Type gen | ts-rs + tauri-specta |
 
 ### Prerequisites
 
 - [Rust toolchain](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/)
+- [Node.js 20+](https://nodejs.org/) + [pnpm](https://pnpm.io/)
 - [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
 - `maestro-server` binary on `PATH` for agent execution
 
@@ -138,6 +158,8 @@ src/
 ```
 
 See `CLAUDE.md` for development conventions and AI agent guidelines.
+
+---
 
 ## License
 
