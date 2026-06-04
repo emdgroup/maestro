@@ -572,39 +572,36 @@ pub async fn emit_cached_capabilities(
     }
 }
 
-/// Cold path: spawn a dedicated maestro-server and start a new ACP session.
-/// Uses `TransportTarget` to abstract over local subprocess vs remote SSH channel.
-pub async fn spawn_acp_session_cold(
+/// Open a transport channel, write the initial message, register the ACP process, and
+/// spawn the reader task. Shared by `spawn_acp_session_cold` and `load_acp_session_cold`.
+async fn launch_cold_session(
     target: TransportTarget<'_>,
-    session_id: &str,
+    initial_msg: &MaestroRpcMessage,
+    remote_error_label: &str,
     task: TaskMetadata,
+    initial_acp_session_id: Option<String>,
+    enable_replay_buffer: bool,
     req: &SessionRequest,
 ) -> Result<(), String> {
-    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: req.agent_id.clone(),
-        session_id: session_id.to_string(),
-        cwd: req.cwd.clone(),
-    }));
-
     let (writer, source, child) = match target {
         TransportTarget::Local => {
             let (mut stdin_writer, source, child) = open_local_transport(&req.app_state).await?;
-            write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
+            write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
             (AcpTransportWriter::Local(stdin_writer), source, Some(child))
         }
         TransportTarget::Remote { ssh, server_path } => {
             let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
-            let bytes = serialize_message(&spawn_req)?;
+            let bytes = serialize_message(initial_msg)?;
             write_tx
                 .send(bytes)
                 .await
-                .map_err(|_| "Failed to queue SpawnRequest for remote channel".to_string())?;
+                .map_err(|_| format!("Failed to queue {} for remote channel", remote_error_label))?;
             (AcpTransportWriter::RemoteSsh(write_tx), source, None)
         }
         #[cfg(windows)]
         TransportTarget::Wsl { distro, server_path } => {
             let (mut stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
-            write_to_acp_session_raw(&mut stdin_writer, &spawn_req).await?;
+            write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
             (AcpTransportWriter::Local(stdin_writer), source, Some(child))
         }
     };
@@ -621,8 +618,8 @@ pub async fn spawn_acp_session_cold(
             project_id: req.project_id,
             connection_key: req.connection_key,
             task,
-            initial_acp_session_id: None,
-            enable_replay_buffer: false,
+            initial_acp_session_id,
+            enable_replay_buffer,
         },
         req.log_id,
         req.app_state.app_handle.clone(),
@@ -635,6 +632,22 @@ pub async fn spawn_acp_session_cold(
     Ok(())
 }
 
+/// Cold path: spawn a dedicated maestro-server and start a new ACP session.
+/// Uses `TransportTarget` to abstract over local subprocess vs remote SSH channel.
+pub async fn spawn_acp_session_cold(
+    target: TransportTarget<'_>,
+    session_id: &str,
+    task: TaskMetadata,
+    req: &SessionRequest,
+) -> Result<(), String> {
+    let initial_msg = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        agent_id: req.agent_id.clone(),
+        session_id: session_id.to_string(),
+        cwd: req.cwd.clone(),
+    }));
+    launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
+}
+
 /// Cold path: spawn a dedicated maestro-server and resume an existing ACP session.
 /// Uses `TransportTarget` to abstract over local subprocess vs remote SSH channel.
 pub async fn load_acp_session_cold(
@@ -642,60 +655,22 @@ pub async fn load_acp_session_cold(
     acp_session_id: &str,
     req: &SessionRequest,
 ) -> Result<(), String> {
-    let load_req = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+    let initial_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
         session_id: format!("session-{}", req.log_id),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
     }));
-
-    let (writer, source, child) = match target {
-        TransportTarget::Local => {
-            let (mut stdin_writer, source, child) = open_local_transport(&req.app_state).await?;
-            write_to_acp_session_raw(&mut stdin_writer, &load_req).await?;
-            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
-        }
-        TransportTarget::Remote { ssh, server_path } => {
-            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
-            let bytes = serialize_message(&load_req)?;
-            write_tx
-                .send(bytes)
-                .await
-                .map_err(|_| "Failed to queue SessionLoad for remote channel".to_string())?;
-            (AcpTransportWriter::RemoteSsh(write_tx), source, None)
-        }
-        #[cfg(windows)]
-        TransportTarget::Wsl { distro, server_path } => {
-            let (mut stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
-            write_to_acp_session_raw(&mut stdin_writer, &load_req).await?;
-            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
-        }
-    };
-
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    let (acp_process, ctx) = AcpProcess::create(
-        AcpProcessParams {
-            writer,
-            child,
-            cancel_tx: Some(cancel_tx),
-            cwd: req.cwd.clone(),
-            session_name: req.session_name.clone(),
-            agent_id: req.agent_id.clone(),
-            project_id: req.project_id,
-            connection_key: req.connection_key,
-            task: TaskMetadata::default(),
-            initial_acp_session_id: Some(acp_session_id.to_string()),
-            enable_replay_buffer: true,
-        },
-        req.log_id,
-        req.app_state.app_handle.clone(),
-        Arc::clone(&req.app_state),
-    );
-
-    req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
-    spawn_reader_task(source, cancel_rx, ctx);
-
-    Ok(())
+    launch_cold_session(
+        target,
+        &initial_msg,
+        "SessionLoad",
+        TaskMetadata::default(),
+        Some(acp_session_id.to_string()),
+        true,
+        req,
+    )
+    .await
 }
 
 pub struct ReaderTaskContext {
@@ -814,7 +789,7 @@ pub(crate) fn spawn_reader_task(
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
                 if turn_ended.stop_reason == "end_turn" {
                     if let Some(tid) = task_id {
-                        if try_complete_task(&app_state, tid) {
+                        if try_complete_task(&app_state, tid).await {
                             app_state.app_handle.emit("tasks-changed", ()).ok();
                         }
                     }
@@ -849,7 +824,7 @@ pub(crate) fn spawn_reader_task(
 
         app_state.acp.sessions.lock().await.remove(&log_id);
         if let Some(tid) = task_id {
-            if try_complete_task(&app_state, tid) {
+            if try_complete_task(&app_state, tid).await {
                 app_state.app_handle.emit("tasks-changed", ()).ok();
             }
         }
@@ -858,10 +833,11 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
+async fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
+    let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
     let Ok(conn) = app_state.db.lock() else { return false };
     let now = chrono::Utc::now().to_rfc3339();
-    let target_status = if is_task_project_git_repo(&conn, task_id) { "Review" } else { "Done" };
+    let target_status = if is_git_repo { "Review" } else { "Done" };
     conn.execute(
         &format!("UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ? AND status = 'InProgress'", target_status),
         rusqlite::params![&now, task_id],
@@ -869,16 +845,18 @@ fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
     .unwrap_or(0) > 0
 }
 
-fn is_task_project_git_repo(conn: &rusqlite::Connection, task_id: i32) -> bool {
-    let result: Option<(String, Option<i32>, Option<i32>)> = conn.query_row(
-        "SELECT p.path, p.connection_id, p.wsl_connection_id \
-         FROM tasks t JOIN projects p ON t.project_id = p.id \
-         WHERE t.id = ?",
-        [task_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).ok();
+async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i32) -> bool {
+    let result: Option<(i32, String, Option<i32>, Option<i32>)> = app_state.db.lock().ok().and_then(|conn| {
+        conn.query_row(
+            "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id \
+             FROM tasks t JOIN projects p ON t.project_id = p.id \
+             WHERE t.id = ?",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).ok()
+    });
 
-    let Some((path, connection_id, wsl_connection_id)) = result else {
+    let Some((project_id, path, connection_id, wsl_connection_id)) = result else {
         return true;
     };
 
@@ -886,7 +864,15 @@ fn is_task_project_git_repo(conn: &rusqlite::Connection, task_id: i32) -> bool {
         return std::path::Path::new(&path).join(".git").exists();
     }
 
-    true
+    match crate::core::get_project_with_git_conn(app_state, project_id).await {
+        Ok((_project, git_conn)) => {
+            crate::git::run_git_in_dir(&git_conn, &path, &["rev-parse", "--is-inside-work-tree"])
+                .await
+                .map(|output| output.trim() == "true")
+                .unwrap_or(false)
+        }
+        Err(_) => false,
+    }
 }
 
 async fn try_auto_approve_permission(
@@ -1434,7 +1420,7 @@ async fn handle_shared_server_message(
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
                 if turn_ended.stop_reason == "end_turn" {
                     if let Some(tid) = task_id {
-                        if try_complete_task(app_state, tid) {
+                        if try_complete_task(app_state, tid).await {
                             app_state.app_handle.emit("tasks-changed", ()).ok();
                         }
                     }
@@ -1545,7 +1531,7 @@ async fn handle_shared_server_message(
                 }
             }
             for tid in task_ids {
-                try_complete_task(app_state, tid);
+                try_complete_task(app_state, tid).await;
             }
             if !lost.affected_session_ids.is_empty() {
                 app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -1799,7 +1785,7 @@ fn spawn_shared_reader_task(
             let _ = app_handle.emit(&format!("acp://session-ended/{}", log_id), ());
         }
         for tid in &end_now_task_ids {
-            try_complete_task(&app_state, *tid);
+            try_complete_task(&app_state, *tid).await;
         }
 
         // SSH connections only: park restorable sessions for the reconnect handler.

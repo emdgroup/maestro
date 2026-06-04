@@ -76,6 +76,36 @@ pub(crate) async fn send_response(
     Ok(())
 }
 
+/// Forward a command to an active session. Returns `Err` only if stdout write fails.
+/// Sends an error response to stdout if the session is not found or its channel is closed.
+async fn forward_to_session(
+    sessions: &SessionMap,
+    session_id: &str,
+    cmd: SessionCommand,
+    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(session) = sessions.get(session_id) {
+        if session.cmd_tx.send(cmd).await.is_err() {
+            send_response(
+                stdout,
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message: format!("session {} connection closed", session_id),
+                })),
+            )
+            .await?;
+        }
+    } else {
+        send_response(
+            stdout,
+            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: format!("unknown session: {}", session_id),
+            })),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--protocol-version") {
         println!("{}", PROTOCOL_VERSION);
@@ -365,93 +395,42 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SetModel(set_model_req)) => {
-                if let Some(session) = sessions.get(&set_model_req.session_id) {
-                    if session
-                        .cmd_tx
-                        .send(SessionCommand::SetModel(set_model_req.model_id))
-                        .await
-                        .is_err()
-                    {
-                        send_or_break!(send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!(
-                                    "session {} connection closed",
-                                    set_model_req.session_id
-                                ),
-                            })),
-                        )
-                        .await);
-                    }
-                } else {
-                    send_or_break!(send_response(
+                send_or_break!(
+                    forward_to_session(
+                        &sessions,
+                        &set_model_req.session_id,
+                        SessionCommand::SetModel(set_model_req.model_id),
                         &stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: format!("unknown session: {}", set_model_req.session_id),
-                        })),
                     )
-                    .await);
-                }
+                    .await
+                );
             }
 
             MaestroRpcMessage::Request(ServerRequest::SetMode(set_mode_req)) => {
-                if let Some(session) = sessions.get(&set_mode_req.session_id) {
-                    if session
-                        .cmd_tx
-                        .send(SessionCommand::SetMode(set_mode_req.mode_id))
-                        .await
-                        .is_err()
-                    {
-                        send_or_break!(send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!(
-                                    "session {} connection closed",
-                                    set_mode_req.session_id
-                                ),
-                            })),
-                        )
-                        .await);
-                    }
-                } else {
-                    send_or_break!(send_response(
+                send_or_break!(
+                    forward_to_session(
+                        &sessions,
+                        &set_mode_req.session_id,
+                        SessionCommand::SetMode(set_mode_req.mode_id),
                         &stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: format!("unknown session: {}", set_mode_req.session_id),
-                        })),
                     )
-                    .await);
-                }
+                    .await
+                );
             }
 
             MaestroRpcMessage::Request(ServerRequest::SetConfigOption(req)) => {
-                if let Some(session) = sessions.get(&req.session_id) {
-                    if session
-                        .cmd_tx
-                        .send(SessionCommand::SetConfigOption {
+                send_or_break!(
+                    forward_to_session(
+                        &sessions,
+                        &req.session_id,
+                        SessionCommand::SetConfigOption {
                             config_id: req.config_id,
                             value: req.value,
-                        })
-                        .await
-                        .is_err()
-                    {
-                        send_or_break!(send_response(
-                            &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: format!("session {} connection closed", req.session_id),
-                            })),
-                        )
-                        .await);
-                    }
-                } else {
-                    send_or_break!(send_response(
+                        },
                         &stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: format!("unknown session: {}", req.session_id),
-                        })),
                     )
-                    .await);
-                }
+                    .await
+                );
             }
 
             MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
