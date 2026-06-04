@@ -365,8 +365,14 @@ pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage
 async fn handshake_local_child(
     mut child: tokio::process::Child,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
+    let child_stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "child stdin was not piped".to_string())?;
+    let child_stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "child stdout was not piped".to_string())?;
     let mut stdin_writer = BufWriter::new(child_stdin);
 
     let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {

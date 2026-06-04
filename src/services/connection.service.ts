@@ -243,12 +243,10 @@ export function useSshConnectionStatus(connectionId: number) {
       listen<number>("ssh-connection-lost", (e) => invalidate(e.payload)),
       listen<number>("ssh-connection-failed", (e) => invalidate(e.payload)),
       listen<number>("ssh-reconnected", (e) => invalidate(e.payload)),
-    ]);
+    ]).catch(console.error);
     return () => {
-      void unsub.then(([a, b, c]) => {
-        a();
-        b();
-        c();
+      void unsub.then((fns) => {
+        if (fns) for (const fn of fns) fn();
       });
     };
   }, [connectionId, queryClient]);

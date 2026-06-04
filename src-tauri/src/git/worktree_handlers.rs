@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use crate::command_ext::NoConsoleWindow;
 use chrono::{Duration, Utc};
 
 use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult, DirtyStatus, CommitInfo};
@@ -384,38 +383,7 @@ pub async fn delete_worktree(
 
     // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
-        match &git_conn {
-            crate::models::GitConnection::Local { path } => {
-                let output = tokio::process::Command::new("git")
-                    .args(["branch", "-d", &branch_name])
-                    .current_dir(path)
-                    .no_console_window()
-                    .output()
-                    .await;
-                match output {
-                    Ok(o) if !o.status.success() => {
-                        let _ = o;
-                    }
-                    Err(_) => {}
-                    _ => {}
-                }
-            }
-            crate::models::GitConnection::Remote { ssh, remote_path } => {
-                let cmd = format!(
-                    "git -C {} branch -d {}",
-                    crate::git::remote::shell_quote(remote_path),
-                    crate::git::remote::shell_quote(&branch_name)
-                );
-                let _ = ssh.execute_command(&cmd).await;
-            }
-            crate::models::GitConnection::Wsl { distro, path } => {
-                let _ = tokio::process::Command::new("wsl.exe")
-                    .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", &branch_name])
-                    .no_console_window()
-                    .output()
-                    .await;
-            }
-        }
+        let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await;
     }
 
     // Delete DB row if id provided (orphans have no DB row)
@@ -512,31 +480,7 @@ pub async fn cleanup_zombie_worktrees(
     for (_, relative_path, branch_name) in &to_delete {
         let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
 
-        match &git_conn {
-            crate::models::GitConnection::Local { path } => {
-                let _ = tokio::process::Command::new("git")
-                    .args(["branch", "-d", branch_name])
-                    .current_dir(path)
-                    .no_console_window()
-                    .output()
-                    .await;
-            }
-            crate::models::GitConnection::Remote { ssh, remote_path } => {
-                let cmd = format!(
-                    "git -C {} branch -d {}",
-                    crate::git::remote::shell_quote(remote_path),
-                    crate::git::remote::shell_quote(branch_name)
-                );
-                let _ = ssh.execute_command(&cmd).await;
-            }
-            crate::models::GitConnection::Wsl { distro, path } => {
-                let _ = tokio::process::Command::new("wsl.exe")
-                    .args(["-d", distro, "--", "git", "-C", path, "branch", "-d", branch_name])
-                    .no_console_window()
-                    .output()
-                    .await;
-            }
-        }
+        let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", branch_name]).await;
     }
 
     // Batch-delete DB rows under a single lock
@@ -581,25 +525,13 @@ pub async fn stage_worktree_files(
     }
 
     if let Some(patch_content) = patch {
-        let tmp_dir = std::env::temp_dir();
-        let tmp_path = tmp_dir.join(format!(
-            "maestro-patch-{}.diff",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-        ));
-        std::fs::write(&tmp_path, patch_content.as_bytes())
-            .map_err(|e| format!("Failed to write patch file: {}", e))?;
-        let tmp_str = tmp_path.to_string_lossy().to_string();
-        let result = crate::git::run_git_in_dir(
+        crate::git::run_git_in_dir_with_stdin(
             &git_conn,
             &worktree_abs,
-            &["apply", "--cached", &tmp_str],
+            &["apply", "--cached"],
+            patch_content.as_bytes(),
         )
-        .await;
-        let _ = std::fs::remove_file(&tmp_path);
-        result?;
+        .await?;
     }
     Ok(())
 }
@@ -650,25 +582,13 @@ pub async fn discard_worktree_changes(
     }
 
     if let Some(patch_content) = patch {
-        let tmp_dir = std::env::temp_dir();
-        let tmp_path = tmp_dir.join(format!(
-            "maestro-revert-{}.diff",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-        ));
-        std::fs::write(&tmp_path, patch_content.as_bytes())
-            .map_err(|e| format!("Failed to write patch file: {}", e))?;
-        let tmp_str = tmp_path.to_string_lossy().to_string();
-        let result = crate::git::run_git_in_dir(
+        crate::git::run_git_in_dir_with_stdin(
             &git_conn,
             &worktree_abs,
-            &["apply", "--reverse", &tmp_str],
+            &["apply", "--reverse"],
+            patch_content.as_bytes(),
         )
-        .await;
-        let _ = std::fs::remove_file(&tmp_path);
-        result?;
+        .await?;
     }
     app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())

@@ -622,6 +622,91 @@ impl RemoteSshSession {
         Ok(stdout)
     }
 
+    /// Execute a command on the remote host, piping `stdin_data` to its stdin.
+    pub async fn execute_command_with_stdin(&self, cmd: &str, stdin_data: &[u8]) -> Result<String, SshError> {
+        if !self.is_connected().await {
+            self.reconnect_if_needed().await?;
+        }
+
+        let mut channel = {
+            let open_result = {
+                let guard = self.handle.lock().await;
+                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                    "No active SSH session".to_string(),
+                ))?;
+                handle.channel_open_session().await
+            };
+
+            match open_result {
+                Ok(ch) => ch,
+                Err(_) => {
+                    *self.state.lock().await = SshConnectionState::Disconnected;
+                    self.reconnect_if_needed().await?;
+                    let guard = self.handle.lock().await;
+                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
+                        "No active SSH session after reconnect".to_string(),
+                    ))?;
+                    handle
+                        .channel_open_session()
+                        .await
+                        .map_err(|e| SshError::ConnectionError(format!("Failed to create channel after reconnect: {}", e)))?
+                }
+            }
+        };
+
+        channel
+            .exec(true, cmd.as_bytes())
+            .await
+            .map_err(|e| SshError::CommandExecutionError {
+                exit_code: -1,
+                stderr: format!("Failed to execute command: {}", e),
+            })?;
+
+        channel
+            .data(std::io::Cursor::new(stdin_data))
+            .await
+            .map_err(|e| SshError::CommandExecutionError {
+                exit_code: -1,
+                stderr: format!("Failed to write stdin: {}", e),
+            })?;
+        channel
+            .eof()
+            .await
+            .map_err(|e| SshError::CommandExecutionError {
+                exit_code: -1,
+                stderr: format!("Failed to send EOF: {}", e),
+            })?;
+
+        let mut stdout = String::new();
+        let mut stderr_buf = String::new();
+        let mut exit_code = 0i32;
+
+        loop {
+            match channel.wait().await {
+                None => break,
+                Some(ChannelMsg::Data { ref data }) => {
+                    stdout.push_str(&String::from_utf8_lossy(data));
+                }
+                Some(ChannelMsg::ExtendedData { ref data, ext: 1 }) => {
+                    stderr_buf.push_str(&String::from_utf8_lossy(data));
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = exit_status as i32;
+                }
+                _ => {}
+            }
+        }
+
+        if exit_code != 0 {
+            return Err(SshError::CommandExecutionError {
+                exit_code,
+                stderr: if stderr_buf.is_empty() { stdout } else { stderr_buf },
+            });
+        }
+
+        Ok(stdout)
+    }
+
     /// Open an SSH exec channel and execute `cmd`, returning the channel for streaming I/O.
     ///
     /// Unlike `execute_command` (which collects all output), this returns the raw channel so

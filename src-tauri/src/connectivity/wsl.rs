@@ -46,16 +46,16 @@ pub fn is_wsl_available() -> bool {
     false
 }
 
-/// List installed WSL distros using `wsl.exe --list --quiet`.
+/// List installed WSL distros using `wsl.exe --list --verbose`.
 ///
 /// Returns an empty vec when WSL is unavailable or no distros are installed.
-/// Quiet mode outputs one distro name per line with no headers or markers.
+/// Verbose mode outputs a header followed by one distro per line with name, state, and version.
 pub fn list_distros() -> Result<Vec<WslDistro>, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
         let output = std::process::Command::new("wsl.exe")
-            .args(["--list", "--quiet"])
+            .args(["--list", "--verbose"])
             .no_console_window()
             .output()
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
@@ -153,20 +153,34 @@ fn decode_wsl_output(bytes: &[u8]) -> Result<String, String> {
     text.map(|s| s.to_string()).map_err(|e| format!("UTF-8 decode error: {e}"))
 }
 
-/// Parse the output of `wsl.exe --list --quiet`.
+/// Parse the output of `wsl.exe --list --verbose`.
 ///
-/// Quiet mode outputs one distro name per line with no headers or `*` markers.
-/// Null bytes are stripped to handle UTF-16LE decode remnants.
+/// Verbose output format:
+///   NAME      STATE           VERSION
+/// * Ubuntu    Running         2
+///   Debian    Stopped         1
+///
+/// The `*` marks the default distro. Lines with fewer than 3 whitespace-separated
+/// tokens (e.g. the header) are skipped. State defaults to `Stopped` for unknown values.
 #[cfg(windows)]
 fn parse_distro_list(text: &str) -> Vec<WslDistro> {
     text.lines()
         .map(|line| line.replace('\0', ""))
-        .map(|line| line.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .map(|name| WslDistro {
-            name,
-            state: WslDistroState::Stopped,
-            version: 2,
+        .filter_map(|line| {
+            // Strip the default-distro marker and leading/trailing whitespace
+            let stripped = line.trim_start_matches('*').trim().to_string();
+            let parts: Vec<&str> = stripped.split_whitespace().collect();
+            // Need at least name + state + version; skip header line (name = "NAME")
+            if parts.len() < 3 || parts[0].eq_ignore_ascii_case("NAME") {
+                return None;
+            }
+            let name = parts[0].to_string();
+            let state = match parts[1] {
+                "Running" => WslDistroState::Running,
+                _ => WslDistroState::Stopped,
+            };
+            let version = parts[2].parse::<u8>().unwrap_or(2);
+            Some(WslDistro { name, state, version })
         })
         .collect()
 }

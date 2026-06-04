@@ -300,10 +300,7 @@ pub async fn attach_terminal(
         sessions.get(&task_id).cloned()
     };
 
-    if session.is_none() {
-        return Err(format!("No active PTY session for task {}", task_id));
-    }
-    let session = session.unwrap();
+    let session = session.ok_or_else(|| format!("No active PTY session for task {}", task_id))?;
     let _ = include_history; // history is in-memory only; no DB fallback
 
     let _app_state_arc = (*app_state).clone();

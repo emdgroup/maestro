@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +49,9 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
         wslConnectionId: wslConnection?.id ?? null,
       });
       const project = await api.openProject(created.id);
-      api.primeProjectServer(created.id).catch(() => {});
+      api.primeProjectServer(created.id).catch(() => {
+        toast.error("Failed to initialize project server");
+      });
       setSelectedProject(project);
       // Reset form and close
       setParentDir("");

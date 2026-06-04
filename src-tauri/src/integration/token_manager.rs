@@ -37,7 +37,7 @@ impl TokenManager {
     }
 
     fn get_or_create_lock(&self, project_id: i32) -> Arc<Mutex<Option<StoredToken>>> {
-        let mut map = self.tokens.lock().expect("token map lock poisoned");
+        let mut map = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
         map.entry(project_id)
             .or_insert_with(|| Arc::new(Mutex::new(None)))
             .clone()
@@ -57,7 +57,7 @@ impl TokenManager {
         app_handle: &AppHandle,
     ) -> Result<Option<StoredToken>, String> {
         let project_lock = self.get_or_create_lock(project_id);
-        let mut cached = project_lock.lock().expect("per-project token lock poisoned");
+        let mut cached = project_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         if let Some(ref token) = *cached {
             if let Some(exp) = token.expires_at {
@@ -102,7 +102,7 @@ impl TokenManager {
         app_handle: &AppHandle,
     ) -> Result<(), String> {
         let project_lock = self.get_or_create_lock(project_id);
-        let mut cached = project_lock.lock().expect("per-project token lock poisoned");
+        let mut cached = project_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         match crate::integration::keychain::KeychainStore::store_token(
             project_id,
@@ -127,7 +127,7 @@ impl TokenManager {
         app_handle: &AppHandle,
     ) -> Result<(), String> {
         let project_lock = self.get_or_create_lock(project_id);
-        let mut cached = project_lock.lock().expect("per-project token lock poisoned");
+        let mut cached = project_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         match crate::integration::keychain::KeychainStore::delete_token(project_id, app_data_dir) {
             Ok(crate::integration::keychain::KeychainOutcome::FileFallback(())) => {

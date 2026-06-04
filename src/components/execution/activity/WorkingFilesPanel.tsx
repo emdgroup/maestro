@@ -120,7 +120,7 @@ export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPa
     api
       .getAcpSessionMeta(sessionKey)
       .then((meta) => setCwd(meta.cwd.replace(/\/+$/, "")))
-      .catch(console.error);
+      .catch((e) => setLoadError(String(e)));
   }, [sessionKey]);
 
   useEffect(() => {

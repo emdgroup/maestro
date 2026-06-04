@@ -227,10 +227,10 @@ export function TaskReviewPanel({
   // Tree file selection handler
   const handleTreeFileSelect = useCallback(
     (fileName: string) => {
-      const idx = diffFiles.findIndex((f) => f.fileName === fileName);
+      const idx = filteredDiffFiles.findIndex((f) => f.fileName === fileName);
       setSelectedFileIndex(idx >= 0 ? idx : null);
     },
-    [diffFiles],
+    [filteredDiffFiles],
   );
 
   // Multi-state button logic

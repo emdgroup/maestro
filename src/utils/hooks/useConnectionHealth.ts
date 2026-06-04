@@ -75,15 +75,11 @@ export function useConnectionHealth(connectionId: number | null): ConnectionHeal
           setState("failed");
         }
       }),
-    ]);
+    ]).catch(console.error);
 
     return () => {
-      unlisteners.then(([u1, u2, u3, u4, u5]) => {
-        u1();
-        u2();
-        u3();
-        u4();
-        u5();
+      unlisteners.then((fns) => {
+        if (fns) for (const fn of fns) fn();
       });
     };
   }, [connectionId]);

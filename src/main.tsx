@@ -5,6 +5,7 @@ import "./index.css";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { ToasterRoot } from "@/components/common/error-toast/ErrorToast";
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import { AppErrorBoundary } from "@/components/common/AppErrorBoundary";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Detect and apply system theme synchronously before React renders
@@ -20,7 +21,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryProvider>
       <ThemeProvider>
         <ToasterRoot />
-        <App />
+        <AppErrorBoundary>
+          <App />
+        </AppErrorBoundary>
       </ThemeProvider>
     </QueryProvider>
   </React.StrictMode>,

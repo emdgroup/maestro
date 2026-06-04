@@ -68,7 +68,7 @@ pub async fn get_remote_diff(
 ) -> Result<String, SshError> {
     let cmd = format!(
         "cd {} && git diff --unified=6 {}...{}",
-        shell_quote(remote_path), base_branch, branch
+        shell_quote(remote_path), shell_quote(base_branch), shell_quote(branch)
     );
     ssh.execute_command(&cmd).await
 }

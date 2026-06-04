@@ -609,7 +609,7 @@ pub async fn list_bitbucket_repos(
                 if is_last || next_start.is_none() {
                     break;
                 }
-                start = next_start.expect("checked above");
+                start = next_start.unwrap_or(0);
             }
 
             Ok(all_repos
@@ -775,7 +775,7 @@ pub async fn list_bitbucket_projects(
         if is_last || next_start.is_none() {
             break;
         }
-        start = next_start.expect("checked above");
+        start = next_start.unwrap_or(0);
     }
 
     Ok(all_projects

@@ -3,9 +3,11 @@ use tauri::{Emitter, State};
 use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 
-use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
-use crate::core::{AppState, get_git_connection, get_project_with_git_conn};
+use crate::models::{Task, TASK_SELECT, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
+use crate::core::{AppState, get_project_with_git_conn};
+use crate::acp::ConnectionKey;
 use crate::git;
+use crate::git::remote::shell_quote;
 
 /// Insert (or replace) a review record with optional per-file comments.
 /// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
@@ -38,10 +40,9 @@ fn insert_review_with_comments(
     Ok(review_id)
 }
 
-/// Get diff for review: generates unified diff between task branch and main
+/// Get diff for review: generates unified diff between task branch and its base branch.
 ///
-/// For local projects, uses git dispatcher directly.
-/// For remote projects, uses git dispatcher over SSH.
+/// Dispatches through GitConnection so it works for local, SSH, and WSL projects.
 ///
 /// Returns the unified diff as a string with 6 context lines.
 #[tauri::command]
@@ -50,58 +51,25 @@ pub async fn get_diff_for_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    // 1. Single JOIN query to get all needed data
-    let (project, worktree_path, branch_name) = {
+    let (project_id, branch_name, base_branch) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let (proj_id, proj_name, proj_path, proj_created, proj_updated, proj_last_opened, proj_conn_id, wt_path, branch): (i32, String, String, String, String, Option<String>, Option<i32>, String, String) = conn
-            .query_row(
-                "SELECT t.project_id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id, w.path, w.branch_name
-                 FROM tasks t
-                 JOIN projects p ON p.id = t.project_id
-                 JOIN worktrees w ON w.task_id = t.id
-                 WHERE t.id = ?",
-                rusqlite::params![task_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?)),
-            )
-            .map_err(|e| format!("Task/project/worktree not found: {}", e))?;
-
-        let project = Project {
-            id: proj_id,
-            name: proj_name,
-            path: proj_path,
-            created_at: proj_created,
-            updated_at: proj_updated,
-            last_opened: proj_last_opened,
-            connection_id: proj_conn_id,
-            wsl_connection_id: None,
-        };
-        (project, wt_path, branch)
+        conn.query_row(
+            "SELECT t.project_id, w.branch_name, t.base_branch
+             FROM tasks t
+             JOIN worktrees w ON w.task_id = t.id
+             WHERE t.id = ?",
+            rusqlite::params![task_id],
+            |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+        )
+        .map_err(|e| format!("Task/worktree not found: {}", e))?
     };
 
-    // 2. Handle diff generation based on project type
-    if project.is_remote() {
-        // Remote project: use git dispatcher which executes over SSH
-        let git_conn = get_git_connection(&project, &app_state)
-            .await
-            .map_err(|e| format!("Failed to get git connection: {}", e))?;
+    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
+        .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-        let diff = git::git_diff(&git_conn, &branch_name, "main")
-            .await
-            .map_err(|e| format!("Failed to get diff from remote: {}", e))?;
-
-        Ok(diff)
-    } else {
-        // Local project: use git dispatcher directly
-        let full_worktree_path = format!("{}/{}", project.path, worktree_path);
-        let _ = full_worktree_path; // used above for context
-
-        let git_conn = crate::models::GitConnection::Local { path: project.path.clone() };
-        let diff = git::git_diff(&git_conn, &branch_name, "main")
-            .await
-            .map_err(|e| format!("Failed to get diff: {}", e))?;
-
-        Ok(diff)
-    }
+    git::git_diff(&git_conn, &branch_name, &base_branch)
+        .await
+        .map_err(|e| format!("Failed to get diff: {}", e))
 }
 
 /// Save task review with feedback and per-file comments
@@ -227,10 +195,10 @@ pub async fn resolve_commit_message(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    let (task_name, branch_name, base_branch, external_id, description, project_path) = {
+    let (task_name, branch_name, base_branch, external_id, description, project_path, connection_id, wsl_connection_id) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path
+            "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path, p.connection_id, p.wsl_connection_id
              FROM tasks t
              JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
@@ -243,16 +211,60 @@ pub async fn resolve_commit_message(
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, Option<i32>>(6)?,
+                row.get::<_, Option<i32>>(7)?,
             )),
         )
         .map_err(|e| format!("Task/worktree/project not found: {}", e))?
     };
 
-    let template_path = std::path::Path::new(&project_path)
-        .join(".maestro")
-        .join("commit-template.txt");
-    let template = std::fs::read_to_string(&template_path)
-        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string());
+    let template_path = format!("{}/.maestro/commit-template.txt", project_path);
+    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
+    let template = match connection_key {
+        ConnectionKey::Local => {
+            std::fs::read_to_string(&template_path)
+                .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
+        }
+        ConnectionKey::Ssh { id: conn_id } => {
+            match app_state.ssh.get_session(conn_id).await {
+                Some(session) => {
+                    session.execute_command(&format!("cat {}", shell_quote(&template_path)))
+                        .await
+                        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
+                }
+                None => DEFAULT_COMMIT_TEMPLATE.to_string(),
+            }
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro_result: Result<String, String> = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    rusqlite::params![wsl_id],
+                    |row| row.get(0),
+                ).map_err(|e| format!("WSL connection not found: {}", e))
+            };
+            match distro_result {
+                Ok(distro) => {
+                    let output = tokio::process::Command::new("wsl.exe")
+                        .args(["-d", &distro, "--", "cat", &template_path])
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .no_console_window()
+                        .output()
+                        .await
+                        .ok();
+                    match output {
+                        Some(out) if out.status.success() => {
+                            String::from_utf8_lossy(&out.stdout).into_owned()
+                        }
+                        _ => DEFAULT_COMMIT_TEMPLATE.to_string(),
+                    }
+                }
+                Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
+            }
+        }
+    };
 
     let external_id_str = external_id.unwrap_or_default();
     let description_str = description
@@ -291,7 +303,6 @@ pub async fn approve_task_and_merge(
     include_untracked: bool,
     commit_message: String,
 ) -> Result<MergeResult, String> {
-    let _ = merge_strategy;
 
     // 1. Single JOIN query to get task, worktree, and project data
     let (branch_name, worktree_path, worktree_id, project_id, repo_path, base_branch) = {
@@ -338,6 +349,15 @@ pub async fn approve_task_and_merge(
                 &["commit", "--no-verify", "-m", "Include new files from agent session"],
             ).await.map_err(|e| format!("Failed to commit untracked files: {}", e))?;
         }
+    }
+
+    if merge_strategy == "CommitOnly" {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        return Ok(MergeResult {
+            success: true,
+            task_status: "Review".to_string(),
+            conflicts: vec![],
+        });
     }
 
     // 4. Perform squash merge via git dispatcher (local, SSH, or WSL)
@@ -416,31 +436,7 @@ pub(crate) async fn finalize_successful_merge(
     match crate::git::delete_worktree(&git_conn, worktree_path).await {
         Ok(()) => {
             // Delete branch — non-fatal, best effort
-            match &git_conn {
-                crate::models::GitConnection::Local { path } => {
-                    let _ = tokio::process::Command::new("git")
-                        .args(["branch", "-D", branch_name])
-                        .current_dir(path)
-                        .no_console_window()
-                        .output()
-                        .await;
-                }
-                crate::models::GitConnection::Remote { ssh, remote_path } => {
-                    let cmd = format!(
-                        "git -C {} branch -D {}",
-                        crate::git::remote::shell_quote(remote_path),
-                        crate::git::remote::shell_quote(branch_name)
-                    );
-                    let _ = ssh.execute_command(&cmd).await;
-                }
-                crate::models::GitConnection::Wsl { distro, path } => {
-                    let _ = tokio::process::Command::new("wsl.exe")
-                        .args(["-d", distro, "--", "git", "-C", path, "branch", "-D", branch_name])
-                        .no_console_window()
-                        .output()
-                        .await;
-                }
-            }
+            let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-D", branch_name]).await;
             // Delete from database on successful cleanup
             {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;

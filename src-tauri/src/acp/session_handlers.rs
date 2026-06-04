@@ -119,6 +119,19 @@ pub async fn spawn_acp_session(
         let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
             .await.ok().map(|s| s.trim().to_string());
         (sha, Some((conn_id, ssh)))
+    } else if let Some(wsl_id) = wsl_connection_id {
+        let distro: String = {
+            let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            db.query_row(
+                "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                [wsl_id],
+                |row| row.get(0),
+            ).map_err(|e| format!("WSL connection not found: {}", e))?
+        };
+        let git_conn = crate::models::GitConnection::Wsl { distro, path: cwd.clone() };
+        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
+            .await.ok().map(|s| s.trim().to_string());
+        (sha, None)
     } else {
         let git_conn = crate::models::GitConnection::Local { path: cwd.clone() };
         let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])

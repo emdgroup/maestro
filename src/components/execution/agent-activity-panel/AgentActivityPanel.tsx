@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { Skeleton } from "@/ui/skeleton";
@@ -293,7 +294,9 @@ export function AgentActivityPanel({
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
-      await api.setAcpConfigOption(sessionKey, optionId, value).catch(console.error);
+      await api.setAcpConfigOption(sessionKey, optionId, value).catch(() => {
+        toast.error("Failed to save config option");
+      });
     },
     [sessionKey],
   );

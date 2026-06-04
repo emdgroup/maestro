@@ -492,10 +492,9 @@ async closePtySession(sessionKey: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Get diff for review: generates unified diff between task branch and main
+ * Get diff for review: generates unified diff between task branch and its base branch.
  * 
- * For local projects, uses git dispatcher directly.
- * For remote projects, uses git dispatcher over SSH.
+ * Dispatches through GitConnection so it works for local, SSH, and WSL projects.
  * 
  * Returns the unified diff as a string with 6 context lines.
  */
