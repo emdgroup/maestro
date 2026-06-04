@@ -861,11 +861,32 @@ pub(crate) fn spawn_reader_task(
 fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
     let Ok(conn) = app_state.db.lock() else { return false };
     let now = chrono::Utc::now().to_rfc3339();
+    let target_status = if is_task_project_git_repo(&conn, task_id) { "Review" } else { "Done" };
     conn.execute(
-        "UPDATE tasks SET status = 'Review', updated_at = ? WHERE id = ? AND status = 'InProgress'",
+        &format!("UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ? AND status = 'InProgress'", target_status),
         rusqlite::params![&now, task_id],
     )
     .unwrap_or(0) > 0
+}
+
+fn is_task_project_git_repo(conn: &rusqlite::Connection, task_id: i32) -> bool {
+    let result: Option<(String, Option<i32>, Option<i32>)> = conn.query_row(
+        "SELECT p.path, p.connection_id, p.wsl_connection_id \
+         FROM tasks t JOIN projects p ON t.project_id = p.id \
+         WHERE t.id = ?",
+        [task_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).ok();
+
+    let Some((path, connection_id, wsl_connection_id)) = result else {
+        return true;
+    };
+
+    if connection_id.is_none() && wsl_connection_id.is_none() {
+        return std::path::Path::new(&path).join(".git").exists();
+    }
+
+    true
 }
 
 async fn try_auto_approve_permission(

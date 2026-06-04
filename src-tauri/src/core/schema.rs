@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 
-pub const SCHEMA_V20: &str = r#"
+pub const SCHEMA_V21: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     isolated_worktree INTEGER NOT NULL DEFAULT 1,
     agent_id TEXT,
     permission_mode_override TEXT,
+    execution_start_sha TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -210,7 +211,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
                 PRAGMA foreign_keys = ON;
             "#)?;
         }
-        conn.execute_batch(SCHEMA_V20)?;
+        conn.execute_batch(SCHEMA_V21)?;
         conn.execute(
             &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
             [],
@@ -266,7 +267,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 19);
+        assert_eq!(version, 21);
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

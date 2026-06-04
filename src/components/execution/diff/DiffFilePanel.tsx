@@ -1,4 +1,4 @@
-import { Check, Minus } from "lucide-react";
+import { Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -12,6 +12,7 @@ export interface DiffFile {
 }
 
 interface DiffFilePanelProps {
+  mode?: "worktree" | "review" | "session";
   viewMode: "uncommitted" | "untracked";
   onViewModeChange: (mode: "uncommitted" | "untracked") => void;
   modifiedCount: number;
@@ -36,9 +37,14 @@ interface DiffFilePanelProps {
   isCommitting: boolean;
   isStaging: boolean;
   onStageUntracked: () => Promise<void>;
+  viewedFiles?: Set<string>;
+  onToggleViewed?: (fileName: string) => void;
+  scopeSelector?: React.ReactNode;
+  onFileComment?: (fileName: string) => void;
 }
 
 export function DiffFilePanel({
+  mode = "worktree",
   viewMode,
   onViewModeChange,
   modifiedCount,
@@ -63,35 +69,53 @@ export function DiffFilePanel({
   isCommitting,
   isStaging,
   onStageUntracked,
+  viewedFiles,
+  onToggleViewed,
+  scopeSelector,
+  onFileComment: _onFileComment,
 }: DiffFilePanelProps) {
+  const showWorktreeControls = mode === "worktree" && viewMode === "uncommitted";
+  const showUntrackedControls = (mode === "worktree" || mode === "review") && viewMode === "untracked";
+  const showTabs = (mode === "worktree" || mode === "review") && untrackedCount > 0;
+  const showCheckboxes = mode === "worktree";
+
   return (
     <div className="w-64 shrink-0 flex flex-col border-r border-border">
-      <div className="flex border-b border-border shrink-0">
-        <button
-          onClick={() => onViewModeChange("uncommitted")}
-          className={cn(
-            "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
-            viewMode === "uncommitted"
-              ? "border-accent text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
-          )}
-        >
-          Modified ({modifiedCount})
-        </button>
-        <button
-          onClick={() => onViewModeChange("untracked")}
-          className={cn(
-            "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
-            viewMode === "untracked"
-              ? "border-accent text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
-          )}
-        >
-          Untracked ({untrackedCount})
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {viewMode === "untracked" ? (
+      {/* Scope selector slot */}
+      {scopeSelector && <div className="border-b border-border shrink-0">{scopeSelector}</div>}
+
+      {/* Tabs: only in worktree mode */}
+      {showTabs && (
+        <div className="flex border-b border-border shrink-0">
+          <button
+            onClick={() => onViewModeChange("uncommitted")}
+            className={cn(
+              "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              viewMode === "uncommitted"
+                ? "border-accent text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
+            )}
+          >
+            Modified ({modifiedCount})
+          </button>
+          <button
+            onClick={() => onViewModeChange("untracked")}
+            className={cn(
+              "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              viewMode === "untracked"
+                ? "border-accent text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
+            )}
+          >
+            Untracked ({untrackedCount})
+          </button>
+        </div>
+      )}
+
+      {/* File list */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {showUntrackedControls ? (
+          /* Untracked files view (worktree mode only) */
           diffLoading ? (
             <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
           ) : untrackedFiles.length === 0 ? (
@@ -129,6 +153,7 @@ export function DiffFilePanel({
                   }
                 });
               }}
+              viewedFiles={viewedFiles}
             />
           ) : (
             untrackedFiles.map((filePath, index) => {
@@ -146,19 +171,33 @@ export function DiffFilePanel({
                   )}
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <CheckboxPrimitive.Root
-                      checked={isChecked}
-                      onCheckedChange={() => onToggleUntrackedFile(filePath)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
-                      tabIndex={-1}
-                    >
-                      <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
-                        <Check className="size-3.5" />
-                      </CheckboxPrimitive.Indicator>
-                    </CheckboxPrimitive.Root>
+                    {showCheckboxes && (
+                      <CheckboxPrimitive.Root
+                        checked={isChecked}
+                        onCheckedChange={() => onToggleUntrackedFile(filePath)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                        tabIndex={-1}
+                      >
+                        <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                          <Check className="size-3.5" />
+                        </CheckboxPrimitive.Indicator>
+                      </CheckboxPrimitive.Root>
+                    )}
                     <span className="text-xs font-medium shrink-0 text-muted-foreground">U</span>
                     <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
+                    {onToggleViewed && viewedFiles?.has(filePath) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleViewed(filePath);
+                        }}
+                        className="shrink-0 text-success hover:text-foreground"
+                        title="Mark as unviewed"
+                      >
+                        <CheckCheck className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -176,10 +215,13 @@ export function DiffFilePanel({
             }
             onSelectFile={onTreeFileSelect}
             checkedFiles={
-              new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
+              showCheckboxes
+                ? new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
+                : undefined
             }
-            onToggleFile={onFileToggle}
-            onToggleFolder={onFolderToggle}
+            onToggleFile={showCheckboxes ? onFileToggle : undefined}
+            onToggleFolder={showCheckboxes ? onFolderToggle : undefined}
+            viewedFiles={viewedFiles}
           />
         ) : (
           filteredDiffFiles.map((file) => {
@@ -205,24 +247,38 @@ export function DiffFilePanel({
                 )}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <CheckboxPrimitive.Root
-                    checked={checkState === "checked"}
-                    indeterminate={checkState === "indeterminate"}
-                    onCheckedChange={() => onFileToggle(file.fileName)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
-                    tabIndex={-1}
-                  >
-                    <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
-                      {checkState === "indeterminate" ? (
-                        <Minus className="size-3.5" />
-                      ) : (
-                        <Check className="size-3.5" />
-                      )}
-                    </CheckboxPrimitive.Indicator>
-                  </CheckboxPrimitive.Root>
+                  {showCheckboxes && (
+                    <CheckboxPrimitive.Root
+                      checked={checkState === "checked"}
+                      indeterminate={checkState === "indeterminate"}
+                      onCheckedChange={() => onFileToggle(file.fileName)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                      tabIndex={-1}
+                    >
+                      <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                        {checkState === "indeterminate" ? (
+                          <Minus className="size-3.5" />
+                        ) : (
+                          <Check className="size-3.5" />
+                        )}
+                      </CheckboxPrimitive.Indicator>
+                    </CheckboxPrimitive.Root>
+                  )}
                   <span className={cn("text-xs font-medium shrink-0", statusColor)}>{status}</span>
                   <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
+                  {onToggleViewed && viewedFiles?.has(file.fileName) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleViewed(file.fileName);
+                      }}
+                      className="shrink-0 text-success hover:text-foreground"
+                      title="Mark as unviewed"
+                    >
+                      <CheckCheck className="size-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -230,8 +286,8 @@ export function DiffFilePanel({
         )}
       </div>
 
-      {/* Bottom action area */}
-      {viewMode === "untracked"
+      {/* Bottom action area (worktree mode only) */}
+      {showUntrackedControls
         ? stagedFiles.size > 0 && (
             <div className="border-t border-border p-2 shrink-0">
               <Button size="sm" className="w-full" disabled={isStaging} onClick={onStageUntracked}>
@@ -239,7 +295,8 @@ export function DiffFilePanel({
               </Button>
             </div>
           )
-        : hasAnyStaged && (
+        : showWorktreeControls &&
+          hasAnyStaged && (
             <div className="border-t border-border p-2 shrink-0 flex flex-col gap-2">
               <Textarea
                 placeholder="Commit message..."

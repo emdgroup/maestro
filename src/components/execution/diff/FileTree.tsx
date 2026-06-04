@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Check, Minus } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/ui-utils";
 import { DiffFileWithName } from "@/types/review";
@@ -20,6 +20,7 @@ interface FileTreeProps {
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
+  viewedFiles?: Set<string>;
 }
 
 /**
@@ -108,7 +109,8 @@ const DirectoryNode: React.FC<{
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder }) => {
+  viewedFiles?: Set<string>;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder, viewedFiles }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const folderCheckState =
@@ -146,6 +148,11 @@ const DirectoryNode: React.FC<{
           </CheckboxPrimitive.Root>
         )}
         <span className="font-mono truncate">{node.name}</span>
+        {viewedFiles && (() => {
+          const descendants = getDescendantFiles(node);
+          const allViewed = descendants.length > 0 && descendants.every(f => viewedFiles.has(f));
+          return allViewed ? <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" /> : null;
+        })()}
       </button>
       {isExpanded && node.children && (
         <div>
@@ -159,6 +166,7 @@ const DirectoryNode: React.FC<{
               checkedFiles={checkedFiles}
               onToggleFile={onToggleFile}
               onToggleFolder={onToggleFolder}
+              viewedFiles={viewedFiles}
             />
           ))}
         </div>
@@ -175,7 +183,8 @@ const FileNode: React.FC<{
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder }) => {
+  viewedFiles?: Set<string>;
+}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder, viewedFiles }) => {
   if (node.isDir) {
     return (
       <DirectoryNode
@@ -186,6 +195,7 @@ const FileNode: React.FC<{
         checkedFiles={checkedFiles}
         onToggleFile={onToggleFile}
         onToggleFolder={onToggleFolder}
+        viewedFiles={viewedFiles}
       />
     );
   }
@@ -227,6 +237,9 @@ const FileNode: React.FC<{
       )}
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
       <span className="font-mono truncate">{node.name}</span>
+      {viewedFiles?.has(node.fileName!) && (
+        <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" />
+      )}
     </div>
   );
 };
@@ -238,6 +251,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   checkedFiles,
   onToggleFile,
   onToggleFolder,
+  viewedFiles,
 }) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
@@ -257,6 +271,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
           checkedFiles={checkedFiles}
           onToggleFile={onToggleFile}
           onToggleFolder={onToggleFolder}
+          viewedFiles={viewedFiles}
         />
       ))}
     </div>

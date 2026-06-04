@@ -278,7 +278,7 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
       const text = content.content?.text;
       if (!text) return null;
       return (
-        <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+        <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto custom-scrollbar">
           {text}
         </pre>
       );
@@ -368,7 +368,7 @@ function InlineDiffBlock({
           {path}
         </div>
       )}
-      <div className="overflow-x-auto max-h-52 overflow-y-auto">
+      <div className="overflow-x-auto max-h-52 overflow-y-auto custom-scrollbar">
         {lines.map((line, i) => (
           <div
             key={i}

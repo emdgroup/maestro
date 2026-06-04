@@ -1,14 +1,18 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
+import { CheckCheck } from "lucide-react";
 import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
 import { cn } from "@/lib/ui-utils";
 import { DiffViewer } from "./DiffViewer";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";
+import { ScopeSelector } from "./ScopeSelector";
+import type { DiffScope } from "./ScopeSelector";
 import { useStagingState } from "../worktree-card/useStagingState";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import {
   useWorktreeDiffQuery,
+  useWorktreeCommitsQuery,
   useStageWorktreeFilesMutation,
   useCommitWorktreeMutation,
   useDiscardWorktreeChangesMutation,
@@ -16,8 +20,6 @@ import {
   useDeleteUntrackedFilesMutation,
 } from "@/services/worktree.service";
 import type { WorktreeWithStatus, DiffTarget } from "@/types/bindings";
-
-const DIFF_TARGET_HEAD: DiffTarget = { type: "Head" };
 
 interface WorktreeDiffPanelProps {
   worktree: WorktreeWithStatus | null;
@@ -29,14 +31,42 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [viewMode, setViewMode] = useState<"uncommitted" | "untracked">("uncommitted");
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
+  const [scope, setScope] = useState<DiffScope>({ type: "uncommitted" });
+  const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
+
+  const toggleViewed = useCallback((fileName: string) => {
+    setViewedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileName)) next.delete(fileName);
+      else next.add(fileName);
+      return next;
+    });
+  }, []);
 
   const worktreePath = worktree?.path ?? null;
+  const baseBranch = worktree?.base_branch ?? null;
+
+  const isUncommittedScope = scope.type === "uncommitted";
+
+  const diffTarget: DiffTarget = useMemo(() => {
+    switch (scope.type) {
+      case "uncommitted":
+        return { type: "Head" };
+      case "all":
+        return baseBranch ? { type: "BranchAll", branch: baseBranch } : { type: "Head" };
+      case "commit":
+        return { type: "CommitRange", from: scope.sha + "~1", to: scope.sha };
+    }
+  }, [scope, baseBranch]);
+
+  const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
+  const commits = commitsQuery.data || [];
 
   const {
     data: diffResult,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(projectId, worktreePath, DIFF_TARGET_HEAD);
+  } = useWorktreeDiffQuery(projectId, worktreePath, diffTarget);
 
   const diffString = diffResult?.diff ?? null;
   const untrackedFiles = diffResult?.untracked_files ?? [];
@@ -311,6 +341,11 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const forceUnified = selectedFile?.status === "A" || selectedFile?.status === "D";
   const effectiveDiffViewMode = forceUnified ? DiffModeEnum.Unified : diffViewMode;
 
+  // No-op helpers for read-only (non-uncommitted) scopes
+  const noopFileToggle = () => {};
+  const noopFolderToggle = () => {};
+  const noopGetFileCheckState = (): "unchecked" => "unchecked";
+
   if (worktree === null) {
     return null;
   }
@@ -318,6 +353,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   return (
     <div className="flex flex-col h-full">
       <DiffActionBar
+        mode="worktree"
         branchName={worktree.branch_name}
         fileSearch={fileSearch}
         onFileSearchChange={setFileSearch}
@@ -326,25 +362,26 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         diffViewMode={diffViewMode}
         onDiffViewModeChange={setDiffViewMode}
         forceUnified={forceUnified}
-        hasAnyStaged={hasAnyStaged}
-        isDiscarding={discardMutation.isPending}
-        isDeleteMode={viewMode === "untracked"}
-        deleteDialogOpen={deleteDialogOpen}
-        onDeleteDialogOpenChange={handleDeleteDialogOpenChange}
-        isDeleting={deleteMutation.isPending}
-        deleteError={deleteMutation.error ? String(deleteMutation.error) : null}
-        isShelving={shelveMutation.isPending}
-        shelvePopoverOpen={shelvePopoverOpen}
-        onShelvePopoverOpenChange={setShelvePopoverOpen}
-        shelveName={shelveName}
-        onShelveNameChange={setShelveName}
-        onRevert={viewMode === "untracked" ? handleDeleteUntracked : handleRevert}
-        onShelve={handleShelve}
+        hasAnyStaged={isUncommittedScope ? hasAnyStaged : false}
+        isDiscarding={isUncommittedScope ? discardMutation.isPending : false}
+        isDeleteMode={isUncommittedScope && viewMode === "untracked"}
+        deleteDialogOpen={isUncommittedScope ? deleteDialogOpen : false}
+        onDeleteDialogOpenChange={isUncommittedScope ? handleDeleteDialogOpenChange : undefined}
+        isDeleting={isUncommittedScope ? deleteMutation.isPending : false}
+        deleteError={isUncommittedScope && deleteMutation.error ? String(deleteMutation.error) : null}
+        isShelving={isUncommittedScope ? shelveMutation.isPending : false}
+        shelvePopoverOpen={isUncommittedScope ? shelvePopoverOpen : false}
+        onShelvePopoverOpenChange={isUncommittedScope ? setShelvePopoverOpen : undefined}
+        shelveName={isUncommittedScope ? shelveName : ""}
+        onShelveNameChange={isUncommittedScope ? setShelveName : undefined}
+        onRevert={isUncommittedScope ? (viewMode === "untracked" ? handleDeleteUntracked : handleRevert) : undefined}
+        onShelve={isUncommittedScope ? handleShelve : undefined}
         onClose={onClose}
       />
 
       <div className="flex flex-1 min-h-0">
         <DiffFilePanel
+          mode="worktree"
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           modifiedCount={diffFiles.length}
@@ -356,19 +393,31 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           untrackedFiles={untrackedFiles}
           selectedFileIndex={selectedFileIndex}
           onFileIndexChange={setSelectedFileIndex}
-          stagedFiles={stagedFiles}
-          getFileCheckState={getFileCheckState}
-          onFileToggle={handleFileToggle}
-          onFolderToggle={handleFolderToggle}
-          onToggleUntrackedFile={handleToggleUntrackedFile}
+          stagedFiles={isUncommittedScope ? stagedFiles : new Set<string>()}
+          getFileCheckState={isUncommittedScope ? getFileCheckState : noopGetFileCheckState}
+          onFileToggle={isUncommittedScope ? handleFileToggle : noopFileToggle}
+          onFolderToggle={isUncommittedScope ? handleFolderToggle : noopFolderToggle}
+          onToggleUntrackedFile={isUncommittedScope ? handleToggleUntrackedFile : noopFileToggle}
           onTreeFileSelect={handleTreeFileSelect}
-          hasAnyStaged={hasAnyStaged}
-          commitMessage={commitMessage}
-          onCommitMessageChange={setCommitMessage}
-          onCommit={handleCommit}
-          isCommitting={commitMutation.isPending}
-          isStaging={stageMutation.isPending}
-          onStageUntracked={handleStageUntracked}
+          hasAnyStaged={isUncommittedScope ? hasAnyStaged : false}
+          commitMessage={isUncommittedScope ? commitMessage : ""}
+          onCommitMessageChange={isUncommittedScope ? setCommitMessage : noopFileToggle}
+          onCommit={isUncommittedScope ? handleCommit : noopFileToggle}
+          isCommitting={isUncommittedScope ? commitMutation.isPending : false}
+          isStaging={isUncommittedScope ? stageMutation.isPending : false}
+          onStageUntracked={isUncommittedScope ? handleStageUntracked : async () => {}}
+          viewedFiles={viewedFiles}
+          onToggleViewed={toggleViewed}
+          scopeSelector={
+            <ScopeSelector
+              selectedScope={scope}
+              onScopeChange={setScope}
+              commits={commits}
+              uncommittedFileCount={untrackedFiles.length + diffFiles.length}
+              totalFileCount={diffFiles.length + untrackedFiles.length}
+              isLoading={commitsQuery.isLoading}
+            />
+          }
         />
 
         {/* Right diff body */}
@@ -398,8 +447,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                   : status === "D"
                     ? "text-destructive"
                     : "text-muted-foreground";
+              const isViewed = viewedFiles.has(selectedFile.fileName);
               return (
-                <div className="px-3 py-2 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
                   <span className="font-mono text-foreground truncate flex-1">
                     {selectedFile.fileName}
                   </span>
@@ -410,17 +460,28 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                   {stats.deletions > 0 && (
                     <span className="text-destructive shrink-0">-{stats.deletions}</span>
                   )}
+                  <button
+                    onClick={() => toggleViewed(selectedFile.fileName)}
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
+                      isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+                    )}
+                    title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                  >
+                    <CheckCheck className="size-3" />
+                    <span className="text-[10px]">Viewed</span>
+                  </button>
                 </div>
               );
             })()}
 
           {viewMode === "uncommitted" && (
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
               {diffLoading ? (
                 <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
-              ) : worktree.git_status === "" && diffFiles.length === 0 ? (
+              ) : diffFiles.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                  No uncommitted changes
+                  {isUncommittedScope ? "No uncommitted changes" : "No changes in this scope"}
                 </div>
               ) : selectedFile ? (
                 <DiffViewer
@@ -428,14 +489,14 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                   loading={false}
                   diffViewMode={effectiveDiffViewMode}
                   hunkSelection={
-                    stagedFiles.has(selectedFile.fileName)
-                      ? undefined
-                      : stagedHunks.get(selectedFile.fileName)
+                    isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
+                      ? stagedHunks.get(selectedFile.fileName)
+                      : undefined
                   }
                   onHunkToggle={
-                    stagedFiles.has(selectedFile.fileName)
-                      ? undefined
-                      : (idx) => handleHunkToggle(selectedFile.fileName, idx)
+                    isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
+                      ? (idx) => handleHunkToggle(selectedFile.fileName, idx)
+                      : undefined
                   }
                 />
               ) : (

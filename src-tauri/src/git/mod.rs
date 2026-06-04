@@ -4,8 +4,8 @@ pub mod review_handlers;
 pub mod review_models;
 pub mod diff_models;
 
-pub use review_models::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult};
-pub use diff_models::{DiffTarget, WorktreeDiffResult};
+pub use review_models::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
+pub use diff_models::{DiffTarget, WorktreeDiffResult, DirtyStatus, CommitInfo};
 
 use crate::command_ext::NoConsoleWindow;
 use crate::models::GitConnection;
@@ -493,52 +493,34 @@ async fn get_current_branch_local(
 ///    4b. If nothing staged: return error (branches identical)
 /// 5. Commit with standardised message
 pub async fn squash_merge_to_main(
-    repo_path: &str,
+    conn: &GitConnection,
     task_id: i32,
     branch_name: &str,
     task_name: &str,
 ) -> Result<MergeResult, String> {
-    // Step 1: checkout main
-    let output = TokioCommand::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_path)
-        .no_console_window()
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git checkout: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git checkout main failed: {}", stderr));
-    }
+    let repo_path = match conn {
+        GitConnection::Local { path } => path.as_str(),
+        GitConnection::Remote { remote_path, .. } => remote_path.as_str(),
+        GitConnection::Wsl { path, .. } => path.as_str(),
+    };
 
-    // Step 2: squash merge (non-zero exit expected on conflicts — do not check status here)
-    let _output = TokioCommand::new("git")
-        .args(["merge", branch_name, "--squash", "--no-commit"])
-        .current_dir(repo_path)
-        .no_console_window()
-        .output()
+    // Step 1: checkout main
+    run_git_in_dir(conn, repo_path, &["checkout", "main"])
         .await
-        .map_err(|e| format!("Failed to run git merge: {}", e))?;
+        .map_err(|e| format!("git checkout main failed: {}", e))?;
+
+    // Step 2: squash merge (non-zero exit expected on conflicts)
+    let _ = run_git_in_dir_lossy(conn, repo_path, &["merge", branch_name, "--squash", "--no-commit"]).await;
 
     // Step 3: check for conflicts via git status --porcelain
-    let status_output = TokioCommand::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(repo_path)
-        .no_console_window()
-        .output()
+    let status_stdout = run_git_in_dir(conn, repo_path, &["status", "--porcelain"])
         .await
-        .map_err(|e| format!("Failed to run git status: {}", e))?;
-    let status_stdout = String::from_utf8_lossy(&status_output.stdout);
+        .map_err(|e| format!("git status failed: {}", e))?;
     let conflicts = parse_conflict_files(&status_stdout);
 
     // Step 4a: conflicts detected — abort and return
     if !conflicts.is_empty() {
-        let _ = TokioCommand::new("git")
-            .args(["merge", "--abort"])
-            .current_dir(repo_path)
-            .no_console_window()
-            .output()
-            .await;
+        let _ = run_git_in_dir_lossy(conn, repo_path, &["merge", "--abort"]).await;
         return Ok(MergeResult {
             success: false,
             task_status: "InProgress".to_string(),
@@ -556,17 +538,9 @@ pub async fn squash_merge_to_main(
         "Merge task #{}: {}\n\nAll agent commits squashed into single commit.",
         task_id, task_name
     );
-    let output = TokioCommand::new("git")
-        .args(["commit", "-m", &commit_msg])
-        .current_dir(repo_path)
-        .no_console_window()
-        .output()
+    run_git_in_dir(conn, repo_path, &["commit", "-m", &commit_msg])
         .await
-        .map_err(|e| format!("Failed to run git commit: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git commit failed: {}", stderr));
-    }
+        .map_err(|e| format!("git commit failed: {}", e))?;
 
     // Step 6: return success
     Ok(MergeResult {

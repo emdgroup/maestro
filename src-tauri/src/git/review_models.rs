@@ -47,6 +47,23 @@ pub struct ReviewResult {
     pub task_status: Option<String>,
 }
 
+/// Response for get_task_review: review with all comments
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct TaskReviewWithComments {
+    pub decision: String,
+    pub general_feedback: Option<String>,
+    pub comments: Vec<ReviewCommentEntry>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ReviewCommentEntry {
+    pub file_path: String,
+    pub comment: String,
+}
+
 /// Typed response for approve_task_and_merge IPC command
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]

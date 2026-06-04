@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { DiffView, DiffModeEnum } from "@git-diff-view/react";
+import { DiffView, DiffModeEnum, SplitSide } from "@git-diff-view/react";
 import {
   getDiffHighlighter,
   type DiffHighlighterInstance,
@@ -11,6 +11,16 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
+import { InlineCommentInput } from "./InlineCommentInput";
+import { PendingCommentBlock } from "./PendingCommentBlock";
+
+export interface PendingComment {
+  id: string;
+  filePath: string;
+  lineNumber: number; // 0 = file-level
+  side: "old" | "new";
+  text: string;
+}
 
 interface DiffViewerProps {
   diffFile: DiffFile | null;
@@ -20,6 +30,19 @@ interface DiffViewerProps {
   // Hunk selection support
   hunkSelection?: Set<number>;
   onHunkToggle?: (hunkIndex: number) => void;
+  // Review mode (inline comment gutters)
+  reviewMode?: boolean;
+  comments?: PendingComment[];
+  activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
+  onAddComment?: (lineNumber: number, side: "old" | "new") => void;
+  onRemoveComment?: (commentId: string) => void;
+  onEditComment?: (commentId: string, newText: string) => void;
+  onCancelComment?: () => void;
+  onSubmitComment?: (text: string) => void;
+}
+
+function splitSideToSide(side: SplitSide): "old" | "new" {
+  return side === SplitSide.old ? "old" : "new";
 }
 
 function HunkCheckboxOverlay({
@@ -92,6 +115,13 @@ export function DiffViewer({
   diffViewMode,
   hunkSelection,
   onHunkToggle,
+  reviewMode,
+  comments,
+  onAddComment,
+  onRemoveComment,
+  onEditComment,
+  onCancelComment,
+  onSubmitComment,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
@@ -116,6 +146,55 @@ export function DiffViewer({
     loadHighlighter();
   }, []);
 
+  // Build extendData from comments (single comment per line/side)
+  const extendData = useMemo(() => {
+    if (!reviewMode || !comments || comments.length === 0) return undefined;
+    const oldFile: Record<string, { data: PendingComment }> = {};
+    const newFile: Record<string, { data: PendingComment }> = {};
+    for (const comment of comments) {
+      if (comment.lineNumber === 0) continue;
+      const key = String(comment.lineNumber);
+      const target = comment.side === "old" ? oldFile : newFile;
+      target[key] = { data: comment };
+    }
+    return { oldFile, newFile };
+  }, [reviewMode, comments]);
+
+  // Native widget callbacks
+  const handleAddWidgetClick = useCallback(
+    (lineNumber: number, side: SplitSide) => {
+      onAddComment?.(lineNumber, splitSideToSide(side));
+    },
+    [onAddComment],
+  );
+
+  const renderWidgetLine = useCallback(
+    ({ onClose }: { lineNumber: number; side: SplitSide; diffFile: any; onClose: () => void }) => {
+      if (!onSubmitComment || !onCancelComment) return null;
+      return (
+        <InlineCommentInput
+          onSubmit={(text) => { onSubmitComment(text); onClose(); }}
+          onCancel={() => { onCancelComment(); onClose(); }}
+        />
+      );
+    },
+    [onSubmitComment, onCancelComment],
+  );
+
+  const renderExtendLine = useCallback(
+    ({ data }: { lineNumber: number; side: SplitSide; data: PendingComment; diffFile: any; onUpdate: () => void }) => {
+      if (!onRemoveComment) return null;
+      return (
+        <PendingCommentBlock
+          text={data.text}
+          onRemove={() => onRemoveComment(data.id)}
+          onEdit={onEditComment ? (newText) => onEditComment(data.id, newText) : undefined}
+        />
+      );
+    },
+    [onRemoveComment, onEditComment],
+  );
+
   if (highlighterError)
     return (
       <DiffPlaceholder
@@ -132,7 +211,7 @@ export function DiffViewer({
     <div className="min-h-0 flex flex-col h-full">
       <div
         ref={wrapperRef}
-        className={cn("flex-1 min-h-0", onHunkToggle && "hunk-selection-active")}
+        className={cn("flex-1 min-h-0", onHunkToggle && "hunk-selection-active", reviewMode && "review-mode-active")}
       >
         <DiffView
           data={diffFile}
@@ -140,6 +219,11 @@ export function DiffViewer({
           diffViewTheme={diffTheme}
           diffViewHighlight
           registerHighlighter={highlighter as any}
+          diffViewAddWidget={reviewMode}
+          onAddWidgetClick={reviewMode ? handleAddWidgetClick : undefined}
+          renderWidgetLine={reviewMode ? renderWidgetLine : undefined}
+          extendData={extendData}
+          renderExtendLine={reviewMode ? renderExtendLine : undefined}
         />
         {onHunkToggle && (
           <HunkCheckboxOverlay

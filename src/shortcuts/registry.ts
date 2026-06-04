@@ -8,6 +8,11 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "tab-worktrees", key: "3",      ctrl: true,  label: "Ctrl+3", scope: "global" },
   { id: "tab-settings",  key: "4",      ctrl: true,  label: "Ctrl+4", scope: "global" },
 
+  // Global — block webview reload
+  { id: "prevent-reload",       key: "r",  ctrl: true,  label: "Ctrl+R",       scope: "global" },
+  { id: "prevent-reload-shift", key: "r",  ctrl: true,  shift: true, label: "Ctrl+Shift+R", scope: "global" },
+  { id: "prevent-reload-f5",    key: "F5", ctrl: false, label: "F5",           scope: "global" },
+
   // Search focus — relevant on screens that have a search input
   { id: "focus-search",  key: "f",      ctrl: true,  label: "Ctrl+F", scope: ["board", "agents", "worktrees"] },
 

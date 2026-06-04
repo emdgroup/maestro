@@ -3,7 +3,7 @@ use tauri::{Emitter, State};
 use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 
-use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult};
+use crate::models::{Project, Task, TASK_SELECT, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
 use crate::core::{AppState, get_git_connection, get_project_with_git_conn};
 use crate::git;
 
@@ -159,6 +159,38 @@ pub async fn request_changes(
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
 }
 
+/// Get the current review (with comments) for a task
+#[tauri::command]
+#[specta::specta]
+pub async fn get_task_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<Option<TaskReviewWithComments>, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+    let review = conn.query_row(
+        "SELECT id, decision, general_feedback, created_at FROM task_reviews WHERE task_id = ?",
+        [task_id],
+        |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, String>(3)?)),
+    ).ok();
+
+    let Some((review_id, decision, general_feedback, created_at)) = review else {
+        return Ok(None);
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT file_path, comment FROM review_comments WHERE review_id = ?"
+    ).map_err(|e| format!("Prepare failed: {}", e))?;
+
+    let comments: Vec<ReviewCommentEntry> = stmt.query_map([review_id], |row| {
+        Ok(ReviewCommentEntry { file_path: row.get(0)?, comment: row.get(1)? })
+    }).map_err(|e| format!("Query failed: {}", e))?
+      .filter_map(|r| r.ok())
+      .collect();
+
+    Ok(Some(TaskReviewWithComments { decision, general_feedback, comments, created_at }))
+}
+
 // ============================================================================
 // Merge Automation and Conflict Handling
 // ============================================================================
@@ -182,10 +214,10 @@ pub async fn approve_task_and_merge(
     let _ = merge_strategy;
 
     // 1. Single JOIN query to get task, worktree, and project data
-    let (task_name, branch_name, worktree_path, worktree_id, _project_id, repo_path) = {
+    let (task_name, branch_name, worktree_path, worktree_id, project_id, repo_path) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT t.name, w.branch_name, w.path, w.id, t.project_id, p.path
+            "SELECT t.title, w.branch_name, w.path, w.id, t.project_id, p.path
              FROM tasks t
              JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
@@ -196,12 +228,16 @@ pub async fn approve_task_and_merge(
         .map_err(|e| format!("Task, worktree, or project not found: {}", e))?
     };
 
-    // 2. Build full worktree path
+    // 2. Resolve git connection for this project
+    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
+        .map_err(|e| format!("Failed to get git connection: {}", e))?;
+
+    // 3. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-    // 3. Perform squash merge via native Rust git subprocess
+    // 4. Perform squash merge via git dispatcher (local, SSH, or WSL)
     let merge_result = git::squash_merge_to_main(
-        &repo_path,
+        &git_conn,
         task_id,
         &branch_name,
         &task_name,
@@ -321,9 +357,9 @@ pub(crate) async fn finalize_successful_merge(
 /// Reject a task in review with one of three actions
 ///
 /// Handles the three rejection paths from the review panel:
-/// - "SendToBacklog": moves task back to Backlog status (worktree cleanup is a TODO)
+/// - "SendToBacklog": moves task back to Backlog, deletes worktree, resets agent commits
 /// - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
-/// - "CancelTask": moves task to Cancelled status (worktree cleanup is a TODO)
+/// - "CancelTask": moves task to Cancelled, deletes worktree, resets agent commits
 ///
 /// Returns the updated Task.
 #[tauri::command]
@@ -334,23 +370,117 @@ pub async fn reject_review(
     action: String,
     instruction: Option<String>,
 ) -> Result<Task, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     match action.as_str() {
-        "SendToBacklog" => {
-            // Move task back to Backlog; worktree cleanup is a TODO for full implementation
-            conn.execute(
-                "UPDATE tasks SET status = 'Backlog', updated_at = ? WHERE id = ?",
-                rusqlite::params![&now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task status: {}", e))?;
-            // TODO: delete worktree for this task
+        "SendToBacklog" | "CancelTask" => {
+            let new_status = if action == "SendToBacklog" { "Backlog" } else { "Cancelled" };
+
+            // Gather worktree and task info while holding the lock briefly
+            let (worktree_info, execution_start_sha, project_id) = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+                // Update task status
+                conn.execute(
+                    &format!("UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ?", new_status),
+                    rusqlite::params![&now, task_id],
+                )
+                .map_err(|e| format!("Failed to update task status: {}", e))?;
+
+                // Query associated worktree
+                let wt: Option<(i32, String, String)> = conn.query_row(
+                    "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
+                    rusqlite::params![task_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                ).ok();
+
+                // Get execution_start_sha and project_id from task
+                let (sha, pid): (Option<String>, i32) = conn.query_row(
+                    "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
+                    rusqlite::params![task_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                ).map_err(|e| format!("Failed to read task: {}", e))?;
+
+                (wt, sha, pid)
+            };
+
+            // Perform async git cleanup outside the DB lock
+            if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
+                // Delete the worktree (same logic as delete_worktree_for_task)
+                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
+
+                // Remove worktree from disk (best effort)
+                let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+
+                // Delete branch (best effort)
+                match &git_conn {
+                    crate::models::GitConnection::Local { path } => {
+                        let _ = tokio::process::Command::new("git")
+                            .args(["branch", "-D", &branch_name])
+                            .current_dir(path)
+                            .no_console_window()
+                            .output()
+                            .await;
+                    }
+                    crate::models::GitConnection::Remote { ssh, remote_path } => {
+                        let cmd = format!(
+                            "git -C {} branch -D {}",
+                            crate::git::remote::shell_quote(remote_path),
+                            crate::git::remote::shell_quote(&branch_name)
+                        );
+                        let _ = ssh.execute_command(&cmd).await;
+                    }
+                    crate::models::GitConnection::Wsl { distro, path } => {
+                        let _ = tokio::process::Command::new("wsl.exe")
+                            .args(["-d", distro, "--", "git", "-C", path, "branch", "-D", &branch_name])
+                            .no_console_window()
+                            .output()
+                            .await;
+                    }
+                }
+
+                // Delete worktree DB row
+                {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    conn.execute(
+                        "DELETE FROM worktrees WHERE id = ?",
+                        rusqlite::params![worktree_id],
+                    )
+                    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
+                }
+
+                app_state.app_handle.emit("worktrees-changed", ()).ok();
+            } else if let Some(start_sha) = execution_start_sha {
+                // No worktree but have a start SHA — reset agent commits on the project path
+                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
+                let project_path = match &git_conn {
+                    crate::models::GitConnection::Local { path } => path.clone(),
+                    crate::models::GitConnection::Remote { remote_path, .. } => remote_path.clone(),
+                    crate::models::GitConnection::Wsl { path, .. } => path.clone(),
+                };
+
+                // Reset to the start SHA
+                let _ = git::run_git_in_dir(&git_conn, &project_path, &["reset", "--hard", &start_sha]).await;
+                // Clean uncommitted changes
+                let _ = git::run_git_in_dir(&git_conn, &project_path, &["checkout", "--", "."]).await;
+                let _ = git::run_git_in_dir(&git_conn, &project_path, &["clean", "-fd"]).await;
+            }
+
+            // Clear execution_start_sha now that cleanup is done
+            {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.execute(
+                    "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
+                    rusqlite::params![task_id],
+                ).ok();
+            }
         }
         "ResumeWithInstructions" => {
             let instr = instruction.ok_or_else(|| {
                 "instruction is required for ResumeWithInstructions action".to_string()
             })?;
+
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
             // Move task back to InProgress
             conn.execute(
@@ -366,15 +496,6 @@ pub async fn reject_review(
             )
             .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
         }
-        "CancelTask" => {
-            // Move task to Cancelled; worktree cleanup is a TODO for full implementation
-            conn.execute(
-                "UPDATE tasks SET status = 'Cancelled', updated_at = ? WHERE id = ?",
-                rusqlite::params![&now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task status: {}", e))?;
-            // TODO: delete worktree for this task
-        }
         _ => {
             return Err(format!(
                 "Unknown reject action '{}'. Expected SendToBacklog, ResumeWithInstructions, or CancelTask",
@@ -384,6 +505,7 @@ pub async fn reject_review(
     }
 
     // Read back the updated task
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let query = format!("{} WHERE id = ?", TASK_SELECT);
     let task = conn.query_row(&query, [task_id], Task::from_row)
         .map_err(|e| format!("Failed to read updated task: {}", e))?;

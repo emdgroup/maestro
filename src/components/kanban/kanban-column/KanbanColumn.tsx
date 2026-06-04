@@ -75,7 +75,7 @@ export function KanbanColumn({
       </div>
       <div
         ref={ref}
-        className={`flex-1 overflow-y-auto p-3 transition-all duration-150 ${isDropTarget ? getDropTargetClass(status) : ""}`}
+        className={`flex-1 overflow-y-auto custom-scrollbar p-3 transition-all duration-150 ${isDropTarget ? getDropTargetClass(status) : ""}`}
       >
         {tasks.map((task, index) => (
           <TaskCard

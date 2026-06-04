@@ -1,10 +1,11 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Plus, Archive } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { TaskDetailScreen } from "@/views/kanban/task-detail/TaskDetailScreen";
+import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
 import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
@@ -36,6 +37,7 @@ export const KanbanView: React.FC = () => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [reviewPanelTaskId, setReviewPanelTaskId] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useShortcuts("board", {
@@ -57,8 +59,28 @@ export const KanbanView: React.FC = () => {
     return matchesQuery && matchesPriority && matchesLabel;
   });
 
+  const reviewTask = reviewPanelTaskId != null ? taskList.find((t) => t.id === reviewPanelTaskId) : null;
+  const reviewWorktree = reviewPanelTaskId != null
+    ? (worktrees ?? []).find((w) => w.task_id === reviewPanelTaskId)
+    : null;
+
+  const handleReviewClose = useCallback(() => setReviewPanelTaskId(null), []);
+  const handleReviewClick = useCallback((taskId: number) => setReviewPanelTaskId(taskId), []);
+
   if (activeTaskId !== null) {
     return <TaskDetailScreen taskId={activeTaskId} />;
+  }
+
+  if (reviewPanelTaskId != null && reviewTask) {
+    return (
+      <TaskReviewPanel
+        task={reviewTask}
+        worktreePath={reviewWorktree?.path ?? null}
+        baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
+        branchName={reviewWorktree?.branch_name ?? null}
+        onClose={handleReviewClose}
+      />
+    );
   }
 
   return (
@@ -179,7 +201,7 @@ export const KanbanView: React.FC = () => {
         </>
       )}
       <div className="flex-1 min-h-0">
-        <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} />
+        <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} onReviewClick={handleReviewClick} />
       </div>
     </div>
   );

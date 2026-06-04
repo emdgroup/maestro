@@ -1,87 +1,42 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { useShallow } from "zustand/react/shallow";
-import { DiffFileWithName } from "@/types/review";
+import type { PendingComment } from "@/components/execution/diff/DiffViewer";
 
-export interface ReviewState {
-  currentTaskId: number | null;
-  diffData: DiffFileWithName[];
-  selectedFile: string | null;
-  isLoading: boolean;
-  error: string | null;
-
-  openReview: (taskId: number) => void;
-  closeReview: () => void;
-  selectFile: (fileName: string) => void;
-  setDiffData: (files: DiffFileWithName[]) => void;
-  setError: (msg: string | null) => void;
-  setLoading: (loading: boolean) => void;
+interface ReviewState {
+  viewedFiles: Record<number, string[]>;
+  comments: Record<number, PendingComment[]>;
 }
 
-export const useReviewStore = create<ReviewState>()(
-  immer((set) => ({
-    currentTaskId: null,
-    diffData: [],
-    selectedFile: null,
-    isLoading: false,
-    error: null,
+interface ReviewActions {
+  getViewedFiles: (taskId: number) => Set<string>;
+  getComments: (taskId: number) => PendingComment[];
+  setViewedFiles: (taskId: number, files: Set<string>) => void;
+  setComments: (taskId: number, comments: PendingComment[]) => void;
+  clearTask: (taskId: number) => void;
+}
 
-    openReview: (taskId: number) =>
+export const useReviewStore = create<ReviewState & ReviewActions>()(
+  immer((set, get) => ({
+    viewedFiles: {},
+    comments: {},
+
+    getViewedFiles: (taskId) => new Set(get().viewedFiles[taskId] ?? []),
+    getComments: (taskId) => get().comments[taskId] ?? [],
+
+    setViewedFiles: (taskId, files) =>
       set((state) => {
-        state.currentTaskId = taskId;
-        state.isLoading = true;
-        state.error = null;
+        state.viewedFiles[taskId] = [...files];
       }),
 
-    closeReview: () =>
+    setComments: (taskId, comments) =>
       set((state) => {
-        state.currentTaskId = null;
-        state.diffData = [];
-        state.selectedFile = null;
-        state.isLoading = false;
-        state.error = null;
+        state.comments[taskId] = comments;
       }),
 
-    selectFile: (fileName: string) =>
+    clearTask: (taskId) =>
       set((state) => {
-        state.selectedFile = fileName;
-      }),
-
-    setDiffData: (files: DiffFileWithName[]) =>
-      set((state) => {
-        state.diffData = files;
-        state.isLoading = false;
-        if (files.length > 0 && !state.selectedFile) {
-          state.selectedFile = files[0].fileName;
-        }
-      }),
-
-    setError: (msg: string | null) =>
-      set((state) => {
-        state.error = msg;
-        state.isLoading = false;
-      }),
-
-    setLoading: (loading: boolean) =>
-      set((state) => {
-        state.isLoading = loading;
+        delete state.viewedFiles[taskId];
+        delete state.comments[taskId];
       }),
   })),
 );
-
-export const useReviewCurrentTaskId = () => useReviewStore((s) => s.currentTaskId);
-export const useReviewDiffData = () => useReviewStore((s) => s.diffData);
-export const useReviewSelectedFile = () => useReviewStore((s) => s.selectedFile);
-export const useReviewIsLoading = () => useReviewStore((s) => s.isLoading);
-export const useReviewError = () => useReviewStore((s) => s.error);
-export const useReviewActions = () =>
-  useReviewStore(
-    useShallow((s) => ({
-      openReview: s.openReview,
-      closeReview: s.closeReview,
-      selectFile: s.selectFile,
-      setDiffData: s.setDiffData,
-      setError: s.setError,
-      setLoading: s.setLoading,
-    })),
-  );

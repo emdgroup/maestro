@@ -64,7 +64,7 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
           </button>
         </div>
 
-        <div className="max-h-70 overflow-y-auto">
+        <div className="max-h-70 overflow-y-auto custom-scrollbar">
           {entries.map((entry, i) => {
             const isLast = i === entries.length - 1;
             const nextStatus = !isLast ? entries[i + 1].status : null;

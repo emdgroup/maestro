@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
@@ -12,6 +12,13 @@ import {
 } from "@/services/execution.service";
 import { useUpdateTask } from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
+import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
+
+interface DirtyState {
+  modifiedCount: number;
+  untrackedCount: number;
+  resolve: (choice: DirtyChoice | "cancel") => void;
+}
 
 export function useExecuteTask(
   projectId: number | null,
@@ -24,6 +31,8 @@ export function useExecuteTask(
   const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
   const updateTask = useUpdateTask();
   const [isExecuting, setIsExecuting] = useState(false);
+  const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
+  const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
 
   const execute = async (task: Task) => {
     if (!projectId) return;
@@ -70,6 +79,28 @@ export function useExecuteTask(
         }
       } else {
         cwd = projectPath;
+      }
+
+      // Check for dirty worktree
+      try {
+        const dirtyStatus = await api.checkWorktreeDirty(projectId, cwd);
+        if (dirtyStatus.modified_count > 0 || dirtyStatus.untracked_count > 0) {
+          const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
+            dirtyResolveRef.current = resolve;
+            setDirtyState({
+              modifiedCount: dirtyStatus.modified_count,
+              untrackedCount: dirtyStatus.untracked_count,
+              resolve,
+            });
+          });
+          setDirtyState(null);
+          dirtyResolveRef.current = null;
+          if (choice === "cancel") return;
+          if (choice === "stash") await api.stashWorktree(projectId, cwd);
+          if (choice === "discard") await api.discardAllWorktreeChanges(projectId, cwd);
+        }
+      } catch (err) {
+        console.warn("Dirty worktree check failed, proceeding anyway:", err);
       }
 
       // Spawn ACP session
@@ -162,6 +193,39 @@ export function useExecuteTask(
         }
       }
 
+      // Fetch review feedback for rework (if task was sent back with comments)
+      try {
+        const review = await api.getTaskReview(task.id);
+        if (review && review.decision === "RequestChanges") {
+          let feedbackText = "";
+
+          if (review.comments.length > 0) {
+            const grouped = new Map<string, string[]>();
+            for (const c of review.comments) {
+              const list = grouped.get(c.file_path) ?? [];
+              list.push(c.comment);
+              grouped.set(c.file_path, list);
+            }
+            for (const [filePath, comments] of grouped) {
+              feedbackText += `## \`${filePath}\`\n`;
+              comments.forEach((comment, i) => {
+                feedbackText += `### Feedback #${i + 1}\n${comment}\n\n`;
+              });
+            }
+          }
+
+          if (review.general_feedback) {
+            feedbackText += `## General feedback\n${review.general_feedback}\n`;
+          }
+
+          if (feedbackText) {
+            contentBlocks.push({ type: "text", text: feedbackText });
+          }
+        }
+      } catch {
+        // Non-critical — proceed without review feedback
+      }
+
       await api.sendAcpPromptStructured(logId, contentBlocks);
 
       // Transition task to InProgress
@@ -184,7 +248,23 @@ export function useExecuteTask(
     }
   };
 
-  return { execute, isExecuting };
+  const onDirtyChoice = useCallback((choice: DirtyChoice) => {
+    dirtyResolveRef.current?.(choice);
+  }, []);
+
+  const onDirtyCancel = useCallback(() => {
+    dirtyResolveRef.current?.("cancel");
+  }, []);
+
+  return {
+    execute,
+    isExecuting,
+    dirtyDialogOpen: dirtyState !== null,
+    dirtyModifiedCount: dirtyState?.modifiedCount ?? 0,
+    dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
+    onDirtyChoice,
+    onDirtyCancel,
+  };
 }
 
 export function useTaskActiveSession(taskId: number | null, projectId: number | null) {

@@ -4,7 +4,7 @@ use tauri::{Emitter, State};
 use crate::command_ext::NoConsoleWindow;
 use chrono::{Duration, Utc};
 
-use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult};
+use crate::models::{Worktree, WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, WORKTREE_DIR, DiffTarget, WorktreeDiffResult, DirtyStatus, CommitInfo};
 use crate::core::AppState;
 
 // ============================================================================
@@ -214,12 +214,20 @@ pub async fn get_worktree_diff(
         DiffTarget::Head => {
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "HEAD"]).await?
         }
-        DiffTarget::Branch(branch) => {
+        DiffTarget::Branch { branch } => {
             let range = format!("origin/{}..HEAD", branch);
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
         }
-        DiffTarget::Commit(sha) => {
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &sha]).await?
+        DiffTarget::Commit { sha } => {
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha]).await?
+        }
+        DiffTarget::BranchAll { branch } => {
+            let target = format!("origin/{}", branch);
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &target]).await?
+        }
+        DiffTarget::CommitRange { from, to } => {
+            let range = format!("{}..{}", from, to);
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
         }
     };
 
@@ -769,5 +777,118 @@ pub async fn delete_worktree_for_task(
     .map_err(|e| format!("Failed to delete worktree: {}", e))?;
 
     app_state.app_handle.emit("worktrees-changed", ()).ok();
+    Ok(())
+}
+
+// ============================================================================
+// check_worktree_dirty — Review State Phase 1
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn check_worktree_dirty(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+) -> Result<DirtyStatus, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let output = crate::git::run_git_in_dir(&git_conn, &worktree_path, &["status", "--porcelain"]).await?;
+
+    let mut modified_count: u32 = 0;
+    let mut untracked_count: u32 = 0;
+    for line in output.lines() {
+        if line.starts_with("??") {
+            untracked_count += 1;
+        } else if line.len() >= 2 {
+            modified_count += 1;
+        }
+    }
+
+    Ok(DirtyStatus { modified_count, untracked_count })
+}
+
+// ============================================================================
+// get_worktree_commits — Review State Phase 1
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_worktree_commits(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    base_branch: String,
+) -> Result<Vec<CommitInfo>, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let range = format!("origin/{}..HEAD", base_branch);
+    let log_output = crate::git::run_git_in_dir(
+        &git_conn,
+        &worktree_path,
+        &["log", "--oneline", "--format=%H %s", &range],
+    ).await.unwrap_or_default();
+
+    let mut commits: Vec<CommitInfo> = Vec::new();
+    for line in log_output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let (sha, message) = match line.split_once(' ') {
+            Some((s, m)) => (s.to_string(), m.to_string()),
+            None => (line.to_string(), String::new()),
+        };
+
+        let file_count_output = crate::git::run_git_in_dir(
+            &git_conn,
+            &worktree_path,
+            &["diff-tree", "--no-commit-id", "--name-only", "-r", &sha],
+        ).await.unwrap_or_default();
+        let file_count = file_count_output.lines().filter(|l| !l.is_empty()).count() as u32;
+
+        commits.push(CommitInfo { sha, message, file_count });
+    }
+
+    Ok(commits)
+}
+
+// ============================================================================
+// stash_worktree — Review State Phase 1
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stash_worktree(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+) -> Result<(), String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    crate::git::run_git_in_dir(
+        &git_conn,
+        &worktree_path,
+        &["stash", "push", "-m", "maestro-auto-stash"],
+    ).await?;
+
+    Ok(())
+}
+
+// ============================================================================
+// discard_all_worktree_changes — Review State Phase 1
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn discard_all_worktree_changes(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+) -> Result<(), String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    crate::git::run_git_in_dir(&git_conn, &worktree_path, &["checkout", "--", "."]).await?;
+    crate::git::run_git_in_dir(&git_conn, &worktree_path, &["clean", "-fd"]).await?;
+
     Ok(())
 }

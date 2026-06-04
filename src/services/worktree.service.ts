@@ -288,3 +288,32 @@ export function useCreateWorktreeMutation() {
     onError: createErrorToastHandler("Failed to create worktree"),
   });
 }
+
+/**
+ * One-shot query for checking if a worktree has dirty (uncommitted) changes.
+ * Set `enabled: false` so it only runs via `refetch()`.
+ */
+export function useCheckWorktreeDirty(projectId: number | null, worktreePath: string | null) {
+  return useQuery({
+    queryKey: [...worktreeQueryKeys.base, "dirty", worktreePath] as const,
+    queryFn: () => api.checkWorktreeDirty(projectId!, worktreePath!),
+    enabled: false,
+  });
+}
+
+/**
+ * Query hook for fetching commits in a worktree relative to a base branch.
+ * Returns CommitInfo[] wrapped in a Result type.
+ */
+export function useWorktreeCommitsQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  baseBranch: string | null,
+) {
+  return useQuery({
+    queryKey: [...worktreeQueryKeys.base, "commits", worktreePath, baseBranch] as const,
+    queryFn: () => api.getWorktreeCommits(projectId!, worktreePath!, baseBranch!),
+    enabled: projectId != null && worktreePath != null && baseBranch != null,
+    staleTime: 10000,
+  });
+}

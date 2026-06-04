@@ -541,6 +541,17 @@ async requestChanges(taskId: number, generalFeedback: string | null, perFileComm
 }
 },
 /**
+ * Get the current review (with comments) for a task
+ */
+async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_task_review", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Approve task and perform synchronous merge to main branch
  * 
  * Orchestrates the complete merge workflow synchronously:
@@ -563,9 +574,9 @@ async approveTaskAndMerge(taskId: number, mergeStrategy: string) : Promise<Resul
  * Reject a task in review with one of three actions
  * 
  * Handles the three rejection paths from the review panel:
- * - "SendToBacklog": moves task back to Backlog status (worktree cleanup is a TODO)
+ * - "SendToBacklog": moves task back to Backlog, deletes worktree, resets agent commits
  * - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
- * - "CancelTask": moves task to Cancelled status (worktree cleanup is a TODO)
+ * - "CancelTask": moves task to Cancelled, deletes worktree, resets agent commits
  * 
  * Returns the updated Task.
  */
@@ -852,25 +863,38 @@ async getUntrackedFileContent(projectId: number, worktreePath: string, filePath:
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Launch a new ACP agent session via maestro-server subprocess.
- * 
- * Assigns a session key from the in-memory counter, spawns maestro-server with piped
- * stdin/stdout, sends SpawnRequest, and starts a background reader task that emits
- * Tauri events for each session update.
- * 
- * The session is keyed by the returned session_key in AppState.acp_sessions.
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `agent_id` - ACP agent identifier (e.g. "claude-code", package name)
- * * `cwd` - Working directory for the agent
- * * `session_name` - Optional display name for the session
- * 
- * # Returns
- * Session key (i32) — used as the key for send_acp_prompt, respond_acp_permission,
- * cancel_acp_session, and Tauri event subscription (acp://session-update/{key}, etc.)
- */
+async checkWorktreeDirty(projectId: number, worktreePath: string) : Promise<Result<DirtyStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_worktree_dirty", { projectId, worktreePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWorktreeCommits(projectId: number, worktreePath: string, baseBranch: string) : Promise<Result<CommitInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_worktree_commits", { projectId, worktreePath, baseBranch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stashWorktree(projectId: number, worktreePath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stash_worktree", { projectId, worktreePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async discardAllWorktreeChanges(projectId: number, worktreePath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discard_all_worktree_changes", { projectId, worktreePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<SpawnSessionResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };
@@ -879,13 +903,6 @@ async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Send a plain-text prompt to a running ACP session.
- * 
- * # Security
- * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
- * valid sessions can receive messages (inherited from Phase 43).
- */
 async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt", { logId, content }) };
@@ -894,9 +911,6 @@ async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Send a structured prompt (JSON array of ContentBlock objects) enabling file attachments.
- */
 async sendAcpPromptStructured(logId: number, contentBlocks: JsonValue) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt_structured", { logId, contentBlocks }) };
@@ -905,17 +919,6 @@ async sendAcpPromptStructured(logId: number, contentBlocks: JsonValue) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Respond to a permission request from the agent.
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `log_id` - Session key
- * * `request_id` - The permission request ID from the agent's PermissionRequest event
- * # Security
- * T-44-01: write_to_acp_session returns Err if log_id not in acp_sessions map — only
- * valid sessions can receive messages (inherited from Phase 43).
- */
 async respondAcpPermission(logId: number, requestId: string, optionId: string | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, optionId }) };
@@ -924,9 +927,6 @@ async respondAcpPermission(logId: number, requestId: string, optionId: string | 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Respond to an elicitation request from the agent.
- */
 async respondAcpElicitation(logId: number, requestId: string, response: JsonValue) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("respond_acp_elicitation", { logId, requestId, response }) };
@@ -937,19 +937,6 @@ async respondAcpElicitation(logId: number, requestId: string, response: JsonValu
 },
 /**
  * Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
- * 
- * Steps:
- * 1. Send CancelRequest to maestro-server (best-effort, ignored if session already gone)
- * 2. Remove session from AppState.acp_sessions (drops AcpProcess, which kills subprocess via kill_on_drop)
- * 3. Send cancel signal to the background reader task
- * 
- * # Security
- * T-43-08: cancel_acp_session sends CancelRequest then removes from map (drops Child with
- * kill_on_drop). Reader task also removes on EOF. Double-cleanup is safe.
- * 
- * # Arguments
- * * `app_state` - Tauri app state
- * * `log_id` - Session key
  */
 async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
     try {
@@ -961,10 +948,6 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
 },
 /**
  * Interrupt the current ACP turn without killing the session.
- * 
- * Sends InterruptTurn to maestro-server, which forwards a CancelNotification
- * to the agent. The agent responds with StopReason::Cancelled, keeping the
- * session alive for subsequent prompts.
  */
 async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
     try {
@@ -976,9 +959,6 @@ async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
 },
 /**
  * Validate the environment for a connection and boot the persistent server.
- * 
- * Idempotent: if the server is already running the spawn step is skipped and only
- * agent discovery + tool checks are refreshed. The server process lives until app quit.
  */
 async preflightConnection(connection: ConnectionKey) : Promise<Result<PreflightResult, string>> {
     try {
@@ -988,11 +968,6 @@ async preflightConnection(connection: ConnectionKey) : Promise<Result<PreflightR
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Detect which agent tools have configuration markers in the given project directory.
- * Used to suggest a default agent when opening a project.
- * Requires the connection server to be running (call `preflight_connection` first).
- */
 async detectProjectAgents(connection: ConnectionKey, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connection, cwd }) };
@@ -1001,11 +976,6 @@ async detectProjectAgents(connection: ConnectionKey, cwd: string) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Discover available ACP agents via maestro-server.
- * Works for both local (connection_id = None) and remote SSH (connection_id = Some(id)).
- * Returns cached result if within 5-minute TTL; otherwise re-runs discovery.
- */
 async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connection }) };
@@ -1014,9 +984,6 @@ async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryR
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Send a SetModel request to change the active model for a running ACP session.
- */
 async setAcpModel(logId: number, modelId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_acp_model", { logId, modelId }) };
@@ -1025,9 +992,6 @@ async setAcpModel(logId: number, modelId: string) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Send a SetMode request to change the active mode for a running ACP session.
- */
 async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_acp_mode", { logId, modeId }) };
@@ -1036,10 +1000,6 @@ async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Send a SetConfigOption request for a running ACP session.
- * Routes to the appropriate underlying protocol message based on category.
- */
 async setAcpConfigOption(logId: number, optionId: string, value: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_acp_config_option", { logId, optionId, value }) };
@@ -1048,11 +1008,6 @@ async setAcpConfigOption(logId: number, optionId: string, value: string) : Promi
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Search files in the project directory via the active maestro-server session.
- * Routes the FileSearch request through the existing session transport so it works
- * for both local and remote (SSH) projects.
- */
 async searchSessionFiles(logId: number, query: string, limit: number | null) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("search_session_files", { logId, query, limit }) };
@@ -1061,11 +1016,6 @@ async searchSessionFiles(logId: number, query: string, limit: number | null) : P
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Read a file from the project via the active maestro-server session.
- * Routes the FileRead request through the existing session transport so it works
- * for both local and remote (SSH) projects.
- */
 async readSessionFile(logId: number, relativePath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_session_file", { logId, relativePath }) };
@@ -1074,14 +1024,6 @@ async readSessionFile(logId: number, relativePath: string) : Promise<Result<stri
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Read a binary file from the project and return it as a base64-encoded string.
- * 
- * For local sessions, reads directly from disk.
- * For remote SSH sessions, downloads via SFTP to a local cache under `app_data_dir/working_file_cache/`
- * and returns base64-encoded content. Subsequent calls for the same file return the cached copy.
- * Files larger than 5 MB are rejected.
- */
 async readSessionFileBinary(logId: number, relativePath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_session_file_binary", { logId, relativePath }) };
@@ -1090,9 +1032,6 @@ async readSessionFileBinary(logId: number, relativePath: string) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Return metadata for a running ACP session needed to scope a session diff.
- */
 async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_acp_session_meta", { sessionKey }) };
@@ -1101,10 +1040,6 @@ async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, str
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get currently active sessions (ACP + PTY) as a flat list, filtered by project.
- * Used by the Agents sidebar to display live sessions.
- */
 async getActiveSessions(projectId: number) : Promise<Result<ActiveSessionInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_active_sessions", { projectId }) };
@@ -1113,11 +1048,6 @@ async getActiveSessions(projectId: number) : Promise<Result<ActiveSessionInfo[],
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * List ACP sessions available for a given agent via the persistent connection server.
- * Applies user-defined aliases over agent-provided titles. When the full list is returned
- * (no next page), prunes stale aliases for sessions the agent no longer knows about.
- */
 async listAcpSessions(projectId: number, agentId: string, cwd: string, connection: ConnectionKey, cursor: string | null) : Promise<Result<SessionListEntryDto[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_acp_sessions", { projectId, agentId, cwd, connection, cursor }) };
@@ -1145,15 +1075,6 @@ async drainAcpReplay(logId: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Prepare external file attachments for inclusion in an ACP prompt.
- * 
- * For images: reads bytes, validates size (rejects >10 MB, scales down >5 MB), base64-encodes.
- * For text files with embedded_context=true: reads content locally, uploads to remote if needed.
- * For text files with embedded_context=false: uploads to remote if needed, sends path-only ResourceLink.
- * 
- * Remote uploads go to `{cwd}/.maestro/attachments/{session_id}/{basename}`.
- */
 async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], embeddedContext: boolean) : Promise<Result<PreparedAttachment[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("prepare_external_attachments", { logId, files, embeddedContext }) };
@@ -1181,11 +1102,6 @@ async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectio
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Rename an ACP session by storing a user-defined display name in the local DB.
- * Only creates a DB entry on explicit rename — not on session creation.
- * Also updates the in-memory session_name if the session is currently active.
- */
 async renameAcpSession(projectId: number, agentId: string, acpSessionId: string, displayName: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rename_acp_session", { projectId, agentId, acpSessionId, displayName }) };
@@ -1220,11 +1136,6 @@ async sftpDownload(connectionId: number, remotePath: string, localPath: string, 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get the full agent-level catalog cache for a (project, agent) pair.
- * Returns None if the agent has not been warmed up or spawned yet.
- * Populated from PreInitialize/SpawnOk/SessionLoadOk/config_option_update.
- */
 async getAgentCache(agentId: string, connection: ConnectionKey) : Promise<Result<AgentCacheResponse | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_agent_cache", { agentId, connection }) };
@@ -1652,6 +1563,7 @@ export type BitbucketProjectOption = { key: string; name: string }
  */
 export type BitbucketRepoOption = { slug: string; name: string; description: string | null; clone_url: string | null }
 export type BranchList = { local: string[]; remote: string[] }
+export type CommitInfo = { sha: string; message: string; file_count: number }
 /**
  * Identifies which connection server (or local instance) owns a session or cache entry.
  */
@@ -1666,10 +1578,13 @@ export type CredentialSource = "manual" | "gh_cli"
  * Controls what get_worktree_diff compares against.
  * 
  * - Head: `git diff HEAD` (uncommitted changes vs last commit)
- * - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
- * - Commit(sha): `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
+ * - Branch: `git diff --unified=6 origin/{branch}..HEAD` (committed branch changes)
+ * - Commit: `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
+ * - BranchAll: `git diff --unified=6 origin/{branch}` (all changes including uncommitted)
+ * - CommitRange: `git diff --unified=6 {from}..{to}` (single commit view)
  */
-export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } | { type: "Commit"; branch: string }
+export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } | { type: "Commit"; sha: string } | { type: "BranchAll"; branch: string } | { type: "CommitRange"; from: string; to: string }
+export type DirtyStatus = { modified_count: number; untracked_count: number }
 /**
  * Agent discovered by maestro-server's CDN registry check.
  * Returned by the `discover_agents` IPC command for both local and remote connections.
@@ -1727,6 +1642,7 @@ export type RemoteIssue = { external_id: string; title: string; body: string | n
  * A repository option returned by provider lookup commands for combobox display.
  */
 export type RepoOption = { name: string; description: string | null; clone_url: string | null }
+export type ReviewCommentEntry = { file_path: string; comment: string }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -1757,23 +1673,19 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null }
+export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null; execution_start_sha?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
+/**
+ * Response for get_task_review: review with all comments
+ */
+export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled"
 export type TerminalColorMode = "follow_theme" | "default"
-export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; 
-/**
- * Agent IDs that require this tool to spawn.
- */
-required_by: string[]; 
-/**
- * `true` for `git` — the session cannot function without it.
- */
-mandatory: boolean }
+export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean }
 /**
  * Fields that can be updated on a task. All fields are optional — only non-None fields
  * are included in the SQL UPDATE. Grouped into a struct to work around the specta

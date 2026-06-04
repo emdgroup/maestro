@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { X, AlignJustify, Columns2, List, FolderTree, FileDiff } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { X, AlignJustify, Columns2, List, FolderTree, FileDiff, CheckCheck } from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { cn } from "@/lib/ui-utils";
 import { Input } from "@/ui/input";
@@ -29,6 +29,16 @@ export function ReviewChangesPanel({
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [search, setSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
+
+  const toggleViewed = useCallback((fileName: string) => {
+    setViewedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileName)) next.delete(fileName);
+      else next.add(fileName);
+      return next;
+    });
+  }, []);
 
   const [projectId, setProjectId] = useState<number | null>(null);
   const [cwd, setCwd] = useState<string | null>(null);
@@ -50,7 +60,7 @@ export function ReviewChangesPanel({
 
   const diffTarget = useMemo(
     () =>
-      startSha ? ({ type: "Commit", branch: startSha } as const) : ({ type: "Head" } as const),
+      startSha ? ({ type: "Commit", sha: startSha } as const) : ({ type: "Head" } as const),
     [startSha],
   );
 
@@ -203,6 +213,7 @@ export function ReviewChangesPanel({
                   );
                   if (idx >= 0) setSelectedFileIndex(idx);
                 }}
+                viewedFiles={viewedFiles}
               />
             ) : (
               filteredItems.map((item, index) => {
@@ -243,6 +254,9 @@ export function ReviewChangesPanel({
                           -{stats.deletions}
                         </span>
                       )}
+                      {viewedFiles.has(file.fileName) && (
+                        <CheckCheck className="size-3.5 shrink-0 text-success" />
+                      )}
                     </button>
                   );
                 } else {
@@ -262,6 +276,9 @@ export function ReviewChangesPanel({
                       <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-success" />
                       <span className="flex-1 text-xs truncate text-foreground/80">{basename}</span>
                       <span className="text-[10px] text-muted-foreground shrink-0">new</span>
+                      {viewedFiles.has(item.path) && (
+                        <CheckCheck className="size-3.5 shrink-0 text-success" />
+                      )}
                     </button>
                   );
                 }
@@ -285,7 +302,35 @@ export function ReviewChangesPanel({
         </div>
 
         {/* Diff viewer */}
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+          {/* File content header */}
+          {selectedItem && (() => {
+            const fileName = selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
+            const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
+            const stats = selectedItem.kind === "diff" ? computeFileStats(selectedItem.file.hunks) : { insertions: 0, deletions: 0 };
+            const statusColor = status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
+            const isViewed = viewedFiles.has(fileName);
+            return (
+              <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
+                <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+                {stats.insertions > 0 && <span className="text-success shrink-0">+{stats.insertions}</span>}
+                {stats.deletions > 0 && <span className="text-destructive shrink-0">-{stats.deletions}</span>}
+                <button
+                  onClick={() => toggleViewed(fileName)}
+                  className={cn(
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
+                    isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+                  )}
+                  title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                >
+                  <CheckCheck className="size-3" />
+                  <span className="text-[10px]">Viewed</span>
+                </button>
+              </div>
+            );
+          })()}
+
           {loading ? (
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
               <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />

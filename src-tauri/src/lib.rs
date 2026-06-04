@@ -61,6 +61,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_diff_for_review,
             crate::ipc::save_task_review,
             crate::ipc::request_changes,
+            crate::ipc::get_task_review,
             crate::ipc::approve_task_and_merge,
             crate::ipc::reject_review,
             crate::ipc::get_project_settings,
@@ -89,6 +90,10 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::shelve_worktree_changes,
             crate::ipc::delete_untracked_files,
             crate::ipc::get_untracked_file_content,
+            crate::ipc::check_worktree_dirty,
+            crate::ipc::get_worktree_commits,
+            crate::ipc::stash_worktree,
+            crate::ipc::discard_all_worktree_changes,
             // ACP session management + unified agent discovery
             crate::ipc::spawn_acp_session,
             crate::ipc::send_acp_prompt,

@@ -398,7 +398,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               <Textarea
                 {...register("description")}
                 placeholder="Add description..."
-                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-18 max-h-[40vh] overflow-y-auto"
+                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-18 max-h-[40vh] overflow-y-auto custom-scrollbar"
               />
             </div>
 

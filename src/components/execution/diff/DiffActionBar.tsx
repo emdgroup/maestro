@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Archive,
   Loader2,
+  CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -58,7 +59,8 @@ function getDialogContent(
 }
 
 interface DiffActionBarProps {
-  branchName: string;
+  mode?: "worktree" | "review" | "session";
+  branchName?: string;
   fileSearch: string;
   onFileSearchChange: (value: string) => void;
   fileListMode: "flat" | "tree";
@@ -66,24 +68,29 @@ interface DiffActionBarProps {
   diffViewMode: DiffModeEnum;
   onDiffViewModeChange: (mode: DiffModeEnum) => void;
   forceUnified: boolean;
-  hasAnyStaged: boolean;
-  isDiscarding: boolean;
+  hasAnyStaged?: boolean;
+  isDiscarding?: boolean;
   isDeleteMode?: boolean;
   deleteDialogOpen?: boolean;
   onDeleteDialogOpenChange?: (open: boolean) => void;
   isDeleting?: boolean;
   deleteError?: string | null;
-  isShelving: boolean;
-  shelvePopoverOpen: boolean;
-  onShelvePopoverOpenChange: (open: boolean) => void;
-  shelveName: string;
-  onShelveNameChange: (name: string) => void;
-  onRevert: () => void;
-  onShelve: () => void;
+  isShelving?: boolean;
+  shelvePopoverOpen?: boolean;
+  onShelvePopoverOpenChange?: (open: boolean) => void;
+  shelveName?: string;
+  onShelveNameChange?: (name: string) => void;
+  onRevert?: () => void;
+  onShelve?: () => void;
   onClose: () => void;
+  viewedCount?: number;
+  totalFileCount?: number;
+  splitButtonNode?: React.ReactNode;
+  centerLabel?: string;
 }
 
 export function DiffActionBar({
+  mode = "worktree",
   branchName,
   fileSearch,
   onFileSearchChange,
@@ -92,21 +99,25 @@ export function DiffActionBar({
   diffViewMode,
   onDiffViewModeChange,
   forceUnified,
-  hasAnyStaged,
-  isDiscarding,
+  hasAnyStaged = false,
+  isDiscarding = false,
   isDeleteMode = false,
   deleteDialogOpen,
   onDeleteDialogOpenChange,
   isDeleting = false,
   deleteError = null,
-  isShelving,
-  shelvePopoverOpen,
+  isShelving = false,
+  shelvePopoverOpen = false,
   onShelvePopoverOpenChange,
-  shelveName,
+  shelveName = "",
   onShelveNameChange,
   onRevert,
   onShelve,
   onClose,
+  viewedCount,
+  totalFileCount,
+  splitButtonNode,
+  centerLabel,
 }: DiffActionBarProps) {
   const splitActive = !forceUnified && diffViewMode === DiffModeEnum.SplitGitHub;
 
@@ -137,104 +148,129 @@ export function DiffActionBar({
           </ToggleGroupItem>
         </ToggleGroup>
 
-        {/* Revert button with confirmation dialog */}
-        <AlertDialog
-          open={isDeleteMode ? deleteDialogOpen : undefined}
-          onOpenChange={
-            isDeleteMode
-              ? (open) => {
-                  if (!isDeleting) onDeleteDialogOpenChange?.(open);
-                }
-              : undefined
-          }
-        >
-          <AlertDialogTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={revertDisabled}
-                className="h-8 w-8 p-0"
-                title={isDeleteMode ? "Delete selected files" : "Revert selected changes"}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
+        {/* Worktree-only: Revert button with confirmation dialog */}
+        {mode === "worktree" && (
+          <AlertDialog
+            open={isDeleteMode ? deleteDialogOpen : undefined}
+            onOpenChange={
+              isDeleteMode
+                ? (open) => {
+                    if (!isDeleting) onDeleteDialogOpenChange?.(open);
+                  }
+                : undefined
             }
-          />
-          <AlertDialogContent>
-            {(() => {
-              const dialog = getDialogContent(isDeleting, deleteError, isDeleteMode);
-              return (
-                <>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>{dialog.title}</AlertDialogTitle>
-                    <AlertDialogDescription>{dialog.description}</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={isDeleting}>
-                      {deleteError ? "Dismiss" : "Cancel"}
-                    </AlertDialogCancel>
-                    <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
-                      {isDeleting ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          {dialog.actionLabel}
-                        </>
-                      ) : (
-                        dialog.actionLabel
-                      )}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </>
-              );
-            })()}
-          </AlertDialogContent>
-        </AlertDialog>
+          >
+            <AlertDialogTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={revertDisabled}
+                  className="h-8 w-8 p-0"
+                  title={isDeleteMode ? "Delete selected files" : "Revert selected changes"}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <AlertDialogContent>
+              {(() => {
+                const dialog = getDialogContent(isDeleting, deleteError, isDeleteMode);
+                return (
+                  <>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{dialog.title}</AlertDialogTitle>
+                      <AlertDialogDescription>{dialog.description}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isDeleting}>
+                        {deleteError ? "Dismiss" : "Cancel"}
+                      </AlertDialogCancel>
+                      <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
+                        {isDeleting ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            {dialog.actionLabel}
+                          </>
+                        ) : (
+                          dialog.actionLabel
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </>
+                );
+              })()}
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
 
-        {/* Shelve button with name popover */}
-        <Popover open={shelvePopoverOpen} onOpenChange={onShelvePopoverOpenChange}>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!hasAnyStaged || isShelving}
-                className="h-8 w-8 p-0"
-                title="Shelve selected changes"
-              >
-                <Archive className="h-3.5 w-3.5" />
-              </Button>
-            }
-          />
-          <PopoverContent className="w-64 p-3">
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium">Stash name</label>
-              <Input
-                value={shelveName}
-                onChange={(e) => onShelveNameChange(e.target.value)}
-                className="h-8 text-xs"
-                placeholder="wip-branch-name-2026-04-02"
-              />
-              <Button
-                size="sm"
-                className="w-full"
-                disabled={!shelveName.trim() || isShelving}
-                onClick={onShelve}
-              >
-                {isShelving ? "Shelving..." : "Confirm"}
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
+        {/* Worktree-only: Shelve button with name popover */}
+        {mode === "worktree" && (
+          <Popover
+            open={shelvePopoverOpen}
+            onOpenChange={onShelvePopoverOpenChange ?? (() => {})}
+          >
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!hasAnyStaged || isShelving}
+                  className="h-8 w-8 p-0"
+                  title="Shelve selected changes"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <PopoverContent className="w-64 p-3">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-medium">Stash name</label>
+                <Input
+                  value={shelveName}
+                  onChange={(e) => onShelveNameChange?.(e.target.value)}
+                  className="h-8 text-xs"
+                  placeholder="wip-branch-name-2026-04-02"
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={!shelveName.trim() || isShelving}
+                  onClick={onShelve}
+                >
+                  {isShelving ? "Shelving..." : "Confirm"}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
-      {/* Center: branch name */}
+      {/* Center section */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="font-mono text-sm font-semibold truncate max-w-48">{branchName}</span>
+        {mode === "worktree" && branchName && (
+          <span className="font-mono text-sm font-semibold truncate max-w-48">{branchName}</span>
+        )}
+        {mode === "review" && centerLabel && (
+          <span className="font-mono text-sm font-semibold truncate max-w-48 text-accent">
+            {centerLabel}
+          </span>
+        )}
+        {mode === "session" && centerLabel && (
+          <span className="font-mono text-sm font-semibold truncate max-w-48">{centerLabel}</span>
+        )}
       </div>
 
-      {/* Right side: unified/split toggle + close button */}
+      {/* Right side: viewed counter + unified/split toggle + split button node + close button */}
       <div className="ml-auto flex items-center gap-2 z-10">
+        {viewedCount != null && viewedCount > 0 && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <CheckCheck className="size-3.5" />
+            <span>
+              {viewedCount}/{totalFileCount} viewed
+            </span>
+          </div>
+        )}
         <ToggleGroup
           value={[splitActive ? "split" : "unified"]}
           onValueChange={(values) => {
@@ -259,6 +295,7 @@ export function DiffActionBar({
             <Columns2 className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
+        {mode === "review" && splitButtonNode}
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="size-4" />
         </Button>

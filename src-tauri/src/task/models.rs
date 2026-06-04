@@ -8,13 +8,15 @@ use std::str::FromStr;
 /// base_branch(6), archived_at(7), external_id(8), is_imported(9), import_source(10),
 /// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
-/// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23)
+/// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
+/// execution_start_sha(24)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
-     auto_approve, isolated_worktree, agent_id, permission_mode_override FROM tasks";
+     auto_approve, isolated_worktree, agent_id, permission_mode_override, \
+     execution_start_sha FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -55,6 +57,8 @@ pub struct Task {
     pub agent_id: Option<String>,
     #[specta(optional)]
     pub permission_mode_override: Option<String>,
+    #[specta(optional)]
+    pub execution_start_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -159,6 +163,7 @@ impl Task {
             isolated_worktree: row.get::<_, bool>(21).unwrap_or(true),
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
+            execution_start_sha: row.get(24)?,
         })
     }
 }

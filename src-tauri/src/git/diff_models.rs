@@ -4,15 +4,19 @@ use specta::Type;
 /// Controls what get_worktree_diff compares against.
 ///
 /// - Head: `git diff HEAD` (uncommitted changes vs last commit)
-/// - Branch(name): `git diff --unified=6 origin/{name}..HEAD` (all branch changes)
-/// - Commit(sha): `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
+/// - Branch: `git diff --unified=6 origin/{branch}..HEAD` (committed branch changes)
+/// - Commit: `git diff --unified=6 {sha}..HEAD` (changes since a specific commit)
+/// - BranchAll: `git diff --unified=6 origin/{branch}` (all changes including uncommitted)
+/// - CommitRange: `git diff --unified=6 {from}..{to}` (single commit view)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(tag = "type", content = "branch")]
+#[serde(tag = "type")]
 #[specta(export)]
 pub enum DiffTarget {
     Head,
-    Branch(String),
-    Commit(String),
+    Branch { branch: String },
+    Commit { sha: String },
+    BranchAll { branch: String },
+    CommitRange { from: String, to: String },
 }
 
 /// Return type for get_worktree_diff. Bundles the unified diff string with the
@@ -22,4 +26,19 @@ pub enum DiffTarget {
 pub struct WorktreeDiffResult {
     pub diff: String,
     pub untracked_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct DirtyStatus {
+    pub modified_count: u32,
+    pub untracked_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct CommitInfo {
+    pub sha: String,
+    pub message: String,
+    pub file_count: u32,
 }

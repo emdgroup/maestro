@@ -126,6 +126,17 @@ pub async fn spawn_acp_session(
         (sha, None)
     };
 
+    // Persist execution_start_sha to the task for rollback capability
+    if let Some(tid) = task_id {
+        if let Some(ref sha) = session_start_sha {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock: {}", e))?;
+            conn.execute(
+                "UPDATE tasks SET execution_start_sha = ? WHERE id = ?",
+                rusqlite::params![sha, tid],
+            ).map_err(|e| format!("Failed to save execution_start_sha: {}", e))?;
+        }
+    }
+
     let connection_key = connection;
     let req = SessionRequest {
         connection_key,

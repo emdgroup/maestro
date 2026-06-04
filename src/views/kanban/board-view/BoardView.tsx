@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
 import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
+import { useIsGitRepo } from "@/store/projectStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
-import { ReviewModal } from "@/views/kanban/review-modal/ReviewModal";
 import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
 import { useUpdateTask } from "@/services/task.service";
 
@@ -31,17 +31,20 @@ function buildDndItems(tasks: Task[]): DndItems {
 interface BoardViewProps {
   tasks: Task[];
   worktreeTaskIds: Set<number>;
+  onReviewClick: (taskId: number) => void;
 }
 
-export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
+export function BoardView({ tasks, worktreeTaskIds, onReviewClick }: BoardViewProps) {
   const activeTerminalTaskId = useActiveTerminalTaskId();
   const isTerminalOpen = useIsTerminalOpen();
   const { closeTerminal } = useBoardActions();
   const updateTask = useUpdateTask();
+  const isGitRepo = useIsGitRepo();
 
-  const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-  const [selectedTaskName, setSelectedTaskName] = useState<string>("");
+  const statuses = useMemo(
+    () => isGitRepo ? BOARD_STATUSES : BOARD_STATUSES.filter((s) => s !== "Review"),
+    [isGitRepo],
+  );
 
   const [dndItems, setDndItems] = useState<DndItems>(() => buildDndItems(tasks));
   const [isDragActive, setIsDragActive] = useState(false);
@@ -84,8 +87,6 @@ export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
           if (source?.type !== "item") return;
           const taskId = source.id as number;
           const tentative = move(liveDndRef.current, event);
-          // Only update state for cross-column moves — prevents false visual
-          // reorder affordance within the same column (no persistence on same-col drops).
           const wasInBacklog = liveDndRef.current.Backlog.includes(taskId);
           const nowInBacklog = tentative.Backlog.includes(taskId);
           if (wasInBacklog === nowInBacklog) return;
@@ -128,19 +129,15 @@ export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
           );
         }}
       >
-        <div className="grid grid-cols-5 p-4 bg-background flex-1 min-h-0 overflow-hidden">
-          {BOARD_STATUSES.map((status) => (
+        <div className={`grid p-4 bg-background flex-1 min-h-0 overflow-hidden`} style={{ gridTemplateColumns: `repeat(${statuses.length}, minmax(0, 1fr))` }}>
+          {statuses.map((status) => (
             <KanbanColumn
               key={status}
               columnTitle={COLUMN_TITLES[status]!}
               tasks={getColumnTasks(status)}
               status={status}
               isDragActive={isDragActive}
-              onReviewClick={(taskId, taskName) => {
-                setSelectedTaskId(taskId);
-                setSelectedTaskName(taskName);
-                setReviewModalOpen(true);
-              }}
+              onReviewClick={(taskId, _taskName) => onReviewClick(taskId)}
               worktreeTaskIds={worktreeTaskIds}
             />
           ))}
@@ -155,19 +152,6 @@ export function BoardView({ tasks, worktreeTaskIds }: BoardViewProps) {
           )}
         </DragOverlay>
       </DragDropProvider>
-
-      {reviewModalOpen && selectedTaskId && (
-        <ReviewModal
-          taskId={selectedTaskId}
-          taskName={selectedTaskName}
-          isOpen={reviewModalOpen}
-          onClose={() => {
-            setReviewModalOpen(false);
-            setSelectedTaskId(null);
-            setSelectedTaskName("");
-          }}
-        />
-      )}
 
       {isTerminalOpen && activeTerminalTaskId !== null && (
         <ExecutionTerminal

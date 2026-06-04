@@ -5,6 +5,7 @@ export interface ShortcutDef {
   /** Lowercase key name (e.g. "n", "escape") or "Escape" for the escape key */
   key: string;
   ctrl: boolean;
+  shift?: boolean;
   /** Display label shown in the hint tooltip (e.g. "Ctrl+N", "Esc") */
   label: string;
   scope: ShortcutScope | ShortcutScope[];

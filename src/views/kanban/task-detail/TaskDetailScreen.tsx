@@ -588,7 +588,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
         {/* ---------------------------------------------------------------- */}
         <div className="flex flex-1 overflow-hidden">
           {/* Main content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
             {/* Title */}
             <EditableField
               value={task.title}
@@ -710,7 +710,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
           {/* ---------------------------------------------------------------- */}
           {/* Right sidebar                                                     */}
           {/* ---------------------------------------------------------------- */}
-          <div className="w-60 flex-shrink-0 border-l border-border overflow-y-auto p-4 space-y-4 bg-card">
+          <div className="w-60 flex-shrink-0 border-l border-border overflow-y-auto custom-scrollbar p-4 space-y-4 bg-card">
             {/* Status */}
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground font-medium">Status</label>
@@ -719,7 +719,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ALL_STATUSES.map((s) => (
+                  {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
                     <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
                       {s}
                     </SelectItem>
