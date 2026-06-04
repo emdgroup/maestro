@@ -4,20 +4,54 @@
 
 # Maestro
 
-Desktop app for orchestrating autonomous AI coding agents. Queue tasks on a Kanban board, agents execute in isolated git worktrees with real-time monitoring and human review gates.
+**Run multiple AI coding agents in parallel — without losing control.**
 
-## Features
+Maestro is a desktop app that turns your backlog into shipped code. Queue tasks, watch agents work in real-time, review diffs, and merge — all without leaving a single window.
 
-- **Kanban workflow** — Backlog → Ready → In Progress → Review → Done with drag-and-drop
-- **Parallel execution** — Multiple agents run simultaneously in isolated git worktrees
-- **Live monitoring** — Real-time terminal output, structured ACP activity feed, and file tree navigation
-- **Diff review** — Inline file diff viewer with hunk-level staging, revert, and commit workflow
-- **SSH remotes** — Connect to remote projects over SSH; password, key, and passphrase auth
-- **Issue import** — Sync tasks from GitHub and Jira
-- **Model selection** — Per-task model configuration and MCP allowlists
-- **Theme** — Light, dark, and system themes
+---
 
-## Tech Stack
+## What it does
+
+### Queue tasks, agents execute
+Drop tasks onto the Kanban board. Maestro spins up an AI agent per task, each working in its own isolated git worktree. No conflicts. No shared state. Just parallel progress.
+
+### Watch every move in real-time
+Live terminal output, structured activity feed, and file tree navigation — all updating as your agents work. You're never flying blind.
+
+### Review before it lands
+When an agent finishes, the task moves to Review. You get an inline diff viewer with hunk-level staging: accept what you want, revert what you don't, then commit in one click.
+
+### Work on any machine
+SSH into a remote server or WSL distro and run agents there. Password, key, and passphrase auth all supported. Your local machine stays fast; the heavy lifting happens where you point it.
+
+### Pull work from your tracker
+Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, and hand it to an agent — no copy-pasting.
+
+### Control which model does what
+Pick the model per task. Configure MCP allowlists. Maestro gets out of the way and lets you run the stack you want.
+
+---
+
+## Features at a glance
+
+| | |
+|---|---|
+| Kanban workflow | Backlog → Ready → In Progress → Review → Done with drag-and-drop |
+| Parallel agents | Multiple agents run simultaneously in isolated git worktrees |
+| Live monitoring | Real-time terminal, ACP activity feed, file tree |
+| Diff review | Inline viewer with hunk-level staging, revert, and commit |
+| SSH & WSL remotes | Connect to remote and WSL projects with full auth support |
+| Issue import | Sync from GitHub Issues and Jira |
+| Model selection | Per-task model and MCP allowlist configuration |
+| Themes | Light, dark, and system |
+
+---
+
+---
+
+## For contributors
+
+### Tech stack
 
 | Layer    | Technology                                               |
 | -------- | -------------------------------------------------------- |
@@ -30,24 +64,21 @@ Desktop app for orchestrating autonomous AI coding agents. Queue tasks on a Kanb
 | Protocol | ACP (Agent Client Protocol) via `maestro-server` sidecar |
 | Type gen | ts-rs + tauri-specta                                     |
 
-## Prerequisites
+### Prerequisites
 
 - [Rust toolchain](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/)
 - [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
 - `maestro-server` binary on `PATH` for agent execution
 
-## Getting Started
+### Getting started
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Run in development (Tauri + Vite)
 pnpm tauri:dev
 ```
 
-## Development Commands
+### Development commands
 
 ```bash
 # Frontend
@@ -78,7 +109,7 @@ pnpm tauri build      # Production bundle (all platforms)
 pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
 ```
 
-## Architecture
+### Architecture
 
 Three Rust crates in a Cargo workspace:
 
