@@ -492,11 +492,11 @@ async fn get_current_branch_local(
 ///    4a. If conflicts: abort merge, return conflict list
 ///    4b. If nothing staged: return error (branches identical)
 /// 5. Commit with standardised message
-pub async fn squash_merge_to_main(
+pub async fn squash_merge_to_base(
     conn: &GitConnection,
-    task_id: i32,
     branch_name: &str,
-    task_name: &str,
+    target_branch: &str,
+    commit_message: &str,
 ) -> Result<MergeResult, String> {
     let repo_path = match conn {
         GitConnection::Local { path } => path.as_str(),
@@ -504,10 +504,10 @@ pub async fn squash_merge_to_main(
         GitConnection::Wsl { path, .. } => path.as_str(),
     };
 
-    // Step 1: checkout main
-    run_git_in_dir(conn, repo_path, &["checkout", "main"])
+    // Step 1: checkout target branch
+    run_git_in_dir(conn, repo_path, &["checkout", target_branch])
         .await
-        .map_err(|e| format!("git checkout main failed: {}", e))?;
+        .map_err(|e| format!("git checkout {} failed: {}", target_branch, e))?;
 
     // Step 2: squash merge (non-zero exit expected on conflicts)
     let _ = run_git_in_dir_lossy(conn, repo_path, &["merge", branch_name, "--squash", "--no-commit"]).await;
@@ -530,15 +530,14 @@ pub async fn squash_merge_to_main(
 
     // Step 4b: nothing staged — branches may already be identical
     if status_stdout.trim().is_empty() {
-        return Err("Nothing to merge: no changes between branch and main".to_string());
+        return Err(format!(
+            "Nothing to merge: no changes between {} and {}",
+            branch_name, target_branch
+        ));
     }
 
-    // Step 5: commit with standardized squash merge message format
-    let commit_msg = format!(
-        "Merge task #{}: {}\n\nAll agent commits squashed into single commit.",
-        task_id, task_name
-    );
-    run_git_in_dir(conn, repo_path, &["commit", "-m", &commit_msg])
+    // Step 5: commit with caller-provided message
+    run_git_in_dir(conn, repo_path, &["commit", "--no-verify", "-m", commit_message])
         .await
         .map_err(|e| format!("git commit failed: {}", e))?;
 

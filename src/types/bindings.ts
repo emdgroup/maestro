@@ -552,6 +552,19 @@ async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | nu
 }
 },
 /**
+ * Resolve the commit message template for a task.
+ * Reads .maestro/commit-template.txt from the project path; falls back to the default template.
+ * Returns the resolved string with all variables substituted.
+ */
+async resolveCommitMessage(taskId: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_commit_message", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Approve task and perform synchronous merge to main branch
  * 
  * Orchestrates the complete merge workflow synchronously:
@@ -562,9 +575,9 @@ async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | nu
  * 
  * Returns a typed MergeResult with success flag, task_status, and conflicts.
  */
-async approveTaskAndMerge(taskId: number, mergeStrategy: string) : Promise<Result<MergeResult, string>> {
+async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracked: boolean, commitMessage: string) : Promise<Result<MergeResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy }) };
+    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy, includeUntracked, commitMessage }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

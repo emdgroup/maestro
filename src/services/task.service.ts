@@ -33,6 +33,7 @@ export const taskQueryKeys = {
   relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
   instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
   attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
+  commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
 };
 
 /**
@@ -168,12 +169,21 @@ export function useSaveTaskReviewMutation() {
 /**
  * Mutation hook for approving task and performing synchronous merge
  */
+export function useResolveCommitMessageQuery(taskId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: taskQueryKeys.commitMessage(taskId),
+    queryFn: () => api.resolveCommitMessage(taskId),
+    enabled,
+    staleTime: 0,
+  });
+}
+
 export function useApproveTaskAndMergeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, mergeStrategy }: { taskId: number; mergeStrategy: string }) =>
-      api.approveTaskAndMerge(taskId, mergeStrategy),
+    mutationFn: ({ taskId, mergeStrategy, includeUntracked, commitMessage }: { taskId: number; mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) =>
+      api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
     onSuccess: (result: unknown) => {
       const data = result as { success: boolean; task_status: string; conflicts?: string[] };
       if (data.success) {

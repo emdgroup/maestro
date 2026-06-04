@@ -195,6 +195,84 @@ pub async fn get_task_review(
 // Merge Automation and Conflict Handling
 // ============================================================================
 
+const DEFAULT_COMMIT_TEMPLATE: &str = "\
+Merge task #{task_id}: {task_name}
+
+Squash merge {branch} into {target_branch}.";
+
+fn resolve_template(
+    template: &str,
+    task_id: i32,
+    task_name: &str,
+    branch: &str,
+    target_branch: &str,
+    external_id: &str,
+    description: &str,
+) -> String {
+    template
+        .replace("{task_id}", &task_id.to_string())
+        .replace("{task_name}", task_name)
+        .replace("{branch}", branch)
+        .replace("{target_branch}", target_branch)
+        .replace("{external_id}", external_id)
+        .replace("{description}", description)
+}
+
+/// Resolve the commit message template for a task.
+/// Reads .maestro/commit-template.txt from the project path; falls back to the default template.
+/// Returns the resolved string with all variables substituted.
+#[tauri::command]
+#[specta::specta]
+pub async fn resolve_commit_message(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<String, String> {
+    let (task_name, branch_name, base_branch, external_id, description, project_path) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path
+             FROM tasks t
+             JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
+             JOIN projects p ON p.id = t.project_id
+             WHERE t.id = ?",
+            [task_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            )),
+        )
+        .map_err(|e| format!("Task/worktree/project not found: {}", e))?
+    };
+
+    let template_path = std::path::Path::new(&project_path)
+        .join(".maestro")
+        .join("commit-template.txt");
+    let template = std::fs::read_to_string(&template_path)
+        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string());
+
+    let external_id_str = external_id.unwrap_or_default();
+    let description_str = description
+        .unwrap_or_default()
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(resolve_template(
+        &template,
+        task_id,
+        &task_name,
+        &branch_name,
+        &base_branch,
+        &external_id_str,
+        &description_str,
+    ))
+}
+
 /// Approve task and perform synchronous merge to main branch
 ///
 /// Orchestrates the complete merge workflow synchronously:
@@ -210,20 +288,22 @@ pub async fn approve_task_and_merge(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     merge_strategy: String,
+    include_untracked: bool,
+    commit_message: String,
 ) -> Result<MergeResult, String> {
     let _ = merge_strategy;
 
     // 1. Single JOIN query to get task, worktree, and project data
-    let (task_name, branch_name, worktree_path, worktree_id, project_id, repo_path) = {
+    let (branch_name, worktree_path, worktree_id, project_id, repo_path, base_branch) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT t.title, w.branch_name, w.path, w.id, t.project_id, p.path
+            "SELECT w.branch_name, w.path, w.id, t.project_id, p.path, t.base_branch
              FROM tasks t
              JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
              WHERE t.id = ?",
             [task_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i32>(3)?, row.get::<_, i32>(4)?, row.get::<_, String>(5)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i32>(2)?, row.get::<_, i32>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?)),
         )
         .map_err(|e| format!("Task, worktree, or project not found: {}", e))?
     };
@@ -235,12 +315,37 @@ pub async fn approve_task_and_merge(
     // 3. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
+    // 3a. Auto-commit untracked files in the worktree before merge
+    if include_untracked {
+        let untracked_output = crate::git::run_git_in_dir(
+            &git_conn, &full_worktree_path,
+            &["ls-files", "--others", "--exclude-standard"],
+        ).await.unwrap_or_default();
+
+        let untracked_files: Vec<&str> = untracked_output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .collect();
+
+        if !untracked_files.is_empty() {
+            let mut add_args = vec!["add", "--"];
+            add_args.extend(untracked_files.iter().copied());
+            crate::git::run_git_in_dir(&git_conn, &full_worktree_path, &add_args).await
+                .map_err(|e| format!("Failed to stage untracked files: {}", e))?;
+
+            crate::git::run_git_in_dir(
+                &git_conn, &full_worktree_path,
+                &["commit", "--no-verify", "-m", "Include new files from agent session"],
+            ).await.map_err(|e| format!("Failed to commit untracked files: {}", e))?;
+        }
+    }
+
     // 4. Perform squash merge via git dispatcher (local, SSH, or WSL)
-    let merge_result = git::squash_merge_to_main(
+    let merge_result = git::squash_merge_to_base(
         &git_conn,
-        task_id,
         &branch_name,
-        &task_name,
+        &base_branch,
+        &commit_message,
     ).await?;
 
     if merge_result.success {

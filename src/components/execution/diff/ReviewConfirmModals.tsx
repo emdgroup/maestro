@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import {
@@ -26,9 +26,10 @@ interface ReworkModalProps {
   onOpenChange: (open: boolean) => void;
   comments: PendingComment[];
   onConfirm: (data: { comments: PendingComment[]; generalFeedback: string }) => void;
+  isPending?: boolean;
 }
 
-export function ReworkModal({ open, onOpenChange, comments, onConfirm }: ReworkModalProps) {
+export function ReworkModal({ open, onOpenChange, comments, onConfirm, isPending }: ReworkModalProps) {
   const [expanded, setExpanded] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -38,7 +39,7 @@ export function ReworkModal({ open, onOpenChange, comments, onConfirm }: ReworkM
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>Request changes</AlertDialogTitle>
@@ -88,12 +89,13 @@ export function ReworkModal({ open, onOpenChange, comments, onConfirm }: ReworkM
         />
 
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
           <Button
             onClick={handleSubmit}
+            disabled={isPending}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
-            Submit review
+            {isPending ? "Submitting..." : "Submit review"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -107,7 +109,10 @@ interface ApproveModalProps {
   onOpenChange: (open: boolean) => void;
   hasWorktree: boolean;
   hasUncommitted: boolean;
-  onConfirm: (data: { mergeStrategy: string }) => void;
+  untrackedCount: number;
+  commitMessage: string;
+  onConfirm: (data: { mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) => void;
+  isPending?: boolean;
 }
 
 export function ApproveModal({
@@ -115,9 +120,18 @@ export function ApproveModal({
   onOpenChange,
   hasWorktree,
   hasUncommitted,
+  untrackedCount,
+  commitMessage: initialCommitMessage,
   onConfirm,
+  isPending,
 }: ApproveModalProps) {
   const [strategy, setStrategy] = useState("merge-delete");
+  const [includeUntracked, setIncludeUntracked] = useState(true);
+  const [commitMessage, setCommitMessage] = useState(initialCommitMessage);
+
+  useEffect(() => {
+    setCommitMessage(initialCommitMessage);
+  }, [initialCommitMessage]);
 
   const showRadio = hasWorktree && hasUncommitted;
 
@@ -138,7 +152,7 @@ export function ApproveModal({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Approve task</AlertDialogTitle>
@@ -170,10 +184,38 @@ export function ApproveModal({
           </div>
         )}
 
+        {untrackedCount > 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeUntracked}
+                onChange={(e) => setIncludeUntracked(e.target.checked)}
+              />
+              Include {untrackedCount} untracked file{untrackedCount !== 1 ? "s" : ""} (not yet committed)
+            </label>
+            {!includeUntracked && (
+              <p className="text-xs text-destructive">
+                These files will be permanently lost when the worktree is deleted.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Commit message</p>
+          <textarea
+            value={commitMessage}
+            onChange={(e) => setCommitMessage(e.target.value)}
+            className="w-full min-h-[80px] resize-y rounded-md border bg-transparent px-3 py-2 text-sm font-mono outline-none"
+            rows={4}
+          />
+        </div>
+
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <Button onClick={() => onConfirm({ mergeStrategy: strategy })}>
-            {showRadio ? "Confirm" : getActionLabel()}
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <Button onClick={() => onConfirm({ mergeStrategy: strategy, includeUntracked, commitMessage })} disabled={isPending || !commitMessage.trim()}>
+            {isPending ? "Approving..." : (showRadio ? "Confirm" : getActionLabel())}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -189,6 +231,7 @@ interface DiscardModalProps {
   branchName: string | null;
   commitCount: number;
   onConfirm: (action: "backlog" | "cancel") => void;
+  isPending?: boolean;
 }
 
 export function DiscardModal({
@@ -198,9 +241,10 @@ export function DiscardModal({
   branchName,
   commitCount,
   onConfirm,
+  isPending,
 }: DiscardModalProps) {
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -235,14 +279,14 @@ export function DiscardModal({
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
           <ButtonGroup>
-            <Button size="sm" onClick={() => onConfirm("backlog")}>
-              Send to Backlog
+            <Button size="sm" onClick={() => onConfirm("backlog")} disabled={isPending}>
+              {isPending ? "Discarding..." : "Send to Backlog"}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button size="sm" className="px-1.5!"><ChevronDown className="size-3.5" /></Button>}
+                render={<Button size="sm" className="px-1.5!" disabled={isPending}><ChevronDown className="size-3.5" /></Button>}
               />
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem variant="destructive" onClick={() => onConfirm("cancel")}>

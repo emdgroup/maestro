@@ -47,6 +47,8 @@ fn register_project_in_db(
         ConnectionKey::Local => {
             crate::core::project_storage::create_project_maestro_folder(path)
                 .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+            crate::core::project_storage::ensure_commit_template_exists(path)
+                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         }
         ConnectionKey::Wsl { id: wsl_id } => {
             let distro = {
@@ -60,6 +62,8 @@ fn register_project_in_db(
             let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
             crate::core::project_storage::create_project_maestro_folder(&unc_path)
                 .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
+            crate::core::project_storage::ensure_commit_template_exists(&unc_path)
+                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         }
         ConnectionKey::Ssh { .. } => {}
     }
@@ -296,6 +300,23 @@ pub fn open_project(
         rusqlite::params![now, project_id],
     )
     .map_err(|e| e.to_string())?;
+
+    // Ensure commit template exists for local/WSL projects (no-op if file already present).
+    // SSH projects don't have a local .maestro/ folder.
+    if !project.is_remote() {
+        let effective_path = if let Some(wsl_id) = project.wsl_connection_id {
+            let distro: String = conn.query_row(
+                "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                [wsl_id],
+                |row| row.get(0),
+            ).map_err(|e| format!("WSL connection not found: {}", e))?;
+            format!(r"\\wsl$\{}\{}", distro, project.path.trim_start_matches('/'))
+        } else {
+            project.path.clone()
+        };
+        crate::core::project_storage::ensure_commit_template_exists(&effective_path)
+            .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
+    }
 
     Ok(project)
 }
@@ -780,6 +801,8 @@ pub fn create_project(
         ConnectionKey::Local => {
             project_storage::create_project_maestro_folder(&path)
                 .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
+            project_storage::ensure_commit_template_exists(&path)
+                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         }
         ConnectionKey::Wsl { id: wsl_id } => {
             let distro = {
@@ -793,6 +816,8 @@ pub fn create_project(
             let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
             project_storage::create_project_maestro_folder(&unc_path)
                 .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
+            project_storage::ensure_commit_template_exists(&unc_path)
+                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         }
         ConnectionKey::Ssh { .. } => {}
     }

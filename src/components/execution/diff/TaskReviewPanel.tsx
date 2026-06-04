@@ -26,6 +26,7 @@ import {
   useApproveTaskAndMergeMutation,
   useRejectReviewMutation,
   useSaveTaskReviewMutation,
+  useResolveCommitMessageQuery,
 } from "@/services/task.service";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useKanban } from "@/contexts/KanbanContext";
@@ -107,11 +108,13 @@ export function TaskReviewPanel({
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [discardModalOpen, setDiscardModalOpen] = useState(false);
 
+  const commitMessageQuery = useResolveCommitMessageQuery(task.id, approveModalOpen);
+
   // Mutations
-  const { mutate: saveReview } = useSaveTaskReviewMutation();
-  const { mutate: approveAndMerge } = useApproveTaskAndMergeMutation();
-  const { mutate: rejectReview } = useRejectReviewMutation();
-  const { mutate: requestChanges } = useRequestChangesMutation();
+  const { mutate: saveReview, isPending: isSaving } = useSaveTaskReviewMutation();
+  const { mutate: approveAndMerge, isPending: isApproving } = useApproveTaskAndMergeMutation();
+  const { mutate: rejectReview, isPending: isRejecting } = useRejectReviewMutation();
+  const { mutate: requestChanges, isPending: isRequestingChanges } = useRequestChangesMutation();
   const { execute } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
 
@@ -283,14 +286,14 @@ export function TaskReviewPanel({
   );
 
   const handleApproveConfirm = useCallback(
-    (data: { mergeStrategy: string }) => {
+    (data: { mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) => {
       saveReview(
         { taskId: task.id, decision: "Approve", generalFeedback: null, perFileComments: null },
         {
           onSuccess: () => {
             const strategy = data.mergeStrategy === "commit-only" ? "CommitOnly" : "CommitAndMerge";
             approveAndMerge(
-              { taskId: task.id, mergeStrategy: strategy },
+              { taskId: task.id, mergeStrategy: strategy, includeUntracked: data.includeUntracked, commitMessage: data.commitMessage },
               {
                 onSuccess: () => {
                   setApproveModalOpen(false);
@@ -589,13 +592,17 @@ export function TaskReviewPanel({
         onOpenChange={setReworkModalOpen}
         comments={comments}
         onConfirm={handleReworkConfirm}
+        isPending={isRequestingChanges}
       />
       <ApproveModal
         open={approveModalOpen}
         onOpenChange={setApproveModalOpen}
         hasWorktree={hasWorktree}
         hasUncommitted={hasUncommitted}
+        untrackedCount={untrackedFiles.length}
+        commitMessage={commitMessageQuery.data ?? ""}
         onConfirm={handleApproveConfirm}
+        isPending={isSaving || isApproving}
       />
       <DiscardModal
         open={discardModalOpen}
@@ -604,6 +611,7 @@ export function TaskReviewPanel({
         branchName={branchName}
         commitCount={commits.length}
         onConfirm={handleDiscardConfirm}
+        isPending={isRejecting}
       />
     </div>
   );

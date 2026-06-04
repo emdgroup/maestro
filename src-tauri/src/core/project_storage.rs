@@ -1,6 +1,22 @@
 use std::path::Path;
 use crate::models::{ProjectConfig, ProjectState};
 
+const DEFAULT_COMMIT_TEMPLATE: &str = "\
+Merge task #{task_id}: {task_name}
+
+Squash merge {branch} into {target_branch}.";
+
+/// Write the default commit template to .maestro/commit-template.txt if it doesn't exist.
+/// Never overwrites an existing file so user edits are preserved.
+pub fn ensure_commit_template_exists(project_path: &str) -> Result<(), String> {
+    let template_path = Path::new(project_path).join(".maestro").join("commit-template.txt");
+    if !template_path.exists() {
+        std::fs::write(&template_path, DEFAULT_COMMIT_TEMPLATE)
+            .map_err(|e| format!("Failed to write commit template: {}", e))?;
+    }
+    Ok(())
+}
+
 /// Initialize the .maestro directory structure for a project
 ///
 /// Creates the .maestro folder if it doesn't exist.
