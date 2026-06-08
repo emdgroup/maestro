@@ -13,7 +13,7 @@ pub use maestro_protocol::{
     ModeInfo, SessionModeState,
     SetModelRequest, SetModelOkResponse,
     SetModeRequest, SetModeOkResponse,
-    SetConfigOptionRequest, SetConfigOptionOkResponse,
+    SetConfigOptionRequest, SetConfigOptionOkResponse, ConfigOptionUpdatedResponse,
     PromptCapabilitiesInfo,
     FileSearchRequest, FileSearchResponse, FileReadRequest, FileReadResponse,
     TurnEnded,

@@ -11,7 +11,7 @@ export type ConfigOption = {
   id: string;
   name: string;
   description?: string;
-  category: string;
+  category?: string;
   currentValue: string;
   options: ConfigOptionValue[];
 };
@@ -134,7 +134,7 @@ export type ToolCallItem = {
   toolCallId: string;
   title: string;
   kind: string;
-  status: "pending" | "in_progress" | "completed" | "error";
+  status: "pending" | "in_progress" | "completed" | "error" | "interrupted";
   content: ToolCallContent[];
   locations: ToolCallLocation[];
   rawInput?: Record<string, unknown>;

@@ -62,7 +62,7 @@ export function useAcpSessionLifecycle(
       return agentCache.config_options.map((o) => ({
         id: o.id,
         name: o.name,
-        category: o.category,
+        category: o.category ?? undefined,
         currentValue: o.default_value ?? o.options[0]?.value ?? "",
         options: o.options.map((v) => ({
           name: v.name,
@@ -262,12 +262,23 @@ export function useAcpSessionLifecycle(
   }, [sessionKey]);
 
   useEffect(() => {
-    const unlisten = listen<{ config_id: string; value: string }>(
-      `acp://config-changed/${sessionKey}`,
-      (event) => {
-        setConfigValues((prev) => ({ ...prev, [event.payload.config_id]: event.payload.value }));
-      },
-    );
+    const unlisten = listen<{
+      config_id: string;
+      value: string;
+      configOptions: ConfigOption[];
+    }>(`acp://config-state-updated/${sessionKey}`, (event) => {
+      const { configOptions: options, config_id, value } = event.payload;
+      if (Array.isArray(options) && options.length > 0) {
+        setConfigOptions(options);
+        const values: Record<string, string> = {};
+        for (const opt of options) {
+          if (opt.currentValue) values[opt.id] = opt.currentValue;
+        }
+        setConfigValues(values);
+      } else {
+        setConfigValues((prev) => ({ ...prev, [config_id]: value }));
+      }
+    });
     return () => {
       unlisten.then((fn) => fn());
     };
@@ -307,28 +318,12 @@ export function useAcpSessionLifecycle(
         }
       } else if (p.sessionUpdate === "config_option_update") {
         if (Array.isArray(p.configOptions)) {
-          // Merge: keep existing option lists (seeded from cache with full catalog), add new categories.
-          // The raw agent payload can be degraded (missing opusplan etc.) when loading a session.
-          setConfigOptions((prev) => {
-            if (prev.length === 0) return p.configOptions!;
-            const existingIds = new Set(prev.map((o) => o.id));
-            const newCategories = p.configOptions!.filter((o) => !existingIds.has(o.id));
-            return newCategories.length > 0 ? [...prev, ...newCategories] : prev;
-          });
-          setConfigValues((prev) => {
-            // model/mode have dedicated authoritative events (model-changed, mode-changed).
-            // config_option_update reflects agent's internal resolution which may differ
-            // from user's selection (e.g., "opusplan" resolves to "sonnet" internally).
-            const AUTHORITATIVE_KEYS = new Set(["model", "mode"]);
-            const incoming = Object.fromEntries(
-              p.configOptions!
-                .filter((o) => !AUTHORITATIVE_KEYS.has(o.id) || !(o.id in prev))
-                .map((o) => [o.id, o.currentValue]),
-            );
-            if (Object.keys(incoming).length === 0) return prev;
-            const hasChange = Object.entries(incoming).some(([k, v]) => prev[k] !== v);
-            return hasChange ? { ...prev, ...incoming } : prev;
-          });
+          setConfigOptions(p.configOptions);
+          const values: Record<string, string> = {};
+          for (const opt of p.configOptions) {
+            if (opt.currentValue) values[opt.id] = opt.currentValue;
+          }
+          setConfigValues(values);
         }
       } else if (p.sessionUpdate === "current_model_update") {
         const modelId = p.modelId ?? p.currentModelId;

@@ -599,8 +599,14 @@ pub async fn squash_merge_to_base(
         });
     }
 
-    // Step 4b: nothing staged — branches may already be identical
-    if status_stdout.trim().is_empty() {
+    // Step 4b: nothing staged — branches may already be identical.
+    // Use diff --cached to check staged content specifically (git status --porcelain
+    // includes pre-existing unstaged modifications which would give a false positive).
+    let staged_output = run_git_in_dir(conn, repo_path, &["diff", "--cached", "--name-only"])
+        .await
+        .map_err(|e| format!("git diff --cached failed: {}", e))?;
+
+    if staged_output.trim().is_empty() {
         return Err(format!(
             "Nothing to merge: no changes between {} and {}",
             branch_name, target_branch

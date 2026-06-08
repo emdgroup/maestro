@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { Skeleton } from "@/ui/skeleton";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
 import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
@@ -121,7 +120,8 @@ export function AgentActivityPanel({
   const onUsageChangeRef = useRef(onUsageChange);
   onUsageChangeRef.current = onUsageChange;
 
-  const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessing =
+    activityInfo?.status === "thinking" || activityInfo?.status === "acting";
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
   const [centeredTextWidth, setCenteredTextWidth] = useState<number | null>(null);
   const composeBarRef = useRef<ComposeBarHandle>(null);
@@ -134,15 +134,6 @@ export function AgentActivityPanel({
       removeActivityStatus(sessionKey);
     };
   }, [sessionKey, setActivityStatus, removeActivityStatus]);
-
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
-      setIsProcessing(false);
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey]);
 
   const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
     undefined,
@@ -213,7 +204,6 @@ export function AgentActivityPanel({
 
   useEffect(() => {
     if (liveState.sessionEnded) {
-      setIsProcessing(false);
       removeActivityStatus(sessionKey);
     }
   }, [liveState.sessionEnded, sessionKey, removeActivityStatus]);
@@ -395,7 +385,6 @@ export function AgentActivityPanel({
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
       liveDispatch({ type: "finalize_streaming" });
-      setIsProcessing(true);
       setActivityStatus(sessionKey, "thinking");
       try {
         if (contentBlocks) {
@@ -404,7 +393,6 @@ export function AgentActivityPanel({
           await api.sendAcpPrompt(sessionKey, content);
         }
       } catch {
-        setIsProcessing(false);
         setActivityStatus(sessionKey, "idle");
       }
     },
@@ -416,7 +404,6 @@ export function AgentActivityPanel({
       await api.interruptAcpTurn(sessionKey);
     } catch {
       // Write failed (session already gone) — reset UI directly
-      setIsProcessing(false);
       setActivityStatus(sessionKey, "idle");
     }
   }, [sessionKey, setActivityStatus]);

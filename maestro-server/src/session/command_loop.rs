@@ -11,11 +11,11 @@ use acp::schema::{
 };
 use agent_client_protocol_schema::{ElicitationCapabilities, ElicitationFormCapabilities};
 use maestro_protocol::{
-    ErrorResponse, MaestroRpcMessage, ModeInfo as ProtocolModeInfo,
-    ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
-    SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, SetConfigOptionOkResponse,
-    SetModeOkResponse, SetModelOkResponse, TurnEnded,
+    ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage,
+    ModeInfo as ProtocolModeInfo, ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo,
+    ServerResponse, SessionModeState as ProtocolSessionModeState,
+    SessionModelState as ProtocolSessionModelState, SetModeOkResponse, SetModelOkResponse,
+    TurnEnded,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -82,6 +82,13 @@ pub(crate) fn convert_acp_modes(
             })
             .collect(),
     })
+}
+
+fn serialize_config_options(options: &[SessionConfigOption]) -> Vec<serde_json::Value> {
+    options
+        .iter()
+        .filter_map(|opt| serde_json::to_value(opt).ok())
+        .collect()
 }
 
 /// Used on session load when the agent provides config_options but no legacy models field.
@@ -234,19 +241,44 @@ pub(crate) async fn run_command_loop(
             }
             SessionCommand::SetModel(model_id) => {
                 let result = cx
-                    .send_request(SetSessionModelRequest::new(
+                    .send_request(SetSessionConfigOptionRequest::new(
                         session_id.clone(),
-                        model_id.clone(),
+                        SessionConfigId::new("model".to_string()),
+                        SessionConfigValueId::new(model_id.clone()),
                     ))
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModelOk(
-                        SetModelOkResponse {
+                    Ok(response) => MaestroRpcMessage::Response(
+                        ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
-                            model_id,
-                        },
-                    )),
+                            config_id: "model".to_string(),
+                            value: model_id,
+                            config_options: serialize_config_options(&response.config_options),
+                        }),
+                    ),
+                    Err(e) if e.code == acp::ErrorCode::MethodNotFound => {
+                        let fallback = cx
+                            .send_request(SetSessionModelRequest::new(
+                                session_id.clone(),
+                                model_id.clone(),
+                            ))
+                            .block_task()
+                            .await;
+                        match fallback {
+                            Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModelOk(
+                                SetModelOkResponse {
+                                    session_id: maestro_sid.clone(),
+                                    model_id,
+                                },
+                            )),
+                            Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
+                                ErrorResponse {
+                                    message: format!("SetModel failed: {}", e),
+                                },
+                            )),
+                        }
+                    }
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetModel failed: {}", e),
                     })),
@@ -255,19 +287,44 @@ pub(crate) async fn run_command_loop(
             }
             SessionCommand::SetMode(mode_id) => {
                 let result = cx
-                    .send_request(SetSessionModeRequest::new(
+                    .send_request(SetSessionConfigOptionRequest::new(
                         session_id.clone(),
-                        mode_id.clone(),
+                        SessionConfigId::new("mode".to_string()),
+                        SessionConfigValueId::new(mode_id.clone()),
                     ))
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModeOk(
-                        SetModeOkResponse {
+                    Ok(response) => MaestroRpcMessage::Response(
+                        ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
-                            mode_id,
-                        },
-                    )),
+                            config_id: "mode".to_string(),
+                            value: mode_id,
+                            config_options: serialize_config_options(&response.config_options),
+                        }),
+                    ),
+                    Err(e) if e.code == acp::ErrorCode::MethodNotFound => {
+                        let fallback = cx
+                            .send_request(SetSessionModeRequest::new(
+                                session_id.clone(),
+                                mode_id.clone(),
+                            ))
+                            .block_task()
+                            .await;
+                        match fallback {
+                            Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModeOk(
+                                SetModeOkResponse {
+                                    session_id: maestro_sid.clone(),
+                                    mode_id,
+                                },
+                            )),
+                            Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
+                                ErrorResponse {
+                                    message: format!("SetMode failed: {}", e),
+                                },
+                            )),
+                        }
+                    }
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetMode failed: {}", e),
                     })),
@@ -284,13 +341,14 @@ pub(crate) async fn run_command_loop(
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(
-                        SetConfigOptionOkResponse {
+                    Ok(response) => MaestroRpcMessage::Response(
+                        ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id,
                             value,
-                        },
-                    )),
+                            config_options: serialize_config_options(&response.config_options),
+                        }),
+                    ),
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetConfigOption failed: {}", e),
                     })),

@@ -228,6 +228,9 @@ export function useExecuteTask(
 
       await api.sendAcpPromptStructured(logId, contentBlocks);
 
+      // Clear review from DB after successful injection to prevent re-injection on next cold start
+      api.clearTaskReview(task.id).catch(() => {});
+
       // Transition task to InProgress
       await updateTask.mutateAsync({ taskId: task.id, updates: { status: "InProgress" } });
 

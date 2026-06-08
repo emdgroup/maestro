@@ -34,7 +34,7 @@ pub struct AgentCatalogOption {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub category: String,
+    pub category: Option<String>,
     pub options: Vec<AgentCatalogOptionValue>,
     pub default_value: Option<String>,
 }

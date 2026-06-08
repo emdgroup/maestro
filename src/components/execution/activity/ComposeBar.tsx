@@ -784,7 +784,6 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
                 option={opt}
                 value={configValues[opt.id] ?? opt.currentValue}
                 onChange={(v) => onConfigChange(opt.id, v)}
-                disabled={isProcessing}
               />
             ))}
 

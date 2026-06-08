@@ -96,6 +96,9 @@ function SubagentToolCallList({ items }: { items: ToolCallItem[] }) {
               {tc.status === "error" && (
                 <span className="text-[10px] text-destructive shrink-0">Failed</span>
               )}
+              {tc.status === "interrupted" && (
+                <span className="text-[10px] text-warning/70 shrink-0">Interrupted</span>
+              )}
             </button>
             {isExpanded && (
               <div className="px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5 border-t border-border/40">
@@ -132,6 +135,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
     }
   }, [toolCallVisibility]);
   const isStreaming = item.status === "in_progress" || item.status === "pending";
+  const isInterrupted = item.status === "interrupted";
 
   const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
 
@@ -203,6 +207,8 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           <div className="mt-0.5 text-[10px] text-muted-foreground">
             {isStreaming ? (
               <TypingDots />
+            ) : isInterrupted ? (
+              <span className="text-warning/70">Session interrupted</span>
             ) : usage ? (
               `${usage.duration} · ${usage.tokens} tokens · ${usage.tools} tool calls`
             ) : null}
@@ -212,11 +218,18 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           className={cn(
             "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5",
             isStreaming && "bg-accent/15 text-accent",
+            isInterrupted && "bg-warning/15 text-warning",
             item.status === "completed" && "bg-success/15 text-success",
             item.status === "error" && "bg-destructive/15 text-destructive",
           )}
         >
-          {isStreaming ? "Running" : item.status === "completed" ? "Done" : "Failed"}
+          {isStreaming
+            ? "Running"
+            : isInterrupted
+              ? "Interrupted"
+              : item.status === "completed"
+                ? "Done"
+                : "Failed"}
         </span>
         <ChevronRight
           className={cn(

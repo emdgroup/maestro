@@ -175,6 +175,7 @@ pub enum ServerResponse {
     SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
     SetConfigOptionOk(SetConfigOptionOkResponse),
+    ConfigOptionUpdated(ConfigOptionUpdatedResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
     TurnEnded(TurnEnded),
@@ -258,6 +259,14 @@ pub struct SetConfigOptionOkResponse {
     pub session_id: String,
     pub config_id: String,
     pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ConfigOptionUpdatedResponse {
+    pub session_id: String,
+    pub config_id: String,
+    pub value: String,
+    pub config_options: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

@@ -26,16 +26,18 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return processEvent(state, action.payload, action.raw);
     case "session_ended": {
       const flushed = flushOrphans(state);
+      const interrupted = interruptStalledToolCalls(flushed);
       return {
-        ...flushed,
-        items: finalizeLastStreaming(flushed.items),
+        ...interrupted,
+        items: finalizeLastStreaming(interrupted.items),
         sessionEnded: true,
         endReason: "completed",
       };
     }
     case "turn_ended": {
       const flushed = flushOrphans(state);
-      return { ...flushed, items: finalizeLastStreaming(flushed.items) };
+      const interrupted = interruptStalledToolCalls(flushed);
+      return { ...interrupted, items: finalizeLastStreaming(interrupted.items) };
     }
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
@@ -44,6 +46,28 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     default:
       return state;
   }
+}
+
+function interruptStalledToolCalls(state: ActivityState): ActivityState {
+  const stalledIds: string[] = [];
+  for (const [id, tc] of state.toolCallMap) {
+    if (tc.status === "in_progress" || tc.status === "pending") {
+      stalledIds.push(id);
+    }
+  }
+  if (stalledIds.length === 0) return state;
+  const newMap = new Map(state.toolCallMap);
+  for (const id of stalledIds) {
+    const tc = newMap.get(id)!;
+    newMap.set(id, { ...tc, status: "interrupted" });
+  }
+  const items = state.items.map((item) => {
+    if (item.type === "toolCall" && stalledIds.includes(item.item.toolCallId)) {
+      return { ...item, item: newMap.get(item.item.toolCallId)! };
+    }
+    return item;
+  });
+  return { ...state, items, toolCallMap: newMap };
 }
 
 function flushOrphans(state: ActivityState): ActivityState {

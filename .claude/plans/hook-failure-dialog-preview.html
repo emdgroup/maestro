@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hook Failure Dialog — Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #09090b;
+    color: #fafafa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+  }
+
+  .dialog {
+    position: relative;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    padding: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    z-index: 10;
+  }
+
+  .dialog-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .warning-icon {
+    width: 18px;
+    height: 18px;
+    color: #f59e0b;
+  }
+
+  .dialog-description {
+    font-size: 13px;
+    color: #a1a1aa;
+    margin-bottom: 16px;
+  }
+
+  .hook-output {
+    background: #0f0f12;
+    border: 1px solid #f59e0b30;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #d4d4d8;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+  }
+
+  .hook-output .highlight {
+    color: #f59e0b;
+    font-weight: 500;
+  }
+
+  .hook-output .metric {
+    color: #a1a1aa;
+  }
+
+  .hook-output .risk-high {
+    color: #ef4444;
+    font-weight: 600;
+  }
+
+  .hook-output .untested {
+    color: #fb923c;
+  }
+
+  .footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+
+  .btn-cancel {
+    background: #27272a;
+    color: #fafafa;
+    border: 1px solid #3f3f46;
+  }
+  .btn-cancel:hover {
+    background: #3f3f46;
+  }
+
+  .btn-group {
+    display: inline-flex;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 8px 0 0 8px;
+    padding: 8px 14px;
+  }
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-dropdown {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-left: 1px solid #1d4ed8;
+    border-radius: 0 8px 8px 0;
+    padding: 8px 8px;
+    display: flex;
+    align-items: center;
+  }
+  .btn-dropdown:hover {
+    background: #1d4ed8;
+  }
+  .btn-dropdown svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .dropdown-menu {
+    position: absolute;
+    bottom: 68px;
+    right: 24px;
+    background: #1c1c20;
+    border: 1px solid #3f3f46;
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 200px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+
+  .dropdown-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #d4d4d8;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+  .dropdown-item:hover {
+    background: #27272a;
+    color: #fafafa;
+  }
+  .dropdown-item.destructive {
+    color: #f59e0b;
+  }
+  .dropdown-item.destructive:hover {
+    background: #f59e0b15;
+    color: #fbbf24;
+  }
+
+  /* Scrollbar */
+  .hook-output::-webkit-scrollbar { width: 6px; }
+  .hook-output::-webkit-scrollbar-track { background: transparent; }
+  .hook-output::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+
+  .label {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="overlay"></div>
+  <div class="dialog">
+    <div class="dialog-title">
+      <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+        <path d="M12 9v4"/><path d="M12 17h.01"/>
+      </svg>
+      Pre-commit hook blocked merge
+    </div>
+    <p class="dialog-description">
+      A git hook prevented the commit. Review the output below and choose whether to proceed.
+    </p>
+
+    <span class="label">Hook output</span>
+    <div class="hook-output"><span class="highlight">Analyzed 44 changed file(s):</span>
+<span class="metric"> - 22 changed function(s)/class(es)</span>
+<span class="metric"> - 0 affected flow(s)</span>
+<span class="metric"> - 22 test gap(s)</span>
+<span class="risk-high"> - Overall risk score: 0.85</span>
+<span class="untested"> - Untested: git_diff, create_builder, ActivityPlanPanel,
+   parseDiffLines, saveTaskReview</span></div>
+
+    <div class="footer">
+      <button class="btn btn-cancel">Cancel</button>
+      <div class="btn-group">
+        <button class="btn btn-primary" title="Send hook output to agent as rework feedback">Fix issues</button>
+        <button class="btn btn-dropdown" onclick="document.querySelector('.dropdown-menu').classList.toggle('visible')" title="More options">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+      </div>
+      <div class="dropdown-menu" style="display:none" id="dropdown">
+        <button class="dropdown-item destructive">Force merge (skip hooks)</button>
+      </div>
+    </div>
+
+    <script>
+      const toggle = document.querySelector('.btn-dropdown');
+      const menu = document.getElementById('dropdown');
+      toggle.addEventListener('click', () => {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.btn-dropdown') && !e.target.closest('.dropdown-menu')) {
+          menu.style.display = 'none';
+        }
+      });
+    </script>
+  </div>
+</body>
+</html>

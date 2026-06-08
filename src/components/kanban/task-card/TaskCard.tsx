@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, memo } from "react";
 import { Task, TaskStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
+import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
@@ -110,11 +111,15 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
   const { projectId, projectPath, connection } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
-  const { execute: handleExecute, isExecuting } = useExecuteTask(
-    projectId,
-    projectPath,
-    connection,
-  );
+  const {
+    execute: handleExecute,
+    isExecuting,
+    dirtyDialogOpen,
+    dirtyModifiedCount,
+    dirtyUntrackedCount,
+    onDirtyChoice,
+    onDirtyCancel,
+  } = useExecuteTask(projectId, projectPath, connection);
   const interruptTask = useInterruptTaskMutation();
   const archiveTask = useArchiveTaskMutation();
   const activeSession = useTaskActiveSession(task.status === "InProgress" ? task.id : null, projectId);
@@ -143,6 +148,7 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
   const hasMetadata = task.priority !== "None" || task.labels.length > 0 || task.auto_approve || task.agent_id;
 
   return (
+    <>
     <div
       ref={ref}
       className={`rounded-lg border bg-card shadow-sm p-3 mb-3 transition-all duration-200 hover:shadow-md hover:border-ring
@@ -277,5 +283,13 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
         </div>
       </div>
     </div>
+    <DirtyWorktreeDialog
+      open={dirtyDialogOpen}
+      modifiedCount={dirtyModifiedCount}
+      untrackedCount={dirtyUntrackedCount}
+      onChoice={onDirtyChoice}
+      onCancel={onDirtyCancel}
+    />
+    </>
   );
 }

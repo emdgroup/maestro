@@ -742,7 +742,16 @@ pub async fn get_worktree_commits(
 ) -> Result<Vec<CommitInfo>, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let range = format!("origin/{}..HEAD", base_branch);
+    let merge_base = crate::git::run_git_in_dir(
+        &git_conn, &worktree_path, &["merge-base", &base_branch, "HEAD"],
+    ).await.unwrap_or_default();
+
+    let range = if merge_base.trim().is_empty() {
+        format!("{}..HEAD", base_branch)
+    } else {
+        format!("{}..HEAD", merge_base.trim())
+    };
+
     let log_output = crate::git::run_git_in_dir(
         &git_conn,
         &worktree_path,

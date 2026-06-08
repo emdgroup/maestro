@@ -159,6 +159,22 @@ pub async fn get_task_review(
     Ok(Some(TaskReviewWithComments { decision, general_feedback, comments, created_at }))
 }
 
+/// Clear the review and its comments for a task after feedback has been injected into the agent.
+/// Prevents stale comments from appearing in subsequent review cycles or being re-injected on cold starts.
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_task_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<(), String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    conn.execute(
+        "DELETE FROM task_reviews WHERE task_id = ?",
+        rusqlite::params![task_id],
+    ).map_err(|e| format!("Delete review failed: {}", e))?;
+    Ok(())
+}
+
 // ============================================================================
 // Merge Automation and Conflict Handling
 // ============================================================================
@@ -326,7 +342,11 @@ pub async fn approve_task_and_merge(
     // 3. Build full worktree path
     let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
 
-    // 3a. Auto-commit untracked files in the worktree before merge
+    // 3a. Stage and commit modified tracked files (agents may modify without committing)
+    crate::git::run_git_in_dir(&git_conn, &full_worktree_path, &["add", "-u"]).await
+        .map_err(|e| format!("Failed to stage modified files: {}", e))?;
+
+    // 3b. Also stage untracked files if user opted in
     if include_untracked {
         let untracked_output = crate::git::run_git_in_dir(
             &git_conn, &full_worktree_path,
@@ -343,12 +363,20 @@ pub async fn approve_task_and_merge(
             add_args.extend(untracked_files.iter().copied());
             crate::git::run_git_in_dir(&git_conn, &full_worktree_path, &add_args).await
                 .map_err(|e| format!("Failed to stage untracked files: {}", e))?;
-
-            crate::git::run_git_in_dir(
-                &git_conn, &full_worktree_path,
-                &["commit", "--no-verify", "-m", "Include new files from agent session"],
-            ).await.map_err(|e| format!("Failed to commit untracked files: {}", e))?;
         }
+    }
+
+    // 3c. Commit everything staged (modified + untracked if included)
+    let staged_output = crate::git::run_git_in_dir(
+        &git_conn, &full_worktree_path,
+        &["diff", "--cached", "--name-only"],
+    ).await.unwrap_or_default();
+
+    if !staged_output.trim().is_empty() {
+        crate::git::run_git_in_dir(
+            &git_conn, &full_worktree_path,
+            &["commit", "--no-verify", "-m", &commit_message],
+        ).await.map_err(|e| format!("Failed to commit changes: {}", e))?;
     }
 
     if merge_strategy == "CommitOnly" {

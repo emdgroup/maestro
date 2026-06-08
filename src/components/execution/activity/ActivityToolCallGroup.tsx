@@ -56,6 +56,7 @@ function groupLabel(items: ToolCallItem[]): string {
 
 function groupStatus(items: ToolCallItem[]): ToolCallItem["status"] {
   if (items.some((i) => i.status === "in_progress")) return "in_progress";
+  if (items.some((i) => i.status === "interrupted")) return "interrupted";
   if (items.every((i) => i.status === "completed")) return "completed";
   if (items.every((i) => i.status === "error")) return "error";
   if (items.every((i) => i.status === "completed" || i.status === "error")) return "completed";
@@ -97,7 +98,9 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
   const { data: settings } = useSettings();
   const visibility = settings?.tool_call_visibility ?? "auto";
 
-  const allDone = items.every((i) => i.status === "completed" || i.status === "error");
+  const allDone = items.every(
+    (i) => i.status === "completed" || i.status === "error" || i.status === "interrupted",
+  );
   const isSingleItem = items.length === 1;
   const singleItemHasContent =
     isSingleItem &&
@@ -148,13 +151,15 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
   const statusText =
     status === "error"
       ? "Failed"
-      : status === "completed"
-        ? errorCount > 0
-          ? `Done (${errorCount} failed)`
-          : "Done"
-        : status === "in_progress"
-          ? "Running"
-          : "Pending";
+      : status === "interrupted"
+        ? "Interrupted"
+        : status === "completed"
+          ? errorCount > 0
+            ? `Done (${errorCount} failed)`
+            : "Done"
+          : status === "in_progress"
+            ? "Running"
+            : "Pending";
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -189,9 +194,11 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
           className={`ml-auto flex items-center gap-1 text-[10px] font-medium shrink-0 ${
             isError
               ? "text-destructive"
-              : status === "completed"
-                ? "text-muted-foreground"
-                : "text-secondary"
+              : status === "interrupted"
+                ? "text-warning"
+                : status === "completed"
+                  ? "text-muted-foreground"
+                  : "text-secondary"
           }`}
         >
           {status === "in_progress" && <Loader2 className="w-3 h-3 animate-spin" />}

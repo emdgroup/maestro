@@ -62,6 +62,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::save_task_review,
             crate::ipc::request_changes,
             crate::ipc::get_task_review,
+            crate::ipc::clear_task_review,
             crate::ipc::resolve_commit_message,
             crate::ipc::approve_task_and_merge,
             crate::ipc::reject_review,

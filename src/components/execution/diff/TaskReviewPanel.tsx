@@ -29,6 +29,7 @@ import {
   useResolveCommitMessageQuery,
 } from "@/services/task.service";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
+import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
@@ -115,7 +116,14 @@ export function TaskReviewPanel({
   const { mutate: approveAndMerge, isPending: isApproving } = useApproveTaskAndMergeMutation();
   const { mutate: rejectReview, isPending: isRejecting } = useRejectReviewMutation();
   const { mutate: requestChanges, isPending: isRequestingChanges } = useRequestChangesMutation();
-  const { execute } = useExecuteTask(projectId, projectPath, connection);
+  const {
+    execute,
+    dirtyDialogOpen,
+    dirtyModifiedCount,
+    dirtyUntrackedCount,
+    onDirtyChoice,
+    onDirtyCancel,
+  } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
 
   // Map scope to DiffTarget
@@ -136,6 +144,7 @@ export function TaskReviewPanel({
 
   // Data queries
   const diffQuery = useWorktreeDiffQuery(projectId, worktreePath, diffTarget);
+  const uncommittedDiffQuery = useWorktreeDiffQuery(projectId, worktreePath, { type: "Head" });
   const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
   const commits = commitsQuery.data || [];
 
@@ -144,6 +153,15 @@ export function TaskReviewPanel({
     if (!diffQuery.data?.diff) return [];
     return parseDiffString(diffQuery.data.diff);
   }, [diffQuery.data?.diff]);
+
+  // Uncommitted file count (stable regardless of selected scope)
+  const uncommittedFileCount = useMemo(() => {
+    const modifiedCount = uncommittedDiffQuery.data?.diff
+      ? parseDiffString(uncommittedDiffQuery.data.diff).length
+      : 0;
+    const untrackedCount = uncommittedDiffQuery.data?.untracked_files?.length || 0;
+    return modifiedCount + untrackedCount;
+  }, [uncommittedDiffQuery.data]);
 
   // Untracked files from diff result
   const untrackedFiles = diffQuery.data?.untracked_files || [];
@@ -273,11 +291,12 @@ export function TaskReviewPanel({
             if (activeSession) {
               const blocks = buildReviewFeedbackBlocks(data);
               await api.sendAcpPromptStructured(activeSession.session_key, blocks);
-              onClose();
             } else {
               execute(task);
-              onClose();
             }
+            api.clearTaskReview(task.id).catch(() => {});
+            reviewStore.clearTask(task.id);
+            onClose();
           },
         },
       );
@@ -439,7 +458,7 @@ export function TaskReviewPanel({
               selectedScope={scope}
               onScopeChange={setScope}
               commits={commits}
-              uncommittedFileCount={untrackedFiles.length}
+              uncommittedFileCount={uncommittedFileCount}
               totalFileCount={totalFileCount}
               isLoading={commitsQuery.isLoading}
             />
@@ -612,6 +631,13 @@ export function TaskReviewPanel({
         commitCount={commits.length}
         onConfirm={handleDiscardConfirm}
         isPending={isRejecting}
+      />
+      <DirtyWorktreeDialog
+        open={dirtyDialogOpen}
+        modifiedCount={dirtyModifiedCount}
+        untrackedCount={dirtyUntrackedCount}
+        onChoice={onDirtyChoice}
+        onCancel={onDirtyCancel}
       />
     </div>
   );

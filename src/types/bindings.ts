@@ -551,6 +551,18 @@ async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | nu
 }
 },
 /**
+ * Clear the review and its comments for a task after feedback has been injected into the agent.
+ * Prevents stale comments from appearing in subsequent review cycles or being re-injected on cold starts.
+ */
+async clearTaskReview(taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_task_review", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Resolve the commit message template for a task.
  * Reads .maestro/commit-template.txt from the project path; falls back to the default template.
  * Returns the resolved string with all variables substituted.
@@ -1545,7 +1557,7 @@ export type ActiveSessionInfo = { session_key: number; session_name: string | nu
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 export type AgentCacheResponse = { config_options: AgentCatalogOption[]; available_commands: AgentCatalogCommand[]; prompt_capabilities: AcpPromptCapabilities | null; session_capabilities: AgentSessionCapabilities }
 export type AgentCatalogCommand = { name: string; description: string }
-export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string; options: AgentCatalogOptionValue[]; default_value: string | null }
+export type AgentCatalogOption = { id: string; name: string; description: string | null; category: string | null; options: AgentCatalogOptionValue[]; default_value: string | null }
 export type AgentCatalogOptionValue = { name: string; value: string; description: string | null }
 /**
  * Unified discovery result returned to the frontend via IPC.

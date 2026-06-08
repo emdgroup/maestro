@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Message Differentiation — Rotating Rainbow Border</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #ffffff;
+    --surface: #f8f9fa;
+    --surface-elevated: #ffffff;
+    --border: #e2e8f0;
+    --text: #1a1a2e;
+    --text-muted: #64748b;
+    --accent: #6366f1;
+    --agent-bg: #f1f5f9;
+  }
+
+  [data-theme="dark"] {
+    --bg: #0f1117;
+    --surface: #1a1d2e;
+    --surface-elevated: #222538;
+    --border: #2d3148;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent: #818cf8;
+    --agent-bg: #1e2235;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    transition: all 0.3s ease;
+  }
+
+  .controls {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 100;
+  }
+
+  .controls button {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-elevated);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .controls button.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600; }
+  .subtitle { color: var(--text-muted); margin-bottom: 2.5rem; font-size: 0.9rem; }
+  .section { margin-bottom: 3rem; }
+  .section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .section .desc { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 1rem; }
+
+  .stream {
+    max-width: 700px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+
+  .msg {
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .msg .label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.35rem;
+    color: var(--text-muted);
+  }
+
+  .msg.agent {
+    background: var(--agent-bg);
+    border: 1px solid var(--border);
+  }
+
+  .msg.event {
+    background: transparent;
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border);
+  }
+
+  /* ============================================
+     Rotating rainbow border
+     Key: pseudo must be SQUARE (aspect-ratio:1)
+     so conic-gradient rotates evenly.
+     ============================================ */
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .rainbow-border {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 1.5px;
+  }
+
+  .rainbow-border::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 300%;
+    aspect-ratio: 1;
+    margin-top: calc(-150% * 3); /* vertically center a square based on width */
+    margin-left: -150%;
+    background: conic-gradient(
+      #6366f1, #8b5cf6, #d946ef, #f43f5e,
+      #f97316, #eab308, #22c55e, #06b6d4,
+      #6366f1
+    );
+    animation: spin 4s linear infinite;
+  }
+
+  .rainbow-border > .rainbow-inner {
+    position: relative;
+    z-index: 1;
+    background: var(--surface-elevated);
+    border-radius: 8.5px;
+    padding: 0.85rem 1.1rem;
+  }
+
+  /* Speed variants */
+  .rainbow-border.slow::before { animation-duration: 8s; }
+  .rainbow-border.fast::before { animation-duration: 2s; }
+
+  /* Thicker border */
+  .rainbow-border.thick { padding: 2px; }
+
+  /* ============================================
+     Compose bar
+     ============================================ */
+  .composebar-section { margin-top: 1.5rem; }
+
+  .composebar {
+    max-width: 700px;
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    padding: 1.5px;
+  }
+
+  .composebar::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 300%;
+    aspect-ratio: 1;
+    margin-top: calc(-150% * 3);
+    margin-left: -150%;
+    background: conic-gradient(
+      #6366f1, #8b5cf6, #d946ef, #f43f5e,
+      #f97316, #eab308, #22c55e, #06b6d4,
+      #6366f1
+    );
+    animation: spin 4s linear infinite;
+  }
+
+  .composebar-inner {
+    position: relative;
+    z-index: 1;
+    background: var(--surface-elevated);
+    border-radius: 10.5px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .composebar-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 0.875rem;
+    font-family: inherit;
+  }
+
+  .composebar-input::placeholder { color: var(--text-muted); }
+
+  .composebar-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--accent);
+    border: none;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  /* Focus-only variant */
+  .composebar.focus-only::before { opacity: 0; transition: opacity 0.3s ease; }
+  .composebar.focus-only { border: 1px solid var(--border); }
+  .composebar.focus-only:focus-within::before { opacity: 1; }
+  .composebar.focus-only:focus-within { border-color: transparent; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    max-width: 1440px;
+  }
+
+  .idea-label {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+</style>
+</head>
+<body>
+<div class="controls">
+  <button class="active" onclick="setTheme('light')">Light</button>
+  <button onclick="setTheme('dark')">Dark</button>
+</div>
+
+<h1>Rotating Rainbow Border</h1>
+<p class="subtitle">Conic gradient on a square pseudo-element, spinning behind a clipped container. Colors chase around the border.</p>
+
+<div class="grid-2">
+
+<!-- Normal speed -->
+<div class="section">
+  <div class="idea-label">4s rotation</div>
+  <h2>Default Speed</h2>
+  <p class="desc">Full rainbow, 4-second cycle.</p>
+  <div class="stream">
+    <div class="msg event">Agent spawned worktree <code>feature/auth</code></div>
+    <div class="msg agent"><div class="label">Agent</div>I'll start by examining the authentication module structure.</div>
+    <div class="rainbow-border"><div class="rainbow-inner"><div class="label">You</div>Focus on the OAuth flow specifically — the basic auth is fine.</div></div>
+    <div class="msg event">Reading <code>src/auth/oauth.ts</code></div>
+    <div class="msg agent"><div class="label">Agent</div>Found the issue. The refresh token rotation is missing the state parameter validation.</div>
+    <div class="rainbow-border"><div class="rainbow-inner"><div class="label">You</div>Good catch. Can you also check whether the PKCE challenge is being verified on the callback?</div></div>
+    <div class="msg agent"><div class="label">Agent</div>Checking now. The PKCE verifier is stored in session but never compared against the callback code.</div>
+  </div>
+</div>
+
+<!-- Slow speed -->
+<div class="section">
+  <div class="idea-label">8s rotation</div>
+  <h2>Slow + Thick Border</h2>
+  <p class="desc">Slower, more subtle. Thicker border (2px).</p>
+  <div class="stream">
+    <div class="msg event">Agent spawned worktree <code>feature/auth</code></div>
+    <div class="msg agent"><div class="label">Agent</div>I'll start by examining the authentication module structure.</div>
+    <div class="rainbow-border slow thick"><div class="rainbow-inner"><div class="label">You</div>Focus on the OAuth flow specifically — the basic auth is fine.</div></div>
+    <div class="msg event">Reading <code>src/auth/oauth.ts</code></div>
+    <div class="msg agent"><div class="label">Agent</div>Found the issue. The refresh token rotation is missing the state parameter validation.</div>
+    <div class="rainbow-border slow thick"><div class="rainbow-inner"><div class="label">You</div>Good catch. Can you also check whether the PKCE challenge is being verified on the callback?</div></div>
+    <div class="msg agent"><div class="label">Agent</div>Checking now. The PKCE verifier is stored in session but never compared against the callback code.</div>
+  </div>
+</div>
+
+<!-- Fast speed -->
+<div class="section">
+  <div class="idea-label">2s rotation</div>
+  <h2>Fast Rotation</h2>
+  <p class="desc">More energetic, eye-catching.</p>
+  <div class="stream">
+    <div class="msg event">Agent spawned worktree <code>feature/auth</code></div>
+    <div class="msg agent"><div class="label">Agent</div>I'll start by examining the authentication module structure.</div>
+    <div class="rainbow-border fast"><div class="rainbow-inner"><div class="label">You</div>Focus on the OAuth flow specifically — the basic auth is fine.</div></div>
+    <div class="msg event">Reading <code>src/auth/oauth.ts</code></div>
+    <div class="msg agent"><div class="label">Agent</div>Found the issue. The refresh token rotation is missing the state parameter validation.</div>
+    <div class="rainbow-border fast"><div class="rainbow-inner"><div class="label">You</div>Good catch. Can you also check whether the PKCE challenge is being verified on the callback?</div></div>
+    <div class="msg agent"><div class="label">Agent</div>Checking now. The PKCE verifier is stored in session but never compared against the callback code.</div>
+  </div>
+</div>
+
+<!-- Compose bars -->
+<div class="section">
+  <div class="idea-label">Compose Bar</div>
+  <h2>Composebar Variants</h2>
+  <p class="desc">Always-on and focus-triggered.</p>
+
+  <div class="composebar-section">
+    <p class="desc">Always rotating:</p>
+    <div class="composebar">
+      <div class="composebar-inner">
+        <input class="composebar-input" placeholder="Send a message to the agent..." />
+        <button class="composebar-btn">↑</button>
+      </div>
+    </div>
+
+    <p class="desc" style="margin-top:1.5rem">Rotate on focus only (click input):</p>
+    <div class="composebar focus-only">
+      <div class="composebar-inner">
+        <input class="composebar-input" placeholder="Send a message to the agent..." />
+        <button class="composebar-btn">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : '');
+  document.querySelectorAll('.controls button').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.toLowerCase() === theme);
+  });
+}
+</script>
+</body>
+</html>
