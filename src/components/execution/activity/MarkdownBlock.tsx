@@ -26,6 +26,7 @@ import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 import { Copy, Check } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ZoomableContent } from "@/ui/zoomable-content";
 import { commands } from "@/types/bindings";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -365,11 +366,17 @@ export function MermaidBlock({ code }: { code: string }) {
     return <div className="h-24 bg-muted/50 rounded-md my-2 animate-pulse" />;
   }
   return (
-    <div
+    <ZoomableContent
       className="my-2 overflow-x-auto"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid strict-mode SVG
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+      ariaLabel="Mermaid diagram"
+      lightboxContent={
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid strict-mode SVG
+        <div dangerouslySetInnerHTML={{ __html: svg }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+      }
+    >
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid strict-mode SVG */}
+      <div dangerouslySetInnerHTML={{ __html: svg }} />
+    </ZoomableContent>
   );
 }
 
@@ -390,11 +397,17 @@ export function SvgBlock({ code }: { code: string }) {
     );
   }
   return (
-    <div
+    <ZoomableContent
       className="my-2 overflow-x-auto"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-    />
+      ariaLabel="SVG graphic"
+      lightboxContent={
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist
+        <div dangerouslySetInnerHTML={{ __html: sanitized }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+      }
+    >
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist */}
+      <div dangerouslySetInnerHTML={{ __html: sanitized }} />
+    </ZoomableContent>
   );
 }
 
@@ -430,9 +443,9 @@ export function SmilesBlock({ code }: { code: string }) {
   }
 
   return (
-    <div className="my-2 flex justify-start">
+    <ZoomableContent className="my-2 flex justify-start" ariaLabel="Molecular structure">
       <svg ref={svgRef} width={400} height={300} />
-    </div>
+    </ZoomableContent>
   );
 }
 
@@ -657,7 +670,9 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
   }
 
   return (
-    <img src={resolvedSrc} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+    <ZoomableContent ariaLabel={alt || "Image"}>
+      <img src={resolvedSrc} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+    </ZoomableContent>
   );
 }
 
@@ -710,7 +725,9 @@ export const MARKDOWN_COMPONENTS = {
   ),
   a: MarkdownAnchorComponent,
   img: ({ src, alt }: { src?: string; alt?: string }) => (
-    <img src={src} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+    <ZoomableContent ariaLabel={alt || "Image"}>
+      <img src={src} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+    </ZoomableContent>
   ),
   table: ({ children }: { children?: ReactNode }) => (
     <InteractiveTable>{children}</InteractiveTable>

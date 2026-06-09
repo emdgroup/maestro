@@ -1,7 +1,7 @@
-import { User } from "lucide-react";
+import { User, Paperclip } from "lucide-react";
 import type { UserMessageItem } from "./types";
 import { MarkdownBlock } from "./MarkdownBlock";
-import { Paperclip } from "lucide-react";
+import { ZoomableContent } from "@/ui/zoomable-content";
 
 function escapeHtml(str: string): string {
   return str
@@ -109,12 +109,13 @@ export function ActivityUserMessage({ message }: ActivityUserMessageProps) {
             {hasExtras && (
               <div className="flex flex-wrap items-start gap-2 mt-2 pt-2 border-t border-border/15">
                 {imageBlocks.map((b, i) => (
-                  <img
-                    key={i}
-                    src={`data:${b.mimeType};base64,${b.data}`}
-                    alt={b.name}
-                    className="max-w-[240px] max-h-48 rounded-md border border-border/20 object-cover"
-                  />
+                  <ZoomableContent key={i} ariaLabel={b.name}>
+                    <img
+                      src={`data:${b.mimeType};base64,${b.data}`}
+                      alt={b.name}
+                      className="max-w-[240px] max-h-48 rounded-md border border-border/20 object-cover"
+                    />
+                  </ZoomableContent>
                 ))}
                 {attachmentBlocks.map((b, i) => (
                   <span
