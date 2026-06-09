@@ -5,12 +5,13 @@ import { cn } from "@/lib/ui-utils";
 import type { SelectorProps } from "./BaseDropdownSelector";
 
 export function EffortSelector({ option, value, onChange, disabled }: SelectorProps) {
-  const currentIdx = option.options.findIndex((o) => o.value === value);
+  const options = option.options.filter((o) => o.value !== "default");
+  const currentIdx = options.findIndex((o) => o.value === value);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const displayIdx = hoveredIdx ?? currentIdx;
-  const n = option.options.length;
+  const n = options.length;
 
-  const displayName = option.options[displayIdx]?.name ?? value;
+  const displayName = options[displayIdx]?.name ?? value;
 
   function barHeight(i: number): number {
     if (n <= 1) return 14;
@@ -35,7 +36,7 @@ export function EffortSelector({ option, value, onChange, disabled }: SelectorPr
 
           {/* Growing bars — slide in on hover */}
           <div className="flex items-end gap-0.5 overflow-hidden max-w-0 group-hover:max-w-20 transition-[max-width] duration-200 ease-out ml-0.5">
-            {option.options.map((opt, i) => {
+            {options.map((opt, i) => {
               const filled = i <= displayIdx;
               const height = barHeight(i);
               return (
