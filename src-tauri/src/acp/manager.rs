@@ -16,20 +16,13 @@ use crate::acp::transport::{
     PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
     SessionListOkResponse, SessionCloseRequest,
     CheckToolsRequest, CheckToolsResponse, PermissionResponse,
+    SetConfigOptionRequest,
 };
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse,
     DetectProjectAgentsRequest, DetectProjectAgentsResponse,
 };
 
-
-/// A pre-warmed session held in the pool, keyed by (project_id, agent_id).
-/// The AcpProcess itself lives in AppState.acp.sessions under this log_id.
-pub struct PooledSession {
-    pub log_id: i32,
-    pub session_id: String,
-    pub cwd: String,
-}
 
 /// Metadata captured for sessions that were active when the connection server died.
 /// Used to reload them after SSH reconnects via the session/load mechanism.
@@ -526,57 +519,10 @@ pub async fn try_spawn_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    emit_cached_capabilities(&acp_process, req.connection_key, &req.agent_id, req.log_id, &req.app_state).await;
     req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
     Ok(true)
 }
 
-/// Emit cached catalog as legacy session-models/session-modes/session-capabilities events
-/// immediately after session creation, so the frontend gets available options before SpawnOk.
-/// Seeds per-session current_model_id/current_mode_id with the catalog's first option value
-/// as a best-guess; real current values arrive via SpawnOk/config_option_update.
-pub async fn emit_cached_capabilities(
-    acp_process: &AcpProcess,
-    connection_key: crate::acp::ConnectionKey,
-    agent_id: &str,
-    log_id: i32,
-    app_state: &Arc<crate::core::AppState>,
-) {
-    let cache = match app_state.acp.agent_cache.lock().await.get(&(connection_key, agent_id.to_string())).cloned() {
-        Some(c) => c,
-        None => return,
-    };
-
-    if let Some(model_opt) = cache.config_options.iter().find(|o| o.id == "model") {
-        if let Some(first) = model_opt.options.first() {
-            if let Ok(mut m) = acp_process.current_model_id.lock() { *m = Some(first.value.clone()); }
-        }
-        let legacy_models = serde_json::json!({
-            "current_model_id": model_opt.options.first().map(|v| &v.value),
-            "available_models": model_opt.options.iter().map(|v| serde_json::json!({
-                "model_id": v.value, "name": v.name
-            })).collect::<Vec<_>>(),
-        });
-        let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), &legacy_models);
-    }
-
-    if let Some(mode_opt) = cache.config_options.iter().find(|o| o.id == "mode") {
-        if let Some(first) = mode_opt.options.first() {
-            if let Ok(mut m) = acp_process.current_mode_id.lock() { *m = Some(first.value.clone()); }
-        }
-        let legacy_modes = serde_json::json!({
-            "current_mode_id": mode_opt.options.first().map(|v| &v.value),
-            "available_modes": mode_opt.options.iter().map(|v| serde_json::json!({
-                "mode_id": v.value, "name": v.name
-            })).collect::<Vec<_>>(),
-        });
-        let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), &legacy_modes);
-    }
-
-    if let Some(caps) = &cache.prompt_capabilities {
-        let _ = app_state.app_handle.emit(&format!("acp://session-capabilities/{}", log_id), caps);
-    }
-}
 
 /// Open a transport channel, write the initial message, register the ACP process, and
 /// spawn the reader task. Shared by `spawn_acp_session_cold` and `load_acp_session_cold`.
@@ -802,11 +748,39 @@ pub(crate) fn spawn_reader_task(
                 }
             }
 
+            // Extract current mode before handle_server_message takes ownership of msg.
+            // Used to refresh config_options via a no-op SetConfigOption after spawn/load.
+            let refresh_mode_id = match &msg {
+                MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
+                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
+                }
+                MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
+                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
+                }
+                _ => None,
+            };
+
             if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
                     }
+                }
+            }
+
+            // After SpawnOk/SessionLoadOk, echo current mode via SetConfigOption to retrieve
+            // full config_options. ACP has no read-only config query; the set response always
+            // includes the complete config_options array even when the value is unchanged.
+            if let Some(mode_id) = refresh_mode_id {
+                let refresh_msg = MaestroRpcMessage::Request(ServerRequest::SetConfigOption(
+                    SetConfigOptionRequest {
+                        session_id: format!("session-{}", log_id),
+                        config_id: "mode".to_string(),
+                        value: mode_id,
+                    },
+                ));
+                if let Err(err) = write_to_acp_session(&app_state, log_id, &refresh_msg).await {
+                    eprintln!("[maestro] config refresh failed for log_id={log_id}: {err}");
                 }
             }
         }
@@ -1031,6 +1005,12 @@ fn handle_server_message(
                 spawn_ok.prompt_capabilities.as_ref(),
                 log_id, app_handle, current_model_id, current_mode_id,
             );
+            if let Some(ref config_options) = spawn_ok.config_options {
+                let _ = app_handle.emit(
+                    &format!("acp://config-state-updated/{}", log_id),
+                    &serde_json::json!({ "configOptions": config_options }),
+                );
+            }
             let new_native_id = if let Some(native_id) = spawn_ok.acp_session_id {
                 if let Ok(mut cache) = acp_session_id_cache.lock() {
                     *cache = Some(native_id.clone());
@@ -1051,6 +1031,12 @@ fn handle_server_message(
                 load_ok.prompt_capabilities.as_ref(),
                 log_id, app_handle, current_model_id, current_mode_id,
             );
+            if let Some(ref config_options) = load_ok.config_options {
+                let _ = app_handle.emit(
+                    &format!("acp://config-state-updated/{}", log_id),
+                    &serde_json::json!({ "configOptions": config_options }),
+                );
+            }
             push_config_init_to_buffer(load_ok.models.as_ref(), load_ok.modes.as_ref(), replay_buffer);
             if let Ok(mut init) = initialized.lock() { *init = true; }
             let _ = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ());
@@ -1162,45 +1148,6 @@ async fn write_to_acp_session_raw(
     Ok(())
 }
 
-fn model_state_to_catalog_option(state: &SessionModelState) -> CatalogOption {
-    CatalogOption {
-        id: "model".to_string(),
-        name: "Model".to_string(),
-        description: None,
-        category: Some("model".to_string()),
-        options: state.available_models.iter().map(|m| CatalogOptionValue {
-            name: m.name.clone(),
-            value: m.model_id.clone(),
-            description: m.description.clone(),
-        }).collect(),
-        current_value: Some(state.current_model_id.clone()),
-        default_value: Some(state.current_model_id.clone()),
-    }
-}
-
-fn mode_state_to_catalog_option(state: &SessionModeState) -> CatalogOption {
-    CatalogOption {
-        id: "mode".to_string(),
-        name: "Permission mode".to_string(),
-        description: None,
-        category: Some("mode".to_string()),
-        options: state.available_modes.iter().map(|m| CatalogOptionValue {
-            name: m.name.clone(),
-            value: m.mode_id.clone(),
-            description: m.description.clone(),
-        }).collect(),
-        current_value: Some(state.current_mode_id.clone()),
-        default_value: Some(state.current_mode_id.clone()),
-    }
-}
-
-fn upsert_catalog_option(options: &mut Vec<CatalogOption>, option: CatalogOption) {
-    if let Some(existing) = options.iter_mut().find(|o| o.id == option.id) {
-        *existing = option;
-    } else {
-        options.push(option);
-    }
-}
 
 pub(crate) fn upsert_session_alias(
     conn: &rusqlite::Connection,
@@ -1277,22 +1224,22 @@ async fn update_agent_cache_from_response(
         _ => {}
     }
 
-    let (models, modes, caps, spawn_caps) = match msg {
+    let (caps, spawn_caps, config_options_raw) = match msg {
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
             let spawn_caps = Some(SessionCapabilitiesInfo {
                 supports_session_list: r.supports_session_list,
                 supports_session_load: r.supports_session_load,
                 supports_session_close: r.supports_session_close,
             });
-            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), spawn_caps)
+            (r.prompt_capabilities.as_ref(), spawn_caps, r.config_options.as_deref())
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-            (r.models.as_ref(), r.modes.as_ref(), r.prompt_capabilities.as_ref(), None)
+            (r.prompt_capabilities.as_ref(), None, r.config_options.as_deref())
         }
         _ => return,
     };
 
-    if models.is_none() && modes.is_none() && caps.is_none() && spawn_caps.is_none() {
+    if caps.is_none() && spawn_caps.is_none() {
         return;
     }
 
@@ -1311,17 +1258,23 @@ async fn update_agent_cache_from_response(
         let entry = cache_map
             .entry((connection_key, agent_id.clone()))
             .or_insert_with(AgentCache::default);
-        if let Some(m) = models {
-            upsert_catalog_option(&mut entry.config_options, model_state_to_catalog_option(m));
-        }
-        if let Some(m) = modes {
-            upsert_catalog_option(&mut entry.config_options, mode_state_to_catalog_option(m));
-        }
         if let Some(c) = caps {
             entry.prompt_capabilities = Some(c.clone());
         }
         if let Some(sc) = spawn_caps {
             entry.session_capabilities = sc;
+        }
+        match config_options_raw {
+            Some(opts) => {
+                if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(
+                    serde_json::Value::Array(opts.to_vec()),
+                ) {
+                    entry.config_options = options;
+                }
+            }
+            None => {
+                entry.config_options = Vec::new();
+            }
         }
     }
     let mut payload = serde_json::to_value(&connection_key).unwrap_or_default();
@@ -1385,7 +1338,6 @@ async fn handle_shared_server_message(
     app_state: &Arc<crate::core::AppState>,
     pending: &PendingChannels,
 ) {
-    eprintln!("[maestro] handle_shared_server_message: log_id={:?} msg={msg:?}", extract_session_log_id(&msg));
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(log_id) = extract_session_log_id(&msg) {
@@ -1435,6 +1387,17 @@ async fn handle_shared_server_message(
                 }
             }
 
+            // Extract current mode before handle_server_message takes ownership of msg.
+            let refresh_mode_id = match &msg {
+                MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
+                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
+                }
+                MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
+                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
+                }
+                _ => None,
+            };
+
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
@@ -1444,6 +1407,19 @@ async fn handle_shared_server_message(
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, project_id_val, &agent_id, &native_id, name);
                     }
+                }
+            }
+
+            if let Some(mode_id) = refresh_mode_id {
+                let refresh_msg = MaestroRpcMessage::Request(ServerRequest::SetConfigOption(
+                    SetConfigOptionRequest {
+                        session_id: format!("session-{}", log_id),
+                        config_id: "mode".to_string(),
+                        value: mode_id,
+                    },
+                ));
+                if let Err(err) = write_to_acp_session(app_state, log_id, &refresh_msg).await {
+                    eprintln!("[maestro] config refresh failed for log_id={log_id}: {err}");
                 }
             }
         }
@@ -1703,31 +1679,9 @@ fn spawn_shared_reader_task(
         // Server process died — clean up all shared sessions for this connection.
         app_state.acp.connection_servers.lock().await.remove(&connection_key);
 
-        // Pool entries are pre-warmed sessions with no user work — exclude them from the
-        // restorable list so they are not reloaded after reconnect. The pool is also cleared
-        // for this connection so stale entries don't linger; it replenishes naturally after restore.
-        let pool_log_ids: std::collections::HashSet<i32> = {
-            let sessions = app_state.acp.sessions.lock().await;
-            let connection_log_ids: std::collections::HashSet<i32> = sessions
-                .iter()
-                .filter(|(_, s)| s.connection_key == connection_key)
-                .map(|(id, _)| *id)
-                .collect();
-            drop(sessions);
-            let mut pool = app_state.acp.session_pool.lock().await;
-            let ids: std::collections::HashSet<i32> = pool
-                .values()
-                .filter(|p| connection_log_ids.contains(&p.log_id))
-                .map(|p| p.log_id)
-                .collect();
-            pool.retain(|_, p| !ids.contains(&p.log_id));
-            ids
-        };
-
         // Snapshot restorable metadata before removing sessions from the map.
         // Sessions without an acp_session_id haven't received SpawnOk yet and cannot
         // be restored — emit session-ended for those immediately.
-        // Pool sessions (pre-warmed, no user work) are silently dropped.
         // Collect task_ids for sessions that will end now (not parked for SSH restore).
         let (to_restore, to_end_now, end_now_task_ids): (Vec<RestorableSession>, Vec<i32>, Vec<i32>) = {
             let sessions = app_state.acp.sessions.lock().await;
@@ -1736,9 +1690,6 @@ fn spawn_shared_reader_task(
             let mut task_ids: Vec<i32> = Vec::new();
             let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. });
             for (log_id, s) in sessions.iter().filter(|(_, s)| s.connection_key == connection_key) {
-                if pool_log_ids.contains(log_id) {
-                    continue;
-                }
                 let acp_session_id = s.acp_session_id.lock().ok().and_then(|g| g.clone());
                 if acp_session_id.is_some() && is_ssh {
                     restorable.push(RestorableSession {
@@ -1760,16 +1711,13 @@ fn spawn_shared_reader_task(
             (restorable, unrestorable, task_ids)
         };
 
-        // Remove all affected sessions from the map (including pool entries).
+        // Remove all affected sessions from the map.
         {
             let mut sessions = app_state.acp.sessions.lock().await;
             for s in &to_restore {
                 sessions.remove(&s.log_id);
             }
             for log_id in &to_end_now {
-                sessions.remove(log_id);
-            }
-            for log_id in &pool_log_ids {
                 sessions.remove(log_id);
             }
         }
@@ -2041,20 +1989,11 @@ pub async fn pre_initialize_via_connection_server(
         .map_err(|_| format!("PreInitialize timed out for agent {}", agent_id))?
         .map_err(|_| "PreInitialize response channel dropped".to_string())??;
 
-    // Populate agent-level catalog cache from the warm session's models/modes/capabilities.
-    // session_capabilities are not provided by PreInitialize (no SpawnOk), so they are
-    // left at default until the first SpawnOk/SessionLoadOk updates the cache entry.
-    if response.models.is_some() || response.modes.is_some() || response.prompt_capabilities.is_some() {
+    // Populate agent-level cache from prompt_capabilities.
+    // Models/modes are not available until the first SpawnOk.
+    if let Some(capabilities) = &response.prompt_capabilities {
         let mut cache_entry = AgentCache::default();
-        if let Some(m) = &response.models {
-            upsert_catalog_option(&mut cache_entry.config_options, model_state_to_catalog_option(m));
-        }
-        if let Some(m) = &response.modes {
-            upsert_catalog_option(&mut cache_entry.config_options, mode_state_to_catalog_option(m));
-        }
-        if let Some(c) = &response.prompt_capabilities {
-            cache_entry.prompt_capabilities = Some(c.clone());
-        }
+        cache_entry.prompt_capabilities = Some(capabilities.clone());
         app_state
             .acp
             .agent_cache
@@ -2136,7 +2075,6 @@ pub async fn try_session_load_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    emit_cached_capabilities(&acp_process, req.connection_key, &req.agent_id, req.log_id, &req.app_state).await;
     req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
 
     if writer_tx.send(bytes).await.is_err() {

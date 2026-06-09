@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::collections::HashSet;
 use tauri::State;
 use tauri::Emitter;
 use serde::{Deserialize, Serialize};
@@ -44,16 +43,11 @@ pub async fn get_active_sessions(
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
 
-    let pooled_log_ids: HashSet<i32> = {
-        let pool = app_state.acp.session_pool.lock().await;
-        pool.values().map(|p| p.log_id).collect()
-    };
     let acp_session_data: Vec<_> = {
         let acp = app_state.acp.sessions.lock().await;
         acp.iter()
-            .filter(|(key, proc)| {
-                !pooled_log_ids.contains(key)
-                    && proc.project_id == Some(project_id)
+            .filter(|(_, proc)| {
+                proc.project_id == Some(project_id)
             })
             .map(|(key, proc)| {
                 let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());

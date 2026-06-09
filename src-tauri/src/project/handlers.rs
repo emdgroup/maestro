@@ -1027,14 +1027,6 @@ pub async fn prime_project_server(
                     &app_state,
                 )
                 .await?;
-                crate::acp::session_handlers::spawn_pooled_session(
-                    &*app_state,
-                    project_id,
-                    ConnectionKey::Ssh { id: conn_id },
-                    &agent_id,
-                    &project_path,
-                )
-                .await;
             }
         }
 
@@ -1084,14 +1076,6 @@ pub async fn prime_project_server(
                         &app_state,
                     )
                     .await?;
-                    crate::acp::session_handlers::spawn_pooled_session(
-                        &*app_state,
-                        project_id,
-                        ConnectionKey::Wsl { id: wsl_id },
-                        &agent_id,
-                        &project_path,
-                    )
-                    .await;
                 }
             }
             #[cfg(not(windows))]
@@ -1114,14 +1098,6 @@ pub async fn prime_project_server(
                     &app_state,
                 )
                 .await?;
-                crate::acp::session_handlers::spawn_pooled_session(
-                    &*app_state,
-                    project_id,
-                    ConnectionKey::Local,
-                    &agent_id,
-                    &project_path,
-                )
-                .await;
             }
         }
     }

@@ -1675,7 +1675,7 @@ export type ReviewResult = { success: boolean; review_id: number; task_status: s
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null }
-export type SpawnSessionResult = { log_id: number; ready: boolean }
+export type SpawnSessionResult = { log_id: number }
 /**
  * SSH authentication method configuration
  */

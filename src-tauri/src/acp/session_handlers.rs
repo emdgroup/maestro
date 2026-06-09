@@ -5,7 +5,7 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::core::AppState;
-use crate::acp::{PooledSession, SessionRequest, TaskMetadata, ConnectionKey};
+use crate::acp::{SessionRequest, TaskMetadata, ConnectionKey};
 
 use super::session_id_for;
 
@@ -13,38 +13,6 @@ use super::session_id_for;
 #[specta(export)]
 pub struct SpawnSessionResult {
     pub log_id: i32,
-    pub ready: bool,
-}
-
-/// Spawn a pooled session for the given agent using the running connection server.
-pub async fn spawn_pooled_session(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-    connection_key: ConnectionKey,
-    agent_id: &str,
-    cwd: &str,
-) {
-    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let session_id = session_id_for(log_id);
-
-    let req = SessionRequest {
-        connection_key,
-        agent_id: agent_id.to_string(),
-        cwd: cwd.to_string(),
-        log_id,
-        session_name: None,
-        project_id: Some(project_id),
-        task_id: None,
-        app_state: Arc::clone(app_state),
-    };
-    let spawned = crate::acp::try_spawn_via_connection_server(&session_id, TaskMetadata::default(), &req).await;
-
-    if matches!(spawned, Ok(true)) {
-        app_state.acp.session_pool.lock().await.insert(
-            (project_id, agent_id.to_string()),
-            PooledSession { log_id, session_id, cwd: cwd.to_string() },
-        );
-    }
 }
 
 #[tauri::command]
@@ -76,35 +44,6 @@ pub async fn spawn_acp_session(
                 ).ok()
             })
     });
-
-    // Pool claim
-    {
-        let mut pool = app_state.acp.session_pool.lock().await;
-        if let Some(pooled) = pool.remove(&(project_id, agent_id.clone())) {
-            if pooled.cwd == cwd {
-                if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&pooled.log_id) {
-                    proc.session_name = session_name;
-                    proc.branch_name = branch_name;
-                    proc.task_id = task_id;
-                    proc.task_name = task_name;
-                }
-                drop(pool);
-
-                let state = Arc::clone(&*app_state);
-                let aid = agent_id.clone();
-                let pool_cwd = pooled.cwd.clone();
-                let pool_connection_key = connection;
-                tokio::spawn(async move {
-                    spawn_pooled_session(&state, project_id, pool_connection_key, &aid, &pool_cwd).await;
-                });
-
-                app_state.app_handle.emit("sessions-changed", ()).ok();
-                return Ok(SpawnSessionResult { log_id: pooled.log_id, ready: true });
-            } else {
-                pool.insert((project_id, agent_id.clone()), pooled);
-            }
-        }
-    }
 
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
@@ -167,7 +106,7 @@ pub async fn spawn_acp_session(
         &req,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
-        return Ok(SpawnSessionResult { log_id, ready: false });
+        return Ok(SpawnSessionResult { log_id });
     }
 
     // Cold path
@@ -242,7 +181,7 @@ pub async fn spawn_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    Ok(SpawnSessionResult { log_id, ready: false })
+    Ok(SpawnSessionResult { log_id })
 }
 
 /// Cancel a running ACP session — kills the maestro-server subprocess and cleans up.

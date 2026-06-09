@@ -353,6 +353,8 @@ pub struct SessionLoadOkResponse {
     pub modes: Option<SessionModeState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_options: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -372,6 +374,8 @@ pub struct SpawnResponse {
     pub supports_session_load: bool,
     #[serde(default)]
     pub supports_session_close: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_options: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -385,10 +389,6 @@ pub struct PreInitializeResponse {
     pub supports_session_load: bool,
     #[serde(default)]
     pub supports_session_close: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub models: Option<SessionModelState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub modes: Option<SessionModeState>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -610,6 +610,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -645,6 +646,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -887,6 +889,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -911,6 +914,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            config_options: None,
         }));
         let req_json = serde_json::to_string(&req).unwrap();
         let resp_json = serde_json::to_string(&resp).unwrap();
@@ -946,8 +950,6 @@ mod tests {
             supports_session_list: true,
             supports_session_load: true,
             supports_session_close: false,
-            models: None,
-            modes: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

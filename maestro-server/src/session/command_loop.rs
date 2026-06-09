@@ -1,15 +1,13 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
 use acp::schema::{
-    CancelNotification, ClientCapabilities, CloseSessionRequest, Implementation,
-    InitializeRequest, PromptRequest, PromptResponse, ProtocolVersion, SessionConfigId,
+    CancelNotification, CloseSessionRequest,
+    PromptRequest, PromptResponse, SessionConfigId,
     SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
     SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModelRequest,
     SetSessionModeRequest, StopReason,
 };
-use agent_client_protocol_schema::{ElicitationCapabilities, ElicitationFormCapabilities};
 use maestro_protocol::{
     ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage,
     ModeInfo as ProtocolModeInfo, ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo,
@@ -17,13 +15,10 @@ use maestro_protocol::{
     SessionModelState as ProtocolSessionModelState, SetModeOkResponse, SetModelOkResponse,
     TurnEnded,
 };
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio::sync::{mpsc, Mutex};
 
-use crate::agent;
 use crate::send_response;
-use crate::sessions::{SessionCommand, SharedSessionState, TerminalHandle};
-use super::handlers::ConnectionHandlers;
+use crate::sessions::SessionCommand;
 
 pub(crate) async fn handle_prompt_result(
     result: Result<PromptResponse, acp::Error>,
@@ -84,7 +79,7 @@ pub(crate) fn convert_acp_modes(
     })
 }
 
-fn serialize_config_options(options: &[SessionConfigOption]) -> Vec<serde_json::Value> {
+pub(crate) fn serialize_config_options(options: &[SessionConfigOption]) -> Vec<serde_json::Value> {
     options
         .iter()
         .filter_map(|opt| serde_json::to_value(opt).ok())
@@ -364,81 +359,3 @@ pub(crate) async fn run_command_loop(
     }
 }
 
-type AgentTransport = acp::ByteStreams<Compat<tokio::process::ChildStdin>, Compat<tokio::process::ChildStdout>>;
-
-pub(crate) struct AgentBootstrap {
-    pub(crate) child: tokio::process::Child,
-    pub(crate) transport: AgentTransport,
-    pub(crate) cmd_tx: mpsc::Sender<SessionCommand>,
-    pub(crate) cmd_rx: mpsc::Receiver<SessionCommand>,
-    pub(crate) pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
-    pub(crate) pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
-    pub(crate) session_state: Arc<SharedSessionState>,
-    pub(crate) handlers: ConnectionHandlers,
-    pub(crate) terms: Arc<Mutex<HashMap<String, TerminalHandle>>>,
-    pub(crate) so: Arc<Mutex<tokio::io::Stdout>>,
-    pub(crate) sid: String,
-    pub(crate) cwd_owned: String,
-}
-
-pub(crate) async fn bootstrap_agent_transport(
-    spawn_cmd: &str,
-    spawn_args: &[String],
-    spawn_env: &HashMap<String, String>,
-    cwd: &str,
-    maestro_session_id: String,
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Option<AgentBootstrap> {
-    eprintln!("[session_handler] bootstrap_agent_transport: cmd={spawn_cmd:?} args={spawn_args:?} cwd={cwd:?}");
-    let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
-        Ok(c) => {
-            eprintln!("[session_handler] agent subprocess spawned OK");
-            c
-        }
-        Err(e) => {
-            eprintln!("[session_handler] agent spawn FAILED: {e}");
-            let _ = send_response(&stdout, &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e }))).await;
-            return None;
-        }
-    };
-    if let Some(stderr_pipe) = child.stderr.take() {
-        tokio::spawn(async move {
-            use tokio::io::{AsyncBufReadExt, BufReader};
-            let mut lines = BufReader::new(stderr_pipe).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                eprintln!("[agent-stderr] {line}");
-            }
-        });
-    }
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let transport = acp::ByteStreams::new(child_stdin.compat_write(), child_stdout.compat());
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let session_state = Arc::new(SharedSessionState {
-        pending_permissions: Arc::clone(&pending_permissions),
-        pending_elicitations: Arc::clone(&pending_elicitations),
-    });
-    let (handlers, _router) = ConnectionHandlers::new(Arc::clone(&stdout));
-    let terms = Arc::clone(&handlers.terminals);
-    let so = Arc::clone(&stdout);
-    let sid = maestro_session_id;
-    let cwd_owned = cwd.to_string();
-    Some(AgentBootstrap { child, transport, cmd_tx, cmd_rx, pending_permissions, pending_elicitations, session_state, handlers, terms, so, sid, cwd_owned })
-}
-
-pub(crate) fn build_initialize_request() -> InitializeRequest {
-    InitializeRequest::new(ProtocolVersion::V1)
-        .client_info(Implementation::new("maestro-server", "0.1.0"))
-        .client_capabilities(
-            ClientCapabilities::new()
-                .terminal(true)
-                .elicitation(
-                    ElicitationCapabilities::new()
-                        .form(ElicitationFormCapabilities::new()),
-                ),
-        )
-}

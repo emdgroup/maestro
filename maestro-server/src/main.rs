@@ -32,9 +32,8 @@ use tokio::sync::Mutex;
 
 use file_ops::{handle_file_read, handle_file_search};
 use session::{
-    create_session_on_connection, load_acp_session, load_session_on_connection,
-    pre_initialize_agent, run_session_close, run_session_list, session_close_on_connection,
-    session_list_on_connection, spawn_acp_session,
+    create_session_on_connection, load_session_on_connection,
+    pre_initialize_agent, session_close_on_connection, session_list_on_connection,
 };
 use sessions::{AgentConnectionMap, SessionCommand, SessionMap};
 
@@ -60,6 +59,30 @@ async fn resolve_agent_spawn_params(
             .await;
             None
         }
+    }
+}
+
+/// Ensures an `AgentConnection` exists for `agent_id`, initializing one if needed.
+/// Returns `true` if a connection is available (existing or newly created).
+/// Returns `false` if initialization failed (error already sent to stdout).
+async fn ensure_agent_connection(
+    agent_id: &str,
+    agent_connections: &mut AgentConnectionMap,
+    agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
+    cwd: &str,
+    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+) -> bool {
+    if agent_connections.contains_key(agent_id) {
+        return true;
+    }
+    let Some((cmd, args, env)) = resolve_agent_spawn_params(agent_id, agents_with_spawn, stdout).await
+    else { return false; };
+    match pre_initialize_agent(&cmd, &args, &env, cwd, Arc::clone(stdout)).await {
+        Some(conn) => {
+            agent_connections.insert(agent_id.to_string(), conn);
+            true
+        }
+        None => false,
     }
 }
 
@@ -231,33 +254,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
                 eprintln!("[main] Spawn request: agent_id={:?} session_id={:?} cwd={:?}", req.agent_id, req.session_id, req.cwd);
-                let used_fast_path = agent_connections.contains_key(&req.agent_id);
-                eprintln!("[main] fast_path={used_fast_path}");
-                let result = if used_fast_path {
-                    let conn = agent_connections.get(&req.agent_id).unwrap();
-                    create_session_on_connection(
-                        conn,
-                        req.session_id.clone(),
-                        &req.cwd,
-                        Arc::clone(&stdout),
-                    )
-                    .await
-                } else {
-                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
-                    else { continue; };
-                    spawn_acp_session(
-                        &spawn_cmd,
-                        &spawn_args_owned,
-                        &spawn_env,
-                        &req.cwd,
-                        req.session_id.clone(),
-                        Arc::clone(&stdout),
-                    )
-                    .await
+                if !ensure_agent_connection(&req.agent_id, &mut agent_connections, &agents_with_spawn, &req.cwd, &stdout).await {
+                    continue;
+                }
+                let result = {
+                    let conn = agent_connections.get(&req.agent_id).expect("ensure_agent_connection guarantees entry");
+                    create_session_on_connection(conn, req.session_id.clone(), &req.cwd, Arc::clone(&stdout)).await
                 };
-
-                if used_fast_path && result.is_none() {
+                if result.is_none() {
                     agent_connections.remove(&req.agent_id);
                 }
 
@@ -271,6 +275,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         supports_session_list: result.supports_session_list,
                         supports_session_load: result.supports_session_load,
                         supports_session_close: result.supports_session_close,
+                        config_options: result.config_options,
                     };
                     sessions.insert(req.session_id, result.session);
                     send_or_break!(send_response(
@@ -462,17 +467,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
-                let used_fast_path = agent_connections.contains_key(&req.agent_id);
-                let list_result = if used_fast_path {
-                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                if !ensure_agent_connection(&req.agent_id, &mut agent_connections, &agents_with_spawn, &req.cwd, &stdout).await {
+                    continue;
+                }
+                let list_result = {
+                    let conn = agent_connections.get(&req.agent_id).expect("ensure_agent_connection guarantees entry");
                     session_list_on_connection(conn, &req.cwd, req.cursor).await
-                } else {
-                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
-                    else { continue; };
-                    run_session_list(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.cursor).await
                 };
-                if used_fast_path && list_result.is_err() {
+                if list_result.is_err() {
                     agent_connections.remove(&req.agent_id);
                 }
                 match list_result {
@@ -498,9 +500,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {
-                let used_fast_path = agent_connections.contains_key(&req.agent_id);
-                let result = if used_fast_path {
-                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                if !ensure_agent_connection(&req.agent_id, &mut agent_connections, &agents_with_spawn, &req.cwd, &stdout).await {
+                    continue;
+                }
+                let result = {
+                    let conn = agent_connections.get(&req.agent_id).expect("ensure_agent_connection guarantees entry");
                     load_session_on_connection(
                         conn,
                         req.session_id.clone(),
@@ -509,27 +513,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         Arc::clone(&stdout),
                     )
                     .await
-                } else {
-                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
-                    else { continue; };
-                    load_acp_session(
-                        &spawn_cmd,
-                        &spawn_args_owned,
-                        &spawn_env,
-                        &req.cwd,
-                        req.resume_session_id.clone(),
-                        req.session_id.clone(),
-                        Arc::clone(&stdout),
-                    )
-                    .await
                 };
-
-                if used_fast_path && result.is_none() {
+                if result.is_none() {
                     agent_connections.remove(&req.agent_id);
                 }
 
-                if let Some((session, models, modes, prompt_caps)) = result {
+                if let Some((session, models, modes, prompt_caps, config_options)) = result {
                     sessions.insert(req.session_id.clone(), session);
                     send_or_break!(send_response(
                         &stdout,
@@ -539,6 +528,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 models,
                                 modes,
                                 prompt_capabilities: Some(prompt_caps),
+                                config_options,
                             },
                         )),
                     )
@@ -547,17 +537,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionClose(req)) => {
-                let used_fast_path = agent_connections.contains_key(&req.agent_id);
-                let close_result = if used_fast_path {
-                    let conn = agent_connections.get(&req.agent_id).unwrap();
+                let had_connection = agent_connections.contains_key(&req.agent_id);
+                let close_result = if had_connection {
+                    let conn = agent_connections.get(&req.agent_id).expect("checked above");
                     session_close_on_connection(conn, req.session_id).await
                 } else {
-                    let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
-                        resolve_agent_spawn_params(&req.agent_id, &agents_with_spawn, &stdout).await
-                    else { continue; };
-                    run_session_close(&spawn_cmd, &spawn_args_owned, &spawn_env, &req.cwd, req.session_id).await
+                    Err(format!("no active connection for agent {}", req.agent_id))
                 };
-                if used_fast_path && close_result.is_err() {
+                if had_connection && close_result.is_err() {
                     agent_connections.remove(&req.agent_id);
                 }
                 match close_result {
@@ -604,30 +591,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 {
                     Some(conn) => {
-                        // Create a warm session to obtain models/modes immediately.
-                        let warm_result = create_session_on_connection(
-                            &conn,
-                            "prewarmed".to_string(),
-                            &req.cwd,
-                            Arc::clone(&stdout),
-                        )
-                        .await;
-                        let (models, modes) = match &warm_result {
-                            Some(r) => (r.models.clone(), r.modes.clone()),
-                            None => (None, None),
-                        };
-                        if let Some(result) = warm_result {
-                            sessions.insert("prewarmed".to_string(), result.session);
-                        }
-
                         let response = PreInitializeResponse {
                             agent_id: req.agent_id.clone(),
                             prompt_capabilities: conn.capabilities.prompt_capabilities.clone(),
                             supports_session_list: conn.capabilities.supports_session_list,
                             supports_session_load: conn.capabilities.supports_session_load,
                             supports_session_close: conn.capabilities.supports_session_close,
-                            models,
-                            modes,
                         };
                         agent_connections.insert(req.agent_id, conn);
                         send_or_break!(send_response(

@@ -28,140 +28,20 @@ use crate::sessions::{
 use super::command_loop::{
     convert_acp_models, convert_acp_modes, extract_prompt_capabilities,
     models_from_config_options, modes_from_config_options, run_command_loop,
+    serialize_config_options,
 };
 use super::handlers::{configure_acp_builder, ConnectionHandlers};
-use super::spawn::SpawnResult;
 
-pub(crate) async fn run_session_list(
-    spawn_cmd: &str,
-    spawn_args: &[String],
-    spawn_env: &HashMap<String, String>,
-    cwd: &str,
-    cursor: Option<String>,
-) -> Result<(Vec<SessionListEntry>, Option<String>), String> {
-    let mut child = agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await?;
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let outgoing = child_stdin.compat_write();
-    let incoming = child_stdout.compat();
-    let transport = acp::ByteStreams::new(outgoing, incoming);
-
-    let (result_tx, result_rx) = oneshot::channel::<Result<(Vec<SessionListEntry>, Option<String>), String>>();
-    let cwd_owned = cwd.to_string();
-
-    tokio::spawn(async move {
-        let _result = acp::Client
-            .builder()
-            .name("maestro-server")
-            .on_receive_notification(
-                {
-                    move |_notification: SessionNotification, _cx: acp::ConnectionTo<acp::Agent>| {
-                        async move { Ok(()) }
-                    }
-                },
-                acp::on_receive_notification!(),
-            )
-            .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
-                let init_result = cx
-                    .send_request(
-                        InitializeRequest::new(ProtocolVersion::V1)
-                            .client_info(Implementation::new("maestro-server", "0.1.0")),
-                    )
-                    .block_task()
-                    .await;
-                if let Err(e) = init_result {
-                    let _ = result_tx.send(Err(format!("ACP initialize failed: {}", e)));
-                    return Ok(());
-                }
-
-                let mut req = ListSessionsRequest::new().cwd(std::path::PathBuf::from(&cwd_owned));
-                if let Some(c) = cursor {
-                    req = req.cursor(c);
-                }
-                let list_result = cx
-                    .send_request(req)
-                    .block_task()
-                    .await;
-                match list_result {
-                    Ok(resp) => {
-                        let entries: Vec<SessionListEntry> = resp.sessions.into_iter().map(|s| {
-                            SessionListEntry {
-                                session_id: s.session_id.to_string(),
-                                title: s.title,
-                                updated_at: s.updated_at,
-                            }
-                        }).collect();
-                        let _ = result_tx.send(Ok((entries, resp.next_cursor)));
-                    }
-                    Err(e) => {
-                        let _ = result_tx.send(Err(format!("session/list failed: {}", e)));
-                    }
-                }
-                Ok(())
-            })
-            .await;
-        drop(child);
-    });
-
-    result_rx.await.map_err(|_| "session/list connection dropped".to_string())?
-}
-
-pub(crate) async fn run_session_close(
-    spawn_cmd: &str,
-    spawn_args: &[String],
-    spawn_env: &HashMap<String, String>,
-    cwd: &str,
-    session_id: String,
-) -> Result<(), String> {
-    let mut child = agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await?;
-    let child_stdin = child.stdin.take().expect("child stdin must be piped");
-    let child_stdout = child.stdout.take().expect("child stdout must be piped");
-    let outgoing = child_stdin.compat_write();
-    let incoming = child_stdout.compat();
-    let transport = acp::ByteStreams::new(outgoing, incoming);
-
-    let (result_tx, result_rx) = oneshot::channel::<Result<(), String>>();
-
-    tokio::spawn(async move {
-        let _result = acp::Client
-            .builder()
-            .name("maestro-server")
-            .on_receive_notification(
-                {
-                    move |_notification: SessionNotification, _cx: acp::ConnectionTo<acp::Agent>| {
-                        async move { Ok(()) }
-                    }
-                },
-                acp::on_receive_notification!(),
-            )
-            .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
-                let init_result = cx
-                    .send_request(
-                        InitializeRequest::new(ProtocolVersion::V1)
-                            .client_info(Implementation::new("maestro-server", "0.1.0")),
-                    )
-                    .block_task()
-                    .await;
-                if let Err(e) = init_result {
-                    let _ = result_tx.send(Err(format!("ACP initialize failed: {}", e)));
-                    return Ok(());
-                }
-
-                let close_result = cx
-                    .send_request(CloseSessionRequest::new(session_id))
-                    .block_task()
-                    .await;
-                match close_result {
-                    Ok(_) => { let _ = result_tx.send(Ok(())); }
-                    Err(e) => { let _ = result_tx.send(Err(format!("session/close failed: {}", e))); }
-                }
-                Ok(())
-            })
-            .await;
-        drop(child);
-    });
-
-    result_rx.await.map_err(|_| "session/close connection dropped".to_string())?
+pub(crate) struct SpawnResult {
+    pub(crate) session: ActiveSession,
+    pub(crate) models: Option<ProtocolSessionModelState>,
+    pub(crate) modes: Option<ProtocolSessionModeState>,
+    pub(crate) prompt_capabilities: PromptCapabilitiesInfo,
+    pub(crate) supports_session_list: bool,
+    pub(crate) supports_session_load: bool,
+    pub(crate) supports_session_close: bool,
+    pub(crate) acp_session_id: String,
+    pub(crate) config_options: Option<Vec<serde_json::Value>>,
 }
 
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
@@ -234,8 +114,12 @@ pub(crate) async fn create_session_on_connection(
         }
     };
 
-    let models = convert_acp_models(session_response.models.as_ref());
-    let modes = convert_acp_modes(session_response.modes.as_ref());
+    let models = convert_acp_models(session_response.models.as_ref())
+        .or_else(|| session_response.config_options.as_deref().and_then(models_from_config_options));
+    let modes = session_response.config_options.as_deref()
+        .and_then(modes_from_config_options)
+        .or_else(|| convert_acp_modes(session_response.modes.as_ref()));
+    let config_options = session_response.config_options.as_deref().map(serialize_config_options);
     let session_id = session_response.session_id.clone();
     let acp_session_id_str = session_id.to_string();
 
@@ -293,6 +177,7 @@ pub(crate) async fn create_session_on_connection(
         supports_session_load,
         supports_session_close,
         acp_session_id: acp_session_id_str,
+        config_options,
     })
 }
 
@@ -306,7 +191,7 @@ pub(crate) async fn load_session_on_connection(
     resume_session_id: String,
     cwd: &str,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo)> {
+) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, Option<Vec<serde_json::Value>>)> {
     let cx = conn.connection.clone();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
@@ -349,6 +234,7 @@ pub(crate) async fn load_session_on_connection(
     let modes = load_response.config_options.as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
+    let config_options = load_response.config_options.as_deref().map(serialize_config_options);
     let session_id = acp::schema::SessionId::new(resume_session_id.clone());
 
     let prompt_capabilities = conn
@@ -380,6 +266,7 @@ pub(crate) async fn load_session_on_connection(
         models,
         modes,
         prompt_capabilities,
+        config_options,
     ))
 }
 

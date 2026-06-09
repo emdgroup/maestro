@@ -53,7 +53,7 @@ impl ConnectionKey {
 pub use manager::{AcpProcess, AcpProcessParams, SessionRequest, AcpTransportWriter,
     SessionCapabilitiesInfo, CatalogOption, CatalogOptionValue, CatalogCommand,
     ConnectionServer, PendingChannels, TaskMetadata, AgentCache, AgentCacheMap,
-    TransportTarget, PooledSession, RestorableSession,
+    TransportTarget, RestorableSession,
     spawn_acp_session_cold, load_acp_session_cold, write_to_acp_session,
     spawn_connection_server, pre_initialize_via_connection_server,
     try_spawn_via_connection_server, query_session_list_via_server,
