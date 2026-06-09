@@ -27,11 +27,15 @@ dist-ssr
 *.sln
 *.sw?
 
+# claude plans
+.claude/plans/
+
 # Local brainstorming images
 brainstorm-img/
 
 # Maestro runtime data (worktrees managed by the app)
 .maestro/worktrees/
+.maestro/attachments/
 
 # Generated/build artifacts
 .codegraph/
