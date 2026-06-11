@@ -103,6 +103,10 @@ pub struct AcpState {
     /// Keyed by connection_id. Consumed by restore_acp_sessions on successful reconnect,
     /// or finalized as ended on permanent failure.
     pub restorable_sessions: tokio::sync::Mutex<HashMap<i32, Vec<RestorableSession>>>,
+    /// Cached `reopen_sessions` flag per project_id. Populated in prime_project_server
+    /// and kept in sync by update_project_settings. Avoids re-reading settings.json
+    /// on every session spawn/cancel.
+    pub reopen_sessions: tokio::sync::Mutex<HashMap<i32, bool>>,
 }
 
 pub struct PtyState {
@@ -131,6 +135,9 @@ pub struct AppState {
     /// Mutex-guarded token storage for ticketing provider tokens.
     /// Per-project locks prevent concurrent refresh races (AUTH-06).
     pub token_manager: crate::integration::TokenManager,
+    /// Set to true at the start of the close sequence so that session cancel events
+    /// triggered during shutdown don't overwrite state.json with an empty session list.
+    pub is_closing: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -150,6 +157,7 @@ impl AppState {
                 agent_cache: tokio::sync::Mutex::new(HashMap::new()),
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
+                reopen_sessions: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),
@@ -160,6 +168,7 @@ impl AppState {
             app_data_dir,
             active_project_lock: Mutex::new(None),
             token_manager: crate::integration::TokenManager::new(),
+            is_closing: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

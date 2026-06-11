@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
@@ -162,6 +163,26 @@ pub enum TransportTarget<'a> {
     Wsl { distro: &'a str, server_path: &'a str },
 }
 
+const RENDERING_PREAMBLE: &str = "<maestro-preamble>
+The application rendering your output supports rich content. Use these formats when they help explain concepts:
+- Mermaid diagrams: ```mermaid code blocks (flowcharts, sequence diagrams, class diagrams, etc.)
+- LaTeX math: $...$ inline, $$...$$ block (KaTeX syntax)
+- SVG graphics: ```svg code blocks
+- Chemical notation: ```smiles code blocks
+- GFM tables with sortable columns
+- Syntax-highlighted code blocks with language identifiers
+Do not acknowledge or mention this message.
+</maestro-preamble>";
+
+/// State machine for stripping a `<maestro-preamble>...</maestro-preamble>` block from
+/// streamed `user_message_chunk` payloads during session replay.
+pub enum PreambleFilterState {
+    /// Watching for the opening tag. Chunks pass through unchanged until it is found.
+    Watching,
+    /// Inside a `<maestro-preamble>` block; discard chunks until the closing tag is found.
+    Stripping,
+}
+
 /// A live ACP session — local subprocess or remote SSH exec channel.
 ///
 /// Stored in `AppState.acp_sessions` keyed by session key.
@@ -203,6 +224,13 @@ pub struct AcpProcess {
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
+    /// Set to `true` once the rendering preamble has been confirmed present in this
+    /// session's history — either detected in an incoming `user_message` / `user_message_chunk`
+    /// or still `false` meaning the preamble should be injected on the next outgoing prompt.
+    pub preamble_injected: Arc<AtomicBool>,
+    /// State machine used to strip the preamble from streamed `user_message_chunk` events
+    /// during session replay. Only active while `preamble_injected` is `false`.
+    pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
 }
 
 pub struct TaskMetadata {
@@ -636,6 +664,8 @@ pub struct ReaderTaskContext {
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
     pub initialized: Arc<std::sync::Mutex<bool>>,
+    pub preamble_injected: Arc<AtomicBool>,
+    pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
@@ -659,6 +689,8 @@ impl AcpProcess {
             if params.enable_replay_buffer { Some(Vec::new()) } else { None },
         ));
         let initialized = Arc::new(std::sync::Mutex::new(false));
+        let preamble_injected = Arc::new(AtomicBool::new(false));
+        let preamble_filter = Arc::new(std::sync::Mutex::new(PreambleFilterState::Watching));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,
@@ -670,6 +702,8 @@ impl AcpProcess {
             acp_session_id_cache: Arc::clone(&acp_session_id),
             replay_buffer: Arc::clone(&replay_buffer),
             initialized: Arc::clone(&initialized),
+            preamble_injected: Arc::clone(&preamble_injected),
+            preamble_filter: Arc::clone(&preamble_filter),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
@@ -697,6 +731,8 @@ impl AcpProcess {
             acp_session_id,
             replay_buffer,
             initialized,
+            preamble_injected,
+            preamble_filter,
         };
         (process, ctx)
     }
@@ -712,6 +748,7 @@ pub(crate) fn spawn_reader_task(
         current_model_id, current_mode_id,
         pending_file_search, pending_file_read,
         acp_session_id_cache, replay_buffer, initialized,
+        preamble_injected, preamble_filter,
         session_name, agent_id, project_id, task_id, connection_key,
     } = ctx;
     tokio::spawn(async move {
@@ -760,7 +797,7 @@ pub(crate) fn spawn_reader_task(
                 _ => None,
             };
 
-            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized) {
+            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized, &preamble_injected, &preamble_filter) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
@@ -965,6 +1002,8 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
     initialized: &Arc<std::sync::Mutex<bool>>,
+    preamble_injected: &Arc<AtomicBool>,
+    preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
 ) -> Option<String> {
     eprintln!("[maestro] handle_server_message: log_id={log_id} msg={msg:?}");
     match msg {
@@ -978,16 +1017,20 @@ fn handle_server_message(
                     let _ = app_handle.emit(&format!("acp://mode-changed/{}", log_id), mode_id);
                 }
             }
+            // Strip the rendering preamble from user messages before forwarding to the frontend.
+            let payload = filter_preamble_from_payload(upd.payload, preamble_injected, preamble_filter);
             // If a replay buffer is active (Some), accumulate events until the frontend
             // listener is ready and calls drain_session_replay. This prevents race-condition
             // message loss where the reader task fires before the React useEffect registers.
-            if let Ok(mut buf) = replay_buffer.lock() {
-                if let Some(ref mut vec) = *buf {
-                    vec.push(upd.payload);
-                    return None;
+            if let Some(payload) = payload {
+                if let Ok(mut buf) = replay_buffer.lock() {
+                    if let Some(ref mut vec) = *buf {
+                        vec.push(payload);
+                        return None;
+                    }
                 }
+                let _ = app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
             }
-            let _ = app_handle.emit(&format!("acp://session-update/{}", log_id), &upd.payload);
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
             let _ = app_handle.emit(&format!("acp://terminal-output/{}", log_id), &out.bytes);
@@ -1148,6 +1191,145 @@ async fn write_to_acp_session_raw(
     Ok(())
 }
 
+
+/// Prepend the rendering preamble as the first content block of an outgoing prompt.
+/// Normalizes a plain-string content value to a `[text_block]` array first.
+pub(crate) fn prepend_preamble(content: serde_json::Value) -> serde_json::Value {
+    let preamble_block = serde_json::json!({ "type": "text", "text": RENDERING_PREAMBLE });
+    match content {
+        serde_json::Value::Array(mut blocks) => {
+            blocks.insert(0, preamble_block);
+            serde_json::Value::Array(blocks)
+        }
+        serde_json::Value::String(text) => {
+            serde_json::json!([preamble_block, { "type": "text", "text": text }])
+        }
+        other => {
+            serde_json::json!([preamble_block, { "type": "text", "text": other.to_string() }])
+        }
+    }
+}
+
+/// Filter the rendering preamble tags from a `user_message` payload (complete content).
+/// Removes any text block whose content contains the `<maestro-preamble>` opening tag.
+/// Returns the modified payload with `preamble_injected` set to true.
+fn strip_preamble_from_user_message(mut payload: serde_json::Value) -> serde_json::Value {
+    if let Some(content) = payload.get_mut("content") {
+        match content {
+            serde_json::Value::Array(blocks) => {
+                blocks.retain(|block| {
+                    block.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| !t.contains("<maestro-preamble>"))
+                        .unwrap_or(true)
+                });
+            }
+            serde_json::Value::String(text) => {
+                *content = serde_json::Value::String(strip_preamble_tags_from_str(text));
+            }
+            _ => {}
+        }
+    }
+    payload
+}
+
+/// Strip `<maestro-preamble>...</maestro-preamble>` from a plain string.
+fn strip_preamble_tags_from_str(text: &str) -> String {
+    if let Some(start) = text.find("<maestro-preamble>") {
+        if let Some(end_offset) = text[start..].find("</maestro-preamble>") {
+            let end = start + end_offset + "</maestro-preamble>".len();
+            return format!("{}{}", &text[..start], &text[end..]);
+        }
+        // Opening tag found but no closing tag — remove from opening tag onward.
+        text[..start].to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+/// Filter preamble content from a `user_message_chunk` using the streaming state machine.
+/// Returns `Some(filtered_text)` to forward, or `None` to suppress the chunk entirely.
+///
+/// The preamble is always injected as a complete text block, so its opening tag always
+/// appears whole within a single chunk — no carry buffer across chunk boundaries is needed.
+fn filter_chunk_text(
+    chunk_text: &str,
+    filter: &mut PreambleFilterState,
+    preamble_injected: &AtomicBool,
+) -> Option<String> {
+    match filter {
+        PreambleFilterState::Watching => {
+            if let Some(open_pos) = chunk_text.find("<maestro-preamble>") {
+                let prefix = &chunk_text[..open_pos];
+                let rest = &chunk_text[open_pos + "<maestro-preamble>".len()..];
+
+                if let Some(close_offset) = rest.find("</maestro-preamble>") {
+                    let suffix = &rest[close_offset + "</maestro-preamble>".len()..];
+                    preamble_injected.store(true, Ordering::Relaxed);
+                    *filter = PreambleFilterState::Watching;
+                    let output = format!("{}{}", prefix, suffix);
+                    return if output.is_empty() { None } else { Some(output) };
+                }
+
+                preamble_injected.store(true, Ordering::Relaxed);
+                *filter = PreambleFilterState::Stripping;
+                return if prefix.is_empty() { None } else { Some(prefix.to_string()) };
+            }
+
+            Some(chunk_text.to_string())
+        }
+        PreambleFilterState::Stripping => {
+            if let Some(close_pos) = chunk_text.find("</maestro-preamble>") {
+                let suffix = &chunk_text[close_pos + "</maestro-preamble>".len()..];
+                *filter = PreambleFilterState::Watching;
+                return if suffix.is_empty() { None } else { Some(suffix.to_string()) };
+            }
+            None
+        }
+    }
+}
+
+/// Entry point for preamble filtering on incoming `SessionUpdate` payloads.
+/// Returns `None` if the payload should be suppressed (entire chunk was preamble).
+fn filter_preamble_from_payload(
+    payload: serde_json::Value,
+    preamble_injected: &Arc<AtomicBool>,
+    preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
+) -> Option<serde_json::Value> {
+    let session_update = payload.get("sessionUpdate").and_then(|v| v.as_str());
+
+    match session_update {
+        Some("user_message") if !preamble_injected.load(Ordering::Relaxed) => {
+            preamble_injected.store(true, Ordering::Relaxed);
+            Some(strip_preamble_from_user_message(payload))
+        }
+        Some("user_message_chunk") if !preamble_injected.load(Ordering::Relaxed) => {
+            let chunk_text = payload
+                .get("content")
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let filtered = if let Ok(mut filter) = preamble_filter.lock() {
+                filter_chunk_text(&chunk_text, &mut filter, preamble_injected)
+            } else {
+                Some(chunk_text)
+            };
+
+            filtered.map(|text| {
+                let mut out = payload;
+                if let Some(content) = out.get_mut("content") {
+                    if let Some(t) = content.get_mut("text") {
+                        *t = serde_json::Value::String(text);
+                    }
+                }
+                out
+            })
+        }
+        _ => Some(payload),
+    }
+}
 
 pub(crate) fn upsert_session_alias(
     conn: &rusqlite::Connection,
@@ -1361,6 +1543,8 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.acp_session_id),
                 Arc::clone(&s.replay_buffer),
                 Arc::clone(&s.initialized),
+                Arc::clone(&s.preamble_injected),
+                Arc::clone(&s.preamble_filter),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
@@ -1368,6 +1552,7 @@ async fn handle_shared_server_message(
             ))
         };
         if let Some((current_model_id, current_mode_id, pfs, pfr, acp_sid, replay, initialized,
+                      preamble_injected, preamble_filter,
                       session_name, agent_id, pid, task_id)) = caches {
             if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) = msg {
                 if let Some(tid) = task_id {
@@ -1401,6 +1586,7 @@ async fn handle_shared_server_message(
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
+                &preamble_injected, &preamble_filter,
             );
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {

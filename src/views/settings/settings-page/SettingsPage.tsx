@@ -4,7 +4,7 @@ import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Button } from "@/ui/button";
-import { Bot, CircleDot, Monitor } from "lucide-react";
+import { Bot, CircleDot, Monitor, RotateCcw } from "lucide-react";
 import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
@@ -15,6 +15,7 @@ import {
   PROVIDER_NAMES,
 } from "@/services/integration.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
+import { Switch } from "@/ui/switch";
 import type { ConnectionKey, EnterKeyBehavior, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
 import { showSuccessToast } from "@/components/common/error-toast/ErrorToast";
 
@@ -25,6 +26,8 @@ interface SettingsPageProps {
 
 interface ProjectSettingsFormData {
   default_agent: string;
+  reopen_sessions: boolean;
+  startup_tab: string;
 }
 
 export interface SettingsPageHandle {
@@ -35,7 +38,7 @@ export interface SettingsPageHandle {
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
   ({ projectId, connection }, ref) => {
     const { control, handleSubmit, reset } = useForm<ProjectSettingsFormData>({
-      defaultValues: { default_agent: "" },
+      defaultValues: { default_agent: "", reopen_sessions: false, startup_tab: "" },
     });
 
     const projectSettingsQuery = useProjectSettings(projectId);
@@ -77,9 +80,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
-      const { default_agent } = projectSettingsQuery.data;
+      const { default_agent, reopen_sessions, startup_tab } = projectSettingsQuery.data;
       reset({
         default_agent: default_agent ?? "",
+        reopen_sessions: reopen_sessions ?? false,
+        startup_tab: startup_tab ?? "",
       });
     }, [projectSettingsQuery.data, reset]);
 
@@ -109,6 +114,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           projectId,
           config: {
             default_agent: data.default_agent || null,
+            reopen_sessions: data.reopen_sessions || null,
+            startup_tab: data.startup_tab || null,
           },
         });
         if (selectedProvider) {
@@ -134,7 +141,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         await handleSubmit(onSubmit)();
       },
       resetToDefaults: () => {
-        reset({ default_agent: "" });
+        reset({ default_agent: "", reopen_sessions: false, startup_tab: "" });
       },
     }));
 
@@ -226,6 +233,68 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                   </p>
                 </div>
 
+              </div>
+
+              {/* Startup Behavior Card */}
+              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                  Startup
+                </h3>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Reopen Previous Sessions</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Automatically restore agent sessions from your last session
+                    </p>
+                  </div>
+                  <Controller
+                    name="reopen_sessions"
+                    control={control}
+                    render={({ field }) => (
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Default Tab</Label>
+                  <Controller
+                    name="startup_tab"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={(v) => field.onChange(v ?? "")}
+                      >
+                        <SelectTrigger className="w-full bg-muted">
+                          <SelectValue>
+                            {field.value === "" || field.value === "kanban"
+                              ? "Tasks (default)"
+                              : field.value === "agents"
+                                ? "Agents"
+                                : field.value === "worktrees"
+                                  ? "Worktrees"
+                                  : "Settings"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Tasks (default)</SelectItem>
+                          <SelectItem value="agents">Agents</SelectItem>
+                          <SelectItem value="worktrees">Worktrees</SelectItem>
+                          <SelectItem value="settings">Settings</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Which tab opens first when you enter this project
+                  </p>
+                </div>
               </div>
 
               {/* Appearance Card */}

@@ -9,6 +9,7 @@ import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
 import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
 import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
@@ -17,6 +18,7 @@ import {
   useNavigationActions,
   type ViewType,
 } from "@/store/navigationStore";
+import { useProjectSettings } from "@/services/project.service";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
@@ -101,7 +103,11 @@ function App() {
 
   // Running agent count for header badge
   const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
-  const runningAgentCount = sessions.length;
+  const activitySessions = useSessionActivityStore((s) => s.sessions);
+  const runningAgentCount = sessions.filter((s) => {
+    const activity = activitySessions[s.session_key];
+    return activity && activity.status !== "idle" && activity.status !== "awaiting_input";
+  }).length;
 
   // SSH connection health monitoring — only active for SSH projects
   const {
@@ -154,6 +160,20 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
+
+  // Startup preferences — applied once per project open.
+  const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);
+
+  useEffect(() => {
+    if (!currentProject || !projectSettings?.startup_tab) return;
+    const validTabs = new Set<ViewType>(["kanban", "agents", "worktrees", "settings"]);
+    const tab = projectSettings.startup_tab as ViewType;
+    if (validTabs.has(tab)) {
+      setActiveTab(tab);
+    }
+    // Run when project or startup_tab setting changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, projectSettings?.startup_tab]);
 
   useEffect(() => {
     if (!currentProject || integrationsLoading || issueTrackingLoading) return;

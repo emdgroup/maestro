@@ -770,8 +770,8 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
           </div>
 
           {/* Meta row: context indicator · model · mode · send */}
-          <div className="flex items-center gap-2 pl-3.5 pr-2 pb-2">
-            <div className="w-7 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-2 pl-2 pr-2 pb-2">
+            <div className="w-8 h-8 flex items-center justify-center shrink-0">
               <LiquidContextIndicator
                 usage={usageState ?? { used: 0, size: 1, cost: null }}
                 onCompact={isProcessing ? undefined : () => onSend("/compact")}

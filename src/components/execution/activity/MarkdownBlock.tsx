@@ -415,6 +415,7 @@ export function SmilesBlock({ code }: { code: string }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const { theme, systemTheme } = useTheme();
   const [error, setError] = useState<string | null>(null);
+  const [svgHtml, setSvgHtml] = useState("");
   const resolvedTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
@@ -427,6 +428,7 @@ export function SmilesBlock({ code }: { code: string }) {
       (tree) => {
         const drawer = new SmilesDrawerLib.SvgDrawer({ width: 400, height: 300, padding: 20 });
         drawer.draw(tree, svgEl, resolvedTheme);
+        setSvgHtml(svgEl.outerHTML);
       },
       (err) => {
         setError(String(err));
@@ -443,7 +445,16 @@ export function SmilesBlock({ code }: { code: string }) {
   }
 
   return (
-    <ZoomableContent className="my-2 flex justify-start" ariaLabel="Molecular structure">
+    <ZoomableContent
+      className="my-2 flex justify-start"
+      ariaLabel="Molecular structure"
+      lightboxContent={
+        svgHtml ? (
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: SmilesDrawer-generated SVG
+          <div dangerouslySetInnerHTML={{ __html: svgHtml }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+        ) : undefined
+      }
+    >
       <svg ref={svgRef} width={400} height={300} />
     </ZoomableContent>
   );
@@ -484,14 +495,25 @@ export function getCompleteBlocksText(text: string): string {
 
 export function splitSvgBlocks(text: string): Segment[] {
   if (!text.includes("<svg")) return [{ type: "text", content: text }];
+
+  const fencedRanges: Array<[number, number]> = [];
+  const fenceMatches = [...text.matchAll(/^```[^\n]*$/gm)];
+  for (let i = 0; i < fenceMatches.length - 1; i += 2) {
+    const start = fenceMatches[i].index!;
+    const end = fenceMatches[i + 1].index! + fenceMatches[i + 1][0].length;
+    fencedRanges.push([start, end]);
+  }
+  const isInsideFence = (idx: number) => fencedRanges.some(([s, e]) => idx >= s && idx < e);
+
   const segments: Segment[] = [];
   let lastIndex = 0;
   for (const match of text.matchAll(/<svg[\s\S]*?<\/svg>/gi)) {
-    if (match.index > lastIndex) {
+    if (isInsideFence(match.index!)) continue;
+    if (match.index! > lastIndex) {
       segments.push({ type: "text", content: text.slice(lastIndex, match.index) });
     }
     segments.push({ type: "svg", content: match[0] });
-    lastIndex = match.index + match[0].length;
+    lastIndex = match.index! + match[0].length;
   }
   if (lastIndex < text.length) {
     segments.push({ type: "text", content: text.slice(lastIndex) });

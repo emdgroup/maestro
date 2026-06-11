@@ -348,6 +348,7 @@ export function ReviewChangesPanel({
               projectId={projectId}
               worktreePath={cwd}
               filePath={selectedUntrackedPath}
+              showHeader={false}
             />
           ) : (
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">

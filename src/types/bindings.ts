@@ -1655,8 +1655,8 @@ export type Project = { id: number; name: string; path: string; created_at: stri
  * Project-level agent detection: which agent tools have config markers in the project dir.
  */
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
-export type ProjectConfigRequest = { default_agent: string | null }
-export type ProjectConfigResponse = { default_agent: string | null }
+export type ProjectConfigRequest = { default_agent: string | null; reopen_sessions: boolean | null; startup_tab: string | null }
+export type ProjectConfigResponse = { default_agent: string | null; reopen_sessions: boolean | null; startup_tab: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.

@@ -61,6 +61,10 @@ pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub updated_at: String,
     pub issue_tracking: Option<ProjectIssueTrackingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopen_sessions: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_tab: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -158,17 +162,30 @@ pub struct WorktreeSnapshot {
     pub created_at: String,
 }
 
+/// Minimal session metadata persisted on app close for reopen-on-startup.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct SessionSnapshot {
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub cwd: String,
+    pub session_name: Option<String>,
+    pub connection_key: crate::acp::ConnectionKey,
+    pub branch_name: Option<String>,
+}
+
 /// Project-level state stored in .maestro/state.json
 /// Contains snapshots of all tasks and worktrees for this project
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(default)]
 #[specta(export)]
 pub struct ProjectState {
     pub tasks: Vec<TaskSnapshot>,
     pub worktrees: Vec<WorktreeSnapshot>,
     pub updated_at: String,
     /// Schema version for future migrations; defaults to 1 for backward compatibility
-    #[serde(default)]
     pub schema_version: u32,
+    pub restorable_sessions: Vec<SessionSnapshot>,
 }
 
 impl ProjectState {
@@ -215,6 +232,7 @@ impl ProjectState {
             worktrees: vec![],
             updated_at: Utc::now().to_rfc3339(),
             schema_version: 1,
+            restorable_sessions: vec![],
         }
     }
 }

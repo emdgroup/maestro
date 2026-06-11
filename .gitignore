@@ -33,10 +33,11 @@ dist-ssr
 # Local brainstorming images
 brainstorm-img/
 
-# Maestro runtime data (worktrees managed by the app)
-.maestro/worktrees/
-.maestro/attachments/
+# Maestro data
+.maestro/
 
 # Generated/build artifacts
 .codegraph/
 target/
+# Added by code-review-graph
+.code-review-graph/

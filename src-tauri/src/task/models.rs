@@ -194,12 +194,16 @@ pub enum TaskStatus {
 #[specta(export)]
 pub struct ProjectConfigResponse {
     pub default_agent: Option<String>,
+    pub reopen_sessions: Option<bool>,
+    pub startup_tab: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ProjectConfigRequest {
     pub default_agent: Option<String>,
+    pub reopen_sessions: Option<bool>,
+    pub startup_tab: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

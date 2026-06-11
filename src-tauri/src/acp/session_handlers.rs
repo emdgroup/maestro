@@ -106,6 +106,10 @@ pub async fn spawn_acp_session(
         &req,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
+        {
+            let state = Arc::clone(&*app_state);
+            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, project_id));
+        }
         return Ok(SpawnSessionResult { log_id });
     }
 
@@ -181,6 +185,10 @@ pub async fn spawn_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
+    {
+        let state = Arc::clone(&*app_state);
+        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, project_id));
+    }
     Ok(SpawnSessionResult { log_id })
 }
 
@@ -197,8 +205,9 @@ pub async fn cancel_acp_session(
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
-    let teardown_key: Option<ConnectionKey> = {
+    let (teardown_key, project_id_for_save): (Option<ConnectionKey>, Option<i32>) = {
         let mut sessions = app_state.acp.sessions.lock().await;
+        let project_id_for_save = sessions.get(&log_id).and_then(|p| p.project_id);
         let removed = sessions.remove(&log_id);
         let conn_key = removed.as_ref()
             .filter(|s| s.child.is_none())
@@ -208,8 +217,9 @@ pub async fn cancel_acp_session(
                 let _ = cancel_tx.send(());
             }
         }
-        conn_key
-            .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()))
+        let teardown = conn_key
+            .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()));
+        (teardown, project_id_for_save)
     };
 
     if let Some(key) = teardown_key {
@@ -217,6 +227,10 @@ pub async fn cancel_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
+    if let Some(pid) = project_id_for_save {
+        let state = Arc::clone(&*app_state);
+        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, pid));
+    }
     Ok(())
 }
 
@@ -236,11 +250,9 @@ pub async fn interrupt_acp_turn(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-/// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
-#[tauri::command]
-#[specta::specta]
-pub async fn load_acp_session(
-    app_state: State<'_, Arc<AppState>>,
+/// Inner implementation shared by the IPC handler and warmup session restore.
+pub async fn restore_acp_session(
+    app_state: &Arc<AppState>,
     agent_id: String,
     acp_session_id: String,
     cwd: String,
@@ -260,7 +272,7 @@ pub async fn load_acp_session(
         session_name: session_name.clone(),
         project_id,
         task_id: None,
-        app_state: Arc::clone(&*app_state),
+        app_state: Arc::clone(app_state),
     };
 
     if crate::acp::try_session_load_via_connection_server(&acp_session_id, &req).await? {
@@ -276,7 +288,7 @@ pub async fn load_acp_session(
     // Cold path
     match connection_key {
         ConnectionKey::Ssh { id: conn_id } => {
-            let (ssh, maestro_path) = crate::acp::resolve_remote_context(&app_state, conn_id).await?;
+            let (ssh, maestro_path) = crate::acp::resolve_remote_context(app_state, conn_id).await?;
             crate::acp::load_acp_session_cold(
                 crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path },
                 &acp_session_id,
@@ -335,6 +347,22 @@ pub async fn load_acp_session(
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(log_id)
+}
+
+/// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
+#[tauri::command]
+#[specta::specta]
+pub async fn load_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+    acp_session_id: String,
+    cwd: String,
+    connection: crate::acp::ConnectionKey,
+    session_name: Option<String>,
+    project_id: Option<i32>,
+    worktree_branch: Option<String>,
+) -> Result<i32, String> {
+    restore_acp_session(&app_state, agent_id, acp_session_id, cwd, connection, session_name, project_id, worktree_branch).await
 }
 
 /// Close an ACP session stored on the agent server (not a live Tauri session).

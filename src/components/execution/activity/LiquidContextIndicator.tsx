@@ -14,6 +14,9 @@ const FILL_COLOR: Record<FillState, string> = {
   normal: "var(--success)",
 };
 
+// Softened critical for light theme — less violent red
+const FILL_COLOR_LIGHT_CRITICAL = "oklch(55% 0.14 25)";
+
 const RING_COLOR: Record<FillState, string> = {
   critical: "var(--destructive)",
   warning: "var(--warning)",
@@ -21,22 +24,39 @@ const RING_COLOR: Record<FillState, string> = {
   normal: "var(--border)",
 };
 
-const RING_OP: Record<FillState, number> = {
+// Light: per-state opacity; Dark: always 0.2 (ring too prominent otherwise)
+const RING_OP_LIGHT: Record<FillState, number> = {
   critical: 0.5,
   warning: 0.5,
   amber: 1,
   normal: 1,
 };
 
-const LENS_GLOW: Record<FillState, string> = {
-  critical:
-    "inset 0 0 0 1.5px rgba(255,255,255,0.1), inset 0 1.5px 3px 0 rgba(255,255,255,0.15), inset 0 -1.5px 3px 0 rgba(0,0,0,0.3), 0 0 14px 3px rgba(239,68,68,0.14), 0 0 1px 0 rgba(255,255,255,0.06)",
-  warning:
-    "inset 0 0 0 1.5px rgba(255,255,255,0.12), inset 0 1.5px 3px 0 rgba(255,255,255,0.18), inset 0 -1.5px 3px 0 rgba(0,0,0,0.3), 0 0 12px 3px rgba(245,158,11,0.1), 0 0 1px 0 rgba(255,255,255,0.06)",
-  amber:
-    "inset 0 0 0 1.5px rgba(255,255,255,0.14), inset 0 1.5px 3px 0 rgba(255,255,255,0.2), inset 0 -1.5px 3px 0 rgba(0,0,0,0.3), 0 0 12px 2px rgba(99,102,241,0.08), 0 0 1px 0 rgba(255,255,255,0.08)",
-  normal:
-    "inset 0 0 0 1.5px rgba(255,255,255,0.14), inset 0 1.5px 3px 0 rgba(255,255,255,0.2), inset 0 -1.5px 3px 0 rgba(0,0,0,0.3), 0 0 12px 2px rgba(99,102,241,0.08), 0 0 1px 0 rgba(255,255,255,0.08)",
+const LENS_STYLE = {
+  light: {
+    backdropFilter: "blur(0.6px) brightness(1.20) saturate(1.40)",
+    background: [
+      "radial-gradient(ellipse 60% 36% at 35% 25%, rgba(255,255,255,0.50) 0%, transparent 70%)",
+      "radial-gradient(circle at 50% 55%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.10) 45%, transparent 70%)",
+      "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0.07) 55%, transparent 100%)",
+    ].join(", "),
+    boxShadow: [
+      "inset 0 0 20px 1px rgba(255,255,255,0.30)",
+      "inset 0 0 3px 0 rgba(0,0,0,0.14)",
+      "0 0 8px 2px rgba(99,102,241,0.06)",
+    ].join(", "),
+  },
+  dark: {
+    backdropFilter: "blur(0.6px) brightness(0.90) saturate(1.40)",
+    background: [
+      "radial-gradient(ellipse 60% 36% at 35% 25%, rgba(255,255,255,0.30) 0%, transparent 70%)",
+      "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0.07) 55%, transparent 100%)",
+    ].join(", "),
+    boxShadow: [
+      "inset 0 0 20px 1px rgba(0,0,0,0.30)",
+      "0 0 8px 2px rgba(99,102,241,0.06)",
+    ].join(", "),
+  },
 };
 
 const TIPS: Record<FillState, { icon: string; text: string }> = {
@@ -109,6 +129,7 @@ export function LiquidContextIndicator({
   const fillPathRef = useRef<SVGPathElement>(null);
   const ringRef = useRef<SVGCircleElement>(null);
   const lensRef = useRef<HTMLSpanElement>(null);
+  const isDarkRef = useRef(document.documentElement.classList.contains("dark"));
 
   // Spring state — initialized with current ratio so the mount effect needs no ratio dep
   const animRef = useRef({
@@ -122,8 +143,6 @@ export function LiquidContextIndicator({
   // tickRef lets the ratio-change effect restart the RAF after the setup effect defines tick
   const tickRef = useRef<((ts: number) => void) | null>(null);
 
-  // React state only for discrete pulse threshold changes (≤4 transitions total per session)
-  const [pulseStyle, setPulseStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [fillState, setFillState] = useState<FillState>(() => stateFor(ratio));
 
   const [open, setOpen] = useState(false);
@@ -146,20 +165,15 @@ export function LiquidContextIndicator({
       wg.setAttribute("transform", `translate(0,${(1 - r) * 20})`);
 
       const state = stateFor(r);
+      const isDark = isDarkRef.current;
+
       // Use .style (not setAttribute) so CSS custom properties resolve correctly
-      fp.style.fill = FILL_COLOR[state];
+      fp.style.fill =
+        !isDark && state === "critical" ? FILL_COLOR_LIGHT_CRITICAL : FILL_COLOR[state];
       rg.style.stroke = RING_COLOR[state];
-      rg.style.strokeOpacity = String(RING_OP[state]);
+      rg.style.strokeOpacity = String(isDark ? 0.2 : RING_OP_LIGHT[state]);
 
       if (state !== anim.prevState) {
-        ln.style.boxShadow = LENS_GLOW[state];
-        setPulseStyle(
-          state === "critical"
-            ? { animation: "ctx-pulse 1.4s ease-in-out infinite" }
-            : state === "warning"
-              ? { animation: "ctx-pulse 2s ease-in-out infinite" }
-              : undefined,
-        );
         setFillState(state);
         anim.prevState = state;
       }
@@ -196,6 +210,44 @@ export function LiquidContextIndicator({
         anim.raf = null;
       }
     };
+  }, []);
+
+  // Apply theme-aware lens style + re-run applyFrame when dark/light class changes
+  useEffect(() => {
+    function applyLensTheme() {
+      const ln = lensRef.current;
+      if (!ln) return;
+      const style = isDarkRef.current ? LENS_STYLE.dark : LENS_STYLE.light;
+      ln.style.backdropFilter = style.backdropFilter;
+      ln.style.background = style.background;
+      ln.style.boxShadow = style.boxShadow;
+    }
+
+    applyLensTheme();
+
+    const observer = new MutationObserver(() => {
+      isDarkRef.current = document.documentElement.classList.contains("dark");
+      applyLensTheme();
+      // Re-apply fill + ring opacity for new theme
+      const anim = animRef.current;
+      const state = stateFor(anim.current);
+      const fp = fillPathRef.current;
+      const rg = ringRef.current;
+      if (fp)
+        fp.style.fill =
+          !isDarkRef.current && state === "critical"
+            ? FILL_COLOR_LIGHT_CRITICAL
+            : FILL_COLOR[state];
+      if (rg)
+        rg.style.strokeOpacity = String(isDarkRef.current ? 0.2 : RING_OP_LIGHT[state]);
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => observer.disconnect();
   }, []);
 
   // Kick spring toward new ratio whenever usage changes
@@ -271,7 +323,7 @@ export function LiquidContextIndicator({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <span className="relative w-4 h-4 origin-center cursor-pointer" style={pulseStyle}>
+        <span className="relative w-8 h-8 origin-center cursor-pointer">
           <svg viewBox="0 0 20 20" className="w-full h-full block">
             <defs>
               <clipPath id={clipId}>
@@ -285,7 +337,7 @@ export function LiquidContextIndicator({
               cy="10"
               r="8.5"
               fill="none"
-              strokeWidth="1.5"
+              strokeWidth="0.7"
               style={{ stroke: "var(--border)", strokeOpacity: 1 }}
             />
             {/* clip-path on static wrapper — never moves (CSS transform + clip-path on same element is unreliable) */}
@@ -315,22 +367,10 @@ export function LiquidContextIndicator({
               </g>
             </g>
           </svg>
-          {/* Glass lens overlay */}
+          {/* Glass lens overlay — styles applied by JS (theme-aware) */}
           <span
             ref={lensRef}
-            className={cn(
-              "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3.75 rounded-full pointer-events-none",
-              "backdrop-blur-[0.4px] backdrop-brightness-[1.18] backdrop-saturate-[1.35]",
-              "before:absolute before:-inset-px before:rounded-full",
-              "before:[background:conic-gradient(from_200deg,rgba(99,102,241,0.15),rgba(168,85,247,0.1),rgba(236,72,153,0.08),rgba(251,191,36,0.05),rgba(34,197,94,0.08),rgba(59,130,246,0.1),rgba(99,102,241,0.15))]",
-              "before:[mask:radial-gradient(circle,transparent_60%,black_62%,black_100%)]",
-              "after:absolute after:w-[30%] after:h-[16%] after:top-[16%] after:left-[22%] after:rounded-full after:bg-white/[0.28] after:blur-[2px]",
-            )}
-            style={{
-              background:
-                "radial-gradient(ellipse 60% 40% at 35% 25%, rgba(255,255,255,0.2) 0%, transparent 70%), radial-gradient(circle at 50% 50%, rgba(99,102,241,0.05) 0%, rgba(99,102,241,0.02) 60%, transparent 100%)",
-              boxShadow: LENS_GLOW.normal,
-            }}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-7.5 rounded-full pointer-events-none"
           />
         </span>
       </PopoverTrigger>

@@ -32,9 +32,12 @@ export function ZoomableContent({
   const draggingRef = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const naturalSize = useRef({ width: 0, height: 0 });
+  // Refs to current pan/zoom — read during drag without triggering re-renders
+  const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
 
   const clampZoom = useCallback((z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z)), []);
 
@@ -108,12 +111,16 @@ export function ZoomableContent({
   }, [open, startIdleTimer, doFitToView]);
 
 
+  // Keep refs in sync so drag onMove can read current values without re-render
+  useEffect(() => { panRef.current = pan; }, [pan]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
   function applyZoom(next: number) {
     setZoom(clampZoom(next));
   }
 
   const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: WheelEvent) => {
       e.preventDefault();
       const vp = viewportRef.current;
       if (!vp) return;
@@ -131,36 +138,52 @@ export function ZoomableContent({
     [clampZoom, showControls],
   );
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+  const handlePointerDown = useCallback((e: PointerEvent) => {
     if ((e.target as HTMLElement).closest("[data-lightbox-controls]")) return;
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     draggingRef.current = true;
     setIsDragging(true);
     lastMouse.current = { x: e.clientX, y: e.clientY };
-  }, []);
 
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!draggingRef.current) {
-        showControls();
-        return;
+    const onMove = (ev: PointerEvent) => {
+      panRef.current = {
+        x: panRef.current.x + ev.clientX - lastMouse.current.x,
+        y: panRef.current.y + ev.clientY - lastMouse.current.y,
+      };
+      lastMouse.current = { x: ev.clientX, y: ev.clientY };
+      // Direct DOM update — avoids React re-renders which kill pointermove in React 19
+      if (contentRef.current) {
+        contentRef.current.style.transform =
+          `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${zoomRef.current})`;
       }
-      setPan((p) => ({
-        x: p.x + e.clientX - lastMouse.current.x,
-        y: p.y + e.clientY - lastMouse.current.y,
-      }));
-      lastMouse.current = { x: e.clientX, y: e.clientY };
-    },
-    [showControls],
-  );
+    };
 
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    draggingRef.current = false;
-    setIsDragging(false);
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      draggingRef.current = false;
+      setIsDragging(false);
+      setPan({ ...panRef.current }); // sync ref back to React state
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }, []);
+
+  const viewportCallbackRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (viewportRef.current) {
+        viewportRef.current.removeEventListener("wheel", handleWheel);
+        viewportRef.current.removeEventListener("pointerdown", handlePointerDown);
+      }
+      viewportRef.current = el;
+      if (el) {
+        el.addEventListener("wheel", handleWheel, { passive: false });
+        el.addEventListener("pointerdown", handlePointerDown, { passive: false });
+      }
+    },
+    [handleWheel, handlePointerDown],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -182,7 +205,7 @@ export function ZoomableContent({
         setZoom((z) => clampZoom(z - ZOOM_STEP));
         return;
       }
-      if (e.key === "f") doFitToView();
+      if (e.key === " ") { e.preventDefault(); doFitToView(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -224,17 +247,13 @@ export function ZoomableContent({
 
           {/* Viewport */}
           <div
-            ref={viewportRef}
+            ref={viewportCallbackRef}
             className={cn(
               "flex-1 overflow-hidden flex items-center justify-center select-none",
               cursor,
             )}
             style={{ touchAction: "none" }}
-            onWheel={handleWheel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
+            onPointerMove={() => { if (!draggingRef.current) showControls(); }}
           >
             <div
               ref={contentRef}

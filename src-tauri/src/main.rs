@@ -42,6 +42,11 @@ fn main() {
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let state = handle.state::<Arc<AppState>>();
+
+                    // Block saves triggered by session cancel events during shutdown — state.json
+                    // was already written on the last spawn/cancel before close was requested.
+                    state.is_closing.store(true, std::sync::atomic::Ordering::Relaxed);
+
                     let session_keys: Vec<i32> = state.acp.sessions.lock().await.keys().copied().collect();
                     for log_id in session_keys {
                         let session_id = format!("session-{}", log_id);

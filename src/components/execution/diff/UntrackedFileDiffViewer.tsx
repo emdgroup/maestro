@@ -8,12 +8,14 @@ interface UntrackedFileDiffViewerProps {
   projectId: number | null;
   worktreePath: string | null;
   filePath: string | null;
+  showHeader?: boolean;
 }
 
 export function UntrackedFileDiffViewer({
   projectId,
   worktreePath,
   filePath,
+  showHeader = true,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
 
@@ -24,7 +26,7 @@ export function UntrackedFileDiffViewer({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {diffFile && (
+      {showHeader && diffFile && (
         <div className="px-3 py-2 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
           <span className="font-mono text-foreground truncate flex-1">{diffFile.fileName}</span>
           <span className="font-medium shrink-0 text-success">A</span>

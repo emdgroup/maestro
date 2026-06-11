@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
@@ -361,6 +362,8 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const deleteTask = useDeleteTaskMutation();
   const archiveTask = useArchiveTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
+  const addAttachmentRef = useRef(addAttachment);
+  addAttachmentRef.current = addAttachment;
   const removeAttachment = useDeleteTaskAttachmentMutation();
 
   const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
@@ -426,14 +429,18 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   }
 
   async function handlePickFile() {
-    const selected = await openFilePicker({ multiple: true });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
-    for (const filePath of paths) {
-      const filename = filePath.slice(
-        Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1,
-      );
-      addAttachment.mutate({ taskId: task!.id, filename, filePath });
+    try {
+      const selected = await openFilePicker({ multiple: true });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      for (const filePath of paths) {
+        const filename = filePath.slice(
+          Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1,
+        );
+        addAttachment.mutate({ taskId: task!.id, filename, filePath });
+      }
+    } catch {
+      toast.error("Failed to open file picker");
     }
   }
 
@@ -445,7 +452,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
         setIsDragOver(false);
         for (const filePath of event.payload.paths) {
           const filename = filePath.split(/[/\\]/).pop() ?? filePath;
-          addAttachment.mutate({ taskId, filename, filePath });
+          addAttachmentRef.current.mutate({ taskId, filename, filePath });
         }
       }
       if (event.payload.type === "leave") {
@@ -455,6 +462,52 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
     return () => {
       unlisten.then((fn: () => void) => fn());
     };
+  }, [isEditable, task?.id]);
+
+  useEffect(() => {
+    if (!isEditable || !task) return;
+    const currentTaskId = task.id;
+
+    async function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === "file" && items[i].type.startsWith("image/")) {
+          const file = items[i].getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length === 0) return;
+      e.preventDefault();
+
+      let pastedCount = 0;
+      for (const file of imageFiles) {
+        try {
+          const mimeType = file.type || "image/png";
+          const buffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64Data = btoa(binary);
+          const tempPath = await api.saveClipboardImage(base64Data, mimeType);
+          const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
+          const filename =
+            pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount + 1}).${ext}`;
+          pastedCount += 1;
+          addAttachmentRef.current.mutate({ taskId: currentTaskId, filename, filePath: tempPath });
+        } catch {
+          toast.error("Failed to paste image");
+        }
+      }
+    }
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
   }, [isEditable, task?.id]);
 
   return (
