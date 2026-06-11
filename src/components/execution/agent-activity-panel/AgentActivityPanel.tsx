@@ -14,6 +14,7 @@ import { ActivityUserMessage, parseUserContent } from "../activity/ActivityUserM
 import { ActivityThinkingBlock } from "../activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "../activity/ActivityToolCallGroup";
 import { ActivityFileCard } from "../activity/ActivityFileCard";
+import { PlanReviewCard } from "../activity/PlanReviewCard";
 import { SubagentCard } from "../activity/SubagentCard";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import { ComposeBar } from "../activity/ComposeBar";
@@ -281,6 +282,10 @@ export function AgentActivityPanel({
   const [livePermissionResponses, setLivePermissionResponses] = useState<
     Array<{ item: PermissionResponseItem; insertAt: number }>
   >([]);
+  const [showPlanOverlay, setShowPlanOverlay] = useState(false);
+  useEffect(() => {
+    if (!pendingPermission) setShowPlanOverlay(false);
+  }, [pendingPermission]);
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
@@ -535,14 +540,16 @@ export function AgentActivityPanel({
         isPlanPermission(pendingPermission.payload) &&
         extractBodyText(pendingPermission.payload) !== null
       ) {
-        planOverlay = (
-          <PermissionPrompt
-            requestId={pendingPermission.requestId}
-            payload={pendingPermission.payload}
-            onRespond={handlePermissionRespond}
-            fullHeight
-          />
-        );
+        if (showPlanOverlay) {
+          planOverlay = (
+            <PermissionPrompt
+              requestId={pendingPermission.requestId}
+              payload={pendingPermission.payload}
+              onRespond={handlePermissionRespond}
+              fullHeight
+            />
+          );
+        }
       } else {
         inlinePermission = (
           <motion.div
@@ -644,6 +651,25 @@ export function AgentActivityPanel({
                     nextSectionStartsWithMessage;
 
                   if (gi.type === "toolGroup") {
+                    if (gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
+                      const tc = gi.items[0];
+                      const respEntry = livePermissionResponses[0];
+                      const responseStatus = respEntry
+                        ? respEntry.item.isRejection
+                          ? "rejected"
+                          : "accepted"
+                        : null;
+                      return (
+                        <PlanReviewCard
+                          key={tc.toolCallId}
+                          item={tc}
+                          isPending={!!(pendingPermission && isPlanPermission(pendingPermission.payload))}
+                          responseStatus={responseStatus as "accepted" | "rejected" | null}
+                          onOpen={() => setShowPlanOverlay(true)}
+                        />
+                      );
+                    }
+
                     if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {
                       return (
                         <SubagentCard
