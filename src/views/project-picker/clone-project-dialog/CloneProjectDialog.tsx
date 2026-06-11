@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
 import { FilePicker } from "../file-picker/FilePicker";
 import { ProviderRepoPicker } from "../provider-repo-picker/ProviderRepoPicker";
 import { useCloneProject } from "@/services/project.service";
-import { useSelectedProjectActions } from "@/store/projectStore";
+import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
 import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Check, Globe, Link, Loader2 } from "lucide-react";
@@ -68,9 +68,12 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
         provider: provider ?? null,
       });
       const project = await api.openProject(created.id);
-      api.primeProjectServer(created.id).catch(() => {
-        toast.error("Failed to initialize project server");
-      });
+      await Promise.all([
+        api.primeProjectServer(created.id).catch(() => {
+          toast.error("Failed to initialize project server");
+        }),
+        applyProjectStartupTab(project.id),
+      ]);
       setSelectedProject(project);
       setUrl("");
       setTargetPath("");

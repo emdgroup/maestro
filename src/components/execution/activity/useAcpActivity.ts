@@ -11,6 +11,7 @@ import type {
   MessageItem,
   ThinkingItem,
   UserMessageItem,
+  CanvasSurface,
 } from "./types";
 
 export type ActivityAction =
@@ -306,6 +307,52 @@ function processEvent(
         items: [...items, { type: "userMessage", item: userMsg }],
         lastUserMessageId: userMsg.id,
       };
+    }
+
+    case "canvas_create": {
+      const surface: CanvasSurface = {
+        surfaceId: payload.surfaceId,
+        catalogId: payload.catalogId,
+        title: payload.title,
+        components: [],
+        data: {},
+      };
+      const newCanvasMap = new Map(newState.canvasMap);
+      newCanvasMap.set(payload.surfaceId, surface);
+      const items = finalizeLastStreaming(newState.items);
+      return {
+        ...newState,
+        items: [...items, { type: "canvas", item: { surfaceId: payload.surfaceId } }],
+        canvasMap: newCanvasMap,
+      };
+    }
+
+    case "canvas_update": {
+      const newCanvasMap = new Map(newState.canvasMap);
+      const existing = newCanvasMap.get(payload.surfaceId);
+      if (existing) {
+        const componentMap = new Map(existing.components.map((c) => [c.id, c]));
+        for (const c of payload.components) {
+          componentMap.set(c.id, c);
+        }
+        newCanvasMap.set(payload.surfaceId, {
+          ...existing,
+          components: [...componentMap.values()],
+        });
+      }
+      return { ...newState, canvasMap: newCanvasMap };
+    }
+
+    case "canvas_data": {
+      const newCanvasMap = new Map(newState.canvasMap);
+      const existing = newCanvasMap.get(payload.surfaceId);
+      if (existing) {
+        newCanvasMap.set(payload.surfaceId, {
+          ...existing,
+          data: { ...existing.data, [payload.path]: payload.value },
+        });
+      }
+      return { ...newState, canvasMap: newCanvasMap };
     }
 
     default:

@@ -316,6 +316,8 @@ pub fn open_project(
         };
         crate::core::project_storage::ensure_commit_template_exists(&effective_path)
             .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
+        crate::core::project_storage::write_canvas_catalog(&effective_path)
+            .map_err(|e| format!("Failed to write canvas catalog: {}", e))?;
     }
 
     Ok(project)
@@ -1306,6 +1308,9 @@ pub async fn prime_project_server(
                 }
             };
 
+            crate::acp::deploy::ensure_remote_catalog(&ssh, &project_path).await
+                .unwrap_or_else(|e| eprintln!("Warning: failed to deploy canvas catalog: {}", e));
+
             crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
             let (_, config) = tokio::join!(
@@ -1354,6 +1359,10 @@ pub async fn prime_project_server(
                     .map_err(|e| format!("WSL connection not found: {}", e))?
                 };
                 let maestro_path = crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle).await?.path;
+
+                crate::acp::deploy::ensure_wsl_catalog(&distro, &project_path).await
+                    .unwrap_or_else(|e| eprintln!("Warning: failed to deploy WSL canvas catalog: {}", e));
+
                 crate::acp::spawn_connection_server(
                     ConnectionKey::Wsl { id: wsl_id },
                     crate::acp::TransportTarget::Wsl { distro: &distro, server_path: &maestro_path },

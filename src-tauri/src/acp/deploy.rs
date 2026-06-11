@@ -158,6 +158,45 @@ pub async fn ensure_wsl_server(
     Ok(DeployResult { path: abs_path, deployed: true })
 }
 
+/// Write the bundled canvas catalog to `.maestro/canvas-catalog.json` on a remote host.
+/// Uses base64 encoding to safely transfer the JSON over the SSH channel.
+pub async fn ensure_remote_catalog(
+    ssh: &crate::connectivity::ssh::RemoteSshSession,
+    project_path: &str,
+) -> Result<(), String> {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
+    let dest = format!("{}/.maestro/canvas-catalog.json", project_path);
+    ssh.execute_command(&format!(
+        "printf '%s' '{}' | base64 -d > '{}'",
+        encoded, dest
+    ))
+    .await
+    .map_err(|e| format!("Failed to write remote canvas catalog: {}", e))?;
+    Ok(())
+}
+
+/// Write the bundled canvas catalog to `.maestro/canvas-catalog.json` inside a WSL distro.
+#[cfg(windows)]
+pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), String> {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
+    let dest = format!("{}/.maestro/canvas-catalog.json", project_path);
+    let status = tokio::process::Command::new("wsl.exe")
+        .args([
+            "-d", distro, "--",
+            "sh", "-c",
+            &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
+        ])
+        .status()
+        .await
+        .map_err(|e| format!("Failed to spawn WSL catalog write: {}", e))?;
+    if !status.success() {
+        return Err(format!("WSL catalog write exited with status: {}", status));
+    }
+    Ok(())
+}
+
 fn resolve_bundled_linux_binary(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     let resource_dir = app_handle
         .path()

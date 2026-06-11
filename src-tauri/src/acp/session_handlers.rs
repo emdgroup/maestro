@@ -106,10 +106,6 @@ pub async fn spawn_acp_session(
         &req,
     ).await? {
         app_state.app_handle.emit("sessions-changed", ()).ok();
-        {
-            let state = Arc::clone(&*app_state);
-            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, project_id));
-        }
         return Ok(SpawnSessionResult { log_id });
     }
 
@@ -185,10 +181,6 @@ pub async fn spawn_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    {
-        let state = Arc::clone(&*app_state);
-        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, project_id));
-    }
     Ok(SpawnSessionResult { log_id })
 }
 
@@ -282,6 +274,10 @@ pub async fn restore_acp_session(
             }
         }
         app_state.app_handle.emit("sessions-changed", ()).ok();
+        if let Some(pid) = project_id {
+            let state = Arc::clone(app_state);
+            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, pid));
+        }
         return Ok(log_id);
     }
 
@@ -346,6 +342,11 @@ pub async fn restore_acp_session(
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
+    // Session in map with acp_session_id set; persist so it survives restart.
+    if let Some(pid) = project_id {
+        let state = Arc::clone(app_state);
+        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, pid));
+    }
     Ok(log_id)
 }
 

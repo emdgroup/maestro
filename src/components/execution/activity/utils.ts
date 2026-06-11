@@ -95,7 +95,7 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
         i++;
         continue;
       }
-      if (isSubagentToolCall(item.item)) {
+      if (isSubagentToolCall(item.item) || item.item.kind === "switch_mode") {
         result.push({ type: "toolGroup", items: [item.item] });
       } else {
         const group: ToolCallItem[] = [item.item];
@@ -104,7 +104,8 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
           if (
             lookahead.type !== "toolCall" ||
             isSubagentToolCall(lookahead.item) ||
-            lookahead.item.parentToolCallId
+            lookahead.item.parentToolCallId ||
+            lookahead.item.kind === "switch_mode"
           )
             break;
           i++;

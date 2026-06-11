@@ -1,6 +1,8 @@
 use std::path::Path;
 use crate::models::{ProjectConfig, ProjectState};
 
+pub const CANVAS_CATALOG: &str = include_str!("../../assets/canvas-catalog.json");
+
 const DEFAULT_COMMIT_TEMPLATE: &str = "\
 Merge task #{task_id}: {task_name}
 
@@ -84,6 +86,13 @@ pub fn load_project_state(project_path: &str) -> Result<ProjectState, String> {
             }
         }
     }
+}
+
+/// Write the bundled canvas catalog to .maestro/canvas-catalog.json, overwriting any existing file.
+pub fn write_canvas_catalog(project_path: &str) -> Result<(), String> {
+    let catalog_path = Path::new(project_path).join(".maestro").join("canvas-catalog.json");
+    std::fs::write(&catalog_path, CANVAS_CATALOG)
+        .map_err(|e| format!("Failed to write canvas catalog: {}", e))
 }
 
 /// Ensure the .maestro folder exists, creating it if necessary

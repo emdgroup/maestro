@@ -98,6 +98,33 @@ export type ConfigOptionUpdatePayload = {
   configOptions: ConfigOption[];
 };
 
+export type CanvasComponent = {
+  id: string;
+  component: string;
+  children?: string[];
+  [prop: string]: unknown;
+};
+
+export type CanvasCreatePayload = {
+  sessionUpdate: "canvas_create";
+  surfaceId: string;
+  catalogId: string;
+  title: string;
+};
+
+export type CanvasUpdatePayload = {
+  sessionUpdate: "canvas_update";
+  surfaceId: string;
+  components: CanvasComponent[];
+};
+
+export type CanvasDataPayload = {
+  sessionUpdate: "canvas_data";
+  surfaceId: string;
+  path: string;
+  value: unknown;
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -107,7 +134,10 @@ export type SessionUpdatePayload =
   | UserMessagePayload
   | UserMessageChunkPayload
   | UsageUpdatePayload
-  | ConfigOptionUpdatePayload;
+  | ConfigOptionUpdatePayload
+  | CanvasCreatePayload
+  | CanvasUpdatePayload
+  | CanvasDataPayload;
 
 // Accumulated state for rendering
 
@@ -154,13 +184,26 @@ export type ElicitationSummaryItem = {
   answer: string; // e.g. "Yes, proceed" or "Declined"
 };
 
+export type CanvasSurface = {
+  surfaceId: string;
+  catalogId: string;
+  title: string;
+  components: CanvasComponent[];
+  data: Record<string, unknown>;
+};
+
+export type CanvasItem = {
+  surfaceId: string;
+};
+
 export type ActivityItem =
   | { type: "message"; item: MessageItem }
   | { type: "thinking"; item: ThinkingItem }
   | { type: "userMessage"; item: UserMessageItem }
   | { type: "toolCall"; item: ToolCallItem }
   | { type: "permissionResponse"; item: PermissionResponseItem }
-  | { type: "elicitationSummary"; item: ElicitationSummaryItem };
+  | { type: "elicitationSummary"; item: ElicitationSummaryItem }
+  | { type: "canvas"; item: CanvasItem };
 
 export type ActivityState = {
   items: ActivityItem[];
@@ -173,6 +216,7 @@ export type ActivityState = {
   sessionEnded: boolean;
   endReason: "completed" | "failed" | "cancelled" | null;
   suppressUserChunks: boolean;
+  canvasMap: Map<string, CanvasSurface>;
 };
 
 export type AvailableCommand = {
@@ -191,4 +235,5 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   sessionEnded: false,
   endReason: null,
   suppressUserChunks: false,
+  canvasMap: new Map(),
 };

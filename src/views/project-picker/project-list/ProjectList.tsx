@@ -14,7 +14,7 @@ import {
   useCheckIsGitRepo,
   connectionQueryKey,
 } from "@/services/project.service";
-import { useSelectedProjectActions } from "@/store/projectStore";
+import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
@@ -70,11 +70,10 @@ export function ProjectList() {
         : { type: "local" };
     const created = await createProject({ path: selectedPath, connection });
     const project = await api.openProject(created.id);
-    try {
-      await api.primeProjectServer(created.id);
-    } catch {
-      // Warmup failure is non-fatal — agent cache won't be pre-populated
-    }
+    await Promise.all([
+      api.primeProjectServer(created.id).catch(() => {}),
+      applyProjectStartupTab(project.id),
+    ]);
     setSelectedProject(project, isGitRepo);
     setShowFilePickerModal(false);
   };
@@ -162,16 +161,15 @@ export function ProjectList() {
     setProjectLoading(true);
     try {
       const project = await api.openProject(projectId);
-      try {
-        await api.primeProjectServer(projectId);
-      } catch {
-        // Warmup failure is non-fatal — agent cache won't be pre-populated
-      }
-      const isGitRepo = await checkIsGitRepo({
-        path: project.path,
-        connectionId: project.connection_id,
-        wslConnectionId: project.wsl_connection_id,
-      });
+      const [isGitRepo] = await Promise.all([
+        checkIsGitRepo({
+          path: project.path,
+          connectionId: project.connection_id,
+          wslConnectionId: project.wsl_connection_id,
+        }),
+        api.primeProjectServer(projectId).catch(() => {}),
+        applyProjectStartupTab(project.id),
+      ]);
       setSelectedProject(project, isGitRepo);
     } catch (error) {
       const msg = String(error);

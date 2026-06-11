@@ -15,6 +15,7 @@ import { ActivityThinkingBlock } from "../activity/ActivityThinkingBlock";
 import { ActivityToolCallGroup } from "../activity/ActivityToolCallGroup";
 import { ActivityFileCard } from "../activity/ActivityFileCard";
 import { PlanReviewCard } from "../activity/PlanReviewCard";
+import { CanvasRenderer } from "../activity/canvas/CanvasRenderer";
 import { SubagentCard } from "../activity/SubagentCard";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import { ComposeBar } from "../activity/ComposeBar";
@@ -389,6 +390,9 @@ export function AgentActivityPanel({
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
+      if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
+        await handlePermissionRespond(pendingPermission.requestId, null);
+      }
       liveDispatch({ type: "finalize_streaming" });
       setActivityStatus(sessionKey, "thinking");
       try {
@@ -401,7 +405,7 @@ export function AgentActivityPanel({
         setActivityStatus(sessionKey, "idle");
       }
     },
-    [isProcessing, sessionKey, liveDispatch, setActivityStatus],
+    [isProcessing, sessionKey, liveDispatch, setActivityStatus, pendingPermission, handlePermissionRespond],
   );
 
   const handleCancel = useCallback(async () => {
@@ -447,6 +451,19 @@ export function AgentActivityPanel({
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
 
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
+
+  const planToolCallIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const section of agentSections) {
+      if (section.type !== "agentSection") continue;
+      for (const gi of section.items) {
+        if (gi.type === "toolGroup" && gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
+          ids.push(gi.items[0].toolCallId);
+        }
+      }
+    }
+    return ids;
+  }, [agentSections]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
@@ -550,6 +567,7 @@ export function AgentActivityPanel({
             />
           );
         }
+        // !showPlanOverlay: plan card visible in stream; fall through to compose bar below
       } else {
         inlinePermission = (
           <motion.div
@@ -566,7 +584,8 @@ export function AgentActivityPanel({
           </motion.div>
         );
       }
-    } else if (!isCenteredCompose) {
+    }
+    if (!bottomBar && !inlinePermission && !planOverlay && !isCenteredCompose) {
       bottomBar = (
         <motion.div
           ref={composeBarWrapperRef}
@@ -630,7 +649,9 @@ export function AgentActivityPanel({
                     ? `tg-${firstItem.items[0].toolCallId}`
                     : firstItem.item.type === "toolCall"
                       ? firstItem.item.item.toolCallId
-                      : firstItem.item.item.id;
+                      : firstItem.item.type === "canvas"
+                        ? firstItem.item.item.surfaceId
+                        : firstItem.item.item.id;
 
                 const nextSectionStartsWithMessage = (() => {
                   for (let si = sectionIndex + 1; si < agentSections.length; si++) {
@@ -653,7 +674,8 @@ export function AgentActivityPanel({
                   if (gi.type === "toolGroup") {
                     if (gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
                       const tc = gi.items[0];
-                      const respEntry = livePermissionResponses[0];
+                      const planIdx = planToolCallIds.indexOf(tc.toolCallId);
+                      const respEntry = planIdx >= 0 ? (livePermissionResponses[planIdx] ?? null) : null;
                       const responseStatus = respEntry
                         ? respEntry.item.isRejection
                           ? "rejected"
@@ -743,6 +765,10 @@ export function AgentActivityPanel({
                     return <PermissionResponseCard key={item.item.id} item={item.item} />;
                   } else if (item.type === "elicitationSummary") {
                     return <ActivityElicitationSummary key={item.item.id} item={item.item} />;
+                  } else if (item.type === "canvas") {
+                    const surface = liveState.canvasMap.get(item.item.surfaceId);
+                    if (!surface || surface.components.length === 0) return null;
+                    return <CanvasRenderer key={item.item.surfaceId} surface={surface} />;
                   }
                   return null;
                 });

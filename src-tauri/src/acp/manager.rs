@@ -171,6 +171,7 @@ The application rendering your output supports rich content. Use these formats w
 - Chemical notation: ```smiles code blocks
 - GFM tables with sortable columns
 - Syntax-highlighted code blocks with language identifiers
+- Canvas UI: to display structured data, dashboards, forms, or reports inline, read .maestro/canvas-catalog.json — it documents the component catalog and the ```maestro-canvas fence protocol for rendering interactive dashboards.
 Do not acknowledge or mention this message.
 </maestro-preamble>";
 
@@ -181,6 +182,140 @@ pub enum PreambleFilterState {
     Watching,
     /// Inside a `<maestro-preamble>` block; discard chunks until the closing tag is found.
     Stripping,
+}
+
+const CANVAS_FENCE_OPEN: &str = "```maestro-canvas\n";
+
+/// Extracts `maestro-canvas` code fences from streamed `agent_message_chunk` text.
+///
+/// The agent writes canvas operations as ` ```maestro-canvas\n{...}\n``` ` fences in its text
+/// output. This extractor accumulates incoming text chunks, detects complete fences, parses
+/// their JSON bodies as canvas session updates, and strips them from the forwarded text.
+///
+/// Partial fences across chunk boundaries are handled by buffering until the close marker arrives.
+pub struct CanvasFenceExtractor {
+    /// Text received but not yet forwarded or consumed as a fence body.
+    buffer: String,
+    /// Whether we are currently inside an open canvas fence.
+    in_fence: bool,
+}
+
+impl CanvasFenceExtractor {
+    pub fn new() -> Self {
+        Self { buffer: String::new(), in_fence: false }
+    }
+
+    /// Feed a new text chunk. Returns the text that should be forwarded as a normal message
+    /// (fences stripped) and any canvas JSON payloads extracted from complete fences.
+    pub fn process_chunk(&mut self, chunk: &str) -> (String, Vec<serde_json::Value>) {
+        self.buffer.push_str(chunk);
+        let mut forward = String::new();
+        let mut canvas_messages = Vec::new();
+
+        loop {
+            if self.in_fence {
+                match find_canvas_fence_close(&self.buffer) {
+                    Some((body_end, rest_start)) => {
+                        let body = self.buffer[..body_end].to_string();
+                        self.buffer = self.buffer[rest_start..].to_string();
+                        self.in_fence = false;
+                        match serde_json::from_str::<serde_json::Value>(body.trim()) {
+                            Ok(value) if is_valid_canvas_payload(&value) => {
+                                canvas_messages.push(value);
+                            }
+                            _ => {
+                                // Invalid JSON or unrecognised type — pass fence through as text.
+                                forward.push_str(CANVAS_FENCE_OPEN);
+                                forward.push_str(&body);
+                                forward.push_str("```\n");
+                            }
+                        }
+                    }
+                    None => break,
+                }
+            } else {
+                match self.buffer.find(CANVAS_FENCE_OPEN) {
+                    Some(open_pos) => {
+                        forward.push_str(&self.buffer[..open_pos]);
+                        self.buffer = self.buffer[open_pos + CANVAS_FENCE_OPEN.len()..].to_string();
+                        self.in_fence = true;
+                    }
+                    None => {
+                        // No fence found. Forward the portion that cannot be a partial match,
+                        // keeping the tail in case the next chunk completes the open marker.
+                        let safe = canvas_fence_safe_forward_len(&self.buffer);
+                        forward.push_str(&self.buffer[..safe]);
+                        self.buffer = self.buffer[safe..].to_string();
+                        break;
+                    }
+                }
+            }
+        }
+
+        (forward, canvas_messages)
+    }
+
+    /// Flush any buffered text as-is (call when the stream ends).
+    pub fn flush(&mut self) -> String {
+        let remaining = std::mem::take(&mut self.buffer);
+        self.in_fence = false;
+        remaining
+    }
+}
+
+/// Return how many leading bytes of `text` can be safely forwarded without risking
+/// a split across the canvas fence open marker. Only holds back bytes that form a
+/// valid prefix of `CANVAS_FENCE_OPEN` at the tail of `text`.
+fn canvas_fence_safe_forward_len(text: &str) -> usize {
+    // Find the longest suffix of `text` that is simultaneously a prefix of CANVAS_FENCE_OPEN.
+    // Those bytes must be held back; everything before them can be forwarded immediately.
+    for hold in (1..CANVAS_FENCE_OPEN.len()).rev() {
+        if text.ends_with(&CANVAS_FENCE_OPEN[..hold]) {
+            let mut candidate = text.len() - hold;
+            while candidate > 0 && !text.is_char_boundary(candidate) {
+                candidate -= 1;
+            }
+            return candidate;
+        }
+    }
+    text.len()
+}
+
+/// Find the closing ` ``` ` fence in a buffer that is the body of an open canvas fence.
+/// Returns `(body_end, rest_start)` where `buffer[..body_end]` is the JSON body and
+/// scanning of the surrounding text should resume from `buffer[rest_start..]`.
+fn find_canvas_fence_close(buffer: &str) -> Option<(usize, usize)> {
+    // The close is "```" at the start of a line, followed by "\n" or end-of-buffer.
+    // Since the buffer starts right after the opening fence's newline, check position 0 first.
+    if buffer.starts_with("```") {
+        let after = 3;
+        if after >= buffer.len() || buffer.as_bytes()[after] == b'\n' {
+            let rest = if after < buffer.len() { after + 1 } else { after };
+            return Some((0, rest));
+        }
+    }
+
+    let mut search = 0;
+    while let Some(rel) = buffer[search..].find("\n```") {
+        let abs = search + rel;
+        let after = abs + 4;
+        if after >= buffer.len() || buffer.as_bytes()[after] == b'\n' {
+            // body = buffer[..abs], rest starts after the closing "\n```[\n]"
+            let rest = if after < buffer.len() { after + 1 } else { after };
+            return Some((abs, rest));
+        }
+        // "```" followed by something else (e.g. "```json") — not our close marker
+        search = abs + 1;
+    }
+
+    None
+}
+
+fn is_valid_canvas_payload(value: &serde_json::Value) -> bool {
+    matches!(
+        value.get("sessionUpdate").and_then(|v| v.as_str()),
+        Some("canvas_create") | Some("canvas_update") | Some("canvas_data")
+    )
 }
 
 /// A live ACP session — local subprocess or remote SSH exec channel.
@@ -231,6 +366,9 @@ pub struct AcpProcess {
     /// State machine used to strip the preamble from streamed `user_message_chunk` events
     /// during session replay. Only active while `preamble_injected` is `false`.
     pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
+    /// Extracts `maestro-canvas` code fences from `agent_message_chunk` text and emits
+    /// them as synthetic canvas session updates.
+    pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
 }
 
 pub struct TaskMetadata {
@@ -666,6 +804,7 @@ pub struct ReaderTaskContext {
     pub initialized: Arc<std::sync::Mutex<bool>>,
     pub preamble_injected: Arc<AtomicBool>,
     pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
+    pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
@@ -691,6 +830,7 @@ impl AcpProcess {
         let initialized = Arc::new(std::sync::Mutex::new(false));
         let preamble_injected = Arc::new(AtomicBool::new(false));
         let preamble_filter = Arc::new(std::sync::Mutex::new(PreambleFilterState::Watching));
+        let canvas_extractor = Arc::new(std::sync::Mutex::new(CanvasFenceExtractor::new()));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,
@@ -704,6 +844,7 @@ impl AcpProcess {
             initialized: Arc::clone(&initialized),
             preamble_injected: Arc::clone(&preamble_injected),
             preamble_filter: Arc::clone(&preamble_filter),
+            canvas_extractor: Arc::clone(&canvas_extractor),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
@@ -733,6 +874,7 @@ impl AcpProcess {
             initialized,
             preamble_injected,
             preamble_filter,
+            canvas_extractor,
         };
         (process, ctx)
     }
@@ -748,7 +890,7 @@ pub(crate) fn spawn_reader_task(
         current_model_id, current_mode_id,
         pending_file_search, pending_file_read,
         acp_session_id_cache, replay_buffer, initialized,
-        preamble_injected, preamble_filter,
+        preamble_injected, preamble_filter, canvas_extractor,
         session_name, agent_id, project_id, task_id, connection_key,
     } = ctx;
     tokio::spawn(async move {
@@ -797,11 +939,18 @@ pub(crate) fn spawn_reader_task(
                 _ => None,
             };
 
-            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized, &preamble_injected, &preamble_filter) {
+            if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized, &preamble_injected, &preamble_filter, &canvas_extractor) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, pid, &agent_id, &native_id, name);
                     }
+                }
+                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
+                if let Some(pid) = project_id {
+                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
+                        Arc::clone(&app_state),
+                        pid,
+                    ));
                 }
             }
 
@@ -1004,6 +1153,7 @@ fn handle_server_message(
     initialized: &Arc<std::sync::Mutex<bool>>,
     preamble_injected: &Arc<AtomicBool>,
     preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
+    canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
 ) -> Option<String> {
     eprintln!("[maestro] handle_server_message: log_id={log_id} msg={msg:?}");
     match msg {
@@ -1019,17 +1169,21 @@ fn handle_server_message(
             }
             // Strip the rendering preamble from user messages before forwarding to the frontend.
             let payload = filter_preamble_from_payload(upd.payload, preamble_injected, preamble_filter);
-            // If a replay buffer is active (Some), accumulate events until the frontend
-            // listener is ready and calls drain_session_replay. This prevents race-condition
-            // message loss where the reader task fires before the React useEffect registers.
+
             if let Some(payload) = payload {
-                if let Ok(mut buf) = replay_buffer.lock() {
-                    if let Some(ref mut vec) = *buf {
-                        vec.push(payload);
-                        return None;
-                    }
+                // Extract canvas fences from agent_message_chunk text. Each complete
+                // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
+                // update; the remaining text (fences stripped) is forwarded normally.
+                let (payload_opt, canvas_messages) =
+                    extract_canvas_fences_from_payload(payload, canvas_extractor);
+
+                for canvas_msg in canvas_messages {
+                    emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
                 }
-                let _ = app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
+
+                if let Some(payload) = payload_opt {
+                    emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
+                }
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
@@ -1299,11 +1453,11 @@ fn filter_preamble_from_payload(
     let session_update = payload.get("sessionUpdate").and_then(|v| v.as_str());
 
     match session_update {
-        Some("user_message") if !preamble_injected.load(Ordering::Relaxed) => {
+        Some("user_message") => {
             preamble_injected.store(true, Ordering::Relaxed);
             Some(strip_preamble_from_user_message(payload))
         }
-        Some("user_message_chunk") if !preamble_injected.load(Ordering::Relaxed) => {
+        Some("user_message_chunk") => {
             let chunk_text = payload
                 .get("content")
                 .and_then(|c| c.get("text"))
@@ -1329,6 +1483,63 @@ fn filter_preamble_from_payload(
         }
         _ => Some(payload),
     }
+}
+
+/// Extract canvas fences from an `agent_message_chunk` payload.
+///
+/// Returns the modified payload (fence text stripped; `None` if nothing remains to forward)
+/// and a list of canvas JSON values to emit as synthetic session updates.
+/// Non-chunk payloads are returned unchanged with an empty canvas list.
+fn extract_canvas_fences_from_payload(
+    payload: serde_json::Value,
+    canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+) -> (Option<serde_json::Value>, Vec<serde_json::Value>) {
+    if payload.get("sessionUpdate").and_then(|v| v.as_str()) != Some("agent_message_chunk") {
+        return (Some(payload), Vec::new());
+    }
+
+    let chunk_text = match payload
+        .get("content")
+        .and_then(|c| c.get("text"))
+        .and_then(|t| t.as_str())
+    {
+        Some(t) => t.to_string(),
+        None => return (Some(payload), Vec::new()),
+    };
+
+    let (remaining_text, canvas_messages) = match canvas_extractor.lock() {
+        Ok(mut extractor) => extractor.process_chunk(&chunk_text),
+        Err(_) => return (Some(payload), Vec::new()),
+    };
+
+    if remaining_text.is_empty() {
+        return (None, canvas_messages);
+    }
+
+    let mut updated = payload;
+    if let Some(content) = updated.get_mut("content") {
+        if let Some(text_field) = content.get_mut("text") {
+            *text_field = serde_json::Value::String(remaining_text);
+        }
+    }
+    (Some(updated), canvas_messages)
+}
+
+/// Emit a session-update payload through the replay buffer if one is active,
+/// or directly via Tauri event otherwise.
+fn emit_or_buffer_payload(
+    payload: serde_json::Value,
+    replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    app_handle: &tauri::AppHandle,
+    log_id: i32,
+) {
+    if let Ok(mut buf) = replay_buffer.lock() {
+        if let Some(ref mut vec) = *buf {
+            vec.push(payload);
+            return;
+        }
+    }
+    let _ = app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
 }
 
 pub(crate) fn upsert_session_alias(
@@ -1545,6 +1756,7 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.initialized),
                 Arc::clone(&s.preamble_injected),
                 Arc::clone(&s.preamble_filter),
+                Arc::clone(&s.canvas_extractor),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
@@ -1552,7 +1764,7 @@ async fn handle_shared_server_message(
             ))
         };
         if let Some((current_model_id, current_mode_id, pfs, pfr, acp_sid, replay, initialized,
-                      preamble_injected, preamble_filter,
+                      preamble_injected, preamble_filter, canvas_extractor,
                       session_name, agent_id, pid, task_id)) = caches {
             if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) = msg {
                 if let Some(tid) = task_id {
@@ -1586,13 +1798,20 @@ async fn handle_shared_server_message(
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
-                &preamble_injected, &preamble_filter,
+                &preamble_injected, &preamble_filter, &canvas_extractor,
             );
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
                         let _ = upsert_session_alias(&conn, project_id_val, &agent_id, &native_id, name);
                     }
+                }
+                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
+                if let Some(project_id_val) = pid {
+                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
+                        Arc::clone(app_state),
+                        project_id_val,
+                    ));
                 }
             }
 
@@ -2324,4 +2543,91 @@ pub async fn restore_acp_sessions(
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn canvas_create_json(surface_id: &str) -> String {
+        format!(
+            r#"{{"sessionUpdate":"canvas_create","surfaceId":"{}","catalogId":"maestro-canvas/v1","title":"Test"}}"#,
+            surface_id
+        )
+    }
+
+    #[test]
+    fn single_fence_in_one_chunk() {
+        let mut ex = CanvasFenceExtractor::new();
+        let input = format!("```maestro-canvas\n{}\n```\n", canvas_create_json("s1"));
+        let (text, msgs) = ex.process_chunk(&input);
+        assert_eq!(text, "");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["sessionUpdate"], "canvas_create");
+        assert_eq!(msgs[0]["surfaceId"], "s1");
+    }
+
+    #[test]
+    fn fence_split_across_chunks() {
+        let mut ex = CanvasFenceExtractor::new();
+        let json = canvas_create_json("s2");
+        let full = format!("```maestro-canvas\n{}\n```\n", json);
+        let mid = full.len() / 2;
+        let (t1, m1) = ex.process_chunk(&full[..mid]);
+        let (t2, m2) = ex.process_chunk(&full[mid..]);
+        assert_eq!(t1, "");
+        assert!(m1.is_empty());
+        assert_eq!(t2, "");
+        assert_eq!(m2.len(), 1);
+        assert_eq!(m2[0]["surfaceId"], "s2");
+    }
+
+    #[test]
+    fn mixed_text_and_fence() {
+        let mut ex = CanvasFenceExtractor::new();
+        let json = canvas_create_json("s3");
+        let input = format!("Before text.\n```maestro-canvas\n{}\n```\nAfter text.", json);
+        let (text, msgs) = ex.process_chunk(&input);
+        assert!(text.contains("Before text."));
+        assert!(text.contains("After text."));
+        assert!(!text.contains("maestro-canvas"));
+        assert_eq!(msgs.len(), 1);
+    }
+
+    #[test]
+    fn invalid_json_fence_passes_through_as_text() {
+        let mut ex = CanvasFenceExtractor::new();
+        let input = "```maestro-canvas\nnot valid json\n```\n";
+        let (text, msgs) = ex.process_chunk(input);
+        assert!(text.contains("maestro-canvas"));
+        assert!(text.contains("not valid json"));
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn multiple_fences_in_one_chunk() {
+        let mut ex = CanvasFenceExtractor::new();
+        let j1 = canvas_create_json("m1");
+        let j2 = format!(
+            r#"{{"sessionUpdate":"canvas_data","surfaceId":"m1","path":"/rows","value":[]}}"#
+        );
+        let input = format!(
+            "```maestro-canvas\n{}\n```\n```maestro-canvas\n{}\n```\n",
+            j1, j2
+        );
+        let (text, msgs) = ex.process_chunk(&input);
+        assert_eq!(text, "");
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["sessionUpdate"], "canvas_create");
+        assert_eq!(msgs[1]["sessionUpdate"], "canvas_data");
+    }
+
+    #[test]
+    fn fence_with_wrong_session_update_passes_through() {
+        let mut ex = CanvasFenceExtractor::new();
+        let input = "```maestro-canvas\n{\"sessionUpdate\":\"unknown_type\",\"foo\":1}\n```\n";
+        let (text, msgs) = ex.process_chunk(input);
+        assert!(text.contains("maestro-canvas"));
+        assert!(msgs.is_empty());
+    }
 }

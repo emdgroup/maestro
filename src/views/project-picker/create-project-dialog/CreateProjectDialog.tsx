@@ -13,7 +13,7 @@ import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { FilePicker } from "../file-picker/FilePicker";
 import { useCreateNewProject } from "@/services/project.service";
-import { useSelectedProjectActions } from "@/store/projectStore";
+import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
 import type { SshConnection, WslConnection } from "@/types/bindings";
 import { Loader2 } from "lucide-react";
@@ -49,9 +49,12 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
         wslConnectionId: wslConnection?.id ?? null,
       });
       const project = await api.openProject(created.id);
-      api.primeProjectServer(created.id).catch(() => {
-        toast.error("Failed to initialize project server");
-      });
+      await Promise.all([
+        api.primeProjectServer(created.id).catch(() => {
+          toast.error("Failed to initialize project server");
+        }),
+        applyProjectStartupTab(project.id),
+      ]);
       setSelectedProject(project);
       // Reset form and close
       setParentDir("");
