@@ -158,16 +158,18 @@ export function ZoomableContent({
       }
     };
 
-    const onUp = () => {
+    const onUpOrCancel = () => {
       document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointerup", onUpOrCancel);
+      document.removeEventListener("pointercancel", onUpOrCancel);
       draggingRef.current = false;
       setIsDragging(false);
       setPan({ ...panRef.current }); // sync ref back to React state
     };
 
     document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointerup", onUpOrCancel);
+    document.addEventListener("pointercancel", onUpOrCancel);
   }, []);
 
   const viewportCallbackRef = useCallback(

@@ -69,14 +69,20 @@ async fn send_prompt_impl(
     log_id: i32,
     content: serde_json::Value,
 ) -> Result<(), String> {
-    let should_inject = {
+    let (should_inject, preamble_injected) = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions
-            .get(&log_id)
-            .map(|s| !s.preamble_injected.load(Ordering::Relaxed))
-            .unwrap_or(false)
+        match sessions.get(&log_id) {
+            Some(s) => {
+                let inject = !s.preamble_injected.load(Ordering::Relaxed);
+                (inject, Some(Arc::clone(&s.preamble_injected)))
+            }
+            None => (false, None),
+        }
     };
     let content = if should_inject {
+        if let Some(flag) = preamble_injected {
+            flag.store(true, Ordering::Relaxed);
+        }
         crate::acp::manager::prepend_preamble(content)
     } else {
         content

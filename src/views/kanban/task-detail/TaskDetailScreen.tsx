@@ -489,15 +489,11 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
           const mimeType = file.type || "image/png";
           const buffer = await file.arrayBuffer();
           const bytes = new Uint8Array(buffer);
-          let binary = "";
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          const base64Data = btoa(binary);
+          const base64Data = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
           const tempPath = await api.saveClipboardImage(base64Data, mimeType);
           const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
           const filename =
-            pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount + 1}).${ext}`;
+            pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount}).${ext}`;
           pastedCount += 1;
           addAttachmentRef.current.mutate({ taskId: currentTaskId, filename, filePath: tempPath });
         } catch {

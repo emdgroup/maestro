@@ -50,6 +50,7 @@ function App() {
   const currentProject = useSelectedProject();
   const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
+  const startupTabAppliedForRef = useRef<number | null>(null);
 
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError } = useSettings();
@@ -166,12 +167,13 @@ function App() {
 
   useEffect(() => {
     if (!currentProject || !projectSettings?.startup_tab) return;
+    if (startupTabAppliedForRef.current === currentProject.id) return;
+    startupTabAppliedForRef.current = currentProject.id;
     const validTabs = new Set<ViewType>(["kanban", "agents", "worktrees", "settings"]);
     const tab = projectSettings.startup_tab as ViewType;
     if (validTabs.has(tab)) {
       setActiveTab(tab);
     }
-    // Run when project or startup_tab setting changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id, projectSettings?.startup_tab]);
 
