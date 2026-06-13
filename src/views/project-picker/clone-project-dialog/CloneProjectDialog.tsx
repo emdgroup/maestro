@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -33,8 +33,24 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState("");
   const [provider, setProvider] = useState<string | null>(null);
+  const [attempted, setAttempted] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mutateAsync: cloneProject, isPending } = useCloneProject();
   const { setSelectedProject } = useSelectedProjectActions();
+
+  const isSubmitDisabled = isPending || !url.trim() || !targetPath.trim();
+
+  const startHoverTimer = () => {
+    if (!isSubmitDisabled) return;
+    hoverTimerRef.current = setTimeout(() => setAttempted(true), 500);
+  };
+
+  const cancelHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
 
   const handleBrowse = (selectedPath: string) => {
     const repoName = deriveRepoName(url);
@@ -75,6 +91,8 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
         applyProjectStartupTab(project.id),
       ]);
       setSelectedProject(project);
+      setAttempted(false);
+      cancelHoverTimer();
       setUrl("");
       setTargetPath("");
       setSelectedRepoName("");
@@ -91,6 +109,8 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
         setTargetPath("");
         setSelectedRepoName("");
         setProvider(null);
+        setAttempted(false);
+        cancelHoverTimer();
       }
       onOpenChange(nextOpen);
     }
@@ -104,10 +124,10 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
             <DialogTitle>Clone Project</DialogTitle>
             <DialogDescription>Clone a git repository into a chosen directory.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div key={attempted ? 1 : 0} className={`space-y-4 py-2 ${attempted ? "animate-shake" : ""}`}>
             {/* Parent directory — always visible */}
             <div className="space-y-2">
-              <Label htmlFor="clone-target">Parent Directory</Label>
+              <Label htmlFor="clone-target" required>Parent Directory</Label>
               <div className="flex gap-2">
                 <Input
                   id="clone-target"
@@ -116,6 +136,8 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
                   onChange={(e) => setTargetPath(e.target.value)}
                   disabled={isPending}
                   className="flex-1"
+                  aria-required="true"
+                  aria-invalid={attempted && !targetPath.trim() ? "true" : undefined}
                 />
                 <Button
                   variant="outline"
@@ -156,7 +178,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
 
               <TabsContent value="url">
                 <div className="space-y-2">
-                  <Label htmlFor="clone-url">Git URL</Label>
+                  <Label htmlFor="clone-url" required>Git URL</Label>
                   <Input
                     id="clone-url"
                     placeholder="https://github.com/user/repo.git"
@@ -166,7 +188,12 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
                       setSelectedRepoName("");
                     }}
                     disabled={isPending}
+                    aria-required="true"
+                    aria-invalid={attempted && !url.trim() ? "true" : undefined}
                   />
+                  {attempted && !url.trim() && (
+                    <p className="text-xs text-destructive">Git URL is required</p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
@@ -175,19 +202,21 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
             <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>
               Cancel
             </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isPending || !url.trim() || !targetPath.trim()}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Cloning...
-                </>
-              ) : (
-                "Clone"
-              )}
-            </Button>
+            <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitDisabled}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Cloning...
+                  </>
+                ) : (
+                  "Clone"
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

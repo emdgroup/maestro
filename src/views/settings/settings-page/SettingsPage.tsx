@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { useForm, Controller } from "react-hook-form";
 import { Label } from "@/ui/label";
@@ -33,6 +33,23 @@ interface ProjectSettingsFormData {
 export interface SettingsPageHandle {
   save: () => Promise<void>;
   resetToDefaults: () => void;
+}
+
+function getRequiredIntegrationFields(provider: string): string[] {
+  switch (provider) {
+    case "github":
+    case "forgejo":
+    case "gitea":
+      return ["owner", "repo"];
+    case "gitlab":
+      return ["project_path"];
+    case "jira_cloud":
+      return ["project_key"];
+    case "azuredevops":
+      return ["project_name"];
+    default:
+      return [];
+  }
 }
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
@@ -77,6 +94,14 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
     const [issueTrackingConfigured, setIssueTrackingConfigured] = useState(false);
     const [issueTrackingEditing, setIssueTrackingEditing] = useState(false);
+    const [issueTrackingAttempted, setIssueTrackingAttempted] = useState(false);
+    const saveHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const isIssueTrackingValid =
+      !selectedProvider ||
+      getRequiredIntegrationFields(selectedProvider).every(
+        (f) => issueTrackingFields[f]?.trim(),
+      );
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
@@ -130,9 +155,22 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           };
           await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: config });
         }
+        setIssueTrackingAttempted(false);
         showSuccessToast("Settings saved");
       } catch (err) {
         console.error("Failed to save project settings:", err);
+      }
+    };
+
+    const startSaveHoverTimer = () => {
+      if (isIssueTrackingValid) return;
+      saveHoverTimerRef.current = setTimeout(() => setIssueTrackingAttempted(true), 500);
+    };
+
+    const cancelSaveHoverTimer = () => {
+      if (saveHoverTimerRef.current) {
+        clearTimeout(saveHoverTimerRef.current);
+        saveHoverTimerRef.current = null;
       }
     };
 
@@ -424,7 +462,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         <button
                           key={integration.provider}
                           type="button"
-                          onClick={() => setSelectedProvider(integration.provider)}
+                          onClick={() => { setSelectedProvider(integration.provider); setIssueTrackingAttempted(false); }}
                           className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
                             selectedProvider === integration.provider
                               ? "border-primary ring-2 ring-primary bg-primary/5"
@@ -444,7 +482,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                           issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!
                         }
                         fields={issueTrackingFields}
-                        onFieldsChange={setIssueTrackingFields}
+                        onFieldsChange={(f) => { setIssueTrackingFields(f); setIssueTrackingAttempted(false); }}
+                        showValidation={issueTrackingAttempted}
                       />
                     )}
                   </div>
@@ -452,9 +491,14 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
               </div>
 
               <div className="flex justify-end">
-                <Button type="submit" disabled={updateProjectSettingsMutation.isPending}>
+                <div onMouseEnter={startSaveHoverTimer} onMouseLeave={cancelSaveHoverTimer}>
+                <Button
+                  type="submit"
+                  disabled={updateProjectSettingsMutation.isPending || !isIssueTrackingValid}
+                >
                   {updateProjectSettingsMutation.isPending ? "Saving…" : "Save"}
                 </Button>
+                </div>
               </div>
             </form>
           )}

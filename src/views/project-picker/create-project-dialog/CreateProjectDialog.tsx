@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -30,8 +30,24 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
   const [folderName, setFolderName] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempted, setAttempted] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mutateAsync: createNewProject, isPending } = useCreateNewProject();
   const { setSelectedProject } = useSelectedProjectActions();
+
+  const isSubmitDisabled = isPending || !parentDir.trim() || !folderName.trim();
+
+  const startHoverTimer = () => {
+    if (!isSubmitDisabled) return;
+    hoverTimerRef.current = setTimeout(() => setAttempted(true), 500);
+  };
+
+  const cancelHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
 
   const handleBrowse = (selectedPath: string) => {
     setParentDir(selectedPath);
@@ -56,7 +72,8 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
         applyProjectStartupTab(project.id),
       ]);
       setSelectedProject(project);
-      // Reset form and close
+      setAttempted(false);
+      cancelHoverTimer();
       setParentDir("");
       setFolderName("");
       onOpenChange(false);
@@ -72,6 +89,8 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
         setParentDir("");
         setFolderName("");
         setError(null);
+        setAttempted(false);
+        cancelHoverTimer();
       }
       onOpenChange(nextOpen);
     }
@@ -85,9 +104,9 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>Create a new project folder.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div key={attempted ? 1 : 0} className={`space-y-4 py-2 ${attempted ? "animate-shake" : ""}`}>
             <div className="space-y-2">
-              <Label htmlFor="create-parent">Parent Directory</Label>
+              <Label htmlFor="create-parent" required>Parent Directory</Label>
               <div className="flex gap-2">
                 <Input
                   id="create-parent"
@@ -99,6 +118,8 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
                   }}
                   disabled={isPending}
                   className="flex-1"
+                  aria-required="true"
+                  aria-invalid={attempted && !parentDir.trim() ? "true" : undefined}
                 />
                 <Button
                   variant="outline"
@@ -111,7 +132,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-folder">Folder Name</Label>
+              <Label htmlFor="create-folder" required>Folder Name</Label>
               <Input
                 id="create-folder"
                 placeholder="my-project"
@@ -121,6 +142,8 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
                   setError(null);
                 }}
                 disabled={isPending}
+                aria-required="true"
+                aria-invalid={attempted && !folderName.trim() ? "true" : undefined}
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -129,19 +152,21 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
             <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>
               Cancel
             </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isPending || !parentDir.trim() || !folderName.trim()}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create"
-              )}
-            </Button>
+            <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitDisabled}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create"
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

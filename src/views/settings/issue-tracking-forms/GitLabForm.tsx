@@ -13,9 +13,10 @@ import { useListGitlabProjects } from "@/services/integration-lookup.service";
 interface Props {
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
-export function GitLabForm({ fields, onFieldsChange }: Props) {
+export function GitLabForm({ fields, onFieldsChange, showValidation }: Props) {
   const projectPath = fields.project_path ?? "";
   const { data: projects = [], isLoading } = useListGitlabProjects();
   const [search, setSearch] = useState("");
@@ -29,7 +30,10 @@ export function GitLabForm({ fields, onFieldsChange }: Props) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">Project</Label>
+      <Label className="text-sm font-medium" required>Project</Label>
+      {showValidation && !projectPath && (
+        <p className="text-xs text-destructive">Project is required</p>
+      )}
       <Combobox
         value={projectPath}
         onValueChange={(v) => {

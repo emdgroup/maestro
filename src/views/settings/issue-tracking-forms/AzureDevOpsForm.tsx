@@ -13,9 +13,10 @@ import { useListAzureDevOpsProjects } from "@/services/integration-lookup.servic
 interface Props {
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
-export function AzureDevOpsForm({ fields, onFieldsChange }: Props) {
+export function AzureDevOpsForm({ fields, onFieldsChange, showValidation }: Props) {
   const projectName = fields.project_name ?? "";
   const { data: projects = [], isLoading } = useListAzureDevOpsProjects();
   const [search, setSearch] = useState("");
@@ -25,7 +26,10 @@ export function AzureDevOpsForm({ fields, onFieldsChange }: Props) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">Project</Label>
+      <Label className="text-sm font-medium" required>Project</Label>
+      {showValidation && !projectName && (
+        <p className="text-xs text-destructive">Project is required</p>
+      )}
       <Combobox
         value={projectName}
         onValueChange={(v) => onFieldsChange({ ...fields, project_name: v ?? "" })}

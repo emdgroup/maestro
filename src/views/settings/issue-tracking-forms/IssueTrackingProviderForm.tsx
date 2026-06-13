@@ -12,6 +12,7 @@ interface Props {
   integration: IntegrationStatus;
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
 export function IssueTrackingProviderForm({
@@ -19,28 +20,62 @@ export function IssueTrackingProviderForm({
   integration,
   fields,
   onFieldsChange,
+  showValidation,
 }: Props) {
   switch (provider) {
     case "github":
       return (
-        <GitHubForm integration={integration} fields={fields} onFieldsChange={onFieldsChange} />
+        <GitHubForm
+          integration={integration}
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
       );
     case "jira_cloud":
-      return <JiraCloudForm fields={fields} onFieldsChange={onFieldsChange} />;
+      return (
+        <JiraCloudForm
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
+      );
     case "linear":
       return <LinearForm fields={fields} onFieldsChange={onFieldsChange} />;
     case "gitlab":
-      return <GitLabForm fields={fields} onFieldsChange={onFieldsChange} />;
+      return (
+        <GitLabForm
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
+      );
     case "forgejo":
       return (
-        <ForgejoForm integration={integration} fields={fields} onFieldsChange={onFieldsChange} />
+        <ForgejoForm
+          integration={integration}
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
       );
     case "gitea":
       return (
-        <GiteaForm integration={integration} fields={fields} onFieldsChange={onFieldsChange} />
+        <GiteaForm
+          integration={integration}
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
       );
     case "azuredevops":
-      return <AzureDevOpsForm fields={fields} onFieldsChange={onFieldsChange} />;
+      return (
+        <AzureDevOpsForm
+          fields={fields}
+          onFieldsChange={onFieldsChange}
+          showValidation={showValidation}
+        />
+      );
     default:
       return null;
   }

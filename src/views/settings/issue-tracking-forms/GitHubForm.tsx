@@ -24,6 +24,7 @@ interface Props {
   integration: IntegrationStatus;
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
 function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
@@ -32,7 +33,7 @@ function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
   return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
 }
 
-export function GitHubForm({ integration, fields, onFieldsChange }: Props) {
+export function GitHubForm({ integration, fields, onFieldsChange, showValidation }: Props) {
   const owner = fields.owner ?? "";
   const repo = fields.repo ?? "";
   const [byUrl, setByUrl] = useState("");
@@ -75,13 +76,15 @@ export function GitHubForm({ integration, fields, onFieldsChange }: Props) {
     <div className="space-y-3">
       {/* Owner */}
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Owner</Label>
+        <Label className="text-sm font-medium" required>Owner</Label>
         <div className="flex items-center gap-2">
           <Input
             className="flex-1"
             placeholder="username or org"
             value={owner}
             onChange={(e) => onFieldsChange({ ...fields, owner: e.target.value, repo: "" })}
+            aria-required="true"
+            aria-invalid={showValidation && !owner ? "true" : undefined}
           />
           {owner && ownerCheck.isLoading && (
             <Loader2 className="size-4 text-muted-foreground animate-spin shrink-0" />
@@ -126,7 +129,7 @@ export function GitHubForm({ integration, fields, onFieldsChange }: Props) {
       {/* Repository */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="text-sm font-medium" required>Repository</Label>
           {ownerValid && (
             <button
               type="button"
@@ -174,6 +177,9 @@ export function GitHubForm({ integration, fields, onFieldsChange }: Props) {
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
+        {showValidation && !repo && (
+          <p className="text-xs text-destructive mt-1">Repository is required</p>
+        )}
       </div>
 
       <div className="flex items-center gap-3">

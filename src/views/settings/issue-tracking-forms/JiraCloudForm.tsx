@@ -16,9 +16,10 @@ import { useListJiraProjects } from "@/services/integration-lookup.service";
 interface Props {
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
-export function JiraCloudForm({ fields, onFieldsChange }: Props) {
+export function JiraCloudForm({ fields, onFieldsChange, showValidation }: Props) {
   const projectKey = fields.project_key ?? "";
   const { data: projects = [], isLoading } = useListJiraProjects();
   const [search, setSearch] = useState("");
@@ -32,7 +33,10 @@ export function JiraCloudForm({ fields, onFieldsChange }: Props) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">Project</Label>
+      <Label className="text-sm font-medium" required>Project</Label>
+      {showValidation && !projectKey && (
+        <p className="text-xs text-destructive">Project is required</p>
+      )}
       <Combobox
         value={projectKey}
         onValueChange={(v) => onFieldsChange({ ...fields, project_key: v ?? "" })}

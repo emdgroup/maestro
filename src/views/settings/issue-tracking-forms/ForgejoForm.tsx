@@ -22,6 +22,7 @@ interface Props {
   integration: IntegrationStatus;
   fields: Record<string, string>;
   onFieldsChange: (fields: Record<string, string>) => void;
+  showValidation?: boolean;
 }
 
 function RepoProviderForm({
@@ -30,6 +31,7 @@ function RepoProviderForm({
   onFieldsChange,
   repoList,
   refreshRepos,
+  showValidation,
 }: Props & {
   repoList: { data?: RepoOption[]; isLoading: boolean };
   refreshRepos: () => void;
@@ -53,16 +55,18 @@ function RepoProviderForm({
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Owner</Label>
+        <Label className="text-sm font-medium" required>Owner</Label>
         <Input
           placeholder="username or org"
           value={owner}
           onChange={(e) => onFieldsChange({ ...fields, owner: e.target.value, repo: "" })}
+          aria-required="true"
+          aria-invalid={showValidation && !owner ? "true" : undefined}
         />
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="text-sm font-medium" required>Repository</Label>
           {ownerSet && (
             <button
               type="button"
@@ -110,12 +114,15 @@ function RepoProviderForm({
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
+        {showValidation && !repo && (
+          <p className="text-xs text-destructive mt-1">Repository is required</p>
+        )}
       </div>
     </div>
   );
 }
 
-export function ForgejoForm({ integration, fields, onFieldsChange }: Props) {
+export function ForgejoForm({ integration, fields, onFieldsChange, showValidation }: Props) {
   const owner = fields.owner ?? "";
   const repoList = useListForgejoRepos(owner, owner.length >= 1);
   const refreshRepos = useRefreshForgejoRepos(owner);
@@ -126,11 +133,12 @@ export function ForgejoForm({ integration, fields, onFieldsChange }: Props) {
       onFieldsChange={onFieldsChange}
       repoList={repoList}
       refreshRepos={refreshRepos}
+      showValidation={showValidation}
     />
   );
 }
 
-export function GiteaForm({ integration, fields, onFieldsChange }: Props) {
+export function GiteaForm({ integration, fields, onFieldsChange, showValidation }: Props) {
   const owner = fields.owner ?? "";
   const repoList = useListGiteaRepos(owner, owner.length >= 1);
   const refreshRepos = useRefreshGiteaRepos(owner);
@@ -141,6 +149,7 @@ export function GiteaForm({ integration, fields, onFieldsChange }: Props) {
       onFieldsChange={onFieldsChange}
       repoList={repoList}
       refreshRepos={refreshRepos}
+      showValidation={showValidation}
     />
   );
 }
