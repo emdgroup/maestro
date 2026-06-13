@@ -44,7 +44,7 @@ const SettingsView = lazy(() =>
 const NOOP = () => {};
 
 function App() {
-  const [showMissingDialog, setShowMissingDialog] = useState(false);
+  const [integrationDismissed, setIntegrationDismissed] = useState(false);
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
@@ -88,12 +88,26 @@ function App() {
   );
 
   // Zombie worktree cleanup on project open (REQ-36)
-  const cleanupZombiesMutation = useCleanupZombieWorktreesMutation();
+  const { mutate: cleanupZombies } = useCleanupZombieWorktreesMutation();
 
   // D-19 cascade check: verify issue tracking integration is still connected after project opens
   const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
   const { data: issueTrackingConfig, isLoading: issueTrackingLoading } =
     useProjectIssueTrackingConfig(currentProject?.id ?? 0);
+
+  // Reset dismissed flag whenever the user switches projects.
+  useEffect(() => {
+    setIntegrationDismissed(false);
+  }, [currentProject?.id]);
+
+  // Derived: show the dialog when project is loaded, queries settled, config present, and not connected.
+  const showMissingDialog =
+    !integrationDismissed &&
+    !!currentProject &&
+    !integrationsLoading &&
+    !issueTrackingLoading &&
+    !!issueTrackingConfig &&
+    !integrations?.find((i) => i.provider === issueTrackingConfig.provider && i.connected);
 
   // Stable connection key — memoized so downstream hooks don't churn on every render.
   const connection = useMemo(
@@ -154,13 +168,12 @@ function App() {
 
   useEffect(() => {
     if (currentProject) {
-      cleanupZombiesMutation.mutate({
+      cleanupZombies({
         projectId: currentProject.id,
         repoPath: currentProject.path,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject?.id]);
+  }, [currentProject?.id, cleanupZombies]);
 
   // Startup preferences — applied once per project open.
   const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);
@@ -174,24 +187,8 @@ function App() {
     if (validTabs.has(tab)) {
       setActiveTab(tab);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject?.id, projectSettings?.startup_tab]);
+  }, [currentProject?.id, projectSettings?.startup_tab, setActiveTab]);
 
-  useEffect(() => {
-    if (!currentProject || integrationsLoading || issueTrackingLoading) return;
-    if (!issueTrackingConfig) {
-      setShowMissingDialog(false);
-      return;
-    }
-    const integration = integrations?.find((i) => i.provider === issueTrackingConfig.provider);
-    setShowMissingDialog(!integration || !integration.connected);
-  }, [
-    currentProject,
-    integrations,
-    issueTrackingConfig,
-    integrationsLoading,
-    issueTrackingLoading,
-  ]);
 
   if (settingsLoading) {
     return (
@@ -310,7 +307,7 @@ function App() {
         projectId={currentProject.id}
         provider={issueTrackingConfig?.provider ?? ""}
         onFixIntegration={clearSelectedProject}
-        onDropConfig={() => setShowMissingDialog(false)}
+        onDropConfig={() => setIntegrationDismissed(true)}
       />
 
       {/* SSH connection loss overlay — blocks interaction during reconnect */}

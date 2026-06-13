@@ -7,71 +7,45 @@ import { useSettings } from "@/services/settings.service";
 
 interface ActivityThinkingBlockProps {
   thinking: ThinkingItem;
-  hasSubsequentMessage: boolean;
 }
 
-export function ActivityThinkingBlock({
-  thinking,
-  hasSubsequentMessage,
-}: ActivityThinkingBlockProps) {
+export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) {
   const { data: settings } = useSettings();
   const visibility = settings?.thinking_visibility ?? "auto";
 
-  const userToggled = useRef(false);
-  const [expanded, setExpanded] = useState(() => {
-    if (visibility === "collapse") return false;
-    if (visibility === "show") return true;
-    // "auto": expanded while streaming; hide mode doesn't matter (handled below)
-    return thinking.isStreaming;
-  });
-  useEffect(() => {
-    if (visibility === "collapse") {
-      setExpanded(false);
-      userToggled.current = false;
-    } else if (visibility === "show") {
-      setExpanded(true);
-      userToggled.current = false;
-    } else if (visibility === "auto") {
-      setExpanded(thinking.isStreaming);
-      userToggled.current = false;
-    }
-  }, [visibility]);
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
 
-  const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  // Reset user override when visibility setting changes
+  const prevVisibilityRef = useRef(visibility);
+  if (prevVisibilityRef.current !== visibility) {
+    prevVisibilityRef.current = visibility;
+    if (userExpanded !== null) setUserExpanded(null);
+  }
+
+  // Compute expanded during render — no stale render from effect
+  const expanded =
+    userExpanded !== null
+      ? userExpanded
+      : visibility === "collapse"
+        ? false
+        : visibility === "show"
+          ? true
+          : thinking.isStreaming; // "auto": expanded while streaming, collapsed otherwise
+
   const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
   const highWaterRef = useRef("");
 
   useEffect(() => {
-    if (thinking.isStreaming) {
-      lastTextRef.current = { text: thinking.text, time: Date.now() };
-    } else {
-      highWaterRef.current = "";
-    }
-  }, [thinking.text, thinking.isStreaming]);
-
-  useEffect(() => {
     if (!thinking.isStreaming) {
       setIsActivelyStreaming(false);
+      highWaterRef.current = "";
       return;
     }
-    const interval = setInterval(() => {
-      const stale = Date.now() - lastTextRef.current.time > 1500;
-      setIsActivelyStreaming(!stale);
-    }, 250);
-    return () => clearInterval(interval);
-  }, [thinking.isStreaming]);
-
-  // Auto mode: collapse when a subsequent agent message arrives (unless user toggled manually)
-  useEffect(() => {
-    if (
-      visibility === "auto" &&
-      hasSubsequentMessage &&
-      !thinking.isStreaming &&
-      !userToggled.current
-    ) {
-      setExpanded(false);
-    }
-  }, [visibility, hasSubsequentMessage, thinking.isStreaming]);
+    // New text arrived — mark as actively streaming and reset stale timer
+    setIsActivelyStreaming(true);
+    const id = setTimeout(() => setIsActivelyStreaming(false), 1500);
+    return () => clearTimeout(id);
+  }, [thinking.text, thinking.isStreaming]);
 
   const completedText = useMemo(() => {
     if (!isActivelyStreaming) return "";
@@ -85,8 +59,7 @@ export function ActivityThinkingBlock({
   if (visibility === "hide") return null;
 
   function handleToggle() {
-    userToggled.current = true;
-    setExpanded((v) => !v);
+    setUserExpanded((v) => (v === null ? !expanded : !v));
   }
 
   if (thinking.isStreaming) {

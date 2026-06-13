@@ -147,19 +147,17 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const titleValue = watch("title");
 
   useEffect(() => {
-    if (currentBranch && isOpen) {
-      setValue("baseBranch", currentBranch);
-    }
-  }, [currentBranch, isOpen, setValue]);
-
-  useEffect(() => {
-    if (projectSettings?.default_agent && isOpen) {
-      setValue("agentId", projectSettings.default_agent);
-    }
-  }, [projectSettings?.default_agent, isOpen, setValue]);
-
-  useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      reset({
+        title: "",
+        description: "",
+        baseBranch: currentBranch ?? "",
+        priority: "None",
+        agentId: projectSettings?.default_agent ?? "",
+        isolatedWorktree: true,
+        autoApprove: false,
+      });
+    } else {
       reset();
       setError(null);
       setSelectedIssue(null);
@@ -168,7 +166,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       setBranchTab("local");
       setIssueSearch("");
     }
-  }, [isOpen, reset]);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps -- reset is stable; currentBranch/projectSettings read at open time intentionally
 
   const handleIssueSelect = (issue: RemoteIssue) => {
     setSelectedIssue(issue);

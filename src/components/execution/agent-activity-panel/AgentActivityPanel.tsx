@@ -182,7 +182,7 @@ export function AgentActivityPanel({
       activeTab === "agents" &&
       !hasUnread &&
       activityInfo?.status === "idle" &&
-      activityInfo?.seen === false
+      !activityInfo?.seen
     ) {
       markSeen(sessionKey);
     }
@@ -196,25 +196,13 @@ export function AgentActivityPanel({
     markSeen,
   ]);
 
-  const initItemCountRef = useRef<number | null>(null);
-
   useEffect(() => {
     if (liveState.isInitializing) return;
-    initItemCountRef.current = liveState.items.length;
-    setActivityStatus(sessionKey, "idle");
-  }, [liveState.isInitializing, sessionKey, setActivityStatus]);
-
-  useEffect(() => {
     if (liveState.sessionEnded) {
       removeActivityStatus(sessionKey);
+      return;
     }
-  }, [liveState.sessionEnded, sessionKey, removeActivityStatus]);
-
-  useEffect(() => {
-    if (liveState.isInitializing || liveState.sessionEnded) return;
-    if (initItemCountRef.current === null) return;
-    const items = liveState.items;
-    if (items.length <= initItemCountRef.current) return;
+    const { items } = liveState;
 
     const lastItem = items[items.length - 1];
     if (!lastItem) return;
@@ -233,6 +221,8 @@ export function AgentActivityPanel({
           setActivityStatus(sessionKey, "acting", toolKindCategory(tc.kind));
         }
       }
+    } else {
+      setActivityStatus(sessionKey, "idle");
     }
   }, [
     liveState.items,
@@ -240,6 +230,7 @@ export function AgentActivityPanel({
     liveState.sessionEnded,
     sessionKey,
     setActivityStatus,
+    removeActivityStatus
   ]);
 
   const agentItemsCountRef = useRef(0);
@@ -267,6 +258,8 @@ export function AgentActivityPanel({
     return { workingFiles: [...working], sessionChangedFiles: [...changed] };
   }, [liveState.items]);
 
+  // Callback refs: parent passes new function references on every render, so storing in refs
+  // prevents the effect from re-running on every parent re-render while always calling the latest version.
   const onWorkingFilesChangeRef = useRef(onWorkingFilesChange);
   onWorkingFilesChangeRef.current = onWorkingFilesChange;
   const onSessionChangedFilesChangeRef = useRef(onSessionChangedFilesChange);
@@ -283,22 +276,17 @@ export function AgentActivityPanel({
   const [livePermissionResponses, setLivePermissionResponses] = useState<
     Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>
   >([]);
-  const planPermissionsRef = useRef(new Map<string, string>());
+
+  const planPermissionRequestIds = useRef<string[]>([]);
   const [showPlanOverlay, setShowPlanOverlay] = useState(false);
-  useEffect(() => {
-    if (!pendingPermission) setShowPlanOverlay(false);
-  }, [pendingPermission]);
 
   useEffect(() => {
+    if (!pendingPermission) setShowPlanOverlay(false);
     if (!pendingPermission || !isPlanPermission(pendingPermission.payload)) return;
-    for (let i = liveState.items.length - 1; i >= 0; i--) {
-      const item = liveState.items[i];
-      if (item.type === "toolCall" && item.item.kind === "switch_mode") {
-        planPermissionsRef.current.set(item.item.toolCallId, pendingPermission.requestId);
-        break;
-      }
+    if (!planPermissionRequestIds.current.includes(pendingPermission.requestId)) {
+      planPermissionRequestIds.current.push(pendingPermission.requestId);
     }
-  }, [pendingPermission, liveState.items]);
+  }, [pendingPermission]);
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
@@ -464,6 +452,14 @@ export function AgentActivityPanel({
     [liveState.items, livePermissionResponses, liveElicitationSummaries],
   );
 
+  const switchModeToolCallIds = useMemo(
+    () =>
+      liveState.items
+        .filter((it) => it.type === "toolCall" && it.item.kind === "switch_mode")
+        .map((it) => (it as Extract<typeof it, { type: "toolCall" }>).item.toolCallId),
+    [liveState.items],
+  );
+
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
 
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
@@ -493,8 +489,8 @@ export function AgentActivityPanel({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  // isReady: re-run when initialization completes (refs become available)
-  // isCenteredCompose: re-run when compose bar mounts/unmounts
+  // scrollEl and atBottomRef are refs — stable identities, intentionally non-reactive.
+  // Re-run only when the observable element mounts (isReady) or layout changes (isCenteredCompose).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, isCenteredCompose]);
 
@@ -526,7 +522,7 @@ export function AgentActivityPanel({
           </div>
         </div>
         <div className="px-16 pb-2.5 pt-1">
-          <Skeleton className="h-[72px] w-full rounded-3xl" />
+          <Skeleton className="h-18 w-full rounded-3xl" />
         </div>
       </div>
     );
@@ -620,7 +616,7 @@ export function AgentActivityPanel({
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {liveState.plan && (
-        <div className="flex-shrink-0 bg-card border-b border-border">
+        <div className="shrink-0 bg-card border-b border-border">
           <ActivityPlanPanel entries={liveState.plan} title={liveState.planTitle} />
         </div>
       )}
@@ -677,7 +673,11 @@ export function AgentActivityPanel({
                   if (gi.type === "toolGroup") {
                     if (gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
                       const tc = gi.items[0];
-                      const reqId = planPermissionsRef.current.get(tc.toolCallId);
+                      const switchModeIndex = switchModeToolCallIds.indexOf(tc.toolCallId);
+                      const reqId =
+                        switchModeIndex >= 0
+                          ? planPermissionRequestIds.current[switchModeIndex]
+                          : undefined;
                       const respEntry = reqId
                         ? (livePermissionResponses.find((r) => r.requestId === reqId) ?? null)
                         : null;
@@ -763,7 +763,6 @@ export function AgentActivityPanel({
                       <ActivityThinkingBlock
                         key={item.item.id}
                         thinking={item.item}
-                        hasSubsequentMessage={hasSubsequentMessage}
                       />
                     );
                   } else if (item.type === "permissionResponse") {
@@ -847,16 +846,16 @@ export function AgentActivityPanel({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
                 onClick={scrollToLastUserMsg}
-                className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-[4px] bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
+                className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-xs bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
                 aria-label="Scroll to last message"
               >
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center flex-shrink-0">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center shrink-0">
                   <User className="w-2.5 h-2.5 text-accent/70" />
                 </div>
                 <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
                   {parseUserContent(lastUserMessage.content).text}
                 </span>
-                <ChevronUp className="w-3 h-3 text-muted-foreground flex-shrink-0 opacity-50" />
+                <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 opacity-50" />
               </motion.button>
             )}
           </AnimatePresence>
@@ -871,7 +870,7 @@ export function AgentActivityPanel({
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => scrollToBottom()}
-                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[4px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
+                className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
                 aria-label="Scroll to bottom"
               >
                 <ChevronDown

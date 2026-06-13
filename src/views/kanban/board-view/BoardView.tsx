@@ -50,16 +50,24 @@ export function BoardView({ tasks, worktreeTaskIds, onReviewClick }: BoardViewPr
   const [isDragActive, setIsDragActive] = useState(false);
   const [draggingTask, setDraggingTask] = useState<Task | null>(null);
 
+  const highlightedColumn: DndGroup | null =
+    isDragActive && draggingTask
+      ? dndItems.Ready.includes(draggingTask.id)
+        ? "Ready"
+        : "Backlog"
+      : null;
+
   const liveDndRef = useRef<DndItems>(dndItems);
   const previousDndRef = useRef<DndItems>(dndItems);
 
+  const stableDndItems = useMemo(() => buildDndItems(tasks), [tasks]);
+
   useEffect(() => {
     if (!isDragActive) {
-      const next = buildDndItems(tasks);
-      setDndItems(next);
-      liveDndRef.current = next;
+      setDndItems(stableDndItems);
+      liveDndRef.current = stableDndItems;
     }
-  }, [tasks, isDragActive]);
+  }, [stableDndItems, isDragActive]);
 
   const getColumnTasks = (status: TaskStatus): Task[] => {
     if (status === "Done") {
@@ -137,6 +145,7 @@ export function BoardView({ tasks, worktreeTaskIds, onReviewClick }: BoardViewPr
               tasks={getColumnTasks(status)}
               status={status}
               isDragActive={isDragActive}
+              isHighlighted={highlightedColumn === status}
               onReviewClick={(taskId, _taskName) => onReviewClick(taskId)}
               worktreeTaskIds={worktreeTaskIds}
             />
