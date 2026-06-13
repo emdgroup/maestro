@@ -108,6 +108,8 @@ export function ReviewChangesPanel({
 
   useEffect(() => {
     if (!initialFile || initialFileAppliedRef.current || allDisplayItems.length === 0) return;
+    // diff items have relative fileName; initialFile is absolute → check absolute ends with relative.
+    // untracked items have absolute path → check absolute path ends with initialFile (handles bare filename too).
     const idx = allDisplayItems.findIndex((item) =>
       item.kind === "diff"
         ? initialFile.endsWith(item.file.fileName)
