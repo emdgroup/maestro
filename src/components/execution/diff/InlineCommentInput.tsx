@@ -42,10 +42,10 @@ export function InlineCommentInput({ onSubmit, onCancel, initialText }: InlineCo
         rows={2}
       />
       <div className="flex justify-end gap-2 mt-2">
-        <Button variant="ghost" size="sm" onClick={onCancel}>
+        <Button variant="ghost" size="sm" onClick={onCancel} style={{ color: "var(--foreground)" }}>
           Cancel
         </Button>
-        <Button size="sm" onClick={handleSubmit} disabled={!text.trim()}>
+        <Button size="sm" onClick={handleSubmit} disabled={!text.trim()} style={{ color: "var(--primary-foreground)" }}>
           {initialText ? "Save" : "Add"}
         </Button>
       </div>
