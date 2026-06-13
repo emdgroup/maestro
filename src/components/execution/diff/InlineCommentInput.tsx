@@ -38,7 +38,7 @@ export function InlineCommentInput({ onSubmit, onCancel, initialText }: InlineCo
         onChange={e => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Add a comment..."
-        className="w-full min-h-[60px] resize-y bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="w-full min-h-[60px] resize-y bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         rows={2}
       />
       <div className="flex justify-end gap-2 mt-2">
