@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -253,12 +253,48 @@ export function IntegrationConnectDialog({
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [bitbucketMode, setBitbucketMode] = useState<"cloud" | "server">("cloud");
+  const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { mutateAsync: saveIntegration, isPending } = useSaveIntegration();
 
   const providerName = PROVIDER_NAMES[provider] ?? provider;
   const fields = getProviderFields(provider);
   const isBitbucket = provider === "bitbucket";
+
+  const instanceUrlRequired = !isBitbucket && fields.showInstanceUrl;
+  const emailRequired = !isBitbucket && fields.showEmail;
+  const isSubmitDisabled =
+    isPending ||
+    !token.trim() ||
+    (instanceUrlRequired && !instanceUrl.trim()) ||
+    (emailRequired && !email.trim());
+
+  const triggerValidation = () => {
+    const el = formRef.current;
+    if (el) {
+      el.classList.remove("animate-shake");
+      void el.offsetWidth;
+      el.classList.add("animate-shake");
+    }
+    setAttempted(true);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => setAttempted(false), 2000);
+  };
+
+  const startHoverTimer = () => {
+    if (!isSubmitDisabled) return;
+    hoverTimerRef.current = setTimeout(triggerValidation, 500);
+  };
+
+  const cancelHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -267,6 +303,9 @@ export function IntegrationConnectDialog({
       setEmail("");
       setError(null);
       setBitbucketMode("cloud");
+      setAttempted(false);
+      cancelHoverTimer();
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
     }
     onOpenChange(nextOpen);
   };
@@ -277,10 +316,11 @@ export function IntegrationConnectDialog({
     setInstanceUrl("");
     setEmail("");
     setError(null);
+    setAttempted(false);
   };
 
   const handleSubmit = async () => {
-    if (!token.trim()) return;
+    if (isSubmitDisabled) return;
     setError(null);
     try {
       await saveIntegration({
@@ -311,7 +351,7 @@ export function IntegrationConnectDialog({
           <DialogDescription>Enter your credentials to connect {providerName}.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div ref={formRef} className="space-y-4 py-2">
           {isBitbucket && (
             <BitbucketModeToggle
               mode={bitbucketMode}
@@ -348,7 +388,7 @@ export function IntegrationConnectDialog({
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="integration-token">
+                <Label htmlFor="integration-token" required>
                   {bitbucketMode === "cloud" ? "App Password" : "HTTP Access Token"}
                 </Label>
                 <Input
@@ -360,27 +400,41 @@ export function IntegrationConnectDialog({
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={isPending}
+                  aria-required="true"
+                  aria-invalid={attempted && !token.trim() ? "true" : undefined}
                 />
+                {attempted && !token.trim() && (
+                  <p className="text-xs text-destructive">
+                    {bitbucketMode === "cloud" ? "App password" : "Access token"} is required
+                  </p>
+                )}
               </div>
             </>
           ) : (
             <>
               {fields.showInstanceUrl && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-instance-url">{fields.instanceUrlLabel}</Label>
+                  <Label htmlFor="integration-instance-url" required>
+                    {fields.instanceUrlLabel}
+                  </Label>
                   <Input
                     id="integration-instance-url"
                     placeholder={fields.instanceUrlPlaceholder}
                     value={instanceUrl}
                     onChange={(e) => setInstanceUrl(e.target.value)}
                     disabled={isPending}
+                    aria-required="true"
+                    aria-invalid={attempted && !instanceUrl.trim() ? "true" : undefined}
                   />
+                  {attempted && !instanceUrl.trim() && (
+                    <p className="text-xs text-destructive">{fields.instanceUrlLabel} is required</p>
+                  )}
                 </div>
               )}
 
               {fields.showEmail && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-email">Email</Label>
+                  <Label htmlFor="integration-email" required>Email</Label>
                   <Input
                     id="integration-email"
                     type="email"
@@ -388,12 +442,17 @@ export function IntegrationConnectDialog({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isPending}
+                    aria-required="true"
+                    aria-invalid={attempted && !email.trim() ? "true" : undefined}
                   />
+                  {attempted && !email.trim() && (
+                    <p className="text-xs text-destructive">Email is required</p>
+                  )}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="integration-token">{fields.tokenLabel}</Label>
+                <Label htmlFor="integration-token" required>{fields.tokenLabel}</Label>
                 <Input
                   id="integration-token"
                   type="password"
@@ -401,7 +460,12 @@ export function IntegrationConnectDialog({
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={isPending}
+                  aria-required="true"
+                  aria-invalid={attempted && !token.trim() ? "true" : undefined}
                 />
+                {attempted && !token.trim() && (
+                  <p className="text-xs text-destructive">{fields.tokenLabel} is required</p>
+                )}
               </div>
             </>
           )}
@@ -418,16 +482,18 @@ export function IntegrationConnectDialog({
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || !token.trim()}>
-            {isPending ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Connecting...
-              </>
-            ) : (
-              "Connect"
-            )}
-          </Button>
+          <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
+            <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
+              {isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect"
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -31,15 +31,29 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mutateAsync: createNewProject, isPending } = useCreateNewProject();
   const { setSelectedProject } = useSelectedProjectActions();
 
   const isSubmitDisabled = isPending || !parentDir.trim() || !folderName.trim();
 
+  const triggerValidation = () => {
+    const el = formRef.current;
+    if (el) {
+      el.classList.remove("animate-shake");
+      void el.offsetWidth;
+      el.classList.add("animate-shake");
+    }
+    setAttempted(true);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => setAttempted(false), 2000);
+  };
+
   const startHoverTimer = () => {
     if (!isSubmitDisabled) return;
-    hoverTimerRef.current = setTimeout(() => setAttempted(true), 500);
+    hoverTimerRef.current = setTimeout(triggerValidation, 500);
   };
 
   const cancelHoverTimer = () => {
@@ -74,6 +88,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
       setSelectedProject(project);
       setAttempted(false);
       cancelHoverTimer();
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       setParentDir("");
       setFolderName("");
       onOpenChange(false);
@@ -91,6 +106,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
         setError(null);
         setAttempted(false);
         cancelHoverTimer();
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       }
       onOpenChange(nextOpen);
     }
@@ -104,7 +120,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>Create a new project folder.</DialogDescription>
           </DialogHeader>
-          <div key={attempted ? 1 : 0} className={`space-y-4 py-2 ${attempted ? "animate-shake" : ""}`}>
+          <div ref={formRef} className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="create-parent" required>Parent Directory</Label>
               <div className="flex gap-2">

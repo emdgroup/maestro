@@ -33,16 +33,31 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState("");
   const [provider, setProvider] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("provider");
   const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mutateAsync: cloneProject, isPending } = useCloneProject();
   const { setSelectedProject } = useSelectedProjectActions();
 
   const isSubmitDisabled = isPending || !url.trim() || !targetPath.trim();
 
+  const triggerValidation = () => {
+    const el = formRef.current;
+    if (el) {
+      el.classList.remove("animate-shake");
+      void el.offsetWidth;
+      el.classList.add("animate-shake");
+    }
+    setAttempted(true);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => setAttempted(false), 2000);
+  };
+
   const startHoverTimer = () => {
     if (!isSubmitDisabled) return;
-    hoverTimerRef.current = setTimeout(() => setAttempted(true), 500);
+    hoverTimerRef.current = setTimeout(triggerValidation, 500);
   };
 
   const cancelHoverTimer = () => {
@@ -93,9 +108,11 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
       setSelectedProject(project);
       setAttempted(false);
       cancelHoverTimer();
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       setUrl("");
       setTargetPath("");
       setSelectedRepoName("");
+      setActiveTab("provider");
       onOpenChange(false);
     } catch {
       // Error handled by mutation hook
@@ -109,8 +126,10 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
         setTargetPath("");
         setSelectedRepoName("");
         setProvider(null);
+        setActiveTab("provider");
         setAttempted(false);
         cancelHoverTimer();
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       }
       onOpenChange(nextOpen);
     }
@@ -124,7 +143,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
             <DialogTitle>Clone Project</DialogTitle>
             <DialogDescription>Clone a git repository into a chosen directory.</DialogDescription>
           </DialogHeader>
-          <div key={attempted ? 1 : 0} className={`space-y-4 py-2 ${attempted ? "animate-shake" : ""}`}>
+          <div ref={formRef} className="space-y-4 py-2">
             {/* Parent directory — always visible */}
             <div className="space-y-2">
               <Label htmlFor="clone-target" required>Parent Directory</Label>
@@ -151,7 +170,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
             </div>
 
             {/* Tabs: Provider first, URL second */}
-            <Tabs defaultValue="provider">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="w-full">
                 <TabsTrigger value="provider">
                   <Globe className="size-3.5" />
