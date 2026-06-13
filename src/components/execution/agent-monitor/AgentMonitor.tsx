@@ -220,7 +220,7 @@ export function AgentMonitor({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
-  const [openPanel, setOpenPanel] = useState<"working-files" | "review-changes" | null>(null);
+  const [openPanel, setOpenPanel] = useState<{ panel: "working-files" | "review-changes"; initialFile?: string } | null>(null);
   const [sessionWorkingFiles, setSessionWorkingFiles] = useState<Map<number, string[]>>(new Map());
   const [sessionChangedFiles, setSessionChangedFiles] = useState<Map<number, string[]>>(new Map());
 
@@ -254,10 +254,10 @@ export function AgentMonitor({
 
   useShortcuts("agents", {
     "agents-working":     () => {
-      if (selectedSessionKey != null) setOpenPanel("working-files");
+      if (selectedSessionKey != null) setOpenPanel({ panel: "working-files" });
     },
     "agents-review":      () => {
-      if (selectedSessionKey != null) setOpenPanel("review-changes");
+      if (selectedSessionKey != null) setOpenPanel({ panel: "review-changes" });
     },
     "agents-close-panel": () => {
       if (openPanel !== null) setOpenPanel(null);
@@ -438,7 +438,7 @@ export function AgentMonitor({
                         disabled={
                           (sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0
                         }
-                        onClick={() => setOpenPanel("working-files")}
+                        onClick={() => setOpenPanel({ panel: "working-files" })}
                       >
                         <FileText className="w-3.5 h-3.5 mr-1" />
                         Working Files
@@ -454,7 +454,7 @@ export function AgentMonitor({
                         variant="outline"
                         size="sm"
                         className="h-8 text-xs"
-                        onClick={() => setOpenPanel("review-changes")}
+                        onClick={() => setOpenPanel({ panel: "review-changes" })}
                       >
                         <FileDiff className="w-3.5 h-3.5 mr-1" />
                         Review Changes
@@ -506,22 +506,24 @@ export function AgentMonitor({
                 isSelected={s.session_key === selectedSessionKey}
                 onWorkingFilesChange={handleWorkingFilesChange}
                 onSessionChangedFilesChange={handleSessionChangedFilesChange}
-                onOpenPanel={s.session_key === selectedSessionKey ? setOpenPanel : undefined}
+                onOpenPanel={s.session_key === selectedSessionKey ? (panel, initialFile) => setOpenPanel({ panel, initialFile }) : undefined}
               />
             </div>
           ))}
 
-        {selectedSessionKey != null && openPanel === "working-files" && (
+        {selectedSessionKey != null && openPanel?.panel === "working-files" && (
           <WorkingFilesPanel
             sessionKey={selectedSessionKey}
             files={sessionWorkingFiles.get(selectedSessionKey) ?? []}
+            initialFile={openPanel.initialFile}
             onClose={() => setOpenPanel(null)}
           />
         )}
-        {selectedSessionKey != null && openPanel === "review-changes" && (
+        {selectedSessionKey != null && openPanel?.panel === "review-changes" && (
           <ReviewChangesPanel
             sessionKey={selectedSessionKey}
             sessionChangedFiles={sessionChangedFiles.get(selectedSessionKey) ?? []}
+            initialFile={openPanel.initialFile}
             onClose={() => setOpenPanel(null)}
           />
         )}
