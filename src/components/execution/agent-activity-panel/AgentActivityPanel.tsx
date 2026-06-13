@@ -20,7 +20,7 @@ import { SubagentCard } from "../activity/SubagentCard";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import { ComposeBar } from "../activity/ComposeBar";
 import type { ComposeBarHandle } from "../activity/ComposeBar";
-import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import { PermissionPrompt, isPlanPermission, extractBodyText, isAllowKind } from "../activity/PermissionPrompt";
 import { PermissionResponseCard } from "../activity/PermissionResponseCard";
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import { ActivityElicitationSummary } from "../activity/ActivityElicitationSummary";
@@ -281,12 +281,24 @@ export function AgentActivityPanel({
     Array<{ item: ElicitationSummaryItem; insertAt: number }>
   >([]);
   const [livePermissionResponses, setLivePermissionResponses] = useState<
-    Array<{ item: PermissionResponseItem; insertAt: number }>
+    Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>
   >([]);
+  const planPermissionsRef = useRef(new Map<string, string>());
   const [showPlanOverlay, setShowPlanOverlay] = useState(false);
   useEffect(() => {
     if (!pendingPermission) setShowPlanOverlay(false);
   }, [pendingPermission]);
+
+  useEffect(() => {
+    if (!pendingPermission || !isPlanPermission(pendingPermission.payload)) return;
+    for (let i = liveState.items.length - 1; i >= 0; i--) {
+      const item = liveState.items[i];
+      if (item.type === "toolCall" && item.item.kind === "switch_mode") {
+        planPermissionsRef.current.set(item.item.toolCallId, pendingPermission.requestId);
+        break;
+      }
+    }
+  }, [pendingPermission, liveState.items]);
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
@@ -367,7 +379,7 @@ export function AgentActivityPanel({
           isRejection,
         };
         const insertAt = agentItemsCountRef.current;
-        setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt }]);
+        setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt, requestId }]);
       }
       setPendingPermission(null);
       setActivityStatus(sessionKey, "thinking");
@@ -391,7 +403,11 @@ export function AgentActivityPanel({
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
       if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
-        await handlePermissionRespond(pendingPermission.requestId, null);
+        const options = pendingPermission.payload.options as
+          | Array<{ optionId: string; kind: string }>
+          | undefined;
+        const rejectOpt = options?.find((o) => !isAllowKind(o.kind));
+        await handlePermissionRespond(pendingPermission.requestId, rejectOpt?.optionId ?? null);
       }
       liveDispatch({ type: "finalize_streaming" });
       setActivityStatus(sessionKey, "thinking");
@@ -451,19 +467,6 @@ export function AgentActivityPanel({
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
 
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
-
-  const planToolCallIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const section of agentSections) {
-      if (section.type !== "agentSection") continue;
-      for (const gi of section.items) {
-        if (gi.type === "toolGroup" && gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
-          ids.push(gi.items[0].toolCallId);
-        }
-      }
-    }
-    return ids;
-  }, [agentSections]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
@@ -674,8 +677,10 @@ export function AgentActivityPanel({
                   if (gi.type === "toolGroup") {
                     if (gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
                       const tc = gi.items[0];
-                      const planIdx = planToolCallIds.indexOf(tc.toolCallId);
-                      const respEntry = planIdx >= 0 ? (livePermissionResponses[planIdx] ?? null) : null;
+                      const reqId = planPermissionsRef.current.get(tc.toolCallId);
+                      const respEntry = reqId
+                        ? (livePermissionResponses.find((r) => r.requestId === reqId) ?? null)
+                        : null;
                       const responseStatus = respEntry
                         ? respEntry.item.isRejection
                           ? "rejected"

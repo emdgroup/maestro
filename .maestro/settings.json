@@ -1,6 +1,6 @@
 {
   "default_agent": "claude-acp",
-  "updated_at": "2026-06-09T23:17:13.167600200+00:00",
+  "updated_at": "2026-06-13T00:12:36.974064200+00:00",
   "issue_tracking": null,
   "reopen_sessions": true,
   "startup_tab": "agents"

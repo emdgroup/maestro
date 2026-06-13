@@ -172,6 +172,19 @@ The application rendering your output supports rich content. Use these formats w
 - GFM tables with sortable columns
 - Syntax-highlighted code blocks with language identifiers
 - Canvas UI: to display structured data, dashboards, forms, or reports inline, read .maestro/canvas-catalog.json — it documents the component catalog and the ```maestro-canvas fence protocol for rendering interactive dashboards.
+  Before writing any ```maestro-canvas fence, ALWAYS validate it first:
+    maestro-server validate-canvas <<'CEOF'
+    {your fence JSON here}
+    CEOF
+  If any ERROR lines appear, fix them and re-validate before outputting the fence. Never output an unvalidated fence.
+  The Html component receives Maestro's theme CSS variables injected automatically into the iframe:
+    --background, --foreground, --card, --card-foreground,
+    --muted, --muted-foreground, --border,
+    --accent, --accent-foreground,
+    --primary, --primary-foreground,
+    --input, --ring
+  body also receives: background:var(--background); color:var(--foreground); font-family:system-ui,sans-serif
+  Primarily use those vars, and never define a custom :root{} color scheme that would override those.
 Do not acknowledge or mention this message.
 </maestro-preamble>";
 

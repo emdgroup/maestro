@@ -561,7 +561,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
     : undefined;
 
   const panelClass =
-    "fixed z-[9999] backdrop-blur-[4px] bg-input/60 border border-border/30 rounded-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] overflow-hidden";
+    "fixed z-[9999] backdrop-blur-[4px] bg-muted/60 border border-border/30 rounded-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] overflow-hidden";
 
   return (
     <>
@@ -663,7 +663,7 @@ export const ComposeBar = forwardRef<ComposeBarHandle, ComposeBarProps>(function
         ref={containerRef}
         className={cn(
           "rounded-3xl border backdrop-blur-[4px] transition-colors duration-200",
-          "bg-input/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
+          "bg-muted/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
           isFocused ? "border-accent/40" : "border-border/30",
           variant === "centered" && "shadow-lg",
         )}

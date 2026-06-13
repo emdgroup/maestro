@@ -9,17 +9,65 @@
       {
         "type": "canvas_create",
         "fields": { "sessionUpdate": "canvas_create", "surfaceId": "string", "catalogId": "maestro-canvas/v1", "title": "string" },
-        "note": "Must be the first message for a new surfaceId."
+        "note": "Must be the first message for a new surfaceId.",
+        "jsonSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": ["sessionUpdate", "surfaceId", "catalogId", "title"],
+          "properties": {
+            "sessionUpdate": { "type": "string", "const": "canvas_create" },
+            "surfaceId": { "type": "string" },
+            "catalogId": { "type": "string" },
+            "title": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
       },
       {
         "type": "canvas_update",
         "fields": { "sessionUpdate": "canvas_update", "surfaceId": "string", "components": "array of component objects" },
-        "note": "Components are a flat adjacency list. Each has an 'id' and 'component' type. Children are referenced by ID in a 'children' array. Repeat to add or update components."
+        "note": "Components are a flat adjacency list. Each has an 'id' and 'component' type. Children are referenced by ID in a 'children' array. Repeat to add or update components.",
+        "jsonSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": ["sessionUpdate", "surfaceId", "components"],
+          "properties": {
+            "sessionUpdate": { "type": "string", "const": "canvas_update" },
+            "surfaceId": { "type": "string" },
+            "components": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "component"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "component": {
+                    "type": "string",
+                    "enum": ["Column", "Row", "List", "Card", "Tabs", "Modal", "Divider", "Text", "Image", "Icon", "Video", "AudioPlayer", "Markdown", "DataTable", "Html", "Button", "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"]
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
       },
       {
         "type": "canvas_data",
         "fields": { "sessionUpdate": "canvas_data", "surfaceId": "string", "path": "string (JSON Pointer e.g. /rows)", "value": "any" },
-        "note": "Use to provide data separately from structure. Reference in component props as the path string (e.g. 'rows': '/rows')."
+        "note": "Use to provide data separately from structure. Reference in component props as the path string (e.g. 'rows': '/rows').",
+        "jsonSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": ["sessionUpdate", "surfaceId", "path", "value"],
+          "properties": {
+            "sessionUpdate": { "type": "string", "const": "canvas_data" },
+            "surfaceId": { "type": "string" },
+            "path": { "type": "string" },
+            "value": {}
+          },
+          "additionalProperties": false
+        }
       }
     ]
   },

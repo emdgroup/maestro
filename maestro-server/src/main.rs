@@ -14,6 +14,7 @@ mod file_ops;
 mod session;
 mod sessions;
 mod terminal;
+mod validate_canvas;
 
 #[cfg(test)]
 mod tests;
@@ -133,6 +134,9 @@ fn main() {
     if std::env::args().any(|a| a == "--protocol-version") {
         println!("{}", PROTOCOL_VERSION);
         return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("validate-canvas") {
+        std::process::exit(validate_canvas::run());
     }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
