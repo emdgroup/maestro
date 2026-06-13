@@ -10,6 +10,7 @@ interface KanbanColumnProps {
   tasks: Task[];
   status: TaskStatus;
   isDragActive: boolean;
+  isHighlighted?: boolean;
   onReviewClick?: (taskId: number, taskName: string) => void;
   worktreeTaskIds: Set<number>;
 }
@@ -49,6 +50,7 @@ export function KanbanColumn({
   tasks,
   status,
   isDragActive,
+  isHighlighted,
   onReviewClick,
   worktreeTaskIds,
 }: KanbanColumnProps) {
@@ -56,7 +58,7 @@ export function KanbanColumn({
   const borderColor = getColumnBorderColor(status);
   const badgeColor = getBadgeColor(status);
 
-  const { ref, isDropTarget } = useDroppable({
+  const { ref } = useDroppable({
     id: status,
     type: "column",
     accept: ["item"],
@@ -77,7 +79,7 @@ export function KanbanColumn({
       </div>
       <div
         ref={ref}
-        className={`flex-1 overflow-y-auto custom-scrollbar p-3 transition-all duration-150 ${isDropTarget ? getDropTargetClass(status) : ""}`}
+        className={`flex-1 overflow-y-auto custom-scrollbar p-3 transition-all duration-150 ${isHighlighted ? getDropTargetClass(status) : ""}`}
       >
         {tasks.map((task, index) => (
           <TaskCard

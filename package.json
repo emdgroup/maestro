@@ -21,9 +21,10 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
-    "@dnd-kit/abstract": "^0.4.0",
-    "@dnd-kit/helpers": "^0.4.0",
-    "@dnd-kit/react": "^0.4.0",
+    "@dnd-kit/abstract": "^0.5.0",
+    "@dnd-kit/collision": "^0.5.0",
+    "@dnd-kit/helpers": "^0.5.0",
+    "@dnd-kit/react": "^0.5.0",
     "@fabianlars/tauri-plugin-oauth": "^2.0.0",
     "@git-diff-view/core": "^0.1.5",
     "@git-diff-view/react": "^0.1.5",

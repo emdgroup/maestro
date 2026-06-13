@@ -8,6 +8,7 @@ import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { ShieldAlert } from "lucide-react";
 import { PRIORITY_COLORS } from "@/utils/constants/priority";
 import { useSortable } from "@dnd-kit/react/sortable";
+import { pointerIntersection } from "@dnd-kit/collision";
 import { cn } from "@/lib/ui-utils";
 import { useSessionActivity, type SessionActivityStatus, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
@@ -133,6 +134,7 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
     accept: ["item"],
     group: dndGroup ?? task.status,
     disabled: !isDraggable,
+    collisionDetector: pointerIntersection,
   });
 
   const dragOccurredRef = useRef(false);
