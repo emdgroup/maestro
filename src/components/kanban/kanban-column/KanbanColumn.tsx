@@ -3,6 +3,7 @@ import { TaskCard } from "../task-card/TaskCard";
 import { Badge } from "@/ui/badge";
 import { useDroppable } from "@dnd-kit/react";
 import { CollisionPriority } from "@dnd-kit/abstract";
+import { pointerIntersection } from "@dnd-kit/collision";
 
 interface KanbanColumnProps {
   columnTitle: string;
@@ -60,6 +61,7 @@ export function KanbanColumn({
     type: "column",
     accept: ["item"],
     collisionPriority: CollisionPriority.Low,
+    collisionDetector: pointerIntersection,
     disabled: !isDndColumn,
   });
 
