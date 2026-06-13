@@ -48,7 +48,7 @@ interface AgentActivityPanelProps {
   onUsageChange?: (usage: UsageState | null) => void;
   onWorkingFilesChange?: (sessionKey: number, files: string[]) => void;
   onSessionChangedFilesChange?: (sessionKey: number, files: string[]) => void;
-  onOpenPanel?: (panel: "working-files" | "review-changes") => void;
+  onOpenPanel?: (panel: "working-files" | "review-changes", initialFile?: string) => void;
 }
 
 const WORKING_FILE_EXTENSIONS = new Set([
@@ -741,14 +741,14 @@ export function AgentActivityPanel({
                           <ActivityFileCard
                             variant="working-files"
                             fileNames={uniqueWorkingFiles}
-                            onClick={() => onOpenPanel?.("working-files")}
+                            onClick={() => onOpenPanel?.("working-files", uniqueWorkingFiles[0])}
                           />
                         )}
                         {groupDone && uniqueChangedFiles.length > 0 && (
                           <ActivityFileCard
                             variant="review-changes"
                             fileNames={uniqueChangedFiles}
-                            onClick={() => onOpenPanel?.("review-changes")}
+                            onClick={() => onOpenPanel?.("review-changes", uniqueChangedFiles[0])}
                           />
                         )}
                       </div>

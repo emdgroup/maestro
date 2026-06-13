@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { X, AlignJustify, Columns2, List, FolderTree, FileDiff, CheckCheck } from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { cn } from "@/lib/ui-utils";
@@ -18,18 +18,21 @@ interface ReviewChangesPanelProps {
   sessionKey: number;
   sessionChangedFiles: string[];
   onClose: () => void;
+  initialFile?: string;
 }
 
 export function ReviewChangesPanel({
   sessionKey,
   sessionChangedFiles,
   onClose,
+  initialFile,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [search, setSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
+  const initialFileAppliedRef = useRef(false);
 
   const toggleViewed = useCallback((fileName: string) => {
     setViewedFiles((prev) => {
@@ -102,6 +105,21 @@ export function ReviewChangesPanel({
       ...untrackedFiles.map((path): DisplayItem => ({ kind: "untracked", path })),
     ];
   }, [diffFiles, untrackedFiles]);
+
+  useEffect(() => {
+    if (!initialFile || initialFileAppliedRef.current || allDisplayItems.length === 0) return;
+    // diff items have relative fileName; initialFile is absolute → check absolute ends with relative.
+    // untracked items have absolute path → check absolute path ends with initialFile (handles bare filename too).
+    const idx = allDisplayItems.findIndex((item) =>
+      item.kind === "diff"
+        ? initialFile.endsWith(item.file.fileName)
+        : item.path.endsWith(initialFile),
+    );
+    if (idx >= 0) {
+      setSelectedFileIndex(idx);
+      initialFileAppliedRef.current = true;
+    }
+  }, [allDisplayItems, initialFile]);
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return allDisplayItems;

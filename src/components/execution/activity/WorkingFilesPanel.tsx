@@ -10,6 +10,7 @@ interface WorkingFilesPanelProps {
   files: string[];
   sessionKey: number;
   onClose: () => void;
+  initialFile?: string;
 }
 
 type FileViewType = "markdown" | "svg" | "mermaid" | "code" | "html" | "plain" | "image";
@@ -106,9 +107,11 @@ function FileContentView({
   }
 }
 
-export function WorkingFilesPanel({ files, sessionKey, onClose }: WorkingFilesPanelProps) {
+export function WorkingFilesPanel({ files, sessionKey, onClose, initialFile }: WorkingFilesPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(files[0] ?? null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(
+    (initialFile && files.includes(initialFile) ? initialFile : null) ?? files[0] ?? null,
+  );
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
