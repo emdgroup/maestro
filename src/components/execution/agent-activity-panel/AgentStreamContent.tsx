@@ -1,0 +1,129 @@
+import { AnimatePresence } from "framer-motion";
+import { ActivityUserMessage } from "../activity/ActivityUserMessage";
+import { AgentResponseSection } from "../activity/AgentResponseSection";
+import { AgentStreamItem } from "./AgentStreamItem";
+import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
+import type { PermissionResponseItem, ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
+
+interface AgentStreamContentProps {
+  agentSections: AgentSectionItem[];
+  lastUserMessage: UserMessageItem | null;
+  toolCallMap: Map<string, ToolCallItem>;
+  canvasMap: Map<string, CanvasSurface>;
+  switchModeToolCallIds: string[];
+  planPermissionRequestIds: React.RefObject<string[]>;
+  livePermissionResponses: Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>;
+  pendingPermission: { requestId: string; payload: Record<string, unknown> } | null;
+  onOpenPlanOverlay: () => void;
+  inlinePermission: React.ReactNode;
+  bottomBar: React.ReactNode;
+  chatScrollRef: React.RefObject<HTMLDivElement | null>;
+  chatContentRef: React.RefObject<HTMLDivElement | null>;
+  lastUserMsgRef: React.RefObject<HTMLDivElement | null>;
+  handleWheel: React.WheelEventHandler<HTMLDivElement>;
+  handleChatScroll: React.UIEventHandler<HTMLDivElement>;
+  onOpenPanel?: (panel: "working-files" | "review-changes", initialFile?: string) => void;
+}
+
+export function AgentStreamContent({
+  agentSections,
+  lastUserMessage,
+  toolCallMap,
+  canvasMap,
+  switchModeToolCallIds,
+  planPermissionRequestIds,
+  livePermissionResponses,
+  pendingPermission,
+  onOpenPlanOverlay,
+  inlinePermission,
+  bottomBar,
+  chatScrollRef,
+  chatContentRef,
+  lastUserMsgRef,
+  handleWheel,
+  handleChatScroll,
+  onOpenPanel,
+}: AgentStreamContentProps) {
+  return (
+    <div
+      className="absolute inset-0 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar"
+      ref={chatScrollRef}
+      onScroll={handleChatScroll}
+      onWheel={handleWheel}
+    >
+      <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
+        {agentSections.map((section, sectionIndex) => {
+          if (section.type === "standalone") {
+            const gi = section.item;
+            if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+            const isLast = gi.item.item.id === lastUserMessage?.id;
+            return (
+              <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
+                <ActivityUserMessage message={gi.item.item} />
+              </div>
+            );
+          }
+
+          const { items, showConnector } = section;
+          const firstItem = items[0];
+          const sectionKey =
+            firstItem.type === "toolGroup"
+              ? `tg-${firstItem.items[0].toolCallId}`
+              : firstItem.item.type === "toolCall"
+                ? firstItem.item.item.toolCallId
+                : firstItem.item.type === "canvas"
+                  ? firstItem.item.item.surfaceId
+                  : firstItem.item.item.id;
+
+          const nextSectionStartsWithMessage = (() => {
+            for (let si = sectionIndex + 1; si < agentSections.length; si++) {
+              const next = agentSections[si];
+              if (next.type === "agentSection") {
+                const first = next.items[0];
+                return first.type === "solo" && first.item.type === "message";
+              }
+            }
+            return false;
+          })();
+
+          const sharedItemProps = {
+            allItems: items,
+            nextSectionStartsWithMessage,
+            switchModeToolCallIds,
+            planPermissionRequestIds,
+            livePermissionResponses,
+            pendingPermission,
+            onOpenPlanOverlay,
+            toolCallMap,
+            canvasMap,
+            onOpenPanel,
+          };
+
+          return (
+            <AgentResponseSection key={sectionKey} showConnector={showConnector}>
+              {items.map((gi, index) => (
+                <AgentStreamItem
+                  key={getItemKey(gi)}
+                  gi={gi}
+                  index={index}
+                  {...sharedItemProps}
+                />
+              ))}
+            </AgentResponseSection>
+          );
+        })}
+        <AnimatePresence>{inlinePermission}</AnimatePresence>
+      </div>
+
+      {bottomBar}
+    </div>
+  );
+}
+
+function getItemKey(gi: GroupedDisplayItem): string {
+  if (gi.type === "toolGroup") return `tg-${gi.items[0].toolCallId}`;
+  const item = gi.item;
+  if (item.type === "toolCall") return item.item.toolCallId;
+  if (item.type === "canvas") return item.item.surfaceId;
+  return item.item.id;
+}

@@ -10,10 +10,8 @@ interface PlanReviewCardProps {
 }
 
 export function PlanReviewCard({ item, isPending, responseStatus, onOpen }: PlanReviewCardProps) {
-  const resolved = responseStatus !== null;
-  const clickable = isPending && !resolved;
 
-  if (clickable) {
+  if (isPending) {
     return (
       <div
         role="button"

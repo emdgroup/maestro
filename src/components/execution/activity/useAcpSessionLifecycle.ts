@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import { useAgentCacheQuery } from "@/services/execution.service";
+import { useAgentCacheQuery} from "@/services/execution.service";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { AcpPromptCapabilities, ConnectionKey } from "@/types/bindings";
 
@@ -94,84 +94,46 @@ export function useAcpSessionLifecycle(
   }, [agentCache]);
 
   useEffect(() => {
-    const unlisten = listen<string>(`acp://turn-ended/${sessionKey}`, () => {
-      setActivityStatus(sessionKey, "idle", null);
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey, setActivityStatus]);
-
-  useEffect(() => {
-    const unlisten = listen<{ request_id: string; payload: Record<string, unknown> }>(
-      `acp://permission-request/${sessionKey}`,
-      (event) => {
-        const permPayload = event.payload.payload;
-        setPendingPermission({
+    const unlisten = Promise.all([
+      listen<string>(`acp://turn-ended/${sessionKey}`, () => {
+        setActivityStatus(sessionKey, "idle", null);
+      }),
+      listen<null>(`acp://replay-drained/${sessionKey}`, () => {
+        setActivityStatus(sessionKey, "idle", null);
+      }),
+      listen<{ request_id: string; payload: Record<string, unknown> }>(
+        `acp://permission-request/${sessionKey}`,
+        (event) => {
+          const permPayload = event.payload.payload;
+          setPendingPermission({
+            requestId: event.payload.request_id,
+            payload: permPayload,
+          });
+          setActivityStatus(sessionKey, "awaiting_input");
+        },
+      ),
+      listen<{
+        request_id: string;
+        message: string;
+        payload: Record<string, unknown>;
+      }>(`acp://elicitation-request/${sessionKey}`, (event) => {
+        setPendingElicitation({
           requestId: event.payload.request_id,
-          payload: permPayload,
+          message: event.payload.message,
+          payload: event.payload.payload,
         });
         setActivityStatus(sessionKey, "awaiting_input");
-      },
-    );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey, setActivityStatus]);
-
-  useEffect(() => {
-    const unlisten = listen<{
-      request_id: string;
-      message: string;
-      payload: Record<string, unknown>;
-    }>(`acp://elicitation-request/${sessionKey}`, (event) => {
-      setPendingElicitation({
-        requestId: event.payload.request_id,
-        message: event.payload.message,
-        payload: event.payload.payload,
-      });
-      setActivityStatus(sessionKey, "awaiting_input");
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey, setActivityStatus]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const unlistenFn = await listen<AcpPromptCapabilities>(
+      }),
+      listen<AcpPromptCapabilities>(
         `acp://session-capabilities/${sessionKey}`,
         (event) => {
-          if (!cancelled) setPromptCapabilities(event.payload);
+          setPromptCapabilities(event.payload);
         },
-      );
-      if (cancelled) {
-        unlistenFn();
-        return;
-      }
-      unlisten = unlistenFn;
-    })();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [sessionKey]);
-
-  // session-models: legacy fallback for agents that don't send config_option_update
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const unlistenFn = await listen<{
+      ),
+      listen<{
         current_model_id: string;
         available_models: Array<{ model_id: string; name: string }>;
       }>(`acp://session-models/${sessionKey}`, (event) => {
-        if (cancelled) return;
         const { current_model_id, available_models } = event.payload;
         setConfigOptions((prev) => {
           if (prev.some((o) => o.id === "model")) return prev;
@@ -187,41 +149,11 @@ export function useAcpSessionLifecycle(
           ];
         });
         setConfigValues((prev) => ({ ...prev, model: current_model_id }));
-      });
-      if (cancelled) {
-        unlistenFn();
-        return;
-      }
-      unlisten = unlistenFn;
-    })();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [sessionKey]);
-
-  // model-changed: update current value regardless of how options arrived
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
-      setConfigValues((prev) => ({ ...prev, model: event.payload }));
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey]);
-
-  // session-modes: legacy fallback for agents that don't send config_option_update
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const unlistenFn = await listen<{
+      }),
+      listen<{
         current_mode_id: string;
         available_modes: Array<{ mode_id: string; name: string }>;
       }>(`acp://session-modes/${sessionKey}`, (event) => {
-        if (cancelled) return;
         const { current_mode_id, available_modes } = event.payload;
         setConfigOptions((prev) => {
           if (prev.some((o) => o.id === "mode")) return prev;
@@ -237,52 +169,40 @@ export function useAcpSessionLifecycle(
           ];
         });
         setConfigValues((prev) => ({ ...prev, mode: current_mode_id }));
-      });
-      if (cancelled) {
-        unlistenFn();
-        return;
-      }
-      unlisten = unlistenFn;
-    })();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [sessionKey]);
-
-  // mode-changed: update current value regardless of how options arrived
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://mode-changed/${sessionKey}`, (event) => {
-      setConfigValues((prev) => ({ ...prev, mode: event.payload }));
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [sessionKey]);
-
-  useEffect(() => {
-    const unlisten = listen<{
-      config_id: string;
-      value: string;
-      configOptions: ConfigOption[];
-    }>(`acp://config-state-updated/${sessionKey}`, (event) => {
-      const { configOptions: options, config_id, value } = event.payload;
-      if (Array.isArray(options) && options.length > 0) {
-        setConfigOptions(options);
-        const values: Record<string, string> = {};
-        for (const opt of options) {
-          if (opt.currentValue) values[opt.id] = opt.currentValue;
+      }),
+      listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
+        setConfigValues((prev) => ({ ...prev, model: event.payload }));
+      }),
+      listen<string>(`acp://mode-changed/${sessionKey}`, (event) => {
+        setConfigValues((prev) => ({ ...prev, mode: event.payload }));
+      }),
+      listen<{
+        config_id: string;
+        value: string;
+        configOptions: ConfigOption[];
+      }>(`acp://config-state-updated/${sessionKey}`, (event) => {
+        const { configOptions: options, config_id, value } = event.payload;
+        if (Array.isArray(options) && options.length > 0) {
+          setConfigOptions(options);
+          const values: Record<string, string> = {};
+          for (const opt of options) {
+            if (opt.currentValue) values[opt.id] = opt.currentValue;
+          }
+          setConfigValues(values);
+        } else {
+          setConfigValues((prev) => ({ ...prev, [config_id]: value }));
         }
-        setConfigValues(values);
-      } else {
-        setConfigValues((prev) => ({ ...prev, [config_id]: value }));
-      }
-    });
+      })
+    ]).then((listeners) => listeners)
+      .catch(console.error);
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlisten.then((fns) => {
+        if (fns) for (const fn of fns) fn();
+      });
     };
-  }, [sessionKey]);
+  }, [sessionKey, setActivityStatus]);
+
 
   // Write session-update handler to the shared ref so useAcpActivity (which registers
   // its listener before drain) can forward events here without a race condition.
