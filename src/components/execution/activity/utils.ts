@@ -152,16 +152,9 @@ export function mergeLiveItems(
   return result;
 }
 
-export function makeElicitationSummary(
-  requestId: string,
-  message: string,
-  answer: string,
-): ElicitationSummaryItem {
-  return { id: `elicit-${requestId}`, question: message, answer };
-}
-
-export function formatElicitationAnswer(values: Record<string, unknown>): string {
-  const parts = Object.values(values).filter((v) => v !== null && v !== undefined && v !== "");
-  if (parts.length === 0) return "Submitted";
-  return parts.map((v) => (Array.isArray(v) ? v.join(", ") : String(v))).join("; ");
+export function formatFieldAnswer(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "(empty)";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "(none)";
+  return String(value);
 }

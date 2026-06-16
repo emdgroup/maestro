@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
@@ -9,7 +9,10 @@ import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
-import { parseElicitationFields } from "../activity/ElicitationPrompt";
+import {
+  ElicitationPrompt,
+  parseElicitationFields,
+} from "../activity/ElicitationPrompt";
 import { groupToolCalls, groupIntoAgentSections, mergeLiveItems } from "../activity/utils";
 import type { UsageState } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
@@ -55,6 +58,7 @@ export function AgentActivityPanel({
 
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const composeBarWrapperRef = useRef<HTMLDivElement>(null);
+  const elicitationPanelRef = useRef<HTMLDivElement>(null);
   const agentItemsCountRef = useRef(0);
   const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
     undefined,
@@ -178,6 +182,28 @@ export function AgentActivityPanel({
     return () => ro.disconnect();
   }, [isReady, isCenteredCompose, scroll]);
 
+  const hasElicitation = pendingElicitation !== null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const contentEl = scroll.chatContentRef.current;
+    const scrollEl = scroll.chatScrollRef.current;
+    if (!hasElicitation) {
+      if (contentEl) contentEl.style.paddingBottom = "";
+      return;
+    }
+    const panelEl = elicitationPanelRef.current;
+    if (!panelEl || !contentEl || !scrollEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      contentEl.style.paddingBottom = `${entry.contentRect.height}px`;
+      if (scroll.atBottomRef.current) scrollEl.scrollTop = scrollEl.scrollHeight;
+    });
+    ro.observe(panelEl);
+    return () => {
+      ro.disconnect();
+      if (contentEl) contentEl.style.paddingBottom = "";
+    };
+  }, [hasElicitation, scroll]);
+
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
       const s = agentSections[i];
@@ -274,12 +300,9 @@ export function AgentActivityPanel({
             bottomBar={
               <AgentBottomBar
                 isSessionDead={isSessionDead}
-                elicitationContent={elicitationContent}
                 showCompose={showCompose}
                 composeBarWrapperRef={composeBarWrapperRef}
                 composeBarRef={composeBarRef}
-                onElicitationSubmit={handleElicitationSubmit}
-                onElicitationDecline={handleElicitationDecline}
                 {...sharedComposeBarProps}
               />
             }
@@ -290,6 +313,26 @@ export function AgentActivityPanel({
             handleChatScroll={scroll.handleChatScroll}
             onOpenPanel={onOpenPanel}
           />
+          <AnimatePresence>
+            {elicitationContent && !isSessionDead && (
+              <motion.div
+                ref={elicitationPanelRef}
+                className="absolute bottom-0 left-0 right-0 z-20"
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <ElicitationPrompt
+                  requestId={elicitationContent.requestId}
+                  message={elicitationContent.message}
+                  fields={elicitationContent.fields}
+                  onSubmit={handleElicitationSubmit}
+                  onDecline={handleElicitationDecline}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
           <AgentScrollOverlays
             showScrollFab={scroll.showScrollFab}
             hasUnread={scroll.hasUnread}

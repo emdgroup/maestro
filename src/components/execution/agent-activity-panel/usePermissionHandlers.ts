@@ -8,9 +8,9 @@ import {
 import {
   isRejectOption,
   getOptionName,
-  makeElicitationSummary,
-  formatElicitationAnswer,
+  formatFieldAnswer,
 } from "../activity/utils";
+import { parseElicitationFields } from "../activity/ElicitationPrompt";
 import type {
   PermissionResponseItem,
   ElicitationSummaryItem,
@@ -106,14 +106,21 @@ export function usePermissionHandlers(
       }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
+        const parsedFields = parseElicitationFields(pendingElicitation.payload);
+        const fieldSummaries = parsedFields.map((f) => ({
+          key: f.key,
+          question: f.title ?? f.key,
+          answer: formatFieldAnswer(values[f.key]),
+        }));
         setLiveElicitationSummaries((prev) => [
           ...prev,
           {
-            item: makeElicitationSummary(
-              requestId,
-              pendingElicitation.message,
-              formatElicitationAnswer(values),
-            ),
+            item: {
+              id: `elicit-${requestId}`,
+              message: pendingElicitation.message,
+              declined: false,
+              fields: fieldSummaries,
+            },
             insertAt,
           },
         ]);
@@ -136,7 +143,12 @@ export function usePermissionHandlers(
         setLiveElicitationSummaries((prev) => [
           ...prev,
           {
-            item: makeElicitationSummary(requestId, pendingElicitation.message, "Declined"),
+            item: {
+              id: `elicit-${requestId}`,
+              message: pendingElicitation.message,
+              declined: true,
+              fields: [],
+            },
             insertAt,
           },
         ]);

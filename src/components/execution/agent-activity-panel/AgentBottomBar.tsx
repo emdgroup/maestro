@@ -1,24 +1,14 @@
 import { motion } from "framer-motion";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
-import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import type { ConfigOption, UsageState, AvailableCommand } from "../activity/types";
 import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
 
-type ElicitationContent = {
-  requestId: string;
-  message: string;
-  fields: ReturnType<typeof parseElicitationFields>;
-};
-
 interface AgentBottomBarProps {
   isSessionDead: boolean;
-  elicitationContent: ElicitationContent | null;
   showCompose: boolean;
   composeBarWrapperRef: React.RefObject<HTMLDivElement | null>;
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
-  onElicitationSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void>;
-  onElicitationDecline: (requestId: string) => Promise<void>;
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => Promise<void>;
   isProcessing: boolean;
@@ -35,12 +25,9 @@ interface AgentBottomBarProps {
 
 export function AgentBottomBar({
   isSessionDead,
-  elicitationContent,
   showCompose,
   composeBarWrapperRef,
   composeBarRef,
-  onElicitationSubmit,
-  onElicitationDecline,
   onSend,
   onCancel,
   isProcessing,
@@ -54,21 +41,7 @@ export function AgentBottomBar({
   onConfigChange,
   promptCapabilities,
 }: AgentBottomBarProps) {
-  if (isSessionDead) return null;
-
-  if (elicitationContent) {
-    return (
-      <ElicitationPrompt
-        requestId={elicitationContent.requestId}
-        message={elicitationContent.message}
-        fields={elicitationContent.fields}
-        onSubmit={onElicitationSubmit}
-        onDecline={onElicitationDecline}
-      />
-    );
-  }
-
-  if (!showCompose) return null;
+  if (isSessionDead || !showCompose) return null;
 
   return (
     <motion.div

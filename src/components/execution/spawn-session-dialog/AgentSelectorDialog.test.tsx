@@ -24,6 +24,8 @@ vi.mock("@/services/worktree.service", () => ({
 vi.mock("@/store/navigationStore", () => ({
   usePendingAgentId: vi.fn(() => null),
   useNavigationActions: vi.fn(() => ({ clearPendingAgent: vi.fn() })),
+  useActiveTab: vi.fn(() => "agents"),
+  useActiveTaskId: vi.fn(() => null),
 }));
 
 import {

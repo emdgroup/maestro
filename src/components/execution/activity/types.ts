@@ -185,8 +185,9 @@ export type PermissionResponseItem = {
 
 export type ElicitationSummaryItem = {
   id: string;
-  question: string;
-  answer: string; // e.g. "Yes, proceed" or "Declined"
+  message: string;
+  declined: boolean;
+  fields: Array<{ key: string; question: string; answer: string }>;
 };
 
 export type CanvasSurface = {

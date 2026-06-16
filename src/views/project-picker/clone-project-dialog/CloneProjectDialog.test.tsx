@@ -21,7 +21,7 @@ vi.mock("../FilePicker", () => ({
   FilePicker: () => <div data-testid="file-picker">FilePicker</div>,
 }));
 
-vi.mock("../ProviderRepoPicker", () => ({
+vi.mock("../provider-repo-picker/ProviderRepoPicker", () => ({
   ProviderRepoPicker: () => <div data-testid="provider-repo-picker">ProviderRepoPicker</div>,
 }));
 
@@ -37,14 +37,14 @@ function renderDialog(open = true) {
 describe("CloneProjectDialog", () => {
   it("renders Parent Directory input and Provider tab by default", () => {
     renderDialog(true);
-    expect(screen.getByLabelText("Parent Directory")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Parent Directory/)).toBeInTheDocument();
     expect(screen.getByTestId("provider-repo-picker")).toBeInTheDocument();
   });
 
   it("shows Git URL input when URL tab clicked", async () => {
     renderDialog(true);
     await userEvent.click(screen.getByRole("tab", { name: /URL/i }));
-    expect(screen.getByLabelText("Git URL")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Git URL/)).toBeInTheDocument();
   });
 
   it("renders Clone and Cancel buttons", () => {
@@ -55,6 +55,6 @@ describe("CloneProjectDialog", () => {
 
   it("does not render when closed", () => {
     renderDialog(false);
-    expect(screen.queryByLabelText("Parent Directory")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Parent Directory/)).not.toBeInTheDocument();
   });
 });

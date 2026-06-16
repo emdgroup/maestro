@@ -69,6 +69,10 @@ function terminalSubtitle(items: ToolCallItem[]): string | null {
   return null;
 }
 
+function isTerminalKind(kind: string) {
+  return /run_terminal|bash|shell|execute/.test(kind);
+}
+
 class ContentErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
     super(props);
@@ -184,9 +188,9 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
         className={`flex items-center gap-2 w-full px-3 py-2 bg-card transition-colors text-left ${isSingleItem && !singleItemHasContent ? "cursor-default" : "hover:bg-muted/50"}`}
       >
         <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground/80">{label}</span>
+        <span className="text-xs font-medium text-foreground/80 truncate min-w-0">{label}</span>
         {subtitle && (
-          <span className="text-[11px] font-mono text-muted-foreground/60 truncate">
+          <span className="text-[11px] font-mono text-muted-foreground/60 truncate min-w-0 flex-1">
             {subtitle}
           </span>
         )}
@@ -216,6 +220,11 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
         (isSingleItem ? (
           <ContentErrorBoundary>
             <div className="border-t border-border px-3 pb-2.5 pt-1.5 bg-muted/10 space-y-1.5">
+              {isTerminalKind(items[0].kind) && items[0].title && (
+                <pre className="text-[11px] bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-words font-mono">
+                  {items[0].title}
+                </pre>
+              )}
               {items[0].content.map((c, i) => (
                 <ToolCallContentBlock key={i} content={c} />
               ))}

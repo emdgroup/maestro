@@ -15,36 +15,40 @@ const mockCreateProject = vi.fn().mockImplementation(() => {
   return Promise.resolve({ id: 1, name: "test", path: "/test" });
 });
 
-vi.mock("@/services/project.service", () => ({
-  useGitInitProject: () => ({
-    mutateAsync: mockGitInitProject,
-    isPending: false,
-  }),
-  useCreateProject: () => ({
-    mutateAsync: mockCreateProject,
-    isPending: false,
-  }),
-  useCloneProject: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useCreateNewProject: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useDeleteProject: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-  }),
-  useRecentProjects: () => ({
-    data: [],
-    isLoading: false,
-  }),
-  useProjectLocks: () => ({
-    data: [],
-    isLoading: false,
-  }),
-}));
+vi.mock("@/services/project.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/project.service")>();
+  return {
+    ...actual,
+    useGitInitProject: () => ({
+      mutateAsync: mockGitInitProject,
+      isPending: false,
+    }),
+    useCreateProject: () => ({
+      mutateAsync: mockCreateProject,
+      isPending: false,
+    }),
+    useCloneProject: () => ({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    }),
+    useCreateNewProject: () => ({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    }),
+    useDeleteProject: () => ({
+      mutate: vi.fn(),
+      isPending: false,
+    }),
+    useRecentProjects: () => ({
+      data: [],
+      isLoading: false,
+    }),
+    useProjectLocks: () => ({
+      data: [],
+      isLoading: false,
+    }),
+  };
+});
 
 vi.mock("@/store/projectStore", () => ({
   useSelectedProjectActions: () => ({

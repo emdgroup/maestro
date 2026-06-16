@@ -32,8 +32,8 @@ function renderDialog(open = true) {
 describe("CreateProjectDialog", () => {
   it("renders parent directory and folder name inputs when open", () => {
     renderDialog(true);
-    expect(screen.getByLabelText("Parent Directory")).toBeInTheDocument();
-    expect(screen.getByLabelText("Folder Name")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Parent Directory/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Folder Name/)).toBeInTheDocument();
   });
 
   it("renders Create and Cancel buttons", () => {
@@ -44,7 +44,7 @@ describe("CreateProjectDialog", () => {
 
   it("does not render when closed", () => {
     renderDialog(false);
-    expect(screen.queryByLabelText("Parent Directory")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Parent Directory/)).not.toBeInTheDocument();
   });
 
   it("has error display mechanism using text-destructive class", () => {

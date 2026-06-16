@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 
-interface ElicitationField {
+export interface ElicitationField {
   key: string;
   type: "string" | "number" | "integer" | "boolean" | "array";
   title?: string;
@@ -21,6 +23,29 @@ interface ElicitationPromptProps {
   onDecline: (requestId: string) => void;
 }
 
+function isSingleSelect(field: ElicitationField): boolean {
+  return field.type === "string" && !!(field.oneOf || field.enumValues);
+}
+
+function isMultiSelect(field: ElicitationField): boolean {
+  return field.type === "array";
+}
+
+function OtherInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+      <span className="text-xs text-muted-foreground whitespace-nowrap">Other</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Custom answer…"
+        className="flex-1 min-w-0 bg-muted/40 border border-border rounded-md text-sm px-2 py-1 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent/50 transition-colors"
+      />
+    </div>
+  );
+}
+
 export function ElicitationPrompt({
   requestId,
   message,
@@ -28,117 +53,331 @@ export function ElicitationPrompt({
   onSubmit,
   onDecline,
 }: ElicitationPromptProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const [otherValues, setOtherValues] = useState<Record<string, string>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [direction, setDirection] = useState(1);
+
+  const isMultiField = fields.length > 1;
+  const currentField = fields[currentIndex] ?? null;
 
   const set = (key: string, value: unknown) => setValues((prev) => ({ ...prev, [key]: value }));
+  const setOther = (key: string, value: string) =>
+    setOtherValues((prev) => ({ ...prev, [key]: value }));
 
-  const handleSubmit = () => {
-    onSubmit(requestId, values);
+  const isAnswered = (field: ElicitationField): boolean => {
+    if (otherValues[field.key]?.trim()) return true;
+    const val = values[field.key];
+    if (field.type === "boolean") return val !== undefined;
+    if (val === undefined || val === null || val === "") return false;
+    if (Array.isArray(val)) return val.length > 0;
+    return true;
   };
 
+  const unansweredCount = fields.filter((f) => !isAnswered(f)).length;
+
+  const resolvedValues = (): Record<string, unknown> => {
+    const result: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (isSingleSelect(field)) {
+        result[field.key] = otherValues[field.key]?.trim() || values[field.key];
+      } else if (isMultiSelect(field)) {
+        const selected = (values[field.key] as string[]) ?? [];
+        const other = otherValues[field.key]?.trim();
+        result[field.key] = other ? [...selected, other] : selected;
+      } else {
+        result[field.key] = values[field.key];
+      }
+    }
+    return result;
+  };
+
+  const goTo = (index: number) => {
+    setDirection(index > currentIndex ? 1 : -1);
+    setCurrentIndex(index);
+  };
+
+  const handleSubmit = () => {
+    if (unansweredCount > 0 && !submitAttempted) {
+      setSubmitAttempted(true);
+      return;
+    }
+    onSubmit(requestId, resolvedValues());
+  };
+
+  const singleSelectOptions = currentField
+    ? isSingleSelect(currentField)
+      ? (currentField.oneOf ??
+        currentField.enumValues?.map((v) => ({ const: v, title: v })) ??
+        [])
+      : []
+    : [];
+
+  const multiSelectOptions = currentField
+    ? isMultiSelect(currentField)
+      ? (currentField.items?.anyOf ??
+        currentField.items?.enum?.map((v) => ({ const: v, title: v })) ??
+        [])
+      : []
+    : [];
+
   return (
-    <div className="border-t border-border bg-background px-3.5 py-3">
-      <div className="flex items-center gap-2 mb-2.5">
-        <MessageSquare className="w-4 h-4 text-accent flex-shrink-0" />
-        <span className="text-sm font-medium text-foreground">{message}</span>
+    <div className="bg-card border-t border-border">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3.5 pt-3 pb-2 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <MessageSquare className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+          <span className="text-sm font-medium text-foreground truncate">{message}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isMultiField && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {currentIndex + 1} / {fields.length}
+            </span>
+          )}
+          <button
+            onClick={() => onDecline(requestId)}
+            className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Decline"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-2 mb-3">
-        {fields.map((field) => {
-          const label = field.title ?? field.key;
-          if (field.type === "boolean") {
-            return (
-              <label
-                key={field.key}
-                className="flex items-center gap-2 text-sm text-foreground cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={Boolean(values[field.key])}
-                  onChange={(e) => set(field.key, e.target.checked)}
-                  className="accent-accent"
-                />
-                {label}
-              </label>
-            );
-          }
-          if (
-            (field.type === "string" && field.oneOf) ||
-            (field.type === "string" && field.enumValues)
-          ) {
-            const options =
-              field.oneOf ?? field.enumValues?.map((v) => ({ const: v, title: v })) ?? [];
-            return (
-              <div key={field.key} className="space-y-1">
-                {label && <div className="text-xs text-muted-foreground">{label}</div>}
-                {options.map((opt) => (
-                  <label
-                    key={opt.const}
-                    className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${values[field.key] === opt.const ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}
-                  >
-                    <input
-                      type="radio"
-                      name={field.key}
-                      value={opt.const}
-                      checked={values[field.key] === opt.const}
-                      onChange={() => set(field.key, opt.const)}
-                      className="sr-only"
+      {/* Progress dots */}
+      {isMultiField && (
+        <div className="flex gap-1.5 px-3.5 pb-2">
+          {fields.map((field, i) => (
+            <button
+              key={field.key}
+              onClick={() => goTo(i)}
+              className={cn(
+                "w-2 h-2 rounded-full transition-all duration-200 border-none p-0 cursor-pointer",
+                i === currentIndex
+                  ? "bg-accent scale-125 shadow-[0_0_0_3px_hsl(var(--accent)/0.25)]"
+                  : isAnswered(field)
+                    ? "bg-accent/50"
+                    : "bg-muted-foreground/30",
+              )}
+              title={field.title ?? field.key}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Question body */}
+      <div className="px-3.5 pb-2 overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={currentIndex}
+            initial={{ x: direction * 16, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: direction * -16, opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            {currentField && (
+              <div className="space-y-1.5">
+                {currentField.title && (
+                  <div className="text-xs font-medium text-foreground">{currentField.title}</div>
+                )}
+                {currentField.description && (
+                  <div className="text-xs text-muted-foreground">{currentField.description}</div>
+                )}
+
+                {/* Single-select (radio) */}
+                {isSingleSelect(currentField) && (
+                  <div className="space-y-1">
+                    {singleSelectOptions.map((opt) => {
+                      const selected = values[currentField.key] === opt.const;
+                      return (
+                        <label
+                          key={opt.const}
+                          className={cn(
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                            selected
+                              ? "border-accent bg-accent/10 text-foreground"
+                              : "border-border text-muted-foreground hover:border-accent/50",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name={currentField.key}
+                            className="sr-only"
+                            checked={selected}
+                            onChange={() => set(currentField.key, opt.const)}
+                          />
+                          <div
+                            className={cn(
+                              "w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                              selected
+                                ? "border-accent bg-accent"
+                                : "border-muted-foreground/40",
+                            )}
+                          >
+                            {selected && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
+                            )}
+                          </div>
+                          {opt.title}
+                        </label>
+                      );
+                    })}
+                    <OtherInput
+                      value={otherValues[currentField.key] ?? ""}
+                      onChange={(v) => setOther(currentField.key, v)}
                     />
-                    {opt.title}
-                  </label>
-                ))}
-              </div>
-            );
-          }
-          if (field.type === "array") {
-            const options =
-              field.items?.anyOf ?? field.items?.enum?.map((v) => ({ const: v, title: v })) ?? [];
-            const selected = (values[field.key] as string[]) ?? [];
-            const toggle = (v: string) =>
-              set(
-                field.key,
-                selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v],
-              );
-            return (
-              <div key={field.key} className="space-y-1">
-                {label && <div className="text-xs text-muted-foreground">{label}</div>}
-                {options.map((opt) => (
+                  </div>
+                )}
+
+                {/* Multi-select (checkbox) */}
+                {isMultiSelect(currentField) && (
+                  <div className="space-y-1">
+                    {multiSelectOptions.map((opt) => {
+                      const selected = (
+                        (values[currentField.key] as string[]) ?? []
+                      ).includes(opt.const);
+                      return (
+                        <label
+                          key={opt.const}
+                          className={cn(
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                            selected
+                              ? "border-accent bg-accent/10 text-foreground"
+                              : "border-border text-muted-foreground hover:border-accent/50",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={selected}
+                            onChange={() => {
+                              const cur = (values[currentField.key] as string[]) ?? [];
+                              set(
+                                currentField.key,
+                                selected
+                                  ? cur.filter((x) => x !== opt.const)
+                                  : [...cur, opt.const],
+                              );
+                            }}
+                          />
+                          <div
+                            className={cn(
+                              "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                              selected
+                                ? "border-accent bg-accent"
+                                : "border-muted-foreground/40",
+                            )}
+                          >
+                            {selected && (
+                              <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                            )}
+                          </div>
+                          {opt.title}
+                        </label>
+                      );
+                    })}
+                    <OtherInput
+                      value={otherValues[currentField.key] ?? ""}
+                      onChange={(v) => setOther(currentField.key, v)}
+                    />
+                  </div>
+                )}
+
+                {/* Boolean */}
+                {currentField.type === "boolean" && (
                   <label
-                    key={opt.const}
-                    className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${selected.includes(opt.const) ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted-foreground hover:border-accent/50"}`}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                      values[currentField.key]
+                        ? "border-accent bg-accent/10 text-foreground"
+                        : "border-border text-muted-foreground hover:border-accent/50",
+                    )}
                   >
                     <input
                       type="checkbox"
-                      checked={selected.includes(opt.const)}
-                      onChange={() => toggle(opt.const)}
                       className="sr-only"
+                      checked={Boolean(values[currentField.key])}
+                      onChange={(e) => set(currentField.key, e.target.checked)}
                     />
-                    {opt.title}
+                    <div
+                      className={cn(
+                        "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                        values[currentField.key]
+                          ? "border-accent bg-accent"
+                          : "border-muted-foreground/40",
+                      )}
+                    >
+                      {Boolean(values[currentField.key]) && (
+                        <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                      )}
+                    </div>
+                    {currentField.title ?? currentField.key}
                   </label>
-                ))}
+                )}
+
+                {/* Free text */}
+                {!isSingleSelect(currentField) &&
+                  !isMultiSelect(currentField) &&
+                  currentField.type !== "boolean" && (
+                    <Textarea
+                      value={(values[currentField.key] as string) ?? ""}
+                      onChange={(e) => set(currentField.key, e.target.value)}
+                      className="min-h-[60px] bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+                      placeholder="Type here…"
+                    />
+                  )}
               </div>
-            );
-          }
-          return (
-            <div key={field.key}>
-              {label && <div className="text-xs text-muted-foreground mb-1">{label}</div>}
-              <Textarea
-                value={(values[field.key] as string) ?? ""}
-                onChange={(e) => set(field.key, e.target.value)}
-                className="min-h-9 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
-              />
-            </div>
-          );
-        })}
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => onDecline(requestId)}>
-          Decline
-        </Button>
-        <Button variant="accent" size="sm" onClick={handleSubmit}>
-          Submit
-        </Button>
+      {/* Footer */}
+      <div className="flex items-center justify-between px-3.5 pb-3 gap-2">
+        {isMultiField ? (
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => goTo(currentIndex - 1)}
+              disabled={currentIndex === 0}
+              className="flex items-center gap-1 px-2.5 py-1 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+            >
+              <ChevronLeft className="w-3 h-3" />
+              Prev
+            </button>
+            {currentIndex < fields.length - 1 && (
+              <button
+                onClick={() => goTo(currentIndex + 1)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+              >
+                Next
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ) : (
+          <div />
+        )}
+        <div className="flex items-center gap-2">
+          {submitAttempted && unansweredCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {unansweredCount} unanswered — click again
+            </span>
+          )}
+          <Button
+            variant={submitAttempted && unansweredCount > 0 ? "outline" : "accent"}
+            size="sm"
+            onClick={handleSubmit}
+            className={
+              submitAttempted && unansweredCount > 0
+                ? "border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10"
+                : ""
+            }
+          >
+            {submitAttempted && unansweredCount > 0 ? "Submit anyway" : "Submit"}
+          </Button>
+        </div>
       </div>
     </div>
   );

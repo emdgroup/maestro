@@ -6,7 +6,7 @@ import { PlanReviewCard } from "../activity/PlanReviewCard";
 import { CanvasRenderer } from "../activity/canvas/CanvasRenderer";
 import { SubagentCard } from "../activity/SubagentCard";
 import { PermissionResponseCard } from "../activity/PermissionResponseCard";
-import { ActivityElicitationSummary } from "../activity/ActivityElicitationSummary";
+import { ActivityElicitationCard } from "../activity/ActivityElicitationCard";
 import { isSubagentToolCall } from "../activity/utils";
 import { isWorkingFile, WRITE_KINDS } from "./useWorkingFileTracker";
 import type { GroupedDisplayItem } from "../activity/utils";
@@ -112,7 +112,7 @@ export function AgentStreamItem({
     return <PermissionResponseCard key={item.item.id} item={item.item} />;
   }
   if (item.type === "elicitationSummary") {
-    return <ActivityElicitationSummary key={item.item.id} item={item.item} />;
+    return <ActivityElicitationCard key={item.item.id} item={item.item} />;
   }
   if (item.type === "canvas") {
     const surface = canvasMap.get(item.item.surfaceId);
