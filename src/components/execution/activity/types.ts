@@ -187,7 +187,7 @@ export type ElicitationSummaryItem = {
   id: string;
   message: string;
   declined: boolean;
-  fields: Array<{ key: string; question: string; answer: string }>;
+  fields: Array<{ key: string; question: string; answer: string[] }>;
 };
 
 export type CanvasSurface = {

@@ -108,10 +108,11 @@ export function usePermissionHandlers(
       }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
-        const { fields: parsedFields } = parseElicitationFields(pendingElicitation.payload);
+        const { message, payload } = pendingElicitation;
+        const { fields: parsedFields } = parseElicitationFields(payload);
         const fieldSummaries = parsedFields.map((f) => ({
           key: f.key,
-          question: f.title ?? f.key,
+          question: f.description ?? f.title ?? f.key,
           answer: formatFieldAnswer(values[f.key]),
         }));
         setLiveElicitationSummaries((prev) => [
@@ -119,7 +120,7 @@ export function usePermissionHandlers(
           {
             item: {
               id: `elicit-${requestId}`,
-              message: pendingElicitation.message,
+              message,
               declined: false,
               fields: fieldSummaries,
             },

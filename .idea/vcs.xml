@@ -3,11 +3,5 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/express" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/fastapi" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/flask" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/gin" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/httpx" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/evaluate/test_repos/nextjs" vcs="Git" />
   </component>
 </project>

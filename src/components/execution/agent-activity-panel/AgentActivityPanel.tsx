@@ -196,10 +196,11 @@ export function AgentActivityPanel({
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
     ? (() => {
-        const { fields, otherField } = parseElicitationFields(pendingElicitation.payload);
+        const { requestId, message, payload } = pendingElicitation;
+        const { fields, otherField } = parseElicitationFields(payload);
         return {
-          requestId: pendingElicitation.requestId,
-          message: pendingElicitation.message,
+          requestId,
+          message,
           fields,
           otherField,
         };

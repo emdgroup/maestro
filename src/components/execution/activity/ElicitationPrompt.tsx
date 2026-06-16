@@ -50,7 +50,7 @@ function OtherInput({
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-[60px] bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+        className="min-h-15 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
         placeholder="Type here…"
       />
     </div>
@@ -139,10 +139,10 @@ export function ElicitationPrompt({
       {/* Header */}
       <div className="flex items-center justify-between px-3.5 pt-3 pb-2 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+          <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent shrink-0" />
           <span className="text-sm font-medium text-foreground truncate">{message}</span>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {isMultiField && (
             <span className="text-xs text-muted-foreground tabular-nums">
               {currentIndex + 1} / {fields.length}
@@ -222,7 +222,7 @@ export function ElicitationPrompt({
                           />
                           <div
                             className={cn(
-                              "w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                              "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
                               selected ? "border-accent bg-accent" : "border-muted-foreground/40",
                             )}
                           >
@@ -279,7 +279,7 @@ export function ElicitationPrompt({
                           />
                           <div
                             className={cn(
-                              "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                              "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
                               selected ? "border-accent bg-accent" : "border-muted-foreground/40",
                             )}
                           >
@@ -321,7 +321,7 @@ export function ElicitationPrompt({
                     />
                     <div
                       className={cn(
-                        "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all",
+                        "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
                         values[currentField.key]
                           ? "border-accent bg-accent"
                           : "border-muted-foreground/40",
@@ -342,7 +342,7 @@ export function ElicitationPrompt({
                     <Textarea
                       value={(values[currentField.key] as string) ?? ""}
                       onChange={(e) => set(currentField.key, e.target.value)}
-                      className="min-h-[60px] bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+                      className="min-h-15 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
                       placeholder="Type here…"
                     />
                   )}
@@ -405,6 +405,7 @@ export function parseElicitationFields(payload: Record<string, unknown>): {
   fields: ElicitationField[];
   otherField: { key: string; title?: string; description?: string } | null;
 } {
+  const message = payload.message as string;
   const schema = payload.requestedSchema as Record<string, unknown> | undefined;
   const properties = (schema?.properties as Record<string, Record<string, unknown>>) ?? {};
   const fields: ElicitationField[] = [];
@@ -413,10 +414,10 @@ export function parseElicitationFields(payload: Record<string, unknown>): {
   for (const [key, prop] of Object.entries(properties)) {
     const type = (prop.type as ElicitationField["type"]) ?? "string";
     const title = prop.title as string | undefined;
-    const description = prop.description as string | undefined;
+    const description = prop.description as string | undefined ?? message;
     const hasOptions = !!(prop.oneOf || prop.enum || prop.items);
     const isOtherField =
-      (key.toLowerCase() === "other" || title?.toLowerCase() === "other") &&
+      (key === "customAnswer" || title === "Other") &&
       type === "string" &&
       !hasOptions;
     if (isOtherField) {

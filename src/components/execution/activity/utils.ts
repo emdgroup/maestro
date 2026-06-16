@@ -152,9 +152,9 @@ export function mergeLiveItems(
   return result;
 }
 
-export function formatFieldAnswer(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "(empty)";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "(none)";
-  return String(value);
+export function formatFieldAnswer(value: unknown): string[] {
+  if (value === undefined || value === null || value === "") return [];
+  if (typeof value === "boolean") return value ? ["Yes"] : ["No"];
+  if (Array.isArray(value)) return value.length > 0 ? value : [];
+  return [String(value)];
 }
