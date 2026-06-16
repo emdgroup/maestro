@@ -58,7 +58,6 @@ export function AgentActivityPanel({
 
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const composeBarWrapperRef = useRef<HTMLDivElement>(null);
-  const elicitationPanelRef = useRef<HTMLDivElement>(null);
   const agentItemsCountRef = useRef(0);
   const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
     undefined,
@@ -182,28 +181,6 @@ export function AgentActivityPanel({
     return () => ro.disconnect();
   }, [isReady, isCenteredCompose, scroll]);
 
-  const hasElicitation = pendingElicitation !== null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const contentEl = scroll.chatContentRef.current;
-    const scrollEl = scroll.chatScrollRef.current;
-    if (!hasElicitation) {
-      if (contentEl) contentEl.style.paddingBottom = "";
-      return;
-    }
-    const panelEl = elicitationPanelRef.current;
-    if (!panelEl || !contentEl || !scrollEl) return;
-    const ro = new ResizeObserver(([entry]) => {
-      contentEl.style.paddingBottom = `${entry.contentRect.height}px`;
-      if (scroll.atBottomRef.current) scrollEl.scrollTop = scrollEl.scrollHeight;
-    });
-    ro.observe(panelEl);
-    return () => {
-      ro.disconnect();
-      if (contentEl) contentEl.style.paddingBottom = "";
-    };
-  }, [hasElicitation, scroll]);
-
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
       const s = agentSections[i];
@@ -218,11 +195,15 @@ export function AgentActivityPanel({
 
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
-    ? {
-        requestId: pendingElicitation.requestId,
-        message: pendingElicitation.message,
-        fields: parseElicitationFields(pendingElicitation.payload),
-      }
+    ? (() => {
+        const { fields, otherField } = parseElicitationFields(pendingElicitation.payload);
+        return {
+          requestId: pendingElicitation.requestId,
+          message: pendingElicitation.message,
+          fields,
+          otherField,
+        };
+      })()
     : null;
 
   const isPlanPermWithBody = !!(
@@ -313,26 +294,6 @@ export function AgentActivityPanel({
             handleChatScroll={scroll.handleChatScroll}
             onOpenPanel={onOpenPanel}
           />
-          <AnimatePresence>
-            {elicitationContent && !isSessionDead && (
-              <motion.div
-                ref={elicitationPanelRef}
-                className="absolute bottom-0 left-0 right-0 z-20"
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <ElicitationPrompt
-                  requestId={elicitationContent.requestId}
-                  message={elicitationContent.message}
-                  fields={elicitationContent.fields}
-                  onSubmit={handleElicitationSubmit}
-                  onDecline={handleElicitationDecline}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
           <AgentScrollOverlays
             showScrollFab={scroll.showScrollFab}
             hasUnread={scroll.hasUnread}
@@ -346,6 +307,26 @@ export function AgentActivityPanel({
             {...sharedComposeBarProps}
           />
         </div>
+        <AnimatePresence>
+          {elicitationContent && !isSessionDead && (
+            <motion.div
+              className="shrink-0 overflow-hidden"
+              initial={{ height: 0 }}
+              animate={{ height: "auto" }}
+              exit={{ height: 0 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <ElicitationPrompt
+                requestId={elicitationContent.requestId}
+                message={elicitationContent.message}
+                fields={elicitationContent.fields}
+                otherField={elicitationContent.otherField}
+                onSubmit={handleElicitationSubmit}
+                onDecline={handleElicitationDecline}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

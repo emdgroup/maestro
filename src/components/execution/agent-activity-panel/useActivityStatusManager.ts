@@ -53,11 +53,7 @@ export function useActivityStatusManager(
         } else {
           setActivity(sessionKey, "acting", toolKindCategory(tc.kind));
         }
-      } else {
-        //setActivity(sessionKey, "idle");
       }
-    } else {
-      //setActivity(sessionKey, "idle");
     }
   }, [
     liveState.items,

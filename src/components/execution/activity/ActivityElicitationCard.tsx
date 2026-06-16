@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, ChevronDown } from "lucide-react";
+import { MessageCircleQuestionMark, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import type { ElicitationSummaryItem } from "./types";
 
@@ -13,7 +13,7 @@ export function ActivityElicitationCard({ item }: Props) {
   if (item.declined) {
     return (
       <div className="border border-border rounded-lg bg-card px-3 py-2 flex items-center gap-2">
-        <MessageSquare className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <MessageCircleQuestionMark className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground italic">Declined</span>
       </div>
@@ -22,6 +22,7 @@ export function ActivityElicitationCard({ item }: Props) {
 
   const answeredCount = item.fields.filter((f) => f.answer && f.answer !== "(empty)").length;
   const total = item.fields.length;
+  const title = item.fields.map((f) => f.question).join(", ");
 
   return (
     <div className="border border-border rounded-lg bg-card overflow-hidden">
@@ -29,8 +30,8 @@ export function ActivityElicitationCard({ item }: Props) {
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors"
         onClick={() => setExpanded((v) => !v)}
       >
-        <MessageSquare className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-        <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
+        <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground flex-1 truncate">{title}</span>
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
           {answeredCount} / {total} answered
         </span>
@@ -48,7 +49,9 @@ export function ActivityElicitationCard({ item }: Props) {
               <span className="text-xs text-muted-foreground min-w-0 truncate flex-shrink-0 basis-1/3">
                 {f.question}
               </span>
-              <span className="text-xs text-foreground min-w-0 flex-1">{f.answer}</span>
+              <code className="text-xs text-foreground min-w-0 flex-1 bg-muted/60 rounded px-1 py-0.5 font-mono break-all">
+                {f.answer}
+              </code>
             </div>
           ))}
         </div>

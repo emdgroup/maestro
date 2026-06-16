@@ -90,7 +90,6 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          pnpm dev &
           npx wait-on http://localhost:5173 --timeout 60000
           pnpm test:e2e
         env:

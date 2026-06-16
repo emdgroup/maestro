@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import { MessageCircleQuestionMark, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -19,6 +19,7 @@ interface ElicitationPromptProps {
   requestId: string;
   message: string;
   fields: ElicitationField[];
+  otherField: { key: string; title?: string; description?: string } | null;
   onSubmit: (requestId: string, values: Record<string, unknown>) => void;
   onDecline: (requestId: string) => void;
 }
@@ -31,16 +32,26 @@ function isMultiSelect(field: ElicitationField): boolean {
   return field.type === "array";
 }
 
-function OtherInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function OtherInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: { key: string; title?: string; description?: string };
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">Other</span>
-      <input
-        type="text"
+    <div className="space-y-1.5 mt-2 pt-2 border-t border-border">
+      {field.title && <div className="text-xs font-medium text-foreground">{field.title}</div>}
+      {field.description && (
+        <div className="text-xs text-muted-foreground">{field.description}</div>
+      )}
+      <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Custom answer…"
-        className="flex-1 min-w-0 bg-muted/40 border border-border rounded-md text-sm px-2 py-1 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent/50 transition-colors"
+        className="min-h-[60px] bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+        placeholder="Type here…"
       />
     </div>
   );
@@ -50,6 +61,7 @@ export function ElicitationPrompt({
   requestId,
   message,
   fields,
+  otherField,
   onSubmit,
   onDecline,
 }: ElicitationPromptProps) {
@@ -63,11 +75,9 @@ export function ElicitationPrompt({
   const currentField = fields[currentIndex] ?? null;
 
   const set = (key: string, value: unknown) => setValues((prev) => ({ ...prev, [key]: value }));
-  const setOther = (key: string, value: string) =>
-    setOtherValues((prev) => ({ ...prev, [key]: value }));
 
   const isAnswered = (field: ElicitationField): boolean => {
-    if (otherValues[field.key]?.trim()) return true;
+    if (otherValues[field.key]) return true;
     const val = values[field.key];
     if (field.type === "boolean") return val !== undefined;
     if (val === undefined || val === null || val === "") return false;
@@ -78,18 +88,18 @@ export function ElicitationPrompt({
   const unansweredCount = fields.filter((f) => !isAnswered(f)).length;
 
   const resolvedValues = (): Record<string, unknown> => {
-    const result: Record<string, unknown> = {};
+    const result = { ...values };
     for (const field of fields) {
+      const ov = otherValues[field.key];
+      if (!ov) continue;
       if (isSingleSelect(field)) {
-        result[field.key] = otherValues[field.key]?.trim() || values[field.key];
+        result[field.key] = ov;
       } else if (isMultiSelect(field)) {
-        const selected = (values[field.key] as string[]) ?? [];
-        const other = otherValues[field.key]?.trim();
-        result[field.key] = other ? [...selected, other] : selected;
-      } else {
-        result[field.key] = values[field.key];
+        const cur = (result[field.key] as string[]) ?? [];
+        result[field.key] = [...cur, ov];
       }
     }
+    if (otherField?.key) delete result[otherField.key];
     return result;
   };
 
@@ -122,12 +132,14 @@ export function ElicitationPrompt({
       : []
     : [];
 
+  const showOtherInput = otherField !== null;
+
   return (
     <div className="bg-card border-t border-border">
       {/* Header */}
       <div className="flex items-center justify-between px-3.5 pt-3 pb-2 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <MessageSquare className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+          <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent flex-shrink-0" />
           <span className="text-sm font-medium text-foreground truncate">{message}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -211,9 +223,7 @@ export function ElicitationPrompt({
                           <div
                             className={cn(
                               "w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all",
-                              selected
-                                ? "border-accent bg-accent"
-                                : "border-muted-foreground/40",
+                              selected ? "border-accent bg-accent" : "border-muted-foreground/40",
                             )}
                           >
                             {selected && (
@@ -224,10 +234,15 @@ export function ElicitationPrompt({
                         </label>
                       );
                     })}
-                    <OtherInput
-                      value={otherValues[currentField.key] ?? ""}
-                      onChange={(v) => setOther(currentField.key, v)}
-                    />
+                    {showOtherInput && (
+                      <OtherInput
+                        field={otherField!}
+                        value={otherValues[currentField.key] ?? ""}
+                        onChange={(v) =>
+                          setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
+                        }
+                      />
+                    )}
                   </div>
                 )}
 
@@ -265,9 +280,7 @@ export function ElicitationPrompt({
                           <div
                             className={cn(
                               "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all",
-                              selected
-                                ? "border-accent bg-accent"
-                                : "border-muted-foreground/40",
+                              selected ? "border-accent bg-accent" : "border-muted-foreground/40",
                             )}
                           >
                             {selected && (
@@ -278,10 +291,15 @@ export function ElicitationPrompt({
                         </label>
                       );
                     })}
-                    <OtherInput
-                      value={otherValues[currentField.key] ?? ""}
-                      onChange={(v) => setOther(currentField.key, v)}
-                    />
+                    {showOtherInput && (
+                      <OtherInput
+                        field={otherField!}
+                        value={otherValues[currentField.key] ?? ""}
+                        onChange={(v) =>
+                          setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
+                        }
+                      />
+                    )}
                   </div>
                 )}
 
@@ -341,7 +359,7 @@ export function ElicitationPrompt({
             <button
               onClick={() => goTo(currentIndex - 1)}
               disabled={currentIndex === 0}
-              className="flex items-center gap-1 px-2.5 py-1 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded border border-muted-foreground text-xs text-foreground hover:border-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
             >
               <ChevronLeft className="w-3 h-3" />
               Prev
@@ -349,7 +367,7 @@ export function ElicitationPrompt({
             {currentIndex < fields.length - 1 && (
               <button
                 onClick={() => goTo(currentIndex + 1)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+                className="flex items-center gap-1 px-2.5 py-1 rounded border border-muted-foreground text-xs text-foreground hover:border-foreground transition-colors"
               >
                 Next
                 <ChevronRight className="w-3 h-3" />
@@ -383,16 +401,38 @@ export function ElicitationPrompt({
   );
 }
 
-export function parseElicitationFields(payload: Record<string, unknown>): ElicitationField[] {
+export function parseElicitationFields(payload: Record<string, unknown>): {
+  fields: ElicitationField[];
+  otherField: { key: string; title?: string; description?: string } | null;
+} {
   const schema = payload.requestedSchema as Record<string, unknown> | undefined;
   const properties = (schema?.properties as Record<string, Record<string, unknown>>) ?? {};
-  return Object.entries(properties).map(([key, prop]) => ({
-    key,
-    type: (prop.type as ElicitationField["type"]) ?? "string",
-    title: prop.title as string | undefined,
-    description: prop.description as string | undefined,
-    enumValues: prop.enum as string[] | undefined,
-    oneOf: prop.oneOf as { const: string; title: string }[] | undefined,
-    items: prop.items as ElicitationField["items"],
-  }));
+  const fields: ElicitationField[] = [];
+  let otherField: { key: string; title?: string; description?: string } | null = null;
+
+  for (const [key, prop] of Object.entries(properties)) {
+    const type = (prop.type as ElicitationField["type"]) ?? "string";
+    const title = prop.title as string | undefined;
+    const description = prop.description as string | undefined;
+    const hasOptions = !!(prop.oneOf || prop.enum || prop.items);
+    const isOtherField =
+      (key.toLowerCase() === "other" || title?.toLowerCase() === "other") &&
+      type === "string" &&
+      !hasOptions;
+    if (isOtherField) {
+      otherField = { key, title, description };
+    } else {
+      fields.push({
+        key,
+        type,
+        title,
+        description,
+        enumValues: prop.enum as string[] | undefined,
+        oneOf: prop.oneOf as { const: string; title: string }[] | undefined,
+        items: prop.items as ElicitationField["items"],
+      });
+    }
+  }
+
+  return { fields, otherField };
 }

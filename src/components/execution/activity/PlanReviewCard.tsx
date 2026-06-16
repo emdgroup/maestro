@@ -16,9 +16,6 @@ export function PlanReviewCard({ item, onOpen }: PlanReviewCardProps) {
         role="button"
         tabIndex={0}
         onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") onOpen();
-        }}
         className="group rounded-[10px] overflow-hidden bg-accent shadow-[0_2px_12px_oklch(55%_0.15_250/0.25)] hover:shadow-[0_4px_20px_oklch(55%_0.15_250/0.3)] hover:-translate-y-px transition-all duration-150 cursor-pointer"
       >
         <div className="flex items-center gap-2.5 px-3.5 py-2.5">

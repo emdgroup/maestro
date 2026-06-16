@@ -74,6 +74,8 @@ export function usePermissionHandlers(
             { item: responseItem, insertAt, requestId },
           ]);
         }
+      } else {
+        setShowPlanOverlay(false);
       }
       setPendingPermission(null);
       setActivity(sessionKey, "thinking");
@@ -106,7 +108,7 @@ export function usePermissionHandlers(
       }
       if (pendingElicitation) {
         const insertAt = agentItemsCountRef.current;
-        const parsedFields = parseElicitationFields(pendingElicitation.payload);
+        const { fields: parsedFields } = parseElicitationFields(pendingElicitation.payload);
         const fieldSummaries = parsedFields.map((f) => ({
           key: f.key,
           question: f.title ?? f.key,
