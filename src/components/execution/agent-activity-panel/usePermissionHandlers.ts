@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
-import { isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import {
+  isPlanPermission,
+  extractBodyText,
+} from "../activity/PermissionPrompt";
 import {
   isRejectOption,
   getOptionName,
   makeElicitationSummary,
   formatElicitationAnswer,
 } from "../activity/utils";
-import type { PermissionResponseItem, ElicitationSummaryItem } from "../activity/types";
+import type {
+  PermissionResponseItem,
+  ElicitationSummaryItem,
+} from "../activity/types";
 
 type PendingPermission = { requestId: string; payload: Record<string, unknown> };
 type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
@@ -17,9 +23,12 @@ export type PermissionHandlers = {
   handlePermissionRespond: (requestId: string, optionId: string | null) => Promise<void>;
   handleElicitationSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void>;
   handleElicitationDecline: (requestId: string) => Promise<void>;
-  livePermissionResponses: Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>;
+  livePermissionResponses: Array<{
+    item: PermissionResponseItem;
+    insertAt: number;
+    requestId: string;
+  }>;
   liveElicitationSummaries: Array<{ item: ElicitationSummaryItem; insertAt: number }>;
-  planPermissionRequestIds: React.RefObject<string[]>;
   showPlanOverlay: boolean;
   setShowPlanOverlay: React.Dispatch<React.SetStateAction<boolean>>;
 };
@@ -39,19 +48,8 @@ export function usePermissionHandlers(
   const [livePermissionResponses, setLivePermissionResponses] = useState<
     Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>
   >([]);
-  const planPermissionRequestIds = useRef<string[]>([]);
-  const [showPlanOverlay, setShowPlanOverlay] = useState(false);
 
-  useEffect(() => {
-    if (!pendingPermission) {
-      setShowPlanOverlay(false);
-      return;
-    }
-    if (!isPlanPermission(pendingPermission.payload)) return;
-    if (!planPermissionRequestIds.current.includes(pendingPermission.requestId)) {
-      planPermissionRequestIds.current.push(pendingPermission.requestId);
-    }
-  }, [pendingPermission]);
+  const [showPlanOverlay, setShowPlanOverlay] = useState(false);
 
   const handlePermissionRespond = useCallback(
     async (requestId: string, optionId: string | null) => {
@@ -62,15 +60,20 @@ export function usePermissionHandlers(
       }
       if (pendingPermission) {
         const isRejection = !optionId || isRejectOption(pendingPermission.payload, optionId);
-        const responseItem: PermissionResponseItem = {
-          id: `perm-${requestId}`,
-          optionName:
-            getOptionName(pendingPermission.payload, optionId) ??
-            (isRejection ? "Permission denied" : "Allowed"),
-          isRejection,
-        };
-        const insertAt = agentItemsCountRef.current;
-        setLivePermissionResponses((prev) => [...prev, { item: responseItem, insertAt, requestId }]);
+        if (!isPlanPermission(pendingPermission.payload)) {
+          const responseItem: PermissionResponseItem = {
+            id: `perm-${requestId}`,
+            optionName:
+              getOptionName(pendingPermission.payload, optionId) ??
+              (isRejection ? "Permission denied" : "Allowed"),
+            isRejection,
+          };
+          const insertAt = agentItemsCountRef.current;
+          setLivePermissionResponses((prev) => [
+            ...prev,
+            { item: responseItem, insertAt, requestId },
+          ]);
+        }
       }
       setPendingPermission(null);
       setActivity(sessionKey, "thinking");
@@ -87,7 +90,7 @@ export function usePermissionHandlers(
       | undefined;
     const allowOpt = options?.find((o) => o.kind === "allow_once" || o.kind === "allow_always");
     if (allowOpt) {
-      handlePermissionRespond(pendingPermission.requestId, allowOpt.optionId);
+      void handlePermissionRespond(pendingPermission.requestId, allowOpt.optionId);
     }
   }, [pendingPermission, handlePermissionRespond]);
 
@@ -150,7 +153,6 @@ export function usePermissionHandlers(
     handleElicitationDecline,
     livePermissionResponses,
     liveElicitationSummaries,
-    planPermissionRequestIds,
     showPlanOverlay,
     setShowPlanOverlay,
   };

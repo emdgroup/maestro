@@ -15,7 +15,7 @@ function toolKindCategory(kind: string): string {
 
 export function useActivityStatusManager(
   sessionKey: number,
-  liveState: Pick<ActivityState, "items" | "isInitializing" | "sessionEnded">,
+  liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
 ): void {
   const { setActivity, removeActivity } = useSessionActivityActions();
 
@@ -34,7 +34,8 @@ export function useActivityStatusManager(
     }
     const { items } = liveState;
     const lastItem = items[items.length - 1];
-    if (!lastItem) {
+
+    if (!lastItem || !liveState.isTurnActive) {
       setActivity(sessionKey, "idle");
       return;
     }
@@ -53,14 +54,15 @@ export function useActivityStatusManager(
           setActivity(sessionKey, "acting", toolKindCategory(tc.kind));
         }
       } else {
-        setActivity(sessionKey, "idle");
+        //setActivity(sessionKey, "idle");
       }
     } else {
-      setActivity(sessionKey, "idle");
+      //setActivity(sessionKey, "idle");
     }
   }, [
     liveState.items,
     liveState.isInitializing,
+    liveState.isTurnActive,
     liveState.sessionEnded,
     sessionKey,
     setActivity,

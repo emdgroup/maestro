@@ -10,11 +10,6 @@ interface Props {
 export function CanvasVideo({ src, poster, className }: Props) {
   if (!src) return null;
   return (
-    <video
-      src={src}
-      poster={poster}
-      controls
-      className={cn("rounded max-w-full", className)}
-    />
+    <video src={src} poster={poster} controls className={cn("rounded max-w-full", className)} />
   );
 }

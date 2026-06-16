@@ -7,7 +7,7 @@ import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
-import type { ComposeBarHandle } from "../activity/ComposeBar";
+import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
 import { parseElicitationFields } from "../activity/ElicitationPrompt";
 import { groupToolCalls, groupIntoAgentSections, mergeLiveItems } from "../activity/utils";
@@ -87,7 +87,15 @@ export function AgentActivityPanel({
     onSessionChangedFilesChange,
   );
 
-  const permHandlers = usePermissionHandlers(
+  const {
+    liveElicitationSummaries,
+    livePermissionResponses,
+    showPlanOverlay,
+    handlePermissionRespond,
+    handleElicitationDecline,
+    handleElicitationSubmit,
+    setShowPlanOverlay,
+  } = usePermissionHandlers(
     sessionKey,
     agentItemsCountRef,
     pendingPermission,
@@ -96,20 +104,14 @@ export function AgentActivityPanel({
     setPendingElicitation,
   );
 
-  const isProcessing =
-    activityInfo?.status === "thinking" || activityInfo?.status === "acting";
+  const isProcessing = activityInfo?.status === "thinking" || activityInfo?.status === "acting";
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
 
   agentItemsCountRef.current = liveState.items.length;
 
   const displayItems = useMemo(
-    () =>
-      mergeLiveItems(
-        liveState.items,
-        permHandlers.livePermissionResponses,
-        permHandlers.liveElicitationSummaries,
-      ),
-    [liveState.items, permHandlers.livePermissionResponses, permHandlers.liveElicitationSummaries],
+    () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
+    [liveState.items, livePermissionResponses, liveElicitationSummaries],
   );
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
@@ -121,7 +123,7 @@ export function AgentActivityPanel({
     isProcessing,
     pendingPermission,
     pendingElicitation,
-    handlePermissionRespond: permHandlers.handlePermissionRespond,
+    handlePermissionRespond: handlePermissionRespond,
     liveDispatch,
     isSelected,
     isInitializing: liveState.isInitializing,
@@ -174,29 +176,17 @@ export function AgentActivityPanel({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isReady, isCenteredCompose]);
+  }, [isReady, isCenteredCompose, scroll]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
       const s = agentSections[i];
-      if (
-        s.type === "standalone" &&
-        s.item.type === "solo" &&
-        s.item.item.type === "userMessage"
-      ) {
+      if (s.type === "standalone" && s.item.type === "solo" && s.item.item.type === "userMessage") {
         return s.item.item.item;
       }
     }
     return null;
   }, [agentSections]);
-
-  const switchModeToolCallIds = useMemo(
-    () =>
-      liveState.items
-        .filter((it) => it.type === "toolCall" && it.item.kind === "switch_mode")
-        .map((it) => (it as Extract<typeof it, { type: "toolCall" }>).item.toolCallId),
-    [liveState.items],
-  );
 
   if (liveState.isInitializing) return <AgentLoadingSkeleton />;
 
@@ -209,14 +199,13 @@ export function AgentActivityPanel({
       }
     : null;
 
-  const isPlanPermWithBody =
-    !!(
-      pendingPermission &&
-      isPlanPermission(pendingPermission.payload) &&
-      extractBodyText(pendingPermission.payload) !== null
-    );
+  const isPlanPermWithBody = !!(
+    pendingPermission &&
+    isPlanPermission(pendingPermission.payload) &&
+    extractBodyText(pendingPermission.payload) !== null
+  );
   const hasInlinePermission = !!(pendingPermission && !isPlanPermWithBody);
-  const hasPlanOverlay = isPlanPermWithBody && permHandlers.showPlanOverlay;
+  const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
 
   const showCompose =
     !isSessionDead &&
@@ -236,7 +225,7 @@ export function AgentActivityPanel({
         <PermissionPrompt
           requestId={pendingPermission.requestId}
           payload={pendingPermission.payload}
-          onRespond={permHandlers.handlePermissionRespond}
+          onRespond={handlePermissionRespond}
         />
       </motion.div>
     ) : null;
@@ -246,7 +235,7 @@ export function AgentActivityPanel({
       <PermissionPrompt
         requestId={pendingPermission.requestId}
         payload={pendingPermission.payload}
-        onRespond={permHandlers.handlePermissionRespond}
+        onRespond={handlePermissionRespond}
         fullHeight
       />
     ) : null;
@@ -280,11 +269,7 @@ export function AgentActivityPanel({
             lastUserMessage={lastUserMessage}
             toolCallMap={liveState.toolCallMap}
             canvasMap={liveState.canvasMap}
-            switchModeToolCallIds={switchModeToolCallIds}
-            planPermissionRequestIds={permHandlers.planPermissionRequestIds}
-            livePermissionResponses={permHandlers.livePermissionResponses}
-            pendingPermission={pendingPermission}
-            onOpenPlanOverlay={() => permHandlers.setShowPlanOverlay(true)}
+            onOpenPlanOverlay={() => setShowPlanOverlay(true)}
             inlinePermission={inlinePermission}
             bottomBar={
               <AgentBottomBar
@@ -293,8 +278,8 @@ export function AgentActivityPanel({
                 showCompose={showCompose}
                 composeBarWrapperRef={composeBarWrapperRef}
                 composeBarRef={composeBarRef}
-                onElicitationSubmit={permHandlers.handleElicitationSubmit}
-                onElicitationDecline={permHandlers.handleElicitationDecline}
+                onElicitationSubmit={handleElicitationSubmit}
+                onElicitationDecline={handleElicitationDecline}
                 {...sharedComposeBarProps}
               />
             }

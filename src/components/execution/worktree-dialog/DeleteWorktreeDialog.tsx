@@ -65,7 +65,9 @@ export function DeleteWorktreeDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleteMutation.isPending} onClick={onClose}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleteMutation.isPending} onClick={onClose}>
+            Cancel
+          </AlertDialogCancel>
           <AlertDialogAction
             disabled={deleteMutation.isPending}
             onClick={() => {

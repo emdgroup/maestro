@@ -19,7 +19,17 @@ import {
   ComboboxEmpty,
 } from "@/ui/combobox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
-import { GitBranch, RefreshCw, Check, ChevronDown, Bot, BotOff, Shield, ShieldOff, Search } from "lucide-react";
+import {
+  GitBranch,
+  RefreshCw,
+  Check,
+  ChevronDown,
+  Bot,
+  BotOff,
+  Shield,
+  ShieldOff,
+  Search,
+} from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import {
   useCreateTaskMutation,
@@ -99,7 +109,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const remoteBranches: string[] = branchData?.[0].remote ?? [];
   const currentBranch: string = branchData?.[1] ?? "";
 
-  const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
+  const connection = selectedProject
+    ? connectionKeyFromProject(selectedProject)
+    : { type: "local" as const };
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const agents = discovery?.agents ?? [];
 
@@ -246,407 +258,429 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
         <form onSubmit={handleSubmit(onSubmit)}>
           <TooltipProvider delay={400}>
-          <div className="flex flex-col gap-4">
-            {/* Issue search — shown only when provider configured */}
-            {hasProvider && (
-              <Combobox
-                value={selectedIssue ? `#${stripProviderPrefix(selectedIssue.external_id)}` : null}
-                onValueChange={(val) => {
-                  if (!val) {
-                    setSelectedIssue(null);
-                    setValue("title", "");
-                    setValue("description", "");
-                    return;
+            <div className="flex flex-col gap-4">
+              {/* Issue search — shown only when provider configured */}
+              {hasProvider && (
+                <Combobox
+                  value={
+                    selectedIssue ? `#${stripProviderPrefix(selectedIssue.external_id)}` : null
                   }
-                  const externalId = val.replace(/^#/, "").split(" ")[0];
-                  const issue = (remoteIssues ?? []).find((i) => i.external_id === externalId);
-                  if (issue) handleIssueSelect(issue);
-                }}
-                filter={null}
-                onInputValueChange={setIssueSearch}
-              >
-                <InputGroup className="w-full">
-                  <InputGroupAddon align="inline-start">
-                    <BrandIcon
-                      slug={issueConfig.provider}
-                      className="text-muted-foreground"
-                      width={14}
-                      height={14}
-                    />
-                  </InputGroupAddon>
-                  <ComboboxPrimitive.Input
-                    render={<InputGroupInput />}
-                    placeholder={getIssueSearchPlaceholder(issueConfig)}
-                  />
-                  <InputGroupAddon align="inline-end">
-                    <Search className="size-3.5 opacity-50" />
-                  </InputGroupAddon>
-                </InputGroup>
-                <ComboboxContent className="min-w-(--anchor-width)" sideOffset={4}>
-                  <ComboboxList className="custom-scrollbar space-y-1">
-                    {issuesFetching && <ComboboxEmpty>Loading issues...</ComboboxEmpty>}
-                    {!issuesFetching && filteredIssues.length === 0 && (
-                      <ComboboxEmpty>No issues found.</ComboboxEmpty>
-                    )}
-                    <TooltipPrimitive.Provider delay={400}>
-                    {filteredIssues.map((issue) => (
-                      <TooltipPrimitive.Root key={issue.external_id}>
-                        <ComboboxItem
-                          value={`#${issue.external_id} ${issue.title}`}
-                          className="p-0 px-1 rounded-md focus:outline-none hover:bg-transparent data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:**:text-inherit not-data-[variant=destructive]:data-highlighted:**:text-inherit"
-                        >
-                          <TooltipPrimitive.Trigger
-                            render={<div />}
-                            className="w-full rounded-md p-2 bg-muted/60 hover:bg-muted transition-colors cursor-default"
-                          >
-                            <div className="flex items-center justify-between gap-2 mb-0.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  void openUrl(issue.url);
-                                }}
-                                className="text-[11px] !text-accent hover:underline shrink-0 cursor-pointer"
-                              >
-                                #{stripProviderPrefix(issue.external_id)}
-                              </button>
-                              {issue.priority && (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span
-                                    className="size-2 rounded-full"
-                                    style={{
-                                      backgroundColor:
-                                        PRIORITY_COLORS[issue.priority as TaskPriority] ?? "#4b5563",
-                                    }}
-                                  />
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {issue.priority}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-sm truncate">{issue.title}</p>
-                            {issue.labels.length > 0 && (
-                              <div className="flex items-center gap-1 overflow-hidden mt-1 mask-[linear-gradient(to_right,black_80%,transparent_100%)]">
-                                {issue.labels.map((label) => (
-                                  <span
-                                    key={label}
-                                    className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground shrink-0"
-                                  >
-                                    {label}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </TooltipPrimitive.Trigger>
-                        </ComboboxItem>
-                        <TooltipPrimitive.Portal>
-                          <TooltipPrimitive.Positioner side="right" sideOffset={8} className="z-50">
-                            <TooltipPrimitive.Popup className="w-72 p-3 bg-popover text-popover-foreground rounded-lg shadow-md ring-1 ring-foreground/10 origin-(--transform-origin) data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
-                              <p className="text-sm font-medium leading-snug mb-2">{issue.title}</p>
-                              {issue.labels.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {issue.labels.map((label) => (
-                                    <span
-                                      key={label}
-                                      className="rounded px-1.5 py-0.5 text-[10px] border border-border text-muted-foreground"
-                                    >
-                                      {label}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </TooltipPrimitive.Popup>
-                          </TooltipPrimitive.Positioner>
-                        </TooltipPrimitive.Portal>
-                      </TooltipPrimitive.Root>
-                    ))}
-                    </TooltipPrimitive.Provider>
-                  </ComboboxList>
-                </ComboboxContent>
-              </Combobox>
-            )}
-
-            <div>
-              <div className="inline-grid min-w-full">
-                <span
-                  aria-hidden
-                  className="col-start-1 row-start-1 pointer-events-none select-none invisible whitespace-pre text-base"
+                  onValueChange={(val) => {
+                    if (!val) {
+                      setSelectedIssue(null);
+                      setValue("title", "");
+                      setValue("description", "");
+                      return;
+                    }
+                    const externalId = val.replace(/^#/, "").split(" ")[0];
+                    const issue = (remoteIssues ?? []).find((i) => i.external_id === externalId);
+                    if (issue) handleIssueSelect(issue);
+                  }}
+                  filter={null}
+                  onInputValueChange={setIssueSearch}
                 >
-                  {titleValue || "Task title"}
-                </span>
-                <Input
-                  {...register("title", {
-                    required: "Title is required",
-                    minLength: { value: 3, message: "Title must be at least 3 characters" },
-                  })}
-                  placeholder="Task title"
-                  className="col-start-1 row-start-1 border-0 shadow-none bg-transparent dark:bg-transparent text-base px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-0"
+                  <InputGroup className="w-full">
+                    <InputGroupAddon align="inline-start">
+                      <BrandIcon
+                        slug={issueConfig.provider}
+                        className="text-muted-foreground"
+                        width={14}
+                        height={14}
+                      />
+                    </InputGroupAddon>
+                    <ComboboxPrimitive.Input
+                      render={<InputGroupInput />}
+                      placeholder={getIssueSearchPlaceholder(issueConfig)}
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <Search className="size-3.5 opacity-50" />
+                    </InputGroupAddon>
+                  </InputGroup>
+                  <ComboboxContent className="min-w-(--anchor-width)" sideOffset={4}>
+                    <ComboboxList className="custom-scrollbar space-y-1">
+                      {issuesFetching && <ComboboxEmpty>Loading issues...</ComboboxEmpty>}
+                      {!issuesFetching && filteredIssues.length === 0 && (
+                        <ComboboxEmpty>No issues found.</ComboboxEmpty>
+                      )}
+                      <TooltipPrimitive.Provider delay={400}>
+                        {filteredIssues.map((issue) => (
+                          <TooltipPrimitive.Root key={issue.external_id}>
+                            <ComboboxItem
+                              value={`#${issue.external_id} ${issue.title}`}
+                              className="p-0 px-1 rounded-md focus:outline-none hover:bg-transparent data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:**:text-inherit not-data-[variant=destructive]:data-highlighted:**:text-inherit"
+                            >
+                              <TooltipPrimitive.Trigger
+                                render={<div />}
+                                className="w-full rounded-md p-2 bg-muted/60 hover:bg-muted transition-colors cursor-default"
+                              >
+                                <div className="flex items-center justify-between gap-2 mb-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      void openUrl(issue.url);
+                                    }}
+                                    className="text-[11px] !text-accent hover:underline shrink-0 cursor-pointer"
+                                  >
+                                    #{stripProviderPrefix(issue.external_id)}
+                                  </button>
+                                  {issue.priority && (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span
+                                        className="size-2 rounded-full"
+                                        style={{
+                                          backgroundColor:
+                                            PRIORITY_COLORS[issue.priority as TaskPriority] ??
+                                            "#4b5563",
+                                        }}
+                                      />
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {issue.priority}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <p className="text-sm truncate">{issue.title}</p>
+                                {issue.labels.length > 0 && (
+                                  <div className="flex items-center gap-1 overflow-hidden mt-1 mask-[linear-gradient(to_right,black_80%,transparent_100%)]">
+                                    {issue.labels.map((label) => (
+                                      <span
+                                        key={label}
+                                        className="rounded px-1 py-0.5 text-[10px] border border-border text-muted-foreground shrink-0"
+                                      >
+                                        {label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </TooltipPrimitive.Trigger>
+                            </ComboboxItem>
+                            <TooltipPrimitive.Portal>
+                              <TooltipPrimitive.Positioner
+                                side="right"
+                                sideOffset={8}
+                                className="z-50"
+                              >
+                                <TooltipPrimitive.Popup className="w-72 p-3 bg-popover text-popover-foreground rounded-lg shadow-md ring-1 ring-foreground/10 origin-(--transform-origin) data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+                                  <p className="text-sm font-medium leading-snug mb-2">
+                                    {issue.title}
+                                  </p>
+                                  {issue.labels.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {issue.labels.map((label) => (
+                                        <span
+                                          key={label}
+                                          className="rounded px-1.5 py-0.5 text-[10px] border border-border text-muted-foreground"
+                                        >
+                                          {label}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </TooltipPrimitive.Popup>
+                              </TooltipPrimitive.Positioner>
+                            </TooltipPrimitive.Portal>
+                          </TooltipPrimitive.Root>
+                        ))}
+                      </TooltipPrimitive.Provider>
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+              )}
+
+              <div>
+                <div className="inline-grid min-w-full">
+                  <span
+                    aria-hidden
+                    className="col-start-1 row-start-1 pointer-events-none select-none invisible whitespace-pre text-base"
+                  >
+                    {titleValue || "Task title"}
+                  </span>
+                  <Input
+                    {...register("title", {
+                      required: "Title is required",
+                      minLength: { value: 3, message: "Title must be at least 3 characters" },
+                    })}
+                    placeholder="Task title"
+                    className="col-start-1 row-start-1 border-0 shadow-none bg-transparent dark:bg-transparent text-base px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-0"
+                  />
+                </div>
+                {errors.title && (
+                  <span className="text-destructive text-xs mt-0.5 block">
+                    {errors.title.message}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <Textarea
+                  {...register("description")}
+                  placeholder="Add description..."
+                  className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-18 max-h-[40vh] overflow-y-auto custom-scrollbar"
                 />
               </div>
-              {errors.title && (
-                <span className="text-destructive text-xs mt-0.5 block">
-                  {errors.title.message}
-                </span>
-              )}
-            </div>
 
-            <div>
-              <Textarea
-                {...register("description")}
-                placeholder="Add description..."
-                className="border-0 shadow-none bg-transparent dark:bg-transparent px-0 resize-none focus-visible:ring-0 placeholder:text-muted-foreground/50 min-h-18 max-h-[40vh] overflow-y-auto custom-scrollbar"
-              />
-            </div>
-
-            {isGitRepo && <Controller
-              name="baseBranch"
-              control={control}
-              rules={{ required: isGitRepo ? "Base branch is required" : false }}
-              render={({ field: { value, onChange } }) => (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                    FROM BRANCH
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <Popover
-                      open={openPopover === "branch"}
-                      onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}
-                    >
-                      <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <PopoverTrigger
-                            className={cn(
-                              "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
-                              errors.baseBranch ? "border-destructive" : "border-border",
-                            )}
-                          />
-                        }
-                      >
-                        <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 text-left truncate">
-                          {value || "Select branch..."}
-                        </span>
-                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>Branch used as base for the task execution</TooltipContent>
-                      </Tooltip>
-                      <PopoverContent className="w-(--anchor-width) p-0 gap-0" align="start">
-                        <div className="p-2 border-b border-border">
-                          <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
-                            <Search className="size-3.5 text-muted-foreground shrink-0" />
-                            <input
-                              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                              placeholder="Search branches..."
-                              value={branchSearch}
-                              onChange={(e) => setBranchSearch(e.target.value)}
+              {isGitRepo && (
+                <Controller
+                  name="baseBranch"
+                  control={control}
+                  rules={{ required: isGitRepo ? "Base branch is required" : false }}
+                  render={({ field: { value, onChange } }) => (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                        FROM BRANCH
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Popover
+                          open={openPopover === "branch"}
+                          onOpenChange={(v) => setOpenPopover(v ? "branch" : null)}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <PopoverTrigger
+                                  className={cn(
+                                    "flex flex-1 items-center gap-2 rounded-md border bg-transparent px-3 h-9 text-sm hover:bg-muted transition-colors",
+                                    errors.baseBranch ? "border-destructive" : "border-border",
+                                  )}
+                                />
+                              }
+                            >
+                              <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="flex-1 text-left truncate">
+                                {value || "Select branch..."}
+                              </span>
+                              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Branch used as base for the task execution
+                            </TooltipContent>
+                          </Tooltip>
+                          <PopoverContent className="w-(--anchor-width) p-0 gap-0" align="start">
+                            <div className="p-2 border-b border-border">
+                              <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
+                                <Search className="size-3.5 text-muted-foreground shrink-0" />
+                                <input
+                                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                                  placeholder="Search branches..."
+                                  value={branchSearch}
+                                  onChange={(e) => setBranchSearch(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="p-1">
+                              <div className="flex rounded-md bg-muted p-0.5 gap-0.5">
+                                {(["local", "remote"] as const).map((tab) => (
+                                  <button
+                                    key={tab}
+                                    type="button"
+                                    onClick={() => setBranchTab(tab)}
+                                    className={cn(
+                                      "flex-1 rounded-[5px] px-2 py-1 text-xs font-medium transition-colors capitalize",
+                                      branchTab === tab
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground/80",
+                                    )}
+                                  >
+                                    {tab === "local"
+                                      ? `Local (${filteredLocal.length})`
+                                      : `Remote (${filteredRemote.length})`}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <BranchList
+                              branches={branchTab === "local" ? filteredLocal : filteredRemote}
+                              selected={value}
+                              onSelect={(b) => {
+                                onChange(b);
+                                setOpenPopover(null);
+                                setBranchSearch("");
+                              }}
                             />
-                          </div>
-                        </div>
-                        <div className="p-1">
-                          <div className="flex rounded-md bg-muted p-0.5 gap-0.5">
-                            {(["local", "remote"] as const).map((tab) => (
-                              <button
-                                key={tab}
-                                type="button"
-                                onClick={() => setBranchTab(tab)}
-                                className={cn(
-                                  "flex-1 rounded-[5px] px-2 py-1 text-xs font-medium transition-colors capitalize",
-                                  branchTab === tab
-                                    ? "bg-background text-foreground shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground/80",
-                                )}
-                              >
-                                {tab === "local"
-                                  ? `Local (${filteredLocal.length})`
-                                  : `Remote (${filteredRemote.length})`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <BranchList
-                          branches={branchTab === "local" ? filteredLocal : filteredRemote}
-                          selected={value}
-                          onSelect={(b) => {
-                            onChange(b);
-                            setOpenPopover(null);
-                            setBranchSearch("");
-                          }}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() =>
-                        void queryClient.invalidateQueries({
-                          queryKey: [...taskQueryKeys.base, "branches", projectId],
-                        })
-                      }
-                      disabled={branchesFetching}
-                    >
-                      <RefreshCw className={cn("size-3.5", branchesFetching && "animate-spin")} />
-                    </Button>
-                  </div>
-                  {errors.baseBranch && (
-                    <span className="text-destructive text-xs">{errors.baseBranch.message}</span>
-                  )}
-                </div>
-              )}
-            />}
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <Popover
-                open={openPopover === "priority"}
-                onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
-              >
-                <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors" />
-                  }
-                >
-                  <span
-                    className="size-2 rounded-full shrink-0"
-                    style={{ backgroundColor: PRIORITY_COLORS[selectedPriority] }}
-                  />
-                  {selectedPriority}
-                </TooltipTrigger>
-                <TooltipContent>Board ordering priority</TooltipContent>
-                </Tooltip>
-                <PopoverContent className="w-36 p-1" align="start">
-                  {PRIORITIES.map((p) => (
-                    <Controller
-                      key={p}
-                      name="priority"
-                      control={control}
-                      render={({ field: { onChange } }) => (
-                        <button
+                          </PopoverContent>
+                        </Popover>
+                        <Button
                           type="button"
-                          className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
-                          onClick={() => {
-                            onChange(p);
-                            setOpenPopover(null);
-                          }}
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() =>
+                            void queryClient.invalidateQueries({
+                              queryKey: [...taskQueryKeys.base, "branches", projectId],
+                            })
+                          }
+                          disabled={branchesFetching}
                         >
-                          <span
-                            className="size-2 rounded-full shrink-0"
-                            style={{ backgroundColor: PRIORITY_COLORS[p] }}
+                          <RefreshCw
+                            className={cn("size-3.5", branchesFetching && "animate-spin")}
                           />
-                          {p}
-                          {selectedPriority === p && <Check className="size-3 ml-auto" />}
-                        </button>
+                        </Button>
+                      </div>
+                      {errors.baseBranch && (
+                        <span className="text-destructive text-xs">
+                          {errors.baseBranch.message}
+                        </span>
                       )}
-                    />
-                  ))}
-                </PopoverContent>
-              </Popover>
-
-              <Popover
-                open={openPopover === "agent"}
-                onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}
-              >
-                <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-50" />
-                  }
-                >
-                  {selectedAgent ? (
-                    hasBrandIcon(selectedAgent.id) ? (
-                      <BrandIcon slug={selectedAgent.id} className="size-3 shrink-0" />
-                    ) : selectedAgent.icon ? (
-                      <img src={selectedAgent.icon} className="size-3 shrink-0 dark:[filter:invert(1)]" />
-                    ) : (
-                      <Bot className="size-3 shrink-0 text-muted-foreground" />
-                    )
-                  ) : (
-                    <BotOff className="size-3 shrink-0 text-muted-foreground" />
+                    </div>
                   )}
-                  <span className="truncate">{agentPillLabel}</span>
-                </TooltipTrigger>
-                <TooltipContent>AI agent assigned to this task</TooltipContent>
-                </Tooltip>
-                <PopoverContent className="w-52 p-1" align="start">
-                  <Controller
-                    name="agentId"
-                    control={control}
-                    render={({ field: { onChange } }) => (
-                      <>
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
-                          onClick={() => {
-                            onChange("");
-                            setOpenPopover(null);
-                          }}
-                        >
-                          <BotOff className="size-3 text-muted-foreground shrink-0" />
-                          <span className="flex-1 text-left">No agent</span>
-                          {!selectedAgentId && <Check className="size-3 ml-auto shrink-0" />}
-                        </button>
-                        {agents.map((agent) => (
+                />
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Popover
+                  open={openPopover === "priority"}
+                  onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
+                >
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors" />
+                      }
+                    >
+                      <span
+                        className="size-2 rounded-full shrink-0"
+                        style={{ backgroundColor: PRIORITY_COLORS[selectedPriority] }}
+                      />
+                      {selectedPriority}
+                    </TooltipTrigger>
+                    <TooltipContent>Board ordering priority</TooltipContent>
+                  </Tooltip>
+                  <PopoverContent className="w-36 p-1" align="start">
+                    {PRIORITIES.map((p) => (
+                      <Controller
+                        key={p}
+                        name="priority"
+                        control={control}
+                        render={({ field: { onChange } }) => (
                           <button
-                            key={agent.id}
                             type="button"
                             className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
                             onClick={() => {
-                              onChange(agent.id);
+                              onChange(p);
                               setOpenPopover(null);
                             }}
                           >
-                            {hasBrandIcon(agent.id) ? (
-                              <BrandIcon slug={agent.id} className="size-3 shrink-0" />
-                            ) : (
-                              <Bot className="size-3 text-muted-foreground shrink-0" />
-                            )}
-                            <span className="truncate flex-1 text-left">{agent.name}</span>
-                            {selectedAgentId === agent.id && <Check className="size-3 shrink-0" />}
+                            <span
+                              className="size-2 rounded-full shrink-0"
+                              style={{ backgroundColor: PRIORITY_COLORS[p] }}
+                            />
+                            {p}
+                            {selectedPriority === p && <Check className="size-3 ml-auto" />}
                           </button>
-                        ))}
-                      </>
-                    )}
+                        )}
+                      />
+                    ))}
+                  </PopoverContent>
+                </Popover>
+
+                <Popover
+                  open={openPopover === "agent"}
+                  onOpenChange={(v) => setOpenPopover(v ? "agent" : null)}
+                >
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <PopoverTrigger className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 h-7 text-xs hover:bg-muted transition-colors max-w-50" />
+                      }
+                    >
+                      {selectedAgent ? (
+                        hasBrandIcon(selectedAgent.id) ? (
+                          <BrandIcon slug={selectedAgent.id} className="size-3 shrink-0" />
+                        ) : selectedAgent.icon ? (
+                          <img
+                            src={selectedAgent.icon}
+                            className="size-3 shrink-0 dark:[filter:invert(1)]"
+                          />
+                        ) : (
+                          <Bot className="size-3 shrink-0 text-muted-foreground" />
+                        )
+                      ) : (
+                        <BotOff className="size-3 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate">{agentPillLabel}</span>
+                    </TooltipTrigger>
+                    <TooltipContent>AI agent assigned to this task</TooltipContent>
+                  </Tooltip>
+                  <PopoverContent className="w-52 p-1" align="start">
+                    <Controller
+                      name="agentId"
+                      control={control}
+                      render={({ field: { onChange } }) => (
+                        <>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
+                            onClick={() => {
+                              onChange("");
+                              setOpenPopover(null);
+                            }}
+                          >
+                            <BotOff className="size-3 text-muted-foreground shrink-0" />
+                            <span className="flex-1 text-left">No agent</span>
+                            {!selectedAgentId && <Check className="size-3 ml-auto shrink-0" />}
+                          </button>
+                          {agents.map((agent) => (
+                            <button
+                              key={agent.id}
+                              type="button"
+                              className="flex items-center gap-2 w-full px-2 py-0.5 text-xs rounded hover:bg-muted transition-colors"
+                              onClick={() => {
+                                onChange(agent.id);
+                                setOpenPopover(null);
+                              }}
+                            >
+                              {hasBrandIcon(agent.id) ? (
+                                <BrandIcon slug={agent.id} className="size-3 shrink-0" />
+                              ) : (
+                                <Bot className="size-3 text-muted-foreground shrink-0" />
+                              )}
+                              <span className="truncate flex-1 text-left">{agent.name}</span>
+                              {selectedAgentId === agent.id && (
+                                <Check className="size-3 shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {isGitRepo && (
+                  <TogglePill
+                    name="isolatedWorktree"
+                    label="Worktree"
+                    control={control}
+                    tooltip="Create dedicated branch + worktree. Off = work on selected branch directly."
+                    icon={<GitBranch className="size-3 shrink-0" />}
                   />
-                </PopoverContent>
-              </Popover>
-
-              {isGitRepo && (
+                )}
                 <TogglePill
-                  name="isolatedWorktree"
-                  label="Worktree"
+                  name="autoApprove"
+                  label="Auto-approve"
                   control={control}
-                  tooltip="Create dedicated branch + worktree. Off = work on selected branch directly."
-                  icon={<GitBranch className="size-3 shrink-0" />}
+                  tooltip="Skip manual approval for file changes and tool calls"
+                  icon={<Shield className="size-3 shrink-0" />}
+                  activeIcon={<ShieldOff className="size-3 shrink-0" />}
                 />
-              )}
-              <TogglePill
-                name="autoApprove"
-                label="Auto-approve"
-                control={control}
-                tooltip="Skip manual approval for file changes and tool calls"
-                icon={<Shield className="size-3 shrink-0" />}
-                activeIcon={<ShieldOff className="size-3 shrink-0" />}
-              />
-            </div>
+              </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                <Switch
-                  size="sm"
-                  checked={createAnother}
-                  onCheckedChange={setCreateAnother}
-                  className="data-unchecked:bg-muted data-unchecked:border-border/50"
-                />
-                Create another
-              </label>
-              <Button type="submit" size="sm" disabled={isPending}>
-                {isPending ? "Creating..." : "Create"}
-              </Button>
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                  <Switch
+                    size="sm"
+                    checked={createAnother}
+                    onCheckedChange={setCreateAnother}
+                    className="data-unchecked:bg-muted data-unchecked:border-border/50"
+                  />
+                  Create another
+                </label>
+                <Button type="submit" size="sm" disabled={isPending}>
+                  {isPending ? "Creating..." : "Create"}
+                </Button>
+              </div>
             </div>
-          </div>
           </TooltipProvider>
         </form>
       </DialogContent>
@@ -687,9 +721,7 @@ function TogglePill({ name, label, control, tooltip, icon, activeIcon }: ToggleP
         if (!tooltip) return button;
         return (
           <Tooltip>
-            <TooltipTrigger render={<span className="inline-flex" />}>
-              {button}
-            </TooltipTrigger>
+            <TooltipTrigger render={<span className="inline-flex" />}>{button}</TooltipTrigger>
             <TooltipContent>{tooltip}</TooltipContent>
           </Tooltip>
         );

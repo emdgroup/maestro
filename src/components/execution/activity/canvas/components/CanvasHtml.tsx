@@ -4,9 +4,19 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { Skeleton } from "@/ui/skeleton";
 
 const THEME_VARS = [
-  "--background", "--foreground", "--card", "--card-foreground",
-  "--muted", "--muted-foreground", "--border", "--accent", "--accent-foreground",
-  "--primary", "--primary-foreground", "--input", "--ring",
+  "--background",
+  "--foreground",
+  "--card",
+  "--card-foreground",
+  "--muted",
+  "--muted-foreground",
+  "--border",
+  "--accent",
+  "--accent-foreground",
+  "--primary",
+  "--primary-foreground",
+  "--input",
+  "--ring",
 ];
 
 const IFRAME_SCRIPTS = `<script>(function(){function r(){parent.postMessage({type:'canvas-iframe-resize',height:document.documentElement.scrollHeight},'*')}window.addEventListener('load',r);new ResizeObserver(r).observe(document.documentElement);window.addEventListener('message',function(e){if(e.data&&e.data.type==='canvas-theme-update'){var el=document.getElementById('__mt__');if(el)el.textContent=e.data.css}})})()</script>`;
@@ -56,10 +66,14 @@ export function CanvasHtml({ srcdoc, height = 200, title, className }: Props) {
     const isDark = document.documentElement.classList.contains("dark");
     const style = `<style id="__mt__">:root{color-scheme:${isDark ? "dark" : "light"};${vars}}body{background:var(--background);color:var(--foreground);margin:0;padding:0;font-family:system-ui,sans-serif}</style>`;
     const inject = style + IFRAME_SCRIPTS;
-    return srcdoc.includes("<head>") ? srcdoc.replace("<head>", `<head>${inject}`) : inject + srcdoc;
+    return srcdoc.includes("<head>")
+      ? srcdoc.replace("<head>", `<head>${inject}`)
+      : inject + srcdoc;
   }, [srcdoc]);
 
-  useLayoutEffect(() => { setLoaded(false); }, [themedSrcdoc]);
+  useLayoutEffect(() => {
+    setLoaded(false);
+  }, [themedSrcdoc]);
 
   if (!themedSrcdoc) return null;
   return (

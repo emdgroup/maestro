@@ -26,9 +26,7 @@ export function KanbanProvider({
   onTaskClick,
 }: KanbanProviderProps) {
   return (
-    <KanbanContext.Provider
-      value={{ projectId, projectPath, connection, onTaskClick }}
-    >
+    <KanbanContext.Provider value={{ projectId, projectPath, connection, onTaskClick }}>
       {children}
     </KanbanContext.Provider>
   );

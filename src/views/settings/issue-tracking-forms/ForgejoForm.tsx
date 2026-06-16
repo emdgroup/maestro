@@ -55,7 +55,9 @@ function RepoProviderForm({
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium" required>Owner</Label>
+        <Label className="text-sm font-medium" required>
+          Owner
+        </Label>
         <Input
           placeholder="username or org"
           value={owner}
@@ -66,7 +68,9 @@ function RepoProviderForm({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium" required>Repository</Label>
+          <Label className="text-sm font-medium" required>
+            Repository
+          </Label>
           {ownerSet && (
             <button
               type="button"

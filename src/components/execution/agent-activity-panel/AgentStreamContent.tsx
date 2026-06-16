@@ -3,17 +3,14 @@ import { ActivityUserMessage } from "../activity/ActivityUserMessage";
 import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
-import type { PermissionResponseItem, ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
+import type { ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
+import React from "react";
 
 interface AgentStreamContentProps {
   agentSections: AgentSectionItem[];
   lastUserMessage: UserMessageItem | null;
   toolCallMap: Map<string, ToolCallItem>;
   canvasMap: Map<string, CanvasSurface>;
-  switchModeToolCallIds: string[];
-  planPermissionRequestIds: React.RefObject<string[]>;
-  livePermissionResponses: Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>;
-  pendingPermission: { requestId: string; payload: Record<string, unknown> } | null;
   onOpenPlanOverlay: () => void;
   inlinePermission: React.ReactNode;
   bottomBar: React.ReactNode;
@@ -30,10 +27,6 @@ export function AgentStreamContent({
   lastUserMessage,
   toolCallMap,
   canvasMap,
-  switchModeToolCallIds,
-  planPermissionRequestIds,
-  livePermissionResponses,
-  pendingPermission,
   onOpenPlanOverlay,
   inlinePermission,
   bottomBar,
@@ -89,10 +82,6 @@ export function AgentStreamContent({
           const sharedItemProps = {
             allItems: items,
             nextSectionStartsWithMessage,
-            switchModeToolCallIds,
-            planPermissionRequestIds,
-            livePermissionResponses,
-            pendingPermission,
             onOpenPlanOverlay,
             toolCallMap,
             canvasMap,
@@ -102,12 +91,7 @@ export function AgentStreamContent({
           return (
             <AgentResponseSection key={sectionKey} showConnector={showConnector}>
               {items.map((gi, index) => (
-                <AgentStreamItem
-                  key={getItemKey(gi)}
-                  gi={gi}
-                  index={index}
-                  {...sharedItemProps}
-                />
+                <AgentStreamItem key={getItemKey(gi)} gi={gi} index={index} {...sharedItemProps} />
               ))}
             </AgentResponseSection>
           );

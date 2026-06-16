@@ -88,11 +88,15 @@ export function TaskReviewPanel({
   const [fileSearch, setFileSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [scope, setScope] = useState<DiffScope>({ type: "all" });
-  const [viewedFiles, setViewedFiles] = useState<Set<string>>(() => reviewStore.getViewedFiles(task.id));
+  const [viewedFiles, setViewedFiles] = useState<Set<string>>(() =>
+    reviewStore.getViewedFiles(task.id),
+  );
   const [viewMode, setViewMode] = useState<"uncommitted" | "untracked">("uncommitted");
 
   // Comment state
-  const [comments, setComments] = useState<PendingComment[]>(() => reviewStore.getComments(task.id));
+  const [comments, setComments] = useState<PendingComment[]>(() =>
+    reviewStore.getComments(task.id),
+  );
   const [activeCommentLine, setActiveCommentLine] = useState<{
     lineNumber: number;
     side: "old" | "new";
@@ -181,15 +185,18 @@ export function TaskReviewPanel({
       : null;
 
   // Viewed toggle — sync to store
-  const toggleViewed = useCallback((fileName: string) => {
-    setViewedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileName)) next.delete(fileName);
-      else next.add(fileName);
-      reviewStore.setViewedFiles(task.id, next);
-      return next;
-    });
-  }, [task.id, reviewStore]);
+  const toggleViewed = useCallback(
+    (fileName: string) => {
+      setViewedFiles((prev) => {
+        const next = new Set(prev);
+        if (next.has(fileName)) next.delete(fileName);
+        else next.add(fileName);
+        reviewStore.setViewedFiles(task.id, next);
+        return next;
+      });
+    },
+    [task.id, reviewStore],
+  );
 
   // Comment handlers
   const handleAddComment = useCallback((lineNumber: number, side: "old" | "new") => {
@@ -202,7 +209,10 @@ export function TaskReviewPanel({
       const filePath = filteredDiffFiles[selectedFileIndex]?.fileName || "";
       setComments((prev) => {
         const existing = prev.findIndex(
-          (c) => c.filePath === filePath && c.lineNumber === activeCommentLine.lineNumber && c.side === activeCommentLine.side,
+          (c) =>
+            c.filePath === filePath &&
+            c.lineNumber === activeCommentLine.lineNumber &&
+            c.side === activeCommentLine.side,
         );
         const newComment = {
           id: existing >= 0 ? prev[existing].id : crypto.randomUUID(),
@@ -228,7 +238,7 @@ export function TaskReviewPanel({
   }, []);
 
   const handleEditComment = useCallback((commentId: string, newText: string) => {
-    setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, text: newText } : c));
+    setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, text: newText } : c)));
   }, []);
 
   const handleFileComment = useCallback(
@@ -255,22 +265,19 @@ export function TaskReviewPanel({
   const hasComments = comments.length > 0;
   const defaultAction = hasComments ? "rework" : "approve";
 
-  const handleActionSelect = useCallback(
-    (value: string) => {
-      switch (value) {
-        case "approve":
-          setApproveModalOpen(true);
-          break;
-        case "rework":
-          setReworkModalOpen(true);
-          break;
-        case "discard":
-          setDiscardModalOpen(true);
-          break;
-      }
-    },
-    [],
-  );
+  const handleActionSelect = useCallback((value: string) => {
+    switch (value) {
+      case "approve":
+        setApproveModalOpen(true);
+        break;
+      case "rework":
+        setReworkModalOpen(true);
+        break;
+      case "discard":
+        setDiscardModalOpen(true);
+        break;
+    }
+  }, []);
 
   // Mutation handlers (called from modals)
   const handleReworkConfirm = useCallback(
@@ -301,7 +308,7 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task, requestChanges, onClose, execute, activeSession],
+    [task, requestChanges, onClose, execute, activeSession, reviewStore],
   );
 
   const handleApproveConfirm = useCallback(
@@ -312,7 +319,12 @@ export function TaskReviewPanel({
           onSuccess: () => {
             const strategy = data.mergeStrategy === "commit-only" ? "CommitOnly" : "CommitAndMerge";
             approveAndMerge(
-              { taskId: task.id, mergeStrategy: strategy, includeUntracked: data.includeUntracked, commitMessage: data.commitMessage },
+              {
+                taskId: task.id,
+                mergeStrategy: strategy,
+                includeUntracked: data.includeUntracked,
+                commitMessage: data.commitMessage,
+              },
               {
                 onSuccess: () => {
                   setApproveModalOpen(false);
@@ -349,10 +361,13 @@ export function TaskReviewPanel({
 
   // Detect worktree state for ApproveModal
   const hasWorktree = worktreePath != null;
-  const hasUncommitted = (diffQuery.data?.untracked_files?.length ?? 0) > 0 || diffFiles.some((f) => f.status === "M" || f.status === "A" || f.status === "D");
+  const hasUncommitted =
+    (diffQuery.data?.untracked_files?.length ?? 0) > 0 ||
+    diffFiles.some((f) => f.status === "M" || f.status === "A" || f.status === "D");
 
   // Current file for DiffViewer
-  const selectedFile = selectedFileIndex != null ? (filteredDiffFiles[selectedFileIndex] ?? null) : null;
+  const selectedFile =
+    selectedFileIndex != null ? (filteredDiffFiles[selectedFileIndex] ?? null) : null;
   const currentFileComments = selectedFile
     ? comments.filter((c) => c.filePath === selectedFile.fileName)
     : [];
@@ -540,45 +555,51 @@ export function TaskReviewPanel({
                 })()}
 
               {/* File-level comment (single per file, editable) */}
-              {selectedFile && (() => {
-                const fileComment = comments.find(
-                  (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
-                );
-                return (
-                  <div className="shrink-0 border-b border-border">
-                    {fileComment && !activeFileComment && (
-                      <PendingCommentBlock
-                        text={fileComment.text}
-                        onRemove={() => handleRemoveComment(fileComment.id)}
-                        onEdit={(newText) => handleEditComment(fileComment.id, newText)}
-                      />
-                    )}
-                    {activeFileComment && (
-                      <div className="p-2">
-                        <InlineCommentInput
-                          initialText={fileComment?.text}
-                          onSubmit={(text) => {
-                            setComments((prev) => {
-                              if (fileComment) {
-                                return prev.map((c) => c.id === fileComment.id ? { ...c, text } : c);
-                              }
-                              return [...prev, {
-                                id: crypto.randomUUID(),
-                                filePath: selectedFile.fileName,
-                                lineNumber: 0,
-                                side: "new" as const,
-                                text,
-                              }];
-                            });
-                            setActiveFileComment(false);
-                          }}
-                          onCancel={() => setActiveFileComment(false)}
+              {selectedFile &&
+                (() => {
+                  const fileComment = comments.find(
+                    (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
+                  );
+                  return (
+                    <div className="shrink-0 border-b border-border">
+                      {fileComment && !activeFileComment && (
+                        <PendingCommentBlock
+                          text={fileComment.text}
+                          onRemove={() => handleRemoveComment(fileComment.id)}
+                          onEdit={(newText) => handleEditComment(fileComment.id, newText)}
                         />
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                      )}
+                      {activeFileComment && (
+                        <div className="p-2">
+                          <InlineCommentInput
+                            initialText={fileComment?.text}
+                            onSubmit={(text) => {
+                              setComments((prev) => {
+                                if (fileComment) {
+                                  return prev.map((c) =>
+                                    c.id === fileComment.id ? { ...c, text } : c,
+                                  );
+                                }
+                                return [
+                                  ...prev,
+                                  {
+                                    id: crypto.randomUUID(),
+                                    filePath: selectedFile.fileName,
+                                    lineNumber: 0,
+                                    side: "new" as const,
+                                    text,
+                                  },
+                                ];
+                              });
+                              setActiveFileComment(false);
+                            }}
+                            onCancel={() => setActiveFileComment(false)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
               <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
                 {diffQuery.isLoading ? (
@@ -597,7 +618,11 @@ export function TaskReviewPanel({
                     onSubmitComment={handleSubmitComment}
                   />
                 ) : (
-                  <DiffViewer diffFile={null} loading={false} diffViewMode={effectiveDiffViewMode} />
+                  <DiffViewer
+                    diffFile={null}
+                    loading={false}
+                    diffViewMode={effectiveDiffViewMode}
+                  />
                 )}
               </div>
             </>

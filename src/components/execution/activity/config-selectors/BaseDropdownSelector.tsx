@@ -24,7 +24,7 @@ export const DESC_CLASS =
   "text-[11px] text-muted-foreground leading-snug group-data-highlighted:text-accent-foreground/70";
 
 const GLASS_CONTENT_CLASS =
-  "backdrop-blur-[4px] bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] ring-0";
+  "backdrop-blur-[4px] bg-muted/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] ring-0";
 
 interface BaseDropdownSelectorProps {
   option: ConfigOption;
@@ -69,7 +69,11 @@ export function BaseDropdownSelector({
           align="start"
           alignItemWithTrigger={false}
           sideOffset={4}
-          className={cn(GLASS_CONTENT_CLASS, "p-1 max-h-128 overflow-y-auto custom-scrollbar", contentClassName)}
+          className={cn(
+            GLASS_CONTENT_CLASS,
+            "p-1 max-h-128 overflow-y-auto custom-scrollbar",
+            contentClassName,
+          )}
         >
           {option.options.map((opt, i) => renderItem(opt, i))}
         </SelectContent>

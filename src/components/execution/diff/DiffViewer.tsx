@@ -173,8 +173,14 @@ export function DiffViewer({
       if (!onSubmitComment || !onCancelComment) return null;
       return (
         <InlineCommentInput
-          onSubmit={(text) => { onSubmitComment(text); onClose(); }}
-          onCancel={() => { onCancelComment(); onClose(); }}
+          onSubmit={(text) => {
+            onSubmitComment(text);
+            onClose();
+          }}
+          onCancel={() => {
+            onCancelComment();
+            onClose();
+          }}
         />
       );
     },
@@ -182,7 +188,15 @@ export function DiffViewer({
   );
 
   const renderExtendLine = useCallback(
-    ({ data }: { lineNumber: number; side: SplitSide; data: PendingComment; diffFile: any; onUpdate: () => void }) => {
+    ({
+      data,
+    }: {
+      lineNumber: number;
+      side: SplitSide;
+      data: PendingComment;
+      diffFile: any;
+      onUpdate: () => void;
+    }) => {
       if (!onRemoveComment) return null;
       return (
         <PendingCommentBlock
@@ -211,7 +225,11 @@ export function DiffViewer({
     <div className="min-h-0 flex flex-col h-full">
       <div
         ref={wrapperRef}
-        className={cn("flex-1 min-h-0", onHunkToggle && "hunk-selection-active", reviewMode && "review-mode-active")}
+        className={cn(
+          "flex-1 min-h-0",
+          onHunkToggle && "hunk-selection-active",
+          reviewMode && "review-mode-active",
+        )}
       >
         <DiffView
           data={diffFile}

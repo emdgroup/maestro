@@ -368,13 +368,21 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         deleteDialogOpen={isUncommittedScope ? deleteDialogOpen : false}
         onDeleteDialogOpenChange={isUncommittedScope ? handleDeleteDialogOpenChange : undefined}
         isDeleting={isUncommittedScope ? deleteMutation.isPending : false}
-        deleteError={isUncommittedScope && deleteMutation.error ? String(deleteMutation.error) : null}
+        deleteError={
+          isUncommittedScope && deleteMutation.error ? String(deleteMutation.error) : null
+        }
         isShelving={isUncommittedScope ? shelveMutation.isPending : false}
         shelvePopoverOpen={isUncommittedScope ? shelvePopoverOpen : false}
         onShelvePopoverOpenChange={isUncommittedScope ? setShelvePopoverOpen : undefined}
         shelveName={isUncommittedScope ? shelveName : ""}
         onShelveNameChange={isUncommittedScope ? setShelveName : undefined}
-        onRevert={isUncommittedScope ? (viewMode === "untracked" ? handleDeleteUntracked : handleRevert) : undefined}
+        onRevert={
+          isUncommittedScope
+            ? viewMode === "untracked"
+              ? handleDeleteUntracked
+              : handleRevert
+            : undefined
+        }
         onShelve={isUncommittedScope ? handleShelve : undefined}
         onClose={onClose}
       />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import { useAgentCacheQuery} from "@/services/execution.service";
+import { useAgentCacheQuery } from "@/services/execution.service";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
 import type { AcpPromptCapabilities, ConnectionKey } from "@/types/bindings";
 
@@ -124,12 +124,9 @@ export function useAcpSessionLifecycle(
         });
         setActivityStatus(sessionKey, "awaiting_input");
       }),
-      listen<AcpPromptCapabilities>(
-        `acp://session-capabilities/${sessionKey}`,
-        (event) => {
-          setPromptCapabilities(event.payload);
-        },
-      ),
+      listen<AcpPromptCapabilities>(`acp://session-capabilities/${sessionKey}`, (event) => {
+        setPromptCapabilities(event.payload);
+      }),
       listen<{
         current_model_id: string;
         available_models: Array<{ model_id: string; name: string }>;
@@ -192,8 +189,9 @@ export function useAcpSessionLifecycle(
         } else {
           setConfigValues((prev) => ({ ...prev, [config_id]: value }));
         }
-      })
-    ]).then((listeners) => listeners)
+      }),
+    ])
+      .then((listeners) => listeners)
       .catch(console.error);
 
     return () => {
@@ -202,7 +200,6 @@ export function useAcpSessionLifecycle(
       });
     };
   }, [sessionKey, setActivityStatus]);
-
 
   // Write session-update handler to the shared ref so useAcpActivity (which registers
   // its listener before drain) can forward events here without a race condition.

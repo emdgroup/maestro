@@ -1,11 +1,11 @@
-import { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
 import { isPlanPermission, isAllowKind } from "../activity/PermissionPrompt";
 import type { ActivityAction } from "../activity/useAcpActivity";
 import type { JsonValue } from "@/types/bindings";
-import type { ComposeBarHandle } from "../activity/ComposeBar";
+import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 
 type PendingPermission = { requestId: string; payload: Record<string, unknown> };
 type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
@@ -65,7 +65,14 @@ export function useMessageSender({
         setActivity(sessionKey, "idle");
       }
     },
-    [isProcessing, sessionKey, liveDispatch, setActivity, pendingPermission, handlePermissionRespond],
+    [
+      isProcessing,
+      sessionKey,
+      liveDispatch,
+      setActivity,
+      pendingPermission,
+      handlePermissionRespond,
+    ],
   );
 
   const handleCancel = useCallback(async () => {
@@ -79,7 +86,7 @@ export function useMessageSender({
   const handleSendWithTransition = useCallback(
     (content: string, contentBlocks?: JsonValue) => {
       if (isCenteredCompose) onCenteredTransition();
-      handleSend(content, contentBlocks);
+      void handleSend(content, contentBlocks);
     },
     [isCenteredCompose, onCenteredTransition, handleSend],
   );
@@ -102,7 +109,14 @@ export function useMessageSender({
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [isSelected, sessionEnded, isInitializing, pendingPermission, pendingElicitation, composeBarRef]);
+  }, [
+    isSelected,
+    sessionEnded,
+    isInitializing,
+    pendingPermission,
+    pendingElicitation,
+    composeBarRef,
+  ]);
 
   return { handleSend, handleCancel, handleSendWithTransition };
 }

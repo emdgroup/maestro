@@ -14,9 +14,7 @@ export interface ConfigState {
   preflightToolChecks: Record<string, ToolCheckEntry[]>;
 
   // Actions
-  setState: (
-    config: Partial<Pick<ConfigState, "default_agent" | "isLoading" | "error">>,
-  ) => void;
+  setState: (config: Partial<Pick<ConfigState, "default_agent" | "isLoading" | "error">>) => void;
   setDefaultAgent: (agent: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;

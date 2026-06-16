@@ -1,7 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
-import { ChevronsUpDown, GitBranch, Group, LayoutGrid, Plus, RefreshCw, SearchIcon } from "lucide-react";
+import {
+  ChevronsUpDown,
+  GitBranch,
+  Group,
+  LayoutGrid,
+  Plus,
+  RefreshCw,
+  SearchIcon,
+} from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
@@ -57,10 +65,17 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useShortcuts("worktrees", {
-    "wt-new":       () => setShowCreateDialog(true),
-    "wt-refresh":   () => { void refetchWorktrees(); },
-    "wt-close-diff": () => { if (selectedWorktreePath !== null) setSelectedWorktreePath(null); },
-    "focus-search": () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+    "wt-new": () => setShowCreateDialog(true),
+    "wt-refresh": () => {
+      void refetchWorktrees();
+    },
+    "wt-close-diff": () => {
+      if (selectedWorktreePath !== null) setSelectedWorktreePath(null);
+    },
+    "focus-search": () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    },
   });
 
   // Refresh when tab becomes active — always-mounted views don't remount on navigate so

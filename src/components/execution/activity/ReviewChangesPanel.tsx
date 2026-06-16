@@ -62,8 +62,7 @@ export function ReviewChangesPanel({
   }, [sessionKey]);
 
   const diffTarget = useMemo(
-    () =>
-      startSha ? ({ type: "Commit", sha: startSha } as const) : ({ type: "Head" } as const),
+    () => (startSha ? ({ type: "Commit", sha: startSha } as const) : ({ type: "Head" } as const)),
     [startSha],
   );
 
@@ -322,32 +321,46 @@ export function ReviewChangesPanel({
         {/* Diff viewer */}
         <div className="flex-1 min-h-0 min-w-0 flex flex-col">
           {/* File content header */}
-          {selectedItem && (() => {
-            const fileName = selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
-            const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
-            const stats = selectedItem.kind === "diff" ? computeFileStats(selectedItem.file.hunks) : { insertions: 0, deletions: 0 };
-            const statusColor = status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
-            const isViewed = viewedFiles.has(fileName);
-            return (
-              <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-                <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
-                <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-                {stats.insertions > 0 && <span className="text-success shrink-0">+{stats.insertions}</span>}
-                {stats.deletions > 0 && <span className="text-destructive shrink-0">-{stats.deletions}</span>}
-                <button
-                  onClick={() => toggleViewed(fileName)}
-                  className={cn(
-                    "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
-                    isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+          {selectedItem &&
+            (() => {
+              const fileName =
+                selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
+              const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
+              const stats =
+                selectedItem.kind === "diff"
+                  ? computeFileStats(selectedItem.file.hunks)
+                  : { insertions: 0, deletions: 0 };
+              const statusColor =
+                status === "A"
+                  ? "text-success"
+                  : status === "D"
+                    ? "text-destructive"
+                    : "text-muted-foreground";
+              const isViewed = viewedFiles.has(fileName);
+              return (
+                <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                  <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
+                  <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+                  {stats.insertions > 0 && (
+                    <span className="text-success shrink-0">+{stats.insertions}</span>
                   )}
-                  title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                >
-                  <CheckCheck className="size-3" />
-                  <span className="text-[10px]">Viewed</span>
-                </button>
-              </div>
-            );
-          })()}
+                  {stats.deletions > 0 && (
+                    <span className="text-destructive shrink-0">-{stats.deletions}</span>
+                  )}
+                  <button
+                    onClick={() => toggleViewed(fileName)}
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
+                      isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+                    )}
+                    title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                  >
+                    <CheckCheck className="size-3" />
+                    <span className="text-[10px]">Viewed</span>
+                  </button>
+                </div>
+              );
+            })()}
 
           {loading ? (
             <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">

@@ -110,10 +110,13 @@ export function ZoomableContent({
     };
   }, [open, startIdleTimer, doFitToView]);
 
-
   // Keep refs in sync so drag onMove can read current values without re-render
-  useEffect(() => { panRef.current = pan; }, [pan]);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   function applyZoom(next: number) {
     setZoom(clampZoom(next));
@@ -153,8 +156,7 @@ export function ZoomableContent({
       lastMouse.current = { x: ev.clientX, y: ev.clientY };
       // Direct DOM update — avoids React re-renders which kill pointermove in React 19
       if (contentRef.current) {
-        contentRef.current.style.transform =
-          `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${zoomRef.current})`;
+        contentRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${zoomRef.current})`;
       }
     };
 
@@ -207,7 +209,10 @@ export function ZoomableContent({
         setZoom((z) => clampZoom(z - ZOOM_STEP));
         return;
       }
-      if (e.key === " ") { e.preventDefault(); doFitToView(); }
+      if (e.key === " ") {
+        e.preventDefault();
+        doFitToView();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -255,7 +260,9 @@ export function ZoomableContent({
               cursor,
             )}
             style={{ touchAction: "none" }}
-            onPointerMove={() => { if (!draggingRef.current) showControls(); }}
+            onPointerMove={() => {
+              if (!draggingRef.current) showControls();
+            }}
           >
             <div
               ref={contentRef}

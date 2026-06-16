@@ -28,12 +28,14 @@ import { useMemo, useState } from "react";
 export function ProjectList() {
   const { activeConnection, preflightStatus } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
-  const activeConnectionKey: import("@/types/bindings").ConnectionKey = activeConnection?.wslConnection
-    ? { type: "wsl", id: activeConnection.wslConnection.id }
-    : activeConnection?.sshConnection
-      ? { type: "ssh", id: activeConnection.sshConnection.id }
-      : { type: "local" };
-  const { data: recentProjects = [], isLoading: projectsLoading } = useRecentProjects(activeConnectionKey);
+  const activeConnectionKey: import("@/types/bindings").ConnectionKey =
+    activeConnection?.wslConnection
+      ? { type: "wsl", id: activeConnection.wslConnection.id }
+      : activeConnection?.sshConnection
+        ? { type: "ssh", id: activeConnection.sshConnection.id }
+        : { type: "local" };
+  const { data: recentProjects = [], isLoading: projectsLoading } =
+    useRecentProjects(activeConnectionKey);
   const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
   const { data: lockedProjectIds = [] } = useProjectLocks(projectIds);
   const lockedSet = useMemo(() => new Set(lockedProjectIds), [lockedProjectIds]);
@@ -63,11 +65,12 @@ export function ProjectList() {
     wslConnectionId?: number,
     isGitRepo = true,
   ) => {
-    const connection: ConnectionKey = wslConnectionId != null
-      ? { type: "wsl", id: wslConnectionId }
-      : connectionId != null
-        ? { type: "ssh", id: connectionId }
-        : { type: "local" };
+    const connection: ConnectionKey =
+      wslConnectionId != null
+        ? { type: "wsl", id: wslConnectionId }
+        : connectionId != null
+          ? { type: "ssh", id: connectionId }
+          : { type: "local" };
     const created = await createProject({ path: selectedPath, connection });
     const project = await api.openProject(created.id);
     await Promise.all([
@@ -206,7 +209,9 @@ export function ProjectList() {
             ) : activeConnection.type === "wsl" && activeConnection.wslConnection ? (
               <>
                 <Terminal className="w-5 h-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold">WSL — {activeConnection.wslConnection.distro_name}</h2>
+                <h2 className="text-lg font-semibold">
+                  WSL — {activeConnection.wslConnection.distro_name}
+                </h2>
               </>
             ) : (
               <>

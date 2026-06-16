@@ -1,10 +1,15 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
-import { ComposeBar } from "../activity/ComposeBar";
-import type { ComposeBarHandle } from "../activity/ComposeBar";
+import { ComposeBar } from "../activity/compose-bar/ComposeBar";
+import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { parseUserContent } from "../activity/ActivityUserMessage";
-import type { ConfigOption, UsageState, AvailableCommand, UserMessageItem } from "../activity/types";
+import type {
+  ConfigOption,
+  UsageState,
+  AvailableCommand,
+  UserMessageItem,
+} from "../activity/types";
 import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
 
 interface AgentScrollOverlaysProps {

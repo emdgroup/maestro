@@ -146,17 +146,9 @@ function ProviderForm({ provider, integration, onRepoSelected, disabled }: Provi
     case "gitlab":
       return <GitLabRepoForm onRepoSelected={withProvider} disabled={disabled} />;
     case "forgejo":
-      return (
-        <OwnerRepoForm
-          provider="forgejo"
-          onRepoSelected={withProvider}
-          disabled={disabled}
-        />
-      );
+      return <OwnerRepoForm provider="forgejo" onRepoSelected={withProvider} disabled={disabled} />;
     case "gitea":
-      return (
-        <OwnerRepoForm provider="gitea" onRepoSelected={withProvider} disabled={disabled} />
-      );
+      return <OwnerRepoForm provider="gitea" onRepoSelected={withProvider} disabled={disabled} />;
     case "azuredevops":
       return <AzureDevOpsRepoForm onRepoSelected={withProvider} disabled={disabled} />;
     case "bitbucket":

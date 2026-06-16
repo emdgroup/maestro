@@ -2,15 +2,42 @@ import { useEffect, useMemo, useRef } from "react";
 import type { ActivityItem } from "../activity/types";
 
 const WORKING_FILE_EXTENSIONS = new Set([
-  ".md", ".txt", ".svg", ".mmd", ".mermaid",
-  ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".tsv",
-  ".html", ".css", ".sql", ".sh", ".bash",
-  ".py", ".js", ".ts", ".rs",
-  ".log", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+  ".md",
+  ".txt",
+  ".svg",
+  ".mmd",
+  ".mermaid",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".csv",
+  ".tsv",
+  ".html",
+  ".css",
+  ".sql",
+  ".sh",
+  ".bash",
+  ".py",
+  ".js",
+  ".ts",
+  ".rs",
+  ".log",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
 ]);
 
 export const WRITE_KINDS = new Set([
-  "edit", "delete", "move", "write_file", "edit_file", "create_file",
+  "edit",
+  "delete",
+  "move",
+  "write_file",
+  "edit_file",
+  "create_file",
 ]);
 
 export function isWorkingFile(path: string): boolean {

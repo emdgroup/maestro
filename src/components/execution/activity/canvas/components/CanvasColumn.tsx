@@ -9,9 +9,5 @@ interface Props {
 }
 
 export function CanvasColumn({ children, gap = 3, className }: Props) {
-  return (
-    <div className={cn("flex flex-col", `gap-${gap}`, className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn("flex flex-col", `gap-${gap}`, className)}>{children}</div>;
 }

@@ -4,10 +4,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { cn } from "@/lib/ui-utils";
 import type { CommitInfo } from "@/types/bindings";
 
-export type DiffScope =
-  | { type: "all" }
-  | { type: "uncommitted" }
-  | { type: "commit"; sha: string };
+export type DiffScope = { type: "all" } | { type: "uncommitted" } | { type: "commit"; sha: string };
 
 interface ScopeSelectorProps {
   selectedScope: DiffScope;
@@ -69,9 +66,7 @@ export function ScopeSelector({
         )}
       >
         <Circle className={cn("size-2 fill-current", getScopeDotColor())} />
-        <span className="truncate flex-1 text-left">
-          {isLoading ? "Loading..." : getLabel()}
-        </span>
+        <span className="truncate flex-1 text-left">{isLoading ? "Loading..." : getLabel()}</span>
         <ChevronDown className="size-3 text-muted-foreground shrink-0" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-1">

@@ -28,11 +28,7 @@ interface AgentsViewProps {
   connection: ConnectionKey;
 }
 
-export const AgentsView: React.FC<AgentsViewProps> = ({
-  projectId,
-  repoPath,
-  connection,
-}) => {
+export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
   const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   const pendingAgentId = usePendingAgentId();
   const { clearPendingAgent } = useNavigationActions();
@@ -70,12 +66,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({
   const { data: discovery } = useAgentDiscoveryQuery(connection);
 
   useShortcuts("agents", {
-    "agents-new":     () => setShowSpawnDialog(true),
-    "focus-search":   () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+    "agents-new": () => setShowSpawnDialog(true),
+    "focus-search": () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    },
     "agents-history": () => {
       if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
     },
-    "agents-close":   () => {
+    "agents-close": () => {
       const session = sessions.find((s) => s.session_key === selectedSessionKey);
       if (session) handleCloseSession(session);
     },

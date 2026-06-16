@@ -16,7 +16,12 @@ import {
 } from "@/services/integration.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { Switch } from "@/ui/switch";
-import type { ConnectionKey, EnterKeyBehavior, ProjectIssueTrackingConfig, TerminalColorMode } from "@/types/bindings";
+import type {
+  ConnectionKey,
+  EnterKeyBehavior,
+  ProjectIssueTrackingConfig,
+  TerminalColorMode,
+} from "@/types/bindings";
 import { showSuccessToast } from "@/components/common/error-toast/ErrorToast";
 
 interface SettingsPageProps {
@@ -99,9 +104,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const isIssueTrackingValid =
       !selectedProvider ||
-      getRequiredIntegrationFields(selectedProvider).every(
-        (f) => issueTrackingFields[f]?.trim(),
-      );
+      getRequiredIntegrationFields(selectedProvider).every((f) => issueTrackingFields[f]?.trim());
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
@@ -270,7 +273,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     Used for new sessions and auto-assigned tasks
                   </p>
                 </div>
-
               </div>
 
               {/* Startup Behavior Card */}
@@ -291,10 +293,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     name="reopen_sessions"
                     control={control}
                     render={({ field }) => (
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     )}
                   />
                 </div>
@@ -305,10 +304,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     name="startup_tab"
                     control={control}
                     render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={(v) => field.onChange(v ?? "")}
-                      >
+                      <Select value={field.value} onValueChange={(v) => field.onChange(v ?? "")}>
                         <SelectTrigger className="w-full bg-muted">
                           <SelectValue>
                             {field.value === "" || field.value === "kanban"
@@ -374,7 +370,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="send_prompt">Send prompt (Shift+Enter for new line)</SelectItem>
+                      <SelectItem value="send_prompt">
+                        Send prompt (Shift+Enter for new line)
+                      </SelectItem>
                       <SelectItem value="new_line">New line (Ctrl+Enter to send)</SelectItem>
                     </SelectContent>
                   </Select>
@@ -462,7 +460,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         <button
                           key={integration.provider}
                           type="button"
-                          onClick={() => { setSelectedProvider(integration.provider); setIssueTrackingAttempted(false); }}
+                          onClick={() => {
+                            setSelectedProvider(integration.provider);
+                            setIssueTrackingAttempted(false);
+                          }}
                           className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
                             selectedProvider === integration.provider
                               ? "border-primary ring-2 ring-primary bg-primary/5"
@@ -482,7 +483,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                           issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!
                         }
                         fields={issueTrackingFields}
-                        onFieldsChange={(f) => { setIssueTrackingFields(f); setIssueTrackingAttempted(false); }}
+                        onFieldsChange={(f) => {
+                          setIssueTrackingFields(f);
+                          setIssueTrackingAttempted(false);
+                        }}
                         showValidation={issueTrackingAttempted}
                       />
                     )}
@@ -492,12 +496,12 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
               <div className="flex justify-end">
                 <div onMouseEnter={startSaveHoverTimer} onMouseLeave={cancelSaveHoverTimer}>
-                <Button
-                  type="submit"
-                  disabled={updateProjectSettingsMutation.isPending || !isIssueTrackingValid}
-                >
-                  {updateProjectSettingsMutation.isPending ? "Saving…" : "Save"}
-                </Button>
+                  <Button
+                    type="submit"
+                    disabled={updateProjectSettingsMutation.isPending || !isIssueTrackingValid}
+                  >
+                    {updateProjectSettingsMutation.isPending ? "Saving…" : "Save"}
+                  </Button>
                 </div>
               </div>
             </form>

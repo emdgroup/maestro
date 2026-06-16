@@ -1,12 +1,5 @@
 import { ScrollArea } from "@/ui/scroll-area";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import type { CanvasSurface } from "../../types";
 
 interface Column {
@@ -23,9 +16,7 @@ interface Props {
 }
 
 export function CanvasDataTable({ columns = [], rows, surface }: Props) {
-  const rowData = rows
-    ? (surface.data[rows] as unknown[][] | undefined) ?? []
-    : [];
+  const rowData = rows ? ((surface.data[rows] as unknown[][] | undefined) ?? []) : [];
 
   return (
     <ScrollArea className="max-h-80 rounded-md border">

@@ -22,7 +22,13 @@ const variantClasses: Record<TextVariant, string> = {
 export function CanvasText({ text, variant = "body", muted = false, className }: Props) {
   if (!text) return null;
   return (
-    <span className={cn(variantClasses[variant] ?? variantClasses.body, muted && "text-muted-foreground", className)}>
+    <span
+      className={cn(
+        variantClasses[variant] ?? variantClasses.body,
+        muted && "text-muted-foreground",
+        className,
+      )}
+    >
       {text}
     </span>
   );

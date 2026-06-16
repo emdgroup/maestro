@@ -14,6 +14,7 @@ import {
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/ui-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
+import type { ToolCallItem } from "@/components/execution/activity/types.ts";
 
 interface PermissionOption {
   optionId: string;
@@ -79,8 +80,12 @@ export function extractBodyText(payload: Record<string, unknown>): string | null
 }
 
 export function isPlanPermission(payload: Record<string, unknown>): boolean {
-  const toolCall = payload.toolCall as Record<string, unknown> | undefined;
-  return toolCall?.kind === "switch_mode";
+  const toolCall = payload.toolCall as ToolCallItem | undefined;
+  return !!toolCall && isPlanToolCallItem(toolCall);
+}
+
+export function isPlanToolCallItem(tc: ToolCallItem): boolean {
+  return tc.kind === "switch_mode";
 }
 
 function LegacyButtons({
@@ -185,7 +190,7 @@ function PlanPermissionOverlay({
 
       {/* Floating glass action area */}
       <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 pt-1 pointer-events-none">
-        <div className="pointer-events-auto rounded-2xl backdrop-blur-[4px] bg-input/60 border border-border/30 overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]">
+        <div className="pointer-events-auto rounded-2xl backdrop-blur-xs bg-muted/60 border border-border/30 overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]">
           {/* Accept track */}
           {acceptOptions.length > 0 && (
             <div className="flex border-b border-border/30">
@@ -198,7 +203,7 @@ function PlanPermissionOverlay({
                     type="button"
                     onClick={() => onRespond(requestId, opt.optionId)}
                     className={cn(
-                      "group flex-1 flex flex-row items-center justify-center gap-[9px] px-2.5 py-[11px]",
+                      "group flex-1 flex flex-row items-center justify-center gap-2.25 px-2.5 py-2.75",
                       "cursor-pointer transition-colors duration-100 border-none bg-transparent font-[inherit]",
                       idx > 0 && "border-l border-border/30",
                       isBypass ? "bg-warning/12 hover:bg-warning/20" : "hover:bg-muted/60",

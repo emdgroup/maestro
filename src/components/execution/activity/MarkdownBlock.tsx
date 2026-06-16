@@ -338,8 +338,7 @@ export function MermaidBlock({ code }: { code: string }) {
               setError(true);
               toast.error("Mermaid diagram syntax error", {
                 id: elId,
-                description:
-                  err instanceof Error ? err.message : "Failed to render diagram",
+                description: err instanceof Error ? err.message : "Failed to render diagram",
               });
             }
           });
@@ -371,7 +370,10 @@ export function MermaidBlock({ code }: { code: string }) {
       ariaLabel="Mermaid diagram"
       lightboxContent={
         // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid strict-mode SVG
-        <div dangerouslySetInnerHTML={{ __html: svg }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+        <div
+          dangerouslySetInnerHTML={{ __html: svg }}
+          className="[&_svg]:max-w-none [&_svg]:h-auto"
+        />
       }
     >
       {/* biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid strict-mode SVG */}
@@ -402,7 +404,10 @@ export function SvgBlock({ code }: { code: string }) {
       ariaLabel="SVG graphic"
       lightboxContent={
         // biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist
-        <div dangerouslySetInnerHTML={{ __html: sanitized }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+        <div
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+          className="[&_svg]:max-w-none [&_svg]:h-auto"
+        />
       }
     >
       {/* biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist */}
@@ -451,7 +456,10 @@ export function SmilesBlock({ code }: { code: string }) {
       lightboxContent={
         svgHtml ? (
           // biome-ignore lint/security/noDangerouslySetInnerHtml: SmilesDrawer-generated SVG
-          <div dangerouslySetInnerHTML={{ __html: svgHtml }} className="[&_svg]:max-w-none [&_svg]:h-auto" />
+          <div
+            dangerouslySetInnerHTML={{ __html: svgHtml }}
+            className="[&_svg]:max-w-none [&_svg]:h-auto"
+          />
         ) : undefined
       }
     >
@@ -648,11 +656,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   );
 
   if (!projectId) return content;
-  return (
-    <ImageProxyContext.Provider value={projectId}>
-      {content}
-    </ImageProxyContext.Provider>
-  );
+  return <ImageProxyContext.Provider value={projectId}>{content}</ImageProxyContext.Provider>;
 });
 
 const imageProxyCache = new Map<string, string>();
@@ -693,7 +697,12 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
 
   return (
     <ZoomableContent ariaLabel={alt || "Image"}>
-      <img src={resolvedSrc} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ""}
+        className="max-w-full rounded-md my-2"
+        loading="lazy"
+      />
     </ZoomableContent>
   );
 }

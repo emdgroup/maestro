@@ -50,11 +50,12 @@ export function AppHeader({
   onAutoModeChange,
 }: AppHeaderProps) {
   // Load recent projects on-demand (only when header is rendered)
-  const headerConnection = currentProject?.wsl_connection_id != null
-    ? { type: "wsl" as const, id: currentProject.wsl_connection_id }
-    : currentProject?.connection_id != null
-      ? { type: "ssh" as const, id: currentProject.connection_id }
-      : { type: "local" as const };
+  const headerConnection =
+    currentProject?.wsl_connection_id != null
+      ? { type: "wsl" as const, id: currentProject.wsl_connection_id }
+      : currentProject?.connection_id != null
+        ? { type: "ssh" as const, id: currentProject.connection_id }
+        : { type: "local" as const };
   const { data: recentProjects = [] } = useRecentProjects(headerConnection);
 
   // Internal auto mode state (used when no external state is provided)
@@ -180,27 +181,38 @@ export function AppHeader({
               const Icon = view.icon;
               const isActive = activeView === view.id;
               return (
-                <ShortcutHint key={view.id} shortcutId={{ kanban: "tab-board", agents: "tab-agents", worktrees: "tab-worktrees", settings: "tab-settings" }[view.id]} placement="below">
-                <button
-                  onClick={() => onViewChange(view.id)}
-                  className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
+                <ShortcutHint
+                  key={view.id}
+                  shortcutId={
+                    {
+                      kanban: "tab-board",
+                      agents: "tab-agents",
+                      worktrees: "tab-worktrees",
+                      settings: "tab-settings",
+                    }[view.id]
+                  }
+                  placement="below"
                 >
-                  {isActive && (
-                    <motion.span
-                      layoutId="active-tab-pill"
-                      className="absolute inset-0 rounded-md bg-background shadow-sm"
-                      transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                    />
-                  )}
-                  <motion.span
-                    animate={{ color: isActive ? "var(--accent)" : "var(--muted-foreground)" }}
-                    transition={{ duration: 0.15 }}
-                    className="relative z-10 flex items-center gap-1.5"
+                  <button
+                    onClick={() => onViewChange(view.id)}
+                    className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
                   >
-                    <Icon className="size-3.5" />
-                    {view.label}
-                  </motion.span>
-                </button>
+                    {isActive && (
+                      <motion.span
+                        layoutId="active-tab-pill"
+                        className="absolute inset-0 rounded-md bg-background shadow-sm"
+                        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                      />
+                    )}
+                    <motion.span
+                      animate={{ color: isActive ? "var(--accent)" : "var(--muted-foreground)" }}
+                      transition={{ duration: 0.15 }}
+                      className="relative z-10 flex items-center gap-1.5"
+                    >
+                      <Icon className="size-3.5" />
+                      {view.label}
+                    </motion.span>
+                  </button>
                 </ShortcutHint>
               );
             })}

@@ -30,7 +30,9 @@ export function GitLabForm({ fields, onFieldsChange, showValidation }: Props) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium" required>Project</Label>
+      <Label className="text-sm font-medium" required>
+        Project
+      </Label>
       {showValidation && !projectPath && (
         <p className="text-xs text-destructive">Project is required</p>
       )}

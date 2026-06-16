@@ -27,9 +27,7 @@ export function useShortcuts(scope: ShortcutScope, handlers: ShortcutHandlers): 
 
       for (const def of defs) {
         const keyMatch =
-          def.key === "Escape"
-            ? e.key === "Escape"
-            : e.key.toLowerCase() === def.key.toLowerCase();
+          def.key === "Escape" ? e.key === "Escape" : e.key.toLowerCase() === def.key.toLowerCase();
         const shiftMatch = def.shift ? e.shiftKey : !e.shiftKey;
         if (keyMatch && def.ctrl === e.ctrlKey && shiftMatch) {
           e.preventDefault();

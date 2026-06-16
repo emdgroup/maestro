@@ -4,14 +4,13 @@ import type { ToolCallItem } from "./types";
 
 interface PlanReviewCardProps {
   item: ToolCallItem;
-  isPending: boolean;
-  responseStatus: "accepted" | "rejected" | null;
   onOpen: () => void;
 }
 
-export function PlanReviewCard({ item, isPending, responseStatus, onOpen }: PlanReviewCardProps) {
-
-  if (isPending) {
+export function PlanReviewCard({ item, onOpen }: PlanReviewCardProps) {
+  const {status, title} = item;
+  const isAccepted = status === "completed";
+  if (item.status === "pending") {
     return (
       <div
         role="button"
@@ -26,8 +25,8 @@ export function PlanReviewCard({ item, isPending, responseStatus, onOpen }: Plan
           <Route className="w-4 h-4 text-white/80 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-semibold text-white/95">Plan Ready for Review</div>
-            {item.title && (
-              <div className="text-[10px] text-white/60 mt-0.5 truncate">{item.title}</div>
+            {title && (
+              <div className="text-[10px] text-white/60 mt-0.5 truncate">{title}</div>
             )}
           </div>
           <span className="text-[11px] font-semibold text-white/90 bg-white/15 px-2.5 py-1 rounded-md shrink-0">
@@ -52,24 +51,21 @@ export function PlanReviewCard({ item, isPending, responseStatus, onOpen }: Plan
           <Route className="w-3.5 h-3.5 text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-foreground/85">Plan Ready for Review</div>
-          {item.title && (
+          <div className="text-xs font-medium text-foreground/85">Plan</div>
+          {title && (
             <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{item.title}</div>
           )}
         </div>
         <span
           className={cn(
             "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0",
-            responseStatus === "accepted" && "bg-success/15 text-success",
-            responseStatus === "rejected" && "bg-destructive/15 text-destructive",
-            responseStatus === null && "bg-muted text-muted-foreground",
+            isAccepted && "bg-success/15 text-success",
+            !isAccepted && "bg-destructive/15 text-destructive",
           )}
         >
-          {responseStatus === "accepted"
+          {isAccepted
             ? "Accepted"
-            : responseStatus === "rejected"
-              ? "Rejected"
-              : "—"}
+            :  "Rejected"}
         </span>
       </div>
     </div>

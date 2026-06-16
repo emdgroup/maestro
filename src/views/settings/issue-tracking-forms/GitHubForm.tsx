@@ -76,7 +76,9 @@ export function GitHubForm({ integration, fields, onFieldsChange, showValidation
     <div className="space-y-3">
       {/* Owner */}
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium" required>Owner</Label>
+        <Label className="text-sm font-medium" required>
+          Owner
+        </Label>
         <div className="flex items-center gap-2">
           <Input
             className="flex-1"
@@ -129,7 +131,9 @@ export function GitHubForm({ integration, fields, onFieldsChange, showValidation
       {/* Repository */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium" required>Repository</Label>
+          <Label className="text-sm font-medium" required>
+            Repository
+          </Label>
           {ownerValid && (
             <button
               type="button"

@@ -35,37 +35,43 @@ Each task gets its own agent, its own git worktree, and its own terminal. They r
 ## Features
 
 ### Parallel agents, zero conflicts
+
 Each task runs in an isolated git worktree. Agents don't step on each other, and you can have as many in flight as you want.
 
 ### Real-time visibility
+
 Live terminal output, a structured activity feed, and a file tree — all updating as agents work. You see exactly what's happening at every step.
 
 ### Surgical diff review
+
 When an agent finishes, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
 
 ### Any machine, any location
+
 Runs natively on macOS and Linux. On Windows, connect to a WSL distro or SSH into a remote Linux server — agents execute there while you work locally. Password, key, and passphrase auth all supported.
 
 ### Pull work from your tracker
+
 Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
 
 ### Your stack, your models
+
 Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
 
 ---
 
 ## At a glance
 
-| Capability | Detail |
-|---|---|
-| Kanban workflow | Backlog → Ready → In Progress → Review → Done, drag-and-drop |
-| Parallel agents | Multiple agents run simultaneously in isolated git worktrees |
-| Live monitoring | Real-time terminal, ACP activity feed, file tree |
-| Diff review | Inline viewer with hunk-level staging, revert, and commit |
-| SSH & WSL remotes | Connect to remote and WSL projects with full auth support |
-| Issue import | Sync from GitHub Issues and Jira |
-| Model selection | Per-task model and MCP allowlist configuration |
-| Themes | Light, dark, and system |
+| Capability        | Detail                                                       |
+| ----------------- | ------------------------------------------------------------ |
+| Kanban workflow   | Backlog → Ready → In Progress → Review → Done, drag-and-drop |
+| Parallel agents   | Multiple agents run simultaneously in isolated git worktrees |
+| Live monitoring   | Real-time terminal, ACP activity feed, file tree             |
+| Diff review       | Inline viewer with hunk-level staging, revert, and commit    |
+| SSH & WSL remotes | Connect to remote and WSL projects with full auth support    |
+| Issue import      | Sync from GitHub Issues and Jira                             |
+| Model selection   | Per-task model and MCP allowlist configuration               |
+| Themes            | Light, dark, and system                                      |
 
 ---
 
@@ -73,16 +79,16 @@ Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
 
 ### Tech stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui |
-| State | Zustand + Immer, TanStack Query |
-| Terminal | xterm.js |
-| Desktop | Tauri 2 (Rust) |
-| Database | SQLite (rusqlite) |
-| SSH | russh |
+| Layer    | Technology                                               |
+| -------- | -------------------------------------------------------- |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui    |
+| State    | Zustand + Immer, TanStack Query                          |
+| Terminal | xterm.js                                                 |
+| Desktop  | Tauri 2 (Rust)                                           |
+| Database | SQLite (rusqlite)                                        |
+| SSH      | russh                                                    |
 | Protocol | ACP (Agent Client Protocol) via `maestro-server` sidecar |
-| Type gen | ts-rs + tauri-specta |
+| Type gen | ts-rs + tauri-specta                                     |
 
 ### Prerequisites
 

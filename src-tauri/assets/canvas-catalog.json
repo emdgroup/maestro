@@ -8,7 +8,12 @@
     "messages": [
       {
         "type": "canvas_create",
-        "fields": { "sessionUpdate": "canvas_create", "surfaceId": "string", "catalogId": "maestro-canvas/v1", "title": "string" },
+        "fields": {
+          "sessionUpdate": "canvas_create",
+          "surfaceId": "string",
+          "catalogId": "maestro-canvas/v1",
+          "title": "string"
+        },
         "note": "Must be the first message for a new surfaceId.",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -25,7 +30,11 @@
       },
       {
         "type": "canvas_update",
-        "fields": { "sessionUpdate": "canvas_update", "surfaceId": "string", "components": "array of component objects" },
+        "fields": {
+          "sessionUpdate": "canvas_update",
+          "surfaceId": "string",
+          "components": "array of component objects"
+        },
         "note": "Components are a flat adjacency list. Each has an 'id' and 'component' type. Children are referenced by ID in a 'children' array. Repeat to add or update components.",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -43,7 +52,29 @@
                   "id": { "type": "string" },
                   "component": {
                     "type": "string",
-                    "enum": ["Column", "Row", "List", "Card", "Tabs", "Modal", "Divider", "Text", "Image", "Icon", "Video", "AudioPlayer", "Markdown", "DataTable", "Html", "Button", "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"]
+                    "enum": [
+                      "Column",
+                      "Row",
+                      "List",
+                      "Card",
+                      "Tabs",
+                      "Modal",
+                      "Divider",
+                      "Text",
+                      "Image",
+                      "Icon",
+                      "Video",
+                      "AudioPlayer",
+                      "Markdown",
+                      "DataTable",
+                      "Html",
+                      "Button",
+                      "TextField",
+                      "CheckBox",
+                      "ChoicePicker",
+                      "Slider",
+                      "DateTimeInput"
+                    ]
                   }
                 }
               }
@@ -54,7 +85,12 @@
       },
       {
         "type": "canvas_data",
-        "fields": { "sessionUpdate": "canvas_data", "surfaceId": "string", "path": "string (JSON Pointer e.g. /rows)", "value": "any" },
+        "fields": {
+          "sessionUpdate": "canvas_data",
+          "surfaceId": "string",
+          "path": "string (JSON Pointer e.g. /rows)",
+          "value": "any"
+        },
         "note": "Use to provide data separately from structure. Reference in component props as the path string (e.g. 'rows': '/rows').",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -73,31 +109,114 @@
   },
   "components": {
     "layout": {
-      "Column": { "props": { "gap": "number (default 3)", "className": "string" }, "accepts_children": true },
-      "Row": { "props": { "gap": "number (default 3)", "wrap": "boolean", "align": "start|center|end|stretch", "equalWidth": "boolean (default true — children share width equally)" }, "accepts_children": true },
-      "List": { "props": { "items": "[{ text?: string, childId?: string }]", "ordered": "boolean" } },
+      "Column": {
+        "props": { "gap": "number (default 3)", "className": "string" },
+        "accepts_children": true
+      },
+      "Row": {
+        "props": {
+          "gap": "number (default 3)",
+          "wrap": "boolean",
+          "align": "start|center|end|stretch",
+          "equalWidth": "boolean (default true — children share width equally)"
+        },
+        "accepts_children": true
+      },
+      "List": {
+        "props": { "items": "[{ text?: string, childId?: string }]", "ordered": "boolean" }
+      },
       "Card": { "props": { "title": "string", "description": "string" }, "accepts_children": true },
       "Tabs": { "props": { "tabs": "[{ label: string, childId: string }]" } },
-      "Modal": { "props": { "trigger": "string (button label)", "title": "string" }, "accepts_children": true },
+      "Modal": {
+        "props": { "trigger": "string (button label)", "title": "string" },
+        "accepts_children": true
+      },
       "Divider": { "props": { "orientation": "horizontal|vertical" } }
     },
     "content": {
-      "Text": { "props": { "text": "string", "variant": "heading|subheading|body|caption|code|label", "muted": "boolean" } },
-      "Image": { "props": { "src": "string", "alt": "string", "width": "string|number", "height": "string|number" } },
-      "Icon": { "props": { "name": "string (Lucide icon name e.g. 'check-circle')", "size": "number (default 16)" } },
+      "Text": {
+        "props": {
+          "text": "string",
+          "variant": "heading|subheading|body|caption|code|label",
+          "muted": "boolean"
+        }
+      },
+      "Image": {
+        "props": {
+          "src": "string",
+          "alt": "string",
+          "width": "string|number",
+          "height": "string|number"
+        }
+      },
+      "Icon": {
+        "props": {
+          "name": "string (Lucide icon name e.g. 'check-circle')",
+          "size": "number (default 16)"
+        }
+      },
       "Video": { "props": { "src": "string", "poster": "string" } },
       "AudioPlayer": { "props": { "src": "string" } },
       "Markdown": { "props": { "text": "string (markdown text)" } },
-      "DataTable": { "props": { "columns": "[{ key: string, label: string, width?: string }]", "rows": "string (JSON Pointer path to row data e.g. /rows) or array" } },
-      "Html": { "props": { "srcdoc": "string (full self-contained HTML/CSS/JS document)", "height": "number (px, default 400)", "title": "string (accessibility label)" }, "note": "Rendered in a sandboxed iframe (allow-scripts only, no same-origin). Use for custom charts, animations, or layouts the catalog components cannot express." }
+      "DataTable": {
+        "props": {
+          "columns": "[{ key: string, label: string, width?: string }]",
+          "rows": "string (JSON Pointer path to row data e.g. /rows) or array"
+        }
+      },
+      "Html": {
+        "props": {
+          "srcdoc": "string (full self-contained HTML/CSS/JS document)",
+          "height": "number (px, default 400)",
+          "title": "string (accessibility label)"
+        },
+        "note": "Rendered in a sandboxed iframe (allow-scripts only, no same-origin). Use for custom charts, animations, or layouts the catalog components cannot express."
+      }
     },
     "input": {
-      "Button": { "props": { "label": "string", "variant": "default|outline|ghost|destructive|secondary", "disabled": "boolean" } },
-      "TextField": { "props": { "label": "string", "placeholder": "string", "value": "string", "disabled": "boolean" } },
+      "Button": {
+        "props": {
+          "label": "string",
+          "variant": "default|outline|ghost|destructive|secondary",
+          "disabled": "boolean"
+        }
+      },
+      "TextField": {
+        "props": {
+          "label": "string",
+          "placeholder": "string",
+          "value": "string",
+          "disabled": "boolean"
+        }
+      },
       "CheckBox": { "props": { "label": "string", "checked": "boolean", "disabled": "boolean" } },
-      "ChoicePicker": { "props": { "label": "string", "options": "[{ value: string, label: string }]", "value": "string", "placeholder": "string", "disabled": "boolean" } },
-      "Slider": { "props": { "label": "string", "min": "number", "max": "number", "step": "number", "value": "number", "disabled": "boolean" } },
-      "DateTimeInput": { "props": { "label": "string", "variant": "date|time|datetime-local", "value": "string", "disabled": "boolean" } }
+      "ChoicePicker": {
+        "props": {
+          "label": "string",
+          "options": "[{ value: string, label: string }]",
+          "value": "string",
+          "placeholder": "string",
+          "disabled": "boolean"
+        }
+      },
+      "Slider": {
+        "props": {
+          "label": "string",
+          "min": "number",
+          "max": "number",
+          "step": "number",
+          "value": "number",
+          "disabled": "boolean"
+        }
+      },
+      "DateTimeInput": {
+        "props": {
+          "label": "string",
+          "variant": "date|time|datetime-local",
+          "value": "string",
+          "disabled": "boolean"
+        }
+      }
     }
   },
   "example": {

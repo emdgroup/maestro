@@ -61,13 +61,13 @@ function App() {
   const { setActiveTab } = useNavigationActions();
 
   useShortcuts("global", {
-    "tab-board":             () => setActiveTab("kanban"),
-    "tab-agents":            () => setActiveTab("agents"),
-    "tab-worktrees":         () => setActiveTab("worktrees"),
-    "tab-settings":          () => setActiveTab("settings"),
-    "prevent-reload":        () => {},
-    "prevent-reload-shift":  () => {},
-    "prevent-reload-f5":     () => {},
+    "tab-board": () => setActiveTab("kanban"),
+    "tab-agents": () => setActiveTab("agents"),
+    "tab-worktrees": () => setActiveTab("worktrees"),
+    "tab-settings": () => setActiveTab("settings"),
+    "prevent-reload": () => {},
+    "prevent-reload-shift": () => {},
+    "prevent-reload-f5": () => {},
   });
 
   const agentsControls = useAnimationControls();
@@ -111,7 +111,7 @@ function App() {
 
   // Stable connection key — memoized so downstream hooks don't churn on every render.
   const connection = useMemo(
-    () => currentProject ? connectionKeyFromProject(currentProject) : { type: "local" as const },
+    () => (currentProject ? connectionKeyFromProject(currentProject) : { type: "local" as const }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentProject?.id, currentProject?.connection_id, currentProject?.wsl_connection_id],
   );
@@ -173,7 +173,7 @@ function App() {
         repoPath: currentProject.path,
       });
     }
-  }, [currentProject?.id, cleanupZombies]);
+  }, [currentProject, cleanupZombies]);
 
   // Startup preferences — applied once per project open.
   const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);
@@ -187,8 +187,7 @@ function App() {
     if (validTabs.has(tab)) {
       setActiveTab(tab);
     }
-  }, [currentProject?.id, projectSettings?.startup_tab, setActiveTab]);
-
+  }, [currentProject, projectSettings?.startup_tab, setActiveTab]);
 
   if (settingsLoading) {
     return (
@@ -218,108 +217,108 @@ function App() {
 
   return (
     <ShortcutHintProvider>
-    <div className="app flex flex-col h-screen bg-background">
-      <AppHeader
-        currentProject={currentProject}
-        activeView={activeTab}
-        onViewChange={setActiveTab}
-        onProjectChange={setSelectedProject}
-        onBackToPicker={clearSelectedProject}
-        agentCount={runningAgentCount}
-      />
-      <main className="flex-1 overflow-hidden relative">
-        {/* Agents View — always mounted, imperative animation */}
-        <motion.div
-          initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
-          animate={agentsControls}
-          className={cn(
-            "absolute inset-0 overflow-hidden",
-            activeTab !== "agents" && "pointer-events-none",
-          )}
-        >
-          <Suspense fallback={fallback}>
-            <AgentsView
-              projectId={currentProject.id}
-              repoPath={currentProject.path}
-              connection={connection}
-            />
-          </Suspense>
-        </motion.div>
-        {/* Kanban View — always mounted, imperative animation */}
-        <motion.div
-          initial={{ opacity: activeTab === "kanban" ? 1 : 0 }}
-          animate={kanbanControls}
-          className={cn(
-            "absolute inset-0 overflow-hidden",
-            activeTab !== "kanban" && "pointer-events-none",
-          )}
-        >
-          <Suspense fallback={fallback}>
-            <KanbanProvider
-              projectId={currentProject.id}
-              projectPath={currentProject.path}
-              connection={connection}
-              onTaskClick={NOOP}
-            >
-              <KanbanView />
-            </KanbanProvider>
-          </Suspense>
-        </motion.div>
-
-        {/* Worktrees View — always mounted, imperative animation */}
-        <motion.div
-          initial={{ opacity: activeTab === "worktrees" ? 1 : 0 }}
-          animate={worktreesControls}
-          className={cn(
-            "absolute inset-0 overflow-hidden",
-            activeTab !== "worktrees" && "pointer-events-none",
-          )}
-        >
-          <Suspense fallback={fallback}>
-            <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
-          </Suspense>
-        </motion.div>
-
-        {/* Settings View — always mounted, imperative animation */}
-        <motion.div
-          initial={{ opacity: activeTab === "settings" ? 1 : 0 }}
-          animate={settingsControls}
-          className={cn(
-            "absolute inset-0 overflow-hidden",
-            activeTab !== "settings" && "pointer-events-none",
-          )}
-        >
-          <div className="h-full overflow-auto custom-scrollbar">
+      <div className="app flex flex-col h-screen bg-background">
+        <AppHeader
+          currentProject={currentProject}
+          activeView={activeTab}
+          onViewChange={setActiveTab}
+          onProjectChange={setSelectedProject}
+          onBackToPicker={clearSelectedProject}
+          agentCount={runningAgentCount}
+        />
+        <main className="flex-1 overflow-hidden relative">
+          {/* Agents View — always mounted, imperative animation */}
+          <motion.div
+            initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
+            animate={agentsControls}
+            className={cn(
+              "absolute inset-0 overflow-hidden",
+              activeTab !== "agents" && "pointer-events-none",
+            )}
+          >
             <Suspense fallback={fallback}>
-              <SettingsView
-                ref={settingsPageRef}
+              <AgentsView
                 projectId={currentProject.id}
+                repoPath={currentProject.path}
                 connection={connection}
               />
             </Suspense>
-          </div>
-        </motion.div>
-      </main>
+          </motion.div>
+          {/* Kanban View — always mounted, imperative animation */}
+          <motion.div
+            initial={{ opacity: activeTab === "kanban" ? 1 : 0 }}
+            animate={kanbanControls}
+            className={cn(
+              "absolute inset-0 overflow-hidden",
+              activeTab !== "kanban" && "pointer-events-none",
+            )}
+          >
+            <Suspense fallback={fallback}>
+              <KanbanProvider
+                projectId={currentProject.id}
+                projectPath={currentProject.path}
+                connection={connection}
+                onTaskClick={NOOP}
+              >
+                <KanbanView />
+              </KanbanProvider>
+            </Suspense>
+          </motion.div>
 
-      {/* D-19 cascade check: block project access when issue tracking integration is missing */}
-      <IntegrationMissingDialog
-        open={showMissingDialog}
-        projectId={currentProject.id}
-        provider={issueTrackingConfig?.provider ?? ""}
-        onFixIntegration={clearSelectedProject}
-        onDropConfig={() => setIntegrationDismissed(true)}
-      />
+          {/* Worktrees View — always mounted, imperative animation */}
+          <motion.div
+            initial={{ opacity: activeTab === "worktrees" ? 1 : 0 }}
+            animate={worktreesControls}
+            className={cn(
+              "absolute inset-0 overflow-hidden",
+              activeTab !== "worktrees" && "pointer-events-none",
+            )}
+          >
+            <Suspense fallback={fallback}>
+              <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
+            </Suspense>
+          </motion.div>
 
-      {/* SSH connection loss overlay — blocks interaction during reconnect */}
-      {connectionHealth !== "connected" && (
-        <DisconnectBackdrop
-          state={connectionHealth}
-          attempt={reconnectAttempt}
-          maxAttempts={reconnectMaxAttempts}
-          onLeaveConnection={handleLeaveConnection}
+          {/* Settings View — always mounted, imperative animation */}
+          <motion.div
+            initial={{ opacity: activeTab === "settings" ? 1 : 0 }}
+            animate={settingsControls}
+            className={cn(
+              "absolute inset-0 overflow-hidden",
+              activeTab !== "settings" && "pointer-events-none",
+            )}
+          >
+            <div className="h-full overflow-auto custom-scrollbar">
+              <Suspense fallback={fallback}>
+                <SettingsView
+                  ref={settingsPageRef}
+                  projectId={currentProject.id}
+                  connection={connection}
+                />
+              </Suspense>
+            </div>
+          </motion.div>
+        </main>
+
+        {/* D-19 cascade check: block project access when issue tracking integration is missing */}
+        <IntegrationMissingDialog
+          open={showMissingDialog}
+          projectId={currentProject.id}
+          provider={issueTrackingConfig?.provider ?? ""}
+          onFixIntegration={clearSelectedProject}
+          onDropConfig={() => setIntegrationDismissed(true)}
         />
-      )}
-    </div>
+
+        {/* SSH connection loss overlay — blocks interaction during reconnect */}
+        {connectionHealth !== "connected" && (
+          <DisconnectBackdrop
+            state={connectionHealth}
+            attempt={reconnectAttempt}
+            maxAttempts={reconnectMaxAttempts}
+            onLeaveConnection={handleLeaveConnection}
+          />
+        )}
+      </div>
     </ShortcutHintProvider>
   );
 }

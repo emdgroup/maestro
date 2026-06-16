@@ -164,7 +164,12 @@ export type ToolCallItem = {
   toolCallId: string;
   title: string;
   kind: string;
-  status: "pending" | "in_progress" | "completed" | "error" | "interrupted";
+  status:
+    | "pending"
+    | "in_progress"
+    | "completed"
+    | "error"
+    | "interrupted";
   content: ToolCallContent[];
   locations: ToolCallLocation[];
   rawInput?: Record<string, unknown>;
@@ -213,6 +218,7 @@ export type ActivityState = {
   plan: PlanEntry[] | null;
   planTitle: string | null;
   isInitializing: boolean;
+  isTurnActive: boolean;
   sessionEnded: boolean;
   endReason: "completed" | "failed" | "cancelled" | null;
   suppressUserChunks: boolean;
@@ -232,6 +238,7 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   plan: null,
   planTitle: null,
   isInitializing: true,
+  isTurnActive: false,
   sessionEnded: false,
   endReason: null,
   suppressUserChunks: false,

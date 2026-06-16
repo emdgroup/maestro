@@ -11,7 +11,14 @@ interface Props {
   [key: string]: unknown;
 }
 
-export function CanvasRow({ children, gap = 3, wrap = false, align = "start", equalWidth = true, className }: Props) {
+export function CanvasRow({
+  children,
+  gap = 3,
+  wrap = false,
+  align = "start",
+  equalWidth = true,
+  className,
+}: Props) {
   return (
     <div
       className={cn(

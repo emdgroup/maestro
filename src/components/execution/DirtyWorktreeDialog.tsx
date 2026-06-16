@@ -37,7 +37,12 @@ export function DirtyWorktreeDialog({
   onCancel,
 }: DirtyWorktreeDialogProps) {
   return (
-    <AlertDialog open={open} onOpenChange={(open) => { if (!open) onCancel(); }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -45,9 +50,8 @@ export function DirtyWorktreeDialog({
             Worktree has uncommitted changes
           </AlertDialogTitle>
           <AlertDialogDescription>
-              Target worktree has {modifiedCount} modified and{" "}
-              {untrackedCount} untracked files. Choose how to handle them before
-              execution starts.
+            Target worktree has {modifiedCount} modified and {untrackedCount} untracked files.
+            Choose how to handle them before execution starts.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -58,7 +62,11 @@ export function DirtyWorktreeDialog({
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button size="sm" className="px-1.5!"><ChevronDown className="size-3.5" /></Button>}
+                render={
+                  <Button size="sm" className="px-1.5!">
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                }
               />
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => onChoice("stash")}>

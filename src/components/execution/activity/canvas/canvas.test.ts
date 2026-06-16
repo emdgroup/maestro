@@ -14,7 +14,12 @@ describe("canvas reducer", () => {
   it("canvas_create adds surface to canvasMap and canvas item to stream", () => {
     const state = activityReducer(
       INITIAL_ACTIVITY_STATE,
-      makeEvent({ sessionUpdate: "canvas_create", surfaceId: "s1", catalogId: "maestro-canvas/v1", title: "My Dashboard" }),
+      makeEvent({
+        sessionUpdate: "canvas_create",
+        surfaceId: "s1",
+        catalogId: "maestro-canvas/v1",
+        title: "My Dashboard",
+      }),
     );
 
     expect(state.canvasMap.size).toBe(1);
@@ -25,13 +30,20 @@ describe("canvas reducer", () => {
 
     const canvasItems = state.items.filter((i) => i.type === "canvas");
     expect(canvasItems).toHaveLength(1);
-    expect((canvasItems[0] as { type: "canvas"; item: { surfaceId: string } }).item.surfaceId).toBe("s1");
+    expect((canvasItems[0] as { type: "canvas"; item: { surfaceId: string } }).item.surfaceId).toBe(
+      "s1",
+    );
   });
 
   it("canvas_update merges components by id", () => {
     let state = activityReducer(
       INITIAL_ACTIVITY_STATE,
-      makeEvent({ sessionUpdate: "canvas_create", surfaceId: "s1", catalogId: "maestro-canvas/v1", title: "T" }),
+      makeEvent({
+        sessionUpdate: "canvas_create",
+        surfaceId: "s1",
+        catalogId: "maestro-canvas/v1",
+        title: "T",
+      }),
     );
 
     state = activityReducer(
@@ -68,16 +80,32 @@ describe("canvas reducer", () => {
   it("canvas_data stores data at path", () => {
     let state = activityReducer(
       INITIAL_ACTIVITY_STATE,
-      makeEvent({ sessionUpdate: "canvas_create", surfaceId: "s1", catalogId: "maestro-canvas/v1", title: "T" }),
+      makeEvent({
+        sessionUpdate: "canvas_create",
+        surfaceId: "s1",
+        catalogId: "maestro-canvas/v1",
+        title: "T",
+      }),
     );
 
     state = activityReducer(
       state,
-      makeEvent({ sessionUpdate: "canvas_data", surfaceId: "s1", path: "/rows", value: [["a", "b"], ["c", "d"]] }),
+      makeEvent({
+        sessionUpdate: "canvas_data",
+        surfaceId: "s1",
+        path: "/rows",
+        value: [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+      }),
     );
 
     const surface = state.canvasMap.get("s1")!;
-    expect(surface.data["/rows"]).toEqual([["a", "b"], ["c", "d"]]);
+    expect(surface.data["/rows"]).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
   });
 
   it("canvas_update on unknown surfaceId is a no-op", () => {

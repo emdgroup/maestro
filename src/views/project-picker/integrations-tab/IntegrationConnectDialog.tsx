@@ -131,10 +131,12 @@ function getProviderInstructions(provider: string): InstructionLine[] | null {
       ];
     case "azuredevops":
       return [
-        { text: "Sign in to dev.azure.com → click user settings, left of user avatar → Personal access tokens" },
+        {
+          text: "Sign in to dev.azure.com → click user settings, left of user avatar → Personal access tokens",
+        },
         { text: "Click New Token → select your Organization" },
         { text: "Under Scopes, select Work Items (Read)" },
-        { text: "Click Create and copy the token immediately" }
+        { text: "Click Create and copy the token immediately" },
       ];
     case "gitea":
       return [
@@ -427,14 +429,18 @@ export function IntegrationConnectDialog({
                     aria-invalid={attempted && !instanceUrl.trim() ? "true" : undefined}
                   />
                   {attempted && !instanceUrl.trim() && (
-                    <p className="text-xs text-destructive">{fields.instanceUrlLabel} is required</p>
+                    <p className="text-xs text-destructive">
+                      {fields.instanceUrlLabel} is required
+                    </p>
                   )}
                 </div>
               )}
 
               {fields.showEmail && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-email" required>Email</Label>
+                  <Label htmlFor="integration-email" required>
+                    Email
+                  </Label>
                   <Input
                     id="integration-email"
                     type="email"
@@ -452,7 +458,9 @@ export function IntegrationConnectDialog({
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="integration-token" required>{fields.tokenLabel}</Label>
+                <Label htmlFor="integration-token" required>
+                  {fields.tokenLabel}
+                </Label>
                 <Input
                   id="integration-token"
                   type="password"

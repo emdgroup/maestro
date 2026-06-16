@@ -25,7 +25,12 @@ interface CreateProjectDialogProps {
   wslConnection?: WslConnection | null;
 }
 
-export function CreateProjectDialog({ open, onOpenChange, connection, wslConnection }: CreateProjectDialogProps) {
+export function CreateProjectDialog({
+  open,
+  onOpenChange,
+  connection,
+  wslConnection,
+}: CreateProjectDialogProps) {
   const [parentDir, setParentDir] = useState("");
   const [folderName, setFolderName] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -122,7 +127,9 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
           </DialogHeader>
           <div ref={formRef} className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="create-parent" required>Parent Directory</Label>
+              <Label htmlFor="create-parent" required>
+                Parent Directory
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="create-parent"
@@ -148,7 +155,9 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-folder" required>Folder Name</Label>
+              <Label htmlFor="create-folder" required>
+                Folder Name
+              </Label>
               <Input
                 id="create-folder"
                 placeholder="my-project"
@@ -169,10 +178,7 @@ export function CreateProjectDialog({ open, onOpenChange, connection, wslConnect
               Cancel
             </Button>
             <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
-              <Button
-                onClick={handleSubmit}
-                disabled={isSubmitDisabled}
-              >
+              <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
                 {isPending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />

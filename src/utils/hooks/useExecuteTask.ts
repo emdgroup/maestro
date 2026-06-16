@@ -6,10 +6,7 @@ import { api } from "@/utils/helpers/tauri-utils";
 import { connectionKeyStr } from "@/utils/helpers/connection-utils";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
-import {
-  useSpawnAcpSessionMutation,
-  useActiveSessionsQuery,
-} from "@/services/execution.service";
+import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
 import { useUpdateTask } from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
@@ -161,8 +158,9 @@ export function useExecuteTask(
             ? ["bypassPermissions", "full-access", "auto"]
             : ["acceptEdits", "auto", "build"];
 
-          const resolvedMode = priorities.find((m) => availableModeIds.includes(m))
-            ?? availableModeIds.find((m) => m !== "readonly" && m !== "plan");
+          const resolvedMode =
+            priorities.find((m) => availableModeIds.includes(m)) ??
+            availableModeIds.find((m) => m !== "readonly" && m !== "plan");
 
           if (resolvedMode) {
             await api.setAcpMode(logId, resolvedMode);
@@ -239,9 +237,7 @@ export function useExecuteTask(
           // best-effort
         }
       }
-      toast.error(
-        `Execution failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsExecuting(false);
     }

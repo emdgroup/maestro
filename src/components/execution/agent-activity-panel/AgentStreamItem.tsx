@@ -7,21 +7,17 @@ import { CanvasRenderer } from "../activity/canvas/CanvasRenderer";
 import { SubagentCard } from "../activity/SubagentCard";
 import { PermissionResponseCard } from "../activity/PermissionResponseCard";
 import { ActivityElicitationSummary } from "../activity/ActivityElicitationSummary";
-import { isPlanPermission } from "../activity/PermissionPrompt";
 import { isSubagentToolCall } from "../activity/utils";
 import { isWorkingFile, WRITE_KINDS } from "./useWorkingFileTracker";
 import type { GroupedDisplayItem } from "../activity/utils";
-import type { PermissionResponseItem, ToolCallItem, CanvasSurface } from "../activity/types";
+import type { ToolCallItem, CanvasSurface } from "../activity/types";
+import { isPlanToolCallItem } from "@/components/execution/activity/PermissionPrompt.tsx";
 
 interface AgentStreamItemProps {
   gi: GroupedDisplayItem;
   index: number;
   allItems: GroupedDisplayItem[];
   nextSectionStartsWithMessage: boolean;
-  switchModeToolCallIds: string[];
-  planPermissionRequestIds: React.RefObject<string[]>;
-  livePermissionResponses: Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>;
-  pendingPermission: { requestId: string; payload: Record<string, unknown> } | null;
   onOpenPlanOverlay: () => void;
   toolCallMap: Map<string, ToolCallItem>;
   canvasMap: Map<string, CanvasSurface>;
@@ -33,35 +29,18 @@ export function AgentStreamItem({
   index,
   allItems,
   nextSectionStartsWithMessage,
-  switchModeToolCallIds,
-  planPermissionRequestIds,
-  livePermissionResponses,
-  pendingPermission,
   onOpenPlanOverlay,
   toolCallMap,
   canvasMap,
   onOpenPanel,
 }: AgentStreamItemProps) {
   if (gi.type === "toolGroup") {
-    if (gi.items.length === 1 && gi.items[0].kind === "switch_mode") {
-      const tc = gi.items[0];
-      const switchModeIndex = switchModeToolCallIds.indexOf(tc.toolCallId);
-      const reqId =
-        switchModeIndex >= 0 ? planPermissionRequestIds.current[switchModeIndex] : undefined;
-      const respEntry = reqId
-        ? (livePermissionResponses.find((r) => r.requestId === reqId) ?? null)
-        : null;
-      const responseStatus = respEntry
-        ? respEntry.item.isRejection
-          ? "rejected"
-          : "accepted"
-        : null;
+    const tc = gi.items[0];
+    if (gi.items.length === 1 && isPlanToolCallItem(tc)) {
       return (
         <PlanReviewCard
           key={tc.toolCallId}
           item={tc}
-          isPending={!!(pendingPermission && isPlanPermission(pendingPermission.payload))}
-          responseStatus={responseStatus as "accepted" | "rejected" | null}
           onOpen={onOpenPlanOverlay}
         />
       );
@@ -69,11 +48,7 @@ export function AgentStreamItem({
 
     if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {
       return (
-        <SubagentCard
-          key={gi.items[0].toolCallId}
-          item={gi.items[0]}
-          toolCallMap={toolCallMap}
-        />
+        <SubagentCard key={gi.items[0].toolCallId} item={gi.items[0]} toolCallMap={toolCallMap} />
       );
     }
 
@@ -83,9 +58,7 @@ export function AgentStreamItem({
         .some((later) => later.type === "solo" && later.item.type === "message") ||
       nextSectionStartsWithMessage;
 
-    const groupDone = gi.items.every(
-      (i) => i.status === "completed" || i.status === "error",
-    );
+    const groupDone = gi.items.every((i) => i.status === "completed" || i.status === "error");
     const groupWorkingFiles: string[] = [];
     const groupChangedFiles: string[] = [];
     if (groupDone) {
@@ -109,10 +82,7 @@ export function AgentStreamItem({
     const groupKey = `tg-${gi.items[0].toolCallId}`;
     return (
       <div key={groupKey} className="space-y-3">
-        <ActivityToolCallGroup
-          items={gi.items}
-          hasSubsequentMessage={hasSubsequentMessage}
-        />
+        <ActivityToolCallGroup items={gi.items} hasSubsequentMessage={hasSubsequentMessage} />
         {groupDone && uniqueWorkingFiles.length > 0 && (
           <ActivityFileCard
             variant="working-files"

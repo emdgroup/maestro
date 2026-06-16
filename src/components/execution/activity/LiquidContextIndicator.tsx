@@ -52,10 +52,9 @@ const LENS_STYLE = {
       "radial-gradient(ellipse 60% 36% at 35% 25%, rgba(255,255,255,0.30) 0%, transparent 70%)",
       "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0.07) 55%, transparent 100%)",
     ].join(", "),
-    boxShadow: [
-      "inset 0 0 20px 1px rgba(0,0,0,0.30)",
-      "0 0 8px 2px rgba(99,102,241,0.06)",
-    ].join(", "),
+    boxShadow: ["inset 0 0 20px 1px rgba(0,0,0,0.30)", "0 0 8px 2px rgba(99,102,241,0.06)"].join(
+      ", ",
+    ),
   },
 };
 
@@ -238,8 +237,7 @@ export function LiquidContextIndicator({
           !isDarkRef.current && state === "critical"
             ? FILL_COLOR_LIGHT_CRITICAL
             : FILL_COLOR[state];
-      if (rg)
-        rg.style.strokeOpacity = String(isDarkRef.current ? 0.2 : RING_OP_LIGHT[state]);
+      if (rg) rg.style.strokeOpacity = String(isDarkRef.current ? 0.2 : RING_OP_LIGHT[state]);
     });
 
     observer.observe(document.documentElement, {

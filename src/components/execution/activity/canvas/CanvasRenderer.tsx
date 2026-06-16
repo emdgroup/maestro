@@ -52,7 +52,12 @@ export function CanvasComponentNode({ surface, componentId, depth = 0 }: Rendere
 
   const renderChildren = () =>
     children?.map((childId) => (
-      <CanvasComponentNode key={childId} surface={surface} componentId={childId} depth={depth + 1} />
+      <CanvasComponentNode
+        key={childId}
+        surface={surface}
+        componentId={childId}
+        depth={depth + 1}
+      />
     ));
 
   switch (type) {
@@ -112,9 +117,7 @@ interface CanvasRendererProps {
 }
 
 export function CanvasRenderer({ surface }: CanvasRendererProps) {
-  const referencedIds = new Set(
-    surface.components.flatMap((c) => c.children ?? []),
-  );
+  const referencedIds = new Set(surface.components.flatMap((c) => c.children ?? []));
   const roots = surface.components.filter((c) => !referencedIds.has(c.id));
 
   return (

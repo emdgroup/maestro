@@ -107,7 +107,12 @@ function FileContentView({
   }
 }
 
-export function WorkingFilesPanel({ files, sessionKey, onClose, initialFile }: WorkingFilesPanelProps) {
+export function WorkingFilesPanel({
+  files,
+  sessionKey,
+  onClose,
+  initialFile,
+}: WorkingFilesPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(
     (initialFile && files.includes(initialFile) ? initialFile : null) ?? files[0] ?? null,

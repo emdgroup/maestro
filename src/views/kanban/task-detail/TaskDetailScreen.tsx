@@ -109,7 +109,13 @@ function isImageAttachment(filename: string): boolean {
   return IMAGE_EXTENSIONS.has(ext);
 }
 
-function AttachmentThumbnail({ attachment, projectId }: { attachment: TaskAttachment; projectId: number }) {
+function AttachmentThumbnail({
+  attachment,
+  projectId,
+}: {
+  attachment: TaskAttachment;
+  projectId: number;
+}) {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -143,7 +149,13 @@ interface DescriptionFieldProps {
   projectId?: number;
 }
 
-function DescriptionField({ value, onSave, isEditable, placeholder = "", projectId }: DescriptionFieldProps) {
+function DescriptionField({
+  value,
+  onSave,
+  isEditable,
+  placeholder = "",
+  projectId,
+}: DescriptionFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -296,7 +308,12 @@ interface DeleteConfirmButtonProps {
   onConfirm: () => void;
 }
 
-function DeleteConfirmButton({ isPending, open, onOpenChange, onConfirm }: DeleteConfirmButtonProps) {
+function DeleteConfirmButton({
+  isPending,
+  open,
+  onOpenChange,
+  onConfirm,
+}: DeleteConfirmButtonProps) {
   return (
     <>
       <Button
@@ -366,7 +383,9 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   addAttachmentRef.current = addAttachment;
   const removeAttachment = useDeleteTaskAttachmentMutation();
 
-  const connection = selectedProject ? connectionKeyFromProject(selectedProject) : { type: "local" as const };
+  const connection = selectedProject
+    ? connectionKeyFromProject(selectedProject)
+    : { type: "local" as const };
   const { data: agentCache } = useAgentCacheQuery(task?.agent_id ?? null, connection);
 
   const { setActiveTaskId } = useNavigationActions();
@@ -462,6 +481,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
     return () => {
       unlisten.then((fn: () => void) => fn());
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditable, task?.id]);
 
   useEffect(() => {
@@ -504,6 +524,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
 
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditable, task?.id]);
 
   return (
@@ -667,64 +688,77 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                 <p className="text-xs text-muted-foreground">No attachments</p>
               )}
 
-              {attachments.length > 0 && (() => {
-                const imageAtts = attachments.filter((a: TaskAttachment) => isImageAttachment(a.filename));
-                const fileAtts = attachments.filter((a: TaskAttachment) => !isImageAttachment(a.filename));
-                return (
-                  <div className="space-y-2">
-                    {imageAtts.length > 0 && projectId && (
-                      <div className="flex flex-wrap gap-2">
-                        {imageAtts.map((att: TaskAttachment) => (
-                          <div key={att.id} className="relative group">
-                            <AttachmentThumbnail attachment={att} projectId={projectId} />
-                            {isEditable && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() =>
-                                  removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
-                                }
-                                disabled={removeAttachment.isPending}
-                              >
-                                <X className="size-3" />
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {fileAtts.length > 0 && (
-                      <ul className="space-y-1">
-                        {fileAtts.map((att: TaskAttachment) => (
-                          <li
-                            key={att.id}
-                            className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
-                          >
-                            <span className="flex-1 truncate text-foreground">{att.filename}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">
-                              {formatFileSize(att.file_size)}
-                            </span>
-                            {isEditable && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 shrink-0"
-                                onClick={() =>
-                                  removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
-                                }
-                                disabled={removeAttachment.isPending}
-                              >
-                                <X className="size-3" />
-                              </Button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })()}
+              {attachments.length > 0 &&
+                (() => {
+                  const imageAtts = attachments.filter((a: TaskAttachment) =>
+                    isImageAttachment(a.filename),
+                  );
+                  const fileAtts = attachments.filter(
+                    (a: TaskAttachment) => !isImageAttachment(a.filename),
+                  );
+                  return (
+                    <div className="space-y-2">
+                      {imageAtts.length > 0 && projectId && (
+                        <div className="flex flex-wrap gap-2">
+                          {imageAtts.map((att: TaskAttachment) => (
+                            <div key={att.id} className="relative group">
+                              <AttachmentThumbnail attachment={att} projectId={projectId} />
+                              {isEditable && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() =>
+                                    removeAttachment.mutate({
+                                      attachmentId: att.id,
+                                      taskId: att.task_id,
+                                    })
+                                  }
+                                  disabled={removeAttachment.isPending}
+                                >
+                                  <X className="size-3" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {fileAtts.length > 0 && (
+                        <ul className="space-y-1">
+                          {fileAtts.map((att: TaskAttachment) => (
+                            <li
+                              key={att.id}
+                              className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                            >
+                              <span className="flex-1 truncate text-foreground">
+                                {att.filename}
+                              </span>
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {formatFileSize(att.file_size)}
+                              </span>
+                              {isEditable && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={() =>
+                                    removeAttachment.mutate({
+                                      attachmentId: att.id,
+                                      taskId: att.task_id,
+                                    })
+                                  }
+                                  disabled={removeAttachment.isPending}
+                                >
+                                  <X className="size-3" />
+                                </Button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
 
               {/* Dropzone — Backlog only */}
               {isEditable && (
@@ -963,7 +997,9 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                     );
                   })}
                   {!task.skills_override && (
-                    <p className="text-xs text-muted-foreground">None overridden (project default)</p>
+                    <p className="text-xs text-muted-foreground">
+                      None overridden (project default)
+                    </p>
                   )}
                 </div>
               ) : (
@@ -1055,10 +1091,14 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
                       }
                       className="size-4 rounded border border-input"
                     />
-                    <span className="text-sm">{task.isolated_worktree ? "Isolated" : "Shared"}</span>
+                    <span className="text-sm">
+                      {task.isolated_worktree ? "Isolated" : "Shared"}
+                    </span>
                   </label>
                 ) : (
-                  <Badge variant="secondary">{task.isolated_worktree ? "Isolated" : "Shared"}</Badge>
+                  <Badge variant="secondary">
+                    {task.isolated_worktree ? "Isolated" : "Shared"}
+                  </Badge>
                 )}
               </div>
             )}

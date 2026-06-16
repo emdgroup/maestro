@@ -19,7 +19,13 @@ interface Props {
 export function CanvasList({ items = [], ordered = false, surface, depth, className }: Props) {
   const Tag = ordered ? "ol" : "ul";
   return (
-    <Tag className={cn("text-sm space-y-1", ordered ? "list-decimal pl-5" : "list-disc pl-5", className)}>
+    <Tag
+      className={cn(
+        "text-sm space-y-1",
+        ordered ? "list-decimal pl-5" : "list-disc pl-5",
+        className,
+      )}
+    >
       {items.map((item, i) => (
         <li key={i}>
           {item.childId ? (

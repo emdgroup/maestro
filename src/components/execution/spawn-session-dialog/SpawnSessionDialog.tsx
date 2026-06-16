@@ -100,7 +100,8 @@ export function SpawnSessionDialog({
     }
   }
 
-  const canSpawn = sessionType === "terminal" ? !!selectedWorktree : (!isGitRepo || !!selectedWorktree);
+  const canSpawn =
+    sessionType === "terminal" ? !!selectedWorktree : !isGitRepo || !!selectedWorktree;
 
   const isPending = spawnMutation.isPending || spawnAcpMutation.isPending;
 
@@ -110,7 +111,9 @@ export function SpawnSessionDialog({
         <DialogHeader>
           <DialogTitle>New Session</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            {isGitRepo ? "Choose an agent and worktree to get started." : "Choose an agent to get started."}
+            {isGitRepo
+              ? "Choose an agent and worktree to get started."
+              : "Choose an agent to get started."}
           </p>
         </DialogHeader>
         <form
@@ -175,7 +178,7 @@ export function SpawnSessionDialog({
                       disabled={disabled}
                       onClick={() => {
                         setSessionType(agent.id);
-                          }}
+                      }}
                       title={
                         disabled
                           ? `Requires ${missingDeps.join(", ")} (not available on this connection)`
@@ -289,7 +292,6 @@ export function SpawnSessionDialog({
                 </Select>
               </div>
             )}
-
 
             {/* Session name */}
             <div className="space-y-1.5">

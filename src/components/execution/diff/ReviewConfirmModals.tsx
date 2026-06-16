@@ -29,7 +29,13 @@ interface ReworkModalProps {
   isPending?: boolean;
 }
 
-export function ReworkModal({ open, onOpenChange, comments, onConfirm, isPending }: ReworkModalProps) {
+export function ReworkModal({
+  open,
+  onOpenChange,
+  comments,
+  onConfirm,
+  isPending,
+}: ReworkModalProps) {
   const [expanded, setExpanded] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -39,7 +45,13 @@ export function ReworkModal({ open, onOpenChange, comments, onConfirm, isPending
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && isPending) return;
+        onOpenChange(next);
+      }}
+    >
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>Request changes</AlertDialogTitle>
@@ -55,11 +67,7 @@ export function ReworkModal({ open, onOpenChange, comments, onConfirm, isPending
               className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium hover:bg-accent rounded-t-md"
               onClick={() => setExpanded(!expanded)}
             >
-              {expanded ? (
-                <ChevronDown className="size-3" />
-              ) : (
-                <ChevronRight className="size-3" />
-              )}
+              {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
               {comments.length} comment{comments.length !== 1 ? "s" : ""}
             </button>
             {expanded && (
@@ -111,7 +119,11 @@ interface ApproveModalProps {
   hasUncommitted: boolean;
   untrackedCount: number;
   commitMessage: string;
-  onConfirm: (data: { mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) => void;
+  onConfirm: (data: {
+    mergeStrategy: string;
+    includeUntracked: boolean;
+    commitMessage: string;
+  }) => void;
   isPending?: boolean;
 }
 
@@ -152,7 +164,13 @@ export function ApproveModal({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && isPending) return;
+        onOpenChange(next);
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Approve task</AlertDialogTitle>
@@ -192,7 +210,8 @@ export function ApproveModal({
                 checked={includeUntracked}
                 onChange={(e) => setIncludeUntracked(e.target.checked)}
               />
-              Include {untrackedCount} untracked file{untrackedCount !== 1 ? "s" : ""} (not yet committed)
+              Include {untrackedCount} untracked file{untrackedCount !== 1 ? "s" : ""} (not yet
+              committed)
             </label>
             {!includeUntracked && (
               <p className="text-xs text-destructive">
@@ -214,8 +233,11 @@ export function ApproveModal({
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-          <Button onClick={() => onConfirm({ mergeStrategy: strategy, includeUntracked, commitMessage })} disabled={isPending || !commitMessage.trim()}>
-            {isPending ? "Approving..." : (showRadio ? "Confirm" : getActionLabel())}
+          <Button
+            onClick={() => onConfirm({ mergeStrategy: strategy, includeUntracked, commitMessage })}
+            disabled={isPending || !commitMessage.trim()}
+          >
+            {isPending ? "Approving..." : showRadio ? "Confirm" : getActionLabel()}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -244,7 +266,13 @@ export function DiscardModal({
   isPending,
 }: DiscardModalProps) {
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next && isPending) return; onOpenChange(next); }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && isPending) return;
+        onOpenChange(next);
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -257,15 +285,14 @@ export function DiscardModal({
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-1">
           {worktreePath && (
             <p>
-              Worktree{" "}
-              <code className="text-xs bg-muted px-1 rounded">{worktreePath}</code> will be
+              Worktree <code className="text-xs bg-muted px-1 rounded">{worktreePath}</code> will be
               deleted
             </p>
           )}
           {branchName && (
             <p>
-              Branch <code className="text-xs bg-muted px-1 rounded">{branchName}</code> will
-              be removed
+              Branch <code className="text-xs bg-muted px-1 rounded">{branchName}</code> will be
+              removed
             </p>
           )}
           {commitCount > 0 && (
@@ -273,9 +300,7 @@ export function DiscardModal({
               {commitCount} commit{commitCount !== 1 ? "s" : ""} will be rolled back
             </p>
           )}
-          {!worktreePath && commitCount === 0 && (
-            <p>Task will be moved without code changes.</p>
-          )}
+          {!worktreePath && commitCount === 0 && <p>Task will be moved without code changes.</p>}
         </div>
 
         <AlertDialogFooter>
@@ -286,7 +311,11 @@ export function DiscardModal({
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button size="sm" className="px-1.5!" disabled={isPending}><ChevronDown className="size-3.5" /></Button>}
+                render={
+                  <Button size="sm" className="px-1.5!" disabled={isPending}>
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                }
               />
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem variant="destructive" onClick={() => onConfirm("cancel")}>

@@ -75,7 +75,8 @@ export function DiffFilePanel({
   onFileComment: _onFileComment,
 }: DiffFilePanelProps) {
   const showWorktreeControls = mode === "worktree" && viewMode === "uncommitted";
-  const showUntrackedControls = (mode === "worktree" || mode === "review") && viewMode === "untracked";
+  const showUntrackedControls =
+    (mode === "worktree" || mode === "review") && viewMode === "untracked";
   const showTabs = (mode === "worktree" || mode === "review") && untrackedCount > 0;
   const showCheckboxes = mode === "worktree";
 

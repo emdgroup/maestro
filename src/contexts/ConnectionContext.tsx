@@ -1,5 +1,10 @@
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
-import type { ConnectionKey, SshConnection, WslConnection, PreflightResult } from "@/types/bindings";
+import type {
+  ConnectionKey,
+  SshConnection,
+  WslConnection,
+  PreflightResult,
+} from "@/types/bindings";
 import { commands } from "@/types/bindings";
 import { useConfigStore } from "@/store/configStore";
 

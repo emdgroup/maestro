@@ -182,8 +182,17 @@ export function useApproveTaskAndMergeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, mergeStrategy, includeUntracked, commitMessage }: { taskId: number; mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) =>
-      api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
+    mutationFn: ({
+      taskId,
+      mergeStrategy,
+      includeUntracked,
+      commitMessage,
+    }: {
+      taskId: number;
+      mergeStrategy: string;
+      includeUntracked: boolean;
+      commitMessage: string;
+    }) => api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
     onSuccess: (result: unknown) => {
       const data = result as { success: boolean; task_status: string; conflicts?: string[] };
       if (data.success) {

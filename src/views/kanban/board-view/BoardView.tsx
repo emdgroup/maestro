@@ -42,7 +42,7 @@ export function BoardView({ tasks, worktreeTaskIds, onReviewClick }: BoardViewPr
   const isGitRepo = useIsGitRepo();
 
   const statuses = useMemo(
-    () => isGitRepo ? BOARD_STATUSES : BOARD_STATUSES.filter((s) => s !== "Review"),
+    () => (isGitRepo ? BOARD_STATUSES : BOARD_STATUSES.filter((s) => s !== "Review")),
     [isGitRepo],
   );
 
@@ -137,7 +137,10 @@ export function BoardView({ tasks, worktreeTaskIds, onReviewClick }: BoardViewPr
           );
         }}
       >
-        <div className={`grid p-4 bg-background flex-1 min-h-0 overflow-hidden`} style={{ gridTemplateColumns: `repeat(${statuses.length}, minmax(0, 1fr))` }}>
+        <div
+          className={`grid p-4 bg-background flex-1 min-h-0 overflow-hidden`}
+          style={{ gridTemplateColumns: `repeat(${statuses.length}, minmax(0, 1fr))` }}
+        >
           {statuses.map((status) => (
             <KanbanColumn
               key={status}

@@ -31,6 +31,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return {
         ...interrupted,
         items: finalizeLastStreaming(interrupted.items),
+        isTurnActive: false,
         sessionEnded: true,
         endReason: "completed",
       };
@@ -38,7 +39,11 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     case "turn_ended": {
       const flushed = flushOrphans(state);
       const interrupted = interruptStalledToolCalls(flushed);
-      return { ...interrupted, items: finalizeLastStreaming(interrupted.items) };
+      return {
+        ...interrupted,
+        items: finalizeLastStreaming(interrupted.items),
+        isTurnActive: false,
+      };
     }
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
@@ -93,7 +98,7 @@ function processEvent(
   payload: SessionUpdatePayload,
   raw: Record<string, unknown>,
 ): ActivityState {
-  const newState = { ...state };
+  const newState = { ...state, isTurnActive: true };
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
@@ -264,7 +269,7 @@ function processEvent(
         ...newState,
         items,
         plan: payload.entries,
-        planTitle: payload.title ?? state.planTitle,
+        planTitle: state.planTitle ?? payload.title ?? null,
       };
     }
 
@@ -416,10 +421,12 @@ export function useAcpActivity(
         dispatch({ type: "turn_ended" });
         dispatch({ type: "set_initialized" });
       }),
-    ]).then((listeners) => {
-      drainAcpReplay(logId).catch(console.error);
-      return listeners;
-    }).catch(console.error);
+    ])
+      .then((listeners) => {
+        drainAcpReplay(logId).catch(console.error);
+        return listeners;
+      })
+      .catch(console.error);
 
     return () => {
       unlisten.then((fns) => {

@@ -28,7 +28,9 @@ export function useActiveSessionsQuery(projectId: number | undefined) {
     if (projectId === undefined) return;
     let unlisten: (() => void) | undefined;
     listen("sessions-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
     }).then((fn) => {
       unlisten = fn;
     });
@@ -38,7 +40,10 @@ export function useActiveSessionsQuery(projectId: number | undefined) {
   }, [queryClient, projectId]);
 
   return useQuery({
-    queryKey: projectId !== undefined ? executionQueryKeys.activeSessions(projectId) : ["activeSessions-disabled"],
+    queryKey:
+      projectId !== undefined
+        ? executionQueryKeys.activeSessions(projectId)
+        : ["activeSessions-disabled"],
     queryFn: () => api.getActiveSessions(projectId!),
     enabled: projectId !== undefined,
   });
@@ -98,7 +103,8 @@ export function useLoadAcpSessionMutation() {
     },
     onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectId != null ? executionQueryKeys.activeSessions(projectId) : ["activeSessions"],
+        queryKey:
+          projectId != null ? executionQueryKeys.activeSessions(projectId) : ["activeSessions"],
       });
     },
     onError: createErrorToastHandler("Failed to load session"),
@@ -162,7 +168,9 @@ export function useSpawnInteractiveExecutionMutation() {
       );
     },
     onSuccess: (_data, { projectId }) => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to spawn interactive session"),
@@ -192,10 +200,7 @@ export function useProjectAgentsQuery(
  * Unified agent discovery hook — works for both local and remote connections.
  * 5-minute staleTime mirrors backend TTL.
  */
-export function useAgentDiscoveryQuery(
-  connection: ConnectionKey,
-  enabled: boolean = true,
-) {
+export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boolean = true) {
   return useQuery({
     queryKey: executionQueryKeys.agentDiscovery(connection),
     queryFn: () => api.discoverAgents(connection),
@@ -206,10 +211,7 @@ export function useAgentDiscoveryQuery(
 }
 
 /** Full agent catalog (config options, commands, capabilities) from AgentCache. Available after first SpawnOk/PreInitialize. */
-export function useAgentCacheQuery(
-  agentId: string | null,
-  connection: ConnectionKey,
-) {
+export function useAgentCacheQuery(agentId: string | null, connection: ConnectionKey) {
   const queryClient = useQueryClient();
   // Serialize to a string so the effect dep is stable across renders even
   // when callers construct a new ConnectionKey object reference each render.
@@ -217,25 +219,19 @@ export function useAgentCacheQuery(
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    listen<ConnectionKey & { agent_id: string }>(
-      "agent-cache-updated",
-      (event) => {
-        if (
-          event.payload.agent_id === agentId &&
-          connectionKeysEqual(event.payload, connection)
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: ["agentCache", connStr, agentId],
-          });
-        }
-      },
-    ).then((fn) => {
+    listen<ConnectionKey & { agent_id: string }>("agent-cache-updated", (event) => {
+      if (event.payload.agent_id === agentId && connectionKeysEqual(event.payload, connection)) {
+        void queryClient.invalidateQueries({
+          queryKey: ["agentCache", connStr, agentId],
+        });
+      }
+    }).then((fn) => {
       unlisten = fn;
     });
     return () => {
       unlisten?.();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient, agentId, connStr]);
 
   return useQuery({
@@ -284,7 +280,9 @@ export function useSpawnAcpSessionMutation() {
       );
     },
     onSuccess: (_data, { projectId }) => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
     },
     onError: createErrorToastHandler("Failed to spawn ACP session"),
   });
@@ -311,7 +309,9 @@ export function useRenameAcpSessionMutation() {
       return await api.renameAcpSession(projectId, agentId, acpSessionId, displayName);
     },
     onSuccess: (_data, { agentId, projectId }) => {
-      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessions(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
       void queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
       });

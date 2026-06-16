@@ -220,7 +220,10 @@ export function AgentMonitor({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
-  const [openPanel, setOpenPanel] = useState<{ panel: "working-files" | "review-changes"; initialFile?: string } | null>(null);
+  const [openPanel, setOpenPanel] = useState<{
+    panel: "working-files" | "review-changes";
+    initialFile?: string;
+  } | null>(null);
   const [sessionWorkingFiles, setSessionWorkingFiles] = useState<Map<number, string[]>>(new Map());
   const [sessionChangedFiles, setSessionChangedFiles] = useState<Map<number, string[]>>(new Map());
 
@@ -253,10 +256,10 @@ export function AgentMonitor({
   }
 
   useShortcuts("agents", {
-    "agents-working":     () => {
+    "agents-working": () => {
       if (selectedSessionKey != null) setOpenPanel({ panel: "working-files" });
     },
-    "agents-review":      () => {
+    "agents-review": () => {
       if (selectedSessionKey != null) setOpenPanel({ panel: "review-changes" });
     },
     "agents-close-panel": () => {
@@ -442,7 +445,8 @@ export function AgentMonitor({
                       >
                         <FileText className="w-3.5 h-3.5 mr-1" />
                         Working Files
-                        {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) > 0 && (
+                        {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) >
+                          0 && (
                           <span className="ml-1.5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground leading-4">
                             {sessionWorkingFiles.get(selectedSession.session_key)!.length}
                           </span>
@@ -506,7 +510,11 @@ export function AgentMonitor({
                 isSelected={s.session_key === selectedSessionKey}
                 onWorkingFilesChange={handleWorkingFilesChange}
                 onSessionChangedFilesChange={handleSessionChangedFilesChange}
-                onOpenPanel={s.session_key === selectedSessionKey ? (panel, initialFile) => setOpenPanel({ panel, initialFile }) : undefined}
+                onOpenPanel={
+                  s.session_key === selectedSessionKey
+                    ? (panel, initialFile) => setOpenPanel({ panel, initialFile })
+                    : undefined
+                }
               />
             </div>
           ))}

@@ -57,11 +57,7 @@ export function CanvasCard({ surface }: Props) {
             onClick={() => setExpanded((v) => !v)}
             className="p-1 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {expanded ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -80,7 +76,11 @@ export function CanvasCard({ surface }: Props) {
                 <div className="p-4">
                   {showJson ? (
                     <pre className="text-xs font-mono bg-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">
-                      {JSON.stringify({ components: surface.components, data: surface.data }, null, 2)}
+                      {JSON.stringify(
+                        { components: surface.components, data: surface.data },
+                        null,
+                        2,
+                      )}
                     </pre>
                   ) : (
                     <CanvasRenderer surface={surface} />

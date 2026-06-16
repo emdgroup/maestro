@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
-import { ComposeBar } from "../activity/ComposeBar";
-import type { ComposeBarHandle } from "../activity/ComposeBar";
+import { ComposeBar } from "../activity/compose-bar/ComposeBar";
+import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import type { ConfigOption, UsageState, AvailableCommand } from "../activity/types";
 import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";

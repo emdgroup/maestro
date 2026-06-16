@@ -14,10 +14,12 @@ import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
-import type { TaskPriority } from "@/types/bindings";
+import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
+
+const EMPTY_TASKS: Task[] = [];
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
@@ -25,7 +27,7 @@ export const KanbanView: React.FC = () => {
   const projectId = selectedProject?.id ?? null;
   const projectPath = selectedProject?.path ?? "";
   const { data: tasks } = useTasksQuery(projectId);
-  const taskList = tasks ?? [];
+  const taskList = tasks ?? EMPTY_TASKS;
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
   const worktreeTaskIds = useMemo(
     () => new Set((worktrees ?? []).filter((w) => w.task_id != null).map((w) => w.task_id!)),
@@ -41,8 +43,11 @@ export const KanbanView: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useShortcuts("board", {
-    "board-new":    () => setIsCreateModalOpen(true),
-    "focus-search": () => { searchInputRef.current?.focus(); searchInputRef.current?.select(); },
+    "board-new": () => setIsCreateModalOpen(true),
+    "focus-search": () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    },
   });
 
   const availableLabels = useMemo(
@@ -59,10 +64,12 @@ export const KanbanView: React.FC = () => {
     return matchesQuery && matchesPriority && matchesLabel;
   });
 
-  const reviewTask = reviewPanelTaskId != null ? taskList.find((t) => t.id === reviewPanelTaskId) : null;
-  const reviewWorktree = reviewPanelTaskId != null
-    ? (worktrees ?? []).find((w) => w.task_id === reviewPanelTaskId)
-    : null;
+  const reviewTask =
+    reviewPanelTaskId != null ? taskList.find((t) => t.id === reviewPanelTaskId) : null;
+  const reviewWorktree =
+    reviewPanelTaskId != null
+      ? (worktrees ?? []).find((w) => w.task_id === reviewPanelTaskId)
+      : null;
 
   const handleReviewClose = useCallback(() => setReviewPanelTaskId(null), []);
   const handleReviewClick = useCallback((taskId: number) => setReviewPanelTaskId(taskId), []);
@@ -179,7 +186,12 @@ export const KanbanView: React.FC = () => {
 
         <div className="ml-auto">
           <ShortcutHint shortcutId="board-new">
-            <Button variant="accent" size="sm" className="h-8 text-xs bg-clip-border" onClick={() => setIsCreateModalOpen(true)}>
+            <Button
+              variant="accent"
+              size="sm"
+              className="h-8 text-xs bg-clip-border"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
               <Plus className="size-3.5 mr-1" />
               New Task
             </Button>
@@ -201,7 +213,11 @@ export const KanbanView: React.FC = () => {
         </>
       )}
       <div className="flex-1 min-h-0">
-        <BoardView tasks={filteredTasks} worktreeTaskIds={worktreeTaskIds} onReviewClick={handleReviewClick} />
+        <BoardView
+          tasks={filteredTasks}
+          worktreeTaskIds={worktreeTaskIds}
+          onReviewClick={handleReviewClick}
+        />
       </div>
     </div>
   );

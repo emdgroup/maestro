@@ -110,7 +110,16 @@ const DirectoryNode: React.FC<{
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder, viewedFiles }) => {
+}> = ({
+  node,
+  selectedFile,
+  onSelectFile,
+  level,
+  checkedFiles,
+  onToggleFile,
+  onToggleFolder,
+  viewedFiles,
+}) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const folderCheckState =
@@ -148,11 +157,15 @@ const DirectoryNode: React.FC<{
           </CheckboxPrimitive.Root>
         )}
         <span className="font-mono truncate">{node.name}</span>
-        {viewedFiles && (() => {
-          const descendants = getDescendantFiles(node);
-          const allViewed = descendants.length > 0 && descendants.every(f => viewedFiles.has(f));
-          return allViewed ? <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" /> : null;
-        })()}
+        {viewedFiles &&
+          (() => {
+            const descendants = getDescendantFiles(node);
+            const allViewed =
+              descendants.length > 0 && descendants.every((f) => viewedFiles.has(f));
+            return allViewed ? (
+              <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" />
+            ) : null;
+          })()}
       </button>
       {isExpanded && node.children && (
         <div>
@@ -184,7 +197,16 @@ const FileNode: React.FC<{
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
-}> = ({ node, selectedFile, onSelectFile, level, checkedFiles, onToggleFile, onToggleFolder, viewedFiles }) => {
+}> = ({
+  node,
+  selectedFile,
+  onSelectFile,
+  level,
+  checkedFiles,
+  onToggleFile,
+  onToggleFolder,
+  viewedFiles,
+}) => {
   if (node.isDir) {
     return (
       <DirectoryNode

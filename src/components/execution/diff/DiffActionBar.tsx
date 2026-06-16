@@ -206,10 +206,7 @@ export function DiffActionBar({
 
         {/* Worktree-only: Shelve button with name popover */}
         {mode === "worktree" && (
-          <Popover
-            open={shelvePopoverOpen}
-            onOpenChange={onShelvePopoverOpenChange ?? (() => {})}
-          >
+          <Popover open={shelvePopoverOpen} onOpenChange={onShelvePopoverOpenChange ?? (() => {})}>
             <PopoverTrigger
               render={
                 <Button

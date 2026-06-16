@@ -35,7 +35,7 @@ export function InlineCommentInput({ onSubmit, onCancel, initialText }: InlineCo
       <textarea
         ref={textareaRef}
         value={text}
-        onChange={e => setText(e.target.value)}
+        onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Add a comment..."
         className="w-full min-h-[60px] resize-y bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -45,7 +45,12 @@ export function InlineCommentInput({ onSubmit, onCancel, initialText }: InlineCo
         <Button variant="ghost" size="sm" onClick={onCancel} style={{ color: "var(--foreground)" }}>
           Cancel
         </Button>
-        <Button size="sm" onClick={handleSubmit} disabled={!text.trim()} style={{ color: "var(--primary-foreground)" }}>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!text.trim()}
+          style={{ color: "var(--primary-foreground)" }}
+        >
           {initialText ? "Save" : "Add"}
         </Button>
       </div>

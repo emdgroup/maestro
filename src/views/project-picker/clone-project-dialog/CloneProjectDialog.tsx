@@ -27,7 +27,12 @@ interface CloneProjectDialogProps {
   wslConnection?: WslConnection | null;
 }
 
-export function CloneProjectDialog({ open, onOpenChange, connection, wslConnection }: CloneProjectDialogProps) {
+export function CloneProjectDialog({
+  open,
+  onOpenChange,
+  connection,
+  wslConnection,
+}: CloneProjectDialogProps) {
   const [url, setUrl] = useState("");
   const [targetPath, setTargetPath] = useState("");
   const [showDirPicker, setShowDirPicker] = useState(false);
@@ -146,7 +151,9 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
           <div ref={formRef} className="space-y-4 py-2">
             {/* Parent directory — always visible */}
             <div className="space-y-2">
-              <Label htmlFor="clone-target" required>Parent Directory</Label>
+              <Label htmlFor="clone-target" required>
+                Parent Directory
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="clone-target"
@@ -197,7 +204,9 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
 
               <TabsContent value="url">
                 <div className="space-y-2">
-                  <Label htmlFor="clone-url" required>Git URL</Label>
+                  <Label htmlFor="clone-url" required>
+                    Git URL
+                  </Label>
                   <Input
                     id="clone-url"
                     placeholder="https://github.com/user/repo.git"
@@ -222,10 +231,7 @@ export function CloneProjectDialog({ open, onOpenChange, connection, wslConnecti
               Cancel
             </Button>
             <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
-              <Button
-                onClick={handleSubmit}
-                disabled={isSubmitDisabled}
-              >
+              <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
                 {isPending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
