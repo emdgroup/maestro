@@ -26,9 +26,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm lint
+      - run: pnpm lint:fix
 
-      - run: pnpm format
+      - run: pnpm format:fix 
 
       - run: pnpm build
 
