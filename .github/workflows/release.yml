@@ -24,6 +24,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - run: rustup target add x86_64-unknown-linux-gnu
+
       - uses: Swatinem/rust-cache@v2
 
       - run: pnpm install --frozen-lockfile
@@ -53,6 +55,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
+
+      - run: rustup target add x86_64-unknown-linux-gnu
 
       - uses: Swatinem/rust-cache@v2
 
@@ -121,6 +125,10 @@ jobs:
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - run: rustup target add x86_64-unknown-linux-gnu
+
+      - run: cargo install cargo-xwin
 
       - uses: Swatinem/rust-cache@v2
 
