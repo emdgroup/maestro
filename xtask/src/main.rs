@@ -21,15 +21,21 @@ fn main() {
         .unwrap_or_else(|e| panic!("copy {local_src} → {}: {e}", local_dst.display()));
 
     if host_target != REMOTE_TARGET {
-        println!("[xtask] building maestro-server for remote: {REMOTE_TARGET}");
-        cargo_build_server(REMOTE_TARGET);
+        if env::var("SKIP_REMOTE_BUILD").is_ok() {
+            println!("[xtask] skipping cross-compile of {REMOTE_TARGET} (SKIP_REMOTE_BUILD set)");
+        } else {
+            println!("[xtask] building maestro-server for remote: {REMOTE_TARGET}");
+            cargo_build_server(REMOTE_TARGET);
+        }
     }
     let remote_src = format!("target/{REMOTE_TARGET}/release/maestro-server");
     let remote_dst = resources
         .join("remote")
         .join(format!("maestro-server-{REMOTE_TARGET}"));
-    fs::copy(&remote_src, &remote_dst)
-        .unwrap_or_else(|e| panic!("copy {remote_src} → {}: {e}", remote_dst.display()));
+    if Path::new(&remote_src).exists() {
+        fs::copy(&remote_src, &remote_dst)
+            .unwrap_or_else(|e| panic!("copy {remote_src} → {}: {e}", remote_dst.display()));
+    }
 
     println!("[xtask] done");
 }

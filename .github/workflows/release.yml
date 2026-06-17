@@ -12,6 +12,7 @@ jobs:
   build-macos-arm64:
     name: Build macOS (arm64)
     runs-on: macos-latest
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,13 +25,18 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - run: rustup target add x86_64-unknown-linux-gnu
+      - uses: actions/download-artifact@v4
+        with:
+          name: maestro-server-linux
+          path: target/x86_64-unknown-linux-gnu/release
 
       - uses: Swatinem/rust-cache@v2
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm tauri build
+        env:
+          SKIP_REMOTE_BUILD: "1"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -42,6 +48,7 @@ jobs:
   build-macos-x86:
     name: Build macOS (x86_64)
     runs-on: macos-15
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -56,13 +63,18 @@ jobs:
         with:
           targets: x86_64-apple-darwin
 
-      - run: rustup target add x86_64-unknown-linux-gnu
+      - uses: actions/download-artifact@v4
+        with:
+          name: maestro-server-linux
+          path: target/x86_64-unknown-linux-gnu/release
 
       - uses: Swatinem/rust-cache@v2
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm tauri build --target x86_64-apple-darwin
+        env:
+          SKIP_REMOTE_BUILD: "1"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -106,6 +118,11 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
+          name: maestro-server-linux
+          path: target/x86_64-unknown-linux-gnu/release/maestro-server
+
+      - uses: actions/upload-artifact@v4
+        with:
           name: linux-x86_64
           path: |
             target/release/bundle/appimage/*.AppImage
@@ -114,6 +131,7 @@ jobs:
   build-windows:
     name: Build Windows (x86_64)
     runs-on: windows-latest
+    needs: [build-linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -126,15 +144,18 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - run: rustup target add x86_64-unknown-linux-gnu
-
-      - run: cargo install cargo-xwin
+      - uses: actions/download-artifact@v4
+        with:
+          name: maestro-server-linux
+          path: target/x86_64-unknown-linux-gnu/release
 
       - uses: Swatinem/rust-cache@v2
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm tauri build
+        env:
+          SKIP_REMOTE_BUILD: "1"
 
       - uses: actions/upload-artifact@v4
         with:
