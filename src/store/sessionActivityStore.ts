@@ -20,6 +20,7 @@ export interface SessionActivityInfo {
 interface SessionActivityState {
   sessions: Record<number, SessionActivityInfo>;
   setActivity: (executionId: number, status: SessionActivityStatus, label?: string | null) => void;
+  resetIfStale: (executionId: number) => void;
   markSeen: (executionId: number) => void;
   removeActivity: (executionId: number) => void;
 }
@@ -51,6 +52,14 @@ export const useSessionActivityStore = create<SessionActivityState>()(
           };
         }
       }),
+    resetIfStale: (executionId) =>
+      set((state) => {
+        const existing = state.sessions[executionId];
+        if (existing?.status === "stale") {
+          existing.status = "idle";
+          existing.stateChangedAt = Date.now();
+        }
+      }),
     markSeen: (executionId) =>
       set((state) => {
         const existing = state.sessions[executionId];
@@ -72,6 +81,7 @@ export const useSessionActivityActions = () =>
   useSessionActivityStore(
     useShallow((s) => ({
       setActivity: s.setActivity,
+      resetIfStale: s.resetIfStale,
       markSeen: s.markSeen,
       removeActivity: s.removeActivity,
     })),

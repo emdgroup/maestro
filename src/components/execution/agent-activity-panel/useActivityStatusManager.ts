@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import type { ActivityState } from "../activity/types";
 
@@ -17,7 +18,7 @@ export function useActivityStatusManager(
   sessionKey: number,
   liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
 ): void {
-  const { setActivity, removeActivity } = useSessionActivityActions();
+  const { setActivity, removeActivity, resetIfStale } = useSessionActivityActions();
 
   useEffect(() => {
     setActivity(sessionKey, "spawning");
@@ -67,7 +68,22 @@ export function useActivityStatusManager(
 
   // Stale connection detector: if a turn is active but no new events arrive for 45s,
   // mark the session stale so the UI can show a warning and offer a force-end action.
+  // heartbeatCount resets this timer on every server ping so long-running operations
+  // (no items emitted for >45s) don't trigger a false-positive "Connection lost".
   const itemsLength = liveState.items.length;
+  const [heartbeatCount, setHeartbeatCount] = useState(0);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("acp://heartbeat", () => {
+      setHeartbeatCount((n) => n + 1);
+      resetIfStale(sessionKey);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [sessionKey, resetIfStale]);
+
   useEffect(() => {
     if (!liveState.isTurnActive || liveState.sessionEnded || liveState.isInitializing) return;
     const id = setTimeout(() => setActivity(sessionKey, "stale"), 45_000);
@@ -77,6 +93,7 @@ export function useActivityStatusManager(
     liveState.sessionEnded,
     liveState.isInitializing,
     itemsLength,
+    heartbeatCount,
     sessionKey,
     setActivity,
   ]);
