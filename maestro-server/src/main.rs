@@ -200,6 +200,27 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> = agent::discover_agents(&registry);
 
+    // Heartbeat: send Ping every 10s so the parent (Tauri) can detect stale connections.
+    tokio::spawn({
+        let stdout = Arc::clone(&stdout);
+        async move {
+            let mut seq: u64 = 0;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                seq = seq.wrapping_add(1);
+                if send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Ping { seq }),
+                )
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    });
+
     // Break the loop if stdout write fails — server can't communicate, no point continuing.
     macro_rules! send_or_break {
         ($e:expr) => {
@@ -648,6 +669,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     )),
                 )
                 .await);
+            }
+
+            MaestroRpcMessage::Request(ServerRequest::Pong { seq }) => {
+                eprintln!("[heartbeat] pong ack seq={seq}");
             }
 
             MaestroRpcMessage::Response(_) => {}

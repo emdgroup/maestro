@@ -50,6 +50,8 @@ pub enum ServerRequest {
     CheckTools(CheckToolsRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
     DetectProjectAgents(DetectProjectAgentsRequest),
+    /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
+    Pong { seq: u64 },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -187,6 +189,8 @@ pub enum ServerResponse {
     CheckToolsOk(CheckToolsResponse),
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
+    /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
+    Ping { seq: u64 },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1007,6 +1011,22 @@ mod tests {
         let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest {
             cwd: "/home/user/project".to_string(),
         }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_ping_response() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::Ping { seq: 42 });
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_pong_request() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::Pong { seq: 42 });
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
