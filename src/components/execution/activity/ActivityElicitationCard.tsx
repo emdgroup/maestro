@@ -49,7 +49,10 @@ export function ActivityElicitationCard({ item }: Props) {
                 {f.question}
               </span>
               {f.answer.map((answer) => (
-                <code key={answer} className="text-xs text-foreground min-w-0 bg-muted/60 rounded px-1 py-0.5 font-mono break-all">
+                <code
+                  key={answer}
+                  className="text-xs text-foreground min-w-0 bg-muted/60 rounded px-1 py-0.5 font-mono break-all"
+                >
                   {answer}
                 </code>
               ))}

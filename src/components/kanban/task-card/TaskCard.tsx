@@ -1,121 +1,234 @@
-import { useRef, useEffect, useState, memo } from "react";
+import { useRef, useEffect, useMemo, CSSProperties } from "react";
 import { Task, TaskStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
-import { ShieldAlert } from "lucide-react";
-import { PRIORITY_COLORS } from "@/utils/constants/priority";
+import {
+  ShieldAlert,
+  Play,
+  Square,
+  GitPullRequest,
+  Archive,
+  MessageSquare,
+  Flame,
+  ArrowUp,
+  Minus,
+  ArrowDown,
+  GitBranch,
+  ExternalLink,
+  BotMessageSquare,
+} from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { cn } from "@/lib/ui-utils";
-import {
-  useSessionActivity,
-  type SessionActivityStatus,
-  type SessionActivityInfo,
-} from "@/store/sessionActivityStore";
+import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
+import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import { colors } from "@/components/kanban/kanban-column/KanbanColumn.tsx";
 
 interface TaskCardProps {
   task: Task;
   index: number;
   dndGroup?: TaskStatus;
   onReviewClick?: (taskId: number, taskName: string) => void;
-  worktreeTaskIds: Set<number>;
 }
 
-const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
-  spawning: "bg-muted-foreground/60 animate-pulse",
-  thinking: "bg-purple animate-glow-purple",
-  acting: "bg-info animate-glow-info",
-  awaiting_input: "bg-warning animate-pulse",
-  idle: "bg-muted-foreground/40",
-};
-
-const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
-  spawning: "Starting",
-  thinking: "Thinking",
-  acting: "Calling tool",
-  awaiting_input: "Waiting",
-  idle: "Ready",
-};
-
-function formatElapsedCompact(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function formatTimeAgo(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
-}
-
-function getStatusLabel(activityInfo: SessionActivityInfo): string {
-  const { status, label, seen } = activityInfo;
-  if (label) return label;
-  if (status === "idle" && !seen) return "Done";
-  return STATUS_FALLBACK[status];
-}
-
-const ElapsedTime = memo(function ElapsedTime({
-  status,
-  stateChangedAt,
-}: {
-  status: SessionActivityStatus;
-  stateChangedAt: number;
-}) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">
-      {status === "idle"
-        ? formatTimeAgo(now - stateChangedAt)
-        : formatElapsedCompact(now - stateChangedAt)}
-    </span>
+function AgentAvatar({ agentId }: { agentId: string }) {
+  return hasBrandIcon(agentId) ? (
+    <div className="size-6 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-muted">
+      <BrandIcon slug={agentId} className="size-5" />
+    </div>
+  ) : (
+    <span className="text-[8px] font-bold text-muted-foreground uppercase">{agentId}</span>
   );
-});
+}
 
-function SessionStatusRow({ sessionKey }: { sessionKey: number }) {
-  const activityInfo = useSessionActivity(sessionKey);
+function ActivityLine({ activityInfo }: { activityInfo: SessionActivityInfo | undefined }) {
   if (!activityInfo) {
     return (
-      <div className="flex items-center gap-1.5 mt-1.5">
-        <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-muted-foreground/60 animate-pulse" />
-        <span className="text-xs text-muted-foreground">Starting…</span>
+      <div className="flex items-center gap-1 mb-1.5 text-[10px]">
+        <span className="font-bold text-muted-foreground shrink-0">Starting</span>
       </div>
     );
   }
+  const { status, label, stateChangedAt } = activityInfo;
   return (
-    <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
-      <span
-        className={cn(
-          "inline-block w-2 h-2 rounded-full shrink-0",
-          ACTIVITY_DOT[activityInfo.status],
-        )}
-      />
-      <span className="text-xs text-muted-foreground truncate flex-1">
-        {getStatusLabel(activityInfo)}
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span className={cn("font-bold shrink-0", ACTIVITY_TEXT[status])}>
+        {status.toUpperCase()}
       </span>
-      <ElapsedTime status={activityInfo.status} stateChangedAt={activityInfo.stateChangedAt} />
+      {label && (
+        <>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className="text-muted-foreground truncate flex-1">{label}</span>
+        </>
+      )}
+      <ElapsedTime status={status} stateChangedAt={stateChangedAt} />
     </div>
   );
 }
 
-function formatAgentName(agentId: string): string {
-  return agentId
-    .split(/[-_]/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+function PriorityOpt({ priority }: { priority: string }) {
+  if (priority === "Urgent")
+    return (
+      <span className="flex items-center gap-0.5 text-[9.5px] text-[oklch(68%_0.2_25)]">
+        <Flame className="w-2.5 h-2.5 fill-current" />
+        Urgent
+      </span>
+    );
+  if (priority === "High")
+    return (
+      <span className="flex items-center gap-0.5 text-[9.5px] text-[oklch(72%_0.18_55)]">
+        <ArrowUp className="w-2.5 h-2.5" />
+        High
+      </span>
+    );
+  if (priority === "Medium")
+    return (
+      <span className="flex items-center gap-0.5 text-[9.5px] text-muted-foreground">
+        <Minus className="w-2.5 h-2.5" />
+        Medium
+      </span>
+    );
+  if (priority === "Low")
+    return (
+      <span className="flex items-center gap-0.5 text-[9.5px] text-success">
+        <ArrowDown className="w-2.5 h-2.5" />
+        Low
+      </span>
+    );
+  return null;
 }
 
-export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds }: TaskCardProps) {
+interface FooterCTAsProps {
+  task: Task;
+  activeSession: { session_key: number } | undefined | null;
+  isAwaiting: boolean;
+  isExecuting: boolean;
+  onExecute: () => void;
+  onStop: () => void;
+  onJoin: () => void;
+  onReview: () => void;
+  onArchive: () => void;
+}
+
+function FooterCTAs({
+  task,
+  activeSession,
+  isAwaiting,
+  isExecuting,
+  onExecute,
+  onStop,
+  onJoin,
+  onReview,
+  onArchive,
+}: FooterCTAsProps) {
+  const base =
+    "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-1 rounded-[5px] border border-border bg-primary-foreground text-primary hover:bg-primary/60 disabled:opacity-50";
+
+  if (task.status === "Ready") {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onExecute();
+          }}
+          disabled={isExecuting}
+          className={base}
+        >
+          <Play className="w-2.5 h-2.5 fill-current" />
+          {isExecuting ? "Starting…" : "Execute"}
+        </button>
+      </div>
+    );
+  }
+
+  if (task.status === "InProgress") {
+    if (isAwaiting) {
+      return (
+        <div className="flex gap-1 mt-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJoin();
+            }}
+            className={base}
+          >
+            <MessageSquare className="w-2.5 h-2.5 fill-current" />
+            Respond
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStop();
+          }}
+          className={cn(base, "bg-muted text-muted-foreground")}
+        >
+          <Square className="w-2.5 h-2.5 fill-current" />
+          Stop
+        </button>
+        {activeSession && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJoin();
+            }}
+            className={base}
+          >
+            <BotMessageSquare className="w-2.5 h-2.5 fill-current" />
+            Join
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (task.status === "Review") {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReview();
+          }}
+          className={base}
+        >
+          <GitPullRequest className="w-2.5 h-2.5 fill-current" />
+          Review
+        </button>
+      </div>
+    );
+  }
+
+  if (task.status === "Done" && !task.archived_at) {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onArchive();
+          }}
+          className={cn(base, "bg-secondary text-secondary-foreground")}
+        >
+          <Archive className="w-2.5 h-2.5" />
+          Archive
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export function TaskCard({ task, index, dndGroup, onReviewClick }: TaskCardProps) {
   const { projectId, projectPath, connection } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
@@ -134,6 +247,9 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
     task.status === "InProgress" ? task.id : null,
     projectId,
   );
+  const activityInfo = useSessionActivity(activeSession?.session_key);
+  const activityStatus = activityInfo?.status ?? null;
+  const isAwaiting = task.status === "InProgress" && activityStatus === "awaiting_input";
 
   const isDraggable = task.status === "Backlog" || task.status === "Ready";
 
@@ -159,17 +275,29 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
     }
   }, [isDragging]);
 
-  const hasMetadata =
-    task.priority !== "None" || task.labels.length > 0 || task.auto_approve || task.agent_id;
+  const cardColor = useMemo((): string => {
+    return colors[task.status];
+  }, [task.status]);
+
+  const hasOptions = task.priority !== "None" || task.isolated_worktree || task.auto_approve;
 
   return (
     <>
       <div
         ref={ref}
-        className={`rounded-lg border bg-card shadow-sm p-3 mb-3 transition-all duration-200 hover:shadow-md hover:border-ring
-        ${isDragging ? "opacity-30 border-dashed border-accent/40 bg-accent/5" : "border-border"}
-        ${isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}
-      `}
+        style={
+          {
+            "--card-color": cardColor,
+            "--card-bg-color": `color-mix(in oklab, var(--card-color) ${isAwaiting ? "30%" : "12%"}, transparent)`,
+          } as CSSProperties
+        }
+        className={cn(
+          "rounded-lg border p-2.5 mb-2 flex flex-col transition-all border-(--card-color) bg-(--card-bg-color)",
+          "hover:shadow-md",
+          isAwaiting && "animate-glow-warning",
+          isDragging && "opacity-30 border-dashed",
+          isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        )}
         onClick={() => {
           if (dragOccurredRef.current) {
             dragOccurredRef.current = false;
@@ -178,129 +306,77 @@ export function TaskCard({ task, index, dndGroup, onReviewClick, worktreeTaskIds
           setActiveTaskId(task.id);
         }}
       >
-        {/* Row 1: Title */}
-        <p className="text-sm font-medium text-foreground line-clamp-2">{task.title}</p>
+        {/* Header: title + agent avatar right */}
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1">
+            <span className="text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {task.is_imported ? task.external_id : `task-${task.id}`}
+            </span>
+            {task.is_imported && task.external_url && (
+              <ExternalLink className="size-4" href={task.external_url} />
+            )}
+          </div>
+          {task.agent_id && <AgentAvatar agentId={task.agent_id} />}
+        </div>
 
-        {/* Row 2: Description */}
-        {task.description && (
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{task.description}</p>
+        {/* Title */}
+        <p className="text-[12px] font-semibold text-card-foreground line-clamp-2 mb-1.5">
+          {task.title}
+        </p>
+
+        {/* Activity line — InProgress with active session only */}
+        {task.status === "InProgress" && activeSession && (
+          <ActivityLine activityInfo={activityInfo} />
         )}
 
-        {/* Row 3: Metadata (priority dot + labels + agent + auto-approve) */}
-        {hasMetadata && (
-          <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
-            {task.priority !== "None" && (
+        {/* Tags */}
+        {task.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1">
+            {task.labels.slice(0, 3).map((l) => (
               <span
-                style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-                className="h-[7px] w-[7px] rounded-full shrink-0 inline-block"
-              />
-            )}
-            {task.labels.slice(0, 3).map((label) => (
-              <span
-                key={label}
-                className="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground shrink-0"
+                key={l}
+                className="text-[9.5px] px-1.5 py-px rounded bg-muted/60 text-muted-foreground"
               >
-                {label}
+                {l}
               </span>
             ))}
             {task.labels.length > 3 && (
-              <span className="text-xs text-muted-foreground shrink-0">
-                +{task.labels.length - 3}
-              </span>
-            )}
-            {task.agent_id && (
-              <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                {hasBrandIcon(task.agent_id) ? (
-                  <BrandIcon slug={task.agent_id} className="w-3.5 h-3.5 rounded-sm" />
-                ) : (
-                  <span>{formatAgentName(task.agent_id)}</span>
-                )}
-              </span>
-            )}
-            {task.auto_approve && (
-              <ShieldAlert
-                className={cn("h-3.5 w-3.5 text-amber-500 shrink-0", !task.agent_id && "ml-auto")}
-              />
+              <span className="text-[9.5px] text-muted-foreground">+{task.labels.length - 3}</span>
             )}
           </div>
         )}
 
-        {/* Row 4: Session status (InProgress only) */}
-        {task.status === "InProgress" && activeSession && (
-          <SessionStatusRow sessionKey={activeSession.session_key} />
-        )}
-
-        {/* Row 5: Footer (worktree badge left, action button right) */}
-        <div className="flex items-center justify-between mt-2">
-          <div>
-            {worktreeTaskIds.has(task.id) && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+        {/* Options: priority / worktree / auto-approve */}
+        {hasOptions && (
+          <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-border/50 mb-1.5">
+            <PriorityOpt priority={task.priority} />
+            {task.isolated_worktree && (
+              <span className="flex items-center gap-0.5 text-[9.5px] text-secondary">
+                <GitBranch className="w-2.5 h-2.5" />
                 worktree
               </span>
             )}
-          </div>
-          <div className="shrink-0 flex items-center gap-1">
-            {task.status === "Ready" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleExecute(task);
-                }}
-                disabled={isExecuting}
-                className="text-xs px-2 py-1 rounded bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
-              >
-                {isExecuting ? "..." : "▶ Execute"}
-              </button>
-            )}
-            {task.status === "InProgress" && (
-              <>
-                {activeSession && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate({ agentId: String(task.id) });
-                    }}
-                    className="text-xs px-2 py-1 rounded bg-accent text-accent-foreground hover:bg-accent/90"
-                  >
-                    Join
-                  </button>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    interruptTask.mutate(task.id);
-                  }}
-                  className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
-                >
-                  ⏹ Interrupt
-                </button>
-              </>
-            )}
-            {task.status === "Review" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReviewClick?.(task.id, task.title);
-                }}
-                className="text-xs px-2 py-1 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              >
-                Review
-              </button>
-            )}
-            {task.status === "Done" && !task.archived_at && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  archiveTask.mutate(task.id);
-                }}
-                className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80"
-              >
-                Archive
-              </button>
+            {task.auto_approve && (
+              <span className="flex items-center gap-0.5 text-[9.5px] text-warning">
+                <ShieldAlert className="w-2.5 h-2.5" />
+                auto-approve
+              </span>
             )}
           </div>
-        </div>
+        )}
+
+        {/* Footer CTAs */}
+        <FooterCTAs
+          task={task}
+          activeSession={activeSession}
+          isAwaiting={isAwaiting}
+          isExecuting={isExecuting}
+          onExecute={() => void handleExecute(task)}
+          onStop={() => interruptTask.mutate(task.id)}
+          onJoin={() => navigate({ agentId: String(task.id) })}
+          onReview={() => onReviewClick?.(task.id, task.title)}
+          onArchive={() => archiveTask.mutate(task.id)}
+        />
       </div>
       <DirtyWorktreeDialog
         open={dirtyDialogOpen}

@@ -1,6 +1,6 @@
 name: Bug Report
 description: Something isn't working
-labels: [bug]
+type: bug
 body:
   - type: textarea
     id: description
@@ -40,10 +40,11 @@ body:
     attributes:
       label: Operating System
       options:
-        - macOS (Apple Silicon)
-        - macOS (Intel)
+        - All
         - Windows
         - Linux
+        - macOS (Apple Silicon)
+        - macOS (Intel)
     validations:
       required: true
 

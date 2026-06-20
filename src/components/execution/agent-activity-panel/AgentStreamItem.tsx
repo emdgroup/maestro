@@ -37,13 +37,7 @@ export function AgentStreamItem({
   if (gi.type === "toolGroup") {
     const tc = gi.items[0];
     if (gi.items.length === 1 && isPlanToolCallItem(tc)) {
-      return (
-        <PlanReviewCard
-          key={tc.toolCallId}
-          item={tc}
-          onOpen={onOpenPlanOverlay}
-        />
-      );
+      return <PlanReviewCard key={tc.toolCallId} item={tc} onOpen={onOpenPlanOverlay} />;
     }
 
     if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {

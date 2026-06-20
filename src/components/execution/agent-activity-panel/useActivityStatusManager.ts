@@ -64,4 +64,20 @@ export function useActivityStatusManager(
     setActivity,
     removeActivity,
   ]);
+
+  // Stale connection detector: if a turn is active but no new events arrive for 45s,
+  // mark the session stale so the UI can show a warning and offer a force-end action.
+  const itemsLength = liveState.items.length;
+  useEffect(() => {
+    if (!liveState.isTurnActive || liveState.sessionEnded || liveState.isInitializing) return;
+    const id = setTimeout(() => setActivity(sessionKey, "stale"), 45_000);
+    return () => clearTimeout(id);
+  }, [
+    liveState.isTurnActive,
+    liveState.sessionEnded,
+    liveState.isInitializing,
+    itemsLength,
+    sessionKey,
+    setActivity,
+  ]);
 }

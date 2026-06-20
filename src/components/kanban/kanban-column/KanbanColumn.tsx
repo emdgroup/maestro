@@ -4,6 +4,7 @@ import { Badge } from "@/ui/badge";
 import { useDroppable } from "@dnd-kit/react";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { pointerIntersection } from "@dnd-kit/collision";
+import { CSSProperties } from "react";
 
 interface KanbanColumnProps {
   columnTitle: string;
@@ -12,19 +13,15 @@ interface KanbanColumnProps {
   isDragActive: boolean;
   isHighlighted?: boolean;
   onReviewClick?: (taskId: number, taskName: string) => void;
-  worktreeTaskIds: Set<number>;
 }
 
-const getColumnBorderColor = (status: TaskStatus): string => {
-  const colors: Record<TaskStatus, string> = {
-    Backlog: "border-t-slate-400",
-    Ready: "border-t-blue-500",
-    InProgress: "border-t-amber-500",
-    Review: "border-t-purple-500",
-    Done: "border-t-green-500",
-    Cancelled: "border-t-destructive",
-  };
-  return colors[status] || "border-l-slate-400";
+export const colors: Record<TaskStatus, string> = {
+  Backlog: "var(--color-slate-400)",
+  Ready: "var(--color-blue-500)",
+  InProgress: "var(--color-amber-500)",
+  Review: "var(--color-purple-500)",
+  Done: "var(--color-green-500)",
+  Cancelled: "var(--destructive)",
 };
 
 const getBadgeColor = (status: TaskStatus): string => {
@@ -52,10 +49,8 @@ export function KanbanColumn({
   isDragActive,
   isHighlighted,
   onReviewClick,
-  worktreeTaskIds,
 }: KanbanColumnProps) {
   const isDndColumn = status === "Backlog" || status === "Ready";
-  const borderColor = getColumnBorderColor(status);
   const badgeColor = getBadgeColor(status);
 
   const { ref } = useDroppable({
@@ -71,7 +66,8 @@ export function KanbanColumn({
 
   return (
     <div
-      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-card shadow-sm overflow-hidden border-t-4 ${borderColor} transition-all duration-150 ${isDimmed ? "opacity-35" : ""}`}
+      style={{ "--column-border-color": colors[status] } as CSSProperties}
+      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-card shadow-sm overflow-hidden border-t-4 border-t-(--column-border-color) transition-all duration-150 ${isDimmed ? "opacity-35" : ""}`}
     >
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
         <h3 className="font-semibold text-base text-foreground">{columnTitle}</h3>
@@ -88,7 +84,6 @@ export function KanbanColumn({
             index={index}
             dndGroup={isDndColumn ? status : undefined}
             onReviewClick={onReviewClick}
-            worktreeTaskIds={worktreeTaskIds}
           />
         ))}
       </div>

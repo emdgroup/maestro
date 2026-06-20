@@ -9,10 +9,7 @@ import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
-import {
-  ElicitationPrompt,
-  parseElicitationFields,
-} from "../activity/ElicitationPrompt";
+import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import { groupToolCalls, groupIntoAgentSections, mergeLiveItems } from "../activity/utils";
 import type { UsageState } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
@@ -107,7 +104,10 @@ export function AgentActivityPanel({
     setPendingElicitation,
   );
 
-  const isProcessing = activityInfo?.status === "thinking" || activityInfo?.status === "acting";
+  const isProcessing =
+    activityInfo?.status === "thinking" ||
+    activityInfo?.status === "acting" ||
+    activityInfo?.status === "stale";
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
 
   agentItemsCountRef.current = liveState.items.length;
@@ -191,6 +191,10 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
+  const handleForceEnd = useCallback(async () => {
+    await api.cancelAcpSession(sessionKey).catch(() => {});
+  }, [sessionKey]);
+
   if (liveState.isInitializing) return <AgentLoadingSkeleton />;
 
   const isSessionDead = liveState.sessionEnded;
@@ -263,8 +267,21 @@ export function AgentActivityPanel({
     promptCapabilities,
   };
 
+  const isStale = activityInfo?.status === "stale";
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {isStale && (
+        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
+          <span>Connection lost — agent may be stuck</span>
+          <button
+            onClick={handleForceEnd}
+            className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 hover:bg-destructive/20 transition-colors"
+          >
+            Force end session
+          </button>
+        </div>
+      )}
       {liveState.plan && (
         <div className="shrink-0 bg-card border-b border-border">
           <ActivityPlanPanel entries={liveState.plan} title={liveState.planTitle} />

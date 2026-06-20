@@ -253,11 +253,12 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                   agent.icon && (
                                     <img
                                       src={agent.icon}
-                                      className="w-4 h-4 rounded-sm shrink-0 dark:[filter:invert(1)]"
+                                      className="w-4 h-4 rounded-sm shrink-0 dark:filter-[invert(1)]"
                                       onError={(e) => {
                                         (e.currentTarget as HTMLImageElement).style.display =
                                           "none";
                                       }}
+                                      alt="agent icon"
                                     />
                                   )
                                 )}
@@ -293,7 +294,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     name="reopen_sessions"
                     control={control}
                     render={({ field }) => (
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        className="data-unchecked:bg-muted data-unchecked:border-border/50"
+                      />
                     )}
                   />
                 </div>

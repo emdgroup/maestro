@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
+import { useMemo, useState, useCallback, useRef, memo } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Terminal, X, FileText, FileDiff } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
@@ -17,14 +17,7 @@ import {
   type SessionActivityInfo,
 } from "@/store/sessionActivityStore";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
-
-const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
-  spawning: "bg-muted-foreground/60 animate-pulse",
-  thinking: "bg-purple animate-glow-purple",
-  acting: "bg-info animate-glow-info",
-  awaiting_input: "bg-warning animate-pulse",
-  idle: "bg-muted-foreground/40",
-};
+import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
@@ -32,6 +25,7 @@ const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   acting: "Calling tool",
   awaiting_input: "Waiting",
   idle: "Ready",
+  stale: "Connection lost",
 };
 
 function getStatusDot(
@@ -46,46 +40,12 @@ function getStatusDot(
   return ACTIVITY_DOT[status];
 }
 
-function formatElapsedCompact(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function formatTimeAgo(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
-}
-
 function getStatusLabel(activityInfo: SessionActivityInfo): string {
   const { status, label, seen } = activityInfo;
   if (label) return label;
   if (status === "idle" && !seen) return "Done";
   return STATUS_FALLBACK[status];
 }
-
-const ElapsedTime = memo(function ElapsedTime({
-  status,
-  stateChangedAt,
-}: {
-  status: SessionActivityStatus;
-  stateChangedAt: number;
-}) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">
-      {status === "idle"
-        ? formatTimeAgo(now - stateChangedAt)
-        : formatElapsedCompact(now - stateChangedAt)}
-    </span>
-  );
-});
 
 function AgentIcon({
   agentId,
@@ -103,10 +63,11 @@ function AgentIcon({
     return (
       <img
         src={src}
-        className={cn(className, "dark:[filter:invert(1)]")}
+        className={cn(className, "dark:filter-[invert(1)]")}
         onError={(e) => {
           (e.currentTarget as HTMLImageElement).style.display = "none";
         }}
+        alt="agent icon"
       />
     );
   }
@@ -364,7 +325,7 @@ export function AgentMonitor({
                   {selectedSession.execution_mode === "acp" && selectedSession.acp_session_id ? (
                     <input
                       ref={renameInputRef}
-                      className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%_-_3rem),transparent)]"
+                      className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
                       value={
                         renamingKey === selectedSession.session_key
                           ? renameValue
@@ -395,7 +356,7 @@ export function AgentMonitor({
                       onBlur={() => commitRename(selectedSession)}
                     />
                   ) : (
-                    <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%_-_3rem),transparent)]">
+                    <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]">
                       {selectedSession.session_name ??
                         selectedSession.task_name ??
                         selectedSession.branch_name ??
@@ -519,7 +480,7 @@ export function AgentMonitor({
             </div>
           ))}
 
-        {selectedSessionKey != null && openPanel?.panel === "working-files" && (
+        {selectedSessionKey != null && openPanel && openPanel?.panel === "working-files" && (
           <WorkingFilesPanel
             sessionKey={selectedSessionKey}
             files={sessionWorkingFiles.get(selectedSessionKey) ?? []}
@@ -527,7 +488,7 @@ export function AgentMonitor({
             onClose={() => setOpenPanel(null)}
           />
         )}
-        {selectedSessionKey != null && openPanel?.panel === "review-changes" && (
+        {selectedSessionKey != null && openPanel && openPanel?.panel === "review-changes" && (
           <ReviewChangesPanel
             sessionKey={selectedSessionKey}
             sessionChangedFiles={sessionChangedFiles.get(selectedSessionKey) ?? []}

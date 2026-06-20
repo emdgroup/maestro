@@ -36,10 +36,7 @@ export function useCommandAutocomplete({ commands }: Params) {
 
   // Returns true if the event was consumed
   const handleKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent,
-      onSelectCommand: (cmd: AvailableCommand) => void,
-    ): boolean => {
+    (e: React.KeyboardEvent, onSelectCommand: (cmd: AvailableCommand) => void): boolean => {
       if (!showCommands || filteredCommands.length === 0) return false;
       if (e.key === "ArrowDown") {
         e.preventDefault();

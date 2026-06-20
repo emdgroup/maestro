@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useRef,
-  useCallback,
-  useImperativeHandle,
-  useLayoutEffect,
-} from "react";
+import React, { useState, useRef, useCallback, useImperativeHandle, useLayoutEffect } from "react";
 import { flushSync } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
@@ -81,7 +75,10 @@ export function ComposeBar({
   const mentionAC = useMentionAutocomplete({ logId });
   const commandAC = useCommandAutocomplete({ commands });
   const attach = useAttachments({ promptCapabilities, logId });
-  const panelPos = usePanelPositioner(mentionAC.showMentions || commandAC.showCommands, containerRef);
+  const panelPos = usePanelPositioner(
+    mentionAC.showMentions || commandAC.showCommands,
+    containerRef,
+  );
 
   useLayoutEffect(() => {
     const sizer = sizerRef.current;
@@ -210,7 +207,11 @@ export function ComposeBar({
         if (fetched) {
           mentionBlocks.push({
             type: "resource",
-            resource: { uri, text: fetched.text, ...(fetched.mime ? { mimeType: fetched.mime } : {}) },
+            resource: {
+              uri,
+              text: fetched.text,
+              ...(fetched.mime ? { mimeType: fetched.mime } : {}),
+            },
           });
         } else {
           mentionBlocks.push({ type: "resource_link", name: mention.displayName, uri });

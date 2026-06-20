@@ -13,7 +13,13 @@ interface Props {
   onSelect: (cmd: AvailableCommand) => void;
 }
 
-export function CommandSuggestionsPanel({ commands, highlight, panelPos, buttonRefs, onSelect }: Props) {
+export function CommandSuggestionsPanel({
+  commands,
+  highlight,
+  panelPos,
+  buttonRefs,
+  onSelect,
+}: Props) {
   if (!panelPos) return null;
   const panelStyle = {
     left: panelPos.left,

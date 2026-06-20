@@ -36,7 +36,7 @@ export function ProjectListItem({
       disabled={isDisabled}
       variant="outline"
       className={cn(
-        "w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background",
+        "w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background shadow-md",
         locked && "opacity-50 cursor-not-allowed",
       )}
     >

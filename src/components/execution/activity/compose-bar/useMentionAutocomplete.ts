@@ -72,10 +72,7 @@ export function useMentionAutocomplete({ logId }: Params) {
 
   // Returns true if the event was consumed
   const handleKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent,
-      onSelectMention: (filePath: string) => void,
-    ): boolean => {
+    (e: React.KeyboardEvent, onSelectMention: (filePath: string) => void): boolean => {
       if (!showMentions || mentionSuggestions.length === 0) return false;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -84,9 +81,7 @@ export function useMentionAutocomplete({ logId }: Params) {
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMentionHighlight(
-          (i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length,
-        );
+        setMentionHighlight((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length);
         return true;
       }
       if (e.key === "Enter" || e.key === "Tab") {

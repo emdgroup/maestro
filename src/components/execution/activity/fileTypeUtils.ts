@@ -33,6 +33,7 @@ const MIME_MAP: Record<string, string> = {
   ".css": "text/css",
   ".sql": "text/x-sql",
   ".graphql": "text/x-graphql",
+  ".pdf": "application/pdf",
 };
 
 const IMAGE_MIME: Record<string, string> = {
@@ -70,6 +71,10 @@ export function mimeForExtension(path: string): string | undefined {
 
 export function isImageExtension(path: string): boolean {
   return IMAGE_EXTENSIONS.has(extOf(path));
+}
+
+export function isPdfExtension(path: string): boolean {
+  return extOf(path) === ".pdf";
 }
 
 export function langForExtension(path: string): string | undefined {

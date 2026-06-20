@@ -3,15 +3,36 @@ import { toast } from "sonner";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
-import { motion } from "framer-motion";
-import { Sparkles, Pause, Zap, Trash2, Archive, X, Paperclip, Upload } from "lucide-react";
+import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
+import {
+  Pause,
+  Zap,
+  Trash2,
+  Archive,
+  X,
+  Paperclip,
+  Upload,
+  GitBranch,
+  Shield,
+  ShieldOff,
+  Check,
+  GitPullRequest,
+} from "lucide-react";
 import { commands } from "@/types/bindings";
 import type { TaskStatus, TaskAttachment } from "@/types/bindings";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Badge } from "@/ui/badge";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/ui/tooltip";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/ui/dialog";
+import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { TooltipProvider } from "@/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogClose,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +43,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
@@ -41,9 +61,9 @@ import { useActiveSessionsQuery, useAgentCacheQuery } from "@/services/execution
 import { api } from "@/lib/tauri-utils";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
-import { AVAILABLE_MCP_SERVERS, AVAILABLE_SKILLS } from "@/store/configStore";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
-import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
+import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
+import { PRIORITY_COLORS, PRIORITIES } from "@/utils/constants/priority";
 
 // ---------------------------------------------------------------------------
 // EditableField — seamless contenteditable with hover/focus ring
@@ -298,73 +318,26 @@ function formatFileSize(bytes: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// DeleteConfirmButton — AlertDialog for delete confirmation
+// Constants
 // ---------------------------------------------------------------------------
 
-interface DeleteConfirmButtonProps {
-  isPending: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}
-
-function DeleteConfirmButton({
-  isPending,
-  open,
-  onOpenChange,
-  onConfirm,
-}: DeleteConfirmButtonProps) {
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="text-destructive hover:text-destructive"
-        disabled={isPending}
-        onClick={() => onOpenChange(true)}
-      >
-        <Trash2 className="size-4" />
-      </Button>
-      <AlertDialog open={open} onOpenChange={onOpenChange}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => onOpenChange(false)}>Keep Task</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                onOpenChange(false);
-                onConfirm();
-              }}
-            >
-              Delete Task
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Status constants
-// ---------------------------------------------------------------------------
+const PILL = "flex items-center gap-1.5 rounded-full border px-2.5 h-7 text-xs transition-colors";
+const POPOVER_ITEM =
+  "flex items-center gap-2 w-full px-2 py-1 text-xs rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
 
 const ALL_STATUSES: TaskStatus[] = ["Backlog", "Ready", "InProgress", "Review", "Done"];
 const SELECTABLE_STATUSES = new Set<TaskStatus>(["Backlog", "Ready"]);
 
 // ---------------------------------------------------------------------------
-// TaskDetailScreen — main component
+// TaskDetailScreen — modal overlay
 // ---------------------------------------------------------------------------
 
 interface TaskDetailScreenProps {
-  taskId: number;
+  taskId: number | null;
+  onReviewClick?: (taskId: number) => void;
 }
 
-export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) => {
+export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId, onReviewClick }) => {
   const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
@@ -372,7 +345,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const { data: tasks } = useTasksQuery(projectId);
   const task = (tasks ?? []).find((t) => t.id === taskId) ?? null;
 
-  const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
+  const { data: attachments = [] } = useTaskAttachmentsQuery(taskId ?? 0);
 
   const updateTask = useUpdateTask();
   const updateTaskSettings = useUpdateTaskSettingsMutation();
@@ -391,63 +364,64 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
 
+  const {
+    execute,
+    isExecuting,
+    dirtyDialogOpen,
+    dirtyModifiedCount,
+    dirtyUntrackedCount,
+    onDirtyChoice,
+    onDirtyCancel,
+  } = useExecuteTask(projectId, selectedProject?.path ?? "", connection);
+
   const [isInterruptOpen, setIsInterruptOpen] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [openPopover, setOpenPopover] = useState<string | null>(null);
 
   useShortcuts("taskDetail", {
     "task-back": () => {
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if (!task) return;
+      if (document.querySelector('[role="alertdialog"]')) return;
       setActiveTaskId(null);
     },
     "task-delete": () => {
       if (task !== null && task.status !== "Done") setDeleteOpen(true);
     },
     "task-save": () => {
+      if (!task) return;
       (document.activeElement as HTMLElement)?.blur();
     },
   });
 
-  if (task === null) {
-    return (
-      <div className="absolute inset-0 bg-background flex flex-col items-center justify-center gap-4">
-        <p className="text-muted-foreground">Task not found</p>
-        <Button variant="outline" onClick={() => setActiveTaskId(null)}>
-          Back to board
-        </Button>
-      </div>
-    );
-  }
-
-  const isEditable = task.status === "Backlog";
-  const showInterrupt = task.status === "InProgress";
-  const showExecution = task.status === "InProgress" || task.status === "Review";
-  const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
+  const isEditable = task?.status === "Backlog";
 
   function handleTitleSave(newTitle: string) {
-    if (!newTitle) return;
-    updateTask.mutate({ taskId: task!.id, updates: { title: newTitle } });
+    if (!newTitle || !task) return;
+    updateTask.mutate({ taskId: task.id, updates: { title: newTitle } });
   }
 
   function handleDescriptionSave(newDesc: string) {
-    updateTask.mutate({ taskId: task!.id, updates: { description: newDesc } });
+    if (!task) return;
+    updateTask.mutate({ taskId: task.id, updates: { description: newDesc } });
   }
 
   function handleStatusChange(newStatus: string | null) {
-    if (!newStatus) return;
-    if (newStatus === "Ready" && !task!.agent_id) {
+    if (!newStatus || !task) return;
+    if (newStatus === "Ready" && !task.agent_id) {
       setAgentError("Assign an agent before marking as Ready.");
       return;
     }
     setAgentError(null);
     updateTask.mutate({
-      taskId: task!.id,
+      taskId: task.id,
       updates: { status: newStatus as TaskStatus },
     });
   }
 
   async function handlePickFile() {
+    if (!task) return;
     try {
       const selected = await openFilePicker({ multiple: true });
       if (!selected) return;
@@ -456,7 +430,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
         const filename = filePath.slice(
           Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1,
         );
-        addAttachment.mutate({ taskId: task!.id, filename, filePath });
+        addAttachment.mutate({ taskId: task.id, filename, filePath });
       }
     } catch {
       toast.error("Failed to open file picker");
@@ -465,13 +439,13 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
 
   useEffect(() => {
     if (!isEditable || !task) return;
-    const taskId = task.id;
+    const currentTaskId = task.id;
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type === "drop") {
         setIsDragOver(false);
         for (const filePath of event.payload.paths) {
           const filename = filePath.split(/[/\\]/).pop() ?? filePath;
-          addAttachmentRef.current.mutate({ taskId, filename, filePath });
+          addAttachmentRef.current.mutate({ taskId: currentTaskId, filename, filePath });
         }
       }
       if (event.payload.type === "leave") {
@@ -481,7 +455,7 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
     return () => {
       unlisten.then((fn: () => void) => fn());
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditable, task?.id]);
 
   useEffect(() => {
@@ -524,594 +498,640 @@ export const TaskDetailScreen: React.FC<TaskDetailScreenProps> = ({ taskId }) =>
 
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditable, task?.id]);
+
+  const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
+
+  const modelOptions = agentCache?.config_options.find((o) => o.id === "model")?.options ?? [];
+  const modeOptions = agentCache?.config_options.find((o) => o.id === "mode")?.options ?? [];
 
   return (
     <TooltipProvider>
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: PAGE_TRANSITION_DURATION, ease: PAGE_TRANSITION_EASING }}
-        className="absolute inset-0 bg-background flex flex-col z-10"
+      <Dialog
+        open={taskId !== null}
+        onOpenChange={(open) => {
+          if (!open) setActiveTaskId(null);
+        }}
       >
-        {/* ---------------------------------------------------------------- */}
-        {/* Action bar                                                         */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="h-12 border-b border-border flex items-center px-4 gap-2 shrink-0">
-          <span className="text-sm max-w-xs truncate text-muted-foreground">{task.title}</span>
-          <div className="flex-1" />
+        <DialogContent
+          showCloseButton={false}
+          className="w-[90vw] max-w-[90vw] sm:w-[90vw] sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
+        >
+          {task === null ? (
+            <div className="flex flex-col items-center justify-center gap-4 py-16">
+              <p className="text-muted-foreground">Task not found</p>
+              <Button variant="outline" onClick={() => setActiveTaskId(null)}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              {/* ---------------------------------------------------------- */}
+              {/* Header: label + close                                         */}
+              {/* ---------------------------------------------------------- */}
+              <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b border-border shrink-0">
+                <DialogTitle className="flex-1 text-sm font-medium">
+                  {isEditable ? "Update task" : `Read only · ${task.status}`}
+                </DialogTitle>
+                <ShortcutHint shortcutId="task-back">
+                  <DialogClose render={<Button variant="ghost" size="icon" className="shrink-0" />}>
+                    <X className="size-4" />
+                    <span className="sr-only">Close</span>
+                  </DialogClose>
+                </ShortcutHint>
+              </div>
 
-          {/* Improve — stub, always disabled */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="ghost" size="icon" disabled>
-                  <Sparkles className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipContent>Improve task (coming soon)</TooltipContent>
-          </Tooltip>
+              {/* ---------------------------------------------------------- */}
+              {/* Scrollable body                                               */}
+              {/* ---------------------------------------------------------- */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-5 space-y-6 min-h-0">
+                {/* Title */}
+                <EditableField
+                  value={task.title}
+                  onSave={handleTitleSave}
+                  isEditable={isEditable}
+                  placeholder="Add a title..."
+                  className="text-xl font-semibold"
+                />
 
-          {/* Interrupt — InProgress only */}
-          {showInterrupt && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon" onClick={() => setIsInterruptOpen(true)}>
-                    <Pause className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>Interrupt agent</TooltipContent>
-            </Tooltip>
-          )}
+                {/* Description */}
+                <DescriptionField
+                  value={task.description ?? ""}
+                  onSave={handleDescriptionSave}
+                  isEditable={isEditable ?? false}
+                  placeholder="Add a description..."
+                  projectId={projectId ?? undefined}
+                />
 
-          {/* Execution — InProgress or Review */}
-          {showExecution && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
+                {/* Attachments */}
+                <div className="space-y-3">
+                  <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Paperclip className="size-3.5" />
+                    Attachments
+                  </h3>
+
+                  {attachments.length === 0 && !isEditable && (
+                    <p className="text-xs text-muted-foreground">No attachments</p>
+                  )}
+
+                  {attachments.length > 0 &&
+                    (() => {
+                      const imageAtts = attachments.filter((a: TaskAttachment) =>
+                        isImageAttachment(a.filename),
+                      );
+                      const fileAtts = attachments.filter(
+                        (a: TaskAttachment) => !isImageAttachment(a.filename),
+                      );
+                      return (
+                        <div className="space-y-2">
+                          {imageAtts.length > 0 && projectId && (
+                            <div className="flex flex-wrap gap-2">
+                              {imageAtts.map((att: TaskAttachment) => (
+                                <div key={att.id} className="relative group">
+                                  <AttachmentThumbnail attachment={att} projectId={projectId} />
+                                  {isEditable && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() =>
+                                        removeAttachment.mutate({
+                                          attachmentId: att.id,
+                                          taskId: att.task_id,
+                                        })
+                                      }
+                                      disabled={removeAttachment.isPending}
+                                    >
+                                      <X className="size-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {fileAtts.length > 0 && (
+                            <ul className="space-y-1">
+                              {fileAtts.map((att: TaskAttachment) => (
+                                <li
+                                  key={att.id}
+                                  className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                                >
+                                  <span className="flex-1 truncate text-foreground">
+                                    {att.filename}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground shrink-0">
+                                    {formatFileSize(att.file_size)}
+                                  </span>
+                                  {isEditable && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 shrink-0"
+                                      onClick={() =>
+                                        removeAttachment.mutate({
+                                          attachmentId: att.id,
+                                          taskId: att.task_id,
+                                        })
+                                      }
+                                      disabled={removeAttachment.isPending}
+                                    >
+                                      <X className="size-3" />
+                                    </Button>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                  {isEditable && (
+                    <div
+                      className={cn(
+                        "border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground transition-colors",
+                        isDragOver
+                          ? "border-ring bg-muted/20"
+                          : "border-border hover:border-muted-foreground/50",
+                      )}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(true);
+                      }}
+                      onDragLeave={() => setIsDragOver(false)}
+                    >
+                      <Upload className="mx-auto mb-2 size-5 text-muted-foreground/60" />
+                      <p>
+                        Drop files here or{" "}
+                        <button
+                          className="text-foreground underline underline-offset-2 hover:text-primary"
+                          onClick={handlePickFile}
+                        >
+                          browse
+                        </button>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Metadata */}
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <div className="flex flex-wrap gap-2">
+                    {/* Status */}
+                    <Popover
+                      open={openPopover === "status"}
+                      onOpenChange={(v) => setOpenPopover(v ? "status" : null)}
+                    >
+                      <PopoverTrigger
+                        className={cn(
+                          PILL,
+                          "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {task.status}
+                      </PopoverTrigger>
+                      <PopoverContent className="w-36 p-1" align="start">
+                        {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
+                          <button
+                            key={s}
+                            disabled={!SELECTABLE_STATUSES.has(s)}
+                            onClick={() => {
+                              handleStatusChange(s);
+                              setOpenPopover(null);
+                            }}
+                            className={POPOVER_ITEM}
+                          >
+                            {s}
+                            {task.status === s && <Check className="size-3 ml-auto" />}
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+
+                    {/* Priority */}
+                    {isEditable ? (
+                      <Popover
+                        open={openPopover === "priority"}
+                        onOpenChange={(v) => setOpenPopover(v ? "priority" : null)}
+                      >
+                        <PopoverTrigger
+                          className={cn(
+                            PILL,
+                            "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          <span
+                            className="size-2 rounded-full shrink-0"
+                            style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+                          />
+                          {task.priority}
+                        </PopoverTrigger>
+                        <PopoverContent className="w-36 p-1" align="start">
+                          {PRIORITIES.map((p) => (
+                            <button
+                              key={p}
+                              onClick={() => {
+                                updateTask.mutate({
+                                  taskId: task.id,
+                                  updates: { priority: p },
+                                });
+                                setOpenPopover(null);
+                              }}
+                              className={POPOVER_ITEM}
+                            >
+                              <span
+                                className="size-2 rounded-full shrink-0"
+                                style={{ backgroundColor: PRIORITY_COLORS[p] }}
+                              />
+                              {p}
+                              {task.priority === p && <Check className="size-3 ml-auto" />}
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <span
+                        className={cn(PILL, "border-border text-muted-foreground cursor-default")}
+                      >
+                        <span
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+                        />
+                        {task.priority}
+                      </span>
+                    )}
+
+                    {/* Agent — always static */}
+                    <span
+                      className={cn(PILL, "border-border text-muted-foreground cursor-default")}
+                    >
+                      {task.agent_id ?? "No agent"}
+                    </span>
+
+                    {/* Model */}
+                    {isEditable && modelOptions.length > 0 ? (
+                      <Popover
+                        open={openPopover === "model"}
+                        onOpenChange={(v) => setOpenPopover(v ? "model" : null)}
+                      >
+                        <PopoverTrigger
+                          className={cn(
+                            PILL,
+                            "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          {task.model_override ?? "Default model"}
+                        </PopoverTrigger>
+                        <PopoverContent className="w-44 p-1" align="start">
+                          <button
+                            onClick={() => {
+                              updateTaskSettings.mutate({
+                                taskId: task.id,
+                                config: { model_override: null },
+                              });
+                              setOpenPopover(null);
+                            }}
+                            className={POPOVER_ITEM}
+                          >
+                            Agent default
+                            {!task.model_override && <Check className="size-3 ml-auto" />}
+                          </button>
+                          {modelOptions.map((m) => (
+                            <button
+                              key={m.value}
+                              onClick={() => {
+                                updateTaskSettings.mutate({
+                                  taskId: task.id,
+                                  config: { model_override: m.value },
+                                });
+                                setOpenPopover(null);
+                              }}
+                              className={POPOVER_ITEM}
+                            >
+                              {m.name}
+                              {task.model_override === m.value && (
+                                <Check className="size-3 ml-auto" />
+                              )}
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    ) : (task.model_override ?? !isEditable) ? (
+                      <span
+                        className={cn(PILL, "border-border text-muted-foreground cursor-default")}
+                      >
+                        {task.model_override ?? "Default model"}
+                      </span>
+                    ) : null}
+
+                    {/* Permission Mode */}
+                    {isEditable && modeOptions.length > 0 ? (
+                      <Popover
+                        open={openPopover === "mode"}
+                        onOpenChange={(v) => setOpenPopover(v ? "mode" : null)}
+                      >
+                        <PopoverTrigger
+                          className={cn(
+                            PILL,
+                            "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          {task.permission_mode_override ?? "Default mode"}
+                        </PopoverTrigger>
+                        <PopoverContent className="w-44 p-1" align="start">
+                          <button
+                            onClick={() => {
+                              updateTaskSettings.mutate({
+                                taskId: task.id,
+                                config: { permission_mode_override: null },
+                              });
+                              setOpenPopover(null);
+                            }}
+                            className={POPOVER_ITEM}
+                          >
+                            Agent default
+                            {!task.permission_mode_override && <Check className="size-3 ml-auto" />}
+                          </button>
+                          {modeOptions.map((m) => (
+                            <button
+                              key={m.value}
+                              onClick={() => {
+                                updateTaskSettings.mutate({
+                                  taskId: task.id,
+                                  config: { permission_mode_override: m.value },
+                                });
+                                setOpenPopover(null);
+                              }}
+                              className={POPOVER_ITEM}
+                            >
+                              {m.name}
+                              {task.permission_mode_override === m.value && (
+                                <Check className="size-3 ml-auto" />
+                              )}
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    ) : (task.permission_mode_override ?? !isEditable) ? (
+                      <span
+                        className={cn(PILL, "border-border text-muted-foreground cursor-default")}
+                      >
+                        {task.permission_mode_override ?? "Default mode"}
+                      </span>
+                    ) : null}
+
+                    {/* Worktree toggle (git only) */}
+                    {isGitRepo &&
+                      (isEditable ? (
+                        <button
+                          onClick={() =>
+                            updateTask.mutate({
+                              taskId: task.id,
+                              updates: { isolated_worktree: !task.isolated_worktree },
+                            })
+                          }
+                          className={cn(
+                            PILL,
+                            task.isolated_worktree
+                              ? "border-accent/40 bg-accent/10 text-accent hover:bg-accent/15"
+                              : "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          <GitBranch className="size-3 shrink-0" />
+                          {task.isolated_worktree ? "Isolated" : "Shared"} worktree
+                        </button>
+                      ) : (
+                        <span
+                          className={cn(
+                            PILL,
+                            task.isolated_worktree
+                              ? "border-accent/40 bg-accent/10 text-accent"
+                              : "border-border text-muted-foreground",
+                            "cursor-default",
+                          )}
+                        >
+                          <GitBranch className="size-3 shrink-0" />
+                          {task.isolated_worktree ? "Isolated" : "Shared"} worktree
+                        </span>
+                      ))}
+
+                    {/* Auto-approve toggle */}
+                    {isEditable ? (
+                      <button
+                        onClick={() =>
+                          updateTask.mutate({
+                            taskId: task.id,
+                            updates: { auto_approve: !task.auto_approve },
+                          })
+                        }
+                        className={cn(
+                          PILL,
+                          task.auto_approve
+                            ? "border-accent/40 bg-accent/10 text-accent hover:bg-accent/15"
+                            : "border-border bg-transparent text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {task.auto_approve ? (
+                          <ShieldOff className="size-3 shrink-0" />
+                        ) : (
+                          <Shield className="size-3 shrink-0" />
+                        )}
+                        Auto-approve
+                      </button>
+                    ) : (
+                      <span
+                        className={cn(
+                          PILL,
+                          task.auto_approve
+                            ? "border-accent/40 bg-accent/10 text-accent"
+                            : "border-border text-muted-foreground",
+                          "cursor-default",
+                        )}
+                      >
+                        <Shield className="size-3 shrink-0" />
+                        Auto-approve {task.auto_approve ? "on" : "off"}
+                      </span>
+                    )}
+
+                    {/* Base Branch (git only, read-only) */}
+                    {isGitRepo && task.base_branch && (
+                      <span
+                        className={cn(
+                          PILL,
+                          "border-border text-muted-foreground font-mono cursor-default",
+                        )}
+                      >
+                        <GitBranch className="size-3 shrink-0" />
+                        {task.base_branch}
+                      </span>
+                    )}
+                  </div>
+
+                  {agentError && <p className="text-xs text-destructive">{agentError}</p>}
+
+                  {/* Labels */}
+                  {task.labels && task.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {task.labels.map((label) => (
+                        <Badge key={label} variant="secondary" className="text-xs">
+                          {label}
+                          {isEditable && (
+                            <button
+                              className="ml-1 hover:text-destructive leading-none"
+                              onClick={() =>
+                                updateTask.mutate({
+                                  taskId: task.id,
+                                  updates: { labels: task.labels.filter((l) => l !== label) },
+                                })
+                              }
+                            >
+                              ×
+                            </button>
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ---------------------------------------------------------- */}
+              {/* Footer: actions by status                                     */}
+              {/* ---------------------------------------------------------- */}
+              <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
+                <div className="flex-1" />
+
+                {/* Ready: Execute */}
+                {task.status === "Ready" && (
                   <Button
                     variant="ghost"
-                    size="icon"
-                    onClick={() => navigate({ agentId: String(task.id) })}
+                    size="sm"
+                    onClick={() => void execute(task)}
+                    disabled={isExecuting}
                   >
                     <Zap className="size-4" />
+                    {isExecuting ? "Executing..." : "Execute"}
                   </Button>
-                }
-              />
-              <TooltipContent>View agent session</TooltipContent>
-            </Tooltip>
-          )}
+                )}
 
-          {/* Delete (status !== Done) — DeleteConfirmButton manages its own AlertDialog */}
-          {task.status !== "Done" && (
-            <Tooltip>
-              <TooltipTrigger render={<span className="inline-flex items-center" />}>
-                <DeleteConfirmButton
-                  isPending={isPendingDeleteOrArchive}
-                  open={deleteOpen}
-                  onOpenChange={setDeleteOpen}
-                  onConfirm={() => {
-                    deleteTask.mutate(task.id, {
-                      onSuccess: () => setActiveTaskId(null),
-                    });
-                  }}
-                />
-              </TooltipTrigger>
-              <TooltipContent>Delete task</TooltipContent>
-            </Tooltip>
-          )}
+                {/* InProgress: Interrupt + View session */}
+                {task.status === "InProgress" && (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setIsInterruptOpen(true)}>
+                      <Pause className="size-4" />
+                      Interrupt
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate({ agentId: String(task.id) })}
+                    >
+                      <Zap className="size-4" />
+                      View session
+                    </Button>
+                  </>
+                )}
 
-          {/* Archive (status === Done) */}
-          {task.status === "Done" && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
+                {/* Review: Review + View session */}
+                {task.status === "Review" && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onReviewClick?.(task.id);
+                        setActiveTaskId(null);
+                      }}
+                    >
+                      <GitPullRequest className="size-4" />
+                      Review
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate({ agentId: String(task.id) })}
+                    >
+                      <Zap className="size-4" />
+                      View session
+                    </Button>
+                  </>
+                )}
+
+                {/* Done: Archive */}
+                {task.status === "Done" && (
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground"
+                    size="sm"
                     disabled={isPendingDeleteOrArchive}
                     onClick={() =>
-                      archiveTask.mutate(task.id, {
-                        onSuccess: () => setActiveTaskId(null),
-                      })
+                      archiveTask.mutate(task.id, { onSuccess: () => setActiveTaskId(null) })
                     }
                   >
                     <Archive className="size-4" />
+                    Archive
                   </Button>
-                }
-              />
-              <TooltipContent>Archive task</TooltipContent>
-            </Tooltip>
-          )}
+                )}
 
-          {/* Close */}
-          <ShortcutHint shortcutId="task-back">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon" onClick={() => setActiveTaskId(null)}>
-                    <X className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>Back to board</TooltipContent>
-            </Tooltip>
-          </ShortcutHint>
-        </div>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Locked banner                                                       */}
-        {/* ---------------------------------------------------------------- */}
-        {!isEditable && (
-          <div className="bg-muted/30 py-1 px-6 text-xs text-muted-foreground border-b border-border">
-            Read-only — task is {task.status}
-          </div>
-        )}
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Content area                                                        */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Main content */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-            {/* Title */}
-            <EditableField
-              value={task.title}
-              onSave={handleTitleSave}
-              isEditable={isEditable}
-              placeholder="Add a title..."
-              className="text-xl font-semibold"
-            />
-
-            {/* Description */}
-            <DescriptionField
-              value={task.description ?? ""}
-              onSave={handleDescriptionSave}
-              isEditable={isEditable}
-              placeholder="Add a description..."
-              projectId={projectId ?? undefined}
-            />
-
-            {/* Attachments */}
-            <div className="space-y-3">
-              <h3 className="flex items-center gap-2 text-sm font-semibold">
-                <Paperclip className="size-4" />
-                Attachments
-              </h3>
-
-              {attachments.length === 0 && (
-                <p className="text-xs text-muted-foreground">No attachments</p>
-              )}
-
-              {attachments.length > 0 &&
-                (() => {
-                  const imageAtts = attachments.filter((a: TaskAttachment) =>
-                    isImageAttachment(a.filename),
-                  );
-                  const fileAtts = attachments.filter(
-                    (a: TaskAttachment) => !isImageAttachment(a.filename),
-                  );
-                  return (
-                    <div className="space-y-2">
-                      {imageAtts.length > 0 && projectId && (
-                        <div className="flex flex-wrap gap-2">
-                          {imageAtts.map((att: TaskAttachment) => (
-                            <div key={att.id} className="relative group">
-                              <AttachmentThumbnail attachment={att} projectId={projectId} />
-                              {isEditable && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() =>
-                                    removeAttachment.mutate({
-                                      attachmentId: att.id,
-                                      taskId: att.task_id,
-                                    })
-                                  }
-                                  disabled={removeAttachment.isPending}
-                                >
-                                  <X className="size-3" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {fileAtts.length > 0 && (
-                        <ul className="space-y-1">
-                          {fileAtts.map((att: TaskAttachment) => (
-                            <li
-                              key={att.id}
-                              className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
-                            >
-                              <span className="flex-1 truncate text-foreground">
-                                {att.filename}
-                              </span>
-                              <span className="text-xs text-muted-foreground shrink-0">
-                                {formatFileSize(att.file_size)}
-                              </span>
-                              {isEditable && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0"
-                                  onClick={() =>
-                                    removeAttachment.mutate({
-                                      attachmentId: att.id,
-                                      taskId: att.task_id,
-                                    })
-                                  }
-                                  disabled={removeAttachment.isPending}
-                                >
-                                  <X className="size-3" />
-                                </Button>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  );
-                })()}
-
-              {/* Dropzone — Backlog only */}
-              {isEditable && (
-                <div
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground transition-colors",
-                    isDragOver
-                      ? "border-ring bg-muted/20"
-                      : "border-border hover:border-muted-foreground/50",
-                  )}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(true);
-                  }}
-                  onDragLeave={() => setIsDragOver(false)}
-                >
-                  <Upload className="mx-auto mb-2 size-5 text-muted-foreground/60" />
-                  <p>
-                    Drop files here or{" "}
-                    <button
-                      className="text-foreground underline underline-offset-2 hover:text-primary"
-                      onClick={handlePickFile}
+                {/* Non-Done: Delete task (explicit, right) */}
+                {task.status !== "Done" && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={isPendingDeleteOrArchive}
+                      onClick={() => setDeleteOpen(true)}
                     >
-                      browse
-                    </button>
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Right sidebar                                                     */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="w-60 flex-shrink-0 border-l border-border overflow-y-auto custom-scrollbar p-4 space-y-4 bg-card">
-            {/* Status */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Status</label>
-              <Select value={task.status} onValueChange={handleStatusChange}>
-                <SelectTrigger size="sm" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
-                    <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {agentError && <p className="text-xs text-destructive mt-1">{agentError}</p>}
-            </div>
-
-            {/* Priority */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Priority</label>
-              {isEditable ? (
-                <Select
-                  value={task.priority}
-                  onValueChange={(val) => {
-                    if (!val) return;
-                    updateTask.mutate({
-                      taskId: task.id,
-                      // val is string here matching TaskPriority values
-                      updates: { priority: val as typeof task.priority },
-                    });
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="None">None</SelectItem>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Badge variant="secondary">{task.priority ?? "None"}</Badge>
-              )}
-            </div>
-
-            {/* Agent */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Agent</label>
-              <p className="text-sm text-muted-foreground truncate">
-                {task.agent_id ?? "Not assigned"}
-              </p>
-            </div>
-
-            {/* Model override */}
-            {(() => {
-              const modelOptions =
-                agentCache?.config_options.find((o) => o.id === "model")?.options ?? [];
-              return (
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-medium">Model</label>
-                  {isEditable && modelOptions.length > 0 ? (
-                    <Select
-                      value={task.model_override ?? ""}
-                      onValueChange={(v) =>
-                        updateTaskSettings.mutate({
-                          taskId: task.id,
-                          config: { model_override: v === "" ? null : v },
-                        })
-                      }
-                    >
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue placeholder="Agent default" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Agent default</SelectItem>
-                        {modelOptions.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground truncate">
-                      {task.model_override ?? "Agent default"}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Permission mode override */}
-            {(() => {
-              const modeOptions =
-                agentCache?.config_options.find((o) => o.id === "mode")?.options ?? [];
-              return (
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-medium">
-                    Permission Mode
-                  </label>
-                  {isEditable && modeOptions.length > 0 ? (
-                    <Select
-                      value={task.permission_mode_override ?? ""}
-                      onValueChange={(v) =>
-                        updateTaskSettings.mutate({
-                          taskId: task.id,
-                          config: { permission_mode_override: v === "" ? null : v },
-                        })
-                      }
-                    >
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue placeholder="Agent default" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Agent default</SelectItem>
-                        {modeOptions.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground truncate">
-                      {task.permission_mode_override ?? "Agent default"}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* MCP Allowlist */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">MCP Servers</label>
-              {isEditable ? (
-                <div className="flex flex-col gap-1">
-                  {AVAILABLE_MCP_SERVERS.map((srv) => {
-                    const enabled = task.mcp_allowlist?.includes(srv) ?? false;
-                    return (
-                      <label key={srv} className="flex items-center gap-2 text-xs cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(e) => {
-                            const current = task.mcp_allowlist ?? [];
-                            const next = e.target.checked
-                              ? [...current, srv]
-                              : current.filter((s) => s !== srv);
-                            updateTaskSettings.mutate({
-                              taskId: task.id,
-                              config: { mcp_allowlist: next.length > 0 ? next : null },
-                            });
-                          }}
-                          className="accent-primary"
-                        />
-                        <span className="text-foreground font-mono">{srv}</span>
-                      </label>
-                    );
-                  })}
-                  {!task.mcp_allowlist && (
-                    <p className="text-xs text-muted-foreground">All allowed (project default)</p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {task.mcp_allowlist?.join(", ") ?? "All (project default)"}
-                </p>
-              )}
-            </div>
-
-            {/* Skills Override */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Skills</label>
-              {isEditable ? (
-                <div className="flex flex-col gap-1">
-                  {AVAILABLE_SKILLS.map((skill) => {
-                    const enabled = task.skills_override?.includes(skill) ?? false;
-                    return (
-                      <label key={skill} className="flex items-center gap-2 text-xs cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(e) => {
-                            const current = task.skills_override ?? [];
-                            const next = e.target.checked
-                              ? [...current, skill]
-                              : current.filter((s) => s !== skill);
-                            updateTaskSettings.mutate({
-                              taskId: task.id,
-                              config: { skills_override: next.length > 0 ? next : null },
-                            });
-                          }}
-                          className="accent-primary"
-                        />
-                        <span className="text-foreground font-mono">{skill}</span>
-                      </label>
-                    );
-                  })}
-                  {!task.skills_override && (
-                    <p className="text-xs text-muted-foreground">
-                      None overridden (project default)
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {task.skills_override?.join(", ") ?? "None (project default)"}
-                </p>
-              )}
-            </div>
-
-            {/* Base Branch */}
-            {isGitRepo && (
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground font-medium">Base Branch</label>
-                <p className="text-sm text-muted-foreground font-mono truncate">
-                  {task.base_branch ?? "None"}
-                </p>
-              </div>
-            )}
-
-            {/* Labels */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Labels</label>
-              {task.labels && task.labels.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {task.labels.map((label) => (
-                    <Badge key={label} variant="secondary" className="text-xs">
-                      {label}
-                      {isEditable && (
-                        <button
-                          className="ml-1 hover:text-destructive leading-none"
-                          onClick={() => {
-                            const newLabels = (task.labels ?? []).filter((l) => l !== label);
-                            updateTask.mutate({
-                              taskId: task.id,
-                              updates: { labels: newLabels },
-                            });
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">None</p>
-              )}
-            </div>
-
-            {/* Auto-approve */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground font-medium">Auto-approve</label>
-              {isEditable ? (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={task.auto_approve}
-                    onChange={(e) =>
-                      updateTask.mutate({
-                        taskId: task.id,
-                        updates: { auto_approve: e.target.checked },
-                      })
-                    }
-                    className="size-4 rounded border border-input"
-                  />
-                  <span className="text-sm">{task.auto_approve ? "On" : "Off"}</span>
-                </label>
-              ) : (
-                <Badge variant={task.auto_approve ? "default" : "secondary"}>
-                  {task.auto_approve ? "On" : "Off"}
-                </Badge>
-              )}
-            </div>
-
-            {/* Worktree */}
-            {isGitRepo && (
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground font-medium">Worktree</label>
-                {isEditable ? (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={task.isolated_worktree}
-                      onChange={(e) =>
-                        updateTask.mutate({
-                          taskId: task.id,
-                          updates: { isolated_worktree: e.target.checked },
-                        })
-                      }
-                      className="size-4 rounded border border-input"
-                    />
-                    <span className="text-sm">
-                      {task.isolated_worktree ? "Isolated" : "Shared"}
-                    </span>
-                  </label>
-                ) : (
-                  <Badge variant="secondary">
-                    {task.isolated_worktree ? "Isolated" : "Shared"}
-                  </Badge>
+                      <Trash2 className="size-4" />
+                      Delete task
+                    </Button>
+                    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+                          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel onClick={() => setDeleteOpen(false)}>
+                            Keep Task
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => {
+                              setDeleteOpen(false);
+                              deleteTask.mutate(task.id, {
+                                onSuccess: () => setActiveTaskId(null),
+                              });
+                            }}
+                          >
+                            Delete Task
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
                 )}
               </div>
-            )}
-          </div>
-        </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-        {/* Interrupt modal */}
+      {task && (
         <InterruptModal
           open={isInterruptOpen}
           onClose={() => setIsInterruptOpen(false)}
-          taskId={taskId}
+          taskId={task.id}
         />
-      </motion.div>
+      )}
+      <DirtyWorktreeDialog
+        open={dirtyDialogOpen}
+        modifiedCount={dirtyModifiedCount}
+        untrackedCount={dirtyUntrackedCount}
+        onChoice={onDirtyChoice}
+        onCancel={onDirtyCancel}
+      />
     </TooltipProvider>
   );
 };

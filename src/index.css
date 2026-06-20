@@ -1,5 +1,6 @@
 /* Google Fonts */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+@import "tailwindcss" source("../src");
 
 /* Bundled monospace font — includes Nerd Font symbols for terminal rendering */
 @font-face {
@@ -17,8 +18,6 @@
   font-style: normal;
   font-display: block;
 }
-
-@import "tailwindcss" source("../src");
 
 @variant dark (&:where(.dark, .dark *));
 
@@ -402,6 +401,24 @@
 
 @utility animate-glow-purple {
   animation: glow-ring-purple 2.5s ease-in-out infinite;
+}
+
+@keyframes glow-ring-warning {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 color-mix(in oklch, var(--warning) 20%, transparent),
+      0 0 16px color-mix(in oklch, var(--warning) 0%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px color-mix(in oklch, var(--warning) 30%, transparent),
+      0 0 24px color-mix(in oklch, var(--warning) 20%, transparent);
+  }
+}
+
+@utility animate-glow-warning {
+  animation: glow-ring-warning 2s ease-in-out infinite;
 }
 
 @keyframes rail-comet {

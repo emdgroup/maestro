@@ -113,7 +113,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   // Update theme in-place when color mode changes — no PTY detach/reattach needed.

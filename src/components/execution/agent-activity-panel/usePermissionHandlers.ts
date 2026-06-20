@@ -1,20 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
-import {
-  isPlanPermission,
-  extractBodyText,
-} from "../activity/PermissionPrompt";
-import {
-  isRejectOption,
-  getOptionName,
-  formatFieldAnswer,
-} from "../activity/utils";
+import { isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import { isRejectOption, getOptionName, formatFieldAnswer } from "../activity/utils";
 import { parseElicitationFields } from "../activity/ElicitationPrompt";
-import type {
-  PermissionResponseItem,
-  ElicitationSummaryItem,
-} from "../activity/types";
+import type { PermissionResponseItem, ElicitationSummaryItem } from "../activity/types";
 
 type PendingPermission = { requestId: string; payload: Record<string, unknown> };
 type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
@@ -74,9 +64,8 @@ export function usePermissionHandlers(
             { item: responseItem, insertAt, requestId },
           ]);
         }
-      } else {
-        setShowPlanOverlay(false);
       }
+      setShowPlanOverlay(false);
       setPendingPermission(null);
       setActivity(sessionKey, "thinking");
     },

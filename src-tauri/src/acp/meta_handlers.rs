@@ -383,6 +383,14 @@ fn is_image_extension(path: &str) -> bool {
     )
 }
 
+fn is_pdf_extension(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ExternalFileRequest {
@@ -440,6 +448,29 @@ pub async fn prepare_external_attachments(
                 "data": data,
                 "mimeType": mime,
                 "uri": uri,
+            })
+        } else if is_pdf_extension(&file.path) {
+            const MAX_PDF_BYTES: u64 = 25 * 1024 * 1024;
+            let bytes = tokio::fs::read(local_path)
+                .await
+                .map_err(|e| format!("Cannot read '{}': {e}", file.path))?;
+            let size = bytes.len() as u64;
+            if size > MAX_PDF_BYTES {
+                return Err(format!(
+                    "PDF '{}' too large ({} MB, max 25 MB)",
+                    display_name,
+                    size / 1_048_576
+                ));
+            }
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            serde_json::json!({
+                "type": "resource",
+                "resource": {
+                    "uri": format!("file://{}", file.path),
+                    "blob": data,
+                    "mimeType": "application/pdf",
+                },
             })
         } else {
             let mime = mime_for_extension(&file.path)

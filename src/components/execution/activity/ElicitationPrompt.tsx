@@ -118,9 +118,7 @@ export function ElicitationPrompt({
 
   const singleSelectOptions = currentField
     ? isSingleSelect(currentField)
-      ? (currentField.oneOf ??
-        currentField.enumValues?.map((v) => ({ const: v, title: v })) ??
-        [])
+      ? (currentField.oneOf ?? currentField.enumValues?.map((v) => ({ const: v, title: v })) ?? [])
       : []
     : [];
 
@@ -250,9 +248,9 @@ export function ElicitationPrompt({
                 {isMultiSelect(currentField) && (
                   <div className="space-y-1">
                     {multiSelectOptions.map((opt) => {
-                      const selected = (
-                        (values[currentField.key] as string[]) ?? []
-                      ).includes(opt.const);
+                      const selected = ((values[currentField.key] as string[]) ?? []).includes(
+                        opt.const,
+                      );
                       return (
                         <label
                           key={opt.const}
@@ -271,9 +269,7 @@ export function ElicitationPrompt({
                               const cur = (values[currentField.key] as string[]) ?? [];
                               set(
                                 currentField.key,
-                                selected
-                                  ? cur.filter((x) => x !== opt.const)
-                                  : [...cur, opt.const],
+                                selected ? cur.filter((x) => x !== opt.const) : [...cur, opt.const],
                               );
                             }}
                           />
@@ -283,9 +279,7 @@ export function ElicitationPrompt({
                               selected ? "border-accent bg-accent" : "border-muted-foreground/40",
                             )}
                           >
-                            {selected && (
-                              <Check className="w-2.5 h-2.5 text-primary-foreground" />
-                            )}
+                            {selected && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
                           </div>
                           {opt.title}
                         </label>
@@ -414,12 +408,10 @@ export function parseElicitationFields(payload: Record<string, unknown>): {
   for (const [key, prop] of Object.entries(properties)) {
     const type = (prop.type as ElicitationField["type"]) ?? "string";
     const title = prop.title as string | undefined;
-    const description = prop.description as string | undefined ?? message;
+    const description = (prop.description as string | undefined) ?? message;
     const hasOptions = !!(prop.oneOf || prop.enum || prop.items);
     const isOtherField =
-      (key === "customAnswer" || title === "Other") &&
-      type === "string" &&
-      !hasOptions;
+      (key === "customAnswer" || title === "Other") && type === "string" && !hasOptions;
     if (isOtherField) {
       otherField = { key, title, description };
     } else {

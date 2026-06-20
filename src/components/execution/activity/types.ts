@@ -164,12 +164,7 @@ export type ToolCallItem = {
   toolCallId: string;
   title: string;
   kind: string;
-  status:
-    | "pending"
-    | "in_progress"
-    | "completed"
-    | "error"
-    | "interrupted";
+  status: "pending" | "in_progress" | "completed" | "error" | "interrupted";
   content: ToolCallContent[];
   locations: ToolCallLocation[];
   rawInput?: Record<string, unknown>;

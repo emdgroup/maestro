@@ -29,10 +29,6 @@ export const KanbanView: React.FC = () => {
   const { data: tasks } = useTasksQuery(projectId);
   const taskList = tasks ?? EMPTY_TASKS;
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
-  const worktreeTaskIds = useMemo(
-    () => new Set((worktrees ?? []).filter((w) => w.task_id != null).map((w) => w.task_id!)),
-    [worktrees],
-  );
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
@@ -73,10 +69,6 @@ export const KanbanView: React.FC = () => {
 
   const handleReviewClose = useCallback(() => setReviewPanelTaskId(null), []);
   const handleReviewClick = useCallback((taskId: number) => setReviewPanelTaskId(taskId), []);
-
-  if (activeTaskId !== null) {
-    return <TaskDetailScreen taskId={activeTaskId} />;
-  }
 
   if (reviewPanelTaskId != null && reviewTask) {
     return (
@@ -198,6 +190,7 @@ export const KanbanView: React.FC = () => {
           </ShortcutHint>
         </div>
       </div>
+      <TaskDetailScreen taskId={activeTaskId} onReviewClick={handleReviewClick} />
       {projectId !== null && (
         <>
           <CreateTaskModal
@@ -213,11 +206,7 @@ export const KanbanView: React.FC = () => {
         </>
       )}
       <div className="flex-1 min-h-0">
-        <BoardView
-          tasks={filteredTasks}
-          worktreeTaskIds={worktreeTaskIds}
-          onReviewClick={handleReviewClick}
-        />
+        <BoardView tasks={filteredTasks} onReviewClick={handleReviewClick} />
       </div>
     </div>
   );

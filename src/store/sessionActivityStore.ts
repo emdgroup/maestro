@@ -2,7 +2,13 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 
-export type SessionActivityStatus = "spawning" | "thinking" | "acting" | "awaiting_input" | "idle";
+export type SessionActivityStatus =
+  | "spawning"
+  | "thinking"
+  | "acting"
+  | "awaiting_input"
+  | "idle"
+  | "stale";
 
 export interface SessionActivityInfo {
   status: SessionActivityStatus;

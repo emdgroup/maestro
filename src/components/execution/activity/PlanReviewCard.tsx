@@ -8,7 +8,7 @@ interface PlanReviewCardProps {
 }
 
 export function PlanReviewCard({ item, onOpen }: PlanReviewCardProps) {
-  const {status, title} = item;
+  const { status, title } = item;
   const isAccepted = status === "completed";
   if (item.status === "pending") {
     return (
@@ -22,9 +22,7 @@ export function PlanReviewCard({ item, onOpen }: PlanReviewCardProps) {
           <Route className="w-4 h-4 text-white/80 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-semibold text-white/95">Plan Ready for Review</div>
-            {title && (
-              <div className="text-[10px] text-white/60 mt-0.5 truncate">{title}</div>
-            )}
+            {title && <div className="text-[10px] text-white/60 mt-0.5 truncate">{title}</div>}
           </div>
           <span className="text-[11px] font-semibold text-white/90 bg-white/15 px-2.5 py-1 rounded-md shrink-0">
             Review Plan
@@ -60,9 +58,7 @@ export function PlanReviewCard({ item, onOpen }: PlanReviewCardProps) {
             !isAccepted && "bg-destructive/15 text-destructive",
           )}
         >
-          {isAccepted
-            ? "Accepted"
-            :  "Rejected"}
+          {isAccepted ? "Accepted" : "Rejected"}
         </span>
       </div>
     </div>

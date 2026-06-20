@@ -155,8 +155,9 @@ function processEvent(
       newMap.set(payload.toolCallId, tc);
 
       // AskUserQuestion is handled by the elicitation panel — suppress the generic tool card
-      const ccMeta = (raw._meta as Record<string, unknown>)
-        ?.claudeCode as Record<string, unknown> | undefined;
+      const ccMeta = (raw._meta as Record<string, unknown>)?.claudeCode as
+        | Record<string, unknown>
+        | undefined;
       if ((ccMeta?.toolName as string | undefined) === "AskUserQuestion") {
         return { ...newState, items, toolCallMap: newMap };
       }

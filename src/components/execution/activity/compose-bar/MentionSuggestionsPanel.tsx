@@ -13,7 +13,13 @@ interface Props {
   onSelect: (path: string) => void;
 }
 
-export function MentionSuggestionsPanel({ suggestions, highlight, panelPos, buttonRefs, onSelect }: Props) {
+export function MentionSuggestionsPanel({
+  suggestions,
+  highlight,
+  panelPos,
+  buttonRefs,
+  onSelect,
+}: Props) {
   if (!panelPos || suggestions.length === 0) return null;
   const panelStyle = {
     left: panelPos.left,

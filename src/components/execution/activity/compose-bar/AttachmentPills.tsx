@@ -13,7 +13,12 @@ interface Props {
   onRemoveMention: (id: string, filePath: string) => void;
 }
 
-export function AttachmentPills({ attachments, mentions, onRemoveAttachment, onRemoveMention }: Props) {
+export function AttachmentPills({
+  attachments,
+  mentions,
+  onRemoveAttachment,
+  onRemoveMention,
+}: Props) {
   if (attachments.length === 0 && mentions.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 px-3.5 pt-2.5">
@@ -38,7 +43,13 @@ export function AttachmentPills({ attachments, mentions, onRemoveAttachment, onR
             className="opacity-40 hover:opacity-100 transition-opacity"
             onClick={() => onRemoveAttachment(a.id)}
           >
-            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              className="w-2.5 h-2.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d={X_PATH} />
             </svg>
           </button>
@@ -56,7 +67,13 @@ export function AttachmentPills({ attachments, mentions, onRemoveAttachment, onR
             className="opacity-40 hover:opacity-100 transition-opacity"
             onClick={() => onRemoveMention(m.id, m.filePath)}
           >
-            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              className="w-2.5 h-2.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d={X_PATH} />
             </svg>
           </button>
