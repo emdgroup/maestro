@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/m306213/maestro/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License" /></a>
+  <a href="https://github.com/m306213/maestro/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platform" />
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-orange" alt="Tauri" />
 </p>
@@ -169,4 +169,4 @@ See `CLAUDE.md` for development conventions and AI agent guidelines.
 
 ## License
 
-GPL-3.0-only
+Apache-2.0
