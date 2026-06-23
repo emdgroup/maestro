@@ -126,7 +126,7 @@ function FooterCTAs({
   onArchive,
 }: FooterCTAsProps) {
   const base =
-    "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-1 rounded-[5px] border border-border bg-primary-foreground text-primary hover:bg-primary/60 disabled:opacity-50";
+    "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
 
   if (task.status === "Ready") {
     return (
@@ -170,7 +170,7 @@ function FooterCTAs({
             e.stopPropagation();
             onStop();
           }}
-          className={cn(base, "bg-muted text-muted-foreground")}
+          className={cn(base, "bg-foreground text-background")}
         >
           <Square className="w-2.5 h-2.5 fill-current" />
           Stop
@@ -216,7 +216,7 @@ function FooterCTAs({
             e.stopPropagation();
             onArchive();
           }}
-          className={cn(base, "bg-secondary text-secondary-foreground")}
+          className={cn(base, "bg-foreground text-background")}
         >
           <Archive className="w-2.5 h-2.5" />
           Archive

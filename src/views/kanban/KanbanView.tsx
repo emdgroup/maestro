@@ -4,7 +4,7 @@ import { Plus, Archive } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
-import { TaskDetailScreen } from "@/views/kanban/task-detail/TaskDetailScreen";
+import { TaskDetailModal } from "@/components/kanban/task-detail-modal/TaskDetailModal.tsx";
 import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
 import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
@@ -190,7 +190,7 @@ export const KanbanView: React.FC = () => {
           </ShortcutHint>
         </div>
       </div>
-      <TaskDetailScreen taskId={activeTaskId} onReviewClick={handleReviewClick} />
+      <TaskDetailModal taskId={activeTaskId} onReviewClick={handleReviewClick} />
       {projectId !== null && (
         <>
           <CreateTaskModal
