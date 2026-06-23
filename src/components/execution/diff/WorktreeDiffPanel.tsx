@@ -3,12 +3,14 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { CheckCheck } from "lucide-react";
 import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
 import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
 import { DiffViewer } from "./DiffViewer";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";
 import { ScopeSelector } from "./ScopeSelector";
 import type { DiffScope } from "./ScopeSelector";
 import { useStagingState } from "../worktree-card/useStagingState";
+import { DiffStateProvider } from "./DiffStateContext";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import {
   useWorktreeDiffQuery,
@@ -332,11 +334,6 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     });
   }
 
-  const handleTreeFileSelect = (fileName: string) => {
-    const idx = diffFiles.findIndex((f) => f.fileName === fileName);
-    setSelectedFileIndex(idx >= 0 ? idx : null);
-  };
-
   const selectedFile = selectedFileIndex !== null ? (diffFiles[selectedFileIndex] ?? null) : null;
   const forceUnified = selectedFile?.status === "A" || selectedFile?.status === "D";
   const effectiveDiffViewMode = forceUnified ? DiffModeEnum.Unified : diffViewMode;
@@ -387,138 +384,142 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         onClose={onClose}
       />
 
-      <div className="flex flex-1 min-h-0">
-        <DiffFilePanel
-          mode="worktree"
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          modifiedCount={diffFiles.length}
-          untrackedCount={untrackedFiles.length}
-          fileListMode={fileListMode}
-          diffLoading={diffLoading}
-          diffFiles={diffFiles}
-          filteredDiffFiles={filteredDiffFiles}
-          untrackedFiles={untrackedFiles}
-          selectedFileIndex={selectedFileIndex}
-          onFileIndexChange={setSelectedFileIndex}
-          stagedFiles={isUncommittedScope ? stagedFiles : new Set<string>()}
-          getFileCheckState={isUncommittedScope ? getFileCheckState : noopGetFileCheckState}
-          onFileToggle={isUncommittedScope ? handleFileToggle : noopFileToggle}
-          onFolderToggle={isUncommittedScope ? handleFolderToggle : noopFolderToggle}
-          onToggleUntrackedFile={isUncommittedScope ? handleToggleUntrackedFile : noopFileToggle}
-          onTreeFileSelect={handleTreeFileSelect}
-          hasAnyStaged={isUncommittedScope ? hasAnyStaged : false}
-          commitMessage={isUncommittedScope ? commitMessage : ""}
-          onCommitMessageChange={isUncommittedScope ? setCommitMessage : noopFileToggle}
-          onCommit={isUncommittedScope ? handleCommit : noopFileToggle}
-          isCommitting={isUncommittedScope ? commitMutation.isPending : false}
-          isStaging={isUncommittedScope ? stageMutation.isPending : false}
-          onStageUntracked={isUncommittedScope ? handleStageUntracked : async () => {}}
-          viewedFiles={viewedFiles}
-          onToggleViewed={toggleViewed}
-          scopeSelector={
-            <ScopeSelector
-              selectedScope={scope}
-              onScopeChange={setScope}
-              commits={commits}
-              uncommittedFileCount={untrackedFiles.length + diffFiles.length}
-              totalFileCount={diffFiles.length + untrackedFiles.length}
-              isLoading={commitsQuery.isLoading}
-            />
-          }
-        />
+      <DiffStateProvider
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        selectedFileIndex={selectedFileIndex}
+        setSelectedFileIndex={setSelectedFileIndex}
+        fileListMode={fileListMode}
+        setFileListMode={setFileListMode}
+      >
+        <div className="flex flex-1 min-h-0">
+          <DiffFilePanel
+            mode="worktree"
+            modifiedCount={diffFiles.length}
+            untrackedCount={untrackedFiles.length}
+            diffLoading={diffLoading}
+            diffFiles={diffFiles}
+            filteredDiffFiles={filteredDiffFiles}
+            untrackedFiles={untrackedFiles}
+            stagedFiles={isUncommittedScope ? stagedFiles : new Set<string>()}
+            getFileCheckState={isUncommittedScope ? getFileCheckState : noopGetFileCheckState}
+            onFileToggle={isUncommittedScope ? handleFileToggle : noopFileToggle}
+            onFolderToggle={isUncommittedScope ? handleFolderToggle : noopFolderToggle}
+            onToggleUntrackedFile={isUncommittedScope ? handleToggleUntrackedFile : noopFileToggle}
+            hasAnyStaged={isUncommittedScope ? hasAnyStaged : false}
+            commitMessage={isUncommittedScope ? commitMessage : ""}
+            onCommitMessageChange={isUncommittedScope ? setCommitMessage : noopFileToggle}
+            onCommit={isUncommittedScope ? handleCommit : noopFileToggle}
+            isCommitting={isUncommittedScope ? commitMutation.isPending : false}
+            isStaging={isUncommittedScope ? stageMutation.isPending : false}
+            onStageUntracked={isUncommittedScope ? handleStageUntracked : async () => {}}
+            viewedFiles={viewedFiles}
+            onToggleViewed={toggleViewed}
+            scopeSelector={
+              <ScopeSelector
+                selectedScope={scope}
+                onScopeChange={setScope}
+                commits={commits}
+                uncommittedFileCount={untrackedFiles.length + diffFiles.length}
+                totalFileCount={diffFiles.length + untrackedFiles.length}
+                isLoading={commitsQuery.isLoading}
+              />
+            }
+          />
 
-        {/* Right diff body */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {viewMode === "untracked" && !selectedUntrackedPath && (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              Select a file to preview
-            </div>
-          )}
+          {/* Right diff body */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {viewMode === "untracked" && !selectedUntrackedPath && (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                Select a file to preview
+              </div>
+            )}
 
-          {viewMode === "untracked" && selectedUntrackedPath && (
-            <UntrackedFileDiffViewer
-              projectId={projectId}
-              worktreePath={worktreePath}
-              filePath={selectedUntrackedPath}
-            />
-          )}
+            {viewMode === "untracked" && selectedUntrackedPath && (
+              <UntrackedFileDiffViewer
+                projectId={projectId}
+                worktreePath={worktreePath}
+                filePath={selectedUntrackedPath}
+              />
+            )}
 
-          {viewMode === "uncommitted" &&
-            selectedFile &&
-            (() => {
-              const stats = computeFileStats(selectedFile.hunks);
-              const status = selectedFile.status ?? "M";
-              const statusColor =
-                status === "A"
-                  ? "text-success"
-                  : status === "D"
-                    ? "text-destructive"
-                    : "text-muted-foreground";
-              const isViewed = viewedFiles.has(selectedFile.fileName);
-              return (
-                <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-                  <span className="font-mono text-foreground truncate flex-1">
-                    {selectedFile.fileName}
-                  </span>
-                  <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-                  {stats.insertions > 0 && (
-                    <span className="text-success shrink-0">+{stats.insertions}</span>
-                  )}
-                  {stats.deletions > 0 && (
-                    <span className="text-destructive shrink-0">-{stats.deletions}</span>
-                  )}
-                  <button
-                    onClick={() => toggleViewed(selectedFile.fileName)}
-                    className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
-                      isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+            {viewMode === "uncommitted" &&
+              selectedFile &&
+              (() => {
+                const stats = computeFileStats(selectedFile.hunks);
+                const status = selectedFile.status ?? "M";
+                const statusColor =
+                  status === "A"
+                    ? "text-success"
+                    : status === "D"
+                      ? "text-destructive"
+                      : "text-muted-foreground";
+                const isViewed = viewedFiles.has(selectedFile.fileName);
+                return (
+                  <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                    <span className="font-mono text-foreground truncate flex-1">
+                      {selectedFile.fileName}
+                    </span>
+                    <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+                    {stats.insertions > 0 && (
+                      <span className="text-success shrink-0">+{stats.insertions}</span>
                     )}
-                    title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                  >
-                    <CheckCheck className="size-3" />
-                    <span className="text-[10px]">Viewed</span>
-                  </button>
-                </div>
-              );
-            })()}
+                    {stats.deletions > 0 && (
+                      <span className="text-destructive shrink-0">-{stats.deletions}</span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      onClick={() => toggleViewed(selectedFile.fileName)}
+                      className={cn(
+                        "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
+                        isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+                      )}
+                      title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                    >
+                      <CheckCheck className="size-3" />
+                      <span className="text-[10px]">Viewed</span>
+                    </Button>
+                  </div>
+                );
+              })()}
 
-          {viewMode === "uncommitted" && (
-            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-              {diffLoading ? (
-                <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
-              ) : diffFiles.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                  {isUncommittedScope ? "No uncommitted changes" : "No changes in this scope"}
-                </div>
-              ) : selectedFile ? (
-                <DiffViewer
-                  diffFile={selectedFile}
-                  loading={false}
-                  diffViewMode={effectiveDiffViewMode}
-                  hunkSelection={
-                    isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
-                      ? stagedHunks.get(selectedFile.fileName)
-                      : undefined
-                  }
-                  onHunkToggle={
-                    isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
-                      ? (idx) => handleHunkToggle(selectedFile.fileName, idx)
-                      : undefined
-                  }
-                />
-              ) : (
-                <DiffViewer
-                  diffFile={null}
-                  loading={false}
-                  error={diffError ? String(diffError) : undefined}
-                  diffViewMode={effectiveDiffViewMode}
-                />
-              )}
-            </div>
-          )}
+            {viewMode === "uncommitted" && (
+              <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+                {diffLoading ? (
+                  <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
+                ) : diffFiles.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                    {isUncommittedScope ? "No uncommitted changes" : "No changes in this scope"}
+                  </div>
+                ) : selectedFile ? (
+                  <DiffViewer
+                    diffFile={selectedFile}
+                    loading={false}
+                    diffViewMode={effectiveDiffViewMode}
+                    hunkSelection={
+                      isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
+                        ? stagedHunks.get(selectedFile.fileName)
+                        : undefined
+                    }
+                    onHunkToggle={
+                      isUncommittedScope && !stagedFiles.has(selectedFile.fileName)
+                        ? (idx) => handleHunkToggle(selectedFile.fileName, idx)
+                        : undefined
+                    }
+                  />
+                ) : (
+                  <DiffViewer
+                    diffFile={null}
+                    loading={false}
+                    error={diffError ? String(diffError) : undefined}
+                    diffViewMode={effectiveDiffViewMode}
+                  />
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </DiffStateProvider>
     </div>
   );
 }

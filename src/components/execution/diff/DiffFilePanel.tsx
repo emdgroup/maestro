@@ -4,6 +4,7 @@ import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 import { FileTree } from "./FileTree";
+import { useDiffState } from "./DiffStateContext";
 
 export interface DiffFile {
   fileName: string;
@@ -13,23 +14,17 @@ export interface DiffFile {
 
 interface DiffFilePanelProps {
   mode?: "worktree" | "review" | "session";
-  viewMode: "uncommitted" | "untracked";
-  onViewModeChange: (mode: "uncommitted" | "untracked") => void;
   modifiedCount: number;
   untrackedCount: number;
-  fileListMode: "flat" | "tree";
   diffLoading: boolean;
   diffFiles: DiffFile[];
   filteredDiffFiles: DiffFile[];
   untrackedFiles: string[];
-  selectedFileIndex: number | null;
-  onFileIndexChange: (index: number) => void;
   stagedFiles: Set<string>;
   getFileCheckState: (fileName: string) => "checked" | "unchecked" | "indeterminate";
   onFileToggle: (fileName: string) => void;
   onFolderToggle: (fileNames: string[]) => void;
   onToggleUntrackedFile: (filePath: string) => void;
-  onTreeFileSelect: (fileName: string) => void;
   hasAnyStaged: boolean;
   commitMessage: string;
   onCommitMessageChange: (message: string) => void;
@@ -45,23 +40,17 @@ interface DiffFilePanelProps {
 
 export function DiffFilePanel({
   mode = "worktree",
-  viewMode,
-  onViewModeChange,
   modifiedCount,
   untrackedCount,
-  fileListMode,
   diffLoading,
   diffFiles,
   filteredDiffFiles,
   untrackedFiles,
-  selectedFileIndex,
-  onFileIndexChange,
   stagedFiles,
   getFileCheckState,
   onFileToggle,
   onFolderToggle,
   onToggleUntrackedFile,
-  onTreeFileSelect,
   hasAnyStaged,
   commitMessage,
   onCommitMessageChange,
@@ -74,6 +63,8 @@ export function DiffFilePanel({
   scopeSelector,
   onFileComment: _onFileComment,
 }: DiffFilePanelProps) {
+  const { viewMode, setViewMode, selectedFileIndex, setSelectedFileIndex, fileListMode } =
+    useDiffState();
   const showWorktreeControls = mode === "worktree" && viewMode === "uncommitted";
   const showUntrackedControls =
     (mode === "worktree" || mode === "review") && viewMode === "untracked";
@@ -88,28 +79,30 @@ export function DiffFilePanel({
       {/* Tabs: only in worktree mode */}
       {showTabs && (
         <div className="flex border-b border-border shrink-0">
-          <button
-            onClick={() => onViewModeChange("uncommitted")}
+          <Button
+            variant="ghost"
+            onClick={() => setViewMode("uncommitted")}
             className={cn(
-              "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              "flex-1 px-3 py-2 h-auto text-xs font-medium border-b-2 transition-colors",
               viewMode === "uncommitted"
-                ? "border-accent text-foreground"
+                ? "border-accent text-foreground hover:bg-transparent"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
             )}
           >
             Modified ({modifiedCount})
-          </button>
-          <button
-            onClick={() => onViewModeChange("untracked")}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setViewMode("untracked")}
             className={cn(
-              "flex-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+              "flex-1 px-3 py-2 h-auto text-xs font-medium border-b-2 transition-colors",
               viewMode === "untracked"
-                ? "border-accent text-foreground"
+                ? "border-accent text-foreground hover:bg-transparent"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10",
             )}
           >
             Untracked ({untrackedCount})
-          </button>
+          </Button>
         </div>
       )}
 
@@ -133,7 +126,7 @@ export function DiffFilePanel({
               }
               onSelectFile={(fileName) => {
                 const idx = untrackedFiles.indexOf(fileName);
-                if (idx >= 0) onFileIndexChange(idx);
+                if (idx >= 0) setSelectedFileIndex(idx);
               }}
               checkedFiles={
                 new Map(
@@ -163,7 +156,7 @@ export function DiffFilePanel({
               return (
                 <div
                   key={filePath}
-                  onClick={() => onFileIndexChange(index)}
+                  onClick={() => setSelectedFileIndex(index)}
                   className={cn(
                     "px-2 py-2 cursor-pointer border-l-2 transition-colors",
                     index === selectedFileIndex
@@ -188,16 +181,17 @@ export function DiffFilePanel({
                     <span className="text-xs font-medium shrink-0 text-muted-foreground">U</span>
                     <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
                     {onToggleViewed && viewedFiles?.has(filePath) && (
-                      <button
+                      <Button
+                        variant="ghost"
                         onClick={(e) => {
                           e.stopPropagation();
                           onToggleViewed(filePath);
                         }}
-                        className="shrink-0 text-success hover:text-foreground"
+                        className="shrink-0 text-success hover:text-foreground h-auto p-0"
                         title="Mark as unviewed"
                       >
                         <CheckCheck className="size-3.5" />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -214,7 +208,10 @@ export function DiffFilePanel({
             selectedFile={
               selectedFileIndex !== null ? (diffFiles[selectedFileIndex]?.fileName ?? null) : null
             }
-            onSelectFile={onTreeFileSelect}
+            onSelectFile={(fileName) => {
+              const idx = filteredDiffFiles.findIndex((f) => f.fileName === fileName);
+              setSelectedFileIndex(idx >= 0 ? idx : null);
+            }}
             checkedFiles={
               showCheckboxes
                 ? new Map(filteredDiffFiles.map((f) => [f.fileName, getFileCheckState(f.fileName)]))
@@ -239,7 +236,7 @@ export function DiffFilePanel({
             return (
               <div
                 key={file.fileName}
-                onClick={() => onFileIndexChange(realIndex)}
+                onClick={() => setSelectedFileIndex(realIndex)}
                 className={cn(
                   "px-2 py-2 cursor-pointer border-l-2 transition-colors",
                   realIndex === selectedFileIndex
@@ -269,16 +266,17 @@ export function DiffFilePanel({
                   <span className={cn("text-xs font-medium shrink-0", statusColor)}>{status}</span>
                   <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
                   {onToggleViewed && viewedFiles?.has(file.fileName) && (
-                    <button
+                    <Button
+                      variant="ghost"
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleViewed(file.fileName);
                       }}
-                      className="shrink-0 text-success hover:text-foreground"
+                      className="shrink-0 text-success hover:text-foreground h-auto p-0"
                       title="Mark as unviewed"
                     >
                       <CheckCheck className="size-3.5" />
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>

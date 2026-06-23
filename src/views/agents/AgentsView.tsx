@@ -37,6 +37,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
+  const [lastSpawnedKey, setLastSpawnedKey] = useState<number | null>(null);
 
   const { data: settings } = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
@@ -227,6 +228,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           sessions={sessions}
           selectedSessionKey={selectedSessionKey}
           onSelect={setSelectedSessionKey}
+          newSessionKey={lastSpawnedKey}
           search={search}
           agentIcons={agentIcons}
           agentNames={agentNames}
@@ -272,7 +274,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         repoPath={repoPath ?? ""}
         connection={connection}
         worktrees={worktrees}
-        onSuccess={setSelectedSessionKey}
+        onSuccess={(key) => {
+          setSelectedSessionKey(key);
+          setLastSpawnedKey(key);
+        }}
       />
     </div>
   );

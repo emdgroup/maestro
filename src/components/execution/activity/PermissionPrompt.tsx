@@ -198,13 +198,13 @@ function PlanPermissionOverlay({
                 const meta = getAcceptMeta(opt);
                 const isBypass = isBypassOption(opt.optionId);
                 return (
-                  <button
+                  <Button
                     key={opt.optionId}
-                    type="button"
+                    variant="ghost"
                     onClick={() => onRespond(requestId, opt.optionId)}
                     className={cn(
-                      "group flex-1 flex flex-row items-center justify-center gap-2.25 px-2.5 py-2.75",
-                      "cursor-pointer transition-colors duration-100 border-none bg-transparent font-[inherit]",
+                      "group flex-1 flex flex-row items-center justify-center gap-2.25 px-2.5 py-2.75 h-auto",
+                      "transition-colors duration-100 border-none bg-transparent",
                       idx > 0 && "border-l border-border/30",
                       isBypass ? "bg-warning/12 hover:bg-warning/20" : "hover:bg-muted/60",
                     )}
@@ -244,17 +244,17 @@ function PlanPermissionOverlay({
                         {meta.description}
                       </span>
                     </span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
           )}
 
           {/* Reject track */}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => onRespond(requestId, rejectOption?.optionId ?? null)}
-            className="w-full flex items-center justify-center gap-2 px-3.5 py-2 cursor-pointer transition-colors duration-100 border-none bg-transparent font-[inherit] hover:bg-muted/60"
+            className="w-full flex items-center justify-center gap-2 px-3.5 py-2 h-auto transition-colors duration-100 border-none bg-transparent hover:bg-muted/60"
           >
             <span className="text-muted-foreground/40 leading-none transition-colors duration-100">
               <ChevronLeft size={13} />
@@ -264,7 +264,7 @@ function PlanPermissionOverlay({
             </span>
             <span className="text-[11px] text-muted-foreground/40">— return without executing</span>
             <KbdHint label="Esc" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -334,13 +334,13 @@ export function PermissionPrompt({
             {bodyText}
           </div>
           {isLong && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => setExpanded((v) => !v)}
-              className="text-[11px] text-accent hover:text-accent/80 mt-1 transition-colors"
+              className="text-[11px] text-accent hover:text-accent/80 mt-1 h-auto p-0"
             >
               {expanded ? "show less" : "show more"}
-            </button>
+            </Button>
           )}
         </div>
       )}

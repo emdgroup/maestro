@@ -10,6 +10,11 @@ struct GitHubUserResponse {
 }
 
 #[derive(serde::Deserialize)]
+struct GitHubIssueType {
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
 struct GitHubIssueResponse {
     number: u64,
     title: String,
@@ -18,6 +23,8 @@ struct GitHubIssueResponse {
     labels: Vec<GitHubLabel>,
     updated_at: Option<String>,
     pull_request: Option<serde_json::Value>,
+    #[serde(rename = "type")]
+    issue_type: Option<GitHubIssueType>,
 }
 
 #[derive(serde::Deserialize)]
@@ -184,6 +191,7 @@ pub async fn fetch_issues(
             labels: issue.labels.into_iter().map(|l| l.name).collect(),
             updated_at: issue.updated_at,
             priority: None,
+            issue_type: issue.issue_type.map(|t| t.name),
         })
         .collect();
 

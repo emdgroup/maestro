@@ -177,7 +177,8 @@ pub struct RemoteIssue {
     pub url: String,
     pub labels: Vec<String>,
     pub updated_at: Option<String>,
-    pub priority: Option<String>,   // normalized: "Urgent"|"High"|"Medium"|"Low"|null
+    pub priority: Option<String>,    // normalized: "Urgent"|"High"|"Medium"|"Low"|null
+    pub issue_type: Option<String>,  // e.g. "Bug", "Story", "Task", "Epic"
 }
 
 impl IssueTrackingConfig {

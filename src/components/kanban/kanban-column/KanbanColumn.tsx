@@ -12,7 +12,6 @@ interface KanbanColumnProps {
   status: TaskStatus;
   isDragActive: boolean;
   isHighlighted?: boolean;
-  onReviewClick?: (taskId: number, taskName: string) => void;
 }
 
 export const colors: Record<TaskStatus, string> = {
@@ -48,7 +47,6 @@ export function KanbanColumn({
   status,
   isDragActive,
   isHighlighted,
-  onReviewClick,
 }: KanbanColumnProps) {
   const isDndColumn = status === "Backlog" || status === "Ready";
   const badgeColor = getBadgeColor(status);
@@ -83,7 +81,6 @@ export function KanbanColumn({
             task={task}
             index={index}
             dndGroup={isDndColumn ? status : undefined}
-            onReviewClick={onReviewClick}
           />
         ))}
       </div>

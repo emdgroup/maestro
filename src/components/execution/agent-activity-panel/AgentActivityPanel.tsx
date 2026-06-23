@@ -30,6 +30,7 @@ interface AgentActivityPanelProps {
   sessionKey: number;
   agentId: string | null;
   isSelected?: boolean;
+  isNewSession?: boolean;
   onUsageChange?: (usage: UsageState | null) => void;
   onWorkingFilesChange?: (sessionKey: number, files: string[]) => void;
   onSessionChangedFilesChange?: (sessionKey: number, files: string[]) => void;
@@ -40,6 +41,7 @@ export function AgentActivityPanel({
   sessionKey,
   agentId,
   isSelected = false,
+  isNewSession = false,
   onUsageChange,
   onWorkingFilesChange,
   onSessionChangedFilesChange,
@@ -118,8 +120,7 @@ export function AgentActivityPanel({
   );
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
-  const isCenteredCompose =
-    !liveState.isInitializing && displayItems.length === 0 && !hasSentFirstMessage;
+  const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
 
   const { handleCancel, handleSendWithTransition } = useMessageSender({
     sessionKey,
@@ -195,8 +196,6 @@ export function AgentActivityPanel({
     await api.cancelAcpSession(sessionKey).catch(() => {});
   }, [sessionKey]);
 
-  if (liveState.isInitializing) return <AgentLoadingSkeleton />;
-
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
     ? (() => {
@@ -225,6 +224,8 @@ export function AgentActivityPanel({
     !hasInlinePermission &&
     !hasPlanOverlay &&
     !isCenteredCompose;
+
+  if (liveState.isInitializing) return <AgentLoadingSkeleton isNewSession={isNewSession} />;
 
   const inlinePermission =
     !isSessionDead && hasInlinePermission && pendingPermission ? (

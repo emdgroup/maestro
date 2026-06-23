@@ -63,13 +63,14 @@ export function ReworkModal({
 
         {comments.length > 0 && (
           <div className="border rounded-md">
-            <button
-              className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium hover:bg-accent rounded-t-md"
+            <Button
+              variant="ghost"
               onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-accent rounded-t-md justify-start"
             >
               {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
               {comments.length} comment{comments.length !== 1 ? "s" : ""}
-            </button>
+            </Button>
             {expanded && (
               <div className="max-h-40 overflow-y-auto custom-scrollbar border-t divide-y">
                 {comments.map((c) => (

@@ -29,12 +29,18 @@ struct JiraPriority {
 }
 
 #[derive(serde::Deserialize)]
+struct JiraIssueType {
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
 struct JiraIssueFields {
     summary: String,
     description: Option<serde_json::Value>,
     labels: Vec<String>,
     updated: Option<String>,
     priority: Option<JiraPriority>,
+    issuetype: Option<JiraIssueType>,
 }
 
 fn make_basic_auth(email: &str, api_token: &str) -> String {
@@ -136,7 +142,7 @@ pub async fn fetch_issues(
     let body = serde_json::json!({
         "jql": jql,
         "maxResults": 100,
-        "fields": ["summary", "description", "labels", "updated", "priority"]
+        "fields": ["summary", "description", "labels", "updated", "priority", "issuetype"]
     });
 
     let response = client
@@ -185,6 +191,7 @@ pub async fn fetch_issues(
                     "Low" | "Lowest" => Some("Low".to_string()),
                     _ => None,
                 }),
+                issue_type: issue.fields.issuetype.map(|t| t.name),
             }
         })
         .collect();

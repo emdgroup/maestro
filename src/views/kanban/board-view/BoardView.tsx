@@ -30,10 +30,9 @@ function buildDndItems(tasks: Task[]): DndItems {
 
 interface BoardViewProps {
   tasks: Task[];
-  onReviewClick: (taskId: number) => void;
 }
 
-export function BoardView({ tasks, onReviewClick }: BoardViewProps) {
+export function BoardView({ tasks }: BoardViewProps) {
   const activeTerminalTaskId = useActiveTerminalTaskId();
   const isTerminalOpen = useIsTerminalOpen();
   const { closeTerminal } = useBoardActions();
@@ -148,7 +147,6 @@ export function BoardView({ tasks, onReviewClick }: BoardViewProps) {
               status={status}
               isDragActive={isDragActive}
               isHighlighted={highlightedColumn === status}
-              onReviewClick={(taskId, _taskName) => onReviewClick(taskId)}
             />
           ))}
         </div>

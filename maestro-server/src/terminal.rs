@@ -138,7 +138,9 @@ pub(crate) async fn handle_create_terminal(
                                     bytes: chunk.into_bytes(),
                                 }),
                             );
-                            let _ = send_response(&stdout_bg, &msg).await;
+                            if let Err(e) = send_response(&stdout_bg, &msg).await {
+                                eprintln!("[terminal] send TerminalOutput failed: {e}");
+                            }
                         }
                         None => break false,
                     }

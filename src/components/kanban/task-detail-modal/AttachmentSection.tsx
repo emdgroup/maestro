@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Paperclip, Upload, X } from "lucide-react";
-import { commands } from "@/types/bindings";
 import type { TaskAttachment } from "@/types/bindings";
 import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
@@ -8,14 +7,14 @@ import {
   useTaskAttachmentsQuery,
   useAddTaskAttachmentMutation,
   useDeleteTaskAttachmentMutation,
+  useProxyImageQuery,
 } from "@/services/task.service";
 import { useFileInput } from "@/components/kanban/shared/useFileInput";
-
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"]);
+import { isImageExtension } from "@/components/execution/activity/fileTypeUtils";
 
 function isImage(filename: string): boolean {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  return IMAGE_EXTENSIONS.has(ext);
+  return isImageExtension(`.${ext}`);
 }
 
 function formatFileSize(bytes: number): string {
@@ -32,13 +31,7 @@ function AttachmentThumbnail({
   attachment: TaskAttachment;
   projectId: number;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    commands.proxyImage(projectId, attachment.file_path).then((result) => {
-      if (result.status === "ok") setSrc(result.data);
-    });
-  }, [projectId, attachment.file_path]);
+  const { data: src } = useProxyImageQuery(projectId, attachment.file_path);
 
   if (!src) {
     return <span className="w-20 h-20 bg-muted rounded-md animate-pulse" />;

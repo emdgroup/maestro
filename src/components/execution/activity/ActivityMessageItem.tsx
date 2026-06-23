@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Check, Copy } from "lucide-react";
 import type { MessageItem } from "./types";
+import { Button } from "@/ui/button";
 import {
   MarkdownBlock,
   SvgBlock,
@@ -96,14 +97,14 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         )}
       </div>
       {(!message.isStreaming || !isActivelyStreaming) && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={handleCopyMessage}
-          className="sticky bottom-[58px] float-right -mt-5 p-1 rounded text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
+          className="sticky bottom-[58px] float-right -mt-5 p-1 h-auto rounded text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
           aria-label={messageCopied ? "Copied" : "Copy response"}
         >
           {messageCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        </button>
+        </Button>
       )}
     </div>
   );

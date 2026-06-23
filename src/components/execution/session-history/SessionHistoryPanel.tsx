@@ -232,8 +232,9 @@ export function SessionHistoryPanel({
           </p>
           <div className="flex gap-1 flex-wrap">
             {agents.map((agent) => (
-              <button
+              <Button
                 key={agent.id}
+                variant="ghost"
                 onClick={() => setSelectedAgentId(agent.id)}
                 className={cn(
                   "h-[30px] px-3 rounded-md text-xs font-medium flex items-center gap-2 border transition-colors",
@@ -256,7 +257,7 @@ export function SessionHistoryPanel({
                   )
                 )}
                 {agent.name}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -271,14 +272,15 @@ export function SessionHistoryPanel({
           placeholder={`Search ${selectedAgent?.name ?? ""} sessions...`}
           className="flex-1 min-w-0 h-[30px] bg-muted/30 border border-border rounded px-2.5 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
         />
-        <button
+        <Button
+          variant="ghost"
           onClick={() => refetch()}
           disabled={isFetching}
-          className="h-[30px] w-[30px] flex items-center justify-center border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors shrink-0 disabled:opacity-50"
+          className="h-[30px] w-[30px] border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30 shrink-0"
           title="Refresh sessions"
         >
           <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-        </button>
+        </Button>
       </div>
 
       {/* list */}
@@ -325,13 +327,13 @@ export function SessionHistoryPanel({
                     </Button>
                   </div>
                 ) : (
-                  <button
+                  <Button
+                    variant="ghost"
                     disabled={loadMutation.isPending}
                     onClick={() => handleSessionClick(entry.session_id, entry.title)}
                     className={cn(
-                      "group w-full text-left px-2 py-2 rounded-md border border-transparent",
-                      "hover:bg-muted/20 hover:border-border/50 transition-all",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
+                      "group w-full text-left px-2 py-2 h-auto rounded-md border border-transparent justify-start",
+                      "hover:bg-muted/20 hover:border-border/50",
                     )}
                   >
                     <div className="flex items-start justify-between gap-2 min-w-0">
@@ -344,16 +346,18 @@ export function SessionHistoryPanel({
                             {relativeTime(entry.updated_at)}
                           </span>
                         )}
-                        <button
-                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted/40 transition-opacity"
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-muted/40"
                           onClick={(e) => startRename(entry.session_id, entry.title, e)}
                           title="Rename"
                         >
                           <Pencil className="w-2.5 h-2.5 text-muted-foreground" />
-                        </button>
+                        </Button>
                       </div>
                     </div>
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
@@ -398,11 +402,12 @@ export function SessionHistoryPanel({
                 const isMain = wt.path === repoPath;
                 const isSelected = selectedWorktreePath === wt.path;
                 return (
-                  <button
+                  <Button
                     key={wt.path}
+                    variant="ghost"
                     onClick={() => setSelectedWorktreePath(wt.path)}
                     className={cn(
-                      "w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors",
+                      "w-full text-left px-3 py-2 h-auto flex items-center gap-2.5 justify-start rounded-none",
                       isSelected ? "bg-primary/10" : "hover:bg-muted/20",
                     )}
                   >
@@ -425,7 +430,7 @@ export function SessionHistoryPanel({
                         default
                       </span>
                     )}
-                  </button>
+                  </Button>
                 );
               })}
               {filteredWorktrees.length === 0 && (

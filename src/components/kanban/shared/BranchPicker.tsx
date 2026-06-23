@@ -5,9 +5,9 @@ import { cn } from "@/lib/ui-utils";
 import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
+import { useSelectedProject } from "@/store/projectStore";
 
 interface BranchPickerProps {
-  projectId: number | null;
   value: string;
   onChange: (branch: string) => void;
   error?: boolean;
@@ -43,8 +43,10 @@ function BranchList({
   );
 }
 
-export function BranchPicker({ projectId, value, onChange, error }: BranchPickerProps) {
+export function BranchPicker({ value, onChange, error }: BranchPickerProps) {
   const queryClient = useQueryClient();
+  const project = useSelectedProject();
+  const projectId = project?.id ?? null;
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"local" | "remote">("local");
 

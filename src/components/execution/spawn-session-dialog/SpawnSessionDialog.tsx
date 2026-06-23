@@ -129,16 +129,16 @@ export function SpawnSessionDialog({
                 Agent
               </p>
               <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={() => {
                     setSessionType("terminal");
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
+                    "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
                     sessionType === "terminal"
                       ? "bg-accent/8 border-accent/30"
-                      : "border-border/60 bg-transparent hover:bg-muted/20 hover:border-border",
+                      : "border-border/60 hover:bg-muted/20 hover:border-border",
                   )}
                 >
                   <div className="w-7 h-7 rounded-md bg-muted/40 flex items-center justify-center shrink-0">
@@ -155,7 +155,7 @@ export function SpawnSessionDialog({
                     </p>
                     <p className="text-[10px] text-muted-foreground/60">Shell session</p>
                   </div>
-                </button>
+                </Button>
 
                 {discoveryLoading && (
                   <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-border/40 opacity-50">
@@ -172,9 +172,9 @@ export function SpawnSessionDialog({
                   const isSelected = sessionType === agent.id;
                   const isDefault = agent.id === projectSettings?.default_agent;
                   return (
-                    <button
+                    <Button
                       key={agent.id}
-                      type="button"
+                      variant="ghost"
                       disabled={disabled}
                       onClick={() => {
                         setSessionType(agent.id);
@@ -185,12 +185,12 @@ export function SpawnSessionDialog({
                           : undefined
                       }
                       className={cn(
-                        "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
+                        "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
                         disabled
-                          ? "opacity-40 cursor-not-allowed border-border/40 bg-transparent"
+                          ? "opacity-40 cursor-not-allowed border-border/40"
                           : isSelected
                             ? "bg-accent/8 border-accent/30"
-                            : "border-border/60 bg-transparent hover:bg-muted/20 hover:border-border",
+                            : "border-border/60 hover:bg-muted/20 hover:border-border",
                       )}
                     >
                       <div className="w-7 h-7 rounded-md bg-muted/40 flex items-center justify-center shrink-0">
@@ -227,7 +227,7 @@ export function SpawnSessionDialog({
                           <p className="text-[9px] font-medium text-accent/60">Default</p>
                         ) : null}
                       </div>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

@@ -22,6 +22,19 @@ struct GitLabIssueResponse {
     web_url: String,
     labels: Vec<String>,
     updated_at: Option<String>,
+    issue_type: Option<String>,
+}
+
+// Converts GitLab's snake_case issue_type values to display strings.
+// e.g. "test_case" → "Test Case", "incident" → "Incident"
+fn gitlab_issue_type_display(raw: &str) -> String {
+    raw.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 use super::normalize_instance_url;
@@ -160,6 +173,7 @@ pub async fn fetch_issues(
                 labels: issue.labels,
                 updated_at: issue.updated_at,
                 priority: None,
+                issue_type: issue.issue_type.as_deref().map(gitlab_issue_type_display),
             }
         })
         .collect();

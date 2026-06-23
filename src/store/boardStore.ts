@@ -6,14 +6,18 @@ import { api } from "@/lib/tauri-utils";
 export interface BoardState {
   activeTerminalTaskId: number | null;
   isTerminalOpen: boolean;
+  reviewPanelTaskId: number | null;
   openTerminal: (taskId: number) => void;
   closeTerminal: () => Promise<void>;
+  openReview: (taskId: number) => void;
+  closeReview: () => void;
 }
 
 export const useBoardStore = create<BoardState>()(
   immer((set, get) => ({
     activeTerminalTaskId: null,
     isTerminalOpen: false,
+    reviewPanelTaskId: null,
 
     openTerminal: (taskId: number) => {
       set((state) => {
@@ -37,15 +41,27 @@ export const useBoardStore = create<BoardState>()(
         state.activeTerminalTaskId = null;
       });
     },
+    openReview: (taskId: number) =>
+      set((state) => {
+        state.reviewPanelTaskId = taskId;
+      }),
+
+    closeReview: () =>
+      set((state) => {
+        state.reviewPanelTaskId = null;
+      }),
   })),
 );
 
 export const useActiveTerminalTaskId = () => useBoardStore((s) => s.activeTerminalTaskId);
 export const useIsTerminalOpen = () => useBoardStore((s) => s.isTerminalOpen);
+export const useReviewPanelTaskId = () => useBoardStore((s) => s.reviewPanelTaskId);
 export const useBoardActions = () =>
   useBoardStore(
     useShallow((s) => ({
       openTerminal: s.openTerminal,
       closeTerminal: s.closeTerminal,
+      openReview: s.openReview,
+      closeReview: s.closeReview,
     })),
   );

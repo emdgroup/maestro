@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Button } from "@/ui/button";
 import { useTasksQuery } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import type { Task, TaskStatus } from "@/types/bindings";
@@ -101,9 +102,10 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
           ) : (
             <div className="flex flex-col gap-1 p-1">
               {archiveTasks.map((task) => (
-                <button
+                <Button
                   key={task.id}
-                  className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 hover:bg-accent/5 transition-colors text-left w-full"
+                  variant="ghost"
+                  className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 h-auto text-left w-full justify-start hover:bg-accent/5"
                   onClick={() => handleTaskClick(task)}
                 >
                   <div className="flex-1 min-w-0">
@@ -129,7 +131,7 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
                       {task.status}
                     </span>
                   </div>
-                </button>
+                </Button>
               ))}
             </div>
           )}

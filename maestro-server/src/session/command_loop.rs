@@ -35,7 +35,10 @@ pub(crate) async fn handle_prompt_result(
             _ => "unknown",
         }
         .to_string(),
-        Err(_) => "error".to_string(),
+        Err(e) => {
+            eprintln!("[command_loop] ACP prompt error: {e}");
+            "error".to_string()
+        }
     };
     let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
         session_id,

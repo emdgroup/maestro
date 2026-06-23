@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from "react";
-import { Trash2, Archive, X, GitPullRequest } from "lucide-react";
+import { useState, useRef, useEffect, type SetStateAction } from "react";
+import { Trash2, X } from "lucide-react";
 import type { TaskStatus, TaskPriority } from "@/types/bindings";
 import { Button } from "@/ui/button";
-import { Badge } from "@/ui/badge";
+import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { TooltipProvider } from "@/ui/tooltip";
-import { Dialog, DialogContent, DialogClose, DialogTitle } from "@/ui/dialog";
+import { Dialog, DialogContent, DialogClose, DialogTitle, DialogHeader } from "@/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +27,7 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { useNavigationActions } from "@/store/navigationStore";
+import { useIsTaskEditable } from "@/hooks/useIsTaskEditable";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { EditableField } from "./EditableField";
@@ -49,14 +50,14 @@ interface TaskDraft {
   isolatedWorktree: boolean;
   autoApprove: boolean;
   baseBranch: string;
+  labels: string[];
 }
 
 interface TaskDetailModalProps {
   taskId: number | null;
-  onReviewClick?: (taskId: number) => void;
 }
 
-export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onReviewClick }) => {
+export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
@@ -79,7 +80,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
 
   const { setActiveTaskId } = useNavigationActions();
 
-  const isEditable = task?.status === "Backlog";
+  const isEditable = useIsTaskEditable(taskId);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",
@@ -89,10 +90,19 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
     isolatedWorktree: true,
     autoApprove: false,
     baseBranch: "",
+    labels: [],
   });
 
+  const isDirty = useRef(false);
+
+  // Reset dirty flag whenever a different task is opened.
   useEffect(() => {
-    if (task) {
+    isDirty.current = false;
+  }, [taskId]);
+
+  // Sync draft from server when task data changes, but not while the user is editing.
+  useEffect(() => {
+    if (task && !isDirty.current) {
       setDraft({
         title: task.title,
         description: task.description ?? "",
@@ -101,16 +111,25 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
         isolatedWorktree: task.isolated_worktree,
         autoApprove: task.auto_approve,
         baseBranch: task.base_branch ?? "",
+        labels: task.labels ?? [],
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId]);
+  }, [task]);
+
+  function markDirtySetDraft(updater: SetStateAction<TaskDraft>) {
+    isDirty.current = true;
+    setDraft(updater);
+  }
 
   const { pickFiles, isDragging } = useDraggableFileInput(
     isEditable ?? false,
     (filename, filePath) => {
       addAttachmentRef.current.mutate({ taskId: task!.id, filename, filePath });
-      setDraft((d) => ({ ...d, description: appendToAttachmentsSection(d.description, filename) }));
+      markDirtySetDraft((d) => ({
+        ...d,
+        description: appendToAttachmentsSection(d.description, filename),
+      }));
     },
   );
 
@@ -142,7 +161,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
   }
 
   function handleSave() {
-    if (!task || !draft.title.trim()) return;
+    if (!task || draft.title.trim().length < 3) return;
     updateTask.mutate({
       taskId: task.id,
       updates: {
@@ -153,6 +172,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
         isolated_worktree: draft.isolatedWorktree,
         auto_approve: draft.autoApprove,
         base_branch: draft.baseBranch || undefined,
+        labels: draft.labels,
       },
     });
   }
@@ -166,6 +186,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
         onOpenChange={(open) => {
           if (!open) setActiveTaskId(null);
         }}
+        disablePointerDismissal
       >
         <DialogContent
           showCloseButton={false}
@@ -181,7 +202,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
           ) : (
             <>
               {/* Header */}
-              <div className="flex items-center gap-3 px-6 pt-4 pb-3 shrink-0">
+              <DialogHeader className="flex-row items-center gap-3 px-6 pt-3 shrink-0">
                 <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
                   {isEditable ? "EDIT TASK" : "TASK DETAIL"}
                 </DialogTitle>
@@ -204,14 +225,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
                     <span className="sr-only">Close</span>
                   </DialogClose>
                 </ShortcutHint>
-              </div>
+              </DialogHeader>
 
               {/* Body */}
               <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
                 <div className="shrink-0">
                   <EditableField
                     value={draft.title}
-                    onSave={(v) => setDraft((d) => ({ ...d, title: v }))}
+                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
                     isEditable={isEditable ?? false}
                     placeholder="Add a title..."
                     className="text-xl font-semibold"
@@ -221,22 +242,43 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
                 {/* Description + attachment */}
                 <DescriptionWithAttachments
                   value={draft.description}
-                  onSave={(v) => setDraft((d) => ({ ...d, description: v }))}
+                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
                   isEditable={isEditable ?? false}
                   isDragging={isDragging}
                   onPickFiles={pickFiles}
                   placeholder="Add a description..."
-                  projectId={projectId ?? undefined}
                 />
+
+                {/* Labels */}
+                {draft.labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 shrink-0">
+                    {draft.labels.map((label) => (
+                      <IssueTypeChip
+                        key={label}
+                        type={label}
+                        onRemove={
+                          isEditable
+                            ? () =>
+                                markDirtySetDraft((d) => ({
+                                  ...d,
+                                  labels: d.labels.filter((l) => l !== label),
+                                }))
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
 
                 {/* Branch */}
                 {isGitRepo && (
                   <div className="shrink-0">
                     <BranchSection
-                      projectId={projectId}
                       value={draft.baseBranch}
                       onChange={
-                        isEditable ? (b) => setDraft((d) => ({ ...d, baseBranch: b })) : undefined
+                        isEditable
+                          ? (b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                          : undefined
                       }
                     />
                   </div>
@@ -247,52 +289,33 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
                   <TaskMetadataPills
                     priority={draft.priority}
                     onPriorityChange={
-                      isEditable ? (p) => setDraft((d) => ({ ...d, priority: p })) : undefined
+                      isEditable
+                        ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
+                        : undefined
                     }
                     agentId={draft.agentId}
                     agents={agents}
                     onAgentChange={
-                      isEditable ? (id) => setDraft((d) => ({ ...d, agentId: id })) : undefined
+                      isEditable
+                        ? (id) => markDirtySetDraft((d) => ({ ...d, agentId: id }))
+                        : undefined
                     }
                     isolatedWorktree={draft.isolatedWorktree}
                     onIsolatedWorktreeChange={
                       isEditable
-                        ? (v) => setDraft((d) => ({ ...d, isolatedWorktree: v }))
+                        ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
                         : undefined
                     }
                     autoApprove={draft.autoApprove}
                     onAutoApproveChange={
-                      isEditable ? (v) => setDraft((d) => ({ ...d, autoApprove: v })) : undefined
+                      isEditable
+                        ? (v) => markDirtySetDraft((d) => ({ ...d, autoApprove: v }))
+                        : undefined
                     }
                     isGitRepo={isGitRepo ?? false}
                   />
 
                   {agentError && <p className="text-xs text-destructive">{agentError}</p>}
-
-                  {task.labels && task.labels.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {task.labels.map((label) => (
-                        <Badge key={label} variant="secondary" className="text-xs">
-                          {label}
-                          {isEditable && (
-                            <button
-                              className="ml-1 hover:text-destructive leading-none"
-                              onClick={() =>
-                                updateTask.mutate({
-                                  taskId: task.id,
-                                  updates: {
-                                    labels: task.labels.filter((l) => l !== label),
-                                  },
-                                })
-                              }
-                            >
-                              ×
-                            </button>
-                          )}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -339,40 +362,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onRevi
 
                 <div className="flex-1" />
 
-                {/* Right: status actions + save */}
-                {task.status === "Review" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      onReviewClick?.(task.id);
-                      setActiveTaskId(null);
-                    }}
-                  >
-                    <GitPullRequest className="size-4" />
-                    Review
-                  </Button>
-                )}
-
-                {task.status === "Done" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={isPendingDeleteOrArchive}
-                    onClick={() =>
-                      archiveTask.mutate(task.id, { onSuccess: () => setActiveTaskId(null) })
-                    }
-                  >
-                    <Archive className="size-4" />
-                    Archive
-                  </Button>
-                )}
-
                 {isEditable && (
                   <Button
                     size="sm"
                     onClick={handleSave}
-                    disabled={updateTask.isPending || !draft.title.trim()}
+                    disabled={updateTask.isPending || draft.title.trim().length < 3}
                   >
                     {updateTask.isPending ? "Saving..." : "Save"}
                   </Button>

@@ -7,6 +7,24 @@ pub mod jira_cloud;
 pub mod azure_devops;
 pub mod bitbucket;
 
+// ponytail: heuristic — scoped labels like "kind/bug", "type/feature" are the Forgejo/Gitea
+// convention for exclusive classification; extract the suffix as the display type
+pub(super) fn extract_type_from_labels(labels: &[String]) -> Option<String> {
+    const SCOPES: &[&str] = &["kind/", "type/", "category/"];
+    labels.iter().find_map(|label| {
+        let lower = label.to_lowercase();
+        SCOPES.iter().find_map(|scope| {
+            lower.strip_prefix(scope).map(|val| {
+                let mut chars = val.chars();
+                chars
+                    .next()
+                    .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+                    .unwrap_or_default()
+            })
+        })
+    })
+}
+
 pub(crate) fn build_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))

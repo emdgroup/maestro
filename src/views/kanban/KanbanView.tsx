@@ -1,9 +1,10 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { Plus, Archive } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
+import { useReviewPanelTaskId, useBoardActions } from "@/store/boardStore";
 import { TaskDetailModal } from "@/components/kanban/task-detail-modal/TaskDetailModal.tsx";
 import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
 import { useTasksQuery } from "@/services/task.service";
@@ -29,13 +30,14 @@ export const KanbanView: React.FC = () => {
   const { data: tasks } = useTasksQuery(projectId);
   const taskList = tasks ?? EMPTY_TASKS;
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
+  const reviewPanelTaskId = useReviewPanelTaskId();
+  const { closeReview } = useBoardActions();
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
-  const [reviewPanelTaskId, setReviewPanelTaskId] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useShortcuts("board", {
@@ -67,9 +69,6 @@ export const KanbanView: React.FC = () => {
       ? (worktrees ?? []).find((w) => w.task_id === reviewPanelTaskId)
       : null;
 
-  const handleReviewClose = useCallback(() => setReviewPanelTaskId(null), []);
-  const handleReviewClick = useCallback((taskId: number) => setReviewPanelTaskId(taskId), []);
-
   if (reviewPanelTaskId != null && reviewTask) {
     return (
       <TaskReviewPanel
@@ -77,7 +76,7 @@ export const KanbanView: React.FC = () => {
         worktreePath={reviewWorktree?.path ?? null}
         baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
         branchName={reviewWorktree?.branch_name ?? null}
-        onClose={handleReviewClose}
+        onClose={closeReview}
       />
     );
   }
@@ -121,12 +120,13 @@ export const KanbanView: React.FC = () => {
                 </label>
               ))}
               {selectedPriorities.length > 0 && (
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 text-left"
+                <Button
+                  variant="ghost"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
                   onClick={() => setSelectedPriorities([])}
                 >
                   Clear
-                </button>
+                </Button>
               )}
             </div>
           </PopoverContent>
@@ -160,12 +160,13 @@ export const KanbanView: React.FC = () => {
                 </label>
               ))}
               {selectedLabels.length > 0 && (
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 text-left"
+                <Button
+                  variant="ghost"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
                   onClick={() => setSelectedLabels([])}
                 >
                   Clear
-                </button>
+                </Button>
               )}
             </div>
           </PopoverContent>
@@ -190,7 +191,7 @@ export const KanbanView: React.FC = () => {
           </ShortcutHint>
         </div>
       </div>
-      <TaskDetailModal taskId={activeTaskId} onReviewClick={handleReviewClick} />
+      <TaskDetailModal taskId={activeTaskId} />
       {projectId !== null && (
         <>
           <CreateTaskModal
@@ -206,7 +207,7 @@ export const KanbanView: React.FC = () => {
         </>
       )}
       <div className="flex-1 min-h-0">
-        <BoardView tasks={filteredTasks} onReviewClick={handleReviewClick} />
+        <BoardView tasks={filteredTasks} />
       </div>
     </div>
   );

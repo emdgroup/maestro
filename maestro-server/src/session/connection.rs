@@ -169,6 +169,8 @@ pub(crate) async fn create_session_on_connection(
                 acp_session_id: acp_session_id_str.clone(),
                 router,
             }),
+            agent_id: String::new(),
+            cwd: String::new(),
         },
         models,
         modes,
@@ -262,6 +264,8 @@ pub(crate) async fn load_session_on_connection(
                 acp_session_id: resume_session_id,
                 router,
             }),
+            agent_id: String::new(),
+            cwd: String::new(),
         },
         models,
         modes,
@@ -309,8 +313,8 @@ pub(crate) async fn pre_initialize_agent(
     let (ready_tx, ready_rx) = oneshot::channel::<ReadyPayload>();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    tokio::spawn(async move {
-        let _result = configure_acp_builder!(handlers, terms)
+    let connection_task = tokio::spawn(async move {
+        let result = configure_acp_builder!(handlers, terms)
             .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
                 let init_result = cx
                     .send_request(
@@ -347,7 +351,10 @@ pub(crate) async fn pre_initialize_agent(
                 Ok(())
             })
             .await;
-
+        eprintln!("[agent] ACP connection closed: {:?}", result);
+        if let Ok(Some(status)) = child.try_wait() {
+            eprintln!("[agent] subprocess exited: {status}");
+        }
         drop(child);
     });
 
@@ -357,6 +364,7 @@ pub(crate) async fn pre_initialize_agent(
             router,
             capabilities,
             shutdown_tx,
+            connection_task,
         )),
         Ok(Err(e)) => {
             let _ = send_response(

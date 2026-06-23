@@ -99,6 +99,8 @@ pub struct AgentConnection {
     pub capabilities: AgentCapabilities,
     /// Dropping this signals the background task to exit and kill the child process.
     _shutdown_tx: oneshot::Sender<()>,
+    /// JoinHandle for the background ACP transport task. `is_finished()` = agent process died.
+    pub connection_task: tokio::task::JoinHandle<()>,
 }
 
 impl AgentConnection {
@@ -107,12 +109,14 @@ impl AgentConnection {
         router: Arc<SessionRouter>,
         capabilities: AgentCapabilities,
         shutdown_tx: oneshot::Sender<()>,
+        connection_task: tokio::task::JoinHandle<()>,
     ) -> Self {
         Self {
             connection,
             router,
             capabilities,
             _shutdown_tx: shutdown_tx,
+            connection_task,
         }
     }
 }
@@ -132,6 +136,10 @@ pub struct ActiveSession {
     /// Populated for fast-path sessions (shared connection server).
     /// `None` for cold-path sessions (process killed by kill_on_drop on cancel).
     pub cleanup: Option<SessionCleanup>,
+    /// Agent that owns this session — used to find sessions when restarting a dead agent.
+    pub agent_id: String,
+    /// Working directory this session was started in.
+    pub cwd: String,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

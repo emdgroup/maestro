@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
 import { DiffFileWithName } from "@/types/review";
 
 interface FileTreeNode {
@@ -127,9 +128,10 @@ const DirectoryNode: React.FC<{
 
   return (
     <div>
-      <button
+      <Button
+        variant="ghost"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1 w-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors"
+        className="flex items-center gap-1 w-full px-2 py-1 h-auto text-xs text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors justify-start"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
         {isExpanded ? (
@@ -166,7 +168,7 @@ const DirectoryNode: React.FC<{
               <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" />
             ) : null;
           })()}
-      </button>
+      </Button>
       {isExpanded && node.children && (
         <div>
           {node.children.map((child) => (

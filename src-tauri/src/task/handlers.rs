@@ -31,6 +31,7 @@ fn create_task_impl(
     title: String,
     description: Option<String>,
     skills: Vec<String>,
+    labels: Vec<String>,
     base_branch: String,
     agent_id: Option<String>,
     priority: Option<String>,
@@ -51,11 +52,13 @@ fn create_task_impl(
     let now = Utc::now().to_rfc3339();
     let skills_json = serde_json::to_string(&skills)
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    let labels_json = serde_json::to_string(&labels)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
         "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
-         agent_id, priority, auto_approve, isolated_worktree, model_override, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         agent_id, priority, auto_approve, isolated_worktree, model_override, labels, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             project_id, &title, &description, &skills_json, "Backlog", &base_branch,
             &agent_id,
@@ -63,6 +66,7 @@ fn create_task_impl(
             auto_approve,
             isolated_worktree,
             &model_override,
+            &labels_json,
             &now, &now
         ],
     )
@@ -80,6 +84,7 @@ pub struct CreateTaskRequest {
     pub title: String,
     pub description: Option<String>,
     pub skills: Vec<String>,
+    pub labels: Vec<String>,
     pub base_branch: String,
     pub agent_id: Option<String>,
     pub priority: Option<String>,
@@ -102,6 +107,7 @@ pub fn create_task(
         request.title,
         request.description,
         request.skills,
+        request.labels,
         request.base_branch,
         request.agent_id,
         request.priority,
@@ -653,7 +659,7 @@ mod tests {
         let err = create_task_impl(
             &conn, project_id, "ab".to_string(),
             Some("valid description here".to_string()),
-            vec![], "main".to_string(),
+            vec![], vec![], "main".to_string(),
             None, None, false, true, None,
         )
         .unwrap_err();
@@ -667,7 +673,7 @@ mod tests {
         let task = create_task_impl(
             &conn, project_id, "Valid Task Name".to_string(),
             None,
-            vec![], "main".to_string(),
+            vec![], vec![], "main".to_string(),
             None, None, false, true, None,
         )
         .unwrap();
@@ -683,7 +689,7 @@ mod tests {
             &conn, project_id,
             "Valid Task Name".to_string(),
             Some("This is a valid description.".to_string()),
-            vec!["rust".to_string()], "main".to_string(),
+            vec!["rust".to_string()], vec![], "main".to_string(),
             None, None, false, true, None,
         )
         .unwrap();
@@ -700,7 +706,7 @@ mod tests {
             &conn, project_id,
             "Task to Delete".to_string(),
             Some("This task will be deleted.".to_string()),
-            vec![], "main".to_string(),
+            vec![], vec![], "main".to_string(),
             None, None, false, true, None,
         )
         .unwrap();

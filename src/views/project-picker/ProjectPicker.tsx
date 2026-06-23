@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
 import { Cable, Server } from "lucide-react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { Button } from "@/ui/button";
+import { cn } from "@/lib/ui-utils";
 import { ConnectionList } from "./connection-list/ConnectionList";
 import { ProjectList } from "./project-list/ProjectList";
 import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";
@@ -70,12 +72,14 @@ export function ProjectPicker() {
                   const isActive = activeTab === tab.id;
                   const Icon = tab.icon;
                   return (
-                    <button
+                    <Button
                       key={tab.id}
+                      variant="ghost"
                       onClick={() => handleTabClick(tab.id)}
-                      className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${
-                        isActive ? "" : "cursor-pointer hover:bg-background/50"
-                      }`}
+                      className={cn(
+                        "relative flex w-full items-center justify-center rounded-md px-3 py-1.5 h-auto text-xs font-medium",
+                        isActive ? "hover:bg-transparent" : "hover:bg-background/50",
+                      )}
                     >
                       {isActive && (
                         <motion.span
@@ -92,7 +96,7 @@ export function ProjectPicker() {
                         <Icon className="size-3.5" />
                         {tab.label}
                       </motion.span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

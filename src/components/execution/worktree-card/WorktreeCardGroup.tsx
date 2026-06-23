@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
 
 interface WorktreeCardGroupProps {
   groupKey: string;
@@ -19,11 +19,10 @@ export function WorktreeCardGroup({
   return (
     <div>
       {/* Section header */}
-      <button
-        className={cn(
-          "w-full flex items-center gap-2 px-2 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:bg-muted/10 transition-colors",
-        )}
+      <Button
+        variant="ghost"
         onClick={onToggleCollapse}
+        className="w-full flex items-center gap-2 px-2 py-2 h-auto text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:bg-muted/10 transition-colors justify-start"
       >
         {isCollapsed ? (
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -33,7 +32,7 @@ export function WorktreeCardGroup({
         <span>
           {groupKey} ({count})
         </span>
-      </button>
+      </Button>
 
       {/* Card grid */}
       {!isCollapsed && <div className="flex flex-wrap gap-3 px-2 pb-3">{children}</div>}

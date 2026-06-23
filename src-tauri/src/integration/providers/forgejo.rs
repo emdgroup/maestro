@@ -22,7 +22,7 @@ struct ForgejoLabel {
     name: String,
 }
 
-use super::normalize_instance_url;
+use super::{normalize_instance_url, extract_type_from_labels};
 
 /// Validate a Forgejo API token, save the IssueTrackingConfig, and store the token.
 /// Returns the authenticated Forgejo login name on success.
@@ -137,14 +137,19 @@ pub async fn fetch_issues(
 
     let remote_issues = issues
         .into_iter()
-        .map(|issue| RemoteIssue {
-            external_id: format!("forgejo:{}", issue.number),
-            title: issue.title,
-            body: issue.body,
-            url: issue.html_url,
-            labels: issue.labels.into_iter().map(|l| l.name).collect(),
-            updated_at: issue.updated_at,
-            priority: None,
+        .map(|issue| {
+            let labels: Vec<String> = issue.labels.into_iter().map(|l| l.name).collect();
+            let issue_type = extract_type_from_labels(&labels);
+            RemoteIssue {
+                external_id: format!("forgejo:{}", issue.number),
+                title: issue.title,
+                body: issue.body,
+                url: issue.html_url,
+                labels,
+                updated_at: issue.updated_at,
+                priority: None,
+                issue_type,
+            }
         })
         .collect();
 

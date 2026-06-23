@@ -27,6 +27,7 @@ use maestro_protocol::{
     FileReadResponse, FileSearchResponse, HandshakeResponse, ListAgentsResponse,
     MaestroRpcMessage, PreInitializeResponse, PROTOCOL_VERSION, ServerRequest, ServerResponse,
     SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse, ToolCheckResult,
+    TurnEnded,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -230,29 +231,57 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         };
     }
 
+    let mut liveness_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+    liveness_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
-        let msg = match read_message(&mut stdin).await {
-            Ok(msg) => msg,
-            Err(e) => {
-                let is_eof = e
-                    .downcast_ref::<std::io::Error>()
-                    .map(|io_err| io_err.kind() == std::io::ErrorKind::UnexpectedEof)
-                    .unwrap_or_else(|| {
-                        let s = e.to_string();
-                        s.contains("early eof")
-                            || s.contains("unexpected eof")
-                            || s.contains("UnexpectedEof")
-                    });
-                if is_eof {
-                    break;
+        let msg = tokio::select! {
+            biased;
+
+            msg_result = read_message(&mut stdin) => {
+                match msg_result {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        let is_eof = e
+                            .downcast_ref::<std::io::Error>()
+                            .map(|io_err| io_err.kind() == std::io::ErrorKind::UnexpectedEof)
+                            .unwrap_or_else(|| {
+                                let s = e.to_string();
+                                s.contains("early eof")
+                                    || s.contains("unexpected eof")
+                                    || s.contains("UnexpectedEof")
+                            });
+                        if is_eof {
+                            break;
+                        }
+                        send_or_break!(send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!("read error: {}", e),
+                            })),
+                        )
+                        .await);
+                        continue;
+                    }
                 }
-                send_or_break!(send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: format!("read error: {}", e),
-                    })),
-                )
-                .await);
+            }
+
+            _ = liveness_interval.tick() => {
+                let dead: Vec<String> = agent_connections
+                    .iter()
+                    .filter(|(_, conn)| conn.connection_task.is_finished())
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for agent_id in dead {
+                    handle_agent_restart(
+                        agent_id,
+                        &mut agent_connections,
+                        &mut sessions,
+                        &agents_with_spawn,
+                        &stdout,
+                    )
+                    .await;
+                }
                 continue;
             }
         };
@@ -290,7 +319,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     agent_connections.remove(&req.agent_id);
                 }
 
-                if let Some(result) = result {
+                if let Some(mut result) = result {
                     let response = SpawnResponse {
                         session_id: req.session_id.clone(),
                         acp_session_id: Some(result.acp_session_id),
@@ -302,6 +331,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         supports_session_close: result.supports_session_close,
                         config_options: result.config_options,
                     };
+                    result.session.agent_id = req.agent_id.clone();
+                    result.session.cwd = req.cwd.clone();
                     sessions.insert(req.session_id, result.session);
                     send_or_break!(send_response(
                         &stdout,
@@ -543,7 +574,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     agent_connections.remove(&req.agent_id);
                 }
 
-                if let Some((session, models, modes, prompt_caps, config_options)) = result {
+                if let Some((mut session, models, modes, prompt_caps, config_options)) = result {
+                    session.agent_id = req.agent_id.clone();
+                    session.cwd = req.cwd.clone();
                     sessions.insert(req.session_id.clone(), session);
                     send_or_break!(send_response(
                         &stdout,
@@ -688,6 +721,110 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+async fn handle_agent_restart(
+    dead_agent_id: String,
+    agent_connections: &mut AgentConnectionMap,
+    sessions: &mut SessionMap,
+    agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
+    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+) {
+    eprintln!("[main] agent {dead_agent_id:?} died, restarting");
+
+    let to_restore: Vec<(String, String, String)> = sessions
+        .iter()
+        .filter(|(_, s)| s.agent_id == dead_agent_id)
+        .filter_map(|(sid, s)| {
+            s.cleanup
+                .as_ref()
+                .map(|c| (sid.clone(), c.acp_session_id.clone(), s.cwd.clone()))
+        })
+        .collect();
+
+    for (maestro_sid, _, _) in &to_restore {
+        if let Some(session) = sessions.remove(maestro_sid) {
+            session.task.abort();
+            let _ = send_response(
+                stdout,
+                &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                    session_id: maestro_sid.clone(),
+                    stop_reason: "error".to_string(),
+                })),
+            )
+            .await;
+        }
+    }
+
+    // Cold-path sessions (cleanup==None) have no ACP session ID to restore; just notify and remove.
+    let cold_path_sids: Vec<String> = sessions
+        .iter()
+        .filter(|(_, s)| s.agent_id == dead_agent_id && s.cleanup.is_none())
+        .map(|(sid, _)| sid.clone())
+        .collect();
+    for maestro_sid in cold_path_sids {
+        if let Some(session) = sessions.remove(&maestro_sid) {
+            session.task.abort();
+            let _ = send_response(
+                stdout,
+                &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                    session_id: maestro_sid.clone(),
+                    stop_reason: "error".to_string(),
+                })),
+            )
+            .await;
+        }
+    }
+
+    agent_connections.remove(&dead_agent_id);
+
+    if to_restore.is_empty() {
+        return;
+    }
+
+    let cwd = &to_restore[0].2;
+    let Some((cmd, args, env)) =
+        resolve_agent_spawn_params(&dead_agent_id, agents_with_spawn, stdout).await
+    else {
+        return;
+    };
+    let Some(new_conn) = pre_initialize_agent(&cmd, &args, &env, cwd, Arc::clone(stdout)).await
+    else {
+        return;
+    };
+
+    if new_conn.capabilities.supports_session_load {
+        for (maestro_sid, acp_session_id, session_cwd) in &to_restore {
+            let result = load_session_on_connection(
+                &new_conn,
+                maestro_sid.clone(),
+                acp_session_id.clone(),
+                session_cwd,
+                Arc::clone(stdout),
+            )
+            .await;
+            if let Some((mut session, models, modes, prompt_caps, config_options)) = result {
+                session.agent_id = dead_agent_id.clone();
+                session.cwd = session_cwd.clone();
+                sessions.insert(maestro_sid.clone(), session);
+                let _ = send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
+                        SessionLoadOkResponse {
+                            session_id: maestro_sid.clone(),
+                            models,
+                            modes,
+                            prompt_capabilities: Some(prompt_caps),
+                            config_options,
+                        },
+                    )),
+                )
+                .await;
+            }
+        }
+    }
+
+    agent_connections.insert(dead_agent_id, new_conn);
 }
 
 async fn probe_tool(tool: &str) -> (bool, Option<String>) {

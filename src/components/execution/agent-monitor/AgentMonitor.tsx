@@ -162,6 +162,7 @@ interface AgentMonitorProps {
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   projectId?: number;
+  newSessionKey?: number | null;
 }
 
 export function AgentMonitor({
@@ -174,6 +175,7 @@ export function AgentMonitor({
   agentIcons,
   agentNames,
   projectId,
+  newSessionKey,
 }: AgentMonitorProps) {
   const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
@@ -469,6 +471,7 @@ export function AgentMonitor({
                 sessionKey={s.session_key}
                 agentId={s.agent_id ?? null}
                 isSelected={s.session_key === selectedSessionKey}
+                isNewSession={s.session_key === newSessionKey}
                 onWorkingFilesChange={handleWorkingFilesChange}
                 onSessionChangedFilesChange={handleSessionChangedFilesChange}
                 onOpenPanel={

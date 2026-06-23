@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import type { SubmitHandler } from "react-hook-form";
-import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from "@/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
@@ -15,6 +15,7 @@ import {
 } from "@/ui/combobox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Search, X } from "lucide-react";
+import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
   useCreateTaskMutation,
   useAddTaskAttachmentMutation,
@@ -118,6 +119,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [createAnother, setCreateAnother] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<RemoteIssue | null>(null);
   const [issueSearch, setIssueSearch] = useState("");
+  const [labels, setLabels] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
 
   const [title, setTitleState] = useState("");
@@ -186,6 +188,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       setPendingFiles([]);
       setTitle("");
       setDescription("");
+      setLabels([]);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -193,6 +196,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     setSelectedIssue(issue);
     setTitle(issue.title);
     setDescription(issue.body ?? "");
+    setLabels(issue.issue_type ? [issue.issue_type] : []);
   };
 
   const onSubmit: SubmitHandler<FormData> = (data) => {
@@ -209,6 +213,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         title: currentTitle,
         description: descriptionRef.current.trim() || null,
         skills: [],
+        labels,
         base_branch: data.baseBranch,
         agent_id: data.agentId || null,
         priority: data.priority,
@@ -230,6 +235,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
             setTitle("");
             setDescription("");
             setSelectedIssue(null);
+            setLabels([]);
           } else {
             onClose();
           }
@@ -253,17 +259,14 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      disablePointerDismissal
     >
       <DialogContent
         showCloseButton={false}
         className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
-        <DialogDescription className="sr-only">
-          Create a new task for this project
-        </DialogDescription>
-
         {/* Header */}
-        <div className="flex items-center gap-3 px-6 pt-4 pb-3 shrink-0">
+        <div className="flex items-center gap-3 px-6 pt-3 shrink-0">
           <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
             CREATE TASK
           </DialogTitle>
@@ -298,6 +301,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       setSelectedIssue(null);
                       setTitle("");
                       setDescription("");
+                      setLabels([]);
                       return;
                     }
                     const externalId = val.replace(/^#/, "").split(" ")[0];
@@ -342,17 +346,21 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                                 className="w-full rounded-md p-2 bg-muted/60 hover:bg-muted transition-colors cursor-default"
                               >
                                 <div className="flex items-center justify-between gap-2 mb-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      void openUrl(issue.url);
-                                    }}
-                                    className="text-[11px] !text-accent hover:underline shrink-0 cursor-pointer"
-                                  >
-                                    #{stripProviderPrefix(issue.external_id)}
-                                  </button>
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        void openUrl(issue.url);
+                                      }}
+                                      className="text-[11px] !text-accent hover:underline shrink-0 h-auto p-0"
+                                    >
+                                      #{stripProviderPrefix(issue.external_id)}
+                                    </Button>
+                                    {issue.issue_type && <IssueTypeChip type={issue.issue_type} />}
+                                  </div>
                                   {issue.priority && (
                                     <div className="flex items-center gap-1 shrink-0">
                                       <span
@@ -439,6 +447,19 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               placeholder="Add description..."
             />
 
+            {/* Labels */}
+            {labels.length > 0 && (
+              <div className="flex flex-wrap gap-1 shrink-0">
+                {labels.map((l) => (
+                  <IssueTypeChip
+                    key={l}
+                    type={l}
+                    onRemove={() => setLabels((prev) => prev.filter((x) => x !== l))}
+                  />
+                ))}
+              </div>
+            )}
+
             {/* Branch */}
             {isGitRepo && (
               <div className="shrink-0">
@@ -448,7 +469,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                   rules={{ required: isGitRepo ? "Base branch is required" : false }}
                   render={({ field: { value, onChange } }) => (
                     <BranchSection
-                      projectId={projectId}
                       value={value}
                       onChange={onChange}
                       error={errors.baseBranch?.message}

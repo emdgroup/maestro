@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 function parseDiffStat(
@@ -45,7 +46,9 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
     >
       {/* Delete button — appears on hover, hidden for main worktree */}
       {!isMain && (
-        <button
+        <Button
+          variant="ghost"
+          size="icon-xs"
           className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
           onClick={(e) => {
             e.stopPropagation();
@@ -54,7 +57,7 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
           aria-label="Delete worktree"
         >
           <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        </Button>
       )}
 
       {/* Branch name */}

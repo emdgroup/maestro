@@ -270,6 +270,17 @@
   }
 }
 
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in oklch, var(--muted) 70%, white) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
 .shimmer-thinking-text {
   background: linear-gradient(
     90deg,

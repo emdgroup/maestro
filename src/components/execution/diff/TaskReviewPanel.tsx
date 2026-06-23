@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
 import { useWorktreeDiffQuery, useWorktreeCommitsQuery } from "@/services/worktree.service";
+import { DiffStateProvider } from "./DiffStateContext";
 import {
   useRequestChangesMutation,
   useApproveTaskAndMergeMutation,
@@ -252,15 +253,6 @@ export function TaskReviewPanel({
     [filteredDiffFiles],
   );
 
-  // Tree file selection handler
-  const handleTreeFileSelect = useCallback(
-    (fileName: string) => {
-      const idx = filteredDiffFiles.findIndex((f) => f.fileName === fileName);
-      setSelectedFileIndex(idx >= 0 ? idx : null);
-    },
-    [filteredDiffFiles],
-  );
-
   // Multi-state button logic
   const hasComments = comments.length > 0;
   const defaultAction = hasComments ? "rework" : "approve";
@@ -438,197 +430,208 @@ export function TaskReviewPanel({
       />
 
       {/* Main content */}
-      <div className="flex flex-1 min-h-0">
-        {/* File sidebar */}
-        <DiffFilePanel
-          mode="review"
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          modifiedCount={diffFiles.length}
-          untrackedCount={untrackedFiles.length}
-          fileListMode={fileListMode}
-          diffLoading={diffQuery.isLoading}
-          diffFiles={diffFiles}
-          filteredDiffFiles={filteredDiffFiles}
-          untrackedFiles={untrackedFiles}
-          selectedFileIndex={selectedFileIndex}
-          onFileIndexChange={setSelectedFileIndex}
-          stagedFiles={new Set()}
-          getFileCheckState={() => "unchecked"}
-          onFileToggle={() => {}}
-          onFolderToggle={() => {}}
-          onToggleUntrackedFile={() => {}}
-          onTreeFileSelect={handleTreeFileSelect}
-          hasAnyStaged={false}
-          commitMessage=""
-          onCommitMessageChange={() => {}}
-          onCommit={() => {}}
-          isCommitting={false}
-          isStaging={false}
-          onStageUntracked={async () => {}}
-          viewedFiles={viewedFiles}
-          onToggleViewed={toggleViewed}
-          scopeSelector={
-            <ScopeSelector
-              selectedScope={scope}
-              onScopeChange={setScope}
-              commits={commits}
-              uncommittedFileCount={uncommittedFileCount}
-              totalFileCount={totalFileCount}
-              isLoading={commitsQuery.isLoading}
-            />
-          }
-          onFileComment={handleFileComment}
-        />
+      <DiffStateProvider
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        selectedFileIndex={selectedFileIndex}
+        setSelectedFileIndex={setSelectedFileIndex}
+        fileListMode={fileListMode}
+        setFileListMode={setFileListMode}
+      >
+        <div className="flex flex-1 min-h-0">
+          {/* File sidebar */}
+          <DiffFilePanel
+            mode="review"
+            modifiedCount={diffFiles.length}
+            untrackedCount={untrackedFiles.length}
+            diffLoading={diffQuery.isLoading}
+            diffFiles={diffFiles}
+            filteredDiffFiles={filteredDiffFiles}
+            untrackedFiles={untrackedFiles}
+            stagedFiles={new Set()}
+            getFileCheckState={() => "unchecked"}
+            onFileToggle={() => {}}
+            onFolderToggle={() => {}}
+            onToggleUntrackedFile={() => {}}
+            hasAnyStaged={false}
+            commitMessage=""
+            onCommitMessageChange={() => {}}
+            onCommit={() => {}}
+            isCommitting={false}
+            isStaging={false}
+            onStageUntracked={async () => {}}
+            viewedFiles={viewedFiles}
+            onToggleViewed={toggleViewed}
+            scopeSelector={
+              <ScopeSelector
+                selectedScope={scope}
+                onScopeChange={setScope}
+                commits={commits}
+                uncommittedFileCount={uncommittedFileCount}
+                totalFileCount={totalFileCount}
+                isLoading={commitsQuery.isLoading}
+              />
+            }
+            onFileComment={handleFileComment}
+          />
 
-        {/* Diff viewer */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {viewMode === "untracked" && !selectedUntrackedPath && (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              Select a file to preview
-            </div>
-          )}
-
-          {viewMode === "untracked" && selectedUntrackedPath && (
-            <UntrackedFileDiffViewer
-              projectId={projectId}
-              worktreePath={worktreePath}
-              filePath={selectedUntrackedPath}
-            />
-          )}
-
-          {viewMode === "uncommitted" && (
-            <>
-              {/* File content header */}
-              {selectedFile &&
-                (() => {
-                  const stats = selectedFile.hunks.reduce(
-                    (acc, h) => {
-                      for (const line of h.split("\n")) {
-                        if (line.startsWith("+") && !line.startsWith("+++")) acc.insertions++;
-                        if (line.startsWith("-") && !line.startsWith("---")) acc.deletions++;
-                      }
-                      return acc;
-                    },
-                    { insertions: 0, deletions: 0 },
-                  );
-                  const status = selectedFile.status ?? "M";
-                  const statusColor =
-                    status === "A"
-                      ? "text-success"
-                      : status === "D"
-                        ? "text-destructive"
-                        : "text-muted-foreground";
-                  const isViewed = viewedFiles.has(selectedFile.fileName);
-                  return (
-                    <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-                      <span className="font-mono text-foreground truncate flex-1">
-                        {selectedFile.fileName}
-                      </span>
-                      <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-                      {stats.insertions > 0 && (
-                        <span className="text-success shrink-0">+{stats.insertions}</span>
-                      )}
-                      {stats.deletions > 0 && (
-                        <span className="text-destructive shrink-0">-{stats.deletions}</span>
-                      )}
-                      <button
-                        onClick={() => handleFileComment(selectedFile.fileName)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                        title="Add file comment"
-                      >
-                        <MessageSquare className="size-3" />
-                      </button>
-                      <button
-                        onClick={() => toggleViewed(selectedFile.fileName)}
-                        className={cn(
-                          "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
-                          isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
-                        )}
-                        title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                      >
-                        <CheckCheck className="size-3" />
-                        <span className="text-[10px]">Viewed</span>
-                      </button>
-                    </div>
-                  );
-                })()}
-
-              {/* File-level comment (single per file, editable) */}
-              {selectedFile &&
-                (() => {
-                  const fileComment = comments.find(
-                    (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
-                  );
-                  return (
-                    <div className="shrink-0 border-b border-border">
-                      {fileComment && !activeFileComment && (
-                        <PendingCommentBlock
-                          text={fileComment.text}
-                          onRemove={() => handleRemoveComment(fileComment.id)}
-                          onEdit={(newText) => handleEditComment(fileComment.id, newText)}
-                        />
-                      )}
-                      {activeFileComment && (
-                        <div className="p-2">
-                          <InlineCommentInput
-                            initialText={fileComment?.text}
-                            onSubmit={(text) => {
-                              setComments((prev) => {
-                                if (fileComment) {
-                                  return prev.map((c) =>
-                                    c.id === fileComment.id ? { ...c, text } : c,
-                                  );
-                                }
-                                return [
-                                  ...prev,
-                                  {
-                                    id: crypto.randomUUID(),
-                                    filePath: selectedFile.fileName,
-                                    lineNumber: 0,
-                                    side: "new" as const,
-                                    text,
-                                  },
-                                ];
-                              });
-                              setActiveFileComment(false);
-                            }}
-                            onCancel={() => setActiveFileComment(false)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-              <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-                {diffQuery.isLoading ? (
-                  <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
-                ) : selectedFile ? (
-                  <DiffViewer
-                    diffFile={selectedFile}
-                    loading={false}
-                    diffViewMode={effectiveDiffViewMode}
-                    reviewMode={true}
-                    comments={currentFileComments}
-                    onAddComment={handleAddComment}
-                    onRemoveComment={handleRemoveComment}
-                    onEditComment={handleEditComment}
-                    onCancelComment={() => setActiveCommentLine(null)}
-                    onSubmitComment={handleSubmitComment}
-                  />
-                ) : (
-                  <DiffViewer
-                    diffFile={null}
-                    loading={false}
-                    diffViewMode={effectiveDiffViewMode}
-                  />
-                )}
+          {/* Diff viewer */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {viewMode === "untracked" && !selectedUntrackedPath && (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                Select a file to preview
               </div>
-            </>
-          )}
+            )}
+
+            {viewMode === "untracked" && selectedUntrackedPath && (
+              <UntrackedFileDiffViewer
+                projectId={projectId}
+                worktreePath={worktreePath}
+                filePath={selectedUntrackedPath}
+              />
+            )}
+
+            {viewMode === "uncommitted" && (
+              <>
+                {/* File content header */}
+                {selectedFile &&
+                  (() => {
+                    const stats = selectedFile.hunks.reduce(
+                      (acc, h) => {
+                        for (const line of h.split("\n")) {
+                          if (line.startsWith("+") && !line.startsWith("+++")) acc.insertions++;
+                          if (line.startsWith("-") && !line.startsWith("---")) acc.deletions++;
+                        }
+                        return acc;
+                      },
+                      { insertions: 0, deletions: 0 },
+                    );
+                    const status = selectedFile.status ?? "M";
+                    const statusColor =
+                      status === "A"
+                        ? "text-success"
+                        : status === "D"
+                          ? "text-destructive"
+                          : "text-muted-foreground";
+                    const isViewed = viewedFiles.has(selectedFile.fileName);
+                    return (
+                      <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+                        <span className="font-mono text-foreground truncate flex-1">
+                          {selectedFile.fileName}
+                        </span>
+                        <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+                        {stats.insertions > 0 && (
+                          <span className="text-success shrink-0">+{stats.insertions}</span>
+                        )}
+                        {stats.deletions > 0 && (
+                          <span className="text-destructive shrink-0">-{stats.deletions}</span>
+                        )}
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleFileComment(selectedFile.fileName)}
+                          className="flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                          title="Add file comment"
+                        >
+                          <MessageSquare className="size-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => toggleViewed(selectedFile.fileName)}
+                          className={cn(
+                            "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
+                            isViewed
+                              ? "text-success"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                          title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                        >
+                          <CheckCheck className="size-3" />
+                          <span className="text-[10px]">Viewed</span>
+                        </Button>
+                      </div>
+                    );
+                  })()}
+
+                {/* File-level comment (single per file, editable) */}
+                {selectedFile &&
+                  (() => {
+                    const fileComment = comments.find(
+                      (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
+                    );
+                    return (
+                      <div className="shrink-0 border-b border-border">
+                        {fileComment && !activeFileComment && (
+                          <PendingCommentBlock
+                            text={fileComment.text}
+                            onRemove={() => handleRemoveComment(fileComment.id)}
+                            onEdit={(newText) => handleEditComment(fileComment.id, newText)}
+                          />
+                        )}
+                        {activeFileComment && (
+                          <div className="p-2">
+                            <InlineCommentInput
+                              initialText={fileComment?.text}
+                              onSubmit={(text) => {
+                                setComments((prev) => {
+                                  if (fileComment) {
+                                    return prev.map((c) =>
+                                      c.id === fileComment.id ? { ...c, text } : c,
+                                    );
+                                  }
+                                  return [
+                                    ...prev,
+                                    {
+                                      id: crypto.randomUUID(),
+                                      filePath: selectedFile.fileName,
+                                      lineNumber: 0,
+                                      side: "new" as const,
+                                      text,
+                                    },
+                                  ];
+                                });
+                                setActiveFileComment(false);
+                              }}
+                              onCancel={() => setActiveFileComment(false)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+                  {diffQuery.isLoading ? (
+                    <DiffViewer
+                      diffFile={null}
+                      loading={true}
+                      diffViewMode={effectiveDiffViewMode}
+                    />
+                  ) : selectedFile ? (
+                    <DiffViewer
+                      diffFile={selectedFile}
+                      loading={false}
+                      diffViewMode={effectiveDiffViewMode}
+                      reviewMode={true}
+                      comments={currentFileComments}
+                      onAddComment={handleAddComment}
+                      onRemoveComment={handleRemoveComment}
+                      onEditComment={handleEditComment}
+                      onCancelComment={() => setActiveCommentLine(null)}
+                      onSubmitComment={handleSubmitComment}
+                    />
+                  ) : (
+                    <DiffViewer
+                      diffFile={null}
+                      loading={false}
+                      diffViewMode={effectiveDiffViewMode}
+                    />
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      </DiffStateProvider>
 
       {/* Confirmation Modals */}
       <ReworkModal

@@ -3,6 +3,8 @@ import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
 import type { ReactElement } from "react";
 import { useState, useRef } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { buttonVariants } from "@/ui/button";
+import { cn } from "@/lib/ui-utils";
 
 type ThemeConfig = {
   title: string;
@@ -49,7 +51,10 @@ export function ThemeToggle() {
               onClick={handleClick}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
-              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground cursor-pointer"
+              className={cn(
+                buttonVariants({ variant: "ghost" }),
+                "h-7 w-7 rounded-full [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground",
+              )}
               aria-label={`Current theme: ${theme}. Click to cycle`}
             >
               {icon}

@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
+import { Button } from "@/ui/button";
+import { cn } from "@/lib/ui-utils";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
@@ -193,9 +195,13 @@ export function AppHeader({
                   }
                   placement="below"
                 >
-                  <button
+                  <Button
+                    variant="ghost"
                     onClick={() => onViewChange(view.id)}
-                    className={`relative flex w-full items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium outline-none ${isActive ? "" : "cursor-pointer hover:bg-background/50"}`}
+                    className={cn(
+                      "relative flex w-full items-center justify-center rounded-md px-3 py-1.5 h-auto text-xs font-medium",
+                      isActive ? "hover:bg-transparent" : "hover:bg-background/50",
+                    )}
                   >
                     {isActive && (
                       <motion.span
@@ -212,7 +218,7 @@ export function AppHeader({
                       <Icon className="size-3.5" />
                       {view.label}
                     </motion.span>
-                  </button>
+                  </Button>
                 </ShortcutHint>
               );
             })}
@@ -223,18 +229,20 @@ export function AppHeader({
       {/* Right section: Auto/Manual toggle + Status indicator + Theme switcher */}
       <div className="flex items-center justify-end gap-2">
         {/* Auto/Manual mode toggle */}
-        <button
+        <Button
+          variant="ghost"
           onClick={handleAutoModeToggle}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
-            autoMode
-              ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          }`}
           title={
             autoMode
               ? "Auto mode: tasks in Ready are executed automatically. Click to switch to Manual."
               : "Manual mode: tasks must be started manually. Click to enable Auto mode."
           }
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2 py-1 h-auto text-xs font-medium",
+            autoMode
+              ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
+              : "bg-muted text-muted-foreground hover:bg-muted/80",
+          )}
         >
           <span
             className={`h-1.5 w-1.5 rounded-full shrink-0 ${
@@ -242,7 +250,7 @@ export function AppHeader({
             }`}
           />
           {autoMode ? "Auto" : "Manual"}
-        </button>
+        </Button>
 
         {/* Running agent count */}
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">

@@ -90,6 +90,8 @@ struct WorkItemFields {
     title: String,
     #[serde(rename = "System.Description")]
     description: Option<String>,
+    #[serde(rename = "System.WorkItemType")]
+    work_item_type: Option<String>,
     #[serde(rename = "System.ChangedDate")]
     changed_date: Option<String>,
     #[serde(rename = "System.Tags")]
@@ -277,6 +279,7 @@ pub async fn fetch_issues(
                     Some(4) => Some("Low".to_string()),
                     _ => None,
                 },
+                issue_type: item.fields.work_item_type,
             });
         }
     }

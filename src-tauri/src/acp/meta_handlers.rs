@@ -449,29 +449,6 @@ pub async fn prepare_external_attachments(
                 "mimeType": mime,
                 "uri": uri,
             })
-        } else if is_pdf_extension(&file.path) {
-            const MAX_PDF_BYTES: u64 = 25 * 1024 * 1024;
-            let bytes = tokio::fs::read(local_path)
-                .await
-                .map_err(|e| format!("Cannot read '{}': {e}", file.path))?;
-            let size = bytes.len() as u64;
-            if size > MAX_PDF_BYTES {
-                return Err(format!(
-                    "PDF '{}' too large ({} MB, max 25 MB)",
-                    display_name,
-                    size / 1_048_576
-                ));
-            }
-            use base64::Engine;
-            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            serde_json::json!({
-                "type": "resource",
-                "resource": {
-                    "uri": format!("file://{}", file.path),
-                    "blob": data,
-                    "mimeType": "application/pdf",
-                },
-            })
         } else {
             let mime = mime_for_extension(&file.path)
                 .map(str::to_string);
@@ -512,7 +489,7 @@ pub async fn prepare_external_attachments(
                 _ => format!("file://{}", file.path),
             };
 
-            if embedded_context {
+            if embedded_context && !is_pdf_extension(&file.path) {
                 let text = tokio::fs::read_to_string(local_path)
                     .await
                     .map_err(|e| format!("Cannot read '{}': {e}", file.path))?;

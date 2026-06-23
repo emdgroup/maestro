@@ -5,6 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
+import { commands } from "@/types/bindings";
 import type {
   Task,
   TaskConfigRequest,
@@ -34,6 +35,8 @@ export const taskQueryKeys = {
   instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
   attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
   commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
+  proxyImage: (projectId: number, filePath: string) =>
+    [...taskQueryKeys.base, "proxyImage", projectId, filePath] as const,
 };
 
 /**
@@ -546,5 +549,17 @@ export function useCancelTaskMutation() {
       toast.success("Task cancelled");
     },
     onError: createErrorToastHandler("Failed to cancel task"),
+  });
+}
+
+export function useProxyImageQuery(projectId: number, filePath: string) {
+  return useQuery({
+    queryKey: taskQueryKeys.proxyImage(projectId, filePath),
+    queryFn: async () => {
+      const result = await commands.proxyImage(projectId, filePath);
+      if (result.status === "ok") return result.data;
+      return null;
+    },
+    staleTime: Infinity,
   });
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GitCommitHorizontal, ChevronDown, Circle } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { cn } from "@/lib/ui-utils";
+import { Button } from "@/ui/button";
 import type { CommitInfo } from "@/types/bindings";
 
 export type DiffScope = { type: "all" } | { type: "uncommitted" } | { type: "commit"; sha: string };
@@ -70,9 +71,10 @@ export function ScopeSelector({
         <ChevronDown className="size-3 text-muted-foreground shrink-0" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-1">
-        <button
+        <Button
+          variant="ghost"
           className={cn(
-            "flex items-center gap-2 w-full px-3 py-2 text-xs rounded-sm hover:bg-accent",
+            "flex items-center gap-2 w-full px-3 py-2 h-auto text-xs rounded-sm hover:bg-accent justify-start",
             selectedScope.type === "all" && "bg-accent",
           )}
           onClick={() => handleSelect({ type: "all" })}
@@ -82,10 +84,11 @@ export function ScopeSelector({
           <span className="text-muted-foreground">
             {totalFileCount} files &middot; {commits.length} commits
           </span>
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           className={cn(
-            "flex items-center gap-2 w-full px-3 py-2 text-xs rounded-sm hover:bg-accent",
+            "flex items-center gap-2 w-full px-3 py-2 h-auto text-xs rounded-sm hover:bg-accent justify-start",
             selectedScope.type === "uncommitted" && "bg-accent",
           )}
           onClick={() => handleSelect({ type: "uncommitted" })}
@@ -93,16 +96,17 @@ export function ScopeSelector({
           <Circle className="size-2 fill-current text-amber-400" />
           <span className="flex-1 text-left">Uncommitted</span>
           <span className="text-muted-foreground">{uncommittedFileCount} files</span>
-        </button>
+        </Button>
         {commits.length > 0 && (
           <>
             <div className="h-px bg-border my-1" />
             <div className="max-h-48 overflow-y-auto custom-scrollbar">
               {commits.map((commit) => (
-                <button
+                <Button
                   key={commit.sha}
+                  variant="ghost"
                   className={cn(
-                    "flex items-center gap-2 w-full px-3 py-2 text-xs rounded-sm hover:bg-accent",
+                    "flex items-center gap-2 w-full px-3 py-2 h-auto text-xs rounded-sm hover:bg-accent justify-start",
                     selectedScope.type === "commit" &&
                       selectedScope.sha === commit.sha &&
                       "bg-accent",
@@ -115,7 +119,7 @@ export function ScopeSelector({
                   </span>
                   <span className="truncate flex-1 text-left">{commit.message}</span>
                   <span className="text-muted-foreground shrink-0">{commit.file_count}f</span>
-                </button>
+                </Button>
               ))}
             </div>
           </>

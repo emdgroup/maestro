@@ -2,13 +2,12 @@ import { GitBranch } from "lucide-react";
 import { BranchPicker } from "./BranchPicker";
 
 interface BranchSectionProps {
-  projectId: number | null;
   value: string;
   onChange?: (branch: string) => void;
   error?: string;
 }
 
-export function BranchSection({ projectId, value, onChange, error }: BranchSectionProps) {
+export function BranchSection({ value, onChange, error }: BranchSectionProps) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
@@ -16,7 +15,7 @@ export function BranchSection({ projectId, value, onChange, error }: BranchSecti
       </span>
       {onChange ? (
         <>
-          <BranchPicker projectId={projectId} value={value} onChange={onChange} error={!!error} />
+          <BranchPicker value={value} onChange={onChange} error={!!error} />
           {error && <span className="text-destructive text-xs">{error}</span>}
         </>
       ) : value ? (

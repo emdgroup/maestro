@@ -1,10 +1,12 @@
 import { useRef, useEffect, useMemo, CSSProperties } from "react";
 import { Task, TaskStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
+import { Button } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
+import { useBoardActions } from "@/store/boardStore";
 import {
   ShieldAlert,
   Play,
@@ -32,7 +34,6 @@ interface TaskCardProps {
   task: Task;
   index: number;
   dndGroup?: TaskStatus;
-  onReviewClick?: (taskId: number, taskName: string) => void;
 }
 
 function AgentAvatar({ agentId }: { agentId: string }) {
@@ -131,17 +132,18 @@ function FooterCTAs({
   if (task.status === "Ready") {
     return (
       <div className="flex gap-1 mt-1.5">
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onExecute();
           }}
           disabled={isExecuting}
-          className={base}
+          variant="ghost"
+          className={cn(base, "h-auto")}
         >
           <Play className="w-2.5 h-2.5 fill-current" />
           {isExecuting ? "Starting…" : "Execute"}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -150,42 +152,45 @@ function FooterCTAs({
     if (isAwaiting) {
       return (
         <div className="flex gap-1 mt-1.5">
-          <button
+          <Button
             onClick={(e) => {
               e.stopPropagation();
               onJoin();
             }}
-            className={base}
+            variant="ghost"
+            className={cn(base, "h-auto")}
           >
             <MessageSquare className="w-2.5 h-2.5 fill-current" />
             Respond
-          </button>
+          </Button>
         </div>
       );
     }
     return (
       <div className="flex gap-1 mt-1.5">
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onStop();
           }}
-          className={cn(base, "bg-foreground text-background")}
+          variant="ghost"
+          className={cn(base, "h-auto bg-foreground text-background")}
         >
           <Square className="w-2.5 h-2.5 fill-current" />
           Stop
-        </button>
+        </Button>
         {activeSession && (
-          <button
+          <Button
             onClick={(e) => {
               e.stopPropagation();
               onJoin();
             }}
-            className={base}
+            variant="ghost"
+            className={cn(base, "h-auto")}
           >
             <BotMessageSquare className="w-2.5 h-2.5 fill-current" />
             Join
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -194,16 +199,17 @@ function FooterCTAs({
   if (task.status === "Review") {
     return (
       <div className="flex gap-1 mt-1.5">
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onReview();
           }}
-          className={base}
+          variant="ghost"
+          className={cn(base, "h-auto")}
         >
           <GitPullRequest className="w-2.5 h-2.5 fill-current" />
           Review
-        </button>
+        </Button>
       </div>
     );
   }
@@ -211,16 +217,17 @@ function FooterCTAs({
   if (task.status === "Done" && !task.archived_at) {
     return (
       <div className="flex gap-1 mt-1.5">
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onArchive();
           }}
-          className={cn(base, "bg-foreground text-background")}
+          variant="ghost"
+          className={cn(base, "h-auto bg-foreground text-background")}
         >
           <Archive className="w-2.5 h-2.5" />
           Archive
-        </button>
+        </Button>
       </div>
     );
   }
@@ -228,10 +235,11 @@ function FooterCTAs({
   return null;
 }
 
-export function TaskCard({ task, index, dndGroup, onReviewClick }: TaskCardProps) {
+export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const { projectId, projectPath, connection } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
+  const { openReview } = useBoardActions();
   const {
     execute: handleExecute,
     isExecuting,
@@ -374,7 +382,7 @@ export function TaskCard({ task, index, dndGroup, onReviewClick }: TaskCardProps
           onExecute={() => void handleExecute(task)}
           onStop={() => interruptTask.mutate(task.id)}
           onJoin={() => navigate({ agentId: String(task.id) })}
-          onReview={() => onReviewClick?.(task.id, task.title)}
+          onReview={() => openReview(task.id)}
           onArchive={() => archiveTask.mutate(task.id)}
         />
       </div>

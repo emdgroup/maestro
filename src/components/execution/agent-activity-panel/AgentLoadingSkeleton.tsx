@@ -1,6 +1,16 @@
 import { Skeleton } from "@/ui/skeleton";
 
-export function AgentLoadingSkeleton() {
+export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean }) {
+  if (isNewSession) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0 relative">
+        <div className="absolute inset-0 flex items-center justify-center px-8">
+          <Skeleton className="h-12 w-[min(36rem,100%)] rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex-1 p-3 space-y-3">

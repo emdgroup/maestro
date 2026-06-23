@@ -2211,6 +2211,7 @@ export type CreateTaskRequest = {
   title: string;
   description: string | null;
   skills: string[];
+  labels: string[];
   base_branch: string;
   agent_id: string | null;
   priority: string | null;
@@ -2349,6 +2350,7 @@ export type RemoteIssue = {
   labels: string[];
   updated_at: string | null;
   priority: string | null;
+  issue_type: string | null;
 };
 /**
  * A repository option returned by provider lookup commands for combobox display.

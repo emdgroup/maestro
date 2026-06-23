@@ -52,7 +52,13 @@ export function useFileInput(
           const mimeType = file.type || "image/png";
           const buffer = await file.arrayBuffer();
           const bytes = new Uint8Array(buffer);
-          const base64Data = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
+          // ponytail: chunked to avoid stack overflow on large pastes (>64K bytes)
+          const CHUNK = 0x8000;
+          let binary = "";
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(...(bytes.subarray(i, i + CHUNK) as unknown as number[]));
+          }
+          const base64Data = btoa(binary);
           const tempPath = await api.saveClipboardImage(base64Data, mimeType);
           const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
           const filename = count === 0 ? `Pasted image.${ext}` : `Pasted image (${count}).${ext}`;
@@ -82,7 +88,7 @@ export function useFileInput(
       }
     });
     return () => {
-      unlisten.then((fn: () => void) => fn());
+      unlisten.then((fn: () => void) => fn()).catch(() => {});
     };
   }, [isActive]);
 
