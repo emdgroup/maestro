@@ -40,7 +40,7 @@ base64 = "0.22"
 machine-uid = "0.6"
 rand = { version = "0.8", features = ["getrandom"] }
 portable-pty = "0.9.0"
-russh = { version = "0.60.0", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh = { version = "0.61.2", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.1"
 keyring = { version = "3.6.3", features = [
   "windows-native",
