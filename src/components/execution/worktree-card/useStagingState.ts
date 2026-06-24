@@ -57,7 +57,6 @@ export function useStagingState(
 
   if (prevViewModeRef.current !== viewMode) {
     prevViewModeRef.current = viewMode;
-    resetSelectionState();
   }
 
   const effectiveSelectedFileIndex =
