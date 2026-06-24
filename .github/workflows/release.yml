@@ -223,4 +223,4 @@ jobs:
       - name: Generate latest.json and upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node .github/scripts/generate-update-manifest.js
+        run: node .github/scripts/generate-update-manifest.cjs
