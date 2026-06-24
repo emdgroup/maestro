@@ -25,6 +25,7 @@ import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { cn } from "@/lib/ui-utils";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
+import { useUpdater } from "@/hooks/useUpdater";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
@@ -45,6 +46,7 @@ const NOOP = () => {};
 
 function App() {
   const [integrationDismissed, setIntegrationDismissed] = useState(false);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
@@ -53,7 +55,19 @@ function App() {
   const startupTabAppliedForRef = useRef<number | null>(null);
 
   // Query hooks for settings
-  const { isLoading: settingsLoading, error: settingsError } = useSettings();
+  const { isLoading: settingsLoading, error: settingsError, data: appSettings } = useSettings();
+
+  // Updater — startup check fires once when settings are ready
+  const { status: updateStatus, install: installUpdate, checkForUpdates } = useUpdater();
+  const autoUpdate = appSettings?.auto_update ?? false;
+
+  useEffect(() => {
+    if (!settingsLoading && !settingsError) {
+      checkForUpdates(autoUpdate);
+    }
+    // Run once on mount after settings resolve
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsLoading]);
 
   // Page routing backed by navigationStore
   const activeTab = useActiveTab();
@@ -215,9 +229,45 @@ function App() {
     </div>
   );
 
+  const showUpdateBanner =
+    !updateBannerDismissed &&
+    (updateStatus.phase === "available" || updateStatus.phase === "ready");
+
   return (
     <ShortcutHintProvider>
       <div className="app flex flex-col h-screen bg-background">
+        {showUpdateBanner && (
+          <div
+            className={`flex items-center justify-between px-4 py-2 text-sm shrink-0 ${
+              updateStatus.phase === "ready"
+                ? "bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-400"
+                : "bg-accent/10 border-b border-accent/20 text-accent"
+            }`}
+          >
+            <span>
+              {updateStatus.phase === "ready"
+                ? `Update downloaded — restart to apply v${updateStatus.version}`
+                : `Maestro v${updateStatus.version} is available`}
+            </span>
+            <div className="flex items-center gap-2">
+              {updateStatus.phase === "available" && (
+                <button
+                  onClick={installUpdate}
+                  className="font-medium underline underline-offset-2 hover:opacity-80 transition-opacity"
+                >
+                  Install
+                </button>
+              )}
+              <button
+                onClick={() => setUpdateBannerDismissed(true)}
+                className="opacity-60 hover:opacity-100 transition-opacity ml-1"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <AppHeader
           currentProject={currentProject}
           activeView={activeTab}

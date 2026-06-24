@@ -72,6 +72,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<EnterKeyBehavior>().ok())
         .unwrap_or_default();
 
+    let auto_update = settings_map
+        .get("auto_update")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     Ok(AppSettings {
         theme_preference,
         auto_mode,
@@ -82,6 +87,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         terminal_color_mode,
         enter_key_behavior,
         updated_at,
+        auto_update,
     })
 }
 
@@ -99,6 +105,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
     let terminal_color_mode_str = settings.terminal_color_mode.to_string();
     let enter_key_behavior_str = settings.enter_key_behavior.to_string();
+    let auto_update_str = if settings.auto_update { "true" } else { "false" };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -108,6 +115,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("accent_color", accent_color_str.as_str()),
         ("terminal_color_mode", terminal_color_mode_str.as_str()),
         ("enter_key_behavior", enter_key_behavior_str.as_str()),
+        ("auto_update", auto_update_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -157,6 +165,7 @@ mod tests {
             terminal_color_mode: crate::models::TerminalColorMode::FollowTheme,
             enter_key_behavior: crate::models::EnterKeyBehavior::SendPrompt,
             updated_at: chrono::Utc::now().to_rfc3339(),
+            auto_update: false,
         };
 
         save_settings(&mut conn, &settings).unwrap();

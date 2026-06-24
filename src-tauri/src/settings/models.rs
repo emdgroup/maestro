@@ -117,6 +117,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub enter_key_behavior: EnterKeyBehavior,
     pub updated_at: String,
+    #[serde(default)]
+    pub auto_update: bool,
 }
 
 impl Default for AppSettings {
@@ -131,6 +133,7 @@ impl Default for AppSettings {
             terminal_color_mode: TerminalColorMode::FollowTheme,
             enter_key_behavior: EnterKeyBehavior::SendPrompt,
             updated_at: chrono::Utc::now().to_rfc3339(),
+            auto_update: false,
         }
     }
 }

@@ -2162,6 +2162,7 @@ export type AppSettings = {
   terminal_color_mode?: TerminalColorMode;
   enter_key_behavior?: EnterKeyBehavior;
   updated_at: string;
+  auto_update?: boolean;
 };
 /**
  * An Azure DevOps project option for combobox display.

@@ -23,6 +23,7 @@ import type {
   TerminalColorMode,
 } from "@/types/bindings";
 import { showSuccessToast } from "@/components/common/error-toast/ErrorToast";
+import { UpdateCard } from "@/components/settings/UpdateCard";
 
 interface SettingsPageProps {
   projectId: number;
@@ -213,6 +214,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             </div>
           ) : (
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              <UpdateCard />
+
               <div className="bg-card border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                   <Bot className="w-4 h-4 text-muted-foreground" />
