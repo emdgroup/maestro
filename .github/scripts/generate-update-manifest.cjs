@@ -34,16 +34,13 @@ function assetUrl(filename) {
 // Locate updater artifacts
 const linuxDir = path.join(ARTIFACTS, "linux-updater");
 const macArmDir = path.join(ARTIFACTS, "macos-arm64-updater");
-const macX86Dir = path.join(ARTIFACTS, "macos-x86-updater");
 const winDir = path.join(ARTIFACTS, "windows-updater");
 
-const linuxTarGz = findFile(linuxDir, /\.AppImage$/);
+const linuxAppImage = findFile(linuxDir, /\.AppImage$/);
 const linuxSig = findFile(linuxDir, /\.AppImage\.sig$/);
-const macArmTarGz = findFile(macArmDir, /\.app\.tar\.gz$(?!\.sig)/);
+const macArmTarGz = findFile(macArmDir, /\.app\.tar\.gz$/);
 const macArmSig = findFile(macArmDir, /\.app\.tar\.gz\.sig$/);
-const macX86TarGz = findFile(macX86Dir, /\.app\.tar\.gz$(?!\.sig)/);
-const macX86Sig = findFile(macX86Dir, /\.app\.tar\.gz\.sig$/);
-const winExe = findFile(winDir, /-setup\.exe$(?!\.sig)/);
+const winExe = findFile(winDir, /-setup\.exe$/);
 const winSig = findFile(winDir, /-setup\.exe\.sig$/);
 
 const manifest = {
@@ -52,16 +49,12 @@ const manifest = {
   pub_date: pubDate,
   platforms: {
     "linux-x86_64": {
-      url: assetUrl(linuxTarGz),
+      url: assetUrl(linuxAppImage),
       signature: readSig(linuxSig),
     },
     "darwin-aarch64": {
       url: assetUrl(macArmTarGz),
       signature: readSig(macArmSig),
-    },
-    "darwin-x86_64": {
-      url: assetUrl(macX86TarGz),
-      signature: readSig(macX86Sig),
     },
     "windows-x86_64": {
       url: assetUrl(winExe),
@@ -76,17 +69,8 @@ console.log("Generated latest.json:", JSON.stringify(manifest, null, 2));
 // Upload latest.json to the existing GitHub Release
 execSync(`gh release upload "${tag}" latest.json --clobber`, { stdio: "inherit" });
 
-// Also upload the updater artifacts (tar.gz + sig files) so URLs in latest.json resolve
-const updaterFiles = [
-  linuxTarGz,
-  linuxSig,
-  macArmTarGz,
-  macArmSig,
-  macX86TarGz,
-  macX86Sig,
-  winExe,
-  winSig,
-]
+// Also upload the updater artifacts so URLs in latest.json resolve
+const updaterFiles = [linuxAppImage, linuxSig, macArmTarGz, macArmSig, winExe, winSig]
   .filter(Boolean)
   .join(" ");
 

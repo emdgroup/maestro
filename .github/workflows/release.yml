@@ -110,54 +110,6 @@ jobs:
         with:
           files: |
             target/release/bundle/dmg/*.dmg
-            target/release/bundle/macos/*.app.tar.gz
-
-  build-macos-x86:
-    name: Build macOS (x86_64)
-    runs-on: macos-15
-    needs: [build-linux]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - uses: actions/cache/restore@v6
-        with:
-          path: target/x86_64-unknown-linux-gnu/release/maestro-server
-          key: maestro-server-linux-${{ github.sha }}
-          fail-on-cache-miss: true
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm tauri build --target x86_64-apple-darwin
-        env:
-          SKIP_REMOTE_BUILD: "1"
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-x86-updater
-          path: |
-            target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
-            target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-            target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
 
   build-windows:
     name: Build Windows (x86_64)
@@ -207,7 +159,7 @@ jobs:
 
   publish:
     name: Publish update manifest
-    needs: [build-linux, build-macos-arm64, build-macos-x86, build-windows]
+    needs: [build-linux, build-macos-arm64, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
