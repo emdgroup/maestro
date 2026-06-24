@@ -5,7 +5,7 @@ import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { TooltipProvider } from "@/ui/tooltip";
-import { Dialog, DialogContent, DialogClose, DialogTitle, DialogHeader } from "@/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -135,12 +135,21 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const [agentError, setAgentError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+
+  function handleRequestClose() {
+    if (isEditable && isDirty.current) {
+      setDiscardOpen(true);
+      return;
+    }
+    setActiveTaskId(null);
+  }
 
   useShortcuts("taskDetail", {
     "task-back": () => {
       if (!task) return;
       if (document.querySelector('[role="alertdialog"]')) return;
-      setActiveTaskId(null);
+      handleRequestClose();
     },
     "task-delete": () => {
       if (task !== null && task.status !== "Done") setDeleteOpen(true);
@@ -162,19 +171,27 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   function handleSave() {
     if (!task || draft.title.trim().length < 3) return;
-    updateTask.mutate({
-      taskId: task.id,
-      updates: {
-        title: draft.title.trim(),
-        description: draft.description || null,
-        priority: draft.priority,
-        agent_id: draft.agentId,
-        isolated_worktree: draft.isolatedWorktree,
-        auto_approve: draft.autoApprove,
-        base_branch: draft.baseBranch || undefined,
-        labels: draft.labels,
+    updateTask.mutate(
+      {
+        taskId: task.id,
+        updates: {
+          title: draft.title.trim(),
+          description: draft.description || null,
+          priority: draft.priority,
+          agent_id: draft.agentId,
+          isolated_worktree: draft.isolatedWorktree,
+          auto_approve: draft.autoApprove,
+          base_branch: draft.baseBranch || undefined,
+          labels: draft.labels,
+        },
       },
-    });
+      {
+        onSuccess: () => {
+          isDirty.current = false;
+          setActiveTaskId(null);
+        },
+      },
+    );
   }
 
   const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
@@ -184,7 +201,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       <Dialog
         open={taskId !== null}
         onOpenChange={(open) => {
-          if (!open) setActiveTaskId(null);
+          if (!open) handleRequestClose();
         }}
         disablePointerDismissal
       >
@@ -220,10 +237,15 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   </SelectContent>
                 </Select>
                 <ShortcutHint shortcutId="task-back">
-                  <DialogClose render={<Button variant="ghost" size="icon" className="shrink-0" />}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={handleRequestClose}
+                  >
                     <X className="size-4" />
                     <span className="sr-only">Close</span>
-                  </DialogClose>
+                  </Button>
                 </ShortcutHint>
               </DialogHeader>
 
@@ -359,6 +381,30 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                     </AlertDialog>
                   </>
                 )}
+
+                <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Your unsaved changes will be lost.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel onClick={() => setDiscardOpen(false)}>
+                        Keep editing
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => {
+                          setDiscardOpen(false);
+                          setActiveTaskId(null);
+                        }}
+                      >
+                        Discard
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
 
                 <div className="flex-1" />
 

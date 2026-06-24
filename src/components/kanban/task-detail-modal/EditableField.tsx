@@ -83,7 +83,9 @@ export function EditableField({
 
     return (
       <div
+        tabIndex={isEditable ? 0 : -1}
         onClick={() => isEditable && setEditing(true)}
+        onFocus={() => isEditable && setEditing(true)}
         className={cn(
           viewClass,
           "text-sm leading-relaxed",

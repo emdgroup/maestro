@@ -16,16 +16,19 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
       return;
     }
 
+    // Strip trailing slash appended by `ls -F` for directories
+    const name = dirName.replace(/\/$/, "");
+
     // Handle normal directory navigation
     let newPath: string;
 
     // Check if current path is a drive root (e.g., "C:/")
     if (/^[A-Z]:\/$/i.test(currentPath)) {
-      newPath = `${currentPath}${dirName}`;
+      newPath = `${currentPath}${name}`;
     } else if (currentPath === "/") {
-      newPath = `/${dirName}`;
+      newPath = `/${name}`;
     } else {
-      newPath = `${currentPath}/${dirName}`;
+      newPath = `${currentPath}/${name}`;
     }
 
     setCurrentPath(newPath);
