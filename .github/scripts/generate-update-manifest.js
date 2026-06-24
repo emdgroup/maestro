@@ -37,8 +37,8 @@ const macArmDir = path.join(ARTIFACTS, "macos-arm64-updater");
 const macX86Dir = path.join(ARTIFACTS, "macos-x86-updater");
 const winDir = path.join(ARTIFACTS, "windows-updater");
 
-const linuxTarGz = findFile(linuxDir, /\.AppImage\.tar\.gz$(?!\.sig)/);
-const linuxSig = findFile(linuxDir, /\.AppImage\.tar\.gz\.sig$/);
+const linuxTarGz = findFile(linuxDir, /\.AppImage$/);
+const linuxSig = findFile(linuxDir, /\.AppImage\.sig$/);
 const macArmTarGz = findFile(macArmDir, /\.app\.tar\.gz$(?!\.sig)/);
 const macArmSig = findFile(macArmDir, /\.app\.tar\.gz\.sig$/);
 const macX86TarGz = findFile(macX86Dir, /\.app\.tar\.gz$(?!\.sig)/);

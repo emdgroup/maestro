@@ -55,8 +55,8 @@ jobs:
         with:
           name: linux-updater
           path: |
-            target/release/bundle/appimage/*.AppImage.tar.gz
-            target/release/bundle/appimage/*.AppImage.tar.gz.sig
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
 
       - uses: softprops/action-gh-release@v2
         with:
