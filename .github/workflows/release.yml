@@ -13,7 +13,7 @@ jobs:
     name: Build Linux (x86_64)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Tauri system deps
         run: |
@@ -72,7 +72,7 @@ jobs:
     runs-on: macos-latest
     needs: [build-linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
@@ -117,7 +117,7 @@ jobs:
     runs-on: macos-15
     needs: [build-linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
@@ -164,7 +164,7 @@ jobs:
     runs-on: windows-latest
     needs: [build-linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
@@ -210,7 +210,7 @@ jobs:
     needs: [build-linux, build-macos-arm64, build-macos-x86, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
