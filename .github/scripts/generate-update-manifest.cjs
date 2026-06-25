@@ -5,7 +5,6 @@
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const { glob } = require("fs");
 
 const REPO = "emdgroup/maestro";
 const ARTIFACTS = path.join(__dirname, "../../artifacts");
