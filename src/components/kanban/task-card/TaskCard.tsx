@@ -188,7 +188,7 @@ function FooterCTAs({
             variant="ghost"
             className={cn(base, "h-auto")}
           >
-            <BotMessageSquare className="w-2.5 h-2.5 fill-current" />
+            <BotMessageSquare className="w-2.5 h-2.5" />
             Join
           </Button>
         )}
@@ -207,9 +207,22 @@ function FooterCTAs({
           variant="ghost"
           className={cn(base, "h-auto")}
         >
-          <GitPullRequest className="w-2.5 h-2.5 fill-current" />
+          <GitPullRequest className="w-2.5 h-2.5" />
           Review
         </Button>
+        {activeSession && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJoin();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          >
+            <BotMessageSquare className="w-2.5 h-2.5" />
+            Join
+          </Button>
+        )}
       </div>
     );
   }
