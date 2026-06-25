@@ -3467,7 +3467,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.22.1",
@@ -3510,7 +3510,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-protocol"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
