@@ -39,7 +39,7 @@ async function doInstall(autoUpdate: boolean): Promise<void> {
   const version = update.version;
   let totalBytes = 0;
   let downloadedBytes = 0;
-  await update.downloadAndInstall((event) => {
+  await update.download((event) => {
     if (event.event === "Started") {
       totalBytes = event.data.contentLength ?? 0;
       store.setStatus({ phase: "downloading", progress: 0, version });
@@ -53,6 +53,7 @@ async function doInstall(autoUpdate: boolean): Promise<void> {
   });
 
   if (autoUpdate) {
+    await update.install();
     await relaunch();
   }
 }
@@ -111,6 +112,7 @@ export function useUpdater() {
   }
 
   async function applyUpdate() {
+    await pendingUpdate?.install();
     await relaunch();
   }
 

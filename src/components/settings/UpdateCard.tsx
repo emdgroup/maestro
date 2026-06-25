@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -113,19 +113,11 @@ export function UpdateCard() {
           {/* Right block — state-dependent */}
           {status.phase === "available" ? (
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <Button size="sm" onClick={install} className="h-7 text-xs gap-1.5">
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 2 L8 11 M4 8 L8 12 L12 8"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+              <Button size="sm" onClick={install} className="h-7 text-xs gap-1.5 text-accent ">
+                <ArrowDownToLine className="w-3 h-3" />
                 Install
               </Button>
-              <span className="text-[10px] text-accent font-medium">Update available</span>
+              <span className="text-[10px] font-medium">Update available</span>
             </div>
           ) : status.phase === "ready" ? (
             <div className="flex flex-col items-end gap-1 shrink-0">
@@ -140,7 +132,7 @@ export function UpdateCard() {
               <span className="text-[10px] text-amber-500 font-medium">Restart required</span>
             </div>
           ) : status.phase === "downloading" ? (
-            <div className="flex flex-col items-end gap-1.5 shrink-0 min-w-[100px]">
+            <div className="flex flex-col items-end gap-1.5 shrink-0 min-w-25">
               <span className="text-[10px] text-muted-foreground">
                 Downloading… {status.progress}%
               </span>
@@ -156,20 +148,17 @@ export function UpdateCard() {
             <div className="flex items-center gap-2 shrink-0">
               <div className="flex flex-col items-end gap-0.5">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-4 rounded-full border-2 border-green-500 flex items-center justify-center shrink-0">
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
-                      <path
-                        d="M1 4L3 6L7 2"
-                        stroke="#34c759"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <span className="text-[11px] font-semibold text-green-500">
-                    {status.phase === "error" ? "Error" : "Up to date"}
-                  </span>
+                  {status.phase === "error" ? (
+                    <>
+                      <CircleX className="w-3 h-3 text-red-500 shrink-0" />
+                      <span className="text-[11px] font-semibold text-red-500">Error</span>
+                    </>
+                  ) : (
+                    <>
+                      <CircleCheck className="w-3 h-3 text-green-500 shrink-0" />
+                      <span className="text-[11px] font-semibold text-green-500">Up to date</span>
+                    </>
+                  )}
                 </div>
                 <span className="text-[10px] text-muted-foreground/70">
                   Last checked: {lastCheckedLabel}
