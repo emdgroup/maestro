@@ -267,6 +267,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         if is_eof {
                             break;
                         }
+                        send_diag("error", format!("stdin framing error: {e}"));
                         send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -856,6 +857,7 @@ async fn probe_tool(tool: &str) -> (bool, Option<String>) {
         use crate::command_ext::NoConsoleWindow;
         tokio::process::Command::new("cmd")
             .args(["/c", tool, "--version"])
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .no_console_window()
@@ -865,6 +867,7 @@ async fn probe_tool(tool: &str) -> (bool, Option<String>) {
     #[cfg(not(windows))]
     let result = tokio::process::Command::new(tool)
         .arg("--version")
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
