@@ -18,7 +18,6 @@ use crate::acp::transport::{
     PreInitializeRequest, PreInitializeResponse, SessionLoadRequest,
     SessionListOkResponse, SessionCloseRequest,
     CheckToolsRequest, CheckToolsResponse, PermissionResponse,
-    SetConfigOptionRequest,
 };
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse,
@@ -1717,17 +1716,6 @@ async fn handle_shared_server_message(
                 }
             }
 
-            // Extract current mode before handle_server_message takes ownership of msg.
-            let refresh_mode_id = match &msg {
-                MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
-                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
-                }
-                MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
-                }
-                _ => None,
-            };
-
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
@@ -1745,19 +1733,6 @@ async fn handle_shared_server_message(
                         Arc::clone(app_state),
                         project_id_val,
                     ));
-                }
-            }
-
-            if let Some(mode_id) = refresh_mode_id {
-                let refresh_msg = MaestroRpcMessage::Request(ServerRequest::SetConfigOption(
-                    SetConfigOptionRequest {
-                        session_id: format!("session-{}", log_id),
-                        config_id: "mode".to_string(),
-                        value: mode_id,
-                    },
-                ));
-                if let Err(err) = write_to_acp_session(app_state, log_id, &refresh_msg).await {
-                    eprintln!("[maestro] config refresh failed for log_id={log_id}: {err}");
                 }
             }
         }
