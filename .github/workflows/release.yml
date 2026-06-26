@@ -63,9 +63,6 @@ jobs:
           files: |
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/deb/*.deb
-          generate_release_notes: true
-          body: |
-            > **Note:** These binaries are unsigned. macOS users may need to right-click → Open to bypass Gatekeeper. Windows users may see a SmartScreen warning.
 
   build-macos-arm64:
     name: Build macOS (arm64)
