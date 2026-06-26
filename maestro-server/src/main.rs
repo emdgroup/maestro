@@ -23,14 +23,25 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    read_message, AcpRegistry, CheckToolsResponse, DiscoveredAgent, ErrorResponse,
-    FileReadResponse, FileSearchResponse, HandshakeResponse, ListAgentsResponse,
+    read_message, AcpRegistry, CheckToolsResponse, DiagnosticPayload, DiscoveredAgent,
+    ErrorResponse, FileReadResponse, FileSearchResponse, HandshakeResponse, ListAgentsResponse,
     MaestroRpcMessage, PreInitializeResponse, PROTOCOL_VERSION, ServerRequest, ServerResponse,
     SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse, ToolCheckResult,
     TurnEnded,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
+
+pub(crate) type DiagSender = tokio::sync::mpsc::UnboundedSender<DiagnosticPayload>;
+
+static DIAG_TX: std::sync::OnceLock<DiagSender> = std::sync::OnceLock::new();
+
+/// Send a diagnostic event to Tauri. No-op until the main loop is running.
+pub(crate) fn send_diag(level: &str, msg: impl Into<String>) {
+    if let Some(tx) = DIAG_TX.get() {
+        let _ = tx.send(DiagnosticPayload { level: level.into(), message: msg.into() });
+    }
+}
 
 use file_ops::{handle_file_read, handle_file_search};
 use session::{
@@ -44,14 +55,13 @@ async fn resolve_agent_spawn_params(
     agents: &[agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>)> {
-    eprintln!("[main] resolve_agent_spawn_params: agent_id={agent_id:?}");
     match agents.iter().find(|a| a.id == agent_id) {
         Some(a) => {
-            eprintln!("[main] resolved: cmd={:?} args={:?}", a.spawn_cmd, a.spawn_args);
+            send_diag("info", format!("[spawn] resolved agent_id={agent_id:?} cmd={:?} args={:?}", a.spawn_cmd, a.spawn_args));
             Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()))
         }
         None => {
-            eprintln!("[main] agent not found: {agent_id:?}");
+            send_diag("error", format!("[spawn] agent not found: {agent_id:?}"));
             let _ = send_response(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -152,6 +162,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdin = tokio::io::stdin();
     let mut sessions: SessionMap = HashMap::new();
     let mut agent_connections: AgentConnectionMap = HashMap::new();
+
+    let (diag_tx, mut diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
+    let _ = DIAG_TX.set(diag_tx);
 
     let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
         .await
@@ -307,7 +320,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
-                eprintln!("[main] Spawn request: agent_id={:?} session_id={:?} cwd={:?}", req.agent_id, req.session_id, req.cwd);
+                send_diag("info", format!("[spawn] Spawn agent_id={:?} session_id={:?} cwd={:?}", req.agent_id, req.session_id, req.cwd));
                 if !ensure_agent_connection(&req.agent_id, &mut agent_connections, &agents_with_spawn, &req.cwd, &stdout).await {
                     continue;
                 }
@@ -710,6 +723,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Response(_) => {}
         }
+
+        // Flush diagnostics produced during this message's processing.
+        while let Ok(payload) = diag_rx.try_recv() {
+            let _ = send_response(
+                &stdout,
+                &MaestroRpcMessage::Response(ServerResponse::Diagnostic(payload)),
+            ).await;
+        }
     }
 
     // Abort all active session tasks so agent child processes are killed promptly.
@@ -730,7 +751,7 @@ async fn handle_agent_restart(
     agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) {
-    eprintln!("[main] agent {dead_agent_id:?} died, restarting");
+    send_diag("warn", format!("[agent] {dead_agent_id:?} died, restarting"));
 
     let to_restore: Vec<(String, String, String)> = sessions
         .iter()

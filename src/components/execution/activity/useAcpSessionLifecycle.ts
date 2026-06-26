@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import { useAgentCacheQuery } from "@/services/execution.service";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
-import type { AcpPromptCapabilities, ConnectionKey } from "@/types/bindings";
+export type AcpPromptCapabilities = {
+  embedded_context: boolean;
+  image: boolean;
+  audio: boolean;
+};
 
 export type AcpSessionLifecycleResult = {
   configOptions: ConfigOption[];
@@ -31,8 +34,6 @@ export type AcpSessionLifecycleResult = {
 
 export function useAcpSessionLifecycle(
   sessionKey: number,
-  agentId: string | null,
-  connection: ConnectionKey,
   onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): AcpSessionLifecycleResult {
@@ -52,46 +53,6 @@ export function useAcpSessionLifecycle(
     message: string;
     payload: Record<string, unknown>;
   } | null>(null);
-
-  // Seed configOptions catalog from agent cache (available before any session events arrive)
-  const { data: agentCache } = useAgentCacheQuery(agentId, connection);
-  useEffect(() => {
-    if (!agentCache) return;
-    setConfigOptions((prev) => {
-      if (prev.length > 0) return prev;
-      return agentCache.config_options.map((o) => ({
-        id: o.id,
-        name: o.name,
-        category: o.category ?? undefined,
-        currentValue: o.default_value ?? o.options[0]?.value ?? "",
-        options: o.options.map((v) => ({
-          name: v.name,
-          value: v.value,
-          description: v.description ?? undefined,
-        })),
-      }));
-    });
-    setConfigValues((prev) => {
-      if (Object.keys(prev).length > 0) return prev;
-      const seeded: Record<string, string> = {};
-      for (const o of agentCache.config_options) {
-        if (o.default_value != null) seeded[o.id] = o.default_value;
-      }
-      return Object.keys(seeded).length > 0 ? seeded : prev;
-    });
-    setAvailableCommands((prev) => {
-      if (prev.length > 0) return prev;
-      return agentCache.available_commands.map((c) => ({
-        name: c.name,
-        description: c.description,
-      }));
-    });
-    if (agentCache.prompt_capabilities) {
-      setPromptCapabilities(
-        (prev) => prev ?? (agentCache.prompt_capabilities as AcpPromptCapabilities),
-      );
-    }
-  }, [agentCache]);
 
   useEffect(() => {
     const unlisten = Promise.all([

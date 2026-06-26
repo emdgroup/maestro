@@ -214,7 +214,15 @@ pub async fn git_diff(
     branch: &str,
     base_branch: &str,
 ) -> Result<String, String> {
-    match conn {
+    crate::acp::manager::append_debug_log(&format!(
+        "[git] diff branch={branch:?} base={base_branch:?} conn={}",
+        match conn {
+            GitConnection::Local { path } => format!("local path={path}"),
+            GitConnection::Remote { remote_path, .. } => format!("remote path={remote_path}"),
+            GitConnection::Wsl { distro, path } => format!("wsl distro={distro} path={path}"),
+        }
+    ));
+    let result = match conn {
         GitConnection::Local { path } => {
             git_diff_local(path, branch, base_branch).await
         }
@@ -227,7 +235,11 @@ pub async fn git_diff(
             let range = format!("{}...{}", base_branch, branch);
             run_wsl_git(distro, path, &["diff", "--unified=6", &range], false).await
         }
+    };
+    if let Err(ref e) = result {
+        crate::acp::manager::append_debug_log(&format!("[git] diff FAILED: {e}"));
     }
+    result
 }
 
 /// Get git status for the project (local or remote)

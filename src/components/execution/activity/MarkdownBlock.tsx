@@ -31,7 +31,7 @@ import { commands } from "@/types/bindings";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
 import { useTheme } from "@/providers/ThemeProvider";
 import { toast } from "sonner";
-import SmilesDrawerLib from "smiles-drawer";
+import SmilesDrawer from "smiles-drawer";
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -428,10 +428,10 @@ export function SmilesBlock({ code }: { code: string }) {
     if (!svgEl) return;
     setError(null);
 
-    SmilesDrawerLib.parse(
+    SmilesDrawer.parse(
       code.trim(),
       (tree) => {
-        const drawer = new SmilesDrawerLib.SvgDrawer({ width: 400, height: 300, padding: 20 });
+        const drawer = new SmilesDrawer.SvgDrawer({ width: 400, height: 300, padding: 20 });
         drawer.draw(tree, svgEl, resolvedTheme);
         setSvgHtml(svgEl.outerHTML);
       },

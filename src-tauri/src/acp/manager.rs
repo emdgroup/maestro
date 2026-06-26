@@ -26,6 +26,10 @@ use maestro_protocol::{
 };
 
 
+pub(crate) fn append_debug_log(msg: &str) {
+    eprintln!("{msg}");
+}
+
 /// Metadata captured for sessions that were active when the connection server died.
 /// Used to reload them after SSH reconnects via the session/load mechanism.
 pub struct RestorableSession {
@@ -103,59 +107,13 @@ pub struct ConnectionServer {
     pub last_ping_at: Arc<AtomicU64>,
 }
 
-/// A single option value within a config option catalog entry.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CatalogOptionValue {
-    pub name: String,
-    pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CatalogOption {
-    pub id: String,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub category: Option<String>,
-    #[serde(default)]
-    pub options: Vec<CatalogOptionValue>,
-    #[serde(default)]
-    pub current_value: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_value: Option<String>,
-}
-
-/// A slash command available for an agent.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CatalogCommand {
-    pub name: String,
-    pub description: String,
-}
-
-/// Session capability flags reported by the agent on SpawnOk. Static per agent.
+/// Session capability flags reported by the agent on SpawnOk.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SessionCapabilitiesInfo {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
 }
-
-/// Agent-level catalog cache. Keyed by (project_id, agent_id).
-/// Populated from PreInitializeResponse and updated on each SpawnOk/SessionLoadOk/config_option_update.
-/// Session-agnostic: no current values stored here.
-#[derive(Default, Clone)]
-pub struct AgentCache {
-    pub config_options: Vec<CatalogOption>,
-    pub available_commands: Vec<CatalogCommand>,
-    pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
-    pub session_capabilities: SessionCapabilitiesInfo,
-}
-
-pub type AgentCacheMap = HashMap<(crate::acp::ConnectionKey, String), AgentCache>;
 
 /// Describes where to open a new maestro-server connection: local subprocess, remote SSH channel, or WSL distro.
 pub enum TransportTarget<'a> {
@@ -386,6 +344,11 @@ pub struct AcpProcess {
     /// Extracts `maestro-canvas` code fences from `agent_message_chunk` text and emits
     /// them as synthetic canvas session updates.
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+    /// Session capability flags from SpawnOk. Used by get_active_sessions.
+    pub session_capabilities: SessionCapabilitiesInfo,
+    /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
+    /// Used by emit_init_events_from_session to re-emit model/mode events during replay drain.
+    pub config_options: Vec<serde_json::Value>,
 }
 
 pub struct TaskMetadata {
@@ -436,6 +399,11 @@ pub struct SessionRequest {
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
     let json_bytes = serde_json::to_vec(msg)
         .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
+    if !matches!(msg, MaestroRpcMessage::Request(ServerRequest::Pong { .. })) {
+        if let Ok(json) = std::str::from_utf8(&json_bytes) {
+            append_debug_log(&format!("[acp] >> {json}"));
+        }
+    }
     let len = json_bytes.len() as u32;
     let mut frame = Vec::with_capacity(4 + json_bytes.len());
     frame.extend_from_slice(&len.to_le_bytes());
@@ -570,18 +538,11 @@ async fn open_local_transport(
     use std::process::Stdio;
     let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
 
-    let stderr = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/maestro-debug.log")
-        .map(Stdio::from)
-        .unwrap_or_else(|_| Stdio::inherit());
-
     use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new(server_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(stderr)
+        .stderr(Stdio::null())
         .kill_on_drop(true)
         .no_console_window()
         .spawn()
@@ -826,7 +787,6 @@ pub struct ReaderTaskContext {
     pub agent_id: String,
     pub project_id: Option<i32>,
     pub task_id: Option<i32>,
-    pub connection_key: crate::acp::ConnectionKey,
 }
 
 impl AcpProcess {
@@ -866,7 +826,6 @@ impl AcpProcess {
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
             task_id: params.task.task_id,
-            connection_key: params.connection_key,
         };
         let process = Self {
             writer: params.writer,
@@ -892,6 +851,8 @@ impl AcpProcess {
             preamble_injected,
             preamble_filter,
             canvas_extractor,
+            session_capabilities: SessionCapabilitiesInfo::default(),
+            config_options: Vec::new(),
         };
         (process, ctx)
     }
@@ -908,7 +869,7 @@ pub(crate) fn spawn_reader_task(
         pending_file_search, pending_file_read,
         acp_session_id_cache, replay_buffer, initialized,
         preamble_injected, preamble_filter, canvas_extractor,
-        session_name, agent_id, project_id, task_id, connection_key,
+        session_name, agent_id, project_id, task_id,
     } = ctx;
     tokio::spawn(async move {
         let mut source = source;
@@ -923,6 +884,15 @@ pub(crate) fn spawn_reader_task(
                     None => break,
                 },
             };
+            match &msg {
+                MaestroRpcMessage::Response(ServerResponse::Ping { .. })
+                | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
+                _ => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        append_debug_log(&format!("[acp] << log_id={log_id} {json}"));
+                    }
+                }
+            }
             if let MaestroRpcMessage::Response(ServerResponse::Ping { seq }) = &msg {
                 eprintln!("[acp] ping seq={seq} on direct session log_id={log_id}");
                 let pong = MaestroRpcMessage::Request(ServerRequest::Pong { seq: *seq });
@@ -935,8 +905,7 @@ pub(crate) fn spawn_reader_task(
                 continue;
             }
 
-            update_agent_cache_from_response(&msg, &app_state).await;
-            update_agent_cache_from_session_update(&msg, connection_key, &agent_id, &app_state).await;
+            update_session_from_response(log_id, &msg, &app_state).await;
 
             if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) = msg {
                 if let Some(tid) = task_id {
@@ -956,18 +925,6 @@ pub(crate) fn spawn_reader_task(
                 }
             }
 
-            // Extract current mode before handle_server_message takes ownership of msg.
-            // Used to refresh config_options via a no-op SetConfigOption after spawn/load.
-            let refresh_mode_id = match &msg {
-                MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
-                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
-                }
-                MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-                    r.modes.as_ref().map(|m| m.current_mode_id.clone())
-                }
-                _ => None,
-            };
-
             if let Some(native_id) = handle_server_message(msg, log_id, &app_handle, &current_model_id, &current_mode_id, &pending_file_search, &pending_file_read, &acp_session_id_cache, &replay_buffer, &initialized, &preamble_injected, &preamble_filter, &canvas_extractor) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
@@ -983,21 +940,6 @@ pub(crate) fn spawn_reader_task(
                 }
             }
 
-            // After SpawnOk/SessionLoadOk, echo current mode via SetConfigOption to retrieve
-            // full config_options. ACP has no read-only config query; the set response always
-            // includes the complete config_options array even when the value is unchanged.
-            if let Some(mode_id) = refresh_mode_id {
-                let refresh_msg = MaestroRpcMessage::Request(ServerRequest::SetConfigOption(
-                    SetConfigOptionRequest {
-                        session_id: format!("session-{}", log_id),
-                        config_id: "mode".to_string(),
-                        value: mode_id,
-                    },
-                ));
-                if let Err(err) = write_to_acp_session(&app_state, log_id, &refresh_msg).await {
-                    eprintln!("[maestro] config refresh failed for log_id={log_id}: {err}");
-                }
-            }
         }
 
         app_state.acp.sessions.lock().await.remove(&log_id);
@@ -1192,7 +1134,6 @@ fn handle_server_message(
     preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
     canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
 ) -> Option<String> {
-    eprintln!("[maestro] handle_server_message: log_id={log_id} msg={msg:?}");
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
             // Detect CurrentModeUpdate to keep the per-session current_mode_id current.
@@ -1241,6 +1182,15 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(spawn_ok)) => {
+            eprintln!(
+                "[acp] spawn-ok log_id={log_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={}",
+                spawn_ok.session_id,
+                spawn_ok.acp_session_id,
+                spawn_ok.models.as_ref().map(|m| &m.current_model_id),
+                spawn_ok.supports_session_list,
+                spawn_ok.supports_session_load,
+                spawn_ok.supports_session_close,
+            );
             emit_session_init_events(
                 spawn_ok.models.as_ref(),
                 spawn_ok.modes.as_ref(),
@@ -1273,6 +1223,7 @@ fn handle_server_message(
             return new_native_id;
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(load_ok)) => {
+            append_debug_log(&format!("[acp] session-load-ok log_id={log_id} session={}", load_ok.session_id));
             emit_session_init_events(
                 load_ok.models.as_ref(),
                 load_ok.modes.as_ref(),
@@ -1294,18 +1245,21 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(ok)) => {
+            append_debug_log(&format!("[acp] set-model-ok log_id={log_id} model={}", ok.model_id));
             if let Ok(mut m) = current_model_id.lock() { *m = Some(ok.model_id.clone()); }
             if let Err(e) = app_handle.emit(&format!("acp://model-changed/{}", log_id), &ok.model_id) {
                 eprintln!("[acp] emit model-changed/{log_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetModeOk(ok)) => {
+            append_debug_log(&format!("[acp] set-mode-ok log_id={log_id} mode={}", ok.mode_id));
             if let Ok(mut m) = current_mode_id.lock() { *m = Some(ok.mode_id.clone()); }
             if let Err(e) = app_handle.emit(&format!("acp://mode-changed/{}", log_id), &ok.mode_id) {
                 eprintln!("[acp] emit mode-changed/{log_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(ok)) => {
+            append_debug_log(&format!("[acp] set-config-ok log_id={log_id} config={} value={}", ok.config_id, ok.value));
             if let Err(e) = app_handle.emit(
                 &format!("acp://config-changed/{}", log_id),
                 &serde_json::json!({ "config_id": ok.config_id, "value": ok.value }),
@@ -1314,6 +1268,7 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(ok)) => {
+            append_debug_log(&format!("[acp] config-updated log_id={log_id} config={} value={}", ok.config_id, ok.value));
             if ok.config_id == "model" {
                 if let Ok(mut m) = current_model_id.lock() { *m = Some(ok.value.clone()); }
             } else if ok.config_id == "mode" {
@@ -1345,6 +1300,7 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
+            eprintln!("[acp] session-error log_id={log_id}: {}", err.message);
             // Resolve any pending file op with the error before emitting the session-error event.
             if let Ok(mut guard) = pending_file_search.lock() {
                 if let Some(tx) = guard.take() {
@@ -1361,11 +1317,18 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TurnEnded(turn_ended)) => {
+            eprintln!("[acp] turn-ended log_id={log_id} stop={}", turn_ended.stop_reason);
             if let Err(e) = app_handle.emit(
                 &format!("acp://turn-ended/{}", log_id),
                 &turn_ended.stop_reason,
             ) {
                 eprintln!("[acp] emit turn-ended/{log_id} failed: {e}");
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
+            eprintln!("[maestro-server][{}] {}", diag.level, diag.message);
+            if let Err(e) = app_handle.emit(&format!("acp://diagnostic/{}", log_id), &diag) {
+                eprintln!("[acp] emit diagnostic/{log_id} failed: {e}");
             }
         }
         _ => {
@@ -1652,142 +1615,51 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
 /// Update the agent-level catalog cache from SpawnOk or SessionLoadOk.
 /// Converts models/modes to CatalogOption entries; stores prompt_capabilities and
 /// (SpawnOk only) session_capabilities in the agent cache.
-async fn update_agent_cache_from_response(
+/// Update per-session state from response messages. Stores session_capabilities (SpawnOk only)
+/// and config_options (SpawnOk/SessionLoadOk/ConfigOptionUpdated/config_option_update) directly
+/// on the AcpProcess so meta_handlers can read them without a separate cache map.
+async fn update_session_from_response(
+    log_id: i32,
     msg: &MaestroRpcMessage,
     app_state: &Arc<crate::core::AppState>,
 ) {
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
-            let log_id = match extract_session_log_id(msg) {
-                Some(id) => id,
-                None => return,
-            };
-            let (agent_id, connection_key) = {
-                let sessions = app_state.acp.sessions.lock().await;
-                match sessions.get(&log_id) {
-                    Some(s) => (s.agent_id_meta.clone(), s.connection_key),
-                    None => return,
-                }
-            };
-            if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(
-                serde_json::Value::Array(r.config_options.clone()),
-            ) {
-                let mut cache_map = app_state.acp.agent_cache.lock().await;
-                let entry = cache_map
-                    .entry((connection_key, agent_id.clone()))
-                    .or_insert_with(AgentCache::default);
-                entry.config_options = options;
-            }
-            let mut payload = serde_json::to_value(&connection_key).unwrap_or_default();
-            payload["agent_id"] = serde_json::json!(agent_id);
-            app_state.app_handle.emit("agent-cache-updated", payload).ok();
-            return;
-        }
-        _ => {}
-    }
-
-    let (caps, spawn_caps, config_options_raw) = match msg {
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
-            let spawn_caps = Some(SessionCapabilitiesInfo {
-                supports_session_list: r.supports_session_list,
-                supports_session_load: r.supports_session_load,
-                supports_session_close: r.supports_session_close,
-            });
-            (r.prompt_capabilities.as_ref(), spawn_caps, r.config_options.as_deref())
+            let mut sessions = app_state.acp.sessions.lock().await;
+            if let Some(session) = sessions.get_mut(&log_id) {
+                session.session_capabilities = SessionCapabilitiesInfo {
+                    supports_session_list: r.supports_session_list,
+                    supports_session_load: r.supports_session_load,
+                    supports_session_close: r.supports_session_close,
+                };
+                session.config_options = r.config_options.clone().unwrap_or_default();
+            }
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-            (r.prompt_capabilities.as_ref(), None, r.config_options.as_deref())
+            let mut sessions = app_state.acp.sessions.lock().await;
+            if let Some(session) = sessions.get_mut(&log_id) {
+                session.config_options = r.config_options.clone().unwrap_or_default();
+            }
         }
-        _ => return,
-    };
-
-    if caps.is_none() && spawn_caps.is_none() {
-        return;
-    }
-
-    let (agent_id, connection_key) = if let Some(log_id) = extract_session_log_id(msg) {
-        let sessions = app_state.acp.sessions.lock().await;
-        match sessions.get(&log_id) {
-            Some(s) => (s.agent_id_meta.clone(), s.connection_key),
-            None => return,
+        MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
+            let mut sessions = app_state.acp.sessions.lock().await;
+            if let Some(session) = sessions.get_mut(&log_id) {
+                session.config_options = r.config_options.clone();
+            }
         }
-    } else {
-        return;
-    };
-
-    {
-        let mut cache_map = app_state.acp.agent_cache.lock().await;
-        let entry = cache_map
-            .entry((connection_key, agent_id.clone()))
-            .or_insert_with(AgentCache::default);
-        if let Some(c) = caps {
-            entry.prompt_capabilities = Some(c.clone());
-        }
-        if let Some(sc) = spawn_caps {
-            entry.session_capabilities = sc;
-        }
-        match config_options_raw {
-            Some(opts) => {
-                if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(
-                    serde_json::Value::Array(opts.to_vec()),
-                ) {
-                    entry.config_options = options;
+        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
+            if upd.payload.get("sessionUpdate").and_then(|v| v.as_str()) == Some("config_option_update") {
+                if let Some(options_val) = upd.payload.get("configOptions") {
+                    if let Ok(options) = serde_json::from_value::<Vec<serde_json::Value>>(options_val.clone()) {
+                        let mut sessions = app_state.acp.sessions.lock().await;
+                        if let Some(session) = sessions.get_mut(&log_id) {
+                            session.config_options = options;
+                        }
+                    }
                 }
             }
-            None => {
-                entry.config_options = Vec::new();
-            }
         }
-    }
-    let mut payload = serde_json::to_value(&connection_key).unwrap_or_default();
-    payload["agent_id"] = serde_json::json!(agent_id);
-    app_state.app_handle.emit("agent-cache-updated", payload).ok();
-}
-
-/// Update the agent-level catalog cache from config_option_update or available_commands_update
-/// SessionUpdate events. Called from the reader task loop alongside update_agent_cache_from_response.
-async fn update_agent_cache_from_session_update(
-    msg: &MaestroRpcMessage,
-    connection_key: crate::acp::ConnectionKey,
-    agent_id: &str,
-    app_state: &Arc<crate::core::AppState>,
-) {
-    let payload = match msg {
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => &upd.payload,
-        _ => return,
-    };
-
-    let update_type = match payload.get("sessionUpdate").and_then(|v| v.as_str()) {
-        Some(t) => t,
-        None => return,
-    };
-
-    let mut updated = false;
-
-    if update_type == "config_option_update" {
-        if let Some(options_val) = payload.get("configOptions") {
-            if let Ok(options) = serde_json::from_value::<Vec<CatalogOption>>(options_val.clone()) {
-                let mut cache_map = app_state.acp.agent_cache.lock().await;
-                let entry = cache_map.entry((connection_key, agent_id.to_string())).or_insert_with(AgentCache::default);
-                entry.config_options = options;
-                updated = true;
-            }
-        }
-    } else if update_type == "available_commands_update" {
-        if let Some(commands_val) = payload.get("availableCommands") {
-            if let Ok(commands) = serde_json::from_value::<Vec<CatalogCommand>>(commands_val.clone()) {
-                let mut cache_map = app_state.acp.agent_cache.lock().await;
-                let entry = cache_map.entry((connection_key, agent_id.to_string())).or_insert_with(AgentCache::default);
-                entry.available_commands = commands;
-                updated = true;
-            }
-        }
-    }
-
-    if updated {
-        let mut event_payload = serde_json::to_value(&connection_key).unwrap_or_default();
-        event_payload["agent_id"] = serde_json::json!(agent_id);
-        app_state.app_handle.emit("agent-cache-updated", event_payload).ok();
+        _ => {}
     }
 }
 
@@ -1803,15 +1675,7 @@ async fn handle_shared_server_message(
     // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(log_id) = extract_session_log_id(&msg) {
-        // Update agent-level cache on SpawnOk/SessionLoadOk and session updates before dispatching.
-        update_agent_cache_from_response(&msg, app_state).await;
-        let session_identity = {
-            let sessions = app_state.acp.sessions.lock().await;
-            sessions.get(&log_id).map(|s| (s.agent_id_meta.clone(), s.connection_key))
-        };
-        if let Some((ref agent_id, conn_key)) = session_identity {
-            update_agent_cache_from_session_update(&msg, conn_key, agent_id, app_state).await;
-        }
+        update_session_from_response(log_id, &msg, app_state).await;
 
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
@@ -1903,12 +1767,17 @@ async fn handle_shared_server_message(
     // Sessionless messages.
     match msg {
         MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp)) => {
-            let agents = resp.agents.into_iter().map(|a| crate::acp::registry::DiscoveredAgent {
+            let agents: Vec<crate::acp::registry::DiscoveredAgent> = resp.agents.into_iter().map(|a| crate::acp::registry::DiscoveredAgent {
                 id: a.id,
                 name: a.name,
                 icon: a.icon,
                 spawn_deps: a.spawn_deps,
             }).collect();
+            append_debug_log(&format!(
+                "[registry] ListAgentsOk: {} agents: {:?}",
+                agents.len(),
+                agents.iter().map(|a| &a.id).collect::<Vec<_>>()
+            ));
             if let Ok(mut guard) = pending.list_agents.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(agents));
@@ -1937,6 +1806,10 @@ async fn handle_shared_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
+            append_debug_log(&format!(
+                "[registry] DetectInstalledAgentsOk: {:?}",
+                resp.agents.iter().map(|a| &a.agent_id).collect::<Vec<_>>()
+            ));
             if let Ok(mut guard) = pending.detect_installed.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
@@ -1951,6 +1824,8 @@ async fn handle_shared_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
+            let agent_id = resp.agent_id.clone();
+            let supports = (resp.supports_session_list, resp.supports_session_load, resp.supports_session_close);
             let tx = pending.pre_init
                 .lock()
                 .ok()
@@ -1958,6 +1833,10 @@ async fn handle_shared_server_message(
             if let Some(tx) = tx {
                 let _ = tx.send(Ok(resp));
             }
+            append_debug_log(&format!(
+                "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={}",
+                supports.0, supports.1, supports.2
+            ));
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             let mut task_ids: Vec<i32> = Vec::new();
@@ -1979,6 +1858,10 @@ async fn handle_shared_server_message(
             for tid in task_ids {
                 try_complete_task(app_state, tid).await;
             }
+            append_debug_log(&format!(
+                "[acp] agent-connection-lost agent={} reason={} sessions={:?}",
+                lost.agent_id, lost.reason, lost.affected_session_ids
+            ));
             if !lost.affected_session_ids.is_empty() {
                 app_state.app_handle.emit("tasks-changed", ()).ok();
             }
@@ -2009,6 +1892,21 @@ async fn handle_shared_server_message(
                         break;
                     }
                 }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
+            eprintln!("[maestro-server][{}] {}", diag.level, diag.message);
+            // Best-effort: emit to any session on this connection for frontend visibility.
+            let log_ids: Vec<i32> = {
+                let sessions = app_state.acp.sessions.lock().await;
+                sessions
+                    .iter()
+                    .filter(|(_, s)| s.connection_key == connection_key)
+                    .map(|(id, _)| *id)
+                    .collect()
+            };
+            for lid in log_ids {
+                let _ = app_handle.emit(&format!("acp://diagnostic/{}", lid), &diag);
             }
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
@@ -2178,6 +2076,15 @@ fn spawn_shared_reader_task(
         });
 
         while let Some(msg) = source.next_message().await {
+            match &msg {
+                MaestroRpcMessage::Response(ServerResponse::Ping { .. })
+                | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
+                _ => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        append_debug_log(&format!("[acp] << {connection_key:?} {json}"));
+                    }
+                }
+            }
             if let MaestroRpcMessage::Response(ServerResponse::Ping { seq }) = &msg {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -2446,6 +2353,8 @@ pub async fn spawn_connection_server(
         }
     }
 
+    append_debug_log(&format!("[acp] spawning connection server for {connection_key:?}"));
+
     let (write_tx, source, child) = match target {
         TransportTarget::Local => {
             let (stdin_writer, source, child) = open_local_transport(app_state).await?;
@@ -2532,22 +2441,6 @@ pub async fn pre_initialize_via_connection_server(
         .await
         .map_err(|_| format!("PreInitialize timed out for agent {}", agent_id))?
         .map_err(|_| "PreInitialize response channel dropped".to_string())??;
-
-    // Populate agent-level cache from prompt_capabilities.
-    // Models/modes are not available until the first SpawnOk.
-    if let Some(capabilities) = &response.prompt_capabilities {
-        let mut cache_entry = AgentCache::default();
-        cache_entry.prompt_capabilities = Some(capabilities.clone());
-        app_state
-            .acp
-            .agent_cache
-            .lock()
-            .await
-            .insert((connection_key, agent_id.to_string()), cache_entry);
-        let mut event_payload = serde_json::to_value(&connection_key).unwrap_or_default();
-        event_payload["agent_id"] = serde_json::json!(agent_id);
-        app_state.app_handle.emit("agent-cache-updated", event_payload).ok();
-    }
 
     Ok(response)
 }

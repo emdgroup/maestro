@@ -1,13 +1,13 @@
 use std::path::Path;
 use crate::command_ext::NoConsoleWindow;
 
-/// Spawn an ACP agent as a child subprocess with piped stdin/stdout.
+/// Spawn an ACP agent as a child subprocess with piped stdin/stdout/stderr.
 ///
 /// `command` is the program name (e.g., "npx", "claude", "/usr/local/bin/agent-acp").
 /// `args` is the argument list (e.g., ["@agentclientprotocol/claude-agent-acp"]).
 /// `cwd` is the working directory for the subprocess.
 ///
-/// Returns the child process handle with piped stdin/stdout.
+/// Returns the child process handle with piped stdin/stdout/stderr.
 /// The child is `kill_on_drop(true)` so dropping it kills the subprocess.
 pub async fn spawn_agent_subprocess(
     command: &str,
@@ -29,7 +29,7 @@ pub async fn spawn_agent_subprocess(
         return Err(format!("cwd does not exist: {}", cwd));
     }
 
-    eprintln!("[agent] spawn_agent_subprocess: command={command:?} args={args:?} cwd={cwd:?}");
+    crate::send_diag("info", format!("[spawn] spawning cmd={command:?} args={args:?} cwd={cwd:?}"));
     let child = tokio::process::Command::new(command)
         .args(args)
         .current_dir(cwd_path)
@@ -41,10 +41,10 @@ pub async fn spawn_agent_subprocess(
         .no_console_window()
         .spawn()
         .map_err(|e| {
-            eprintln!("[agent] spawn FAILED: command={command:?} error={e}");
+            crate::send_diag("error", format!("[spawn] FAILED cmd={command:?}: {e}"));
             format!("failed to spawn agent '{}': {}", command, e)
         })?;
-    eprintln!("[agent] spawn OK: pid={:?}", child.id());
+    crate::send_diag("info", format!("[spawn] ok pid={:?}", child.id()));
 
     Ok(child)
 }

@@ -196,6 +196,10 @@ pub async fn preflight_connection(
                 .filter(|a| a.spawn_deps.contains(&r.tool))
                 .map(|a| a.id.clone())
                 .collect();
+            crate::acp::manager::append_debug_log(&format!(
+                "[preflight] tool={} available={} version={:?}",
+                r.tool, r.available, r.version
+            ));
             ToolCheckEntry {
                 mandatory: mandatory_tools.contains(r.tool.as_str()),
                 tool: r.tool,
@@ -272,7 +276,7 @@ pub(crate) async fn fetch_and_filter_agents(
         .agents.iter().map(|d| (d.agent_id.clone(), d.tool_name.clone())).collect();
     let detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
 
-    let agents = all_agents.into_iter()
+    let agents: Vec<DiscoveredAgent> = all_agents.into_iter()
         .filter(|a| detected_ids.contains(&a.id))
         .map(|mut a| {
             if let Some(tool_name) = detected_tool_names.get(&a.id) {
@@ -281,6 +285,11 @@ pub(crate) async fn fetch_and_filter_agents(
             a
         })
         .collect();
+
+    crate::acp::manager::append_debug_log(&format!(
+        "[preflight] agents after filter: {:?}",
+        agents.iter().map(|a| &a.id).collect::<Vec<_>>()
+    ));
 
     (agents, list_error)
 }

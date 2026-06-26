@@ -10,7 +10,8 @@ import type {
   AvailableCommand,
   UserMessageItem,
 } from "../activity/types";
-import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
+import type { JsonValue } from "@/types/bindings";
+import type { AcpPromptCapabilities } from "../activity/useAcpSessionLifecycle";
 
 interface AgentScrollOverlaysProps {
   showScrollFab: boolean;

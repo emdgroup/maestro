@@ -203,7 +203,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         onOpenChange={(open) => {
           if (!open) handleRequestClose();
         }}
-        disablePointerDismissal
+        disablePointerDismissal={isEditable ?? false}
       >
         <DialogContent
           showCloseButton={false}

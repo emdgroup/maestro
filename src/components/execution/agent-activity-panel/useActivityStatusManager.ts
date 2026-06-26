@@ -66,6 +66,14 @@ export function useActivityStatusManager(
     removeActivity,
   ]);
 
+  // Spawning timeout: if isInitializing hasn't cleared after 15s (spawn-ok or session-error
+  // never arrived), transition to stale so the user sees a warning instead of an infinite spinner.
+  useEffect(() => {
+    if (!liveState.isInitializing || liveState.sessionEnded) return;
+    const id = setTimeout(() => setActivity(sessionKey, "stale"), 15_000);
+    return () => clearTimeout(id);
+  }, [liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivity]);
+
   // Stale connection detector: if a turn is active but no new events arrive for 45s,
   // mark the session stale so the UI can show a warning and offer a force-end action.
   // heartbeatCount resets this timer on every server ping so long-running operations

@@ -43,38 +43,23 @@ pub async fn get_active_sessions(
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
 
-    let acp_session_data: Vec<_> = {
-        let acp = app_state.acp.sessions.lock().await;
-        acp.iter()
-            .filter(|(_, proc)| {
-                proc.project_id == Some(project_id)
-            })
-            .map(|(key, proc)| {
-                let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
-                (*key, proc.session_name.clone(), proc.agent_id_meta.clone(),
-                 proc.started_at.clone(), proc.task_id, proc.task_name.clone(),
-                 proc.branch_name.clone(), native_id, proc.connection_key)
-            }).collect()
-    };
     {
-        let agent_cache = app_state.acp.agent_cache.lock().await;
-        for (key, session_name, agent_id, started_at, task_id, task_name, branch_name, native_id, conn_key) in acp_session_data {
-            let caps = agent_cache.get(&(conn_key, agent_id.clone()))
-                .map(|e| e.session_capabilities.clone())
-                .unwrap_or_default();
+        let acp = app_state.acp.sessions.lock().await;
+        for (key, proc) in acp.iter().filter(|(_, p)| p.project_id == Some(project_id)) {
+            let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
             sessions.push(ActiveSessionInfo {
-                session_key: key,
-                session_name,
-                agent_id: Some(agent_id),
+                session_key: *key,
+                session_name: proc.session_name.clone(),
+                agent_id: Some(proc.agent_id_meta.clone()),
                 execution_mode: ExecutionMode::Acp,
-                started_at,
-                task_id,
-                task_name,
-                branch_name,
+                started_at: proc.started_at.clone(),
+                task_id: proc.task_id,
+                task_name: proc.task_name.clone(),
+                branch_name: proc.branch_name.clone(),
                 acp_session_id: native_id,
-                supports_session_list: caps.supports_session_list,
-                supports_session_load: caps.supports_session_load,
-                supports_session_close: caps.supports_session_close,
+                supports_session_list: proc.session_capabilities.supports_session_list,
+                supports_session_load: proc.session_capabilities.supports_session_load,
+                supports_session_close: proc.session_capabilities.supports_session_close,
                 project_id: Some(project_id),
             });
         }
@@ -219,41 +204,46 @@ pub async fn rename_acp_session(
     Ok(())
 }
 
-/// Re-emit model/mode state from AcpProcess fields and agent cache.
+/// Re-emit model/mode state from session fields during replay drain.
 async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
-    let (model_id, mode_id, connection_key, agent_id) = {
+    let (model_id, mode_id, config_options) = {
         let sessions = app_state.acp.sessions.lock().await;
         let Some(session) = sessions.get(&log_id) else { return };
         (
             session.current_model_id.lock().ok().and_then(|m| m.clone()),
             session.current_mode_id.lock().ok().and_then(|m| m.clone()),
-            session.connection_key,
-            session.agent_id_meta.clone(),
+            session.config_options.clone(),
         )
     };
-    let cache = app_state.acp.agent_cache.lock().await.get(&(connection_key, agent_id)).cloned();
-    let Some(cache) = cache else { return };
 
-    if let Some(model_opt) = cache.config_options.iter().find(|o| o.id == "model") {
+    let find_opt = |id: &str| -> Option<&serde_json::Value> {
+        config_options.iter().find(|o| o.get("id").and_then(|v| v.as_str()) == Some(id))
+    };
+
+    if let Some(model_opt) = find_opt("model") {
+        let options = model_opt.get("options").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]);
         let current = model_id.unwrap_or_else(|| {
-            model_opt.options.first().map(|v| v.value.clone()).unwrap_or_default()
+            options.first().and_then(|v| v.get("value")).and_then(|v| v.as_str()).unwrap_or("").to_string()
         });
         let payload = serde_json::json!({
             "current_model_id": current,
-            "available_models": model_opt.options.iter().map(|v| serde_json::json!({
-                "model_id": v.value, "name": v.name
+            "available_models": options.iter().map(|v| serde_json::json!({
+                "model_id": v.get("value").and_then(|s| s.as_str()).unwrap_or(""),
+                "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
         let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), &payload);
     }
-    if let Some(mode_opt) = cache.config_options.iter().find(|o| o.id == "mode") {
+    if let Some(mode_opt) = find_opt("mode") {
+        let options = mode_opt.get("options").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]);
         let current = mode_id.unwrap_or_else(|| {
-            mode_opt.options.first().map(|v| v.value.clone()).unwrap_or_default()
+            options.first().and_then(|v| v.get("value")).and_then(|v| v.as_str()).unwrap_or("").to_string()
         });
         let payload = serde_json::json!({
             "current_mode_id": current,
-            "available_modes": mode_opt.options.iter().map(|v| serde_json::json!({
-                "mode_id": v.value, "name": v.name
+            "available_modes": options.iter().map(|v| serde_json::json!({
+                "mode_id": v.get("value").and_then(|s| s.as_str()).unwrap_or(""),
+                "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
         let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), &payload);

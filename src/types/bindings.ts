@@ -1650,17 +1650,6 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
-  async getAgentCache(
-    agentId: string,
-    connection: ConnectionKey,
-  ): Promise<Result<AgentCacheResponse | null, string>> {
-    try {
-      return { status: "ok", data: await TAURI_INVOKE("get_agent_cache", { agentId, connection }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
   /**
    * List installed WSL distros. Returns empty vec on non-Windows.
    */
@@ -2093,7 +2082,6 @@ export const commands = {
 
 /** user-defined types **/
 
-export type AcpPromptCapabilities = { embedded_context: boolean; image: boolean; audio: boolean };
 export type AcpSessionMeta = {
   cwd: string;
   project_id: number | null;
@@ -2118,22 +2106,6 @@ export type ActiveSessionInfo = {
   project_id: number | null;
 };
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide";
-export type AgentCacheResponse = {
-  config_options: AgentCatalogOption[];
-  available_commands: AgentCatalogCommand[];
-  prompt_capabilities: AcpPromptCapabilities | null;
-  session_capabilities: AgentSessionCapabilities;
-};
-export type AgentCatalogCommand = { name: string; description: string };
-export type AgentCatalogOption = {
-  id: string;
-  name: string;
-  description: string | null;
-  category: string | null;
-  options: AgentCatalogOptionValue[];
-  default_value: string | null;
-};
-export type AgentCatalogOptionValue = { name: string; value: string; description: string | null };
 /**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
@@ -2142,11 +2114,6 @@ export type AgentDiscoveryResult = {
   maestro_server_available: boolean;
   agents: DiscoveredAgent[];
   error?: string | null;
-};
-export type AgentSessionCapabilities = {
-  supports_session_list: boolean;
-  supports_session_load: boolean;
-  supports_session_close: boolean;
 };
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch

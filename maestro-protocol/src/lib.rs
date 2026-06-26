@@ -191,6 +191,8 @@ pub enum ServerResponse {
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping { seq: u64 },
+    /// Unsolicited diagnostic event from maestro-server for logging and observability.
+    Diagnostic(DiagnosticPayload),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -400,6 +402,13 @@ pub struct AgentConnectionLost {
     pub agent_id: String,
     pub reason: String,
     pub affected_session_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DiagnosticPayload {
+    /// "info" | "warn" | "error"
+    pub level: String,
+    pub message: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1027,6 +1036,17 @@ mod tests {
     #[test]
     fn roundtrip_pong_request() {
         let msg = MaestroRpcMessage::Request(ServerRequest::Pong { seq: 42 });
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_diagnostic() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::Diagnostic(DiagnosticPayload {
+            level: "error".to_string(),
+            message: "[spawn] FAILED cmd=\"claude\": No such file".to_string(),
+        }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);

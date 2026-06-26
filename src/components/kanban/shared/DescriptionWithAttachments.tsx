@@ -37,10 +37,10 @@ export function DescriptionWithAttachments({
         <Button
           variant="ghost"
           onClick={onPickFiles}
-          className={cn("w-fit", isDragging && "invisible")}
+          className={cn("w-fit text-muted-foreground/50", isDragging && "invisible")}
         >
           <Paperclip className="size-3" />
-          Drop, paste or browse attachments
+          Drop, paste or click to browse files
         </Button>
       )}
       {isDragging && (

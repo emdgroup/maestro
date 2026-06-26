@@ -13,7 +13,6 @@ vi.mock("@/services/execution.service", () => ({
   useSpawnInteractiveExecutionMutation: vi.fn(),
   useActiveSessionsQuery: vi.fn(),
   useCancelActiveSessionMutation: vi.fn(),
-  useAgentCacheQuery: vi.fn(() => ({ data: null })),
   useRenameAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 

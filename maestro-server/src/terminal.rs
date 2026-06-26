@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
-use acp::schema::{
+use acp::schema::v1::{
     CreateTerminalRequest, CreateTerminalResponse, TerminalId,
 };
 use maestro_protocol::{MaestroRpcMessage, ServerResponse, TerminalOutput};

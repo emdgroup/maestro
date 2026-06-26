@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
-use acp::schema::{
+use acp::schema::v1::{
     CancelNotification, CloseSessionRequest,
     PromptRequest, PromptResponse, SessionConfigId,
     SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
-    SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModelRequest,
+    SessionConfigValueId, SetSessionConfigOptionRequest,
     SetSessionModeRequest, StopReason,
 };
 use maestro_protocol::{
     ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage,
     ModeInfo as ProtocolModeInfo, ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo,
     ServerResponse, SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, SetModeOkResponse, SetModelOkResponse,
+    SessionModelState as ProtocolSessionModelState, SetModeOkResponse,
     TurnEnded,
 };
 use tokio::sync::{mpsc, Mutex};
@@ -36,7 +36,7 @@ pub(crate) async fn handle_prompt_result(
         }
         .to_string(),
         Err(e) => {
-            eprintln!("[command_loop] ACP prompt error: {e}");
+            crate::send_diag("error", format!("[prompt] ACP error for session {session_id}: {e}"));
             "error".to_string()
         }
     };
@@ -48,25 +48,8 @@ pub(crate) async fn handle_prompt_result(
 }
 
 
-pub(crate) fn convert_acp_models(
-    acp_models: Option<&acp::schema::SessionModelState>,
-) -> Option<ProtocolSessionModelState> {
-    acp_models.map(|m| ProtocolSessionModelState {
-        current_model_id: m.current_model_id.0.to_string(),
-        available_models: m
-            .available_models
-            .iter()
-            .map(|mi| ProtocolModelInfo {
-                model_id: mi.model_id.0.to_string(),
-                name: mi.name.clone(),
-                description: mi.description.clone(),
-            })
-            .collect(),
-    })
-}
-
 pub(crate) fn convert_acp_modes(
-    acp_modes: Option<&acp::schema::SessionModeState>,
+    acp_modes: Option<&acp::schema::v1::SessionModeState>,
 ) -> Option<ProtocolSessionModeState> {
     acp_modes.map(|m| ProtocolSessionModeState {
         current_mode_id: m.current_mode_id.0.to_string(),
@@ -155,7 +138,7 @@ pub(crate) fn modes_from_config_options(config_options: &[SessionConfigOption]) 
     })
 }
 
-pub(crate) fn extract_prompt_capabilities(response: &acp::schema::InitializeResponse) -> PromptCapabilitiesInfo {
+pub(crate) fn extract_prompt_capabilities(response: &acp::schema::v1::InitializeResponse) -> PromptCapabilitiesInfo {
     PromptCapabilitiesInfo {
         embedded_context: response.agent_capabilities.prompt_capabilities.embedded_context,
         image: response.agent_capabilities.prompt_capabilities.image,
@@ -166,7 +149,7 @@ pub(crate) fn extract_prompt_capabilities(response: &acp::schema::InitializeResp
 pub(crate) async fn run_command_loop(
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     cx: acp::ConnectionTo<acp::Agent>,
-    session_id: acp::schema::SessionId,
+    session_id: acp::schema::v1::SessionId,
     so: Arc<Mutex<tokio::io::Stdout>>,
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
@@ -185,6 +168,7 @@ pub(crate) async fn run_command_loop(
                 return;
             }
             SessionCommand::Prompt(content) => {
+                crate::send_diag("info", format!("[prompt] turn started session={}", maestro_sid));
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
@@ -208,10 +192,11 @@ pub(crate) async fn run_command_loop(
                 }
             }
             SessionCommand::PromptStructured(blocks) => {
+                crate::send_diag("info", format!("[prompt] turn started session={}", maestro_sid));
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
-                let content_blocks: Vec<acp::schema::ContentBlock> = blocks
+                let content_blocks: Vec<acp::schema::v1::ContentBlock> = blocks
                     .into_iter()
                     .filter_map(|b| serde_json::from_value(b).ok())
                     .collect();
@@ -255,28 +240,6 @@ pub(crate) async fn run_command_loop(
                             config_options: serialize_config_options(&response.config_options),
                         }),
                     ),
-                    Err(e) if e.code == acp::ErrorCode::MethodNotFound => {
-                        let fallback = cx
-                            .send_request(SetSessionModelRequest::new(
-                                session_id.clone(),
-                                model_id.clone(),
-                            ))
-                            .block_task()
-                            .await;
-                        match fallback {
-                            Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModelOk(
-                                SetModelOkResponse {
-                                    session_id: maestro_sid.clone(),
-                                    model_id,
-                                },
-                            )),
-                            Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
-                                ErrorResponse {
-                                    message: format!("SetModel failed: {}", e),
-                                },
-                            )),
-                        }
-                    }
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetModel failed: {}", e),
                     })),

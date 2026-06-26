@@ -5,7 +5,6 @@ import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
 import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
@@ -39,7 +38,6 @@ interface AgentActivityPanelProps {
 
 export function AgentActivityPanel({
   sessionKey,
-  agentId,
   isSelected = false,
   isNewSession = false,
   onUsageChange,
@@ -63,9 +61,6 @@ export function AgentActivityPanel({
   );
 
   const [liveState, liveDispatch] = useAcpActivity(sessionKey, sessionUpdateRef);
-  const connection = selectedProject
-    ? connectionKeyFromProject(selectedProject)
-    : { type: "local" as const };
   const {
     configOptions,
     configValues,
@@ -76,7 +71,7 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
-  } = useAcpSessionLifecycle(sessionKey, agentId, connection, onUsageChangeRef, sessionUpdateRef);
+  } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef, sessionUpdateRef);
 
   const isReady = !liveState.isInitializing;
   const scroll = useAcpScrollBehavior(isReady, liveState.lastUserMessageId);

@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
-use acp::schema::{
+use acp::schema::ProtocolVersion;
+use acp::schema::v1::{
     ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
     Implementation, InitializeRequest, KillTerminalRequest, KillTerminalResponse,
-    ListSessionsRequest, LoadSessionRequest, NewSessionRequest, ProtocolVersion,
+    ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, TerminalExitStatus,
     TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
     WaitForTerminalExitResponse,
 };
-use agent_client_protocol_schema::{ElicitationCapabilities, ElicitationFormCapabilities};
+use agent_client_protocol_schema::v1::{ElicitationCapabilities, ElicitationFormCapabilities};
 use maestro_protocol::{
     ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerResponse, SessionListEntry,
     SessionModeState as ProtocolSessionModeState,
@@ -26,7 +27,7 @@ use crate::sessions::{
     ActiveSession, AgentCapabilities, AgentConnection, SessionCommand, SharedSessionState,
 };
 use super::command_loop::{
-    convert_acp_models, convert_acp_modes, extract_prompt_capabilities,
+    convert_acp_modes, extract_prompt_capabilities,
     models_from_config_options, modes_from_config_options, run_command_loop,
     serialize_config_options,
 };
@@ -96,6 +97,7 @@ pub(crate) async fn create_session_on_connection(
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<SpawnResult> {
     let cx = conn.connection.clone();
+    crate::send_diag("info", format!("[session] session/new maestro_id={maestro_session_id}"));
     let session_response = match cx
         .send_request(NewSessionRequest::new(std::path::PathBuf::from(cwd)))
         .block_task()
@@ -114,8 +116,7 @@ pub(crate) async fn create_session_on_connection(
         }
     };
 
-    let models = convert_acp_models(session_response.models.as_ref())
-        .or_else(|| session_response.config_options.as_deref().and_then(models_from_config_options));
+    let models = session_response.config_options.as_deref().and_then(models_from_config_options);
     let modes = session_response.config_options.as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(session_response.modes.as_ref()));
@@ -230,14 +231,14 @@ pub(crate) async fn load_session_on_connection(
             return None;
         }
     };
+    crate::send_diag("info", format!("[session] session/load maestro_id={maestro_session_id} resume={resume_session_id}"));
 
-    let models = convert_acp_models(load_response.models.as_ref())
-        .or_else(|| load_response.config_options.as_deref().and_then(models_from_config_options));
+    let models = load_response.config_options.as_deref().and_then(models_from_config_options);
     let modes = load_response.config_options.as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
     let config_options = load_response.config_options.as_deref().map(serialize_config_options);
-    let session_id = acp::schema::SessionId::new(resume_session_id.clone());
+    let session_id = acp::schema::v1::SessionId::new(resume_session_id.clone());
 
     let prompt_capabilities = conn
         .capabilities
@@ -301,6 +302,17 @@ pub(crate) async fn pre_initialize_agent(
 
     let child_stdin = child.stdin.take().expect("child stdin must be piped");
     let child_stdout = child.stdout.take().expect("child stdout must be piped");
+    // Drain agent stderr so the subprocess never blocks on a full pipe buffer,
+    // and forward each line as a diagnostic for cross-platform debugging.
+    if let Some(stderr_pipe) = child.stderr.take() {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(stderr_pipe).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                crate::send_diag("warn", format!("[agent stderr] {line}"));
+            }
+        });
+    }
     let outgoing = child_stdin.compat_write();
     let incoming = child_stdout.compat();
     let transport = acp::ByteStreams::new(outgoing, incoming);
@@ -342,8 +354,12 @@ pub(crate) async fn pre_initialize_agent(
                     prompt_capabilities: Some(extract_prompt_capabilities(&init_response)),
                     supports_session_list: init_response.agent_capabilities.session_capabilities.list.is_some(),
                     supports_session_load: init_response.agent_capabilities.load_session,
-                    supports_session_close: init_response.agent_capabilities.session_capabilities.list.is_some(),
+                    supports_session_close: init_response.agent_capabilities.session_capabilities.close.is_some(),
                 };
+                crate::send_diag("info", format!(
+                    "[agent] initialize ok session_list={} session_load={} session_close={}",
+                    caps.supports_session_list, caps.supports_session_load, caps.supports_session_close
+                ));
                 // Send the live connection handle out — caller uses it to create sessions.
                 let _ = ready_tx.send(Ok((caps, cx)));
                 // Hold the connection open until shutdown is requested or the child exits.
@@ -351,9 +367,14 @@ pub(crate) async fn pre_initialize_agent(
                 Ok(())
             })
             .await;
-        eprintln!("[agent] ACP connection closed: {:?}", result);
-        if let Ok(Some(status)) = child.try_wait() {
-            eprintln!("[agent] subprocess exited: {status}");
+        let exit_status = child.try_wait().ok().flatten();
+        let exit_msg = exit_status
+            .map(|s| format!(" exit={s}"))
+            .unwrap_or_default();
+        if result.is_err() {
+            crate::send_diag("error", format!("[agent] ACP connection closed with error{exit_msg}: {result:?}"));
+        } else {
+            crate::send_diag("info", format!("[agent] ACP connection closed{exit_msg}"));
         }
         drop(child);
     });

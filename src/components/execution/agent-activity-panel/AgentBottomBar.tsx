@@ -2,7 +2,8 @@ import { motion } from "framer-motion";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import type { ConfigOption, UsageState, AvailableCommand } from "../activity/types";
-import type { AcpPromptCapabilities, JsonValue } from "@/types/bindings";
+import type { JsonValue } from "@/types/bindings";
+import type { AcpPromptCapabilities } from "../activity/useAcpSessionLifecycle";
 
 interface AgentBottomBarProps {
   isSessionDead: boolean;

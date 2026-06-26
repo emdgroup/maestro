@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
-import { connectionKeyStr } from "@/utils/helpers/connection-utils";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
@@ -113,19 +112,33 @@ export function useExecuteTask(
       });
       logId = spawnResult.log_id;
 
+      let capturedModeIds: string[] = [];
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
-          unlisten();
+          unlistenSpawnOk();
           reject(new Error("Agent spawn timed out after 30s"));
         }, 30_000);
 
-        let unlisten: () => void = () => {};
+        let unlistenSpawnOk: () => void = () => {};
+        let unlistenModes: () => void = () => {};
+
+        listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
+          `acp://session-modes/${logId}`,
+          (e) => {
+            capturedModeIds = e.payload.available_modes.map((m) => m.mode_id);
+            unlistenModes();
+          },
+        ).then((fn) => {
+          unlistenModes = fn;
+        });
+
         listen<null>(`acp://spawn-ok/${logId}`, () => {
           clearTimeout(timer);
-          unlisten();
+          unlistenSpawnOk();
+          unlistenModes();
           resolve();
         }).then((fn) => {
-          unlisten = fn;
+          unlistenSpawnOk = fn;
         });
       });
 
@@ -138,35 +151,26 @@ export function useExecuteTask(
         }
       }
 
-      // Set permission mode if overridden
+      // Set permission mode: use override if set, otherwise resolve from modes received at spawn
       if (task.permission_mode_override) {
         try {
           await api.setAcpMode(logId, task.permission_mode_override);
         } catch (err) {
           console.warn("Failed to set permission mode override:", err);
         }
-      } else {
+      } else if (capturedModeIds.length > 0) {
         try {
-          const cache = await queryClient.fetchQuery({
-            queryKey: ["agentCache", connectionKeyStr(connection), agentId],
-            queryFn: () => api.getAgentCache(agentId, connection),
-          });
-          const modeOption = cache?.config_options.find((o) => o.category === "mode");
-          const availableModeIds = modeOption?.options.map((o) => o.value) ?? [];
-
           const priorities = task.auto_approve
             ? ["bypassPermissions", "full-access", "auto"]
             : ["acceptEdits", "auto", "build"];
-
           const resolvedMode =
-            priorities.find((m) => availableModeIds.includes(m)) ??
-            availableModeIds.find((m) => m !== "readonly" && m !== "plan");
-
+            priorities.find((m) => capturedModeIds.includes(m)) ??
+            capturedModeIds.find((m) => m !== "readonly" && m !== "plan");
           if (resolvedMode) {
             await api.setAcpMode(logId, resolvedMode);
           }
         } catch (err) {
-          console.warn("Failed to resolve permission mode:", err);
+          console.warn("Failed to set permission mode:", err);
         }
       }
 

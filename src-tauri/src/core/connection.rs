@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use tauri::AppHandle;
 use crate::project::lock as project_lock;
 
-use crate::acp::{AcpProcess, ConnectionServer, AgentCacheMap, RestorableSession, ConnectionKey};
+use crate::acp::{AcpProcess, ConnectionServer, RestorableSession, ConnectionKey};
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::core::schema::{initialize_schema};
 use crate::execution::PtySession;
@@ -93,8 +93,6 @@ pub struct AcpState {
     /// One long-lived maestro-server process per connection.
     /// All sessions for a connection share this process instead of spawning their own.
     pub connection_servers: tokio::sync::Mutex<HashMap<ConnectionKey, ConnectionServer>>,
-    /// Agent-level capabilities cache. Populated from PreInitialize and updated on SpawnOk/SessionLoadOk.
-    pub agent_cache: tokio::sync::Mutex<AgentCacheMap>,
     /// Per-connection deploy serialization locks. Prevents concurrent ensure_remote_server
     /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
     /// connection from running SFTP uploads simultaneously.
@@ -154,7 +152,6 @@ impl AppState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),
                 discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
                 connection_servers: tokio::sync::Mutex::new(HashMap::new()),
-                agent_cache: tokio::sync::Mutex::new(HashMap::new()),
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 reopen_sessions: tokio::sync::Mutex::new(HashMap::new()),

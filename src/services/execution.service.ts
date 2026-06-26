@@ -6,7 +6,6 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import type { ConnectionKey } from "@/types/bindings";
-import { connectionKeysEqual, connectionKeyStr } from "@/lib/connection-utils";
 
 export const executionQueryKeys = {
   activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
@@ -207,39 +206,6 @@ export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boole
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
-  });
-}
-
-/** Full agent catalog (config options, commands, capabilities) from AgentCache. Available after first SpawnOk/PreInitialize. */
-export function useAgentCacheQuery(agentId: string | null, connection: ConnectionKey) {
-  const queryClient = useQueryClient();
-  // Serialize to a string so the effect dep is stable across renders even
-  // when callers construct a new ConnectionKey object reference each render.
-  const connStr = connectionKeyStr(connection);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen<ConnectionKey & { agent_id: string }>("agent-cache-updated", (event) => {
-      if (event.payload.agent_id === agentId && connectionKeysEqual(event.payload, connection)) {
-        void queryClient.invalidateQueries({
-          queryKey: ["agentCache", connStr, agentId],
-        });
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryClient, agentId, connStr]);
-
-  return useQuery({
-    queryKey: ["agentCache", connStr, agentId] as const,
-    queryFn: () => api.getAgentCache(agentId!, connection),
-    enabled: agentId != null,
-    staleTime: Infinity,
-    gcTime: Infinity,
   });
 }
 

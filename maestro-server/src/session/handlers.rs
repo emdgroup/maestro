@@ -3,12 +3,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
-use acp::schema::{
+use acp::schema::v1::{
     CreateTerminalRequest, CreateTerminalResponse, PermissionOptionId,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SelectedPermissionOutcome, SessionNotification,
 };
-use agent_client_protocol_schema::{CreateElicitationRequest, CreateElicitationResponse};
+use agent_client_protocol_schema::v1::{CreateElicitationRequest, CreateElicitationResponse};
 use maestro_protocol::{
     ElicitationRequest as MaestroElicitationRequest, MaestroRpcMessage,
     PermissionRequest as MaestroPermissionRequest, ServerResponse, SessionUpdate,
@@ -298,7 +298,7 @@ impl ConnectionHandlers {
                 .map_err(|e| acp::Error::new(-32602, format!("invalid elicitation request: {e}")))?;
 
         let acp_sid = match elicitation.scope() {
-            agent_client_protocol_schema::ElicitationScope::Session(scope) => {
+            agent_client_protocol_schema::v1::ElicitationScope::Session(scope) => {
                 scope.session_id.to_string()
             }
             _ => {

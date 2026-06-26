@@ -124,7 +124,6 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
             crate::ipc::sftp_download,
-            crate::ipc::get_agent_cache,
             crate::ipc::list_wsl_distros,
             crate::ipc::list_wsl_directories,
             crate::ipc::get_wsl_home,

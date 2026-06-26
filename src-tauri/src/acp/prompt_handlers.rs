@@ -21,48 +21,6 @@ pub struct AcpPromptCapabilities {
     pub audio: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentCatalogOptionValue {
-    pub name: String,
-    pub value: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentCatalogOption {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub options: Vec<AgentCatalogOptionValue>,
-    pub default_value: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentCatalogCommand {
-    pub name: String,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentSessionCapabilities {
-    pub supports_session_list: bool,
-    pub supports_session_load: bool,
-    pub supports_session_close: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentCacheResponse {
-    pub config_options: Vec<AgentCatalogOption>,
-    pub available_commands: Vec<AgentCatalogCommand>,
-    pub prompt_capabilities: Option<AcpPromptCapabilities>,
-    pub session_capabilities: AgentSessionCapabilities,
-}
 
 async fn send_prompt_impl(
     app_state: &Arc<AppState>,
@@ -205,48 +163,6 @@ pub async fn set_acp_config_option(
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn get_agent_cache(
-    app_state: State<'_, Arc<AppState>>,
-    agent_id: String,
-    connection: crate::acp::ConnectionKey,
-) -> Result<Option<AgentCacheResponse>, String> {
-    let connection_key = connection;
-    let cache = app_state.acp.agent_cache.lock().await;
-    let entry = match cache.get(&(connection_key, agent_id)) {
-        Some(e) => e,
-        None => return Ok(None),
-    };
-    Ok(Some(AgentCacheResponse {
-        config_options: entry.config_options.iter().map(|o| AgentCatalogOption {
-            id: o.id.clone(),
-            name: o.name.clone(),
-            description: o.description.clone(),
-            category: o.category.clone(),
-            options: o.options.iter().map(|v| AgentCatalogOptionValue {
-                name: v.name.clone(),
-                value: v.value.clone(),
-                description: v.description.clone(),
-            }).collect(),
-            default_value: o.default_value.clone(),
-        }).collect(),
-        available_commands: entry.available_commands.iter().map(|c| AgentCatalogCommand {
-            name: c.name.clone(),
-            description: c.description.clone(),
-        }).collect(),
-        prompt_capabilities: entry.prompt_capabilities.as_ref().map(|c| AcpPromptCapabilities {
-            embedded_context: c.embedded_context,
-            image: c.image,
-            audio: c.audio,
-        }),
-        session_capabilities: AgentSessionCapabilities {
-            supports_session_list: entry.session_capabilities.supports_session_list,
-            supports_session_load: entry.session_capabilities.supports_session_load,
-            supports_session_close: entry.session_capabilities.supports_session_close,
-        },
-    }))
-}
 
 #[cfg(test)]
 mod tests {

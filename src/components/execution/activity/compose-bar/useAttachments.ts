@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { api } from "@/lib/tauri-utils";
-import type { AcpPromptCapabilities } from "@/types/bindings";
+import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import { isImageExtension } from "../fileTypeUtils";
 import type { ExternalAttachment } from "./externalAttachment";
 

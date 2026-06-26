@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import { extractAgentMeta } from "./agentMeta";
@@ -428,6 +429,10 @@ export function useAcpActivity(
       listen<null>(`acp://spawn-ok/${logId}`, () => {
         dispatch({ type: "turn_ended" });
         dispatch({ type: "set_initialized" });
+      }),
+      listen<string>(`acp://session-error/${logId}`, (event) => {
+        toast.error(`Agent failed to start: ${event.payload}`);
+        dispatch({ type: "session_ended" });
       }),
     ])
       .then((listeners) => {
