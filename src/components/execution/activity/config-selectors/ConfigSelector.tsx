@@ -3,6 +3,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ModeSelector } from "./ModeSelector";
 import { EffortSelector } from "./EffortSelector";
 import { GenericSelector } from "./GenericSelector";
+import { AgentSelector } from "./AgentSelector";
 
 interface ConfigSelectorProps {
   option: ConfigOption;
@@ -12,6 +13,9 @@ interface ConfigSelectorProps {
 }
 
 export function ConfigSelector({ option, value, onChange, disabled }: ConfigSelectorProps) {
+  if (option.id === "agent") {
+    return <AgentSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
+  }
   switch (option.category) {
     case "model":
       return (
