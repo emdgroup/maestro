@@ -188,13 +188,15 @@ pub(crate) async fn create_session_on_connection(
 ///
 /// Sends `session/load` on the existing connection instead of spawning a fresh agent process.
 /// Registers the session route in the agent's router so shared handlers dispatch correctly.
+/// Ok(Some) = success; Ok(None) = ACP-level error (connection still alive, error already sent);
+/// Err(()) = transport failure (connection dead, error already sent).
 pub(crate) async fn load_session_on_connection(
     conn: &AgentConnection,
     maestro_session_id: String,
     resume_session_id: String,
     cwd: &str,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, Option<Vec<serde_json::Value>>)> {
+) -> Result<Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, Option<Vec<serde_json::Value>>)>, ()> {
     let cx = conn.connection.clone();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
@@ -228,7 +230,18 @@ pub(crate) async fn load_session_on_connection(
                 })),
             )
             .await;
-            return None;
+            // Named ACP error codes mean the agent responded — connection is still alive.
+            // Transport failures (channel closed, I/O error) appear as InternalError or Other.
+            let connection_alive = matches!(
+                e.code,
+                acp::schema::v1::ErrorCode::ResourceNotFound
+                    | acp::schema::v1::ErrorCode::MethodNotFound
+                    | acp::schema::v1::ErrorCode::InvalidParams
+                    | acp::schema::v1::ErrorCode::AuthRequired
+                    | acp::schema::v1::ErrorCode::ParseError
+                    | acp::schema::v1::ErrorCode::InvalidRequest
+            );
+            return if connection_alive { Ok(None) } else { Err(()) };
         }
     };
     crate::send_diag("info", format!("[session] session/load maestro_id={maestro_session_id} resume={resume_session_id}"));
@@ -255,7 +268,7 @@ pub(crate) async fn load_session_on_connection(
     let router = Arc::clone(&conn.router);
     let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
 
-    Some((
+    Ok(Some((
         ActiveSession {
             cmd_tx,
             pending_permissions,
@@ -272,7 +285,7 @@ pub(crate) async fn load_session_on_connection(
         modes,
         prompt_capabilities,
         config_options,
-    ))
+    )))
 }
 
 /// Spawn an agent process and run `initialize` only — no session created yet.

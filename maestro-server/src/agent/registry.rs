@@ -47,19 +47,9 @@ fn normalize_binary_cmd(raw_cmd: &str) -> String {
         .rsplit(|c| c == '/' || c == '\\')
         .next()
         .unwrap_or(raw_cmd);
-
-    eprintln!("[registry] normalize_binary_cmd: raw={raw_cmd:?} filename={filename:?}");
-    match which::which(filename) {
-        Ok(abs_path) => {
-            let resolved = abs_path.to_string_lossy().into_owned();
-            eprintln!("[registry] which resolved: {filename:?} -> {resolved:?}");
-            resolved
-        }
-        Err(e) => {
-            eprintln!("[registry] which failed for {filename:?}: {e}");
-            filename.to_string()
-        }
-    }
+    which::which(filename)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| filename.to_string())
 }
 
 /// Returns (spawn_cmd, spawn_args, spawn_env, spawn_deps).

@@ -28,7 +28,7 @@ pub async fn ensure_remote_server(
     // Single SSH command combining arch check, version check, and HOME resolution.
     let probe = ssh
         .execute_command(&format!(
-            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$($HOME/.{}/{} --protocol-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
+            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$($HOME/.{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
             REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
         ))
         .await
@@ -44,7 +44,7 @@ pub async fn ensure_remote_server(
         return Err(format!("Unsupported remote architecture: {}", arch));
     }
 
-    let local_version = maestro_protocol::PROTOCOL_VERSION.to_string();
+    let local_version = env!("CARGO_PKG_VERSION").to_string();
 
     if remote_version == local_version {
         let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME);
@@ -106,7 +106,7 @@ pub async fn ensure_wsl_server(
             "-d", distro, "--",
             "sh", "-c",
             &format!(
-                "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --protocol-version 2>/dev/null || echo MISSING)\"",
+                "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
                 REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
             ),
         ])
@@ -122,7 +122,7 @@ pub async fn ensure_wsl_server(
     }
     let (home, remote_version) = (parts[0].trim(), parts[1].trim());
 
-    let local_version = maestro_protocol::PROTOCOL_VERSION.to_string();
+    let local_version = env!("CARGO_PKG_VERSION").to_string();
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 

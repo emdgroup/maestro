@@ -60,6 +60,7 @@ pub(crate) async fn handle_create_terminal(
     }
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
+    cmd.stdin(Stdio::null());
     cmd.kill_on_drop(true);
     cmd.no_console_window();
 

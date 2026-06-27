@@ -486,6 +486,28 @@ pub async fn read_message<R: AsyncRead + Unpin>(
     Ok(serde_json::from_slice(&body)?)
 }
 
+/// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
+///
+/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
+/// version uses `spawn_blocking` internally. If the future is dropped while a read
+/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
+/// continues and the 4-byte length prefix gets silently discarded — causing framing
+/// desync. This function is meant to run in a dedicated blocking thread that is never
+/// dropped, writing results to an mpsc channel instead.
+pub fn read_message_sync<R: std::io::Read>(
+    stream: &mut R,
+) -> Result<MaestroRpcMessage, Box<dyn std::error::Error + Send + Sync>> {
+    let mut len_buf = [0u8; MSG_LEN_SIZE];
+    stream.read_exact(&mut len_buf)?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if len > MAX_MESSAGE_SIZE {
+        return Err(format!("Message too large: {} bytes (max {})", len, MAX_MESSAGE_SIZE).into());
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body)?;
+    Ok(serde_json::from_slice(&body)?)
+}
+
 // --- CDN registry types — used by maestro-server for agent discovery ---
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

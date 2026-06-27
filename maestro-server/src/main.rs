@@ -23,11 +23,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    read_message, AcpRegistry, CheckToolsResponse, DiagnosticPayload, DiscoveredAgent,
-    ErrorResponse, FileReadResponse, FileSearchResponse, HandshakeResponse, ListAgentsResponse,
-    MaestroRpcMessage, PreInitializeResponse, PROTOCOL_VERSION, ServerRequest, ServerResponse,
-    SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse, ToolCheckResult,
-    TurnEnded,
+    AcpRegistry, CheckToolsResponse, DiagnosticPayload,
+    DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse, HandshakeResponse,
+    ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse, PROTOCOL_VERSION, ServerRequest,
+    ServerResponse, SessionListOkResponse, SessionLoadOkResponse, SessionUpdate, SpawnResponse,
+    ToolCheckResult, TurnEnded,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -146,6 +146,10 @@ fn main() {
         println!("{}", PROTOCOL_VERSION);
         return;
     }
+    if std::env::args().any(|a| a == "--app-version") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("validate-canvas") {
         std::process::exit(validate_canvas::run());
     }
@@ -159,12 +163,47 @@ fn main() {
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let stdout: Arc<Mutex<tokio::io::Stdout>> = Arc::new(Mutex::new(tokio::io::stdout()));
-    let mut stdin = tokio::io::stdin();
     let mut sessions: SessionMap = HashMap::new();
     let mut agent_connections: AgentConnectionMap = HashMap::new();
 
     let (diag_tx, mut diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
+
+    // On Windows, anonymous pipes don't support overlapped I/O (IOCP), so
+    // tokio::io::stdin() falls back to spawn_blocking for each read. When a
+    // tokio::select! picks a different arm and drops the read_message future,
+    // the blocking thread keeps running and its ReadFile result is discarded —
+    // silently consuming the 4-byte framing prefix and desyncing the stream.
+    // Fix: one dedicated blocking thread owns stdin forever and forwards messages
+    // over a channel, so the future the select polls is always the channel receive,
+    // never a raw stdin read.
+    let (stdin_msg_tx, mut stdin_msg_rx) =
+        tokio::sync::mpsc::channel::<Result<MaestroRpcMessage, String>>(4);
+    tokio::task::spawn_blocking(move || {
+        let stdin = std::io::stdin();
+        let mut locked = stdin.lock();
+        loop {
+            match maestro_protocol::read_message_sync(&mut locked) {
+                Ok(msg) => {
+                    if stdin_msg_tx.blocking_send(Ok(msg)).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    let is_eof = msg.contains("failed to fill whole buffer")
+                        || msg.contains("unexpected eof")
+                        || msg.contains("early eof");
+                    let _ = stdin_msg_tx.blocking_send(Err(msg));
+                    if is_eof {
+                        break;
+                    }
+                    // "Message too large": body bytes still in pipe; loop back
+                    // and read the next 4 bytes — same cascade semantics as before.
+                }
+            }
+        }
+    });
 
     let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
         .await
@@ -173,9 +212,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Validate the protocol version handshake before entering the main dispatch loop.
     // Agent discovery (which::which PATH scanning) runs AFTER handshake so the client
     // does not time out waiting on slow PATH scans on Windows.
-    let first_msg = match read_message(&mut stdin).await {
-        Ok(msg) => msg,
-        Err(_) => return Ok(()),
+    let first_msg = match stdin_msg_rx.recv().await {
+        Some(Ok(msg)) => msg,
+        _ => return Ok(()),
     };
     match first_msg {
         MaestroRpcMessage::Request(ServerRequest::Handshake(req)) => {
@@ -212,7 +251,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> = agent::discover_agents(&registry);
+    let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> = agent::discover_agents(&registry);
 
     // Heartbeat: send Ping every 10s so the parent (Tauri) can detect stale connections.
     tokio::spawn({
@@ -251,19 +290,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         let msg = tokio::select! {
             biased;
 
-            msg_result = read_message(&mut stdin) => {
+            msg_result = stdin_msg_rx.recv() => {
                 match msg_result {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        let is_eof = e
-                            .downcast_ref::<std::io::Error>()
-                            .map(|io_err| io_err.kind() == std::io::ErrorKind::UnexpectedEof)
-                            .unwrap_or_else(|| {
-                                let s = e.to_string();
-                                s.contains("early eof")
-                                    || s.contains("unexpected eof")
-                                    || s.contains("UnexpectedEof")
-                            });
+                    Some(Ok(msg)) => msg,
+                    Some(Err(e)) => {
+                        let is_eof = e.contains("failed to fill whole buffer")
+                            || e.contains("early eof")
+                            || e.contains("unexpected eof")
+                            || e.contains("UnexpectedEof");
                         if is_eof {
                             break;
                         }
@@ -277,6 +311,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .await);
                         continue;
                     }
+                    None => break,
                 }
             }
 
@@ -584,27 +619,33 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .await
                 };
-                if result.is_none() {
-                    agent_connections.remove(&req.agent_id);
-                }
-
-                if let Some((mut session, models, modes, prompt_caps, config_options)) = result {
-                    session.agent_id = req.agent_id.clone();
-                    session.cwd = req.cwd.clone();
-                    sessions.insert(req.session_id.clone(), session);
-                    send_or_break!(send_response(
-                        &stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
-                            SessionLoadOkResponse {
-                                session_id: req.session_id.clone(),
-                                models,
-                                modes,
-                                prompt_capabilities: Some(prompt_caps),
-                                config_options,
-                            },
-                        )),
-                    )
-                    .await);
+                match result {
+                    Err(()) => {
+                        // Transport failure — connection dead, force reconnect on next attempt.
+                        agent_connections.remove(&req.agent_id);
+                    }
+                    Ok(None) => {
+                        // ACP-level error (e.g. session not found) — connection still alive,
+                        // error response already sent inside load_session_on_connection.
+                    }
+                    Ok(Some((mut session, models, modes, prompt_caps, config_options))) => {
+                        session.agent_id = req.agent_id.clone();
+                        session.cwd = req.cwd.clone();
+                        sessions.insert(req.session_id.clone(), session);
+                        send_or_break!(send_response(
+                            &stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
+                                SessionLoadOkResponse {
+                                    session_id: req.session_id.clone(),
+                                    models,
+                                    modes,
+                                    prompt_capabilities: Some(prompt_caps),
+                                    config_options,
+                                },
+                            )),
+                        )
+                        .await);
+                    }
                 }
             }
 
@@ -698,6 +739,17 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
             MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
                 let response = agent::detection::detect_installed_agents().await;
+
+                // Override spawn_cmd with the path found by detection (handles platform quirks
+                // where the registry cmd uses a relative archive path like ./opencode.exe).
+                for info in &response.agents {
+                    if let Some(ref path) = info.binary_path {
+                        if let Some(agent) = agents_with_spawn.iter_mut().find(|a| a.id == info.agent_id) {
+                            agent.spawn_cmd = path.clone();
+                        }
+                    }
+                }
+
                 send_or_break!(send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
@@ -825,7 +877,7 @@ async fn handle_agent_restart(
                 Arc::clone(stdout),
             )
             .await;
-            if let Some((mut session, models, modes, prompt_caps, config_options)) = result {
+            if let Ok(Some((mut session, models, modes, prompt_caps, config_options))) = result {
                 session.agent_id = dead_agent_id.clone();
                 session.cwd = session_cwd.clone();
                 sessions.insert(maestro_sid.clone(), session);
