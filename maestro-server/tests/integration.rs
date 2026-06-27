@@ -42,7 +42,7 @@ fn write_msg(writer: &mut impl Write, msg: &MaestroRpcMessage) {
     writer.flush().expect("flush");
 }
 
-fn read_msg(reader: &mut impl Read) -> MaestroRpcMessage {
+fn read_frame(reader: &mut impl Read) -> MaestroRpcMessage {
     let mut len_buf = [0u8; 4];
     reader.read_exact(&mut len_buf).expect("read len prefix");
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -50,6 +50,18 @@ fn read_msg(reader: &mut impl Read) -> MaestroRpcMessage {
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body).expect("read body");
     serde_json::from_slice(&body).expect("deserialize response")
+}
+
+// Skip Diagnostic and Ping frames — both arrive asynchronously and are not
+// relevant to the error-path assertions these tests make.
+fn read_msg(reader: &mut impl Read) -> MaestroRpcMessage {
+    loop {
+        match read_frame(reader) {
+            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
+            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            other => return other,
+        }
+    }
 }
 
 fn spawn_server() -> std::process::Child {
