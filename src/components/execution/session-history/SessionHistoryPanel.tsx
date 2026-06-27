@@ -336,7 +336,7 @@ export function SessionHistoryPanel({
                       "hover:bg-muted/20 hover:border-border/50",
                     )}
                   >
-                    <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-center justify-between gap-2 min-w-0">
                       <span className="text-xs font-medium text-foreground truncate flex-1">
                         {entry.title ?? entry.session_id}
                       </span>

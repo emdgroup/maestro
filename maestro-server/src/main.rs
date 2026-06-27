@@ -166,7 +166,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sessions: SessionMap = HashMap::new();
     let mut agent_connections: AgentConnectionMap = HashMap::new();
 
-    let (diag_tx, mut diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
+    let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
 
     // On Windows, anonymous pipes don't support overlapped I/O (IOCP), so
@@ -264,6 +264,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 if send_response(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Ping { seq }),
+                )
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    });
+
+    // Flush diagnostics in the background so they appear even when an arm is blocked mid-await.
+    tokio::spawn({
+        let stdout = Arc::clone(&stdout);
+        async move {
+            let mut diag_rx = diag_rx;
+            while let Some(payload) = diag_rx.recv().await {
+                if send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Diagnostic(payload)),
                 )
                 .await
                 .is_err()
@@ -742,10 +761,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Override spawn_cmd with the path found by detection (handles platform quirks
                 // where the registry cmd uses a relative archive path like ./opencode.exe).
+                // Only applies to binary distributions — npx/uvx agents use binary_path as a
+                // detection signal only, not as the spawn command.
                 for info in &response.agents {
                     if let Some(ref path) = info.binary_path {
                         if let Some(agent) = agents_with_spawn.iter_mut().find(|a| a.id == info.agent_id) {
-                            agent.spawn_cmd = path.clone();
+                            if agent.spawn_deps.is_empty() {
+                                agent.spawn_cmd = path.clone();
+                            }
                         }
                     }
                 }
@@ -777,13 +800,6 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             MaestroRpcMessage::Response(_) => {}
         }
 
-        // Flush diagnostics produced during this message's processing.
-        while let Ok(payload) = diag_rx.try_recv() {
-            let _ = send_response(
-                &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Diagnostic(payload)),
-            ).await;
-        }
     }
 
     // Abort all active session tasks so agent child processes are killed promptly.
