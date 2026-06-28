@@ -534,14 +534,14 @@
     {
       "id": "grok-build",
       "name": "Grok Build",
-      "version": "0.2.70",
+      "version": "0.2.72",
       "description": "xAI's coding agent and CLI",
       "website": "https://x.ai/cli",
       "authors": ["xAI"],
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "@xai-official/grok@0.2.70",
+          "package": "@xai-official/grok@0.2.72",
           "args": ["agent", "stdio"]
         }
       },
@@ -863,7 +863,7 @@
     {
       "id": "qwen-code",
       "name": "Qwen Code",
-      "version": "0.19.2",
+      "version": "0.19.3",
       "description": "Alibaba's Qwen coding assistant",
       "repository": "https://github.com/QwenLM/qwen-code",
       "website": "https://qwenlm.github.io/qwen-code-docs/en/users/overview",
@@ -871,7 +871,7 @@
       "license": "Apache-2.0",
       "distribution": {
         "npx": {
-          "package": "@qwen-code/qwen-code@0.19.2",
+          "package": "@qwen-code/qwen-code@0.19.3",
           "args": ["--acp", "--experimental-skills"]
         }
       },
