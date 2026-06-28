@@ -71,6 +71,8 @@ interface DiffActionBarProps {
   hasAnyStaged?: boolean;
   isDiscarding?: boolean;
   isDeleteMode?: boolean;
+  discardDialogOpen?: boolean;
+  onDiscardDialogOpenChange?: (open: boolean) => void;
   deleteDialogOpen?: boolean;
   onDeleteDialogOpenChange?: (open: boolean) => void;
   isDeleting?: boolean;
@@ -102,6 +104,8 @@ export function DiffActionBar({
   hasAnyStaged = false,
   isDiscarding = false,
   isDeleteMode = false,
+  discardDialogOpen,
+  onDiscardDialogOpenChange,
   deleteDialogOpen,
   onDeleteDialogOpenChange,
   isDeleting = false,
@@ -151,13 +155,15 @@ export function DiffActionBar({
         {/* Worktree-only: Revert button with confirmation dialog */}
         {mode === "worktree" && (
           <AlertDialog
-            open={isDeleteMode ? deleteDialogOpen : undefined}
+            open={isDeleteMode ? deleteDialogOpen : discardDialogOpen}
             onOpenChange={
               isDeleteMode
                 ? (open) => {
                     if (!isDeleting) onDeleteDialogOpenChange?.(open);
                   }
-                : undefined
+                : (open) => {
+                    if (!isDiscarding) onDiscardDialogOpenChange?.(open);
+                  }
             }
           >
             <AlertDialogTrigger

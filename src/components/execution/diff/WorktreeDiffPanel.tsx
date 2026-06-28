@@ -79,6 +79,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const shelveMutation = useShelveWorktreeChangesMutation();
   const deleteMutation = useDeleteUntrackedFilesMutation();
   const [shelvePopoverOpen, setShelvePopoverOpen] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   function handleDeleteDialogOpenChange(open: boolean) {
@@ -225,6 +226,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
       });
       setStagedFiles(new Set());
       setStagedHunks(new Map());
+      setDiscardDialogOpen(false);
     } catch {
       // error toast handled by mutation
     }
@@ -362,6 +364,8 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
         hasAnyStaged={isUncommittedScope ? hasAnyStaged : false}
         isDiscarding={isUncommittedScope ? discardMutation.isPending : false}
         isDeleteMode={isUncommittedScope && viewMode === "untracked"}
+        discardDialogOpen={isUncommittedScope ? discardDialogOpen : false}
+        onDiscardDialogOpenChange={isUncommittedScope ? setDiscardDialogOpen : undefined}
         deleteDialogOpen={isUncommittedScope ? deleteDialogOpen : false}
         onDeleteDialogOpenChange={isUncommittedScope ? handleDeleteDialogOpenChange : undefined}
         isDeleting={isUncommittedScope ? deleteMutation.isPending : false}
