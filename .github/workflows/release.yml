@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "maestro-v*.*.*"
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -60,7 +60,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ startsWith(github.ref_name, 'maestro-v0.') }}
           files: |
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/deb/*.deb
@@ -106,7 +105,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ startsWith(github.ref_name, 'maestro-v0.') }}
           files: |
             target/release/bundle/dmg/*.dmg
 
@@ -152,7 +150,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ startsWith(github.ref_name, 'maestro-v0.') }}
           files: |
             target/release/bundle/msi/*.msi
             target/release/bundle/nsis/*.exe
