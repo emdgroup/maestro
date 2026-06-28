@@ -98,6 +98,35 @@ impl std::str::FromStr for EnterKeyBehavior {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[specta(export)]
+pub enum AgentStreamWidth {
+    #[default]
+    Full,
+    Compact,
+}
+
+impl std::fmt::Display for AgentStreamWidth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Full => write!(f, "full"),
+            Self::Compact => write!(f, "compact"),
+        }
+    }
+}
+
+impl std::str::FromStr for AgentStreamWidth {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "full" => Ok(Self::Full),
+            "compact" => Ok(Self::Compact),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct AppSettings {
@@ -116,6 +145,8 @@ pub struct AppSettings {
     pub terminal_color_mode: TerminalColorMode,
     #[serde(default)]
     pub enter_key_behavior: EnterKeyBehavior,
+    #[serde(default)]
+    pub agent_stream_width: AgentStreamWidth,
     pub updated_at: String,
     #[serde(default)]
     pub auto_update: bool,
@@ -132,6 +163,7 @@ impl Default for AppSettings {
             accent_color: None,
             terminal_color_mode: TerminalColorMode::FollowTheme,
             enter_key_behavior: EnterKeyBehavior::SendPrompt,
+            agent_stream_width: AgentStreamWidth::Full,
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
         }

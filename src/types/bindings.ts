@@ -2115,6 +2115,7 @@ export type AgentDiscoveryResult = {
   agents: DiscoveredAgent[];
   error?: string | null;
 };
+export type AgentStreamWidth = "full" | "compact";
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
@@ -2128,6 +2129,7 @@ export type AppSettings = {
   accent_color?: string | null;
   terminal_color_mode?: TerminalColorMode;
   enter_key_behavior?: EnterKeyBehavior;
+  agent_stream_width?: AgentStreamWidth;
   updated_at: string;
   auto_update?: boolean;
 };

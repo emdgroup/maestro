@@ -1,11 +1,16 @@
 import { Skeleton } from "@/ui/skeleton";
+import { cn } from "@/lib/ui-utils";
+import { useSettings } from "@/services/settings.service";
 
 export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean }) {
+  const { data: appSettings } = useSettings();
+  const isCompact = appSettings?.agent_stream_width === "compact";
+
   if (isNewSession) {
     return (
       <div className="flex-1 flex flex-col min-h-0 relative">
         <div className="absolute inset-0 flex items-center justify-center px-8">
-          <Skeleton className="h-12 w-[min(36rem,100%)] rounded-3xl" />
+          <Skeleton className="h-12 w-[min(48rem,100%)] rounded-3xl" />
         </div>
       </div>
     );
@@ -29,7 +34,7 @@ export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean 
           </div>
         </div>
       </div>
-      <div className="px-16 pb-2.5 pt-1">
+      <div className={cn("pb-2.5 pt-1", isCompact ? "px-3" : "px-16")}>
         <Skeleton className="h-18 w-full rounded-3xl" />
       </div>
     </div>

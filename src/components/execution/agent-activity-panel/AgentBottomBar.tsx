@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import { cn } from "@/lib/ui-utils";
+import { useSettings } from "@/services/settings.service";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import type { ConfigOption, UsageState, AvailableCommand } from "../activity/types";
@@ -42,12 +44,15 @@ export function AgentBottomBar({
   onConfigChange,
   promptCapabilities,
 }: AgentBottomBarProps) {
+  const { data: appSettings } = useSettings();
+  const isCompact = appSettings?.agent_stream_width === "compact";
+
   if (isSessionDead || !showCompose) return null;
 
   return (
     <motion.div
       ref={composeBarWrapperRef}
-      className="sticky bottom-0 z-10 px-16 pb-2.5 pt-1"
+      className={cn("sticky bottom-0 z-10 pb-2.5 pt-1", isCompact ? "px-3" : "px-16")}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}

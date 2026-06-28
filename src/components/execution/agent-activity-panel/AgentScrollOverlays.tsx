@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
@@ -60,8 +59,6 @@ export function AgentScrollOverlays({
   onConfigChange,
   promptCapabilities,
 }: AgentScrollOverlaysProps) {
-  const [centeredTextWidth, setCenteredTextWidth] = useState<number | null>(null);
-
   return (
     <>
       <AnimatePresence>
@@ -79,10 +76,7 @@ export function AgentScrollOverlays({
               transition={{ type: "spring", stiffness: 350, damping: 28 }}
               className="transition-[width] duration-150 ease-out"
               style={{
-                width:
-                  centeredTextWidth !== null
-                    ? `clamp(36rem, ${centeredTextWidth + 80}px, calc(100% - 4rem))`
-                    : "36rem",
+                width: "min(48rem, calc(100% - 4rem))",
               }}
             >
               <ComposeBar
@@ -100,7 +94,6 @@ export function AgentScrollOverlays({
                 onConfigChange={onConfigChange}
                 promptCapabilities={promptCapabilities}
                 variant="centered"
-                onContentChange={setCenteredTextWidth}
               />
             </motion.div>
           </motion.div>

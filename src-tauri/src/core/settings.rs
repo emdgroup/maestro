@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
+use crate::models::{AgentStreamWidth, AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
 
 /// Load application settings from the database
 ///
@@ -77,6 +77,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .map(|v| v == "true")
         .unwrap_or(false);
 
+    let agent_stream_width = settings_map
+        .get("agent_stream_width")
+        .and_then(|v| v.parse::<AgentStreamWidth>().ok())
+        .unwrap_or_default();
+
     Ok(AppSettings {
         theme_preference,
         auto_mode,
@@ -86,6 +91,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         accent_color,
         terminal_color_mode,
         enter_key_behavior,
+        agent_stream_width,
         updated_at,
         auto_update,
     })
@@ -105,6 +111,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
     let terminal_color_mode_str = settings.terminal_color_mode.to_string();
     let enter_key_behavior_str = settings.enter_key_behavior.to_string();
+    let agent_stream_width_str = settings.agent_stream_width.to_string();
     let auto_update_str = if settings.auto_update { "true" } else { "false" };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
@@ -115,6 +122,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("accent_color", accent_color_str.as_str()),
         ("terminal_color_mode", terminal_color_mode_str.as_str()),
         ("enter_key_behavior", enter_key_behavior_str.as_str()),
+        ("agent_stream_width", agent_stream_width_str.as_str()),
         ("auto_update", auto_update_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
@@ -164,6 +172,7 @@ mod tests {
             accent_color: None,
             terminal_color_mode: crate::models::TerminalColorMode::FollowTheme,
             enter_key_behavior: crate::models::EnterKeyBehavior::SendPrompt,
+            agent_stream_width: crate::models::AgentStreamWidth::Full,
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
         };

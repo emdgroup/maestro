@@ -4,6 +4,8 @@ import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
+import { cn } from "@/lib/ui-utils";
+import { useSettings } from "@/services/settings.service";
 import React from "react";
 
 interface AgentStreamContentProps {
@@ -37,6 +39,9 @@ export function AgentStreamContent({
   handleChatScroll,
   onOpenPanel,
 }: AgentStreamContentProps) {
+  const { data: appSettings } = useSettings();
+  const isCompact = appSettings?.agent_stream_width === "compact";
+
   return (
     <div
       className="absolute inset-0 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar"
@@ -44,62 +49,68 @@ export function AgentStreamContent({
       onScroll={handleChatScroll}
       onWheel={handleWheel}
     >
-      <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
-        {agentSections.map((section, sectionIndex) => {
-          if (section.type === "standalone") {
-            const gi = section.item;
-            if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-            const isLast = gi.item.item.id === lastUserMessage?.id;
-            return (
-              <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
-                <ActivityUserMessage message={gi.item.item} />
-              </div>
-            );
-          }
-
-          const { items, showConnector } = section;
-          const firstItem = items[0];
-          const sectionKey =
-            firstItem.type === "toolGroup"
-              ? `tg-${firstItem.items[0].toolCallId}`
-              : firstItem.item.type === "toolCall"
-                ? firstItem.item.item.toolCallId
-                : firstItem.item.type === "canvas"
-                  ? firstItem.item.item.surfaceId
-                  : firstItem.item.item.id;
-
-          const nextSectionStartsWithMessage = (() => {
-            for (let si = sectionIndex + 1; si < agentSections.length; si++) {
-              const next = agentSections[si];
-              if (next.type === "agentSection") {
-                const first = next.items[0];
-                return first.type === "solo" && first.item.type === "message";
-              }
+      <div className={cn("flex-1 flex flex-col", isCompact && "max-w-3xl mx-auto w-full")}>
+        <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
+          {agentSections.map((section, sectionIndex) => {
+            if (section.type === "standalone") {
+              const gi = section.item;
+              if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+              const isLast = gi.item.item.id === lastUserMessage?.id;
+              return (
+                <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
+                  <ActivityUserMessage message={gi.item.item} />
+                </div>
+              );
             }
-            return false;
-          })();
 
-          const sharedItemProps = {
-            allItems: items,
-            nextSectionStartsWithMessage,
-            onOpenPlanOverlay,
-            toolCallMap,
-            canvasMap,
-            onOpenPanel,
-          };
+            const { items, showConnector } = section;
+            const firstItem = items[0];
+            const sectionKey =
+              firstItem.type === "toolGroup"
+                ? `tg-${firstItem.items[0].toolCallId}`
+                : firstItem.item.type === "toolCall"
+                  ? firstItem.item.item.toolCallId
+                  : firstItem.item.type === "canvas"
+                    ? firstItem.item.item.surfaceId
+                    : firstItem.item.item.id;
 
-          return (
-            <AgentResponseSection key={sectionKey} showConnector={showConnector}>
-              {items.map((gi, index) => (
-                <AgentStreamItem key={getItemKey(gi)} gi={gi} index={index} {...sharedItemProps} />
-              ))}
-            </AgentResponseSection>
-          );
-        })}
-        <AnimatePresence>{inlinePermission}</AnimatePresence>
+            const nextSectionStartsWithMessage = (() => {
+              for (let si = sectionIndex + 1; si < agentSections.length; si++) {
+                const next = agentSections[si];
+                if (next.type === "agentSection") {
+                  const first = next.items[0];
+                  return first.type === "solo" && first.item.type === "message";
+                }
+              }
+              return false;
+            })();
+
+            const sharedItemProps = {
+              allItems: items,
+              nextSectionStartsWithMessage,
+              onOpenPlanOverlay,
+              toolCallMap,
+              canvasMap,
+              onOpenPanel,
+            };
+
+            return (
+              <AgentResponseSection key={sectionKey} showConnector={showConnector}>
+                {items.map((gi, index) => (
+                  <AgentStreamItem
+                    key={getItemKey(gi)}
+                    gi={gi}
+                    index={index}
+                    {...sharedItemProps}
+                  />
+                ))}
+              </AgentResponseSection>
+            );
+          })}
+          <AnimatePresence>{inlinePermission}</AnimatePresence>
+        </div>
+        {bottomBar}
       </div>
-
-      {bottomBar}
     </div>
   );
 }

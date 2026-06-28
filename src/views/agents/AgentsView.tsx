@@ -16,6 +16,7 @@ import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
+import { Switch } from "@/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { History, Plus, SearchIcon, Settings2 } from "lucide-react";
@@ -44,6 +45,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   const thinkingVisibility = settings?.thinking_visibility ?? "auto";
   const toolCallVisibility = settings?.tool_call_visibility ?? "auto";
+  const isCompact = settings?.agent_stream_width === "compact";
 
   function handleThinkingVisibilityChange(value: ActivityVisibility | null) {
     if (!settings || !value) return;
@@ -59,6 +61,15 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     saveSettings.mutate({
       ...settings,
       tool_call_visibility: value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  function handleCompactToggle(checked: boolean) {
+    if (!settings) return;
+    saveSettings.mutate({
+      ...settings,
+      agent_stream_width: checked ? "compact" : "full",
       updated_at: new Date().toISOString(),
     });
   }
@@ -205,6 +216,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                     <SelectItem value="hide">Hidden</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs text-muted-foreground">Compact stream</label>
+                <Switch
+                  checked={isCompact}
+                  onCheckedChange={handleCompactToggle}
+                  className="data-unchecked:bg-muted data-unchecked:border-border/50"
+                />
               </div>
             </PopoverContent>
           </Popover>

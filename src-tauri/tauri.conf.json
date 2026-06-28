@@ -24,10 +24,7 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' https: blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1 https:; font-src 'self' data: https:",
-      "dangerousDisableAssetCspModification": [
-        "script-src",
-        "style-src"
-      ]
+      "dangerousDisableAssetCspModification": ["script-src", "style-src"]
     }
   },
   "bundle": {
@@ -55,9 +52,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJEQTNCMTJERTE2N0JCQUUKUldTdXUyZmhMYkdqTGZHTjBwVEU0UHhNM2xpKzBHc28za0xRZ1lqZEoycTFTTXBoUHg4TzNabDEK",
-      "endpoints": [
-        "https://github.com/emdgroup/maestro/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/emdgroup/maestro/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
       }
