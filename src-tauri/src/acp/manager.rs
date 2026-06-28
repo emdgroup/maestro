@@ -2188,19 +2188,39 @@ async fn query_via_server<T: Send + 'static>(
         (server.writer_tx.clone(), get_pending(server))
     };
     let (tx, rx) = oneshot::channel();
-    {
-        let mut guard = pending.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
+
+    // If another request of the same type is already in-flight, wait up to 10s for it to
+    // complete rather than failing immediately. This handles the common case where the user
+    // switches between agents in the history panel while the first query is still loading.
+    let slot_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut pending_tx = Some(tx);
+    loop {
+        {
+            let mut guard = pending.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+            if guard.is_none() {
+                *guard = pending_tx.take();
+                break;
+            }
+        }
+        if tokio::time::Instant::now() >= slot_deadline {
             return Err(already_in_progress_err.to_string());
         }
-        *guard = Some(tx);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+
     let bytes = serialize_message(&request)?;
     writer_tx.send(bytes).await.map_err(|_| "Connection server writer channel closed".to_string())?;
-    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
-        .await
-        .map_err(|_| timeout_err.to_string())?
-        .map_err(|_| "Response channel dropped".to_string())?
+    let result = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
+    match result {
+        Err(_) => {
+            // Timeout: clear the pending slot so future requests aren't permanently blocked.
+            if let Ok(mut guard) = pending.lock() {
+                guard.take();
+            }
+            Err(timeout_err.to_string())
+        }
+        Ok(inner) => inner.map_err(|_| "Response channel dropped".to_string())?,
+    }
 }
 
 /// Send `ListAgents` through the running connection server and return the result.
