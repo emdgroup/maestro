@@ -6,8 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev --host",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "pnpm build",
-    "beforeBundleCommand": "cargo run -p xtask",
+    "beforeBuildCommand": "pnpm build && cargo run -p xtask",
     "frontendDist": "../dist"
   },
   "app": {
