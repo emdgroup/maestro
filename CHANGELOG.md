@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/emdgroup/maestro/compare/v0.4.0...v0.5.0) (2026-06-29)
+
+
+### Features
+
+* add compact stream width setting for agent panel ([0820426](https://github.com/emdgroup/maestro/commit/0820426f19a0a0dd6ef393237548186cd8ccfb82))
+* redesign update flow with auto-update splash screen ([c404408](https://github.com/emdgroup/maestro/commit/c404408f4cfb8c0c949a361ebf1797e6b175784b))
+* show agent picker when dragging task to Ready ([9b86da9](https://github.com/emdgroup/maestro/commit/9b86da9de0b1212865cb4f5d8d54090fae8e6cfa))
+* update agent registry and polish execution UI ([7b661b1](https://github.com/emdgroup/maestro/commit/7b661b12d10d58cce2c177a4e9b540dada63b414))
+
+
+### Bug Fixes
+
+* run xtask in beforeBuildCommand to bundle fresh remote binary ([73ef3e8](https://github.com/emdgroup/maestro/commit/73ef3e85cc5dbe98277c9004033d66e1d5b999cb))
+
 ## [0.4.0](https://github.com/emdgroup/maestro/compare/v0.3.0...v0.4.0) (2026-06-28)
 
 ### Features
