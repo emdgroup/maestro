@@ -52,7 +52,7 @@ export function ReworkModal({
         onOpenChange(next);
       }}
     >
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="max-w-lg max-h-[90vh] overflow-hidden">
         <AlertDialogHeader>
           <AlertDialogTitle>Request changes</AlertDialogTitle>
           <AlertDialogDescription>
@@ -93,8 +93,7 @@ export function ReworkModal({
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
           placeholder="Additional feedback (optional)..."
-          className="w-full min-h-[60px] resize-y rounded-md border bg-transparent px-3 py-2 text-sm outline-none"
-          rows={3}
+          className="w-full min-h-[60px] max-h-[40vh] resize-none rounded-md border bg-transparent px-3 py-2 text-sm outline-none overflow-y-auto [field-sizing:content]"
         />
 
         <AlertDialogFooter>

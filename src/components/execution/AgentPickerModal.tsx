@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
+import { useUpdateTask } from "@/services/task.service";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -28,13 +29,15 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const { data: projectSettings } = useProjectSettings(projectId ?? undefined);
   const updateSettings = useUpdateProjectSettings();
+  const updateTask = useUpdateTask();
   const [selected, setSelected] = useState<string | null>(null);
   const [saveAsDefault, setSaveAsDefault] = useState(true);
 
   const agents = discovery?.agents ?? [];
 
-  function handleExecute() {
+  function handleApply() {
     if (!selected) return;
+    updateTask.mutate({ taskId: task.id, updates: { agent_id: selected } });
     if (saveAsDefault && projectId) {
       updateSettings.mutate({
         projectId,
@@ -91,7 +94,7 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
           )}
         </div>
 
-        <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted-foreground">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-foreground">
           <Checkbox
             checked={saveAsDefault}
             onCheckedChange={(checked) => setSaveAsDefault(checked === true)}
@@ -103,8 +106,8 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleExecute} disabled={!selected}>
-            Execute
+          <Button onClick={handleApply} disabled={!selected}>
+            Apply
           </Button>
         </DialogFooter>
       </DialogContent>

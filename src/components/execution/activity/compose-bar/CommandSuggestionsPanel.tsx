@@ -45,11 +45,17 @@ export function CommandSuggestionsPanel({
                   onSelect(cmd);
                 }}
                 className={cn(
-                  "w-full flex items-center rounded-lg px-2 py-1.5 text-left transition-colors whitespace-nowrap",
-                  i === highlight ? "bg-muted" : "hover:bg-muted/50",
+                  "w-full flex items-center rounded-lg px-2 py-1.5 text-left transition-colors whitespace-nowrap hover:bg-accent/15",
                 )}
               >
-                <span className="font-mono text-xs text-accent">/{cmd.name}</span>
+                <span
+                  className={cn(
+                    "font-mono text-xs transition-colors",
+                    i === highlight ? "text-accent font-medium" : "text-accent/70",
+                  )}
+                >
+                  /{cmd.name}
+                </span>
               </button>
             ))
           ) : (

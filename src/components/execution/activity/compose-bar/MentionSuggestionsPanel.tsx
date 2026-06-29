@@ -43,12 +43,24 @@ export function MentionSuggestionsPanel({
               onSelect(path);
             }}
             className={cn(
-              "w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
-              i === highlight ? "bg-muted" : "hover:bg-muted/50",
+              "w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/15",
             )}
           >
-            {iconForFilePath(path, "w-3 h-3 text-muted-foreground shrink-0")}
-            <span className="font-mono text-xs text-foreground truncate">{path}</span>
+            {iconForFilePath(
+              path,
+              cn(
+                "w-3 h-3 shrink-0 transition-colors",
+                i === highlight ? "text-accent" : "text-muted-foreground",
+              ),
+            )}
+            <span
+              className={cn(
+                "font-mono text-xs truncate transition-colors",
+                i === highlight ? "text-accent" : "text-foreground",
+              )}
+            >
+              {path}
+            </span>
           </button>
         ))}
       </div>
