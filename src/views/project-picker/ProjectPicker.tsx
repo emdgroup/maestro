@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Cable, Server, CircleFadingArrowUp, LoaderCircle, RotateCcw } from "lucide-react";
+import { Cable, Server, CircleFadingArrowUp, LoaderCircle } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useUpdater } from "@/hooks/useUpdater";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
@@ -35,8 +35,6 @@ function VersionBadge() {
       </span>
     ) : status.phase === "downloading" ? (
       <LoaderCircle className="w-3.5 h-3.5 animate-spin text-accent" />
-    ) : status.phase === "ready" ? (
-      <RotateCcw className="w-3.5 h-3.5 text-accent" />
     ) : null;
 
   return (
@@ -44,7 +42,7 @@ function VersionBadge() {
       <PopoverTrigger className="absolute bottom-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer border border-transparent hover:border-border/50">
         {icon}v{appVersion}
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-72 p-3">
+      <PopoverContent side="top" align="end" className="w-fit p-3">
         <UpdateCard />
       </PopoverContent>
     </Popover>

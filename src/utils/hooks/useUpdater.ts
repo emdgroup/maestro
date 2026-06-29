@@ -8,7 +8,6 @@ type UpdateStatus =
   | { phase: "upToDate" }
   | { phase: "available"; version: string; notes: string | null }
   | { phase: "downloading"; progress: number; version: string }
-  | { phase: "ready"; version: string }
   | { phase: "error"; message: string };
 
 interface UpdaterState {
@@ -31,7 +30,7 @@ const useUpdaterStore = create<UpdaterState>((set) => ({
   setLastChecked: (date) => set({ lastChecked: date }),
 }));
 
-async function doInstall(autoUpdate: boolean): Promise<void> {
+async function doFullInstall(): Promise<void> {
   const store = useUpdaterStore.getState();
   const update = pendingUpdate;
   if (!update) return;
@@ -47,15 +46,10 @@ async function doInstall(autoUpdate: boolean): Promise<void> {
       downloadedBytes += event.data.chunkLength;
       const pct = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
       store.setStatus({ phase: "downloading", progress: pct, version });
-    } else if (event.event === "Finished") {
-      store.setStatus({ phase: "ready", version });
     }
   });
-
-  if (autoUpdate) {
-    await update.install();
-    await relaunch();
-  }
+  await pendingUpdate?.install();
+  await relaunch();
 }
 
 export function useUpdater() {
@@ -77,7 +71,7 @@ export function useUpdater() {
 
       pendingUpdate = update;
       if (autoUpdate) {
-        await doInstall(true);
+        await doFullInstall();
       } else {
         store.setStatus({
           phase: "available",
@@ -92,7 +86,7 @@ export function useUpdater() {
 
   async function install() {
     if (pendingUpdate) {
-      await doInstall(false);
+      await doFullInstall();
       return;
     }
     // pendingUpdate was lost (e.g. store rehydrated) — re-check then install
@@ -105,16 +99,11 @@ export function useUpdater() {
         return;
       }
       pendingUpdate = update;
-      await doInstall(false);
+      await doFullInstall();
     } catch (e) {
       store.setStatus({ phase: "error", message: String(e) });
     }
   }
 
-  async function applyUpdate() {
-    await pendingUpdate?.install();
-    await relaunch();
-  }
-
-  return { status, lastChecked, checkForUpdates, install, applyUpdate };
+  return { status, lastChecked, checkForUpdates, install };
 }
