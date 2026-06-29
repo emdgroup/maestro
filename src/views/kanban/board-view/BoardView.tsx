@@ -3,9 +3,11 @@ import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
 import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { useIsGitRepo } from "@/store/projectStore";
+import { useDefaultAgent } from "@/store/configStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
 import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
+import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { useUpdateTask } from "@/services/task.service";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
@@ -38,6 +40,7 @@ export function BoardView({ tasks }: BoardViewProps) {
   const { closeTerminal } = useBoardActions();
   const updateTask = useUpdateTask();
   const isGitRepo = useIsGitRepo();
+  const defaultAgent = useDefaultAgent();
 
   const statuses = useMemo(
     () => (isGitRepo ? BOARD_STATUSES : BOARD_STATUSES.filter((s) => s !== "Review")),
@@ -45,6 +48,10 @@ export function BoardView({ tasks }: BoardViewProps) {
   );
 
   const [dndItems, setDndItems] = useState<DndItems>(() => buildDndItems(tasks));
+  const [agentPickerState, setAgentPickerState] = useState<{
+    task: Task;
+    proceed: () => void;
+  } | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [draggingTask, setDraggingTask] = useState<Task | null>(null);
 
@@ -124,15 +131,23 @@ export function BoardView({ tasks }: BoardViewProps) {
 
           if (!newStatus || newStatus === oldStatus) return;
 
-          updateTask.mutate(
-            { taskId, updates: { status: newStatus } },
-            {
-              onError: () => {
-                liveDndRef.current = previousDndRef.current;
-                setDndItems({ ...previousDndRef.current });
+          const doUpdate = () =>
+            updateTask.mutate(
+              { taskId, updates: { status: newStatus } },
+              {
+                onError: () => {
+                  liveDndRef.current = previousDndRef.current;
+                  setDndItems({ ...previousDndRef.current });
+                },
               },
-            },
-          );
+            );
+
+          const task = tasks.find((t) => t.id === taskId);
+          if (newStatus === "Ready" && !task?.agent_id && !defaultAgent) {
+            setAgentPickerState({ task: task!, proceed: doUpdate });
+          } else {
+            doUpdate();
+          }
         }}
       >
         <div
@@ -170,6 +185,21 @@ export function BoardView({ tasks }: BoardViewProps) {
           }
           isActive={true}
           onClose={closeTerminal}
+        />
+      )}
+      {agentPickerState && (
+        <AgentPickerModal
+          open
+          task={agentPickerState.task}
+          proceed={(_agentId) => {
+            agentPickerState.proceed();
+            setAgentPickerState(null);
+          }}
+          onClose={() => {
+            liveDndRef.current = previousDndRef.current;
+            setDndItems({ ...previousDndRef.current });
+            setAgentPickerState(null);
+          }}
         />
       )}
     </div>

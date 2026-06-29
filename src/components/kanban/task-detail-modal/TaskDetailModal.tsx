@@ -26,6 +26,7 @@ import {
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
+import { useDefaultAgent } from "@/store/configStore";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useIsTaskEditable } from "@/hooks/useIsTaskEditable";
 import { useShortcuts } from "@/hooks/useShortcuts";
@@ -61,6 +62,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
+  const defaultAgent = useDefaultAgent();
 
   const { data: tasks } = useTasksQuery(projectId);
   const task = (tasks ?? []).find((t) => t.id === taskId) ?? null;
@@ -161,8 +163,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   function handleStatusChange(newStatus: string | null) {
     if (!newStatus || !task) return;
-    if (newStatus === "Ready" && !task.agent_id) {
-      setAgentError("Assign and save an agent before marking as Ready.");
+    if (newStatus === "Ready" && !task.agent_id && !defaultAgent) {
+      setAgentError("Assign an agent to this task, or set a project default in Settings.");
       return;
     }
     setAgentError(null);
