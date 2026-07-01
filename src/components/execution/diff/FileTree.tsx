@@ -22,6 +22,7 @@ interface FileTreeProps {
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
+  defaultExpanded?: boolean;
 }
 
 /**
@@ -111,6 +112,7 @@ const DirectoryNode: React.FC<{
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
+  defaultExpanded?: boolean;
 }> = ({
   node,
   selectedFile,
@@ -120,8 +122,9 @@ const DirectoryNode: React.FC<{
   onToggleFile,
   onToggleFolder,
   viewedFiles,
+  defaultExpanded = true,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const folderCheckState =
     checkedFiles && onToggleFolder ? getFolderCheckState(node, checkedFiles) : null;
@@ -182,6 +185,7 @@ const DirectoryNode: React.FC<{
               onToggleFile={onToggleFile}
               onToggleFolder={onToggleFolder}
               viewedFiles={viewedFiles}
+              defaultExpanded={defaultExpanded}
             />
           ))}
         </div>
@@ -199,6 +203,7 @@ const FileNode: React.FC<{
   onToggleFile?: (fileName: string) => void;
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
+  defaultExpanded?: boolean;
 }> = ({
   node,
   selectedFile,
@@ -208,6 +213,7 @@ const FileNode: React.FC<{
   onToggleFile,
   onToggleFolder,
   viewedFiles,
+  defaultExpanded,
 }) => {
   if (node.isDir) {
     return (
@@ -220,6 +226,7 @@ const FileNode: React.FC<{
         onToggleFile={onToggleFile}
         onToggleFolder={onToggleFolder}
         viewedFiles={viewedFiles}
+        defaultExpanded={defaultExpanded}
       />
     );
   }
@@ -276,6 +283,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onToggleFile,
   onToggleFolder,
   viewedFiles,
+  defaultExpanded,
 }) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
@@ -296,6 +304,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
           onToggleFile={onToggleFile}
           onToggleFolder={onToggleFolder}
           viewedFiles={viewedFiles}
+          defaultExpanded={defaultExpanded}
         />
       ))}
     </div>

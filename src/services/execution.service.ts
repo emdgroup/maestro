@@ -149,7 +149,7 @@ export function useSpawnInteractiveExecutionMutation() {
       taskDescription,
     }: {
       projectId: number;
-      branchName: string;
+      branchName: string | null;
       repoPath: string;
       sessionName: string | null;
       worktreeId?: number | null;

@@ -236,6 +236,7 @@ export function DiffViewer({
           diffViewMode={diffViewMode ?? DiffModeEnum.Unified}
           diffViewTheme={diffTheme}
           diffViewHighlight
+          diffViewWrap
           registerHighlighter={highlighter as any}
           diffViewAddWidget={reviewMode}
           onAddWidgetClick={reviewMode ? handleAddWidgetClick : undefined}

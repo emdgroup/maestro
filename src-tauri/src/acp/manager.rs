@@ -47,7 +47,7 @@ pub struct RestorableSession {
 /// Remote sessions send framed bytes to a writer task via mpsc.
 /// Shared-server sessions route to a connection-level maestro-server via mpsc.
 pub enum AcpTransportWriter {
-    Local(BufWriter<ChildStdin>),
+    Local(Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>),
     RemoteSsh(tokio::sync::mpsc::Sender<Vec<u8>>),
     /// Session shares a connection-level maestro-server process. The sender routes
     /// to the writer task that owns the child's stdin.
@@ -348,6 +348,9 @@ pub struct AcpProcess {
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
     /// Used by emit_init_events_from_session to re-emit model/mode events during replay drain.
     pub config_options: Vec<serde_json::Value>,
+    /// Set while a `RequestPermission` is outstanding on this session's shared Claude Code
+    /// connection. Prevents new sessions from joining the same connection until resolved.
+    pub has_pending_permission: Arc<AtomicBool>,
 }
 
 pub struct TaskMetadata {
@@ -682,7 +685,7 @@ async fn launch_cold_session(
         TransportTarget::Local => {
             let (mut stdin_writer, source, child) = open_local_transport(&req.app_state).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
-            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
+            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
         }
         TransportTarget::Remote { ssh, server_path } => {
             let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
@@ -697,7 +700,7 @@ async fn launch_cold_session(
         TransportTarget::Wsl { distro, server_path } => {
             let (mut stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
-            (AcpTransportWriter::Local(stdin_writer), source, Some(child))
+            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
         }
     };
 
@@ -852,6 +855,7 @@ impl AcpProcess {
             canvas_extractor,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
+            has_pending_permission: Arc::new(AtomicBool::new(false)),
         };
         (process, ctx)
     }
@@ -1338,22 +1342,41 @@ fn handle_server_message(
 }
 
 /// Write a message to an active ACP session's transport by log_id.
+///
+/// Acquires the sessions lock only long enough to extract the writer handle, then
+/// releases the lock before performing any async I/O, preventing sessions-lock
+/// contention while the write is in progress.
 pub async fn write_to_acp_session(
     app_state: &crate::core::AppState,
     log_id: i32,
     msg: &MaestroRpcMessage,
 ) -> Result<(), String> {
-    let mut sessions = app_state.acp.sessions.lock().await;
-    let session = sessions
-        .get_mut(&log_id)
-        .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
-    match &mut session.writer {
-        AcpTransportWriter::Local(stdin_writer) => {
-            write_to_acp_session_raw(stdin_writer, msg).await
+    enum WriterHandle {
+        Local(Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>),
+        Channel(tokio::sync::mpsc::Sender<Vec<u8>>),
+    }
+
+    let writer_handle = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let session = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+        match &session.writer {
+            AcpTransportWriter::Local(writer) => WriterHandle::Local(Arc::clone(writer)),
+            AcpTransportWriter::RemoteSsh(tx) | AcpTransportWriter::SharedServer(tx) => {
+                WriterHandle::Channel(tx.clone())
+            }
         }
-        AcpTransportWriter::RemoteSsh(write_tx) | AcpTransportWriter::SharedServer(write_tx) => {
+    }; // sessions lock released here
+
+    match writer_handle {
+        WriterHandle::Local(writer) => {
+            let mut guard = writer.lock().await;
+            write_to_acp_session_raw(&mut guard, msg).await
+        }
+        WriterHandle::Channel(tx) => {
             let bytes = serialize_message(msg)?;
-            write_tx.send(bytes).await
+            tx.send(bytes).await
                 .map_err(|_| format!("ACP session write failed: channel closed for log_id {}", log_id))
         }
     }
@@ -1716,11 +1739,18 @@ async fn handle_shared_server_message(
                 }
             }
 
+            let is_permission_request = matches!(msg, MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_)));
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
                 &preamble_injected, &preamble_filter, &canvas_extractor,
             );
+            if is_permission_request {
+                let sessions = app_state.acp.sessions.lock().await;
+                if let Some(session) = sessions.get(&log_id) {
+                    session.has_pending_permission.store(true, Ordering::Release);
+                }
+            }
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { ActivityItem } from "../activity/types";
 
 const WORKING_FILE_EXTENSIONS = new Set([
@@ -51,10 +51,8 @@ export function isWorkingFile(path: string): boolean {
 export function useWorkingFileTracker(
   sessionKey: number,
   items: ActivityItem[],
-  onWorkingFilesChange: ((sessionKey: number, files: string[]) => void) | undefined,
-  onSessionChangedFilesChange: ((sessionKey: number, files: string[]) => void) | undefined,
 ): { workingFiles: string[]; sessionChangedFiles: string[] } {
-  const { workingFiles, sessionChangedFiles } = useMemo(() => {
+  return useMemo(() => {
     const working = new Set<string>();
     const changed = new Set<string>();
     for (const item of items) {
@@ -74,18 +72,6 @@ export function useWorkingFileTracker(
       }
     }
     return { workingFiles: [...working], sessionChangedFiles: [...changed] };
-  }, [items]);
-
-  // Callback refs prevent effect re-runs on parent re-renders (new function identity each render).
-  const onWorkingFilesChangeRef = useRef(onWorkingFilesChange);
-  onWorkingFilesChangeRef.current = onWorkingFilesChange;
-  const onSessionChangedFilesChangeRef = useRef(onSessionChangedFilesChange);
-  onSessionChangedFilesChangeRef.current = onSessionChangedFilesChange;
-
-  useEffect(() => {
-    onWorkingFilesChangeRef.current?.(sessionKey, workingFiles);
-    onSessionChangedFilesChangeRef.current?.(sessionKey, sessionChangedFiles);
-  }, [sessionKey, workingFiles, sessionChangedFiles]);
-
-  return { workingFiles, sessionChangedFiles };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, items]);
 }

@@ -1,5 +1,16 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { X, AlignJustify, Columns2, List, FolderTree, FileDiff, CheckCheck } from "lucide-react";
+import {
+  X,
+  AlignJustify,
+  Columns2,
+  List,
+  FolderTree,
+  FileDiff,
+  CheckCheck,
+  ChevronRight,
+  ListCollapse,
+  ChevronLeft,
+} from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { cn } from "@/lib/ui-utils";
 import { Input } from "@/ui/input";
@@ -19,6 +30,7 @@ interface ReviewChangesPanelProps {
   sessionChangedFiles: string[];
   onClose: () => void;
   initialFile?: string;
+  compact?: boolean;
 }
 
 export function ReviewChangesPanel({
@@ -26,13 +38,21 @@ export function ReviewChangesPanel({
   sessionChangedFiles,
   onClose,
   initialFile,
+  compact = false,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [search, setSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
+  const [listOpen, setListOpen] = useState(false);
+  const [listSearch, setListSearch] = useState("");
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const initialFileAppliedRef = useRef(false);
+  const expandedInitRef = useRef(false);
+  const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const programmaticScrollRef = useRef(false);
 
   const toggleViewed = useCallback((fileName: string) => {
     setViewedFiles((prev) => {
@@ -72,7 +92,6 @@ export function ReviewChangesPanel({
     error: diffError,
   } = useWorktreeDiffQuery(projectId, cwd, diffTarget);
 
-  // Normalize agent tool-call paths (may be absolute) to repo-relative for matching
   const changedRelativePaths = useMemo(() => {
     const set = new Set<string>();
     for (const path of sessionChangedFiles) {
@@ -107,8 +126,6 @@ export function ReviewChangesPanel({
 
   useEffect(() => {
     if (!initialFile || initialFileAppliedRef.current || allDisplayItems.length === 0) return;
-    // diff items have relative fileName; initialFile is absolute → check absolute ends with relative.
-    // untracked items have absolute path → check absolute path ends with initialFile (handles bare filename too).
     const idx = allDisplayItems.findIndex((item) =>
       item.kind === "diff"
         ? initialFile.endsWith(item.file.fileName)
@@ -145,6 +162,342 @@ export function ReviewChangesPanel({
 
   const loading = diffLoading || (projectId === null && cwd === null && !metaError);
   const totalFileCount = diffFiles.length + untrackedFiles.length;
+
+  // Auto-expand all files in compact mode (once on first load)
+  useEffect(() => {
+    if (!compact || allDisplayItems.length === 0 || expandedInitRef.current) return;
+    expandedInitRef.current = true;
+    setExpandedFiles(
+      new Set(
+        allDisplayItems.map((item) => (item.kind === "diff" ? item.file.fileName : item.path)),
+      ),
+    );
+  }, [compact, allDisplayItems]);
+
+  const toggleExpanded = useCallback((key: string) => {
+    setExpandedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const compactListSearch = listSearch;
+  const compactFilteredItems = compactListSearch
+    ? allDisplayItems.filter((item) => {
+        const key = item.kind === "diff" ? item.file.fileName : item.path;
+        return key.toLowerCase().includes(compactListSearch.toLowerCase());
+      })
+    : allDisplayItems;
+  const compactTreeFiles = compactFilteredItems.map((item) =>
+    item.kind === "diff"
+      ? item.file
+      : { fileName: item.path, hunks: [] as DiffFileWithName["hunks"], status: "A" as const },
+  );
+
+  const focusedItem = filteredItems[selectedFileIndex] ?? null;
+  const focusedKey = focusedItem
+    ? focusedItem.kind === "diff"
+      ? focusedItem.file.fileName
+      : focusedItem.path
+    : null;
+  const focusedBasename = focusedKey ? (focusedKey.split("/").pop() ?? focusedKey) : null;
+
+  const navigateCompact = useCallback(
+    (newIndex: number) => {
+      const item = filteredItems[newIndex];
+      if (!item) return;
+      const key = item.kind === "diff" ? item.file.fileName : item.path;
+      setSelectedFileIndex(newIndex);
+      setExpandedFiles((prev) => {
+        if (prev.has(key)) return prev;
+        return new Set([...prev, key]);
+      });
+      programmaticScrollRef.current = true;
+      setTimeout(() => {
+        sectionRefs.current.get(key)?.scrollIntoView({ block: "start", behavior: "smooth" });
+        setTimeout(() => {
+          programmaticScrollRef.current = false;
+        }, 700);
+      }, 0);
+    },
+    [filteredItems],
+  );
+
+  const handleScroll = useCallback(() => {
+    if (programmaticScrollRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const scrollTop = container.scrollTop;
+    let activeIndex = 0;
+    filteredItems.forEach((item, idx) => {
+      const key = item.kind === "diff" ? item.file.fileName : item.path;
+      const el = sectionRefs.current.get(key);
+      if (el && el.offsetTop <= scrollTop + 1) activeIndex = idx;
+    });
+    setSelectedFileIndex(activeIndex);
+  }, [filteredItems]);
+
+  if (compact) {
+    return (
+      <div className="absolute inset-0 flex flex-col bg-background">
+        {/* Compact header: [ListCollapse] | [‹ name ›] | [unified/split] */}
+        <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
+          <button
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              listOpen
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+            title="File list"
+          >
+            <ListCollapse className="w-4 h-4" />
+          </button>
+          <div className="w-px h-4 bg-border shrink-0 mx-1" />
+          <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => navigateCompact(selectedFileIndex - 1)}
+              disabled={selectedFileIndex <= 0}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-xs font-mono text-muted-foreground truncate max-w-[14rem]">
+              {focusedBasename ??
+                (filteredItems.length > 0 ? `${filteredItems.length} files` : "No changes")}
+            </span>
+            <button
+              type="button"
+              onClick={() => navigateCompact(selectedFileIndex + 1)}
+              disabled={selectedFileIndex >= filteredItems.length - 1}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="w-px h-4 bg-border shrink-0 mx-1" />
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setDiffViewMode(DiffModeEnum.Unified)}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                diffViewMode === DiffModeEnum.Unified
+                  ? "text-foreground bg-muted/60"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+              title="Unified diff"
+            >
+              <AlignJustify className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDiffViewMode(DiffModeEnum.SplitGitHub)}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                diffViewMode !== DiffModeEnum.Unified
+                  ? "text-foreground bg-muted/60"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+              title="Split diff"
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* File-picker overlay */}
+        {listOpen && (
+          <div className="absolute top-10 left-0 right-0 bottom-0 z-20 flex flex-col bg-background border-b border-border">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+              <input
+                autoFocus
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
+                placeholder="Filter files..."
+                className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+              />
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setFileListMode("flat")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "flat"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                  title="Flat list"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFileListMode("tree")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "tree"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                  title="Tree view"
+                >
+                  <FolderTree className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {fileListMode === "flat"
+                ? compactFilteredItems.map((item, index) => {
+                    const key = item.kind === "diff" ? item.file.fileName : item.path;
+                    const basename = key.split("/").pop() ?? key;
+                    const status = item.kind === "diff" ? (item.file.status ?? "M") : "A";
+                    const statusColor =
+                      status === "A"
+                        ? "bg-success"
+                        : status === "D"
+                          ? "bg-destructive"
+                          : "bg-warning";
+                    const isFocused = index === selectedFileIndex;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          const idx = filteredItems.findIndex((i) =>
+                            i.kind === "diff" ? i.file.fileName === key : i.path === key,
+                          );
+                          if (idx >= 0) navigateCompact(idx);
+                          setListOpen(false);
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 w-full px-3 py-2 text-left transition-colors text-xs",
+                          isFocused
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                        )}
+                      >
+                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor)} />
+                        <span className="truncate">{basename}</span>
+                      </button>
+                    );
+                  })
+                : (() => {
+                    return (
+                      <FileTree
+                        files={compactTreeFiles}
+                        selectedFile={focusedKey}
+                        onSelectFile={(fileName) => {
+                          const idx = filteredItems.findIndex((i) =>
+                            i.kind === "diff" ? i.file.fileName === fileName : i.path === fileName,
+                          );
+                          if (idx >= 0) navigateCompact(idx);
+                          setListOpen(false);
+                        }}
+                        viewedFiles={viewedFiles}
+                      />
+                    );
+                  })()}
+            </div>
+          </div>
+        )}
+
+        {/* Stacked file cards with gaps */}
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto custom-scrollbar px-3 pb-3 flex flex-col"
+        >
+          {loading && (
+            <div className="text-xs text-muted-foreground py-8 text-center animate-pulse">
+              Loading...
+            </div>
+          )}
+          {!loading && totalFileCount === 0 && !diffError && (
+            <div className="text-xs text-muted-foreground py-8 text-center">No changes yet</div>
+          )}
+          {!loading &&
+            filteredItems.map((item, index) => {
+              const key = item.kind === "diff" ? item.file.fileName : item.path;
+              const isExpanded = expandedFiles.has(key);
+              const isViewed = viewedFiles.has(key);
+              const isFocused = index === selectedFileIndex;
+
+              return (
+                <div
+                  key={key}
+                  ref={(el) => {
+                    if (el) sectionRefs.current.set(key, el);
+                    else sectionRefs.current.delete(key);
+                  }}
+                  className="shrink-0"
+                >
+                  <div className="sticky top-0 z-10 pt-3 bg-background">
+                    <div
+                      onClick={() => toggleExpanded(key)}
+                      className={cn(
+                        "border border-border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+                        isExpanded ? "rounded-t-lg" : "rounded-lg",
+                        isFocused ? "bg-muted/40" : "hover:bg-muted/20",
+                      )}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform",
+                          isExpanded && "rotate-90",
+                        )}
+                      />
+                      <span className="text-xs font-mono truncate text-foreground/80 flex-1">
+                        {key}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleViewed(key);
+                        }}
+                        className={cn(
+                          "p-1 rounded transition-colors shrink-0",
+                          isViewed
+                            ? "text-success hover:bg-muted/30"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/30",
+                        )}
+                        title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                      >
+                        <CheckCheck className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="border border-border border-t-0 rounded-b-lg overflow-auto custom-scrollbar">
+                      {item.kind === "diff" ? (
+                        <DiffViewer
+                          diffFile={item.file}
+                          loading={false}
+                          diffViewMode={diffViewMode}
+                        />
+                      ) : (
+                        <UntrackedFileDiffViewer
+                          projectId={projectId}
+                          worktreePath={cwd}
+                          filePath={item.path}
+                          showHeader={false}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-50 flex flex-col bg-background">
@@ -196,7 +549,6 @@ export function ReviewChangesPanel({
           <X className="w-4 h-4" />
         </button>
       </div>
-
       {/* Body */}
       <div className="flex flex-1 min-h-0">
         {/* File list */}

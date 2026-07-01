@@ -1,16 +1,29 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FileText, X, Copy, Check, FileCode } from "lucide-react";
+import {
+  FileText,
+  X,
+  Copy,
+  Check,
+  FileCode,
+  ListCollapse,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  FolderTree,
+} from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { api } from "@/lib/tauri-utils";
 import { MarkdownBlock, SvgBlock, MermaidBlock, CodeBlockWrapper } from "./MarkdownBlock";
 import { Slider } from "@/ui/slider";
 import { isImageExtension, imageMimeForExtension, langForExtension } from "./fileTypeUtils";
+import { FileTree } from "@/components/execution/diff/FileTree";
 
 interface WorkingFilesPanelProps {
   files: string[];
   sessionKey: number;
   onClose: () => void;
   initialFile?: string;
+  compact?: boolean;
 }
 
 type FileViewType = "markdown" | "svg" | "mermaid" | "code" | "html" | "plain" | "image";
@@ -112,6 +125,7 @@ export function WorkingFilesPanel({
   sessionKey,
   onClose,
   initialFile,
+  compact = false,
 }: WorkingFilesPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(
@@ -214,6 +228,212 @@ export function WorkingFilesPanel({
 
   const basename = selectedFile ? (selectedFile.split("/").pop() ?? selectedFile) : null;
 
+  const contentArea = (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+      <div
+        className={cn(
+          "flex-1 overflow-auto text-sm custom-scrollbar",
+          viewType === "html" ? "p-0" : "px-6 py-5",
+        )}
+      >
+        {loading && <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>}
+        {!loading && selectedFile && !relativePath && !loadError && (
+          <div className="text-xs text-muted-foreground animate-pulse">Resolving path...</div>
+        )}
+        {!loading && !selectedFile && (
+          <div className="text-xs text-muted-foreground">No file selected</div>
+        )}
+        {!loading && selectedFile && loadError && (
+          <div className="text-xs text-destructive">{loadError}</div>
+        )}
+        {!loading && content !== null && viewType !== null && (
+          <div
+            style={{
+              transform: zoom !== 100 ? `scale(${zoom / 100})` : undefined,
+              transformOrigin: "top left",
+              width: zoom !== 100 ? `${10000 / zoom}%` : undefined,
+              height:
+                viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
+            }}
+          >
+            <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />
+          </div>
+        )}
+      </div>
+      {absolutePath && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-t border-border bg-card/30 shrink-0">
+          <span className="flex-1 text-[10px] font-mono text-muted-foreground/70 truncate">
+            {absolutePath}
+          </span>
+          <button
+            type="button"
+            onClick={copyPath}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+          >
+            {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+            {copied ? "Copied" : "Copy path"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const [listOpen, setListOpen] = useState(false);
+  const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
+  const [listSearch, setListSearch] = useState("");
+
+  const fileIndex = selectedFile ? files.indexOf(selectedFile) : -1;
+  const filteredFiles = listSearch
+    ? files.filter((f) => f.toLowerCase().includes(listSearch.toLowerCase()))
+    : files;
+  const treeFiles = filteredFiles.map((f) => ({ fileName: f, hunks: [], status: "A" as const }));
+
+  if (compact) {
+    return (
+      <div ref={panelRef} className="absolute inset-0 flex flex-col bg-background">
+        {/* Header: [LayoutList] | [‹] [basename] [›] | [zoom slider] [zoom%] */}
+        <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
+          <button
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              listOpen
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+            title="File list"
+          >
+            <ListCollapse className="w-4 h-4" />
+          </button>
+          <div className="w-px h-4 bg-border shrink-0 mx-1" />
+          <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => {
+                if (fileIndex > 0) setSelectedFile(files[fileIndex - 1]);
+              }}
+              disabled={fileIndex <= 0}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-xs font-mono text-muted-foreground truncate max-w-[14rem]">
+              {basename ?? "No file"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (fileIndex < files.length - 1) setSelectedFile(files[fileIndex + 1]);
+              }}
+              disabled={fileIndex < 0 || fileIndex >= files.length - 1}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {content !== null && viewType !== null && (
+            <>
+              <div className="w-px h-4 bg-border shrink-0 mx-1" />
+              <Slider
+                min={50}
+                max={200}
+                value={[zoom]}
+                onValueChange={(val) => setZoom(Array.isArray(val) ? val[0] : (val as number))}
+                className="zoom-slider w-16 shrink-0"
+              />
+              <button
+                type="button"
+                onClick={() => setZoom(100)}
+                className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
+              >
+                {zoom}%
+              </button>
+            </>
+          )}
+        </div>
+        {/* File-picker overlay */}
+        {listOpen && (
+          <div className="absolute top-10 left-0 right-0 bottom-0 z-20 flex flex-col bg-background border-b border-border">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+              <input
+                autoFocus
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
+                placeholder="Filter files..."
+                className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+              />
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setFileListMode("flat")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "flat"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                  title="Flat list"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFileListMode("tree")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "tree"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                  title="Tree view"
+                >
+                  <FolderTree className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {fileListMode === "flat" ? (
+                filteredFiles.map((file) => {
+                  const name = file.split("/").pop() ?? file;
+                  return (
+                    <button
+                      key={file}
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(file);
+                        setListOpen(false);
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 w-full px-3 py-2 text-left transition-colors text-xs",
+                        file === selectedFile
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                      )}
+                    >
+                      <FileCode className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                      <span className="truncate">{name}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <FileTree
+                  files={treeFiles}
+                  selectedFile={selectedFile}
+                  onSelectFile={(fileName) => {
+                    setSelectedFile(fileName);
+                    setListOpen(false);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+        {contentArea}
+      </div>
+    );
+  }
+
   return (
     <div ref={panelRef} className="absolute inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
@@ -279,59 +499,7 @@ export function WorkingFilesPanel({
             );
           })}
         </div>
-
-        {/* Content viewer */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div
-            className={cn(
-              "flex-1 overflow-auto text-sm custom-scrollbar",
-              viewType === "html" ? "p-0" : "px-6 py-5",
-            )}
-          >
-            {loading && (
-              <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>
-            )}
-            {!loading && selectedFile && !relativePath && !loadError && (
-              <div className="text-xs text-muted-foreground animate-pulse">Resolving path...</div>
-            )}
-            {!loading && !selectedFile && (
-              <div className="text-xs text-muted-foreground">No file selected</div>
-            )}
-            {!loading && selectedFile && loadError && (
-              <div className="text-xs text-destructive">{loadError}</div>
-            )}
-            {!loading && content !== null && viewType !== null && (
-              <div
-                style={{
-                  transform: zoom !== 100 ? `scale(${zoom / 100})` : undefined,
-                  transformOrigin: "top left",
-                  width: zoom !== 100 ? `${10000 / zoom}%` : undefined,
-                  height:
-                    viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
-                }}
-              >
-                <FileContentView content={content} viewType={viewType} path={selectedFile ?? ""} />
-              </div>
-            )}
-          </div>
-
-          {/* Path bar */}
-          {absolutePath && (
-            <div className="flex items-center gap-2 px-4 py-1.5 border-t border-border bg-card/30 shrink-0">
-              <span className="flex-1 text-[10px] font-mono text-muted-foreground/70 truncate">
-                {absolutePath}
-              </span>
-              <button
-                type="button"
-                onClick={copyPath}
-                className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-              >
-                {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
-                {copied ? "Copied" : "Copy path"}
-              </button>
-            </div>
-          )}
-        </div>
+        {contentArea}
       </div>
     </div>
   );
