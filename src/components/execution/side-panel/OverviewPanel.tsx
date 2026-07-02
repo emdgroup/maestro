@@ -10,6 +10,7 @@ interface OverviewPanelProps {
   hasPlan: boolean;
   artifactFilesCount: number;
   onNavigate: (kind: TabKind) => void;
+  diffStats?: { insertions: number; deletions: number } | null;
 }
 
 export function OverviewPanel({
@@ -19,6 +20,7 @@ export function OverviewPanel({
   hasPlan,
   artifactFilesCount,
   onNavigate,
+  diffStats,
 }: OverviewPanelProps) {
   const cards = [
     {
@@ -46,6 +48,17 @@ export function OverviewPanel({
         changedFilesCount === 0
           ? "No changes"
           : `${changedFilesCount} file${changedFilesCount !== 1 ? "s" : ""}`,
+      detailSuffix:
+        diffStats && changedFilesCount > 0 ? (
+          <span className="flex items-center gap-1 font-mono">
+            {diffStats.insertions > 0 && (
+              <span className="text-success">+{diffStats.insertions}</span>
+            )}
+            {diffStats.deletions > 0 && (
+              <span className="text-destructive">-{diffStats.deletions}</span>
+            )}
+          </span>
+        ) : null,
       available: changedFilesCount > 0,
     },
     {
@@ -70,7 +83,7 @@ export function OverviewPanel({
   return (
     <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
       <div className="flex flex-col gap-1.5">
-        {cards.map(({ kind, label, icon: Icon, detail, available }) => (
+        {cards.map(({ kind, label, icon: Icon, detail, detailSuffix, available }) => (
           <button
             key={kind}
             type="button"
@@ -88,7 +101,10 @@ export function OverviewPanel({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-foreground">{label}</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{detail}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
+                <span className="truncate">{detail}</span>
+                {detailSuffix}
+              </div>
             </div>
             {available && (
               <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />

@@ -15,6 +15,7 @@ interface FileSelectorProps {
   viewedFiles?: Set<string>;
   treeOnly?: boolean;
   treeDefaultExpanded?: boolean;
+  headerRight?: React.ReactNode;
   className?: string;
 }
 
@@ -25,6 +26,7 @@ export function FileSelector({
   viewedFiles,
   treeOnly = false,
   treeDefaultExpanded,
+  headerRight,
   className,
 }: FileSelectorProps) {
   const [search, setSearch] = useState("");
@@ -82,6 +84,7 @@ export function FileSelector({
             </button>
           </div>
         )}
+        {headerRight}
       </div>
 
       {/* File list */}

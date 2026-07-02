@@ -101,16 +101,27 @@ function FileContentInner({
 interface WorkingFileContentViewProps {
   sessionKey: number;
   filePath: string | null;
+  zoom?: number;
+  onZoomChange?: (z: number) => void;
 }
 
-export function WorkingFileContentView({ sessionKey, filePath }: WorkingFileContentViewProps) {
+export function WorkingFileContentView({
+  sessionKey,
+  filePath,
+  zoom: zoomProp,
+  onZoomChange,
+}: WorkingFileContentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [cwd, setCwd] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(100);
+  const [zoomState, setZoomState] = useState(100);
+  const zoom = zoomProp ?? zoomState;
+  const setZoom = onZoomChange ?? setZoomState;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   useEffect(() => {
     api
@@ -128,10 +139,10 @@ export function WorkingFileContentView({ sessionKey, filePath }: WorkingFileCont
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === "=" || e.key === "+") {
         e.preventDefault();
-        setZoom((z) => Math.min(200, z + 10));
+        setZoom(Math.min(200, zoomRef.current + 10));
       } else if (e.key === "-") {
         e.preventDefault();
-        setZoom((z) => Math.max(50, z - 10));
+        setZoom(Math.max(50, zoomRef.current - 10));
       } else if (e.key === "0") {
         e.preventDefault();
         setZoom(100);
@@ -147,7 +158,7 @@ export function WorkingFileContentView({ sessionKey, filePath }: WorkingFileCont
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      setZoom((z) => Math.min(200, Math.max(50, z + (e.deltaY < 0 ? 10 : -10))));
+      setZoom(Math.min(200, Math.max(50, zoomRef.current + (e.deltaY < 0 ? 10 : -10))));
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -199,7 +210,7 @@ export function WorkingFileContentView({ sessionKey, filePath }: WorkingFileCont
 
   return (
     <div ref={panelRef} className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      {content !== null && viewType !== null && (
+      {content !== null && viewType !== null && !onZoomChange && (
         <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-card/30 shrink-0">
           <div className="flex-1" />
           <Slider

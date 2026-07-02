@@ -46,6 +46,25 @@ export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesP
     }
   }
 
+  const pinButton = (
+    <button
+      type="button"
+      onClick={() => {
+        setListPinned((v) => !v);
+        setListOpen(false);
+      }}
+      className={cn(
+        "p-1.5 rounded-md transition-colors shrink-0",
+        listPinned
+          ? "text-foreground bg-muted/60"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+      )}
+      title={listPinned ? "Unpin file list" : "Pin file list"}
+    >
+      <Pin className="w-3.5 h-3.5" />
+    </button>
+  );
+
   return (
     <div className="relative flex flex-col h-full min-h-0">
       {/* Header */}
@@ -69,23 +88,6 @@ export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesP
             {basename ?? "No file selected"}
           </span>
         </div>
-        <div className="w-px h-4 bg-border shrink-0 mx-1" />
-        <button
-          type="button"
-          onClick={() => {
-            setListPinned((v) => !v);
-            setListOpen(false);
-          }}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            listPinned
-              ? "text-foreground bg-muted/60"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-          )}
-          title={listPinned ? "Unpin file list" : "Pin file list"}
-        >
-          <Pin className="w-4 h-4" />
-        </button>
       </div>
 
       {/* Body */}
@@ -104,6 +106,7 @@ export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesP
                 onSelectFile={setSelected}
                 treeOnly
                 treeDefaultExpanded={false}
+                headerRight={pinButton}
                 className="flex-1 min-h-0"
               />
             )}
@@ -128,6 +131,7 @@ export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesP
                   }}
                   treeOnly
                   treeDefaultExpanded={false}
+                  headerRight={pinButton}
                   className="flex-1 min-h-0"
                 />
               )}

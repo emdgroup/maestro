@@ -89,6 +89,11 @@ export function ExecutionSidePanel({
   fill = false,
   onSpawnShell,
 }: ExecutionSidePanelProps) {
+  const [reviewDiffStats, setReviewDiffStats] = useState<{
+    insertions: number;
+    deletions: number;
+  } | null>(null);
+
   // PTY state per terminal tab
   const [ptyState, setPtyState] = useState<Map<string, { key: number | null; failed: boolean }>>(
     new Map(),
@@ -302,6 +307,7 @@ export function ExecutionSidePanel({
                         hasPlan={!!sidePanelPlan}
                         artifactFilesCount={workingFiles.length}
                         onNavigate={onOpenTabKind}
+                        diffStats={reviewDiffStats}
                       />
                     )}
                     {kind === "plan" && (
@@ -384,6 +390,7 @@ export function ExecutionSidePanel({
                         sessionKey={sessionKey}
                         sessionChangedFiles={changedFiles}
                         onClose={() => onCollapsedChange(true)}
+                        onDiffStats={setReviewDiffStats}
                         compact
                       />
                     )}

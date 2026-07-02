@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Files } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
+import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
+import { api } from "@/lib/tauri-utils";
 
 interface ArtifactsPanelProps {
   files: string[];
@@ -10,8 +12,26 @@ interface ArtifactsPanelProps {
 }
 
 export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
-  const [selected, setSelected] = useState<string | null>(files[0] ?? null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [cwd, setCwd] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getAcpSessionMeta(sessionKey)
+      .then((m) => setCwd(m.cwd.replace(/\/+$/, "")))
+      .catch(() => {});
+  }, [sessionKey]);
+
+  const relativeFiles = useMemo(
+    () => files.map((f) => (cwd && f.startsWith(cwd + "/") ? f.slice(cwd.length + 1) : f)),
+    [files, cwd],
+  );
+
+  useEffect(() => {
+    if (selected === null && relativeFiles.length > 0) setSelected(relativeFiles[0]);
+  }, [relativeFiles, selected]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
 
@@ -38,6 +58,25 @@ export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
             {basename ?? "No file selected"}
           </span>
         </div>
+        {selected !== null && (
+          <>
+            <div className="w-px h-4 bg-border shrink-0 mx-1" />
+            <Slider
+              min={50}
+              max={200}
+              value={[zoom]}
+              onValueChange={(v) => setZoom(Array.isArray(v) ? v[0] : (v as number))}
+              className="zoom-slider w-16 shrink-0"
+            />
+            <button
+              type="button"
+              onClick={() => setZoom(100)}
+              className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
+            >
+              {zoom}%
+            </button>
+          </>
+        )}
       </div>
 
       {/* File list overlay */}
@@ -48,7 +87,7 @@ export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
             style={{ top: "2.5rem", width: "14rem" }}
           >
             <FileSelector
-              files={files.map((f) => ({ fileName: f }))}
+              files={relativeFiles.map((f) => ({ fileName: f }))}
               selectedFile={selected}
               onSelectFile={(f) => {
                 setSelected(f);
@@ -66,7 +105,12 @@ export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
       )}
 
       {/* Content */}
-      <WorkingFileContentView sessionKey={sessionKey} filePath={selected} />
+      <WorkingFileContentView
+        sessionKey={sessionKey}
+        filePath={selected}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
     </div>
   );
 }
