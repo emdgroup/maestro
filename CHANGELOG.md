@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/emdgroup/maestro/compare/v0.5.0...v0.6.0) (2026-07-02)
+
+
+### Features
+
+* add execution side panel with workspace files, artifacts, and diff tabs ([9fd9851](https://github.com/emdgroup/maestro/commit/9fd98513b4f94a16380c6149938bed8258e8d98d))
+* redesign execution side panels with shared file picker and diff stats ([7247b02](https://github.com/emdgroup/maestro/commit/7247b02e365a771a6459037c0d600169044669ee))
+* simplify agent connection pool and enrich execution overview ([0157e90](https://github.com/emdgroup/maestro/commit/0157e90db27538a45704619ac273267b4cd897d5))
+
+
+### Bug Fixes
+
+* eliminate connection races in maestro-server agent pool ([a3a1c45](https://github.com/emdgroup/maestro/commit/a3a1c457de1ae4233b60f0613c3b3d4774abb1de))
+
 ## [0.5.0](https://github.com/emdgroup/maestro/compare/v0.4.0...v0.5.0) (2026-06-29)
 
 ### Features
