@@ -91,8 +91,13 @@ async fn ensure_and_get_connection(
         return Some(AgentConnectionHandle::from(conn));
     }
     let new_conn = pre_initialize_agent(cmd, args, env, cwd, Arc::clone(stdout)).await?;
+    let mut connections = agent_connections.lock().await;
+    // Re-check: a concurrent task may have won the race and inserted first.
+    if let Some(existing) = connections.get(agent_id) {
+        return Some(AgentConnectionHandle::from(existing));
+    }
     let handle = AgentConnectionHandle::from(&new_conn);
-    agent_connections.lock().await.insert(agent_id.to_string(), new_conn);
+    connections.insert(agent_id.to_string(), new_conn);
     Some(handle)
 }
 
@@ -657,7 +662,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let list_result = session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await;
                 if list_result.is_err() {
-                    agent_connections.lock().await.remove(&req.agent_id);
+                    let mut connections = agent_connections.lock().await;
+                    if connections.get(&req.agent_id)
+                        .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
+                        .unwrap_or(false)
+                    {
+                        connections.remove(&req.agent_id);
+                    }
                 }
                 match list_result {
                     Ok((sessions_list, next_cursor)) => {
@@ -754,8 +765,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         req.agent_id, req.session_id
                     )),
                 };
-                if close_result.is_err() && conn_handle.is_some() {
-                    agent_connections.lock().await.remove(&req.agent_id);
+                if let (Some(ref handle), Err(_)) = (&conn_handle, &close_result) {
+                    let mut connections = agent_connections.lock().await;
+                    if connections.get(&req.agent_id)
+                        .map(|c| Arc::ptr_eq(&c.router, &handle.router))
+                        .unwrap_or(false)
+                    {
+                        connections.remove(&req.agent_id);
+                    }
                 }
                 match close_result {
                     Ok(()) => {
