@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Files, Pin, Loader2 } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
@@ -9,9 +9,14 @@ import { WorkspaceFileContent } from "./WorkspaceFileContent";
 interface WorkspaceFilesPanelProps {
   projectPath: string;
   connection: ConnectionKey;
+  isActive?: boolean;
 }
 
-export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesPanelProps) {
+export function WorkspaceFilesPanel({
+  projectPath,
+  connection,
+  isActive = true,
+}: WorkspaceFilesPanelProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [listPinned, setListPinned] = useState(false);
@@ -22,7 +27,12 @@ export function WorkspaceFilesPanel({ projectPath, connection }: WorkspaceFilesP
     data: content,
     isLoading: contentLoading,
     error: contentError,
-  } = useReadFile(connection, fullPath);
+    refetch,
+  } = useReadFile(connection, fullPath, { refetchInterval: isActive ? 3000 : undefined });
+
+  useEffect(() => {
+    if (isActive && fullPath) void refetch();
+  }, [isActive, fullPath]);
 
   if (connection.type === "wsl") {
     return (

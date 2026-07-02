@@ -26,6 +26,7 @@ interface ReviewChangesPanelProps {
   onClose: () => void;
   initialFile?: string;
   compact?: boolean;
+  isActive?: boolean;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
 }
 
@@ -35,6 +36,7 @@ export function ReviewChangesPanel({
   onClose,
   initialFile,
   compact = false,
+  isActive = true,
   onDiffStats,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
@@ -84,7 +86,9 @@ export function ReviewChangesPanel({
     data: diffResult,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(projectId, cwd, diffTarget);
+  } = useWorktreeDiffQuery(projectId, cwd, diffTarget, {
+    refetchInterval: isActive ? 10000 : false,
+  });
 
   const changedRelativePaths = useMemo(() => {
     const set = new Set<string>();

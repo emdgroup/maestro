@@ -228,9 +228,13 @@
 /* File content viewer — line numbers via CSS counter on Shiki .line spans */
 .file-code-view code {
   counter-reset: line;
+  display: block;
 }
 .file-code-view code .line {
   display: block;
+}
+.file-code-view code .line:last-child:empty {
+  display: none;
 }
 .file-code-view code .line::before {
   counter-increment: line;

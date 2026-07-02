@@ -9,9 +9,10 @@ import { api } from "@/lib/tauri-utils";
 interface ArtifactsPanelProps {
   files: string[];
   sessionKey: number;
+  isActive?: boolean;
 }
 
-export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
+export function ArtifactsPanel({ files, sessionKey, isActive = true }: ArtifactsPanelProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
@@ -108,6 +109,7 @@ export function ArtifactsPanel({ files, sessionKey }: ArtifactsPanelProps) {
       <WorkingFileContentView
         sessionKey={sessionKey}
         filePath={selected}
+        isActive={isActive}
         zoom={zoom}
         onZoomChange={setZoom}
       />

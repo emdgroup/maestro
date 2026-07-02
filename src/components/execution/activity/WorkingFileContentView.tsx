@@ -101,6 +101,7 @@ function FileContentInner({
 interface WorkingFileContentViewProps {
   sessionKey: number;
   filePath: string | null;
+  isActive?: boolean;
   zoom?: number;
   onZoomChange?: (z: number) => void;
 }
@@ -108,6 +109,7 @@ interface WorkingFileContentViewProps {
 export function WorkingFileContentView({
   sessionKey,
   filePath,
+  isActive = true,
   zoom: zoomProp,
   onZoomChange,
 }: WorkingFileContentViewProps) {
@@ -122,6 +124,14 @@ export function WorkingFileContentView({
   const setZoom = onZoomChange ?? setZoomState;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    if (!isActive) return;
+    setRefreshTick((t) => t + 1);
+    const id = setInterval(() => setRefreshTick((t) => t + 1), 3000);
+    return () => clearInterval(id);
+  }, [isActive]);
 
   useEffect(() => {
     api
@@ -187,19 +197,23 @@ export function WorkingFileContentView({
     setLoading(true);
     setContent(null);
     setLoadError(null);
+  }, [relativePath, sessionKey, isBinary]);
+
+  useEffect(() => {
+    if (!relativePath) return;
     const loader = isBinary
       ? api.readSessionFileBinary(sessionKey, relativePath)
       : api.readSessionFile(sessionKey, relativePath);
     loader
       .then((data) => {
         setLoading(false);
-        setContent(data);
+        setContent((prev) => (prev === data ? prev : data));
       })
       .catch((err) => {
         setLoadError(String(err));
         setLoading(false);
       });
-  }, [relativePath, sessionKey, isBinary]);
+  }, [relativePath, sessionKey, isBinary, refreshTick]);
 
   function copyPath() {
     if (!absolutePath) return;

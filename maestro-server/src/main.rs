@@ -49,7 +49,7 @@ use session::{
     pre_initialize_agent, session_close_on_connection, session_list_on_connection,
 };
 use sessions::{
-    AgentConnectionHandle, AgentConnectionMap, SessionCommand, SessionMap, SessionRouter,
+    AgentConnectionHandle, AgentConnectionMap, SessionCommand, SessionMap,
     SharedAgentConnections,
 };
 
@@ -77,9 +77,8 @@ async fn resolve_agent_spawn_params(
     }
 }
 
-/// Returns the first non-busy pool entry for `agent_id`, creating a new connection if all
-/// entries have pending permissions. "Busy" = router has at least one pending permission.
-async fn ensure_and_get_non_busy_connection(
+/// Returns the existing connection for `agent_id`, or creates a new one if absent.
+async fn ensure_and_get_connection(
     agent_id: &str,
     agent_connections: &SharedAgentConnections,
     cmd: &str,
@@ -88,54 +87,13 @@ async fn ensure_and_get_non_busy_connection(
     cwd: &str,
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<AgentConnectionHandle> {
-    {
-        let connections = agent_connections.lock().await;
-        if let Some(pool) = connections.get(agent_id) {
-            for conn in pool {
-                if !conn.router.has_pending_permissions().await {
-                    return Some(AgentConnectionHandle::from(conn));
-                }
-            }
-        }
+    if let Some(conn) = agent_connections.lock().await.get(agent_id) {
+        return Some(AgentConnectionHandle::from(conn));
     }
-    // All connections busy or pool empty — create a new one.
     let new_conn = pre_initialize_agent(cmd, args, env, cwd, Arc::clone(stdout)).await?;
     let handle = AgentConnectionHandle::from(&new_conn);
-    agent_connections.lock().await.entry(agent_id.to_string()).or_insert_with(Vec::new).push(new_conn);
+    agent_connections.lock().await.insert(agent_id.to_string(), new_conn);
     Some(handle)
-}
-
-/// Returns the first non-busy pool entry for `agent_id`, or `None` if all are busy.
-/// Does not create new connections. Used for operations that should not block (e.g. session list).
-async fn find_non_busy_connection_handle(
-    agent_id: &str,
-    agent_connections: &SharedAgentConnections,
-) -> Option<AgentConnectionHandle> {
-    let connections = agent_connections.lock().await;
-    let pool = connections.get(agent_id)?;
-    for conn in pool {
-        if !conn.router.has_pending_permissions().await {
-            return Some(AgentConnectionHandle::from(conn));
-        }
-    }
-    None
-}
-
-/// Removes a pool entry identified by router pointer if that router is now empty.
-async fn cleanup_empty_pool_entry(
-    router: &Arc<SessionRouter>,
-    agent_id: &str,
-    agent_connections: &SharedAgentConnections,
-) {
-    if router.is_empty().await {
-        let mut connections = agent_connections.lock().await;
-        if let Some(pool) = connections.get_mut(agent_id) {
-            pool.retain(|conn| !Arc::ptr_eq(&conn.router, router));
-            if pool.is_empty() {
-                connections.remove(agent_id);
-            }
-        }
-    }
 }
 
 
@@ -388,11 +346,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             _ = liveness_interval.tick() => {
-                // Find agent IDs that have at least one dead pool entry.
                 let agents_with_dead: Vec<String> = {
                     let connections = agent_connections.lock().await;
                     connections.iter()
-                        .filter(|(_, pool)| pool.iter().any(|conn| conn.connection_task.is_finished()))
+                        .filter(|(_, conn)| conn.connection_task.is_finished())
                         .map(|(id, _)| id.clone())
                         .collect()
                 };
@@ -443,7 +400,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 // Offload the blocking ACP operations to a separate task so the main loop
                 // stays responsive to PermitResponse and other messages.
                 tokio::spawn(async move {
-                    let conn_handle = ensure_and_get_non_busy_connection(
+                    let conn_handle = ensure_and_get_connection(
                         &req.agent_id,
                         &agent_connections_task,
                         &cmd, &args, &env,
@@ -462,11 +419,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     ).await;
                     if result.is_none() {
                         let mut connections = agent_connections_task.lock().await;
-                        if let Some(pool) = connections.get_mut(&req.agent_id) {
-                            pool.retain(|conn| !Arc::ptr_eq(&conn.router, &conn_handle.router));
-                            if pool.is_empty() {
-                                connections.remove(&req.agent_id);
-                            }
+                        // Only evict the connection that failed; a concurrent task may have
+                        // already inserted a different (live) connection for this agent_id.
+                        if connections.get(&req.agent_id)
+                            .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
+                            .unwrap_or(false)
+                        {
+                            connections.remove(&req.agent_id);
                         }
                         return;
                     }
@@ -566,11 +525,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 if timed_out {
                                     c.router.unregister(&c.acp_session_id).await;
                                 }
-                                cleanup_empty_pool_entry(
-                                    &c.router,
-                                    &session_agent_id,
-                                    &agent_connections_cancel,
-                                ).await;
+                                if c.router.is_empty().await {
+                                    agent_connections_cancel.lock().await.remove(&session_agent_id);
+                                }
                             }
                         });
                     } else {
@@ -578,11 +535,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         session.task.abort();
                         if let Some(c) = session.cleanup {
                             c.router.unregister(&c.acp_session_id).await;
-                            cleanup_empty_pool_entry(
-                                &c.router,
-                                &session_agent_id,
-                                &agent_connections,
-                            ).await;
+                            if c.router.is_empty().await {
+                                agent_connections.lock().await.remove(&session_agent_id);
+                            }
                         }
                     }
                 }
@@ -688,12 +643,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
-                let conn_handle = find_non_busy_connection_handle(
-                    &req.agent_id, &agent_connections,
-                ).await;
+                let conn_handle = agent_connections.lock().await
+                    .get(&req.agent_id)
+                    .map(AgentConnectionHandle::from);
                 let Some(conn_handle) = conn_handle else {
-                    // All connections are busy (pending permission) or none exist.
-                    // Return empty list rather than blocking or creating a new process.
                     send_or_break!(send_response(
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
@@ -704,13 +657,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let list_result = session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await;
                 if list_result.is_err() {
-                    let mut connections = agent_connections.lock().await;
-                    if let Some(pool) = connections.get_mut(&req.agent_id) {
-                        pool.retain(|conn| !Arc::ptr_eq(&conn.router, &conn_handle.router));
-                        if pool.is_empty() {
-                            connections.remove(&req.agent_id);
-                        }
-                    }
+                    agent_connections.lock().await.remove(&req.agent_id);
                 }
                 match list_result {
                     Ok((sessions_list, next_cursor)) => {
@@ -742,7 +689,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 let agent_connections_task = Arc::clone(&agent_connections);
                 let spawn_result_tx = spawn_result_tx.clone();
                 tokio::spawn(async move {
-                    let conn_handle = ensure_and_get_non_busy_connection(
+                    let conn_handle = ensure_and_get_connection(
                         &req.agent_id,
                         &agent_connections_task,
                         &cmd, &args, &env,
@@ -763,11 +710,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     match result {
                         Err(()) => {
                             let mut connections = agent_connections_task.lock().await;
-                            if let Some(pool) = connections.get_mut(&req.agent_id) {
-                                pool.retain(|conn| !Arc::ptr_eq(&conn.router, &conn_handle.router));
-                                if pool.is_empty() {
-                                    connections.remove(&req.agent_id);
-                                }
+                            if connections.get(&req.agent_id)
+                                .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
+                                .unwrap_or(false)
+                            {
+                                connections.remove(&req.agent_id);
                             }
                         }
                         Ok(None) => {}
@@ -795,14 +742,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             MaestroRpcMessage::Request(ServerRequest::SessionClose(req)) => {
-                let conn_handle = {
-                    let connections = agent_connections.lock().await;
-                    connections.get(&req.agent_id).and_then(|pool| {
-                        pool.iter()
-                            .find(|conn| conn.router.contains_acp_session(&req.session_id))
-                            .map(AgentConnectionHandle::from)
-                    })
-                };
+                let conn_handle = agent_connections.lock().await
+                    .get(&req.agent_id)
+                    .map(AgentConnectionHandle::from);
                 let close_result = match conn_handle {
                     Some(ref handle) => {
                         session_close_on_connection(handle, req.session_id.clone()).await
@@ -812,14 +754,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         req.agent_id, req.session_id
                     )),
                 };
-                if let (Some(ref handle), Err(_)) = (&conn_handle, &close_result) {
-                    let mut connections = agent_connections.lock().await;
-                    if let Some(pool) = connections.get_mut(&req.agent_id) {
-                        pool.retain(|conn| !Arc::ptr_eq(&conn.router, &handle.router));
-                        if pool.is_empty() {
-                            connections.remove(&req.agent_id);
-                        }
-                    }
+                if close_result.is_err() && conn_handle.is_some() {
+                    agent_connections.lock().await.remove(&req.agent_id);
                 }
                 match close_result {
                     Ok(()) => {
@@ -872,10 +808,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             supports_session_load: conn.capabilities.supports_session_load,
                             supports_session_close: conn.capabilities.supports_session_close,
                         };
-                        agent_connections.lock().await
-                            .entry(req.agent_id)
-                            .or_insert_with(Vec::new)
-                            .push(conn);
+                        agent_connections.lock().await.insert(req.agent_id, conn);
                         send_or_break!(send_response(
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(
@@ -967,33 +900,22 @@ async fn handle_agent_restart(
     agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
 ) {
-    send_diag("warn", format!("[agent] {dead_agent_id:?} has dead connection(s)"));
+    send_diag("warn", format!("[agent] {dead_agent_id:?} connection dead"));
 
-    // Collect routers of dead pool entries to know which sessions to abort.
-    let dead_routers: Vec<Arc<SessionRouter>> = {
-        let connections = agent_connections.lock().await;
-        connections.get(&dead_agent_id)
-            .map(|pool| {
-                pool.iter()
-                    .filter(|conn| conn.connection_task.is_finished())
-                    .map(|conn| Arc::clone(&conn.router))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
+    let is_dead = agent_connections.lock().await
+        .get(&dead_agent_id)
+        .map(|conn| conn.connection_task.is_finished())
+        .unwrap_or(false);
+    if !is_dead {
+        return;
+    }
 
-    // Abort sessions whose cleanup router is one of the dead entries.
+    // Fast-path sessions (shared connection, have cleanup) are candidates for restore.
     let to_restore: Vec<(String, String, String)> = sessions
         .iter()
         .filter(|(_, s)| s.agent_id == dead_agent_id)
         .filter_map(|(sid, s)| {
-            s.cleanup.as_ref().and_then(|c| {
-                if dead_routers.iter().any(|dr| Arc::ptr_eq(dr, &c.router)) {
-                    Some((sid.clone(), c.acp_session_id.clone(), s.cwd.clone()))
-                } else {
-                    None
-                }
-            })
+            s.cleanup.as_ref().map(|c| (sid.clone(), c.acp_session_id.clone(), s.cwd.clone()))
         })
         .collect();
 
@@ -1011,46 +933,29 @@ async fn handle_agent_restart(
         }
     }
 
-    // Remove dead entries from the pool. Track whether the pool is now fully empty.
-    let pool_now_empty = {
-        let mut connections = agent_connections.lock().await;
-        if let Some(pool) = connections.get_mut(&dead_agent_id) {
-            pool.retain(|conn| !conn.connection_task.is_finished());
-            if pool.is_empty() {
-                connections.remove(&dead_agent_id);
-                true
-            } else {
-                false
-            }
-        } else {
-            true
-        }
-    };
-
-    // Cold-path sessions (cleanup==None) are only evicted when all pool entries are dead.
-    if pool_now_empty {
-        let cold_path_sids: Vec<String> = sessions
-            .iter()
-            .filter(|(_, s)| s.agent_id == dead_agent_id && s.cleanup.is_none())
-            .map(|(sid, _)| sid.clone())
-            .collect();
-        for maestro_sid in cold_path_sids {
-            if let Some(session) = sessions.remove(&maestro_sid) {
-                session.task.abort();
-                let _ = send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
-                        session_id: maestro_sid.clone(),
-                        stop_reason: "error".to_string(),
-                    })),
-                )
-                .await;
-            }
+    // Cold-path sessions (no cleanup) are always evicted when the connection dies.
+    let cold_path_sids: Vec<String> = sessions
+        .iter()
+        .filter(|(_, s)| s.agent_id == dead_agent_id && s.cleanup.is_none())
+        .map(|(sid, _)| sid.clone())
+        .collect();
+    for maestro_sid in cold_path_sids {
+        if let Some(session) = sessions.remove(&maestro_sid) {
+            session.task.abort();
+            let _ = send_response(
+                stdout,
+                &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                    session_id: maestro_sid.clone(),
+                    stop_reason: "error".to_string(),
+                })),
+            )
+            .await;
         }
     }
 
-    // Only attempt restart when the pool is fully empty and there are sessions to restore.
-    if !pool_now_empty || to_restore.is_empty() {
+    agent_connections.lock().await.remove(&dead_agent_id);
+
+    if to_restore.is_empty() {
         return;
     }
 
@@ -1097,10 +1002,7 @@ async fn handle_agent_restart(
         }
     }
 
-    agent_connections.lock().await
-        .entry(dead_agent_id)
-        .or_insert_with(Vec::new)
-        .push(new_conn);
+    agent_connections.lock().await.insert(dead_agent_id, new_conn);
 }
 
 async fn probe_tool(tool: &str) -> (bool, Option<String>) {

@@ -83,31 +83,10 @@ impl SessionRouter {
         Some((maestro_id, state))
     }
 
-    /// True if any session in this router has outstanding permission requests.
-    pub async fn has_pending_permissions(&self) -> bool {
-        let state = self.state.read().await;
-        for s in state.values() {
-            if !s.pending_permissions.lock().await.is_empty() {
-                return true;
-            }
-        }
-        false
-    }
-
     /// True if no sessions are registered in this router.
     pub async fn is_empty(&self) -> bool {
         self.state.read().await.is_empty()
     }
-
-    /// True if the given ACP session ID is registered. Safe to call while holding another lock
-    /// since it uses try_read (non-blocking). Returns false if the routes lock is contended.
-    pub fn contains_acp_session(&self, acp_session_id: &str) -> bool {
-        self.routes.try_read()
-            .ok()
-            .map(|routes| routes.contains_key(acp_session_id))
-            .unwrap_or(false)
-    }
-
 }
 
 #[derive(Clone)]
@@ -187,5 +166,5 @@ pub struct ActiveSession {
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;
-pub type AgentConnectionMap = HashMap<String, Vec<AgentConnection>>;
+pub type AgentConnectionMap = HashMap<String, AgentConnection>;
 pub type SharedAgentConnections = Arc<tokio::sync::Mutex<AgentConnectionMap>>;

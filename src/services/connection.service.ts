@@ -236,7 +236,11 @@ export function useListWorkspaceFiles(connection: ConnectionKey | null | undefin
   });
 }
 
-export function useReadFile(connection: ConnectionKey | null | undefined, path: string | null) {
+export function useReadFile(
+  connection: ConnectionKey | null | undefined,
+  path: string | null,
+  options?: { refetchInterval?: number },
+) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "read", connection, path],
     queryFn: () => {
@@ -247,6 +251,7 @@ export function useReadFile(connection: ConnectionKey | null | undefined, path: 
     },
     enabled: !!path && connection?.type !== "wsl",
     staleTime: 10_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

@@ -27,6 +27,7 @@ import type { PanelImperativeHandle } from "react-resizable-panels";
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useWorkingFileTracker } from "./useWorkingFileTracker";
+import { useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
 import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
@@ -90,6 +91,14 @@ export function AgentActivityPanel({
   const { workingFiles: localWorkingFiles, sessionChangedFiles: localChangedFiles } =
     useWorkingFileTracker(sessionKey, liveState.items);
 
+  const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
+  const taskId = useMemo(() => {
+    const info = activeSessions?.find((s) => s.session_key === sessionKey);
+    return info?.task_id ?? null;
+  }, [activeSessions, sessionKey]);
+
+  const isSessionActive = isSelected && activeTab === "agents";
+
   const {
     liveElicitationSummaries,
     livePermissionResponses,
@@ -106,12 +115,13 @@ export function AgentActivityPanel({
     setPendingElicitation,
   );
 
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(isNewSession);
   const sidePanelRef = useRef<PanelImperativeHandle>(null);
+  const leftPanelRef = useRef<PanelImperativeHandle>(null);
+  const [maximized, setMaximized] = useState(false);
   const [sidePanelPlan, setSidePanelPlan] = useState<{
-    body: string;
-    title: string | null;
     requestId: string;
+    payload: Record<string, unknown>;
   } | null>(null);
 
   const subagentItems = useMemo(
@@ -126,6 +136,26 @@ export function AgentActivityPanel({
         .map((item) => item.item),
     [liveState.items],
   );
+
+  const autoExpandPendingRef = useRef(isNewSession);
+  const hasOverviewCard =
+    subagentItems.length > 0 ||
+    liveState.canvasMap.size > 0 ||
+    localChangedFiles.length > 0 ||
+    (liveState.plan?.length ?? 0) > 0 ||
+    localWorkingFiles.length > 0;
+  useEffect(() => {
+    if (autoExpandPendingRef.current && hasOverviewCard) {
+      autoExpandPendingRef.current = false;
+      setSidePanelCollapsed(false);
+    }
+  }, [hasOverviewCard]);
+
+  // Any manual user interaction with the panel cancels the pending auto-expand
+  const handleSidePanelCollapsedChange = useCallback((v: boolean) => {
+    autoExpandPendingRef.current = false;
+    setSidePanelCollapsed(v);
+  }, []);
 
   const {
     tabs,
@@ -183,29 +213,20 @@ export function AgentActivityPanel({
 
   const handleOpenPlanOverlaySplit = useCallback(() => {
     if (!pendingPermission) return;
-    const body = extractBodyText(pendingPermission.payload);
-    if (!body) return;
-    const toolCall = pendingPermission.payload.toolCall as Record<string, unknown> | undefined;
-    const title = (toolCall?.title as string | undefined) ?? null;
-    setSidePanelPlan({ body, title, requestId: pendingPermission.requestId });
+    if (!extractBodyText(pendingPermission.payload)) return;
+    setSidePanelPlan({
+      requestId: pendingPermission.requestId,
+      payload: pendingPermission.payload,
+    });
     setSidePanelCollapsed(false);
   }, [pendingPermission]);
 
   const handlePlanRespond = useCallback(
-    (accept: boolean) => {
-      if (!sidePanelPlan) return;
-      const options = pendingPermission?.payload.options as
-        | Array<{ optionId: string; kind: string }>
-        | undefined;
-      const opt = options?.find((o) =>
-        accept
-          ? o.kind === "allow_once" || o.kind === "allow_always"
-          : o.kind === "reject_once" || o.kind === "reject_always",
-      );
-      void handlePermissionRespond(sidePanelPlan.requestId, opt?.optionId ?? null);
+    (requestId: string, optionId: string | null) => {
+      void handlePermissionRespond(requestId, optionId);
       setSidePanelPlan(null);
     },
-    [sidePanelPlan, pendingPermission, handlePermissionRespond],
+    [handlePermissionRespond],
   );
 
   useEffect(() => {
@@ -288,6 +309,25 @@ export function AgentActivityPanel({
     }
   }, [sidePanelCollapsed]);
 
+  useEffect(() => {
+    if (isSelected) {
+      setMaximized(false);
+      if (leftPanelRef.current?.isCollapsed()) {
+        leftPanelRef.current?.expand();
+      }
+    }
+  }, [isSelected]);
+
+  function handleMaximizedChange(v: boolean) {
+    setMaximized(v);
+    if (v) {
+      setSidePanelCollapsed(false);
+      leftPanelRef.current?.collapse();
+    } else {
+      leftPanelRef.current?.expand();
+    }
+  }
+
   // Restore scroll position after panel collapse/expand.
   // chatScrollRef and scrollTopRef are stable refs — safe to omit from deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,11 +342,11 @@ export function AgentActivityPanel({
 
   useEffect(() => {
     if (!isPlanPermWithBody || !pendingPermission) return;
-    const body = extractBodyText(pendingPermission.payload);
-    if (!body) return;
-    const toolCall = pendingPermission.payload.toolCall as Record<string, unknown> | undefined;
-    const title = (toolCall?.title as string | undefined) ?? null;
-    setSidePanelPlan({ body, title, requestId: pendingPermission.requestId });
+    if (!extractBodyText(pendingPermission.payload)) return;
+    setSidePanelPlan({
+      requestId: pendingPermission.requestId,
+      payload: pendingPermission.payload,
+    });
     setSidePanelCollapsed(false);
   }, [isPlanPermWithBody, pendingPermission]);
 
@@ -435,14 +475,17 @@ export function AgentActivityPanel({
       )}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
         <ResizablePanel
+          panelRef={leftPanelRef}
           defaultSize={65}
           minSize="42rem"
+          collapsible
+          collapsedSize={0}
           className="flex flex-col min-h-0 overflow-hidden"
         >
           {headerSlot}
           {streamContent}
         </ResizablePanel>
-        <ResizableHandle withHandle />
+        {!maximized && <ResizableHandle withHandle />}
         <ResizablePanel
           panelRef={sidePanelRef}
           defaultSize={35}
@@ -462,6 +505,7 @@ export function AgentActivityPanel({
             onAddTab={addDynamicTab}
             onOpenTabKind={openTabKind}
             workingFiles={localWorkingFiles}
+            taskId={taskId}
             changedFiles={localChangedFiles}
             projectPath={selectedProject?.path ?? ""}
             connection={connection}
@@ -470,10 +514,14 @@ export function AgentActivityPanel({
             subagentItems={subagentItems}
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}
+            planEntries={liveState.plan}
             onPlanRespond={handlePlanRespond}
             collapsed={sidePanelCollapsed}
-            onCollapsedChange={setSidePanelCollapsed}
+            onCollapsedChange={handleSidePanelCollapsedChange}
+            maximized={maximized}
+            onMaximizedChange={handleMaximizedChange}
             onSpawnShell={onSpawnShell}
+            isSessionActive={isSessionActive}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
