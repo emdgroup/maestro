@@ -414,6 +414,8 @@ pub struct DiagnosticPayload {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ErrorResponse {
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -714,6 +716,7 @@ mod tests {
     fn roundtrip_error_response() {
         let msg = MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
             message: "agent not found".to_string(),
+            session_id: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

@@ -1,5 +1,114 @@
 use std::fs;
+use std::io;
 use std::path::Path;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FileEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// List files and directories in a local path. Dirs come first, both groups sorted alphabetically.
+/// Hidden entries (starting with `.`) are excluded.
+#[tauri::command]
+#[specta::specta]
+pub fn list_local_contents(path: String) -> Result<Vec<FileEntry>, String> {
+    let dir_path = Path::new(&path);
+    if !dir_path.is_dir() {
+        return Err(format!("Not a directory: {}", path));
+    }
+    let entries = fs::read_dir(dir_path)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+    let mut dirs: Vec<String> = Vec::new();
+    let mut files: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let name = match entry.file_name().into_string() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        match entry.metadata() {
+            Ok(m) if m.is_dir() => dirs.push(name),
+            Ok(_) => files.push(name),
+            Err(_) => continue,
+        }
+    }
+    dirs.sort();
+    files.sort();
+    let mut result: Vec<FileEntry> = dirs.into_iter().map(|n| FileEntry { name: n, is_dir: true }).collect();
+    result.extend(files.into_iter().map(|n| FileEntry { name: n, is_dir: false }));
+    Ok(result)
+}
+
+/// Recursively list all non-hidden files under root, returning paths relative to root.
+/// Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
+#[tauri::command]
+#[specta::specta]
+pub fn list_workspace_files(root: String) -> Result<Vec<String>, String> {
+    let root_path = Path::new(&root);
+    if !root_path.is_dir() {
+        return Err(format!("Not a directory: {}", root));
+    }
+    let mut output = Vec::new();
+    walk_files(root_path, root_path, 0, &mut output).map_err(|e| e.to_string())?;
+    output.sort();
+    Ok(output)
+}
+
+fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> io::Result<()> {
+    if depth > 8 || output.len() >= 2000 {
+        return Ok(());
+    }
+    let mut entries: Vec<_> = fs::read_dir(dir)?.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = match entry.file_name().into_string() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
+            if matches!(name.as_str(), "node_modules" | "target" | "dist") {
+                continue;
+            }
+            walk_files(root, &entry.path(), depth + 1, output)?;
+        } else if file_type.is_file() {
+            let relative = entry
+                .path()
+                .strip_prefix(root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if !relative.is_empty() {
+                output.push(relative);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Read a local file's text content. Rejects binary files and files over 512 KB.
+#[tauri::command]
+#[specta::specta]
+pub fn read_local_file(path: String) -> Result<String, String> {
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 524_288 {
+        return Err("File too large".to_string());
+    }
+    if bytes.contains(&0u8) {
+        return Err("Binary file".to_string());
+    }
+    String::from_utf8(bytes).map_err(|e| e.to_string())
+}
 
 /// List subdirectories in a local filesystem path
 #[tauri::command]

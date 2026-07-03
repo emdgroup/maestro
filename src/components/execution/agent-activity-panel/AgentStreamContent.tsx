@@ -21,7 +21,6 @@ interface AgentStreamContentProps {
   lastUserMsgRef: React.RefObject<HTMLDivElement | null>;
   handleWheel: React.WheelEventHandler<HTMLDivElement>;
   handleChatScroll: React.UIEventHandler<HTMLDivElement>;
-  onOpenPanel?: (panel: "working-files" | "review-changes", initialFile?: string) => void;
 }
 
 export function AgentStreamContent({
@@ -37,7 +36,6 @@ export function AgentStreamContent({
   lastUserMsgRef,
   handleWheel,
   handleChatScroll,
-  onOpenPanel,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -91,7 +89,6 @@ export function AgentStreamContent({
               onOpenPlanOverlay,
               toolCallMap,
               canvasMap,
-              onOpenPanel,
             };
 
             return (

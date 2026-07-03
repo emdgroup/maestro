@@ -39,9 +39,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let h = _h.clone();
-                    move |request: RequestPermissionRequest, responder: acp::Responder<RequestPermissionResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: RequestPermissionRequest, responder: acp::Responder<RequestPermissionResponse>, cx: acp::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
-                        async move { h.handle_permission(request, responder).await }
+                        async move { h.handle_permission(request, responder, cx).await }
                     }
                 },
                 acp::on_receive_request!(),
@@ -114,39 +114,43 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let terms = Arc::clone(&_terms);
-                    move |request: WaitForTerminalExitRequest, responder: acp::Responder<WaitForTerminalExitResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: WaitForTerminalExitRequest, responder: acp::Responder<WaitForTerminalExitResponse>, cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
-                            loop {
-                                let (exit_status_arc, exit_notify_arc) = {
-                                    let terminals = terms.lock().await;
-                                    if let Some(handle) = terminals.get(&terminal_id_str) {
-                                        (
-                                            Arc::clone(&handle.exit_status),
-                                            Arc::clone(&handle.exit_notify),
-                                        )
-                                    } else {
-                                        return responder.respond(
-                                            WaitForTerminalExitResponse::new(
-                                                TerminalExitStatus::new(),
-                                            ),
-                                        );
-                                    }
-                                };
-                                {
+                            let maybe_arcs = {
+                                let terminals = terms.lock().await;
+                                terminals.get(&terminal_id_str).map(|h| {
+                                    (Arc::clone(&h.exit_status), Arc::clone(&h.exit_notify))
+                                })
+                            };
+                            let (exit_status_arc, exit_notify_arc) = match maybe_arcs {
+                                None => return responder.respond(WaitForTerminalExitResponse::new(TerminalExitStatus::new())),
+                                Some(arcs) => arcs,
+                            };
+                            {
+                                let info = exit_status_arc.lock().await;
+                                if let Some(exit_info) = info.as_ref() {
+                                    let status = TerminalExitStatus::new()
+                                        .exit_code(exit_info.exit_code)
+                                        .signal(exit_info.signal.clone());
+                                    return responder.respond(WaitForTerminalExitResponse::new(status));
+                                }
+                            }
+                            cx.spawn(async move {
+                                loop {
+                                    exit_notify_arc.notified().await;
                                     let info = exit_status_arc.lock().await;
                                     if let Some(exit_info) = info.as_ref() {
                                         let status = TerminalExitStatus::new()
                                             .exit_code(exit_info.exit_code)
                                             .signal(exit_info.signal.clone());
-                                        return responder.respond(
-                                            WaitForTerminalExitResponse::new(status),
-                                        );
+                                        let _ = responder.respond(WaitForTerminalExitResponse::new(status));
+                                        return Ok(());
                                     }
                                 }
-                                exit_notify_arc.notified().await;
-                            }
+                            })?;
+                            Ok(())
                         }
                     }
                 },
@@ -174,9 +178,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let h = _h.clone();
-                    move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, cx: acp::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
-                        async move { h.handle_elicitation(request, responder).await }
+                        async move { h.handle_elicitation(request, responder, cx).await }
                     }
                 },
                 acp::on_receive_request!(),
@@ -203,6 +207,7 @@ impl ConnectionHandlers {
         &self,
         request: RequestPermissionRequest,
         responder: acp::Responder<RequestPermissionResponse>,
+        cx: acp::ConnectionTo<acp::Agent>,
     ) -> acp::Result<()> {
         let acp_sid = request.session_id.to_string();
         let (maestro_sid, state) = self
@@ -213,28 +218,34 @@ impl ConnectionHandlers {
 
         let request_id = request.tool_call.tool_call_id.to_string();
         let (tx, rx) = oneshot::channel::<Option<String>>();
-        state.pending_permissions.lock().await.insert(request_id.clone(), tx);
 
         let payload = serde_json::to_value(&request)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
         let msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(
             MaestroPermissionRequest {
                 session_id: maestro_sid,
-                request_id,
+                request_id: request_id.clone(),
                 payload,
             },
         ));
+        // Insert tx after send_response: single-threaded runtime guarantees no PermitResponse
+        // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+        state.pending_permissions.lock().await.insert(request_id, tx);
 
-        let outcome = match rx.await {
-            Ok(Some(id)) => RequestPermissionOutcome::Selected(
-                SelectedPermissionOutcome::new(PermissionOptionId::new(id)),
-            ),
-            Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
-        };
-        responder.respond(RequestPermissionResponse::new(outcome))
+        cx.spawn(async move {
+            let outcome = match rx.await {
+                Ok(Some(id)) => RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(PermissionOptionId::new(id)),
+                ),
+                Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
+            };
+            let _ = responder.respond(RequestPermissionResponse::new(outcome));
+            Ok(())
+        })?;
+        Ok(())
     }
 
     pub async fn handle_notification(
@@ -287,6 +298,7 @@ impl ConnectionHandlers {
         &self,
         request: acp::UntypedMessage,
         responder: acp::Responder<serde_json::Value>,
+        cx: acp::ConnectionTo<acp::Agent>,
     ) -> acp::Result<()> {
         if request.method() != "elicitation/create" {
             return responder.respond_with_error(
@@ -319,25 +331,39 @@ impl ConnectionHandlers {
             self.elicit_counter.fetch_add(1, Ordering::Relaxed) + 1
         );
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
-        state.pending_elicitations.lock().await.insert(request_id.clone(), tx);
 
         let payload = request.params().clone();
         let msg = MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(
             MaestroElicitationRequest {
                 session_id: maestro_sid,
-                request_id,
+                request_id: request_id.clone(),
                 message: elicitation.message,
                 payload,
             },
         ));
+        // Insert tx after send_response: single-threaded runtime guarantees no ElicitationResponse
+        // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+        state.pending_elicitations.lock().await.insert(request_id, tx);
 
-        let response = rx.await.map_err(|_| acp::Error::new(-32603, "elicitation channel closed"))?;
-        let _validated: CreateElicitationResponse =
-            serde_json::from_value(response.clone())
-                .map_err(|e| acp::Error::new(-32603, format!("invalid elicitation response: {e}")))?;
-        responder.respond(response)
+        cx.spawn(async move {
+            let response = match rx.await {
+                Ok(r) => r,
+                Err(_) => {
+                    let _ = responder.respond_with_error(acp::Error::new(-32603, "elicitation channel closed"));
+                    return Ok(());
+                }
+            };
+            match serde_json::from_value::<CreateElicitationResponse>(response.clone()) {
+                Ok(_) => { let _ = responder.respond(response); }
+                Err(e) => {
+                    let _ = responder.respond_with_error(acp::Error::new(-32603, format!("invalid elicitation response: {e}")));
+                }
+            }
+            Ok(())
+        })?;
+        Ok(())
     }
 }

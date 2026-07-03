@@ -1,16 +1,12 @@
 import { useMemo, useState, useCallback, useRef, memo } from "react";
-import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { Terminal, X, FileText, FileDiff } from "lucide-react";
-import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
+import { X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/ui-utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
-import { WorkingFilesPanel } from "@/components/execution/activity/WorkingFilesPanel";
-import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
-import type { ActiveSessionInfo } from "@/types/bindings";
+import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import {
   useSessionActivity,
   type SessionActivityStatus,
@@ -157,12 +153,19 @@ interface AgentMonitorProps {
   selectedSessionKey: number | null;
   onSelect: (sessionKey: number) => void;
   search: string;
-  onOpenTerminal?: (session: ActiveSessionInfo) => void;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   projectId?: number;
   newSessionKey?: number | null;
+  sidebarCollapsed?: boolean;
+  onSidebarCollapsedChange?: (v: boolean) => void;
+  onSpawnShell?: (
+    branchName: string | null,
+    taskId: number | null,
+    embedded?: boolean,
+  ) => Promise<number | null>;
+  connection: ConnectionKey;
 }
 
 export function AgentMonitor({
@@ -170,12 +173,14 @@ export function AgentMonitor({
   selectedSessionKey,
   onSelect,
   search,
-  onOpenTerminal,
   onClose,
   agentIcons,
   agentNames,
   projectId,
   newSessionKey,
+  sidebarCollapsed = false,
+  onSpawnShell,
+  connection,
 }: AgentMonitorProps) {
   const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
@@ -183,52 +188,6 @@ export function AgentMonitor({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
-  const [openPanel, setOpenPanel] = useState<{
-    panel: "working-files" | "review-changes";
-    initialFile?: string;
-  } | null>(null);
-  const [sessionWorkingFiles, setSessionWorkingFiles] = useState<Map<number, string[]>>(new Map());
-  const [sessionChangedFiles, setSessionChangedFiles] = useState<Map<number, string[]>>(new Map());
-
-  const handleWorkingFilesChange = useCallback((sessionKey: number, files: string[]) => {
-    setSessionWorkingFiles((prev) => {
-      const existing = prev.get(sessionKey);
-      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i]))
-        return prev;
-      const next = new Map(prev);
-      next.set(sessionKey, files);
-      return next;
-    });
-  }, []);
-
-  const handleSessionChangedFilesChange = useCallback((sessionKey: number, files: string[]) => {
-    setSessionChangedFiles((prev) => {
-      const existing = prev.get(sessionKey);
-      if (existing && existing.length === files.length && existing.every((f, i) => f === files[i]))
-        return prev;
-      const next = new Map(prev);
-      next.set(sessionKey, files);
-      return next;
-    });
-  }, []);
-
-  const prevSelectedKeyRef = useRef(selectedSessionKey);
-  if (prevSelectedKeyRef.current !== selectedSessionKey) {
-    prevSelectedKeyRef.current = selectedSessionKey;
-    if (openPanel !== null) setOpenPanel(null);
-  }
-
-  useShortcuts("agents", {
-    "agents-working": () => {
-      if (selectedSessionKey != null) setOpenPanel({ panel: "working-files" });
-    },
-    "agents-review": () => {
-      if (selectedSessionKey != null) setOpenPanel({ panel: "review-changes" });
-    },
-    "agents-close-panel": () => {
-      if (openPanel !== null) setOpenPanel(null);
-    },
-  });
 
   const commitRename = useCallback(
     (session: ActiveSessionInfo) => {
@@ -280,10 +239,111 @@ export function AgentMonitor({
 
   const selectedSession = sessions.find((s) => s.session_key === selectedSessionKey);
 
+  const renderSessionHeader = (session: ActiveSessionInfo) => (
+    <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
+      <div className="flex items-center justify-between gap-2">
+        {session.execution_mode === "acp" && session.agent_id && (
+          <AgentIcon
+            agentId={session.agent_id}
+            src={agentIcons?.[session.agent_id]}
+            className="w-10 h-10 rounded-sm shrink-0"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {session.execution_mode === "acp" && session.acp_session_id ? (
+              <input
+                ref={renameInputRef}
+                className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
+                value={
+                  renamingKey === session.session_key
+                    ? renameValue
+                    : (session.session_name ??
+                      session.task_name ??
+                      session.branch_name ??
+                      "Interactive session")
+                }
+                title="Click to rename"
+                onFocus={() => {
+                  setRenamingKey(session.session_key);
+                  setRenameValue(
+                    session.session_name ?? session.task_name ?? session.branch_name ?? "",
+                  );
+                  requestAnimationFrame(() => renameInputRef.current?.select());
+                }}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") renameInputRef.current?.blur();
+                  if (e.key === "Escape") {
+                    renameCanceledRef.current = true;
+                    renameInputRef.current?.blur();
+                  }
+                }}
+                onBlur={() => commitRename(session)}
+              />
+            ) : (
+              <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]">
+                {session.session_name ??
+                  session.task_name ??
+                  session.branch_name ??
+                  "Interactive session"}
+              </h3>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {session.execution_mode === "acp" && (
+              <>
+                <span
+                  className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0",
+                    getStatusDot(session, selectedActivityInfo),
+                  )}
+                />
+                <span className="text-xs text-muted-foreground truncate">
+                  {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
+                </span>
+                {selectedActivityInfo && (
+                  <ElapsedTime
+                    status={selectedActivityInfo.status}
+                    stateChangedAt={selectedActivityInfo.stateChangedAt}
+                  />
+                )}
+              </>
+            )}
+            {session.branch_name && (
+              <span className="text-xs text-muted-foreground font-mono truncate">
+                {session.branch_name}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-px h-4 bg-border shrink-0" />
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              title="Close session"
+              onClick={() => onClose(session)}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-full">
       {/* Sidebar */}
-      <div className="w-72 flex flex-col border-r border-border bg-card shrink-0">
+      <div
+        className={cn(
+          "flex flex-col border-r border-border bg-card shrink-0 transition-[width] duration-200 overflow-hidden",
+          sidebarCollapsed ? "w-0" : "w-72",
+        )}
+      >
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredSessions.length === 0 && (
             <div className="text-xs text-muted-foreground py-8 text-center">No active sessions</div>
@@ -312,150 +372,6 @@ export function AgentMonitor({
 
       {/* Content pane */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {selectedSession && (
-          <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              {selectedSession.execution_mode === "acp" && selectedSession.agent_id && (
-                <AgentIcon
-                  agentId={selectedSession.agent_id}
-                  src={agentIcons?.[selectedSession.agent_id]}
-                  className="w-10 h-10 rounded-sm shrink-0"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  {selectedSession.execution_mode === "acp" && selectedSession.acp_session_id ? (
-                    <input
-                      ref={renameInputRef}
-                      className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
-                      value={
-                        renamingKey === selectedSession.session_key
-                          ? renameValue
-                          : (selectedSession.session_name ??
-                            selectedSession.task_name ??
-                            selectedSession.branch_name ??
-                            "Interactive session")
-                      }
-                      title="Click to rename"
-                      onFocus={() => {
-                        setRenamingKey(selectedSession.session_key);
-                        setRenameValue(
-                          selectedSession.session_name ??
-                            selectedSession.task_name ??
-                            selectedSession.branch_name ??
-                            "",
-                        );
-                        requestAnimationFrame(() => renameInputRef.current?.select());
-                      }}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") renameInputRef.current?.blur();
-                        if (e.key === "Escape") {
-                          renameCanceledRef.current = true;
-                          renameInputRef.current?.blur();
-                        }
-                      }}
-                      onBlur={() => commitRename(selectedSession)}
-                    />
-                  ) : (
-                    <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]">
-                      {selectedSession.session_name ??
-                        selectedSession.task_name ??
-                        selectedSession.branch_name ??
-                        "Interactive session"}
-                    </h3>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {selectedSession.execution_mode === "acp" && (
-                    <>
-                      <span
-                        className={cn(
-                          "inline-block w-2 h-2 rounded-full shrink-0",
-                          getStatusDot(selectedSession, selectedActivityInfo),
-                        )}
-                      />
-                      <span className="text-xs text-muted-foreground truncate">
-                        {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
-                      </span>
-                      {selectedActivityInfo && (
-                        <ElapsedTime
-                          status={selectedActivityInfo.status}
-                          stateChangedAt={selectedActivityInfo.stateChangedAt}
-                        />
-                      )}
-                    </>
-                  )}
-                  {selectedSession.branch_name && (
-                    <span className="text-xs text-muted-foreground font-mono truncate">
-                      {selectedSession.branch_name}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {selectedSession.execution_mode === "acp" && (
-                  <>
-                    <ShortcutHint shortcutId="agents-working">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs"
-                        disabled={
-                          (sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) === 0
-                        }
-                        onClick={() => setOpenPanel({ panel: "working-files" })}
-                      >
-                        <FileText className="w-3.5 h-3.5 mr-1" />
-                        Working Files
-                        {(sessionWorkingFiles.get(selectedSession.session_key)?.length ?? 0) >
-                          0 && (
-                          <span className="ml-1.5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground leading-4">
-                            {sessionWorkingFiles.get(selectedSession.session_key)!.length}
-                          </span>
-                        )}
-                      </Button>
-                    </ShortcutHint>
-                    <ShortcutHint shortcutId="agents-review">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => setOpenPanel({ panel: "review-changes" })}
-                      >
-                        <FileDiff className="w-3.5 h-3.5 mr-1" />
-                        Review Changes
-                      </Button>
-                    </ShortcutHint>
-                  </>
-                )}
-                {selectedSession.execution_mode === "acp" && onOpenTerminal && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => onOpenTerminal(selectedSession)}
-                  >
-                    <Terminal className="w-3.5 h-3.5 mr-1" />
-                    Terminal
-                  </Button>
-                )}
-                <div className="w-px h-4 bg-border shrink-0" />
-                {onClose && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                    title="Close session"
-                    onClick={() => onClose(selectedSession)}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
         {/* ACP panels always mounted so state survives navigation */}
         {sessions
           .filter((s) => s.execution_mode === "acp")
@@ -470,35 +386,18 @@ export function AgentMonitor({
               <AgentActivityPanel
                 sessionKey={s.session_key}
                 agentId={s.agent_id ?? null}
+                connection={connection}
                 isSelected={s.session_key === selectedSessionKey}
                 isNewSession={s.session_key === newSessionKey}
-                onWorkingFilesChange={handleWorkingFilesChange}
-                onSessionChangedFilesChange={handleSessionChangedFilesChange}
-                onOpenPanel={
-                  s.session_key === selectedSessionKey
-                    ? (panel, initialFile) => setOpenPanel({ panel, initialFile })
+                headerSlot={s.session_key === selectedSessionKey ? renderSessionHeader(s) : null}
+                onSpawnShell={
+                  onSpawnShell
+                    ? () => onSpawnShell(s.branch_name ?? null, s.task_id ?? null, true)
                     : undefined
                 }
               />
             </div>
           ))}
-
-        {selectedSessionKey != null && openPanel && openPanel?.panel === "working-files" && (
-          <WorkingFilesPanel
-            sessionKey={selectedSessionKey}
-            files={sessionWorkingFiles.get(selectedSessionKey) ?? []}
-            initialFile={openPanel.initialFile}
-            onClose={() => setOpenPanel(null)}
-          />
-        )}
-        {selectedSessionKey != null && openPanel && openPanel?.panel === "review-changes" && (
-          <ReviewChangesPanel
-            sessionKey={selectedSessionKey}
-            sessionChangedFiles={sessionChangedFiles.get(selectedSessionKey) ?? []}
-            initialFile={openPanel.initialFile}
-            onClose={() => setOpenPanel(null)}
-          />
-        )}
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
           <TerminalComponent

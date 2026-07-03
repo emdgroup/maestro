@@ -32,6 +32,7 @@ const defaultProps = {
   selectedSessionKey: null,
   onSelect: vi.fn(),
   search: "",
+  connection: { type: "local" as const },
 };
 
 function renderMonitor(props: Parameters<typeof AgentMonitor>[0]) {

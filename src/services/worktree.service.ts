@@ -59,12 +59,13 @@ export function useWorktreeDiffQuery(
   projectId: number | null,
   worktreePath: string | null,
   diffTarget: DiffTarget,
+  options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
     queryKey: worktreeQueryKeys.diff(worktreePath ?? "", diffTarget),
     queryFn: () => api.getWorktreeDiff(projectId!, worktreePath!, diffTarget),
     enabled: projectId != null && worktreePath != null,
-    refetchInterval: 10000,
+    refetchInterval: options !== undefined ? options.refetchInterval : 10000,
     staleTime: 4000,
   });
 }

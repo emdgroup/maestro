@@ -431,8 +431,11 @@ export function useAcpActivity(
         dispatch({ type: "set_initialized" });
       }),
       listen<string>(`acp://session-error/${logId}`, (event) => {
-        toast.error(`Agent failed to start: ${event.payload}`);
+        if (!event.payload.includes("session/load failed")) {
+          toast.error(`Agent failed to start: ${event.payload}`);
+        }
         dispatch({ type: "session_ended" });
+        dispatch({ type: "set_initialized" });
       }),
     ])
       .then((listeners) => {

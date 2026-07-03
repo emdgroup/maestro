@@ -7,6 +7,7 @@ use crate::core::AppState;
 use crate::project::handlers::remove_projects_by_connection_id;
 use crate::connectivity::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
+use crate::git::remote::shell_quote;
 
 /// Store SSH session in AppState, update DB timestamps, and kick off a background
 /// remote-agent availability check so the result is ready before the user opens a dialog.
@@ -345,6 +346,48 @@ pub async fn list_remote_directories(
     Ok(directories)
 }
 
+/// List files and directories on a remote host. Dirs first, then files, each sorted alphabetically.
+/// Hidden entries (starting with `.`) are excluded.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_remote_contents(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
+    let session = app_state.ssh.get_session(connection_id)
+        .await
+        .ok_or("No active SSH session found. Please connect first.")?;
+
+    let cmd = format!(
+        "ls -1aF '{}' 2>/dev/null | grep -v '^\\.' | grep -v '^\\.\\.$'",
+        path
+    );
+    let output = session.execute_command(&cmd)
+        .await
+        .map_err(|e| format!("Failed to list directory: {}", e))?;
+
+    let mut dirs: Vec<String> = Vec::new();
+    let mut files: Vec<String> = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.ends_with('/') {
+            dirs.push(line.trim_end_matches('/').to_string());
+        } else {
+            files.push(line.trim_end_matches('*').to_string());
+        }
+    }
+    dirs.sort();
+    files.sort();
+    let mut result: Vec<crate::connectivity::filesystem_handlers::FileEntry> =
+        dirs.into_iter().map(|n| crate::connectivity::filesystem_handlers::FileEntry { name: n, is_dir: true }).collect();
+    result.extend(files.into_iter().map(|n| crate::connectivity::filesystem_handlers::FileEntry { name: n, is_dir: false }));
+    Ok(result)
+}
+
 /// Delete an SSH connection from the database
 #[tauri::command]
 #[specta::specta]
@@ -456,4 +499,41 @@ pub async fn get_ssh_connection_status(
         connected: reachable,
         disconnected_reason: if !reachable { Some("Host unreachable".into()) } else { None },
     })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_remote_workspace_files(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<Vec<String>, String> {
+    let session = app_state.ssh.get_session(connection_id)
+        .await
+        .ok_or("No active SSH session found. Please connect first.")?;
+    let cmd = format!(
+        "cd {} && find . -maxdepth 8 -type f -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/target/*' -not -path '*/dist/*' 2>/dev/null | sed 's|^\\./||' | sort",
+        shell_quote(&path)
+    );
+    let output = session.execute_command(&cmd).await.map_err(|e| format!("Failed to list files: {}", e))?;
+    let files = output.lines().filter(|l| !l.is_empty()).map(|l| l.trim_start_matches("./").to_string()).collect();
+    Ok(files)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn read_remote_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<String, String> {
+    let session = app_state.ssh.get_session(connection_id)
+        .await
+        .ok_or("No active SSH session found. Please connect first.")?;
+    let cmd = format!("head -c 524288 {}", shell_quote(&path));
+    let content = session.execute_command(&cmd).await.map_err(|e| format!("Failed to read file: {}", e))?;
+    if content.contains('\0') {
+        return Err("Binary file".to_string());
+    }
+    Ok(content)
 }

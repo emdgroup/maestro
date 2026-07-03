@@ -263,9 +263,11 @@ function InteractiveTbody({ children }: { children: ReactNode }) {
 export const HighlightedCode = memo(function HighlightedCode({
   code,
   lang,
+  stripContainerStyle = false,
 }: {
   code: string;
   lang: string;
+  stripContainerStyle?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
   const { theme, systemTheme } = useTheme();
@@ -281,7 +283,10 @@ export const HighlightedCode = memo(function HighlightedCode({
           lang: lang || "text",
           theme: isDark ? "github-dark" : "github-light",
         });
-        if (!cancelled) setHtml(result);
+        const stripped = stripContainerStyle
+          ? result.replace(/<pre([^>]*?) style="[^"]*"/, "<pre$1")
+          : result;
+        if (!cancelled) setHtml(stripped);
       } catch {
         // fallback to plain
       }
@@ -295,14 +300,13 @@ export const HighlightedCode = memo(function HighlightedCode({
     return (
       <div
         className="text-xs overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki-generated trusted HTML
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }
 
   return (
-    <pre className="bg-muted p-3 overflow-x-auto text-xs">
+    <pre className="bg-background p-3 overflow-x-auto text-xs">
       <code>{code}</code>
     </pre>
   );
@@ -550,9 +554,11 @@ export function useCopyToClipboard(text: string) {
 export const CodeBlockWrapper = memo(function CodeBlockWrapper({
   code,
   lang,
+  stripContainerStyle,
 }: {
   code: string;
   lang: string;
+  stripContainerStyle?: boolean;
 }) {
   const { copied, copy: handleCopy } = useCopyToClipboard(code);
 
@@ -571,7 +577,7 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
         </button>
       </div>
-      <HighlightedCode code={code} lang={lang} />
+      <HighlightedCode code={code} lang={lang} stripContainerStyle={stripContainerStyle} />
     </div>
   );
 });

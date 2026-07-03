@@ -457,7 +457,7 @@ export const commands = {
    */
   async spawnInteractiveExecution(
     projectId: number,
-    branchName: string,
+    branchName: string | null,
     repoPath: string,
     sessionName: string | null,
     worktreeId: number | null,
@@ -999,11 +999,86 @@ export const commands = {
     }
   },
   /**
+   * List files and directories on a remote host. Dirs first, then files, each sorted alphabetically.
+   * Hidden entries (starting with `.`) are excluded.
+   */
+  async listRemoteContents(
+    connectionId: number,
+    path: string,
+  ): Promise<Result<FileEntry[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_remote_contents", { connectionId, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * List subdirectories in a local filesystem path
    */
   async listLocalDirectories(path: string): Promise<Result<string[], string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("list_local_directories", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * List files and directories in a local path. Dirs come first, both groups sorted alphabetically.
+   * Hidden entries (starting with `.`) are excluded.
+   */
+  async listLocalContents(path: string): Promise<Result<FileEntry[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("list_local_contents", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Recursively list all non-hidden files under root, returning paths relative to root.
+   * Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
+   */
+  async listWorkspaceFiles(root: string): Promise<Result<string[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("list_workspace_files", { root }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Read a local file's text content. Rejects binary files and files over 512 KB.
+   */
+  async readLocalFile(path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("read_local_file", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async listRemoteWorkspaceFiles(
+    connectionId: number,
+    path: string,
+  ): Promise<Result<string[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_remote_workspace_files", { connectionId, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async readRemoteFile(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("read_remote_file", { connectionId, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -1673,6 +1748,17 @@ export const commands = {
     }
   },
   /**
+   * List files and directories inside a WSL distro path.
+   */
+  async listWslContents(distro: string, path: string): Promise<Result<FileEntry[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("list_wsl_contents", { distro, path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Get the home directory for the default user in a WSL distro.
    */
   async getWslHome(distro: string): Promise<Result<string, string>> {
@@ -2217,6 +2303,7 @@ export type EnterKeyBehavior = "send_prompt" | "new_line";
  */
 export type ExecutionMode = "acp" | "pty";
 export type ExternalFileRequest = { path: string; is_image: boolean };
+export type FileEntry = { name: string; is_dir: boolean };
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number };
 /**
  * A GitLab project option for combobox display.

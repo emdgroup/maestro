@@ -80,6 +80,12 @@ pub async fn respond_acp_permission(
     request_id: String,
     option_id: Option<String>,
 ) -> Result<(), String> {
+    {
+        let sessions = app_state.acp.sessions.lock().await;
+        if let Some(session) = sessions.get(&log_id) {
+            session.has_pending_permission.store(false, std::sync::atomic::Ordering::Release);
+        }
+    }
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id,

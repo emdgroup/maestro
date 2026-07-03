@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import { SshAuthMethod } from "@/types/bindings";
+import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 
 /**
  * Query key factory for SSH connection-related queries
@@ -204,6 +204,54 @@ export function useListDirectories(connectionId: number | null | undefined, path
     queryFn: connectionId
       ? () => api.listRemoteDirectories(connectionId, path)
       : () => api.listLocalDirectories(path),
+  });
+}
+
+export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
+  const isWsl = connection?.type === "wsl";
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), connection, path],
+    queryFn: () => {
+      if (!connection || connection.type === "local") {
+        return api.listLocalContents(path);
+      }
+      return api.listRemoteContents(connection.id, path);
+    },
+    // ponytail: WSL needs distro name, not connection ID — disabled in V1
+    enabled: !!path && !isWsl,
+  });
+}
+
+export function useListWorkspaceFiles(connection: ConnectionKey | null | undefined, path: string) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), "workspace", connection, path],
+    queryFn: () => {
+      if (!connection || connection.type === "local") {
+        return api.listWorkspaceFiles(path);
+      }
+      return api.listRemoteWorkspaceFiles(connection.id, path);
+    },
+    enabled: !!path && connection?.type !== "wsl",
+    staleTime: 30_000,
+  });
+}
+
+export function useReadFile(
+  connection: ConnectionKey | null | undefined,
+  path: string | null,
+  options?: { refetchInterval?: number },
+) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), "read", connection, path],
+    queryFn: () => {
+      if (!connection || connection.type === "local") {
+        return api.readLocalFile(path!);
+      }
+      return api.readRemoteFile(connection.id, path!);
+    },
+    enabled: !!path && connection?.type !== "wsl",
+    staleTime: 10_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
