@@ -65,6 +65,39 @@ pub fn save_wsl_connection(
     Ok(row)
 }
 
+fn get_wsl_distro(app_state: &State<Arc<AppState>>, connection_id: i32) -> Result<String, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+    conn.query_row(
+        "SELECT distro_name FROM wsl_connections WHERE id = ?",
+        [connection_id],
+        |row| row.get(0),
+    ).map_err(|_| format!("WSL connection {connection_id} not found"))
+}
+
+/// List all non-hidden workspace files in a WSL distro path.
+#[tauri::command]
+#[specta::specta]
+pub fn list_wsl_workspace_files(
+    app_state: State<Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<Vec<String>, String> {
+    let distro = get_wsl_distro(&app_state, connection_id)?;
+    crate::connectivity::wsl::list_workspace_files(&distro, &path)
+}
+
+/// Read a text file from a WSL distro. Rejects binary files and files over 512 KB.
+#[tauri::command]
+#[specta::specta]
+pub fn read_wsl_file(
+    app_state: State<Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<String, String> {
+    let distro = get_wsl_distro(&app_state, connection_id)?;
+    crate::connectivity::wsl::read_file(&distro, &path)
+}
+
 /// List all saved WSL connections from the database.
 #[tauri::command]
 #[specta::specta]

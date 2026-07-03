@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Files, ExternalLink } from "lucide-react";
+import { Files, ExternalLink, X } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/ui-utils";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
@@ -7,6 +8,11 @@ import { WorkingFileContentView } from "@/components/execution/activity/WorkingF
 import { api } from "@/lib/tauri-utils";
 import { openFileWithConnection } from "@/lib/file-opener";
 import type { ConnectionKey } from "@/types/bindings";
+
+type DlState =
+  | { status: "idle" }
+  | { status: "downloading"; progress: number }
+  | { status: "error" };
 
 interface ArtifactsPanelProps {
   files: string[];
@@ -27,6 +33,7 @@ export function ArtifactsPanel({
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [cwd, setCwd] = useState<string | null>(null);
+  const [dlState, setDlState] = useState<DlState>({ status: "idle" });
 
   useEffect(() => {
     api
@@ -51,6 +58,44 @@ export function ArtifactsPanel({
   }, [relativeFiles, selected]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
+
+  async function handleOpen() {
+    if (!selectedAbsPath || dlState.status === "downloading") return;
+    if (connection.type !== "ssh") {
+      try {
+        await openFileWithConnection(connection, selectedAbsPath, { wslDistroName });
+      } catch {
+        setDlState({ status: "error" });
+        setTimeout(() => setDlState({ status: "idle" }), 2000);
+      }
+      return;
+    }
+    const transferId = `open-${Date.now()}`;
+    setDlState({ status: "downloading", progress: 0 });
+    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
+      `sftp://transfer-progress/${transferId}`,
+      (e) => {
+        const pct =
+          e.payload.total_bytes > 0
+            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
+            : 0;
+        setDlState({ status: "downloading", progress: pct });
+      },
+    );
+    try {
+      await openFileWithConnection(connection, selectedAbsPath, {
+        sshConnectionId: connection.id,
+        transferId,
+        wslDistroName,
+      });
+      setDlState({ status: "idle" });
+    } catch {
+      setDlState({ status: "error" });
+      setTimeout(() => setDlState({ status: "idle" }), 2000);
+    } finally {
+      unlisten();
+    }
+  }
 
   return (
     <div className="relative flex flex-col h-full min-h-0">
@@ -95,14 +140,31 @@ export function ArtifactsPanel({
             <div className="w-px h-4 bg-border shrink-0 mx-1" />
             <button
               type="button"
-              onClick={() => {
-                if (selectedAbsPath)
-                  void openFileWithConnection(connection, selectedAbsPath, { wslDistroName });
-              }}
-              className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
-              title="Open in default application"
+              onClick={() => void handleOpen()}
+              disabled={dlState.status === "downloading"}
+              className={cn(
+                "p-1.5 rounded-md transition-colors shrink-0",
+                dlState.status === "error"
+                  ? "text-destructive"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+              title={
+                dlState.status === "error"
+                  ? "Failed to open"
+                  : connection.type === "ssh"
+                    ? "Download and open"
+                    : "Open in default application"
+              }
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              {dlState.status === "downloading" ? (
+                <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
+                  {dlState.progress}%
+                </span>
+              ) : dlState.status === "error" ? (
+                <X className="w-3.5 h-3.5" />
+              ) : (
+                <ExternalLink className="w-3.5 h-3.5" />
+              )}
             </button>
           </>
         )}

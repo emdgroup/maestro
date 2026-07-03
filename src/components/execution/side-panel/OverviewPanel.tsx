@@ -6,9 +6,11 @@ import {
   ScrollText,
   Paperclip,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { openFileWithConnection } from "@/lib/file-opener";
+import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
@@ -84,7 +86,23 @@ export function OverviewPanel({
   connection,
   wslDistroName,
 }: OverviewPanelProps) {
+  const [errorPaths, setErrorPaths] = useState<Set<string>>(new Set());
   const { data: attachments } = useTaskAttachmentsQuery(taskId);
+
+  function handleRowOpen(path: string) {
+    void openFileWithConnection(connection, path, { wslDistroName }).catch(() => {
+      setErrorPaths((prev) => new Set([...prev, path]));
+      setTimeout(
+        () =>
+          setErrorPaths((prev) => {
+            const s = new Set(prev);
+            s.delete(path);
+            return s;
+          }),
+        2000,
+      );
+    });
+  }
 
   const doneAgents = subagentItems.filter((s) => s.status === "completed").length;
   const agentPct =
@@ -269,12 +287,25 @@ export function OverviewPanel({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              void openFileWithConnection(connection, path, { wslDistroName });
+                              handleRowOpen(path);
                             }}
-                            title="Open in default application"
-                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground/50 hover:text-foreground transition-opacity shrink-0"
+                            title={
+                              errorPaths.has(path)
+                                ? "Failed to open"
+                                : "Open in default application"
+                            }
+                            className={cn(
+                              "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                              errorPaths.has(path)
+                                ? "text-destructive opacity-100"
+                                : "text-muted-foreground/50 hover:text-foreground",
+                            )}
                           >
-                            <ExternalLink className="w-2.5 h-2.5" />
+                            {errorPaths.has(path) ? (
+                              <X className="w-2.5 h-2.5" />
+                            ) : (
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            )}
                           </button>
                         </div>
                       );
@@ -354,7 +385,7 @@ export function OverviewPanel({
           sub={
             subagentItems.length === 0
               ? "None"
-              : `${doneAgents} done · ${subagentItems.filter((s) => s.status === "in_progress").length} running · ${subagentItems.filter((s) => s.status === "pending").length} waiting`
+              : `${doneAgents} done · ${subagentItems.filter((s) => s.status === "in_progress" || s.status === "pending").length} running`
           }
           badge={subagentItems.length > 0 ? `${doneAgents} / ${subagentItems.length}` : undefined}
           badgeClass="bg-accent/15 text-accent"

@@ -86,7 +86,7 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
             let relative = entry
                 .path()
                 .strip_prefix(root)
-                .map(|p| p.to_string_lossy().into_owned())
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
             if !relative.is_empty() {
                 output.push(relative);
@@ -278,5 +278,12 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
         // Unknown platform
         Ok(vec![53, 132, 228])
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn open_path_native(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 

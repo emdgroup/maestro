@@ -55,7 +55,7 @@
     {
       "id": "auggie",
       "name": "Auggie CLI",
-      "version": "0.31.0",
+      "version": "0.32.0",
       "description": "Augment Code's powerful software agent, backed by industry-leading context engine",
       "repository": "https://github.com/augmentcode/auggie",
       "website": "https://www.augmentcode.com/",
@@ -64,7 +64,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/auggie.svg",
       "distribution": {
         "npx": {
-          "package": "@augmentcode/auggie@0.31.0",
+          "package": "@augmentcode/auggie@0.32.0",
           "args": ["--acp"],
           "env": {
             "AUGMENT_DISABLE_AUTO_UPDATE": "1"
@@ -106,7 +106,7 @@
     {
       "id": "cline",
       "name": "Cline",
-      "version": "3.0.34",
+      "version": "3.0.36",
       "description": "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
       "repository": "https://github.com/cline/cline",
       "website": "https://cline.bot/cli",
@@ -115,7 +115,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/cline.svg",
       "distribution": {
         "npx": {
-          "package": "cline@3.0.34",
+          "package": "cline@3.0.36",
           "args": ["--acp"]
         }
       }
@@ -408,14 +408,14 @@
     {
       "id": "factory-droid",
       "name": "Factory Droid",
-      "version": "0.162.2",
+      "version": "0.164.0",
       "description": "Factory Droid - AI coding agent powered by Factory AI",
       "website": "https://factory.ai/product/cli",
       "authors": ["Factory AI"],
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "droid@0.162.2",
+          "package": "droid@0.164.0",
           "args": ["exec", "--output-format", "acp-daemon"],
           "env": {
             "DROID_DISABLE_AUTO_UPDATE": "true",
@@ -494,7 +494,7 @@
     {
       "id": "goose",
       "name": "goose",
-      "version": "1.40.0",
+      "version": "1.41.0",
       "description": "A local, extensible, open source AI agent that automates engineering tasks",
       "repository": "https://github.com/block/goose",
       "website": "https://block.github.io/goose/",
@@ -503,27 +503,27 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/block/goose/releases/download/v1.40.0/goose-aarch64-apple-darwin.tar.bz2",
+            "archive": "https://github.com/block/goose/releases/download/v1.41.0/goose-aarch64-apple-darwin.tar.bz2",
             "cmd": "./goose",
             "args": ["acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/block/goose/releases/download/v1.40.0/goose-x86_64-apple-darwin.tar.bz2",
+            "archive": "https://github.com/block/goose/releases/download/v1.41.0/goose-x86_64-apple-darwin.tar.bz2",
             "cmd": "./goose",
             "args": ["acp"]
           },
           "linux-aarch64": {
-            "archive": "https://github.com/block/goose/releases/download/v1.40.0/goose-aarch64-unknown-linux-gnu.tar.bz2",
+            "archive": "https://github.com/block/goose/releases/download/v1.41.0/goose-aarch64-unknown-linux-gnu.tar.bz2",
             "cmd": "./goose",
             "args": ["acp"]
           },
           "linux-x86_64": {
-            "archive": "https://github.com/block/goose/releases/download/v1.40.0/goose-x86_64-unknown-linux-gnu.tar.bz2",
+            "archive": "https://github.com/block/goose/releases/download/v1.41.0/goose-x86_64-unknown-linux-gnu.tar.bz2",
             "cmd": "./goose",
             "args": ["acp"]
           },
           "windows-x86_64": {
-            "archive": "https://github.com/block/goose/releases/download/v1.40.0/goose-x86_64-pc-windows-msvc.zip",
+            "archive": "https://github.com/block/goose/releases/download/v1.41.0/goose-x86_64-pc-windows-msvc.zip",
             "cmd": "./goose-package\\goose.exe",
             "args": ["acp"]
           }
@@ -534,14 +534,14 @@
     {
       "id": "grok-build",
       "name": "Grok Build",
-      "version": "0.2.83",
+      "version": "0.2.85",
       "description": "xAI's coding agent and CLI",
       "website": "https://x.ai/cli",
       "authors": ["xAI"],
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "@xai-official/grok@0.2.83",
+          "package": "@xai-official/grok@0.2.85",
           "args": ["agent", "stdio"]
         }
       },
@@ -590,7 +590,7 @@
     {
       "id": "kilo",
       "name": "Kilo",
-      "version": "7.3.54",
+      "version": "7.4.1",
       "description": "The open source coding agent",
       "repository": "https://github.com/Kilo-Org/kilocode",
       "website": "https://kilo.ai/",
@@ -600,33 +600,33 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.3.54/kilo-darwin-arm64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1/kilo-darwin-arm64.zip",
             "cmd": "./kilo",
             "args": ["acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.3.54/kilo-darwin-x64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1/kilo-darwin-x64.zip",
             "cmd": "./kilo",
             "args": ["acp"]
           },
           "linux-aarch64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.3.54/kilo-linux-arm64.tar.gz",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1/kilo-linux-arm64.tar.gz",
             "cmd": "./kilo",
             "args": ["acp"]
           },
           "linux-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.3.54/kilo-linux-x64.tar.gz",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1/kilo-linux-x64.tar.gz",
             "cmd": "./kilo",
             "args": ["acp"]
           },
           "windows-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.3.54/kilo-windows-x64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1/kilo-windows-x64.zip",
             "cmd": "./kilo.exe",
             "args": ["acp"]
           }
         },
         "npx": {
-          "package": "@kilocode/cli@7.3.54",
+          "package": "@kilocode/cli@7.4.1",
           "args": ["acp"]
         }
       }
@@ -690,7 +690,7 @@
     {
       "id": "mistral-vibe",
       "name": "Mistral Vibe",
-      "version": "2.18.4",
+      "version": "2.19.0",
       "description": "Mistral's open-source coding assistant",
       "repository": "https://github.com/mistralai/mistral-vibe",
       "website": "https://mistral.ai/products/vibe",
@@ -700,23 +700,23 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.18.4/vibe-acp-darwin-aarch64-2.18.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.19.0/vibe-acp-darwin-aarch64-2.19.0.zip",
             "cmd": "./vibe-acp"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.18.4/vibe-acp-darwin-x86_64-2.18.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.19.0/vibe-acp-darwin-x86_64-2.19.0.zip",
             "cmd": "./vibe-acp"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.18.4/vibe-acp-linux-aarch64-2.18.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.19.0/vibe-acp-linux-aarch64-2.19.0.zip",
             "cmd": "./vibe-acp"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.18.4/vibe-acp-linux-x86_64-2.18.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.19.0/vibe-acp-linux-x86_64-2.19.0.zip",
             "cmd": "./vibe-acp"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.18.4/vibe-acp-windows-x86_64-2.18.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v2.19.0/vibe-acp-windows-x86_64-2.19.0.zip",
             "cmd": "./vibe-acp.exe"
           }
         }
@@ -863,7 +863,7 @@
     {
       "id": "qwen-code",
       "name": "Qwen Code",
-      "version": "0.19.5",
+      "version": "0.19.6",
       "description": "Alibaba's Qwen coding assistant",
       "repository": "https://github.com/QwenLM/qwen-code",
       "website": "https://qwenlm.github.io/qwen-code-docs/en/users/overview",
@@ -871,7 +871,7 @@
       "license": "Apache-2.0",
       "distribution": {
         "npx": {
-          "package": "@qwen-code/qwen-code@0.19.5",
+          "package": "@qwen-code/qwen-code@0.19.6",
           "args": ["--acp", "--experimental-skills"]
         }
       },

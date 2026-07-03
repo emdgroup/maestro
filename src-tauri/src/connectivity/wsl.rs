@@ -172,6 +172,63 @@ pub fn get_home_dir(distro: &str) -> Result<String, String> {
     }
 }
 
+/// Recursively list all non-hidden files under `path` inside a WSL distro.
+/// Returns paths relative to `path`, normalized to `/`. Caps at depth 8 and 2000 files.
+pub fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        use crate::command_ext::NoConsoleWindow;
+        use crate::git::remote::shell_quote;
+        let cmd = format!(
+            "cd {} && find . -maxdepth 8 -type f -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/target/*' -not -path '*/dist/*' 2>/dev/null | sed 's|^\\./||' | sort | head -2000",
+            shell_quote(path)
+        );
+        let output = std::process::Command::new("wsl.exe")
+            .args(["-d", distro, "--", "sh", "-c", &cmd])
+            .no_console_window()
+            .output()
+            .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
+        let text = decode_wsl_output(&output.stdout)?;
+        Ok(text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
+
+/// Read a file's text content from a WSL distro. Rejects binary files and files over 512 KB.
+pub fn read_file(distro: &str, path: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        use crate::command_ext::NoConsoleWindow;
+        use crate::git::remote::shell_quote;
+        let cmd = format!("head -c 524288 {}", shell_quote(path));
+        let output = std::process::Command::new("wsl.exe")
+            .args(["-d", distro, "--", "sh", "-c", &cmd])
+            .no_console_window()
+            .output()
+            .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to read file: {stderr}"));
+        }
+        if output.stdout.contains(&0u8) {
+            return Err("Binary file".to_string());
+        }
+        if output.stdout.len() >= 524_288 {
+            return Err("File too large".to_string());
+        }
+        decode_wsl_output(&output.stdout)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
+
 /// Decode wsl.exe output, handling both UTF-16LE (with/without BOM) and UTF-8.
 #[cfg(windows)]
 pub fn decode_wsl_output_pub(bytes: &[u8]) -> Result<String, String> {

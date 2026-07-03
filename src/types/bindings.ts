@@ -1118,6 +1118,14 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async openPathNative(path: string): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("open_path_native", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   /**
    * Delete an SSH connection from the database
    */
@@ -1792,6 +1800,34 @@ export const commands = {
   async listWslConnections(): Promise<Result<WslConnection[], string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("list_wsl_connections") };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * List all non-hidden workspace files in a WSL distro path.
+   */
+  async listWslWorkspaceFiles(
+    connectionId: number,
+    path: string,
+  ): Promise<Result<string[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_wsl_workspace_files", { connectionId, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Read a text file from a WSL distro. Rejects binary files and files over 512 KB.
+   */
+  async readWslFile(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("read_wsl_file", { connectionId, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };

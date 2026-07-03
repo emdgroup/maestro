@@ -89,6 +89,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_default_file_picker_path,
             crate::ipc::list_drives,
             crate::ipc::get_system_accent_color,
+            crate::ipc::open_path_native,
             crate::ipc::delete_ssh_connection,
             crate::ipc::forget_saved_password,
             crate::ipc::rename_ssh_connection,
@@ -136,6 +137,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_wsl_home,
             crate::ipc::save_wsl_connection,
             crate::ipc::list_wsl_connections,
+            crate::ipc::list_wsl_workspace_files,
+            crate::ipc::read_wsl_file,
             // Integration management (Phase 55)
             crate::ipc::list_integrations,
             crate::ipc::save_integration,

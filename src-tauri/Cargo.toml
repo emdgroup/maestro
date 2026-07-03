@@ -29,7 +29,7 @@ octocrab = { version = "0.53", default-features = false, features = [
 graphql_client = { version = "0.16", default-features = false }
 jc-adf = "0.2"
 htmd = "0.5.4"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40.1", features = ["bundled"] }

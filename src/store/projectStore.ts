@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { useShallow } from "zustand/react/shallow";
+import { useShallow } from "zustand/shallow";
 import type { Project } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useNavigationStore, type ViewType } from "@/store/navigationStore";

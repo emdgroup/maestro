@@ -12,6 +12,7 @@ import { openFileWithConnection } from "@/lib/file-opener";
 interface WorkspaceFilesPanelProps {
   projectPath: string;
   connection: ConnectionKey;
+  wslDistroName?: string;
   isActive?: boolean;
 }
 
@@ -23,6 +24,7 @@ type DlState =
 export function WorkspaceFilesPanel({
   projectPath,
   connection,
+  wslDistroName,
   isActive = true,
 }: WorkspaceFilesPanelProps) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function WorkspaceFilesPanel({
   const [listPinned, setListPinned] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [dlState, setDlState] = useState<DlState>({ status: "idle" });
+  const [pinnedInitialSize, setPinnedInitialSize] = useState(224);
   const treeRef = useRef<HTMLDivElement>(null);
 
   const { data: allFiles = [], isLoading } = useListWorkspaceFiles(connection, projectPath);
@@ -57,16 +60,6 @@ export function WorkspaceFilesPanel({
     return () => clearTimeout(id);
   }, [showList, selected]);
 
-  if (connection.type === "wsl") {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center">
-        <p className="text-xs text-muted-foreground">
-          File browser is not supported for WSL connections.
-        </p>
-      </div>
-    );
-  }
-
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
 
   function toggleList() {
@@ -86,7 +79,12 @@ export function WorkspaceFilesPanel({
     if (!fullPath || dlState.status === "downloading") return;
 
     if (connection.type !== "ssh") {
-      await openFileWithConnection(connection, fullPath);
+      try {
+        await openFileWithConnection(connection, fullPath, { wslDistroName });
+      } catch {
+        setDlState({ status: "error" });
+        setTimeout(() => setDlState({ status: "idle" }), 2000);
+      }
       return;
     }
 
@@ -120,6 +118,9 @@ export function WorkspaceFilesPanel({
     <button
       type="button"
       onClick={() => {
+        if (!listPinned && treeRef.current) {
+          setPinnedInitialSize(treeRef.current.offsetWidth);
+        }
         setListPinned((v) => !v);
         setListOpen(false);
       }}
@@ -197,9 +198,9 @@ export function WorkspaceFilesPanel({
       {listPinned ? (
         <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
           <ResizablePanel
-            defaultSize={30}
+            defaultSize={pinnedInitialSize}
             minSize="8rem"
-            maxSize={60}
+            maxSize="60%"
             className="flex flex-col min-h-0"
           >
             <div ref={treeRef} className="flex flex-col h-full min-h-0">

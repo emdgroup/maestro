@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
 };
+use rand::RngCore;
 use keyring::Entry;
 use sha2::{Digest, Sha256};
 
@@ -110,9 +111,11 @@ impl KeychainStore {
         let plaintext = serde_json::to_vec(creds)
             .map_err(|e| format!("Serialization failed: {}", e))?;
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
-        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-        let cipher = Aes256Gcm::new(key);
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let mut nonce_arr = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        let nonce = Nonce::from(nonce_arr);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_slice())
             .map_err(|e| format!("Encryption failed: {}", e))?;
@@ -140,10 +143,13 @@ impl KeychainStore {
         }
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let (nonce_bytes, ciphertext) = data.split_at(12);
-        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-        let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let plaintext = match cipher.decrypt(nonce, ciphertext) {
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let Ok(nonce_arr) = <[u8; 12]>::try_from(nonce_bytes) else {
+            return Ok(None);
+        };
+        let nonce = Nonce::from(nonce_arr);
+        let plaintext = match cipher.decrypt(&nonce, ciphertext) {
             Ok(p) => p,
             Err(_) => return Ok(None),
         };
@@ -279,9 +285,11 @@ impl KeychainStore {
         let plaintext = serde_json::to_vec(token)
             .map_err(|e| format!("Serialization failed: {}", e))?;
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
-        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-        let cipher = Aes256Gcm::new(key);
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let mut nonce_arr = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        let nonce = Nonce::from(nonce_arr);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_slice())
             .map_err(|e| format!("Encryption failed: {}", e))?;
@@ -309,10 +317,13 @@ impl KeychainStore {
         }
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let (nonce_bytes, ciphertext) = data.split_at(12);
-        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-        let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let plaintext = match cipher.decrypt(nonce, ciphertext) {
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let Ok(nonce_arr) = <[u8; 12]>::try_from(nonce_bytes) else {
+            return Ok(None);
+        };
+        let nonce = Nonce::from(nonce_arr);
+        let plaintext = match cipher.decrypt(&nonce, ciphertext) {
             Ok(p) => p,
             Err(_) => return Ok(None),
         };

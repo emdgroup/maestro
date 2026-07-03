@@ -61,6 +61,13 @@ export function SpawnSessionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Fill default if worktrees load after dialog was already opened
+  useEffect(() => {
+    if (open && selectedWorktree === null && worktrees.length > 0) {
+      setSelectedWorktree(worktrees[0]);
+    }
+  }, [open, worktrees, selectedWorktree]);
+
   function handleSpawn() {
     if (sessionType === "terminal") {
       if (!selectedWorktree) return;

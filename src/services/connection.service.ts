@@ -229,9 +229,12 @@ export function useListWorkspaceFiles(connection: ConnectionKey | null | undefin
       if (!connection || connection.type === "local") {
         return api.listWorkspaceFiles(path);
       }
+      if (connection.type === "wsl") {
+        return api.listWslWorkspaceFiles(connection.id, path);
+      }
       return api.listRemoteWorkspaceFiles(connection.id, path);
     },
-    enabled: !!path && connection?.type !== "wsl",
+    enabled: !!path,
     staleTime: 30_000,
   });
 }
@@ -247,9 +250,12 @@ export function useReadFile(
       if (!connection || connection.type === "local") {
         return api.readLocalFile(path!);
       }
+      if (connection.type === "wsl") {
+        return api.readWslFile(connection.id, path!);
+      }
       return api.readRemoteFile(connection.id, path!);
     },
-    enabled: !!path && connection?.type !== "wsl",
+    enabled: !!path,
     staleTime: 10_000,
     refetchInterval: options?.refetchInterval,
   });

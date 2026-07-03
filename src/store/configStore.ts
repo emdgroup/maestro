@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { useShallow } from "zustand/react/shallow";
+import { useShallow } from "zustand/shallow";
 import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 
 // These constants are used by TaskSettingsModal for per-task overrides.
@@ -93,5 +93,6 @@ export const useConfigActions = () =>
     })),
   );
 
+const EMPTY_TOOL_CHECKS: ToolCheckEntry[] = [];
 export const usePreflightToolChecks = (connection: ConnectionKey) =>
-  useConfigStore((s) => s.preflightToolChecks[connectionKeyStr(connection)] ?? []);
+  useConfigStore((s) => s.preflightToolChecks[connectionKeyStr(connection)] ?? EMPTY_TOOL_CHECKS);

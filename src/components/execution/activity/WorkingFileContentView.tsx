@@ -80,7 +80,7 @@ function FileContentInner({
     case "code":
       return (
         <div className="file-code-view">
-          <HighlightedCode code={content} lang={lang} stripContainerStyle/>
+          <HighlightedCode code={content} lang={lang} stripContainerStyle />
         </div>
       );
     case "image": {
@@ -237,7 +237,7 @@ export function WorkingFileContentView({
           <button
             type="button"
             onClick={() => setZoom(100)}
-            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
+            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-10 text-center shrink-0"
           >
             {zoom}%
           </button>

@@ -495,6 +495,7 @@ export function ExecutionSidePanel({
                       <WorkspaceFilesPanel
                         projectPath={projectPath}
                         connection={connection}
+                        wslDistroName={wslDistroName}
                         isActive={isActive}
                       />
                     )}

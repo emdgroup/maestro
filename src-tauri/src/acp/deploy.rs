@@ -101,19 +101,23 @@ pub async fn ensure_wsl_server(
     use tokio::io::AsyncWriteExt;
 
     use crate::command_ext::NoConsoleWindow;
-    let probe_out = tokio::process::Command::new("wsl.exe")
-        .args([
-            "-d", distro, "--",
-            "sh", "-c",
-            &format!(
-                "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
-                REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
-            ),
-        ])
-        .no_console_window()
-        .output()
-        .await
-        .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
+    let probe_out = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tokio::process::Command::new("wsl.exe")
+            .args([
+                "-d", distro, "--",
+                "sh", "-c",
+                &format!(
+                    "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
+                    REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
+                ),
+            ])
+            .no_console_window()
+            .output(),
+    )
+    .await
+    .map_err(|_| format!("WSL probe timed out for distro {}", distro))?
+    .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
 
     let text = crate::connectivity::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
     let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
@@ -150,7 +154,13 @@ pub async fn ensure_wsl_server(
         stdin.write_all(&binary_bytes).await.map_err(|e| format!("Binary pipe write failed: {}", e))?;
     }
 
-    let status = child.wait().await.map_err(|e| format!("WSL deploy process failed: {}", e))?;
+    let status = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        child.wait(),
+    )
+    .await
+    .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
+    .map_err(|e| format!("WSL deploy process failed: {}", e))?;
     if !status.success() {
         return Err(format!("WSL deploy exited with status: {}", status));
     }

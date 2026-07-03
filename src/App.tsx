@@ -7,7 +7,10 @@ import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import type { SettingsPageHandle } from "@/views/settings/settings-page/SettingsPage";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
-import { useCleanupZombieWorktreesMutation } from "@/services/worktree.service";
+import {
+  useCleanupZombieWorktreesMutation,
+  usePrefetchWorktrees,
+} from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
@@ -103,6 +106,7 @@ function App() {
 
   // Zombie worktree cleanup on project open (REQ-36)
   const { mutate: cleanupZombies } = useCleanupZombieWorktreesMutation();
+  const prefetchWorktrees = usePrefetchWorktrees();
 
   // D-19 cascade check: verify issue tracking integration is still connected after project opens
   const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
@@ -182,12 +186,13 @@ function App() {
 
   useEffect(() => {
     if (currentProject) {
+      prefetchWorktrees(currentProject.id, currentProject.path);
       cleanupZombies({
         projectId: currentProject.id,
         repoPath: currentProject.path,
       });
     }
-  }, [currentProject, cleanupZombies]);
+  }, [currentProject, cleanupZombies, prefetchWorktrees]);
 
   // Startup preferences — applied once per project open.
   const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);

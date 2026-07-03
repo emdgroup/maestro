@@ -104,7 +104,7 @@ function FileContentView({
         </pre>
       );
     case "code":
-      return <CodeBlockWrapper code={content} lang={lang} stripContainerStyle/>;
+      return <CodeBlockWrapper code={content} lang={lang} stripContainerStyle />;
     case "image": {
       const mime = imageMimeForExtension(path);
       return (
@@ -345,7 +345,7 @@ export function WorkingFilesPanel({
               <button
                 type="button"
                 onClick={() => setZoom(100)}
-                className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
+                className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-10 text-center shrink-0"
               >
                 {zoom}%
               </button>

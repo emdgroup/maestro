@@ -51,6 +51,8 @@ export function useActivityStatusManager(
       if (tc.status === "pending" || tc.status === "in_progress") {
         if (/think/.test(tc.kind)) {
           setActivity(sessionKey, "thinking");
+        } else if (/switch_mode/.test(tc.kind)) {
+          setActivity(sessionKey, "awaiting_input");
         } else {
           setActivity(sessionKey, "acting", toolKindCategory(tc.kind));
         }

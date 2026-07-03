@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -36,6 +36,19 @@ export function useWorktreesQuery(projectId: number | undefined, repoPath: strin
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),
     enabled: projectId != null && repoPath != null,
   });
+}
+
+export function usePrefetchWorktrees() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (projectId: number, repoPath: string) => {
+      void queryClient.prefetchQuery({
+        queryKey: worktreeQueryKeys.list(projectId),
+        queryFn: () => api.listWorktreesWithStatus(projectId, repoPath),
+      });
+    },
+    [queryClient],
+  );
 }
 
 export function useUntrackedFileContentQuery(
