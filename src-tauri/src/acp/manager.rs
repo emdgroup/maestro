@@ -1630,6 +1630,9 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
         MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(r)) => log_id_from_session_id(&r.session_id),
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => log_id_from_session_id(&r.session_id),
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => log_id_from_session_id(&r.session_id),
+        MaestroRpcMessage::Response(ServerResponse::Error(err)) if err.session_id.is_some() => {
+            err.session_id.as_deref().and_then(log_id_from_session_id)
+        }
         _ => None,
     }
 }
@@ -1740,6 +1743,7 @@ async fn handle_shared_server_message(
             }
 
             let is_permission_request = matches!(msg, MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_)));
+            let is_session_load_error = matches!(&msg, MaestroRpcMessage::Response(ServerResponse::Error(e)) if e.session_id.is_some());
             let native_id = handle_server_message(
                 msg, log_id, app_handle,
                 &current_model_id, &current_mode_id, &pfs, &pfr, &acp_sid, &replay, &initialized,
@@ -1763,6 +1767,14 @@ async fn handle_shared_server_message(
                         Arc::clone(app_state),
                         project_id_val,
                     ));
+                }
+            }
+            if is_session_load_error {
+                // Session load failed (agent no longer has this session). Remove from the in-memory
+                // map so getActiveSessions no longer lists it, then notify the frontend.
+                app_state.acp.sessions.lock().await.remove(&log_id);
+                if let Err(e) = app_handle.emit("sessions-changed", ()) {
+                    eprintln!("[acp] emit sessions-changed failed: {e}");
                 }
             }
         }

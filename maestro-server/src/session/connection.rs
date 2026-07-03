@@ -110,6 +110,7 @@ pub(crate) async fn create_session_on_connection(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("ACP new_session failed: {}", e),
+                    session_id: None,
                 })),
             )
             .await;
@@ -228,6 +229,7 @@ pub(crate) async fn load_session_on_connection(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("ACP session/load failed: {}", e),
+                    session_id: Some(maestro_session_id.clone()),
                 })),
             )
             .await;
@@ -307,6 +309,7 @@ pub(crate) async fn pre_initialize_agent(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: e,
+                        session_id: None,
                     })),
                 )
                 .await;
@@ -404,7 +407,7 @@ pub(crate) async fn pre_initialize_agent(
         Ok(Err(e)) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e })),
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e, session_id: None })),
             )
             .await;
             None
@@ -414,6 +417,7 @@ pub(crate) async fn pre_initialize_agent(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: "ACP pre-initialize connection task exited unexpectedly".to_string(),
+                    session_id: None,
                 })),
             )
             .await;

@@ -69,6 +69,7 @@ async fn resolve_agent_spawn_params(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("Unknown agent: {}", agent_id),
+                    session_id: None,
                 })),
             )
             .await;
@@ -129,6 +130,7 @@ async fn forward_to_session(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("session {} connection closed", session_id),
+                    session_id: None,
                 })),
             )
             .await?;
@@ -138,6 +140,7 @@ async fn forward_to_session(
             stdout,
             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                 message: format!("unknown session: {}", session_id),
+                session_id: None,
             })),
         )
         .await?;
@@ -235,6 +238,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             "protocol version mismatch: server={}, client={}",
                             PROTOCOL_VERSION, req.protocol_version
                         ),
+                        session_id: None,
                     })),
                 )
                 .await;
@@ -253,6 +257,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: "expected Handshake as first message".to_string(),
+                    session_id: None,
                 })),
             )
             .await;
@@ -334,6 +339,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: format!("read error: {}", e),
+                                session_id: None,
                             })),
                         )
                         .await);
@@ -492,6 +498,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                     "session {} connection closed",
                                     req.session_id
                                 ),
+                                session_id: None,
                             })),
                         )
                         .await);
@@ -501,6 +508,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         &stdout,
                         &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", req.session_id),
+                            session_id: None,
                         })),
                     )
                     .await);
@@ -628,7 +636,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         FileSearchResponse { files },
                     )),
                     Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(
-                        ErrorResponse { message: msg },
+                        ErrorResponse { message: msg, session_id: None },
                     )),
                 };
                 send_or_break!(send_response(&stdout, &response).await);
@@ -641,7 +649,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         FileReadResponse { content },
                     )),
                     Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(
-                        ErrorResponse { message: msg },
+                        ErrorResponse { message: msg, session_id: None },
                     )),
                 };
                 send_or_break!(send_response(&stdout, &response).await);
@@ -685,6 +693,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: e,
+                                session_id: None,
                             })),
                         )
                         .await);
@@ -787,6 +796,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             &stdout,
                             &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                 message: e,
+                                session_id: None,
                             })),
                         )
                         .await);
@@ -799,6 +809,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: "unexpected Handshake after initialization".to_string(),
+                        session_id: None,
                     })),
                 )
                 .await);

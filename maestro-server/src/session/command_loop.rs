@@ -242,6 +242,7 @@ pub(crate) async fn run_command_loop(
                     ),
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetModel failed: {}", e),
+                        session_id: None,
                     })),
                 };
                 let _ = send_response(&so, &msg).await;
@@ -282,12 +283,14 @@ pub(crate) async fn run_command_loop(
                             Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
                                 ErrorResponse {
                                     message: format!("SetMode failed: {}", e),
+                                    session_id: None,
                                 },
                             )),
                         }
                     }
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetMode failed: {}", e),
+                        session_id: None,
                     })),
                 };
                 let _ = send_response(&so, &msg).await;
@@ -312,6 +315,7 @@ pub(crate) async fn run_command_loop(
                     ),
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: format!("SetConfigOption failed: {}", e),
+                        session_id: None,
                     })),
                 };
                 let _ = send_response(&so, &msg).await;
