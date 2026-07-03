@@ -23,6 +23,8 @@ interface FileTreeProps {
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
   defaultExpanded?: boolean;
+  expandedFolders?: Set<string>;
+  onFolderToggle?: (path: string, expanded: boolean) => void;
 }
 
 /**
@@ -113,6 +115,8 @@ const DirectoryNode: React.FC<{
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
   defaultExpanded?: boolean;
+  expandedFolders?: Set<string>;
+  onFolderToggle?: (path: string, expanded: boolean) => void;
 }> = ({
   node,
   selectedFile,
@@ -123,8 +127,20 @@ const DirectoryNode: React.FC<{
   onToggleFolder,
   viewedFiles,
   defaultExpanded = true,
+  expandedFolders,
+  onFolderToggle,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const isControlled = expandedFolders !== undefined;
+  const [localExpanded, setLocalExpanded] = useState(defaultExpanded);
+  const isExpanded = isControlled ? expandedFolders.has(node.path) : localExpanded;
+
+  function handleToggle() {
+    if (isControlled) {
+      onFolderToggle?.(node.path, !isExpanded);
+    } else {
+      setLocalExpanded((v) => !v);
+    }
+  }
 
   const folderCheckState =
     checkedFiles && onToggleFolder ? getFolderCheckState(node, checkedFiles) : null;
@@ -133,7 +149,7 @@ const DirectoryNode: React.FC<{
     <div>
       <Button
         variant="ghost"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleToggle}
         className="flex items-center gap-1 w-full px-2 py-1 h-auto text-xs text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors justify-start"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
@@ -186,6 +202,8 @@ const DirectoryNode: React.FC<{
               onToggleFolder={onToggleFolder}
               viewedFiles={viewedFiles}
               defaultExpanded={defaultExpanded}
+              expandedFolders={expandedFolders}
+              onFolderToggle={onFolderToggle}
             />
           ))}
         </div>
@@ -204,6 +222,8 @@ const FileNode: React.FC<{
   onToggleFolder?: (fileNames: string[]) => void;
   viewedFiles?: Set<string>;
   defaultExpanded?: boolean;
+  expandedFolders?: Set<string>;
+  onFolderToggle?: (path: string, expanded: boolean) => void;
 }> = ({
   node,
   selectedFile,
@@ -214,6 +234,8 @@ const FileNode: React.FC<{
   onToggleFolder,
   viewedFiles,
   defaultExpanded,
+  expandedFolders,
+  onFolderToggle,
 }) => {
   if (node.isDir) {
     return (
@@ -227,6 +249,8 @@ const FileNode: React.FC<{
         onToggleFolder={onToggleFolder}
         viewedFiles={viewedFiles}
         defaultExpanded={defaultExpanded}
+        expandedFolders={expandedFolders}
+        onFolderToggle={onFolderToggle}
       />
     );
   }
@@ -284,6 +308,8 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onToggleFolder,
   viewedFiles,
   defaultExpanded,
+  expandedFolders,
+  onFolderToggle,
 }) => {
   const tree = useMemo(() => buildFileTree(files), [files]);
 
@@ -305,6 +331,8 @@ export const FileTree: React.FC<FileTreeProps> = ({
           onToggleFolder={onToggleFolder}
           viewedFiles={viewedFiles}
           defaultExpanded={defaultExpanded}
+          expandedFolders={expandedFolders}
+          onFolderToggle={onFolderToggle}
         />
       ))}
     </div>

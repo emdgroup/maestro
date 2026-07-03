@@ -302,19 +302,19 @@ export function AgentActivityPanel({
   const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
 
   useEffect(() => {
-    if (sidePanelCollapsed && !sidePanelRef.current?.isCollapsed()) {
+    if (sidePanelCollapsed) {
       sidePanelRef.current?.collapse();
-    } else if (!sidePanelCollapsed && sidePanelRef.current?.isCollapsed()) {
+      leftPanelRef.current?.expand();
+    } else {
       sidePanelRef.current?.expand();
     }
+    setScrollRestoreToken((v) => v + 1);
   }, [sidePanelCollapsed]);
 
   useEffect(() => {
     if (isSelected) {
       setMaximized(false);
-      if (leftPanelRef.current?.isCollapsed()) {
-        leftPanelRef.current?.expand();
-      }
+      leftPanelRef.current?.expand();
     }
   }, [isSelected]);
 
@@ -334,11 +334,7 @@ export function AgentActivityPanel({
   useLayoutEffect(() => {
     const el = scroll.chatScrollRef.current;
     if (el) el.scrollTop = scroll.scrollTopRef.current;
-  }, [sidePanelCollapsed]);
-
-  useEffect(() => {
-    setScrollRestoreToken((v) => v + 1);
-  }, [sidePanelCollapsed]);
+  }, [sidePanelCollapsed, scroll.chatScrollRef, scroll.scrollTopRef]);
 
   useEffect(() => {
     if (!isPlanPermWithBody || !pendingPermission) return;
@@ -476,7 +472,6 @@ export function AgentActivityPanel({
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
         <ResizablePanel
           panelRef={leftPanelRef}
-          defaultSize={65}
           minSize="42rem"
           collapsible
           collapsedSize={0}
@@ -488,8 +483,8 @@ export function AgentActivityPanel({
         {!maximized && <ResizableHandle withHandle />}
         <ResizablePanel
           panelRef={sidePanelRef}
-          defaultSize={35}
-          minSize={15}
+          defaultSize={"60%"}
+          minSize={"22rem"}
           collapsible
           collapsedSize="2.75rem"
           onResize={(panelSize) => setSidePanelCollapsed(panelSize.inPixels <= 60)}

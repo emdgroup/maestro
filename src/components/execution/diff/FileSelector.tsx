@@ -17,6 +17,8 @@ interface FileSelectorProps {
   treeDefaultExpanded?: boolean;
   headerRight?: React.ReactNode;
   className?: string;
+  expandedFolders?: Set<string>;
+  onExpandedFoldersChange?: (folders: Set<string>) => void;
 }
 
 export function FileSelector({
@@ -28,6 +30,8 @@ export function FileSelector({
   treeDefaultExpanded,
   headerRight,
   className,
+  expandedFolders,
+  onExpandedFoldersChange,
 }: FileSelectorProps) {
   const [search, setSearch] = useState("");
   const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
@@ -96,6 +100,16 @@ export function FileSelector({
             onSelectFile={onSelectFile}
             viewedFiles={viewedFiles}
             defaultExpanded={treeDefaultExpanded}
+            expandedFolders={expandedFolders}
+            onFolderToggle={
+              onExpandedFoldersChange
+                ? (path, expanded) => {
+                    const next = new Set(expandedFolders ?? []);
+                    expanded ? next.add(path) : next.delete(path);
+                    onExpandedFoldersChange(next);
+                  }
+                : undefined
+            }
           />
         ) : (
           filteredFiles.map((file) => {

@@ -1,6 +1,16 @@
-import { ChevronRight, Bot, SquarePlay, FileDiff, ScrollText, Paperclip } from "lucide-react";
+import {
+  ChevronRight,
+  Bot,
+  SquarePlay,
+  FileDiff,
+  ScrollText,
+  Paperclip,
+  ExternalLink,
+} from "lucide-react";
 import { cn } from "@/lib/ui-utils";
+import { openFileWithConnection } from "@/lib/file-opener";
 import type { TabKind } from "./useSidePanelTabs";
+import type { ConnectionKey } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import { useTaskAttachmentsQuery } from "@/services/task.service";
@@ -14,6 +24,8 @@ interface OverviewPanelProps {
   taskId: number | null;
   onNavigate: (kind: TabKind) => void;
   diffStats?: { insertions: number; deletions: number } | null;
+  connection: ConnectionKey;
+  wslDistroName?: string;
 }
 
 function ProgressBar({ pct, className }: { pct: number; className: string }) {
@@ -69,6 +81,8 @@ export function OverviewPanel({
   taskId,
   onNavigate,
   diffStats,
+  connection,
+  wslDistroName,
 }: OverviewPanelProps) {
   const { data: attachments } = useTaskAttachmentsQuery(taskId);
 
@@ -236,7 +250,7 @@ export function OverviewPanel({
                       const parts = path.split("/");
                       const name = parts[parts.length - 1] ?? path;
                       return (
-                        <div key={path} className="flex items-baseline gap-2 min-w-0">
+                        <div key={path} className="flex items-center gap-2 min-w-0 group">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -251,6 +265,17 @@ export function OverviewPanel({
                           <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
                             {timeAgo(now - addedAt)}
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openFileWithConnection(connection, path, { wslDistroName });
+                            }}
+                            title="Open in default application"
+                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground/50 hover:text-foreground transition-opacity shrink-0"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </button>
                         </div>
                       );
                     })}

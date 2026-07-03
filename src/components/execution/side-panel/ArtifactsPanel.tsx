@@ -1,18 +1,28 @@
 import { useState, useEffect, useMemo } from "react";
-import { Files } from "lucide-react";
+import { Files, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
 import { api } from "@/lib/tauri-utils";
+import { openFileWithConnection } from "@/lib/file-opener";
+import type { ConnectionKey } from "@/types/bindings";
 
 interface ArtifactsPanelProps {
   files: string[];
   sessionKey: number;
+  connection: ConnectionKey;
+  wslDistroName?: string;
   isActive?: boolean;
 }
 
-export function ArtifactsPanel({ files, sessionKey, isActive = true }: ArtifactsPanelProps) {
+export function ArtifactsPanel({
+  files,
+  sessionKey,
+  connection,
+  wslDistroName,
+  isActive = true,
+}: ArtifactsPanelProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
@@ -29,6 +39,12 @@ export function ArtifactsPanel({ files, sessionKey, isActive = true }: Artifacts
     () => files.map((f) => (cwd && f.startsWith(cwd + "/") ? f.slice(cwd.length + 1) : f)),
     [files, cwd],
   );
+
+  const selectedAbsPath = useMemo(() => {
+    if (!selected) return null;
+    const idx = relativeFiles.indexOf(selected);
+    return idx >= 0 ? (files[idx] ?? null) : null;
+  }, [selected, relativeFiles, files]);
 
   useEffect(() => {
     if (selected === null && relativeFiles.length > 0) setSelected(relativeFiles[0]);
@@ -75,6 +91,18 @@ export function ArtifactsPanel({ files, sessionKey, isActive = true }: Artifacts
               className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
             >
               {zoom}%
+            </button>
+            <div className="w-px h-4 bg-border shrink-0 mx-1" />
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedAbsPath)
+                  void openFileWithConnection(connection, selectedAbsPath, { wslDistroName });
+              }}
+              className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              title="Open in default application"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
             </button>
           </>
         )}

@@ -31,6 +31,7 @@ import type { WorkingFileEntry } from "@/components/execution/agent-activity-pan
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey, DiffTarget } from "@/types/bindings";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import { useWslConnections } from "@/services/connection.service";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { api } from "@/lib/tauri-utils";
 
@@ -151,6 +152,12 @@ export function ExecutionSidePanel({
     }
     return { insertions: ins, deletions: del };
   }, [diffResult]);
+
+  const { data: wslConnections } = useWslConnections();
+  const wslDistroName =
+    connection.type === "wsl"
+      ? (wslConnections?.find((c) => c.id === connection.id)?.distro_name ?? undefined)
+      : undefined;
 
   // PTY state per terminal tab
   const [ptyState, setPtyState] = useState<Map<string, { key: number | null; failed: boolean }>>(
@@ -313,7 +320,7 @@ export function ExecutionSidePanel({
                   <ChevronRight className="w-4 h-4" />
                 </button>
               )}
-              <div className="flex items-center bg-muted rounded-lg p-[3px] gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
+              <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
                 {tabs.map(({ id, kind, label, closeable }) => {
                   const Icon = KIND_ICON[kind];
                   const isActive = activeTabId === id;
@@ -405,6 +412,8 @@ export function ExecutionSidePanel({
                         taskId={taskId}
                         onNavigate={onOpenTabKind}
                         diffStats={diffStats}
+                        connection={connection}
+                        wslDistroName={wslDistroName}
                       />
                     )}
                     {kind === "plan" && (
@@ -478,6 +487,8 @@ export function ExecutionSidePanel({
                         files={workingFiles.map((f) => f.path)}
                         sessionKey={sessionKey}
                         isActive={isActive}
+                        connection={connection}
+                        wslDistroName={wslDistroName}
                       />
                     )}
                     {kind === "files" && (

@@ -163,9 +163,17 @@ interface StackOptionButtonProps {
   requestId: string;
   onRespond: (requestId: string, optionId: string | null) => void;
   isFirst?: boolean;
+  className?: string;
 }
 
-function StackOptionButton({ opt, idx, requestId, onRespond, isFirst }: StackOptionButtonProps) {
+function StackOptionButton({
+  opt,
+  idx,
+  requestId,
+  onRespond,
+  isFirst,
+  className,
+}: StackOptionButtonProps) {
   const meta = getAcceptMeta(opt);
   const isBypass = isBypassOption(opt.optionId);
   return (
@@ -176,6 +184,7 @@ function StackOptionButton({ opt, idx, requestId, onRespond, isFirst }: StackOpt
         "transition-colors duration-100",
         !isFirst && "border-t border-border/20",
         isBypass ? "bg-warning/8 hover:bg-warning/16" : "hover:bg-muted/60",
+        className,
       )}
     >
       <span
@@ -359,12 +368,13 @@ function PlanPermissionOverlay({
               {/* Left: reject — flex-1, stretches to full bar height */}
               <button
                 onClick={() => onRespond(requestId, rejectOption?.optionId ?? null)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 py-2 px-3
+                className="flex-1 flex items-center justify-center gap-2 py-2 px-3
                            border-r border-border/30 bg-transparent
                            hover:bg-muted/60 transition-colors duration-100
                            text-muted-foreground/50 hover:text-muted-foreground"
               >
-                <span className="text-[10px] font-medium leading-tight text-center">
+                <ChevronLeft size={12} />
+                <span className="text-[11px] font-medium">
                   {rejectOption?.name ?? "Keep planning"}
                 </span>
                 <KbdHint label="Esc" />
@@ -379,6 +389,7 @@ function PlanPermissionOverlay({
                       requestId={requestId}
                       onRespond={onRespond}
                       isFirst={true}
+                      className="flex-1"
                     />
                   )}
                   {expanded &&
@@ -429,6 +440,7 @@ function PlanPermissionOverlay({
                       requestId={requestId}
                       onRespond={onRespond}
                       isFirst={true}
+                      className="flex-1"
                     />
                   )}
                   {expanded &&
@@ -470,6 +482,7 @@ function PlanPermissionOverlay({
                            bg-transparent hover:bg-muted/60 transition-colors duration-100
                            text-muted-foreground/50 hover:text-muted-foreground"
               >
+                <ChevronLeft size={12} />
                 <span className="text-[11px] font-medium">
                   {rejectOption?.name ?? "Keep planning"}
                 </span>
