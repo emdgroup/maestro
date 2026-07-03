@@ -231,7 +231,7 @@
   display: block;
 }
 .file-code-view code .line {
-  display: block;
+  line-height: 1.5;
 }
 .file-code-view code .line:last-child:empty {
   display: none;

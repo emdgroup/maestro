@@ -65,7 +65,7 @@ export function WorkspaceFileContent({
         <MarkdownBlock text={content} />
       ) : (
         <div className="file-code-view">
-          <HighlightedCode code={content} lang={lang} />
+          <HighlightedCode code={content} lang={lang} stripContainerStyle/>
         </div>
       )}
     </div>

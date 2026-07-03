@@ -80,7 +80,7 @@ function FileContentInner({
     case "code":
       return (
         <div className="file-code-view">
-          <HighlightedCode code={content} lang={lang} />
+          <HighlightedCode code={content} lang={lang} stripContainerStyle/>
         </div>
       );
     case "image": {

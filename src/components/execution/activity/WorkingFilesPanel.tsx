@@ -104,7 +104,7 @@ function FileContentView({
         </pre>
       );
     case "code":
-      return <CodeBlockWrapper code={content} lang={lang} />;
+      return <CodeBlockWrapper code={content} lang={lang} stripContainerStyle/>;
     case "image": {
       const mime = imageMimeForExtension(path);
       return (
