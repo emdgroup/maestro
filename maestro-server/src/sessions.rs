@@ -83,13 +83,36 @@ impl SessionRouter {
         Some((maestro_id, state))
     }
 
+    /// True if no sessions are registered in this router.
+    pub async fn is_empty(&self) -> bool {
+        self.state.read().await.is_empty()
+    }
 }
 
+#[derive(Clone)]
 pub struct AgentCapabilities {
     pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
+}
+
+/// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods
+/// without holding the agent_connections lock for the duration of the async operation.
+pub struct AgentConnectionHandle {
+    pub connection: acp::ConnectionTo<acp::Agent>,
+    pub router: Arc<SessionRouter>,
+    pub capabilities: AgentCapabilities,
+}
+
+impl From<&AgentConnection> for AgentConnectionHandle {
+    fn from(conn: &AgentConnection) -> Self {
+        Self {
+            connection: conn.connection.clone(),
+            router: Arc::clone(&conn.router),
+            capabilities: conn.capabilities.clone(),
+        }
+    }
 }
 
 /// A long-lived agent process shared across multiple sessions.
@@ -144,3 +167,4 @@ pub struct ActiveSession {
 
 pub type SessionMap = HashMap<String, ActiveSession>;
 pub type AgentConnectionMap = HashMap<String, AgentConnection>;
+pub type SharedAgentConnections = Arc<tokio::sync::Mutex<AgentConnectionMap>>;

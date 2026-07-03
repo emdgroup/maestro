@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/ui-utils";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
@@ -19,7 +19,7 @@ import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { History, Plus, SearchIcon, Settings2 } from "lucide-react";
+import { History, PanelLeftClose, PanelLeftOpen, Plus, SearchIcon, Settings2 } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import type { ActivityVisibility } from "@/types/bindings";
 
@@ -37,6 +37,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [lastSpawnedKey, setLastSpawnedKey] = useState<number | null>(null);
 
@@ -76,6 +77,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const { data: discovery } = useAgentDiscoveryQuery(connection);
+  const visibleSessions = sessions.filter((s) => s.session_name !== "__embedded__");
 
   useShortcuts("agents", {
     "agents-new": () => setShowSpawnDialog(true),
@@ -87,7 +89,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
     },
     "agents-close": () => {
-      const session = sessions.find((s) => s.session_key === selectedSessionKey);
+      const session = visibleSessions.find((s) => s.session_key === selectedSessionKey);
       if (session) handleCloseSession(session);
     },
   });
@@ -105,16 +107,37 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     [...sessions].reverse().find((s) => s.execution_mode === "acp")?.agent_id ?? null;
 
   useEffect(() => {
-    if (pendingAgentId && sessions.length > 0) {
-      const match = sessions.find((s) => String(s.task_id) === pendingAgentId);
+    if (pendingAgentId && visibleSessions.length > 0) {
+      const match = visibleSessions.find((s) => String(s.task_id) === pendingAgentId);
       if (match) {
         setSelectedSessionKey(match.session_key);
         clearPendingAgent();
       }
-    } else if (selectedSessionKey == null && sessions.length > 0) {
-      setSelectedSessionKey(sessions[0].session_key);
+    } else if (selectedSessionKey == null && visibleSessions.length > 0) {
+      setSelectedSessionKey(visibleSessions[0].session_key);
     }
-  }, [sessions, pendingAgentId, clearPendingAgent, selectedSessionKey]);
+  }, [visibleSessions, pendingAgentId, clearPendingAgent, selectedSessionKey]);
+
+  const spawnShell = useCallback(
+    async (
+      branchName: string | null,
+      taskId: number | null,
+      embedded = false,
+    ): Promise<number | null> => {
+      if (projectId == null || repoPath == null) return null;
+      let resolvedBranch = branchName;
+      if (resolvedBranch == null && taskId != null) {
+        resolvedBranch = worktrees.find((wt) => wt.task_id === taskId)?.branch_name ?? null;
+      }
+      return spawnMutation.mutateAsync({
+        projectId,
+        branchName: resolvedBranch,
+        repoPath,
+        sessionName: embedded ? "__embedded__" : null,
+      });
+    },
+    [projectId, repoPath, worktrees, spawnMutation],
+  );
 
   function handleCloseSession(session: ActiveSessionInfo) {
     cancelMutation.mutate(
@@ -132,21 +155,35 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       {/* Action bar */}
       <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <ShortcutHint shortcutId="focus-search">
-            <InputGroup>
-              <InputGroupInput
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search sessions..."
-                value={search}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                className="h-8 w-48 text-sm"
-              />
-              <InputGroupAddon align="inline-start">
-                <SearchIcon className="text-muted-foreground" />
-              </InputGroupAddon>
-            </InputGroup>
-          </ShortcutHint>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            title={sidebarCollapsed ? "Expand session list" : "Collapse session list"}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
+          </button>
+          {!sidebarCollapsed && (
+            <ShortcutHint shortcutId="focus-search">
+              <InputGroup>
+                <InputGroupInput
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search sessions..."
+                  value={search}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                  className="h-8 w-48 text-sm"
+                />
+                <InputGroupAddon align="inline-start">
+                  <SearchIcon className="text-muted-foreground" />
+                </InputGroupAddon>
+              </InputGroup>
+            </ShortcutHint>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {(discovery?.agents?.length ?? 0) > 0 && (
@@ -244,7 +281,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       {/* Agent monitor */}
       <div className="flex-1 min-h-0 relative">
         <AgentMonitor
-          sessions={sessions}
+          sessions={visibleSessions}
           selectedSessionKey={selectedSessionKey}
           onSelect={setSelectedSessionKey}
           newSessionKey={lastSpawnedKey}
@@ -253,21 +290,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           agentNames={agentNames}
           onClose={handleCloseSession}
           projectId={projectId}
-          onOpenTerminal={(session) => {
-            if (projectId == null || repoPath == null) return;
-            const worktree = worktrees.find((wt) => wt.branch_name === session.branch_name);
-            if (!worktree) return;
-            spawnMutation.mutate(
-              {
-                projectId,
-                branchName: worktree.branch_name,
-                repoPath,
-                sessionName: null,
-                worktreeId: worktree.id,
-              },
-              { onSuccess: (key) => setSelectedSessionKey(key) },
-            );
-          }}
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarCollapsedChange={setSidebarCollapsed}
+          onSpawnShell={spawnShell}
+          connection={connection}
         />
         {showHistory && visibleAgents.length > 0 && (
           <SessionHistoryPanel

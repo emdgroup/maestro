@@ -5,6 +5,7 @@ export type AcpScrollBehaviorResult = {
   chatContentRef: React.RefObject<HTMLDivElement | null>;
   lastUserMsgRef: React.RefObject<HTMLDivElement | null>;
   atBottomRef: React.RefObject<boolean>;
+  scrollTopRef: React.RefObject<number>;
   showScrollFab: boolean;
   hasUnread: boolean;
   isLastUserMsgPinned: boolean;
@@ -17,11 +18,13 @@ export type AcpScrollBehaviorResult = {
 export function useAcpScrollBehavior(
   isReady: boolean,
   lastUserMessageId: string | null,
+  remountVersion?: number,
 ): AcpScrollBehaviorResult {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const lastUserMsgRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  const scrollTopRef = useRef(0);
   const scrollingToMsgRef = useRef(false);
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
@@ -39,6 +42,7 @@ export function useAcpScrollBehavior(
   const handleChatScroll = useCallback(() => {
     const el = chatScrollRef.current;
     if (!el) return;
+    scrollTopRef.current = el.scrollTop;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     if (atBottom) {
       if (!scrollingToMsgRef.current) {
@@ -102,25 +106,26 @@ export function useAcpScrollBehavior(
   // ResizeObserver: auto-scroll when content grows if already at bottom
   useEffect(() => {
     if (!isReady) return;
-    const scrollEl = chatScrollRef.current;
     const contentEl = chatContentRef.current;
-    if (!scrollEl || !contentEl) return;
+    if (!contentEl) return;
     const ro = new ResizeObserver(() => {
       if (atBottomRef.current) {
-        scrollEl.scrollTop = scrollEl.scrollHeight;
+        const el = chatScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
       } else {
         setHasUnread(true);
       }
     });
     ro.observe(contentEl);
     return () => ro.disconnect();
-  }, [isReady]);
+  }, [isReady, remountVersion]);
 
   return {
     chatScrollRef,
     chatContentRef,
     lastUserMsgRef,
     atBottomRef,
+    scrollTopRef,
     showScrollFab,
     hasUnread,
     isLastUserMsgPinned,

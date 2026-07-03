@@ -24,7 +24,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::agent;
 use crate::send_response;
 use crate::sessions::{
-    ActiveSession, AgentCapabilities, AgentConnection, SessionCommand, SharedSessionState,
+    ActiveSession, AgentCapabilities, AgentConnection, AgentConnectionHandle, SessionCommand,
+    SharedSessionState,
 };
 use super::command_loop::{
     convert_acp_modes, extract_prompt_capabilities,
@@ -47,7 +48,7 @@ pub(crate) struct SpawnResult {
 
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
 pub(crate) async fn session_list_on_connection(
-    conn: &AgentConnection,
+    conn: &AgentConnectionHandle,
     cwd: &str,
     cursor: Option<String>,
 ) -> Result<(Vec<SessionListEntry>, Option<String>), String> {
@@ -75,7 +76,7 @@ pub(crate) async fn session_list_on_connection(
 
 /// Close a session using an already-initialized connection (fast path for `SessionClose`).
 pub(crate) async fn session_close_on_connection(
-    conn: &AgentConnection,
+    conn: &AgentConnectionHandle,
     session_id: String,
 ) -> Result<(), String> {
     let cx = conn.connection.clone();
@@ -86,12 +87,12 @@ pub(crate) async fn session_close_on_connection(
     Ok(())
 }
 
-/// Create a new session on an already-initialized `AgentConnection` (fast path).
+/// Create a new session on an already-initialized agent connection (fast path).
 ///
 /// Sends `session/new` on the existing connection instead of spawning a fresh agent process.
 /// Registers the session route in the agent's router so shared handlers dispatch correctly.
 pub(crate) async fn create_session_on_connection(
-    conn: &AgentConnection,
+    conn: &AgentConnectionHandle,
     maestro_session_id: String,
     cwd: &str,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
@@ -109,6 +110,7 @@ pub(crate) async fn create_session_on_connection(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("ACP new_session failed: {}", e),
+                    session_id: None,
                 })),
             )
             .await;
@@ -191,7 +193,7 @@ pub(crate) async fn create_session_on_connection(
 /// Ok(Some) = success; Ok(None) = ACP-level error (connection still alive, error already sent);
 /// Err(()) = transport failure (connection dead, error already sent).
 pub(crate) async fn load_session_on_connection(
-    conn: &AgentConnection,
+    conn: &AgentConnectionHandle,
     maestro_session_id: String,
     resume_session_id: String,
     cwd: &str,
@@ -227,6 +229,7 @@ pub(crate) async fn load_session_on_connection(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: format!("ACP session/load failed: {}", e),
+                    session_id: Some(maestro_session_id.clone()),
                 })),
             )
             .await;
@@ -306,6 +309,7 @@ pub(crate) async fn pre_initialize_agent(
                     &stdout,
                     &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                         message: e,
+                        session_id: None,
                     })),
                 )
                 .await;
@@ -403,7 +407,7 @@ pub(crate) async fn pre_initialize_agent(
         Ok(Err(e)) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e })),
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e, session_id: None })),
             )
             .await;
             None
@@ -413,6 +417,7 @@ pub(crate) async fn pre_initialize_agent(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                     message: "ACP pre-initialize connection task exited unexpectedly".to_string(),
+                    session_id: None,
                 })),
             )
             .await;

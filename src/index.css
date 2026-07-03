@@ -225,6 +225,29 @@
   }
 }
 
+/* File content viewer — line numbers via CSS counter on Shiki .line spans */
+.file-code-view code {
+  counter-reset: line;
+  display: block;
+}
+.file-code-view code .line {
+  line-height: 1.5;
+}
+.file-code-view code .line:last-child:empty {
+  display: none;
+}
+.file-code-view code .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  min-width: 2.5rem;
+  padding-right: 1rem;
+  text-align: right;
+  color: oklch(from var(--muted-foreground) l c h / 0.45);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Hunk checkbox injection — active when hunk selection enabled in DiffViewer */
 .hunk-selection-active .diff-line-hunk-action {
   display: flex !important;

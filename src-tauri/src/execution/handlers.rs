@@ -583,7 +583,7 @@ pub async fn close_pty_session(
 pub async fn spawn_interactive_execution(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    branch_name: String,
+    branch_name: Option<String>,
     repo_path: String,
     session_name: Option<String>,
     worktree_id: Option<i32>,
@@ -618,20 +618,20 @@ pub async fn spawn_interactive_execution(
             .map_err(|e| format!("Worktree id={} not found: {}", wt_id, e))?
         };
         format!("{}/{}", repo_path, relative_path)
-    } else {
+    } else if let Some(ref branch) = branch_name {
         // Use git worktree list rather than DB state: git is the source of truth, the DB may
         // be stale, and get_current_branch only returns the main-worktree HEAD (missing branches
         // in other worktrees).
         let git_worktrees = crate::git::list_worktrees(&git_conn).await?;
         let existing_checkout = git_worktrees.into_iter().find(|wt| {
-            wt.branch.as_deref() == Some(branch_name.as_str())
+            wt.branch.as_deref() == Some(branch.as_str())
         });
 
         if let Some(wt) = existing_checkout {
             wt.path
         } else {
             use crate::models::WORKTREE_DIR;
-            let relative_path = format!("{}/{}", WORKTREE_DIR, branch_name);
+            let relative_path = format!("{}/{}", WORKTREE_DIR, branch);
 
             // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
             if !is_remote {
@@ -641,7 +641,7 @@ pub async fn spawn_interactive_execution(
             }
 
             // Checkout existing branch via SSH-aware git connection (None = checkout, not create)
-            crate::git::create_worktree(&git_conn, &branch_name, &relative_path, None).await?;
+            crate::git::create_worktree(&git_conn, branch, &relative_path, None).await?;
 
             // Insert DB row with task_id = NULL
             let now = chrono::Utc::now().to_rfc3339();
@@ -649,7 +649,7 @@ pub async fn spawn_interactive_execution(
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
                 conn.execute(
                     "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, NULL, ?, ?, ?)",
-                    rusqlite::params![project_id, &branch_name, &relative_path, &now],
+                    rusqlite::params![project_id, branch, &relative_path, &now],
                 )
                 .map_err(|e| format!("Failed to insert worktree: {}", e))?;
             }
@@ -657,6 +657,9 @@ pub async fn spawn_interactive_execution(
             app_state.app_handle.emit("worktrees-changed", ()).ok();
             format!("{}/{}", repo_path, relative_path)
         }
+    } else {
+        // No branch specified → spawn in repo root
+        repo_path.clone()
     };
 
     // Step 2: Assign session key and optionally update task status.
@@ -756,7 +759,7 @@ pub async fn spawn_interactive_execution(
             started_at: now.clone(),
             task_id,
             task_name: None,
-            branch_name: Some(branch_name.clone()),
+            branch_name: branch_name.clone(),
             cwd: worktree_abs_path.clone(),
             project_id: Some(project_id),
         };

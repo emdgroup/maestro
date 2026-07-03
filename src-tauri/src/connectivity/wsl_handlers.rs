@@ -24,6 +24,16 @@ pub fn get_wsl_home(distro: String) -> Result<String, String> {
     crate::connectivity::wsl::get_home_dir(&distro)
 }
 
+/// List files and directories inside a WSL distro path.
+#[tauri::command]
+#[specta::specta]
+pub fn list_wsl_contents(
+    distro: String,
+    path: String,
+) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
+    crate::connectivity::wsl::list_contents(&distro, &path)
+}
+
 /// Upsert a WSL connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]

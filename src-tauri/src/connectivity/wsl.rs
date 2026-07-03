@@ -102,6 +102,51 @@ pub fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String>
     }
 }
 
+/// List files and directories inside a WSL distro path. Dirs first, then files, each sorted.
+/// Hidden entries (starting with `.`) are excluded.
+pub fn list_contents(distro: &str, path: &str) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
+    #[cfg(windows)]
+    {
+        use crate::command_ext::NoConsoleWindow;
+        let output = std::process::Command::new("wsl.exe")
+            .args(["-d", distro, "--", "ls", "-1aF", path])
+            .no_console_window()
+            .output()
+            .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("ls failed: {stderr}"));
+        }
+
+        let text = decode_wsl_output(&output.stdout)?;
+        let mut dirs: Vec<String> = Vec::new();
+        let mut files: Vec<String> = Vec::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('.') {
+                continue;
+            }
+            if line.ends_with('/') {
+                dirs.push(line.trim_end_matches('/').to_string());
+            } else {
+                files.push(line.trim_end_matches('*').to_string());
+            }
+        }
+        dirs.sort();
+        files.sort();
+        let mut result: Vec<crate::connectivity::filesystem_handlers::FileEntry> =
+            dirs.into_iter().map(|n| crate::connectivity::filesystem_handlers::FileEntry { name: n, is_dir: true }).collect();
+        result.extend(files.into_iter().map(|n| crate::connectivity::filesystem_handlers::FileEntry { name: n, is_dir: false }));
+        Ok(result)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
+
 /// Get the home directory for a WSL distro's default user.
 pub fn get_home_dir(distro: &str) -> Result<String, String> {
     #[cfg(windows)]
