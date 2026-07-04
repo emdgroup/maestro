@@ -14,27 +14,20 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: oven-sh/setup-bun@v2
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun run lint:fix
 
-      - run: pnpm lint:fix
+      - run: bun run format:fix
 
-      - run: pnpm format:fix
+      - run: bun run build
 
-      - run: pnpm build
-
-      - run: pnpm test --run
+      - run: bun run test --run
 
   rust:
     name: Rust

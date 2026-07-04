@@ -21,25 +21,25 @@ See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 ### Frontend Development
 
 ```bash
-pnpm dev              # Start Vite dev server (port 5173)
-pnpm build            # TypeScript check + Vite production build
-pnpm test             # Run Vitest unit tests
-pnpm test <pattern>   # Run single test file (e.g. pnpm test usePathNavigation)
-pnpm test:e2e         # Run Playwright E2E tests
-pnpm test:e2e:ui      # Run Playwright tests with interactive UI
-pnpm lint             # Run oxlint
-pnpm lint:fix         # Auto-fix lint issues
-pnpm format           # Check formatting with oxfmt
-pnpm format:fix       # Fix formatting with oxfmt
+bun run dev           # Start Vite dev server (port 5173)
+bun run build         # TypeScript check + Vite production build
+bun run test          # Run Vitest unit tests
+bun run test <pattern>   # Run single test file (e.g. bun run test usePathNavigation)
+bun run test:e2e      # Run Playwright E2E tests
+bun run test:e2e:ui   # Run Playwright tests with interactive UI
+bun run lint          # Run oxlint
+bun run lint:fix      # Auto-fix lint issues
+bun run format        # Check formatting with oxfmt
+bun run format:fix    # Fix formatting with oxfmt
 ```
 
 ### Tauri Development
 
 ```bash
-pnpm tauri:dev        # Start Tauri dev mode (frontend + Rust backend)
-pnpm tauri build      # Build production Tauri app
-pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Cross-compile for Windows
-pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
+bun run tauri:dev     # Start Tauri dev mode (frontend + Rust backend)
+bun run tauri build   # Build production Tauri app
+bun run tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc      # Cross-compile for Windows
+bun run tauri:gen     # Regenerate TypeScript bindings from Rust models
 ```
 
 ### Rust Backend
