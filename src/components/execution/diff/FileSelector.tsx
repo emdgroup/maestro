@@ -105,7 +105,11 @@ export function FileSelector({
               onExpandedFoldersChange
                 ? (path, expanded) => {
                     const next = new Set(expandedFolders ?? []);
-                    expanded ? next.add(path) : next.delete(path);
+                    if (expanded) {
+                      next.add(path);
+                    } else {
+                      next.delete(path);
+                    }
                     onExpandedFoldersChange(next);
                   }
                 : undefined

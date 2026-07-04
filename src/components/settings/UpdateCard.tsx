@@ -85,7 +85,11 @@ export function UpdateCard() {
         {/* Right block — state-dependent */}
         {status.phase === "available" ? (
           <div className="flex flex-col items-end gap-1 shrink-0">
-            <Button size="sm" onClick={install} className="h-7 text-xs gap-1.5 text-accent">
+            <Button
+              size="sm"
+              onClick={install}
+              className="h-7 text-xs gap-1.5 bg-accent text-accent-foreground"
+            >
               <ArrowDownToLine className="w-3 h-3" />
               Install
             </Button>

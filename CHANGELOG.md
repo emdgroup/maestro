@@ -2,10 +2,9 @@
 
 ## [0.7.0](https://github.com/emdgroup/maestro/compare/v0.6.0...v0.7.0) (2026-07-03)
 
-
 ### Features
 
-* add WSL file browser, SFTP download progress, and deploy timeouts ([9f6a250](https://github.com/emdgroup/maestro/commit/9f6a2502bc3a627b416f0ab29f2c3d33a6ff4bca))
+- add WSL file browser, SFTP download progress, and deploy timeouts ([9f6a250](https://github.com/emdgroup/maestro/commit/9f6a2502bc3a627b416f0ab29f2c3d33a6ff4bca))
 
 ## [0.6.0](https://github.com/emdgroup/maestro/compare/v0.5.0...v0.6.0) (2026-07-03)
 

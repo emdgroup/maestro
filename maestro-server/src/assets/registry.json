@@ -106,7 +106,7 @@
     {
       "id": "cline",
       "name": "Cline",
-      "version": "3.0.36",
+      "version": "3.0.37",
       "description": "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
       "repository": "https://github.com/cline/cline",
       "website": "https://cline.bot/cli",
@@ -115,7 +115,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/cline.svg",
       "distribution": {
         "npx": {
-          "package": "cline@3.0.36",
+          "package": "cline@3.0.37",
           "args": ["--acp"]
         }
       }
@@ -330,7 +330,7 @@
     {
       "id": "devin",
       "name": "Devin",
-      "version": "2026.8.18",
+      "version": "3000.1.23",
       "description": "Devin CLI coding agent by Cognition",
       "website": "https://docs.devin.ai/cli",
       "authors": ["Cognition"],
@@ -339,32 +339,32 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-aarch64-apple-darwin.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-aarch64-apple-darwin.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-x86_64-apple-darwin.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-x86_64-apple-darwin.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "linux-aarch64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-aarch64-unknown-linux.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-aarch64-unknown-linux.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "linux-x86_64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-x86_64-unknown-linux.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-x86_64-unknown-linux.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "windows-aarch64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-aarch64-pc-windows.zip",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-aarch64-pc-windows.zip",
             "cmd": "./bin\\devin.exe",
             "args": ["acp"]
           },
           "windows-x86_64": {
-            "archive": "https://static.devin.ai/cli/2026.8.18/devin-2026.8.18-x86_64-pc-windows.zip",
+            "archive": "https://static.devin.ai/cli/3000.1.23/devin-3000.1.23-x86_64-pc-windows.zip",
             "cmd": "./bin\\devin.exe",
             "args": ["acp"]
           }
@@ -375,14 +375,14 @@
     {
       "id": "dimcode",
       "name": "DimCode",
-      "version": "0.2.17",
+      "version": "0.2.19",
       "description": "A coding agent that puts leading models at your command.",
       "website": "https://dimcode.dev/docs/acp.html",
       "authors": ["ArcShips"],
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "dimcode@0.2.17",
+          "package": "dimcode@0.2.19",
           "args": ["acp"]
         }
       },
@@ -534,14 +534,14 @@
     {
       "id": "grok-build",
       "name": "Grok Build",
-      "version": "0.2.85",
+      "version": "0.2.86",
       "description": "xAI's coding agent and CLI",
       "website": "https://x.ai/cli",
       "authors": ["xAI"],
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "@xai-official/grok@0.2.85",
+          "package": "@xai-official/grok@0.2.86",
           "args": ["agent", "stdio"]
         }
       },

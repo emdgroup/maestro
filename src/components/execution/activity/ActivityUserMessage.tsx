@@ -11,15 +11,22 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function stripContextBlocks(text: string): string {
+  return text.replace(/<context(?:\s[^>]*)?>[\s\S]*?<\/context>/g, "").trim();
+}
+
 function preprocessUserMarkdown(text: string): string {
-  return text.replace(/^([2-9]\d*|[1-9]\d+)\./, "$1\\.");
+  return text
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/^([2-9]\d*|[1-9]\d+)\./, "$1\\.");
 }
 
 function buildTextMarkdown(blocks: ParsedContentBlock[]): string {
   return blocks
     .filter((b) => b.type === "text" || b.type === "attachment")
     .map((block) => {
-      if (block.type === "text") return block.text;
+      if (block.type === "text") return escapeHtml(block.text);
       return `<span class="inline-flex items-center rounded-md bg-accent/10 border border-accent/20 text-accent/80 px-1.5 py-0.5 text-xs font-mono mx-0.5 align-baseline">${escapeHtml(block.name)}</span>`;
     })
     .join("");
@@ -44,15 +51,17 @@ export function parseUserContent(raw: string): ParsedUserContent {
   try {
     const parsed = Array.isArray(raw as unknown) ? (raw as unknown as unknown[]) : JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      return { text: raw, attachments: [], blocks: [{ type: "text", text: raw }] };
+      const stripped = stripContextBlocks(raw);
+      return { text: stripped, attachments: [], blocks: [{ type: "text", text: stripped }] };
     }
     const textParts: string[] = [];
     const attachments: string[] = [];
     const blocks: ParsedContentBlock[] = [];
     for (const block of parsed) {
       if (block.type === "text" && typeof block.text === "string") {
-        textParts.push(block.text);
-        blocks.push({ type: "text", text: block.text });
+        const text = stripContextBlocks(block.text);
+        textParts.push(text);
+        blocks.push({ type: "text", text });
       } else if (block.type === "resource" && block.resource?.uri) {
         const uri: string = block.resource.uri;
         const name = uri.split("/").pop() ?? uri;

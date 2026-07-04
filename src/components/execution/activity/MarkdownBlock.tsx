@@ -294,7 +294,7 @@ export const HighlightedCode = memo(function HighlightedCode({
     return () => {
       cancelled = true;
     };
-  }, [code, lang, isDark]);
+  }, [code, lang, isDark, stripContainerStyle]);
 
   if (html) {
     return (

@@ -124,6 +124,8 @@ export function WorkingFileContentView({
   const setZoom = onZoomChange ?? setZoomState;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const setZoomRef = useRef(setZoom);
+  setZoomRef.current = setZoom;
 
   const [refreshTick, setRefreshTick] = useState(0);
   useEffect(() => {
@@ -141,7 +143,7 @@ export function WorkingFileContentView({
   }, [sessionKey]);
 
   useEffect(() => {
-    setZoom(100);
+    setZoomRef.current(100);
   }, [filePath]);
 
   useEffect(() => {
@@ -149,13 +151,13 @@ export function WorkingFileContentView({
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === "=" || e.key === "+") {
         e.preventDefault();
-        setZoom(Math.min(200, zoomRef.current + 10));
+        setZoomRef.current(Math.min(200, zoomRef.current + 10));
       } else if (e.key === "-") {
         e.preventDefault();
-        setZoom(Math.max(50, zoomRef.current - 10));
+        setZoomRef.current(Math.max(50, zoomRef.current - 10));
       } else if (e.key === "0") {
         e.preventDefault();
-        setZoom(100);
+        setZoomRef.current(100);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -168,7 +170,7 @@ export function WorkingFileContentView({
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      setZoom(Math.min(200, Math.max(50, zoomRef.current + (e.deltaY < 0 ? 10 : -10))));
+      setZoomRef.current(Math.min(200, Math.max(50, zoomRef.current + (e.deltaY < 0 ? 10 : -10))));
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);

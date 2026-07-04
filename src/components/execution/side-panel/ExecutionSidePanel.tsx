@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   Bot,
@@ -232,295 +232,273 @@ export function ExecutionSidePanel({
             : "flex-1 max-w-[50%] min-w-56 shrink-0 transition-[width,flex] duration-200",
       )}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        {collapsed ? (
-          /* Collapsed: vertical icon strip */
-          <motion.div
-            key="collapsed"
-            className="flex flex-col items-center py-2 gap-1"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+      {collapsed ? (
+        /* Collapsed: vertical icon strip */
+        <div className="flex flex-col items-center py-2 gap-1">
+          <button
+            type="button"
+            onClick={() => onCollapsedChange(false)}
+            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            title="Expand panel"
           >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="w-5 h-px bg-border my-1" />
+          {tabs.map(({ id, kind, label }) => {
+            const Icon = KIND_ICON[kind];
+            return (
+              <button
+                key={id}
+                type="button"
+                title={label}
+                onClick={() => {
+                  onTabChange(id);
+                  onCollapsedChange(false);
+                }}
+                className={cn(
+                  "p-2 rounded-md transition-colors",
+                  activeTabId === id
+                    ? "text-foreground bg-muted/60"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                <Icon className="w-4 h-4" />
+              </button>
+            );
+          })}
+          <div className="w-5 h-px bg-border my-1" />
+          <Popover>
+            <PopoverTrigger
+              className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              title="Add tab"
+            >
+              <Plus className="w-4 h-4" />
+            </PopoverTrigger>
+            {addTabPopoverContent("left")}
+          </Popover>
+          {onMaximizedChange && (
             <button
               type="button"
-              onClick={() => onCollapsedChange(false)}
+              title="Maximize panel"
+              onClick={() => {
+                onMaximizedChange(true);
+                onCollapsedChange(false);
+              }}
               className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-              title="Expand panel"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <Maximize2 className="w-4 h-4" />
             </button>
-            <div className="w-5 h-px bg-border my-1" />
-            {tabs.map(({ id, kind, label }) => {
-              const Icon = KIND_ICON[kind];
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  title={label}
-                  onClick={() => {
-                    onTabChange(id);
-                    onCollapsedChange(false);
-                  }}
-                  className={cn(
-                    "p-2 rounded-md transition-colors",
-                    activeTabId === id
-                      ? "text-foreground bg-muted/60"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                  )}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              );
-            })}
-            <div className="w-5 h-px bg-border my-1" />
-            <Popover>
-              <PopoverTrigger
-                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                title="Add tab"
+          )}
+        </div>
+      ) : (
+        /* Expanded: tab bar + content */
+        <div className="flex flex-col h-full min-h-0">
+          {/* Tab bar */}
+          <div className="flex items-center border-b border-border shrink-0 bg-card px-2 py-1.5 gap-2">
+            {!maximized && (
+              <button
+                type="button"
+                onClick={() => onCollapsedChange(true)}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+                title="Collapse panel"
               >
-                <Plus className="w-4 h-4" />
-              </PopoverTrigger>
-              {addTabPopoverContent("left")}
-            </Popover>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
+            <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
+              {tabs.map(({ id, kind, label, closeable }) => {
+                const Icon = KIND_ICON[kind];
+                const isActive = activeTabId === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onTabChange(id)}
+                    className={cn(
+                      "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
+                      isActive
+                        ? "text-accent hover:bg-transparent"
+                        : "text-muted-foreground hover:bg-background/50",
+                    )}
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="side-panel-tab-pill"
+                        className="absolute inset-0 rounded-md bg-background shadow-sm"
+                        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1.5">
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                    </span>
+                    {closeable && (
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onKeyDown={(e) => e.key === "Enter" && onTabClose(id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTabClose(id);
+                        }}
+                        className={cn(
+                          "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-muted transition-colors",
+                          isActive ? "opacity-50 hover:opacity-100" : "opacity-20 hover:opacity-60",
+                        )}
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              <Popover>
+                <PopoverTrigger
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0"
+                  title="Add tab"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </PopoverTrigger>
+                {addTabPopoverContent("bottom")}
+              </Popover>
+            </div>
             {onMaximizedChange && (
               <button
                 type="button"
-                title="Maximize panel"
-                onClick={() => {
-                  onMaximizedChange(true);
-                  onCollapsedChange(false);
-                }}
-                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                onClick={() => onMaximizedChange(!maximized)}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+                title={maximized ? "Restore panel" : "Maximize panel"}
               >
-                <Maximize2 className="w-4 h-4" />
+                {maximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             )}
-          </motion.div>
-        ) : (
-          /* Expanded: tab bar + content */
-          <motion.div
-            key="expanded"
-            className="flex flex-col h-full min-h-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            {/* Tab bar */}
-            <div className="flex items-center border-b border-border shrink-0 bg-card px-2 py-1.5 gap-2">
-              {!maximized && (
-                <button
-                  type="button"
-                  onClick={() => onCollapsedChange(true)}
-                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-                  title="Collapse panel"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              )}
-              <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
-                {tabs.map(({ id, kind, label, closeable }) => {
-                  const Icon = KIND_ICON[kind];
-                  const isActive = activeTabId === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => onTabChange(id)}
-                      className={cn(
-                        "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
-                        isActive
-                          ? "text-accent hover:bg-transparent"
-                          : "text-muted-foreground hover:bg-background/50",
-                      )}
-                    >
-                      {isActive && (
-                        <motion.span
-                          layoutId="side-panel-tab-pill"
-                          className="absolute inset-0 rounded-md bg-background shadow-sm"
-                          transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                        />
-                      )}
-                      <span className="relative z-10 flex items-center gap-1.5">
-                        <Icon className="w-3.5 h-3.5" />
-                        {label}
-                      </span>
-                      {closeable && (
-                        <span
-                          role="button"
-                          tabIndex={-1}
-                          onKeyDown={(e) => e.key === "Enter" && onTabClose(id)}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTabClose(id);
-                          }}
-                          className={cn(
-                            "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-muted transition-colors",
-                            isActive
-                              ? "opacity-50 hover:opacity-100"
-                              : "opacity-20 hover:opacity-60",
-                          )}
-                        >
-                          <X className="w-2.5 h-2.5" />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                <Popover>
-                  <PopoverTrigger
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0"
-                    title="Add tab"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </PopoverTrigger>
-                  {addTabPopoverContent("bottom")}
-                </Popover>
-              </div>
-              {onMaximizedChange && (
-                <button
-                  type="button"
-                  onClick={() => onMaximizedChange(!maximized)}
-                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-                  title={maximized ? "Restore panel" : "Maximize panel"}
-                >
-                  {maximized ? (
-                    <Minimize2 className="w-4 h-4" />
-                  ) : (
-                    <Maximize2 className="w-4 h-4" />
-                  )}
-                </button>
-              )}
-            </div>
+          </div>
 
-            {/* Content: all panels mounted, inactive ones hidden */}
-            <div className="flex-1 relative min-h-0">
-              {tabs.map(({ id, kind }) => {
-                const isActive = isSessionActive && activeTabId === id;
-                const ptyEntry = kind === "terminal" ? ptyState.get(id) : undefined;
-                return (
-                  <div key={id} className={cn("absolute inset-0", !isActive && "hidden")}>
-                    {kind === "overview" && (
-                      <OverviewPanel
-                        subagentItems={subagentItems}
-                        canvasCount={canvasMap.size}
-                        changedFilesCount={changedFiles.length}
-                        planEntries={planEntries}
-                        workingFiles={workingFiles}
-                        taskId={taskId}
-                        onNavigate={onOpenTabKind}
-                        diffStats={diffStats}
-                        connection={connection}
-                        wslDistroName={wslDistroName}
-                      />
-                    )}
-                    {kind === "plan" && (
-                      <div className="absolute inset-0 flex flex-col overflow-hidden">
-                        {sidePanelPlan ? (
-                          <PermissionPrompt
-                            fullHeight
-                            requestId={sidePanelPlan.requestId}
-                            payload={sidePanelPlan.payload}
-                            onRespond={onPlanRespond}
-                          />
-                        ) : (
-                          <div className="flex-1 flex items-center justify-center">
-                            <p className="text-xs text-muted-foreground">No plan yet</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {kind === "subagents" && (
-                      <SubagentsPanel items={subagentItems} toolCallMap={toolCallMap} />
-                    )}
-                    {kind === "canvas" && (
-                      <div className="absolute inset-0 flex flex-col overflow-hidden">
-                        {canvasEntries.length > 1 && (
-                          <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border">
-                            <span className="text-xs text-muted-foreground">
-                              {canvasIdx + 1} / {canvasEntries.length}
-                            </span>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                disabled={canvasIdx === 0}
-                                onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
-                                className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                              >
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={canvasIdx >= canvasEntries.length - 1}
-                                onClick={() =>
-                                  setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
-                                }
-                                className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                              >
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                          {activeSurface && activeSurface.components.length > 0 ? (
-                            <CanvasRenderer surface={activeSurface} />
-                          ) : (
-                            <p className="text-xs text-muted-foreground">No canvas active</p>
-                          )}
+          {/* Content: all panels mounted, inactive ones hidden */}
+          <div className="flex-1 relative min-h-0">
+            {tabs.map(({ id, kind }) => {
+              const isActive = isSessionActive && activeTabId === id;
+              const ptyEntry = kind === "terminal" ? ptyState.get(id) : undefined;
+              return (
+                <div key={id} className={cn("absolute inset-0", !isActive && "hidden")}>
+                  {kind === "overview" && (
+                    <OverviewPanel
+                      subagentItems={subagentItems}
+                      canvasCount={canvasMap.size}
+                      changedFilesCount={changedFiles.length}
+                      planEntries={planEntries}
+                      workingFiles={workingFiles}
+                      taskId={taskId}
+                      onNavigate={onOpenTabKind}
+                      diffStats={diffStats}
+                      connection={connection}
+                      wslDistroName={wslDistroName}
+                    />
+                  )}
+                  {kind === "plan" && (
+                    <div className="absolute inset-0 flex flex-col overflow-hidden">
+                      {sidePanelPlan ? (
+                        <PermissionPrompt
+                          fullHeight
+                          requestId={sidePanelPlan.requestId}
+                          payload={sidePanelPlan.payload}
+                          onRespond={onPlanRespond}
+                        />
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center">
+                          <p className="text-xs text-muted-foreground">No plan yet</p>
                         </div>
-                      </div>
-                    )}
-                    {kind === "review" && (
-                      <ReviewChangesPanel
-                        sessionKey={sessionKey}
-                        sessionChangedFiles={changedFiles}
-                        onClose={() => onCollapsedChange(true)}
-                        compact
-                        isActive={isActive}
-                      />
-                    )}
-                    {kind === "artifacts" && (
-                      <ArtifactsPanel
-                        files={workingFiles.map((f) => f.path)}
-                        sessionKey={sessionKey}
-                        isActive={isActive}
-                        connection={connection}
-                        wslDistroName={wslDistroName}
-                      />
-                    )}
-                    {kind === "files" && (
-                      <WorkspaceFilesPanel
-                        projectPath={projectPath}
-                        connection={connection}
-                        wslDistroName={wslDistroName}
-                        isActive={isActive}
-                      />
-                    )}
-                    {kind === "terminal" && (
-                      <div className="absolute inset-0">
-                        {ptyEntry?.key != null ? (
-                          <TerminalComponent taskId={ptyEntry.key} />
-                        ) : ptyEntry?.failed ? (
-                          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                            Failed to start terminal
+                      )}
+                    </div>
+                  )}
+                  {kind === "subagents" && (
+                    <SubagentsPanel items={subagentItems} toolCallMap={toolCallMap} />
+                  )}
+                  {kind === "canvas" && (
+                    <div className="absolute inset-0 flex flex-col overflow-hidden">
+                      {canvasEntries.length > 1 && (
+                        <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border">
+                          <span className="text-xs text-muted-foreground">
+                            {canvasIdx + 1} / {canvasEntries.length}
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              disabled={canvasIdx === 0}
+                              onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={canvasIdx >= canvasEntries.length - 1}
+                              onClick={() =>
+                                setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
+                              }
+                              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
                           </div>
+                        </div>
+                      )}
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                        {activeSurface && activeSurface.components.length > 0 ? (
+                          <CanvasRenderer surface={activeSurface} />
                         ) : (
-                          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                            Starting terminal…
-                          </div>
+                          <p className="text-xs text-muted-foreground">No canvas active</p>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                    </div>
+                  )}
+                  {kind === "review" && (
+                    <ReviewChangesPanel
+                      sessionKey={sessionKey}
+                      sessionChangedFiles={changedFiles}
+                      onClose={() => onCollapsedChange(true)}
+                      compact
+                      isActive={isActive}
+                    />
+                  )}
+                  {kind === "artifacts" && (
+                    <ArtifactsPanel
+                      files={workingFiles.map((f) => f.path)}
+                      sessionKey={sessionKey}
+                      isActive={isActive}
+                      connection={connection}
+                      wslDistroName={wslDistroName}
+                    />
+                  )}
+                  {kind === "files" && (
+                    <WorkspaceFilesPanel
+                      projectPath={projectPath}
+                      connection={connection}
+                      wslDistroName={wslDistroName}
+                      isActive={isActive}
+                    />
+                  )}
+                  {kind === "terminal" && (
+                    <div className="absolute inset-0">
+                      {ptyEntry?.key != null ? (
+                        <TerminalComponent taskId={ptyEntry.key} />
+                      ) : ptyEntry?.failed ? (
+                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                          Failed to start terminal
+                        </div>
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                          Starting terminal…
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

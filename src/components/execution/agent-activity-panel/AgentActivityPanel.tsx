@@ -115,8 +115,9 @@ export function AgentActivityPanel({
     setPendingElicitation,
   );
 
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(isNewSession);
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const sidePanelRef = useRef<PanelImperativeHandle>(null);
+  const sidePanelElementRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
   const [maximized, setMaximized] = useState(false);
   const [sidePanelPlan, setSidePanelPlan] = useState<{
@@ -136,26 +137,6 @@ export function AgentActivityPanel({
         .map((item) => item.item),
     [liveState.items],
   );
-
-  const autoExpandPendingRef = useRef(isNewSession);
-  const hasOverviewCard =
-    subagentItems.length > 0 ||
-    liveState.canvasMap.size > 0 ||
-    localChangedFiles.length > 0 ||
-    (liveState.plan?.length ?? 0) > 0 ||
-    localWorkingFiles.length > 0;
-  useEffect(() => {
-    if (autoExpandPendingRef.current && hasOverviewCard) {
-      autoExpandPendingRef.current = false;
-      setSidePanelCollapsed(false);
-    }
-  }, [hasOverviewCard]);
-
-  // Any manual user interaction with the panel cancels the pending auto-expand
-  const handleSidePanelCollapsedChange = useCallback((v: boolean) => {
-    autoExpandPendingRef.current = false;
-    setSidePanelCollapsed(v);
-  }, []);
 
   const {
     tabs,
@@ -301,14 +282,32 @@ export function AgentActivityPanel({
   const hasInlinePermission = !!(pendingPermission && !isPlanPermWithBody);
   const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
 
-  useEffect(() => {
-    if (sidePanelCollapsed) {
-      sidePanelRef.current?.collapse();
-      leftPanelRef.current?.expand();
-    } else {
-      sidePanelRef.current?.expand();
+  useLayoutEffect(() => {
+    const el = sidePanelElementRef.current;
+    if (el) {
+      el.style.transition = sidePanelCollapsed
+        ? "flex-basis 200ms ease-in, flex-grow 200ms ease-in"
+        : "flex-basis 200ms ease-out, flex-grow 200ms ease-out";
     }
+    const raf = requestAnimationFrame(() => {
+      if (sidePanelCollapsed) {
+        sidePanelRef.current?.collapse();
+        leftPanelRef.current?.expand();
+      } else {
+        sidePanelRef.current?.expand();
+      }
+    });
+    const cleanup = setTimeout(() => {
+      if (sidePanelElementRef.current) {
+        sidePanelElementRef.current.style.transition = "";
+      }
+    }, 220);
     setScrollRestoreToken((v) => v + 1);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(cleanup);
+      if (el) el.style.transition = "";
+    };
   }, [sidePanelCollapsed]);
 
   useEffect(() => {
@@ -483,11 +482,11 @@ export function AgentActivityPanel({
         {!maximized && <ResizableHandle withHandle />}
         <ResizablePanel
           panelRef={sidePanelRef}
+          elementRef={sidePanelElementRef}
           defaultSize={"60%"}
           minSize={"22rem"}
           collapsible
           collapsedSize="2.75rem"
-          onResize={(panelSize) => setSidePanelCollapsed(panelSize.inPixels <= 60)}
           className="flex flex-col min-h-0 overflow-hidden"
         >
           <ExecutionSidePanel
@@ -512,7 +511,7 @@ export function AgentActivityPanel({
             planEntries={liveState.plan}
             onPlanRespond={handlePlanRespond}
             collapsed={sidePanelCollapsed}
-            onCollapsedChange={handleSidePanelCollapsedChange}
+            onCollapsedChange={(v) => setSidePanelCollapsed(v)}
             maximized={maximized}
             onMaximizedChange={handleMaximizedChange}
             onSpawnShell={onSpawnShell}
