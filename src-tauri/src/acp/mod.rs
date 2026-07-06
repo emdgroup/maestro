@@ -8,6 +8,14 @@ pub mod prompt_handlers;
 pub mod discovery_handlers;
 pub mod file_handlers;
 pub mod meta_handlers;
+pub mod attachment_handlers;
+pub mod canvas;
+pub mod transport_types;
+pub mod session_types;
+pub mod transport_setup;
+pub mod reader_task;
+pub mod connection_server;
+pub mod session_ops;
 
 pub(crate) fn session_id_for(log_id: i32) -> String {
     format!("session-{}", log_id)
@@ -50,14 +58,19 @@ impl ConnectionKey {
     }
 }
 
-pub use manager::{AcpProcess, AcpProcessParams, SessionRequest, AcpTransportWriter,
-    SessionCapabilitiesInfo,
-    ConnectionServer, PendingChannels, TaskMetadata,
+pub use session_types::{
+    AcpProcess, AcpProcessParams, SessionRequest, AcpTransportWriter,
+    SessionCapabilitiesInfo, ConnectionServer, PendingChannels, TaskMetadata,
     TransportTarget, RestorableSession,
+};
+pub use session_ops::{
     spawn_acp_session_cold, load_acp_session_cold, write_to_acp_session,
+    restore_acp_sessions, resolve_remote_context,
+    try_spawn_via_connection_server, try_session_load_via_connection_server,
+};
+pub use connection_server::{
     spawn_connection_server, pre_initialize_via_connection_server,
-    try_spawn_via_connection_server, query_session_list_via_server,
-    query_session_close_via_server, query_check_tools_via_server,
-    query_list_agents_via_connection_server,
-    resolve_remote_context, try_session_load_via_connection_server, restore_acp_sessions};
+    query_session_list_via_server, query_session_close_via_server,
+    query_check_tools_via_server, query_list_agents_via_connection_server,
+};
 pub use registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};
