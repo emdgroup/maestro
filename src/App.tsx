@@ -49,7 +49,7 @@ const SettingsView = lazy(() =>
 const NOOP = () => {};
 
 function App() {
-  const [integrationDismissed, setIntegrationDismissed] = useState(false);
+  const [dismissedForProjectId, setDismissedForProjectId] = useState<number | null>(null);
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
@@ -113,10 +113,8 @@ function App() {
   const { data: issueTrackingConfig, isLoading: issueTrackingLoading } =
     useProjectIssueTrackingConfig(currentProject?.id ?? 0);
 
-  // Reset dismissed flag whenever the user switches projects.
-  useEffect(() => {
-    setIntegrationDismissed(false);
-  }, [currentProject?.id]);
+  // Derived: true only when the user dismissed the dialog for the current project specifically.
+  const integrationDismissed = dismissedForProjectId === currentProject?.id;
 
   // Derived: show the dialog when project is loaded, queries settled, config present, and not connected.
   const showMissingDialog =
@@ -329,7 +327,7 @@ function App() {
           projectId={currentProject.id}
           provider={issueTrackingConfig?.provider ?? ""}
           onFixIntegration={clearSelectedProject}
-          onDropConfig={() => setIntegrationDismissed(true)}
+          onDropConfig={() => setDismissedForProjectId(currentProject?.id ?? null)}
         />
 
         {/* SSH connection loss overlay — blocks interaction during reconnect */}

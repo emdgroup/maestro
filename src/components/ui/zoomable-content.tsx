@@ -110,14 +110,6 @@ export function ZoomableContent({
     };
   }, [open, startIdleTimer, doFitToView]);
 
-  // Keep refs in sync so drag onMove can read current values without re-render
-  useEffect(() => {
-    panRef.current = pan;
-  }, [pan]);
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
   function applyZoom(next: number) {
     setZoom(clampZoom(next));
   }
@@ -219,6 +211,10 @@ export function ZoomableContent({
   }, [open, showControls, clampZoom, doFitToView]);
 
   const cursor = isDragging ? "cursor-grabbing" : "cursor-grab";
+
+  // Assign refs inline during render so drag handlers always see the latest values.
+  panRef.current = pan;
+  zoomRef.current = zoom;
 
   return (
     <>
