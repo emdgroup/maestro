@@ -21,7 +21,7 @@ import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChange
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { PermissionPrompt } from "@/components/execution/activity/PermissionPrompt";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
-import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent, PopoverClose } from "@/ui/popover";
 import { OverviewPanel } from "./OverviewPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
@@ -196,8 +196,7 @@ export function ExecutionSidePanel({
 
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
-      <button
-        type="button"
+      <PopoverClose
         onClick={() => {
           onAddTab("terminal");
           onCollapsedChange(false);
@@ -206,9 +205,8 @@ export function ExecutionSidePanel({
       >
         <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
         New Terminal
-      </button>
-      <button
-        type="button"
+      </PopoverClose>
+      <PopoverClose
         onClick={() => {
           onAddTab("files");
           onCollapsedChange(false);
@@ -217,7 +215,7 @@ export function ExecutionSidePanel({
       >
         <FileText className="w-3.5 h-3.5 text-muted-foreground" />
         Files Browser
-      </button>
+      </PopoverClose>
     </PopoverContent>
   );
 

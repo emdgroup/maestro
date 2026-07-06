@@ -87,9 +87,14 @@ function PopoverArrow({ className, ...props }: PopoverPrimitive.Arrow.Props) {
   );
 }
 
+function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
+  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
+}
+
 export {
   Popover,
   PopoverArrow,
+  PopoverClose,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,

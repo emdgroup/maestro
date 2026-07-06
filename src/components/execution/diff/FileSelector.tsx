@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { List, FolderTree, CheckCheck } from "lucide-react";
+import { List, FolderTree, CheckCheck, X } from "lucide-react";
 import { cn } from "@/lib/ui-utils";
 import { FileTree } from "./FileTree";
 
@@ -58,6 +58,16 @@ export function FileSelector({
           placeholder="Filter files..."
           className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
         />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            title="Clear filter"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
         {!treeOnly && (
           <div className="flex items-center gap-0.5 shrink-0">
             <button
