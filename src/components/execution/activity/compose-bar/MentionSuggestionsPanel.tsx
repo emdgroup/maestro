@@ -1,10 +1,7 @@
-import { createPortal } from "react-dom";
 import type { RefObject } from "react";
 import { cn } from "@/lib/utils.ts";
 import { iconForFilePath } from "./composeUtils";
-
-const PANEL_CLASS =
-  "fixed z-[9999] backdrop-blur-[4px] bg-muted/60 border border-border/30 rounded-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] overflow-hidden";
+import { SuggestionsPortalWrapper } from "./SuggestionsPortalWrapper";
 
 interface Props {
   suggestions: string[];
@@ -22,14 +19,8 @@ export function MentionSuggestionsPanel({
   onSelect,
 }: Props) {
   if (!panelPos || suggestions.length === 0) return null;
-  const panelStyle = {
-    left: panelPos.left,
-    width: panelPos.width,
-    top: panelPos.top - 4,
-    transform: "translateY(-100%)",
-  };
-  return createPortal(
-    <div className={PANEL_CLASS} style={panelStyle}>
+  return (
+    <SuggestionsPortalWrapper panelPos={panelPos}>
       <div className="overflow-y-auto max-h-48 p-1 custom-scrollbar">
         {suggestions.map((path, i) => (
           <button
@@ -65,7 +56,6 @@ export function MentionSuggestionsPanel({
           </button>
         ))}
       </div>
-    </div>,
-    document.body,
+    </SuggestionsPortalWrapper>
   );
 }

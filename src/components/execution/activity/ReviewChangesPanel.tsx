@@ -30,6 +30,64 @@ interface ReviewChangesPanelProps {
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
 }
 
+function DiffStats({ hunks }: { hunks: string[] }) {
+  const s = computeFileStats(hunks);
+  return (
+    <span className="flex items-center gap-1 shrink-0 text-xs font-mono">
+      {s.insertions > 0 && <span className="text-success">+{s.insertions}</span>}
+      {s.deletions > 0 && <span className="text-destructive">-{s.deletions}</span>}
+    </span>
+  );
+}
+
+function SelectedFileHeader({
+  selectedItem,
+  viewedFiles,
+  onToggleViewed,
+}: {
+  selectedItem: DisplayItem;
+  viewedFiles: Set<string>;
+  onToggleViewed: (fileName: string) => void;
+}) {
+  const fileName =
+    selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
+  const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
+  const stats =
+    selectedItem.kind === "diff"
+      ? computeFileStats(selectedItem.file.hunks)
+      : { insertions: 0, deletions: 0 };
+  const statusColor =
+    status === "A"
+      ? "text-success"
+      : status === "D"
+        ? "text-destructive"
+        : "text-muted-foreground";
+  const isViewed = viewedFiles.has(fileName);
+  return (
+    <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
+      <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
+      <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+      {stats.insertions > 0 && (
+        <span className="text-success shrink-0">+{stats.insertions}</span>
+      )}
+      {stats.deletions > 0 && (
+        <span className="text-destructive shrink-0">-{stats.deletions}</span>
+      )}
+      <button
+        onClick={() => onToggleViewed(fileName)}
+        className={cn(
+          "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
+          isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+        )}
+        title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+      >
+        <CheckCheck className="size-3" />
+        <span className="text-[10px]">Viewed</span>
+      </button>
+    </div>
+  );
+}
+
 export function ReviewChangesPanel({
   sessionKey,
   sessionChangedFiles,
@@ -384,20 +442,7 @@ export function ReviewChangesPanel({
                       <span className="text-xs font-mono truncate text-foreground/80 flex-1">
                         {key}
                       </span>
-                      {item.kind === "diff" &&
-                        (() => {
-                          const s = computeFileStats(item.file.hunks);
-                          return (
-                            <span className="flex items-center gap-1 shrink-0 text-xs font-mono">
-                              {s.insertions > 0 && (
-                                <span className="text-success">+{s.insertions}</span>
-                              )}
-                              {s.deletions > 0 && (
-                                <span className="text-destructive">-{s.deletions}</span>
-                              )}
-                            </span>
-                          );
-                        })()}
+                      {item.kind === "diff" && <DiffStats hunks={item.file.hunks} />}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -448,6 +493,40 @@ export function ReviewChangesPanel({
   const selectedBasename = selectedFileName
     ? (selectedFileName.split("/").pop() ?? selectedFileName)
     : null;
+
+  let diffContent: ReactNode;
+  if (loading) {
+    diffContent = (
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />
+      </div>
+    );
+  } else if (selectedItem?.kind === "diff") {
+    diffContent = (
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <DiffViewer diffFile={selectedItem.file} loading={false} diffViewMode={diffViewMode} />
+      </div>
+    );
+  } else if (selectedItem?.kind === "untracked") {
+    diffContent = (
+      <UntrackedFileDiffViewer
+        projectId={projectId}
+        worktreePath={cwd}
+        filePath={selectedUntrackedPath}
+        showHeader={false}
+      />
+    );
+  } else {
+    diffContent = (
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <DiffViewer
+          diffFile={null}
+          loading={false}
+          error={diffError ? String(diffError) : undefined}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-50 flex flex-col bg-background">
@@ -515,71 +594,14 @@ export function ReviewChangesPanel({
 
       {/* Diff viewer */}
       <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-        {selectedItem &&
-          (() => {
-            const fileName =
-              selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
-            const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
-            const stats =
-              selectedItem.kind === "diff"
-                ? computeFileStats(selectedItem.file.hunks)
-                : { insertions: 0, deletions: 0 };
-            const statusColor =
-              status === "A"
-                ? "text-success"
-                : status === "D"
-                  ? "text-destructive"
-                  : "text-muted-foreground";
-            const isViewed = viewedFiles.has(fileName);
-            return (
-              <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-                <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
-                <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-                {stats.insertions > 0 && (
-                  <span className="text-success shrink-0">+{stats.insertions}</span>
-                )}
-                {stats.deletions > 0 && (
-                  <span className="text-destructive shrink-0">-{stats.deletions}</span>
-                )}
-                <button
-                  onClick={() => toggleViewed(fileName)}
-                  className={cn(
-                    "flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-muted/30",
-                    isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
-                  )}
-                  title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                >
-                  <CheckCheck className="size-3" />
-                  <span className="text-[10px]">Viewed</span>
-                </button>
-              </div>
-            );
-          })()}
-
-        {loading ? (
-          <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-            <DiffViewer diffFile={null} loading={true} diffViewMode={diffViewMode} />
-          </div>
-        ) : selectedItem?.kind === "diff" ? (
-          <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-            <DiffViewer diffFile={selectedItem.file} loading={false} diffViewMode={diffViewMode} />
-          </div>
-        ) : selectedItem?.kind === "untracked" ? (
-          <UntrackedFileDiffViewer
-            projectId={projectId}
-            worktreePath={cwd}
-            filePath={selectedUntrackedPath}
-            showHeader={false}
+        {selectedItem && (
+          <SelectedFileHeader
+            selectedItem={selectedItem}
+            viewedFiles={viewedFiles}
+            onToggleViewed={toggleViewed}
           />
-        ) : (
-          <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-            <DiffViewer
-              diffFile={null}
-              loading={false}
-              error={diffError ? String(diffError) : undefined}
-            />
-          </div>
         )}
+        {diffContent}
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils.ts";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
-import { ToolCallContentBlock } from "./ActivityToolCallGroup";
+import { ToolCallContentBlock } from "./ToolCallContentBlock";
 import { subagentName } from "./utils";
 import { useSettings } from "@/services/settings.service";
 import type { ToolCallItem } from "./types";
