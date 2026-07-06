@@ -106,6 +106,7 @@ export function ExecutionSidePanel({
   isSessionActive = true,
   onSpawnShell,
 }: ExecutionSidePanelProps) {
+  const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const [sessionMeta, setSessionMeta] = useState<{
     projectId: number | null;
     cwd: string | null;
@@ -387,7 +388,10 @@ export function ExecutionSidePanel({
                       planEntries={planEntries}
                       workingFiles={workingFiles}
                       taskId={taskId}
-                      onNavigate={onOpenTabKind}
+                      onNavigate={(kind, filePath) => {
+                        onOpenTabKind(kind);
+                        if (kind === "artifacts" && filePath) setArtifactsSelectedFile(filePath);
+                      }}
                       diffStats={diffStats}
                       connection={connection}
                       wslDistroName={wslDistroName}
@@ -466,6 +470,7 @@ export function ExecutionSidePanel({
                       isActive={isActive}
                       connection={connection}
                       wslDistroName={wslDistroName}
+                      initialFile={artifactsSelectedFile}
                     />
                   )}
                   {kind === "files" && (

@@ -170,10 +170,10 @@ export function DiffFilePanel({
                         checked={isChecked}
                         onCheckedChange={() => onToggleUntrackedFile(filePath)}
                         onClick={(e) => e.stopPropagation()}
-                        className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                        className="border-border dark:bg-input/30 data-checked:bg-accent dark:data-checked:bg-accent data-checked:text-accent-foreground data-checked:border-accent flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
                         tabIndex={-1}
                       >
-                        <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                        <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-accent-foreground">
                           <Check className="size-3.5" />
                         </CheckboxPrimitive.Indicator>
                       </CheckboxPrimitive.Root>
@@ -251,10 +251,10 @@ export function DiffFilePanel({
                       indeterminate={checkState === "indeterminate"}
                       onCheckedChange={() => onFileToggle(file.fileName)}
                       onClick={(e) => e.stopPropagation()}
-                      className="border-border dark:bg-input/30 data-checked:bg-accent data-checked:text-foreground data-checked:border-foreground flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
+                      className="border-border dark:bg-input/30 data-checked:bg-accent dark:data-checked:bg-accent data-checked:text-accent-foreground data-checked:border-accent flex size-4 items-center justify-center rounded-sm border shadow-xs shrink-0 outline-none"
                       tabIndex={-1}
                     >
-                      <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-current">
+                      <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-accent-foreground">
                         {checkState === "indeterminate" ? (
                           <Minus className="size-3.5" />
                         ) : (

@@ -24,7 +24,7 @@ interface OverviewPanelProps {
   planEntries?: PlanEntry[] | null;
   workingFiles?: WorkingFileEntry[];
   taskId: number | null;
-  onNavigate: (kind: TabKind) => void;
+  onNavigate: (kind: TabKind, filePath?: string) => void;
   diffStats?: { insertions: number; deletions: number } | null;
   connection: ConnectionKey;
   wslDistroName?: string;
@@ -273,7 +273,7 @@ export function OverviewPanel({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onNavigate("artifacts");
+                              onNavigate("artifacts", path);
                             }}
                             title={path}
                             className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"
@@ -341,7 +341,7 @@ export function OverviewPanel({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onNavigate("artifacts");
+                            onNavigate("artifacts", att.file_path);
                           }}
                           title={att.file_path}
                           className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"

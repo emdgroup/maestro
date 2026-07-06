@@ -20,6 +20,7 @@ interface ArtifactsPanelProps {
   connection: ConnectionKey;
   wslDistroName?: string;
   isActive?: boolean;
+  initialFile?: string | null;
 }
 
 export function ArtifactsPanel({
@@ -28,6 +29,7 @@ export function ArtifactsPanel({
   connection,
   wslDistroName,
   isActive = true,
+  initialFile,
 }: ArtifactsPanelProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
@@ -56,6 +58,12 @@ export function ArtifactsPanel({
   useEffect(() => {
     if (selected === null && relativeFiles.length > 0) setSelected(relativeFiles[0]);
   }, [relativeFiles, selected]);
+
+  useEffect(() => {
+    if (!initialFile) return;
+    const idx = files.indexOf(initialFile);
+    if (idx >= 0 && relativeFiles[idx]) setSelected(relativeFiles[idx]);
+  }, [initialFile, files, relativeFiles]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
 
