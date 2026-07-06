@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { CheckCheck } from "lucide-react";
-import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
+import { parseDiffString, computeFileStats, countHunks } from "@/lib/diff-utils";
+import { useWorktreeDiffActions } from "./useWorktreeDiffActions";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { DiffViewer } from "./DiffViewer";
@@ -200,132 +201,28 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     });
   }
 
-  async function handleRevert() {
-    if (!projectId || !worktreePath) return;
-
-    const filePathsToRevert = [...stagedFiles];
-
-    const patchParts: string[] = [];
-    for (const [fileName, hunkIndices] of stagedHunks) {
-      if (stagedFiles.has(fileName)) continue;
-      const file = diffFiles.find((f) => f.fileName === fileName);
-      if (!file) continue;
-      for (const idx of hunkIndices) {
-        const patch = extractHunkPatch(file.hunks[0] ?? "", idx);
-        if (patch) patchParts.push(patch);
-      }
-    }
-    const combinedPatch = patchParts.length > 0 ? patchParts.join("") : null;
-
-    try {
-      await discardMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        filePaths: filePathsToRevert,
-        patch: combinedPatch,
-      });
-      setStagedFiles(new Set());
-      setStagedHunks(new Map());
-      setDiscardDialogOpen(false);
-    } catch {
-      // error toast handled by mutation
-    }
-  }
-
-  async function handleShelve() {
-    if (!projectId || !worktreePath || !shelveName.trim()) return;
-
-    const filePaths = [
-      ...stagedFiles,
-      ...[...stagedHunks.keys()].filter((f) => !stagedFiles.has(f)),
-    ];
-
-    try {
-      await shelveMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        stashName: shelveName.trim(),
-        filePaths,
-      });
-      setStagedFiles(new Set());
-      setStagedHunks(new Map());
-      setShelvePopoverOpen(false);
-    } catch {
-      // error toast handled by mutation
-    }
-  }
-
-  async function handleCommit() {
-    if (!projectId || !worktreePath || !commitMessage.trim()) return;
-
-    const filesToStage = [...stagedFiles];
-    const patchParts: string[] = [];
-    for (const [fileName, hunkIndices] of stagedHunks) {
-      if (stagedFiles.has(fileName)) continue;
-      const file = diffFiles.find((f) => f.fileName === fileName);
-      if (!file) continue;
-      for (const idx of hunkIndices) {
-        const patch = extractHunkPatch(file.hunks[0] ?? "", idx);
-        if (patch) patchParts.push(patch);
-      }
-    }
-    const combinedPatch = patchParts.length > 0 ? patchParts.join("") : null;
-
-    try {
-      await stageMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        filePaths: filesToStage,
-        patch: combinedPatch,
-      });
-      await commitMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        message: commitMessage.trim(),
-      });
-
-      setStagedFiles(new Set());
-      setStagedHunks(new Map());
-      setCommitMessage("");
-
-      const allFilesStaged = filesToStage.length === diffFiles.length && !combinedPatch;
-      if (allFilesStaged) {
-        onClose();
-      }
-    } catch {
-      // errors handled by mutation onError toasts
-    }
-  }
-
-  async function handleStageUntracked() {
-    if (!projectId || !worktreePath) return;
-    try {
-      await stageMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        filePaths: [...stagedFiles],
-        patch: null,
-      });
-      setStagedFiles(new Set());
-    } catch {
-      // error toast handled by mutation
-    }
-  }
-
-  async function handleDeleteUntracked() {
-    if (!projectId || !worktreePath || stagedFiles.size === 0) return;
-    try {
-      await deleteMutation.mutateAsync({
-        projectId,
-        worktreePath,
-        filePaths: [...stagedFiles],
-      });
-      setStagedFiles(new Set());
-      setDeleteDialogOpen(false);
-    } catch {
-      // keep dialog open; error surfaced via deleteMutation.error
-    }
-  }
+  const { handleRevert, handleShelve, handleCommit, handleStageUntracked, handleDeleteUntracked } =
+    useWorktreeDiffActions({
+      projectId,
+      worktreePath,
+      stagedFiles,
+      setStagedFiles,
+      stagedHunks,
+      setStagedHunks,
+      diffFiles,
+      commitMessage,
+      setCommitMessage,
+      shelveName,
+      setShelvePopoverOpen,
+      setDiscardDialogOpen,
+      setDeleteDialogOpen,
+      stageMutation,
+      commitMutation,
+      discardMutation,
+      shelveMutation,
+      deleteMutation,
+      onClose,
+    });
 
   function handleToggleUntrackedFile(filePath: string) {
     setStagedFiles((prev) => {

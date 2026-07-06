@@ -1,16 +1,16 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { MessageSquare, CheckCheck, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { ChevronDown } from "lucide-react";
 import { parseDiffString } from "@/lib/diff-utils";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";
 import { DiffViewer, type PendingComment } from "./DiffViewer";
 import { ScopeSelector, type DiffScope } from "./ScopeSelector";
-import { InlineCommentInput } from "./InlineCommentInput";
-import { PendingCommentBlock } from "./PendingCommentBlock";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReworkModal, ApproveModal, DiscardModal } from "./ReviewConfirmModals";
+import { buildReviewFeedbackBlocks } from "./build-review-feedback";
+import { ReviewFileHeader } from "./ReviewFileHeader";
+import { ReviewFileComment } from "./ReviewFileComment";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
@@ -34,35 +34,7 @@ import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog"
 import { useKanban } from "@/contexts/KanbanContext";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
-import type { DiffTarget, Task, JsonValue } from "@/types/bindings";
-
-function buildReviewFeedbackBlocks(data: {
-  comments: PendingComment[];
-  generalFeedback: string;
-}): JsonValue[] {
-  let feedbackText = "# Review Feedback — Changes Requested\n\n";
-
-  if (data.comments.length > 0) {
-    const grouped = new Map<string, string[]>();
-    for (const c of data.comments) {
-      const list = grouped.get(c.filePath) ?? [];
-      list.push(c.lineNumber > 0 ? `line:${c.lineNumber} — ${c.text}` : c.text);
-      grouped.set(c.filePath, list);
-    }
-    for (const [filePath, fileComments] of grouped) {
-      feedbackText += `## \`${filePath}\`\n`;
-      fileComments.forEach((comment, i) => {
-        feedbackText += `### Feedback #${i + 1}\n${comment}\n\n`;
-      });
-    }
-  }
-
-  if (data.generalFeedback) {
-    feedbackText += `## General feedback\n${data.generalFeedback}\n`;
-  }
-
-  return [{ type: "text", text: feedbackText }];
-}
+import type { DiffTarget, Task } from "@/types/bindings";
 
 interface TaskReviewPanelProps {
   task: Task;
@@ -494,110 +466,27 @@ export function TaskReviewPanel({
             {viewMode === "uncommitted" && (
               <>
                 {/* File content header */}
-                {selectedFile &&
-                  (() => {
-                    const stats = selectedFile.hunks.reduce(
-                      (acc, h) => {
-                        for (const line of h.split("\n")) {
-                          if (line.startsWith("+") && !line.startsWith("+++")) acc.insertions++;
-                          if (line.startsWith("-") && !line.startsWith("---")) acc.deletions++;
-                        }
-                        return acc;
-                      },
-                      { insertions: 0, deletions: 0 },
-                    );
-                    const status = selectedFile.status ?? "M";
-                    const statusColor =
-                      status === "A"
-                        ? "text-success"
-                        : status === "D"
-                          ? "text-destructive"
-                          : "text-muted-foreground";
-                    const isViewed = viewedFiles.has(selectedFile.fileName);
-                    return (
-                      <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-                        <span className="font-mono text-foreground truncate flex-1">
-                          {selectedFile.fileName}
-                        </span>
-                        <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-                        {stats.insertions > 0 && (
-                          <span className="text-success shrink-0">+{stats.insertions}</span>
-                        )}
-                        {stats.deletions > 0 && (
-                          <span className="text-destructive shrink-0">-{stats.deletions}</span>
-                        )}
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleFileComment(selectedFile.fileName)}
-                          className="flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                          title="Add file comment"
-                        >
-                          <MessageSquare className="size-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => toggleViewed(selectedFile.fileName)}
-                          className={cn(
-                            "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
-                            isViewed
-                              ? "text-success"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                          title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                        >
-                          <CheckCheck className="size-3" />
-                          <span className="text-[10px]">Viewed</span>
-                        </Button>
-                      </div>
-                    );
-                  })()}
+                {selectedFile && (
+                  <ReviewFileHeader
+                    selectedFile={selectedFile}
+                    viewedFiles={viewedFiles}
+                    onToggleViewed={toggleViewed}
+                    onFileComment={handleFileComment}
+                  />
+                )}
 
                 {/* File-level comment (single per file, editable) */}
-                {selectedFile &&
-                  (() => {
-                    const fileComment = comments.find(
-                      (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
-                    );
-                    return (
-                      <div className="shrink-0 border-b border-border">
-                        {fileComment && !activeFileComment && (
-                          <PendingCommentBlock
-                            text={fileComment.text}
-                            onRemove={() => handleRemoveComment(fileComment.id)}
-                            onEdit={(newText) => handleEditComment(fileComment.id, newText)}
-                          />
-                        )}
-                        {activeFileComment && (
-                          <div className="p-2">
-                            <InlineCommentInput
-                              initialText={fileComment?.text}
-                              onSubmit={(text) => {
-                                setComments((prev) => {
-                                  if (fileComment) {
-                                    return prev.map((c) =>
-                                      c.id === fileComment.id ? { ...c, text } : c,
-                                    );
-                                  }
-                                  return [
-                                    ...prev,
-                                    {
-                                      id: crypto.randomUUID(),
-                                      filePath: selectedFile.fileName,
-                                      lineNumber: 0,
-                                      side: "new" as const,
-                                      text,
-                                    },
-                                  ];
-                                });
-                                setActiveFileComment(false);
-                              }}
-                              onCancel={() => setActiveFileComment(false)}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                {selectedFile && (
+                  <ReviewFileComment
+                    selectedFile={selectedFile}
+                    comments={comments}
+                    activeFileComment={activeFileComment}
+                    setActiveFileComment={setActiveFileComment}
+                    onRemoveComment={handleRemoveComment}
+                    onEditComment={handleEditComment}
+                    setComments={setComments}
+                  />
+                )}
 
                 <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
                   {diffQuery.isLoading ? (
