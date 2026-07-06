@@ -1,0 +1,197 @@
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use chrono::Utc;
+use tauri::{Emitter, State};
+
+use crate::core::AppState;
+use crate::models::issue_tracking::RemoteIssue;
+use crate::models::{Task, TASK_SELECT};
+
+/// Batch-import remote issues as Backlog tasks for a project, skipping any that have already
+/// been imported (by external_id + project_id). Returns the list of newly-created tasks.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_tasks(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    issues: Vec<RemoteIssue>,
+    base_branch: String,
+) -> Result<Vec<Task>, String> {
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+
+    let already_imported: HashSet<String> = if issues.is_empty() {
+        HashSet::new()
+    } else {
+        let external_ids: Vec<&str> = issues.iter().map(|i| i.external_id.as_str()).collect();
+        let placeholders = external_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!(
+            "SELECT external_id FROM tasks WHERE project_id = ? AND external_id IN ({})",
+            placeholders
+        );
+        let mut all_params: Vec<&dyn rusqlite::ToSql> = vec![&project_id as &dyn rusqlite::ToSql];
+        for id in &external_ids {
+            all_params.push(id as &dyn rusqlite::ToSql);
+        }
+        let mut stmt = tx.prepare(&query).map_err(|e| e.to_string())?;
+        let set: HashSet<String> = stmt
+            .query_map(all_params.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        set
+    };
+
+    let mut created_tasks: Vec<Task> = Vec::new();
+
+    for issue in &issues {
+        if already_imported.contains(&issue.external_id) {
+            continue;
+        }
+
+        if issue.title.len() > 1000 || issue.external_id.len() > 200 {
+            return Err(format!("Issue fields exceed maximum allowed length: {}", issue.external_id));
+        }
+
+        let import_source = issue.external_id.split(':').next().unwrap_or("").to_string();
+
+        let priority_str = match issue.priority.as_deref() {
+            Some("Urgent") => "Urgent",
+            Some("High") => "High",
+            Some("Medium") => "Medium",
+            Some("Low") => "Low",
+            _ => "None",
+        };
+
+        let labels_json = serde_json::to_string(&issue.labels)
+            .map_err(|e| format!("JSON serialization failed: {}", e))?;
+
+        tx.execute(
+            "INSERT INTO tasks (project_id, title, description, status, priority, base_branch, \
+             is_imported, import_source, external_id, external_url, external_updated_at, \
+             labels, skills, created_at, updated_at) \
+             VALUES (?, ?, ?, 'Backlog', ?, ?, 1, ?, ?, ?, ?, ?, '[]', ?, ?)",
+            rusqlite::params![
+                project_id,
+                &issue.title,
+                issue.body.as_deref(),
+                priority_str,
+                &base_branch,
+                &import_source,
+                &issue.external_id,
+                &issue.url,
+                &issue.updated_at,
+                labels_json,
+                &now,
+                &now,
+            ],
+        ).map_err(|e| e.to_string())?;
+
+        let task_id = tx.last_insert_rowid();
+        let query = format!("{} WHERE id = ?", TASK_SELECT);
+        let task = tx.query_row(&query, [task_id], Task::from_row)
+            .map_err(|e| e.to_string())?;
+        created_tasks.push(task);
+    }
+
+    tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(created_tasks)
+}
+
+/// Update a task's title, description, labels, and external_updated_at from a remote issue.
+/// This is the "Update task" action in the Changed tab — performs a non-destructive content overwrite.
+#[tauri::command]
+#[specta::specta]
+pub fn update_task_from_remote(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    issue: RemoteIssue,
+) -> Result<Task, String> {
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    let labels_json = serde_json::to_string(&issue.labels)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+
+    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+
+    tx.execute(
+        "UPDATE tasks SET title = ?, description = ?, labels = ?, \
+         external_updated_at = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![
+            &issue.title,
+            issue.body.as_deref(),
+            labels_json,
+            &issue.updated_at,
+            &now,
+            task_id,
+        ],
+    ).map_err(|e| e.to_string())?;
+
+    let query = format!("{} WHERE id = ?", TASK_SELECT);
+    let task = tx.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+/// Advance a task's external_updated_at to the remote value, clearing the "changed" flag
+/// without modifying title, description, or labels.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_task_change(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    remote_updated_at: String,
+) -> Result<Task, String> {
+    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let now = Utc::now().to_rfc3339();
+
+    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+
+    tx.execute(
+        "UPDATE tasks SET external_updated_at = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&remote_updated_at, &now, task_id],
+    ).map_err(|e| e.to_string())?;
+
+    let query = format!("{} WHERE id = ?", TASK_SELECT);
+    let task = tx.query_row(&query, [task_id], Task::from_row)
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[ignore = "Wave 0 stub — implement after import_tasks is wired"]
+    fn test_import_tasks_skips_duplicates() {
+        // Verify that import_tasks does not insert a task whose external_id
+        // already exists for the same project_id.
+    }
+
+    #[test]
+    #[ignore = "Wave 0 stub — implement after update_task_from_remote is wired"]
+    fn test_update_task_from_remote_overwrites_fields() {
+        // Verify that update_task_from_remote updates title, description,
+        // labels, and external_updated_at without touching other fields.
+    }
+
+    #[test]
+    #[ignore = "Wave 0 stub — implement after dismiss_task_change is wired"]
+    fn test_dismiss_task_change_advances_external_updated_at() {
+        // Verify that dismiss_task_change updates external_updated_at to the
+        // remote value without changing title, description, or labels.
+    }
+}
