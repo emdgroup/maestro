@@ -16,6 +16,7 @@ export interface SidePanelTab {
   kind: TabKind;
   label: string;
   closeable: boolean;
+  initialPath?: string;
 }
 
 const LABELS: Record<TabKind, string> = {
@@ -53,7 +54,7 @@ export interface UseSidePanelTabsResult {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   closeTab: (id: string) => void;
-  addDynamicTab: (kind: "terminal" | "files") => string;
+  addDynamicTab: (kind: "terminal" | "files", initialPath?: string) => string;
   openTabKind: (kind: TabKind) => void;
   latestCanvasSurfaceId: string | null;
 }
@@ -128,10 +129,10 @@ export function useSidePanelTabs({
     setActiveTabId((prev) => (prev === id ? "overview" : prev));
   }, []);
 
-  const addDynamicTab = useCallback((kind: "terminal" | "files"): string => {
+  const addDynamicTab = useCallback((kind: "terminal" | "files", initialPath?: string): string => {
     counterRef.current += 1;
     const id = `${kind}-${counterRef.current}`;
-    setTabs((prev) => [...prev, makeTab(kind, id)]);
+    setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath }]);
     setActiveTabId(id);
     return id;
   }, []);

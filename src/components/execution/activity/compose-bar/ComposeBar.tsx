@@ -103,10 +103,11 @@ export function ComposeBar({
 
   const selectMention = useCallback(
     (filePath: string) => {
-      const newMention = { id: crypto.randomUUID(), displayName: filePath, filePath };
+      const basename = filePath.split("/").pop() ?? filePath;
+      const newMention = { id: crypto.randomUUID(), displayName: basename, filePath };
       const before = value.slice(0, mentionAC.mentionTriggerOffset);
       const after = value.slice(textareaRef.current?.selectionStart ?? value.length);
-      const insertion = `@${filePath} `;
+      const insertion = `@${basename} `;
       const newValue = `${before}${insertion}${after.trimStart()}`;
       flushSync(() => {
         setValue(newValue);
@@ -191,14 +192,14 @@ export function ComposeBar({
 
       const mentionBlocks: JsonValue[] = [];
       const sortedMentions = [...mentions].sort((a, b) => {
-        const idxA = trimmed.indexOf(`@${a.filePath}`);
-        const idxB = trimmed.indexOf(`@${b.filePath}`);
+        const idxA = trimmed.indexOf(`@${a.displayName}`);
+        const idxB = trimmed.indexOf(`@${b.displayName}`);
         return idxA - idxB;
       });
 
       let cursor = 0;
       for (const mention of sortedMentions) {
-        const marker = `@${mention.filePath}`;
+        const marker = `@${mention.displayName}`;
         const idx = trimmed.indexOf(marker, cursor);
         if (idx === -1) continue;
         const before = trimmed.slice(cursor, idx);
@@ -269,7 +270,7 @@ export function ComposeBar({
     const newValue = e.target.value;
     const cursor = e.target.selectionStart ?? newValue.length;
     setValue(newValue);
-    mentionAC.setMentions((prev) => prev.filter((m) => newValue.includes(`@${m.filePath}`)));
+    mentionAC.setMentions((prev) => prev.filter((m) => newValue.includes(`@${m.displayName}`)));
     const commandDetected = commandAC.onInputChange(newValue);
     if (commandDetected) mentionAC.closeMentions();
     else mentionAC.onInputChange(newValue, cursor);

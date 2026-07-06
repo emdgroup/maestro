@@ -192,6 +192,17 @@ export function AgentActivityPanel({
     [sessionKey],
   );
 
+  const handleOpenFile = useCallback(
+    (uri: string) => {
+      const abs = uri.startsWith("file://") ? uri.slice(7) : uri;
+      const base = selectedProject?.path ?? "";
+      const rel = base && abs.startsWith(base) ? abs.slice(base.length + 1) : abs;
+      addDynamicTab("files", rel);
+      setSidePanelCollapsed(false);
+    },
+    [addDynamicTab, selectedProject],
+  );
+
   const handleOpenPlanOverlaySplit = useCallback(() => {
     if (!pendingPermission) return;
     if (!extractBodyText(pendingPermission.payload)) return;
@@ -402,6 +413,7 @@ export function AgentActivityPanel({
             toolCallMap={liveState.toolCallMap}
             canvasMap={liveState.canvasMap}
             onOpenPlanOverlay={handleOpenPlanOverlaySplit}
+            onOpenFile={handleOpenFile}
             inlinePermission={inlinePermission}
             bottomBar={
               <AgentBottomBar

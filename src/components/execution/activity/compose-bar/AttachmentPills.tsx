@@ -58,6 +58,7 @@ export function AttachmentPills({
       {mentions.map((m) => (
         <span
           key={m.id}
+          title={m.filePath}
           className="inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-md bg-accent/8 border border-accent/12 text-accent"
         >
           {iconForFilePath(m.displayName, "w-2.5 h-2.5 shrink-0")}

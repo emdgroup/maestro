@@ -14,6 +14,7 @@ interface WorkspaceFilesPanelProps {
   connection: ConnectionKey;
   wslDistroName?: string;
   isActive?: boolean;
+  initialPath?: string;
 }
 
 type DlState =
@@ -26,8 +27,9 @@ export function WorkspaceFilesPanel({
   connection,
   wslDistroName,
   isActive = true,
+  initialPath,
 }: WorkspaceFilesPanelProps) {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialPath ?? null);
   const [listOpen, setListOpen] = useState(true);
   const [listPinned, setListPinned] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());

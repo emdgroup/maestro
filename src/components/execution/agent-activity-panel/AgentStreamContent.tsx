@@ -14,6 +14,7 @@ interface AgentStreamContentProps {
   toolCallMap: Map<string, ToolCallItem>;
   canvasMap: Map<string, CanvasSurface>;
   onOpenPlanOverlay: () => void;
+  onOpenFile?: (uri: string) => void;
   inlinePermission: React.ReactNode;
   bottomBar: React.ReactNode;
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
@@ -29,6 +30,7 @@ export function AgentStreamContent({
   toolCallMap,
   canvasMap,
   onOpenPlanOverlay,
+  onOpenFile,
   inlinePermission,
   bottomBar,
   chatScrollRef,
@@ -56,7 +58,7 @@ export function AgentStreamContent({
               const isLast = gi.item.item.id === lastUserMessage?.id;
               return (
                 <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
-                  <ActivityUserMessage message={gi.item.item} />
+                  <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
                 </div>
               );
             }

@@ -39,6 +39,7 @@ const sanitizeSchema = {
   tagNames: [...(defaultSchema.tagNames ?? []), "mark"],
   attributes: {
     ...defaultSchema.attributes,
+    a: [...(defaultSchema.attributes?.a ?? []), "dataOpenFileUri"],
     code: [...(defaultSchema.attributes?.code ?? []), "className"],
     span: [...(defaultSchema.attributes?.span ?? []), "className", "style"],
     div: [...(defaultSchema.attributes?.div ?? []), "className"],
@@ -610,11 +611,21 @@ function MarkdownCodeComponent({
   return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
 }
 
-function MarkdownAnchorComponent({ href, children }: { href?: string; children?: ReactNode }) {
+function MarkdownAnchorComponent({
+  href,
+  children,
+  "data-open-file-uri": dataOpenFileUri,
+}: {
+  href?: string;
+  children?: ReactNode;
+  "data-open-file-uri"?: string;
+}) {
   return (
     <a
       href={href}
+      data-open-file-uri={dataOpenFileUri}
       onClick={(e) => {
+        if (dataOpenFileUri) return; // handled by ActivityUserMessage event delegation
         e.preventDefault();
         if (!href) return;
         if (href.startsWith("#")) {

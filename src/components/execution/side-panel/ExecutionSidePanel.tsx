@@ -55,7 +55,7 @@ interface ExecutionSidePanelProps {
   activeTabId: string;
   onTabChange: (id: string) => void;
   onTabClose: (id: string) => void;
-  onAddTab: (kind: "terminal" | "files") => string;
+  onAddTab: (kind: "terminal" | "files", initialPath?: string) => string;
   onOpenTabKind: (kind: TabKind) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
@@ -376,7 +376,7 @@ export function ExecutionSidePanel({
 
           {/* Content: all panels mounted, inactive ones hidden */}
           <div className="flex-1 relative min-h-0">
-            {tabs.map(({ id, kind }) => {
+            {tabs.map(({ id, kind, initialPath }) => {
               const isActive = isSessionActive && activeTabId === id;
               const ptyEntry = kind === "terminal" ? ptyState.get(id) : undefined;
               return (
@@ -476,6 +476,7 @@ export function ExecutionSidePanel({
                       connection={connection}
                       wslDistroName={wslDistroName}
                       isActive={isActive}
+                      initialPath={initialPath}
                     />
                   )}
                   {kind === "terminal" && (
