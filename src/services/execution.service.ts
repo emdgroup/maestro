@@ -14,6 +14,7 @@ export const executionQueryKeys = {
   agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
   projectAgents: (connection: ConnectionKey, cwd: string) =>
     ["projectAgents", connection, cwd] as const,
+  sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
 };
 
 /**
@@ -283,6 +284,18 @@ export function useRenameAcpSessionMutation() {
       });
     },
     onError: createErrorToastHandler("Failed to rename session"),
+  });
+}
+
+/**
+ * Lightweight query for ACP session metadata (cwd, project_id, session_start_sha).
+ * Used to resolve relative file paths to absolute paths inside working file views.
+ */
+export function useAcpSessionMeta(sessionKey: number | null) {
+  return useQuery({
+    queryKey: executionQueryKeys.sessionMeta(sessionKey),
+    queryFn: () => api.getAcpSessionMeta(sessionKey!),
+    enabled: sessionKey != null,
   });
 }
 
