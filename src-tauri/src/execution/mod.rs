@@ -1,7 +1,11 @@
 pub mod handlers;
 pub mod process;
 pub mod pty;
+pub mod pty_ops;
+pub mod pty_stream;
+pub mod queue;
 pub mod remote;
+pub mod spawn;
 pub mod streaming;
 pub mod models;
 
