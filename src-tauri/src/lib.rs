@@ -44,6 +44,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_task_instructions,
             crate::ipc::add_task_instruction,
             crate::ipc::list_project_branches,
+            crate::ipc::get_linux_install_type,
             crate::ipc::get_settings,
             crate::ipc::save_settings,
             crate::ipc::list_worktrees_with_status,

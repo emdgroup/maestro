@@ -3,6 +3,7 @@ import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
@@ -20,7 +21,8 @@ function formatLastChecked(date: Date | null): string {
 }
 
 export function UpdateCard() {
-  const { status, lastChecked, checkForUpdates, install } = useUpdater();
+  const { status, lastChecked, isPackageInstall, checkForUpdates, install, downloadPackage } =
+    useUpdater();
   const { data: appSettings } = useSettings();
   const saveAppSettings = useSaveSettings({ successToast: false });
   const [appVersion, setAppVersion] = useState<string>("…");
@@ -87,11 +89,13 @@ export function UpdateCard() {
           <div className="flex flex-col items-end gap-1 shrink-0">
             <Button
               size="sm"
-              onClick={install}
+              onClick={
+                isPackageInstall ? () => void downloadPackage(status.version) : () => void install()
+              }
               className="h-7 text-xs gap-1.5 bg-accent text-accent-foreground"
             >
               <ArrowDownToLine className="w-3 h-3" />
-              Install
+              {isPackageInstall ? "Download" : "Install"}
             </Button>
             <span className="text-[10px] font-medium">Update available</span>
           </div>
@@ -143,11 +147,26 @@ export function UpdateCard() {
       {/* Footer */}
       <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
         <span className="text-xs text-muted-foreground">Auto-update</span>
-        <Switch
-          checked={autoUpdate}
-          onCheckedChange={handleAutoUpdateToggle}
-          className="data-unchecked:bg-muted data-unchecked:border-border/50"
-        />
+        {isPackageInstall ? (
+          <TooltipProvider delay={400}>
+            <Tooltip>
+              <TooltipTrigger render={<span className="inline-flex cursor-not-allowed" />}>
+                <Switch
+                  checked={autoUpdate}
+                  disabled
+                  className="data-unchecked:bg-muted data-unchecked:border-border/50 opacity-50 pointer-events-none"
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left">Auto-update requires the AppImage install</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <Switch
+            checked={autoUpdate}
+            onCheckedChange={handleAutoUpdateToggle}
+            className="data-unchecked:bg-muted data-unchecked:border-border/50"
+          />
+        )}
       </div>
     </div>
   );

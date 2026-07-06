@@ -75,6 +75,16 @@ Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
 
 ---
 
+## Installation
+
+Download the latest release from the [releases page](https://github.com/emdgroup/maestro/releases).
+
+**Linux**: Use the `.AppImage` for automatic in-app updates. The `.deb` package works but requires manual updates — when a new version is available, Maestro will prompt you to download it.
+
+**macOS / Windows**: Use the `.dmg` or `.exe` installer — auto-updates are built in.
+
+---
+
 ## For contributors
 
 ### Tech stack

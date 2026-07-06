@@ -325,6 +325,9 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async getLinuxInstallType(): Promise<string> {
+    return await TAURI_INVOKE("get_linux_install_type");
+  },
   /**
    * Get current application settings from the database
    */

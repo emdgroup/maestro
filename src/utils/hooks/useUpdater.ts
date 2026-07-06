@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+type InstallType = "appimage" | "package" | "native";
 
 type UpdateStatus =
   | { phase: "idle" }
@@ -13,12 +17,15 @@ type UpdateStatus =
 interface UpdaterState {
   status: UpdateStatus;
   lastChecked: Date | null;
+  installType: InstallType | null;
   setStatus: (status: UpdateStatus) => void;
   setLastChecked: (date: Date) => void;
+  setInstallType: (type: InstallType) => void;
 }
 
-// Module-level Update object — non-serializable, cannot go in Zustand
+// Module-level — non-serializable, cannot go in Zustand
 let pendingUpdate: Update | null = null;
+let cachedInstallType: InstallType | null = null;
 
 const useUpdaterStore = create<UpdaterState>((set) => ({
   status: { phase: "idle" },
@@ -26,9 +33,18 @@ const useUpdaterStore = create<UpdaterState>((set) => ({
     const stored = localStorage.getItem("updater:lastChecked");
     return stored ? new Date(stored) : null;
   })(),
+  installType: null,
   setStatus: (status) => set({ status }),
   setLastChecked: (date) => set({ lastChecked: date }),
+  setInstallType: (installType) => set({ installType }),
 }));
+
+async function resolveInstallType(): Promise<InstallType> {
+  if (cachedInstallType !== null) return cachedInstallType;
+  cachedInstallType = await invoke<InstallType>("get_linux_install_type");
+  useUpdaterStore.getState().setInstallType(cachedInstallType);
+  return cachedInstallType;
+}
 
 async function doFullInstall(): Promise<void> {
   const store = useUpdaterStore.getState();
@@ -53,10 +69,12 @@ async function doFullInstall(): Promise<void> {
 }
 
 export function useUpdater() {
-  const { status, lastChecked } = useUpdaterStore();
+  const { status, lastChecked, installType } = useUpdaterStore();
+  const isPackageInstall = installType === "package";
 
   async function checkForUpdates(autoUpdate: boolean) {
     const store = useUpdaterStore.getState();
+    const type = await resolveInstallType();
     store.setStatus({ phase: "checking" });
     try {
       const update = await check();
@@ -70,7 +88,7 @@ export function useUpdater() {
       }
 
       pendingUpdate = update;
-      if (autoUpdate) {
+      if (autoUpdate && type !== "package") {
         await doFullInstall();
       } else {
         store.setStatus({
@@ -105,5 +123,11 @@ export function useUpdater() {
     }
   }
 
-  return { status, lastChecked, checkForUpdates, install };
+  async function downloadPackage(version: string) {
+    // ponytail: open browser URL — browser handles progress, destination, resume
+    const url = `https://github.com/emdgroup/maestro/releases/download/v${version}/maestro_${version}_amd64.deb`;
+    await openUrl(url);
+  }
+
+  return { status, lastChecked, isPackageInstall, checkForUpdates, install, downloadPackage };
 }

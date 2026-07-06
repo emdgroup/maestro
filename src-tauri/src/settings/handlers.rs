@@ -4,6 +4,23 @@ use tauri::State;
 use crate::models::AppSettings;
 use crate::core::AppState;
 
+#[tauri::command]
+#[specta::specta]
+pub fn get_linux_install_type() -> &'static str {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("APPIMAGE").is_ok() {
+            "appimage"
+        } else {
+            "package"
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "native"
+    }
+}
+
 /// Get current application settings from the database
 #[tauri::command]
 #[specta::specta]
