@@ -1,6 +1,6 @@
 import { Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 import { FileTree } from "./FileTree";

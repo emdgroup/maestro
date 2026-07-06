@@ -1,4 +1,4 @@
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 
 type TextVariant = "heading" | "subheading" | "body" | "caption" | "code" | "label";
 

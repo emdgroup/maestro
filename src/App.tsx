@@ -25,7 +25,7 @@ import { useProjectSettings } from "@/services/project.service";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
 import { useUpdater } from "@/hooks/useUpdater";

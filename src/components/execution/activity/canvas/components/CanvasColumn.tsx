@@ -1,4 +1,4 @@
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import type { ReactNode } from "react";
 
 interface Props {

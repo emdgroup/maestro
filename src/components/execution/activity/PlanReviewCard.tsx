@@ -1,5 +1,5 @@
 import { Route, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import type { ToolCallItem } from "./types";
 
 interface PlanReviewCardProps {

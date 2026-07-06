@@ -16,7 +16,7 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { PermissionPrompt } from "@/components/execution/activity/PermissionPrompt";

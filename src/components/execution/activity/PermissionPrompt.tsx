@@ -13,7 +13,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { MarkdownBlock } from "./MarkdownBlock";
 import type { ToolCallItem } from "@/components/execution/activity/types.ts";
 

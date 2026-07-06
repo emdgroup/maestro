@@ -1,5 +1,5 @@
 import { icons } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 
 interface Props {
   name?: string;

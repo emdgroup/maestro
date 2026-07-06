@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, type ReactNode } from "react"
 import { ZoomIn, ZoomOut, Fullscreen, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 
 interface ZoomableContentProps {
   children: ReactNode;

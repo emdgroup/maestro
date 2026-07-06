@@ -1,7 +1,7 @@
 import { Button } from "@/ui/button";
 import { Lock, X } from "lucide-react";
 import { getFolderName } from "@/lib/path-utils";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
 import React from "react";
 
@@ -36,7 +36,7 @@ export function ProjectListItem({
       disabled={isDisabled}
       variant="outline"
       className={cn(
-        "w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background shadow-md",
+        "w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background hover:border-accent hover:text-accent shadow-md",
         locked && "opacity-50 cursor-not-allowed",
       )}
     >

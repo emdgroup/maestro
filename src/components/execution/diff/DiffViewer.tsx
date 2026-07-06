@@ -10,7 +10,7 @@ import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { Check } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 

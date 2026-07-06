@@ -8,7 +8,7 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { openFileWithConnection } from "@/lib/file-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";

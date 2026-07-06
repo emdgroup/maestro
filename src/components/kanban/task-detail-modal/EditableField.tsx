@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 

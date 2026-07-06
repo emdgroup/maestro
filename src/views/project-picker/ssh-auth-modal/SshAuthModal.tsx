@@ -12,7 +12,7 @@ import {
   FileKey,
   Lock,
 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/ui/field";
 import { Checkbox } from "@/ui/checkbox";
 import { Label } from "@/ui/label";

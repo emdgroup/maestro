@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { GitCommitHorizontal, ChevronDown, Circle } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import type { CommitInfo } from "@/types/bindings";
 

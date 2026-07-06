@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Files, ExternalLink, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";

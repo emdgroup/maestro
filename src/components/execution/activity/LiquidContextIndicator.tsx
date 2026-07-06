@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useId } from "react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { humanizeTokenCount } from "@/lib/format-utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
@@ -376,7 +376,6 @@ export function LiquidContextIndicator({
         side="top"
         align="start"
         sideOffset={8}
-        collisionPadding={16}
         onMouseEnter={handlePopoverMouseEnter}
         onMouseLeave={handlePopoverMouseLeave}
         className={cn(

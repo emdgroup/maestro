@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessageCircleQuestionMark, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import type { ElicitationSummaryItem } from "./types";
 
 interface Props {

@@ -10,7 +10,7 @@ import {
   RefreshCw,
   SearchIcon,
 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";

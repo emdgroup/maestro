@@ -1,5 +1,5 @@
 import { Image as ImageIcon } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { iconForFilePath } from "./composeUtils";
 import type { ExternalAttachment } from "./externalAttachment";
 import type { MentionEntry } from "./mentionEntry";

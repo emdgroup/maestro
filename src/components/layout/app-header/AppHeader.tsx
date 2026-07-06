@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
@@ -127,16 +127,14 @@ export function AppHeader({
                     className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
                     onFocus={() => handleItemFocus(project.id)}
                     onBlur={handleItemBlur}
-                    before={
-                      highlightedId === project.id ? (
-                        <motion.div
-                          layoutId="project-hover-pill"
-                          className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
-                          transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                        />
-                      ) : null
-                    }
                   >
+                    {highlightedId === project.id && (
+                      <motion.div
+                        layoutId="project-hover-pill"
+                        className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
+                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                      />
+                    )}
                     <div className="relative z-10 flex items-center gap-2">
                       <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
                         <div className="font-medium text-foreground">{project.name}</div>
@@ -153,16 +151,14 @@ export function AppHeader({
                     className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
                     onFocus={() => handleItemFocus(BACK_TO_PICKER_VALUE)}
                     onBlur={handleItemBlur}
-                    before={
-                      highlightedId === BACK_TO_PICKER_VALUE ? (
-                        <motion.div
-                          layoutId="project-hover-pill"
-                          className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
-                          transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                        />
-                      ) : null
-                    }
                   >
+                    {highlightedId === BACK_TO_PICKER_VALUE && (
+                      <motion.div
+                        layoutId="project-hover-pill"
+                        className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
+                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                      />
+                    )}
                     <div className="relative z-10 flex items-center gap-2 py-1">
                       <FolderOpen className="size-3.5" />
                       <span>Close project</span>

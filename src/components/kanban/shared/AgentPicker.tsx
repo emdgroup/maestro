@@ -1,5 +1,5 @@
 import { Bot, BotOff, Check } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { PILL, POPOVER_ITEM } from "./TogglePill";

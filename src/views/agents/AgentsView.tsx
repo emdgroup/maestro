@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
 import { SessionHistoryPanel } from "@/components/execution/session-history/SessionHistoryPanel";
 import { SpawnSessionDialog } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";

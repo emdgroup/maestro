@@ -9,7 +9,7 @@ import {
   AlignJustify,
 } from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { DiffViewer } from "@/components/execution/diff/DiffViewer";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";

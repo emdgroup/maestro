@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";

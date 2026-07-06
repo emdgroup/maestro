@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import type { ThinkingItem } from "./types";
 import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
 import { useSettings } from "@/services/settings.service";

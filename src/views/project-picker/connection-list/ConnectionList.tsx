@@ -26,7 +26,7 @@ function SshConnectionItem({
         onClick={onConnect}
         disabled={loading || !connected}
         variant="outline"
-        className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background shadow-md"
+        className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background hover:border-accent hover:text-accent shadow-md"
       >
         <div className="flex items-start gap-2 w-full">
           <div className="relative shrink-0">
@@ -126,7 +126,7 @@ export function ConnectionList() {
                       onClick={() => handleConnection(connection)}
                       disabled={loading}
                       variant="outline"
-                      className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background shadow-md"
+                      className="w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-10 hover:bg-background hover:border-accent hover:text-accent shadow-md"
                     >
                       <div className="flex items-start gap-2 w-full">
                         {icon}

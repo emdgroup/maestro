@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { langForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { HighlightedCode, MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 

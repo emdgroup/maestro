@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon, GitBranch } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { generateSessionName } from "@/lib/generateSessionName";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";

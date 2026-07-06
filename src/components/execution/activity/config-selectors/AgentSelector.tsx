@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { Bot, Check, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { TRIGGER_CLASS, GLASS_CONTENT_CLASS } from "./BaseDropdownSelector";
 import type { SelectorProps } from "./BaseDropdownSelector";
 import type { ConfigOptionValue } from "../types";

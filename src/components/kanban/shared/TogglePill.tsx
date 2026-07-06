@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 
 export const PILL =

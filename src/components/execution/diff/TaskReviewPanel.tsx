@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { MessageSquare, CheckCheck, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { parseDiffString } from "@/lib/diff-utils";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { DiffFileWithName } from "@/types/review";
 

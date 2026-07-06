@@ -6,7 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { UpdateCard } from "@/components/settings/UpdateCard";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { ConnectionList } from "./connection-list/ConnectionList";
 import { ProjectList } from "./project-list/ProjectList";
 import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";

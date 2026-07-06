@@ -1,5 +1,5 @@
 import { Skeleton } from "@/ui/skeleton";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
 
 export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean }) {

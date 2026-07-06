@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useRef, memo } from "react";
 import { X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";

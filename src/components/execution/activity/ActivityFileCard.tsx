@@ -1,5 +1,5 @@
 import { FileText, FileDiff } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 
 interface ActivityFileCardProps {
   variant: "working-files" | "review-changes";

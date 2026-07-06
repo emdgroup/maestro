@@ -4,7 +4,7 @@ import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
 import React from "react";
 

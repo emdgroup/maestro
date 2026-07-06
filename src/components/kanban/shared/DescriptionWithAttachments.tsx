@@ -1,5 +1,5 @@
 import { Paperclip, Upload } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";
 

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { pointerIntersection } from "@dnd-kit/collision";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";

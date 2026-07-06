@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dumbbell } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import type { SelectorProps } from "./BaseDropdownSelector";
 
 export function EffortSelector({ option, value, onChange, disabled }: SelectorProps) {

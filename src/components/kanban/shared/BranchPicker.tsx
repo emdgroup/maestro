@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { GitBranch, Check, Search, RefreshCw, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";

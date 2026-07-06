@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MessageCircleQuestionMark, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 

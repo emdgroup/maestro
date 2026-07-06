@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { List, FolderTree, CheckCheck, X } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { FileTree } from "./FileTree";
 
 interface FileSelectorFile {

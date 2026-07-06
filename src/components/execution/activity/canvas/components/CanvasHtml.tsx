@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Skeleton } from "@/ui/skeleton";
 

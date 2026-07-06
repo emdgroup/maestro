@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import type { WorktreeWithStatus } from "@/types/bindings";
 

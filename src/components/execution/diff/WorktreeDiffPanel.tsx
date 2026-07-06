@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { CheckCheck } from "lucide-react";
 import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "@/lib/diff-utils";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { DiffViewer } from "./DiffViewer";
 import { DiffActionBar } from "./DiffActionBar";

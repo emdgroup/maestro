@@ -11,7 +11,7 @@ import {
   ArrowRightLeft,
   Settings2,
 } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";

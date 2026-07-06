@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Files, Pin, Loader2, ExternalLink, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { useListWorkspaceFiles, useReadFile } from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";

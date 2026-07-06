@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useImperativeHandle, useLayoutEffect } from "react";
 import { flushSync } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
-import { cn } from "@/lib/ui-utils";
+import { cn } from "@/lib/utils.ts";
 import { api } from "@/lib/tauri-utils";
 import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
