@@ -1,11 +1,5 @@
 import React, { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/ui/dialog";
 import type { AuthMethod, AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 import { PasswordAuth } from "./PasswordAuth";
 import { KeyFileAuth } from "./KeyFileAuth";

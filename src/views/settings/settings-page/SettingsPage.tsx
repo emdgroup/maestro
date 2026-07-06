@@ -1,61 +1,26 @@
 import { useEffect, useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { useForm, Controller } from "react-hook-form";
-import { Label } from "@/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { useForm } from "react-hook-form";
 import { Button } from "@/ui/button";
-import { Bot, CircleDot, Monitor, RotateCcw } from "lucide-react";
-import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import {
-  useListIntegrations,
-  useProjectIssueTrackingConfig,
-  useSaveProjectIssueTrackingConfig,
-  PROVIDER_NAMES,
-} from "@/services/integration.service";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
-import { Switch } from "@/ui/switch";
-import type {
-  ConnectionKey,
-  EnterKeyBehavior,
-  ProjectIssueTrackingConfig,
-  TerminalColorMode,
-} from "@/types/bindings";
+import { useListIntegrations } from "@/services/integration.service";
 import { showSuccessToast } from "@/components/common/error-toast/ErrorToast";
 import { UpdateCard } from "@/components/settings/UpdateCard";
+import type { ConnectionKey } from "@/types/bindings";
+import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
+import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
+import { AppearanceSection } from "./AppearanceSection";
+import { IssueTrackingSection } from "./IssueTrackingSection";
+import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
 
 interface SettingsPageProps {
   projectId: number;
   connection: ConnectionKey;
 }
 
-interface ProjectSettingsFormData {
-  default_agent: string;
-  reopen_sessions: boolean;
-  startup_tab: string;
-}
-
 export interface SettingsPageHandle {
   save: () => Promise<void>;
   resetToDefaults: () => void;
-}
-
-function getRequiredIntegrationFields(provider: string): string[] {
-  switch (provider) {
-    case "github":
-    case "forgejo":
-    case "gitea":
-      return ["owner", "repo"];
-    case "gitlab":
-      return ["project_path"];
-    case "jira_cloud":
-      return ["project_key"];
-    case "azuredevops":
-      return ["project_name"];
-    default:
-      return [];
-  }
 }
 
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
@@ -67,45 +32,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
     const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connection);
-
     const { data: integrations } = useListIntegrations();
-    const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
-    const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
-
-    const { data: appSettings } = useSettings();
-    const saveAppSettings = useSaveSettings({ successToast: false });
-    const terminalColorMode = appSettings?.terminal_color_mode ?? "follow_theme";
-
-    function handleTerminalColorModeChange(value: string | null) {
-      if (!appSettings || !value) return;
-      saveAppSettings.mutate({
-        ...appSettings,
-        terminal_color_mode: value as TerminalColorMode,
-        updated_at: new Date().toISOString(),
-      });
-    }
-
-    const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
-
-    function handleEnterKeyBehaviorChange(value: string | null) {
-      if (!appSettings || !value) return;
-      saveAppSettings.mutate({
-        ...appSettings,
-        enter_key_behavior: value as EnterKeyBehavior,
-        updated_at: new Date().toISOString(),
-      });
-    }
-
-    const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-    const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
-    const [issueTrackingConfigured, setIssueTrackingConfigured] = useState(false);
-    const [issueTrackingEditing, setIssueTrackingEditing] = useState(false);
-    const [issueTrackingAttempted, setIssueTrackingAttempted] = useState(false);
+    const [isIssueTrackingValid, setIsIssueTrackingValid] = useState(true);
+    const issueTrackingSectionRef = useRef<IssueTrackingSectionHandle>(null);
     const saveHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const isIssueTrackingValid =
-      !selectedProvider ||
-      getRequiredIntegrationFields(selectedProvider).every((f) => issueTrackingFields[f]?.trim());
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
@@ -117,26 +47,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
       });
     }, [projectSettingsQuery.data, reset]);
 
-    useEffect(() => {
-      if (!projectIssueTrackingQuery.data) {
-        setIssueTrackingConfigured(false);
-        setSelectedProvider(null);
-        setIssueTrackingFields({});
-        return;
-      }
-      const config = projectIssueTrackingQuery.data;
-      setIssueTrackingConfigured(true);
-      setSelectedProvider(config.provider);
-      setIssueTrackingFields({
-        owner: config.owner ?? "",
-        repo: config.repo ?? "",
-        project_path: config.project_path ?? "",
-        team_id: config.team_id ?? "",
-        project_key: config.project_key ?? "",
-        project_name: config.project_name ?? "",
-      });
-    }, [projectIssueTrackingQuery.data]);
-
     const onSubmit = async (data: ProjectSettingsFormData) => {
       try {
         await updateProjectSettingsMutation.mutateAsync({
@@ -147,19 +57,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             startup_tab: data.startup_tab || null,
           },
         });
-        if (selectedProvider) {
-          const config: ProjectIssueTrackingConfig = {
-            provider: selectedProvider,
-            owner: issueTrackingFields.owner || null,
-            repo: issueTrackingFields.repo || null,
-            project_path: issueTrackingFields.project_path || null,
-            team_id: issueTrackingFields.team_id || null,
-            project_key: issueTrackingFields.project_key || null,
-            project_name: issueTrackingFields.project_name || null,
-          };
-          await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: config });
-        }
-        setIssueTrackingAttempted(false);
+        await issueTrackingSectionRef.current?.save();
         showSuccessToast("Settings saved");
       } catch (err) {
         console.error("Failed to save project settings:", err);
@@ -168,7 +66,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const startSaveHoverTimer = () => {
       if (isIssueTrackingValid) return;
-      saveHoverTimerRef.current = setTimeout(() => setIssueTrackingAttempted(true), 500);
+      saveHoverTimerRef.current = setTimeout(() => issueTrackingSectionRef.current?.setAttempted(true), 500);
     };
 
     const cancelSaveHoverTimer = () => {
@@ -192,7 +90,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     // Providers that only host repos and do not support issue tracking in Maestro.
     const reposOnlyProviders = new Set(["bitbucket"]);
-
     const connectedIntegrations = integrations?.filter((s) => s.connected) ?? [];
     const issueTrackingIntegrations = connectedIntegrations.filter(
       (s) => !reposOnlyProviders.has(s.provider),
@@ -215,293 +112,18 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           ) : (
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <UpdateCard />
-
-              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-muted-foreground" />
-                  Default Agent
-                </h3>
-
-                {/* Default Agent */}
-                <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Default Agent</Label>
-                  <Controller
-                    name="default_agent"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={(v) => field.onChange(v ?? "")}
-                        disabled={agentsLoading}
-                      >
-                        <SelectTrigger className="w-full bg-muted">
-                          <SelectValue
-                            placeholder={
-                              agentsLoading ? "Loading agents…" : "None (use session default)"
-                            }
-                          >
-                            {field.value === ""
-                              ? "None (use session default)"
-                              : (agents.find((a) => a.id === field.value)?.name ?? field.value)}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">None (use session default)</SelectItem>
-                          {agents.map((agent) => (
-                            <SelectItem key={agent.id} value={agent.id}>
-                              <div className="flex items-center gap-2">
-                                {hasBrandIcon(agent.id) ? (
-                                  <BrandIcon slug={agent.id} className="w-4 h-4 shrink-0" />
-                                ) : (
-                                  agent.icon && (
-                                    <img
-                                      src={agent.icon}
-                                      className="w-4 h-4 rounded-sm shrink-0 dark:filter-[invert(1)]"
-                                      onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display =
-                                          "none";
-                                      }}
-                                      alt="agent icon"
-                                    />
-                                  )
-                                )}
-                                {agent.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Used for new sessions and auto-assigned tasks
-                  </p>
-                </div>
-              </div>
-
-              {/* Startup Behavior Card */}
-              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-muted-foreground" />
-                  Startup
-                </h3>
-
-                <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-medium">Reopen Previous Sessions</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Automatically restore agent sessions from your last session
-                    </p>
-                  </div>
-                  <Controller
-                    name="reopen_sessions"
-                    control={control}
-                    render={({ field }) => (
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        className="data-unchecked:bg-muted data-unchecked:border-border/50"
-                      />
-                    )}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Default Tab</Label>
-                  <Controller
-                    name="startup_tab"
-                    control={control}
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={(v) => field.onChange(v ?? "")}>
-                        <SelectTrigger className="w-full bg-muted">
-                          <SelectValue>
-                            {field.value === "" || field.value === "kanban"
-                              ? "Tasks (default)"
-                              : field.value === "agents"
-                                ? "Agents"
-                                : field.value === "worktrees"
-                                  ? "Worktrees"
-                                  : "Settings"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">Tasks (default)</SelectItem>
-                          <SelectItem value="agents">Agents</SelectItem>
-                          <SelectItem value="worktrees">Worktrees</SelectItem>
-                          <SelectItem value="settings">Settings</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Which tab opens first when you enter this project
-                  </p>
-                </div>
-              </div>
-
-              {/* Appearance Card */}
-              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <Monitor className="w-4 h-4 text-muted-foreground" />
-                  Appearance
-                </h3>
-
-                <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Terminal Colors</Label>
-                  <Select value={terminalColorMode} onValueChange={handleTerminalColorModeChange}>
-                    <SelectTrigger className="w-full bg-muted">
-                      <SelectValue>
-                        {terminalColorMode === "follow_theme"
-                          ? "Follow app theme"
-                          : "Default (black background)"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="follow_theme">Follow app theme</SelectItem>
-                      <SelectItem value="default">Default (black background)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Whether the terminal background matches your app theme or uses standard xterm
-                    colors
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Enter Key Behavior</Label>
-                  <Select value={enterKeyBehavior} onValueChange={handleEnterKeyBehaviorChange}>
-                    <SelectTrigger className="w-full bg-muted">
-                      <SelectValue>
-                        {enterKeyBehavior === "send_prompt"
-                          ? "Send prompt (Shift+Enter for new line)"
-                          : "New line (Ctrl+Enter to send)"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="send_prompt">
-                        Send prompt (Shift+Enter for new line)
-                      </SelectItem>
-                      <SelectItem value="new_line">New line (Ctrl+Enter to send)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Controls what happens when you press Enter in the compose bar
-                  </p>
-                </div>
-              </div>
-
-              {/* Issue Tracking Card */}
-              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <CircleDot className="w-4 h-4 text-muted-foreground" />
-                  Issue Tracking
-                </h3>
-
-                {issueTrackingIntegrations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No integrations connected. Add integrations from the project picker screen.
-                  </p>
-                ) : issueTrackingConfigured && !issueTrackingEditing ? (
-                  /* State C: Configured read-only */
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      {issueTrackingIntegrations.map((integration) => (
-                        <div
-                          key={integration.provider}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-default ${
-                            integration.provider === selectedProvider
-                              ? "border-primary ring-2 ring-primary bg-primary/5"
-                              : "border-border bg-muted/30 opacity-50"
-                          }`}
-                        >
-                          <span className="text-sm font-medium">
-                            {PROVIDER_NAMES[integration.provider] ?? integration.provider}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {selectedProvider && Object.values(issueTrackingFields).some(Boolean) && (
-                      <div className="space-y-1">
-                        {Object.entries(issueTrackingFields)
-                          .filter(([, v]) => v)
-                          .map(([key, value]) => (
-                            <p key={key} className="text-sm text-muted-foreground">
-                              {value}
-                            </p>
-                          ))}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIssueTrackingEditing(true)}
-                      >
-                        Change
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          await saveIssueTrackingMutation.mutateAsync({
-                            projectId,
-                            issueTracking: null,
-                          });
-                          setIssueTrackingConfigured(false);
-                          setSelectedProvider(null);
-                          setIssueTrackingFields({});
-                          setIssueTrackingEditing(false);
-                        }}
-                        disabled={saveIssueTrackingMutation.isPending}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  /* State B: Picker (not configured or editing) */
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      {issueTrackingIntegrations.map((integration) => (
-                        <button
-                          key={integration.provider}
-                          type="button"
-                          onClick={() => {
-                            setSelectedProvider(integration.provider);
-                            setIssueTrackingAttempted(false);
-                          }}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                            selectedProvider === integration.provider
-                              ? "border-primary ring-2 ring-primary bg-primary/5"
-                              : "border-border bg-card hover:bg-muted/50 opacity-70 hover:opacity-100"
-                          }`}
-                        >
-                          <span className="text-sm font-medium">
-                            {PROVIDER_NAMES[integration.provider] ?? integration.provider}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                    {selectedProvider && (
-                      <IssueTrackingProviderForm
-                        provider={selectedProvider}
-                        integration={
-                          issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!
-                        }
-                        fields={issueTrackingFields}
-                        onFieldsChange={(f) => {
-                          setIssueTrackingFields(f);
-                          setIssueTrackingAttempted(false);
-                        }}
-                        showValidation={issueTrackingAttempted}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-
+              <ProjectDefaultsSection
+                control={control}
+                agents={agents}
+                agentsLoading={agentsLoading}
+              />
+              <AppearanceSection />
+              <IssueTrackingSection
+                ref={issueTrackingSectionRef}
+                projectId={projectId}
+                issueTrackingIntegrations={issueTrackingIntegrations}
+                onValidityChange={setIsIssueTrackingValid}
+              />
               <div className="flex justify-end">
                 <div onMouseEnter={startSaveHoverTimer} onMouseLeave={cancelSaveHoverTimer}>
                   <Button

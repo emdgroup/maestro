@@ -267,4 +267,3 @@ export function ActivityToolCallGroup({ items, hasSubsequentMessage }: ActivityT
     </div>
   );
 }
-
