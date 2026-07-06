@@ -23,9 +23,9 @@ import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import type { PanelImperativeHandle } from "react-resizable-panels";
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
+import { useSidePanelState } from "./useSidePanelState";
 import { useWorkingFileTracker } from "./useWorkingFileTracker";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
@@ -115,15 +115,31 @@ export function AgentActivityPanel({
     setPendingElicitation,
   );
 
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
-  const sidePanelRef = useRef<PanelImperativeHandle>(null);
-  const sidePanelElementRef = useRef<HTMLDivElement>(null);
-  const leftPanelRef = useRef<PanelImperativeHandle>(null);
-  const [maximized, setMaximized] = useState(false);
-  const [sidePanelPlan, setSidePanelPlan] = useState<{
-    requestId: string;
-    payload: Record<string, unknown>;
-  } | null>(null);
+  // Computed early so useSidePanelState can receive it before useSidePanelTabs
+  const isPlanPermWithBody = !!(
+    pendingPermission &&
+    isPlanPermission(pendingPermission.payload) &&
+    extractBodyText(pendingPermission.payload) !== null
+  );
+
+  const {
+    sidePanelCollapsed,
+    setSidePanelCollapsed,
+    sidePanelRef,
+    sidePanelElementRef,
+    leftPanelRef,
+    maximized,
+    sidePanelPlan,
+    handleMaximizedChange,
+    handleOpenPlanOverlaySplit,
+    handlePlanRespond,
+  } = useSidePanelState({
+    isSelected,
+    isPlanPermWithBody,
+    pendingPermission,
+    handlePermissionRespond,
+    setScrollRestoreToken,
+  });
 
   const subagentItems = useMemo(
     () =>
@@ -200,25 +216,7 @@ export function AgentActivityPanel({
       addDynamicTab("files", rel);
       setSidePanelCollapsed(false);
     },
-    [addDynamicTab, selectedProject],
-  );
-
-  const handleOpenPlanOverlaySplit = useCallback(() => {
-    if (!pendingPermission) return;
-    if (!extractBodyText(pendingPermission.payload)) return;
-    setSidePanelPlan({
-      requestId: pendingPermission.requestId,
-      payload: pendingPermission.payload,
-    });
-    setSidePanelCollapsed(false);
-  }, [pendingPermission]);
-
-  const handlePlanRespond = useCallback(
-    (requestId: string, optionId: string | null) => {
-      void handlePermissionRespond(requestId, optionId);
-      setSidePanelPlan(null);
-    },
-    [handlePermissionRespond],
+    [addDynamicTab, selectedProject, setSidePanelCollapsed],
   );
 
   useEffect(() => {
@@ -285,58 +283,8 @@ export function AgentActivityPanel({
       })()
     : null;
 
-  const isPlanPermWithBody = !!(
-    pendingPermission &&
-    isPlanPermission(pendingPermission.payload) &&
-    extractBodyText(pendingPermission.payload) !== null
-  );
   const hasInlinePermission = !!(pendingPermission && !isPlanPermWithBody);
   const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
-
-  useLayoutEffect(() => {
-    const el = sidePanelElementRef.current;
-    if (el) {
-      el.style.transition = sidePanelCollapsed
-        ? "flex-basis 200ms ease-in, flex-grow 200ms ease-in"
-        : "flex-basis 200ms ease-out, flex-grow 200ms ease-out";
-    }
-    const raf = requestAnimationFrame(() => {
-      if (sidePanelCollapsed) {
-        sidePanelRef.current?.collapse();
-        leftPanelRef.current?.expand();
-      } else {
-        sidePanelRef.current?.expand();
-      }
-    });
-    const cleanup = setTimeout(() => {
-      if (sidePanelElementRef.current) {
-        sidePanelElementRef.current.style.transition = "";
-      }
-    }, 220);
-    setScrollRestoreToken((v) => v + 1);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(cleanup);
-      if (el) el.style.transition = "";
-    };
-  }, [sidePanelCollapsed]);
-
-  useEffect(() => {
-    if (isSelected) {
-      setMaximized(false);
-      leftPanelRef.current?.expand();
-    }
-  }, [isSelected]);
-
-  function handleMaximizedChange(v: boolean) {
-    setMaximized(v);
-    if (v) {
-      setSidePanelCollapsed(false);
-      leftPanelRef.current?.collapse();
-    } else {
-      leftPanelRef.current?.expand();
-    }
-  }
 
   // Restore scroll position after panel collapse/expand.
   // chatScrollRef and scrollTopRef are stable refs — safe to omit from deps.
@@ -345,16 +293,6 @@ export function AgentActivityPanel({
     const el = scroll.chatScrollRef.current;
     if (el) el.scrollTop = scroll.scrollTopRef.current;
   }, [sidePanelCollapsed, scroll.chatScrollRef, scroll.scrollTopRef]);
-
-  useEffect(() => {
-    if (!isPlanPermWithBody || !pendingPermission) return;
-    if (!extractBodyText(pendingPermission.payload)) return;
-    setSidePanelPlan({
-      requestId: pendingPermission.requestId,
-      payload: pendingPermission.payload,
-    });
-    setSidePanelCollapsed(false);
-  }, [isPlanPermWithBody, pendingPermission]);
 
   const showCompose =
     !isSessionDead &&
