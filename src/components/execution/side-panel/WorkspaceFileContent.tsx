@@ -64,7 +64,7 @@ export function WorkspaceFileContent({
       {isMarkdown ? (
         <MarkdownBlock text={content} />
       ) : (
-        <div className="file-code-view">
+        <div className="min-w-max file-code-view">
           <HighlightedCode code={content} lang={lang} stripContainerStyle />
         </div>
       )}
