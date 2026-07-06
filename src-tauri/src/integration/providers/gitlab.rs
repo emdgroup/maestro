@@ -15,8 +15,9 @@ struct GitLabProjectResponse {
 #[derive(serde::Deserialize)]
 struct GitLabIssueResponse {
     iid: u64,
-    #[allow(dead_code)]
-    id: u64,
+    // Internal GitLab database ID — deserialized from API response; iid is used for external_id
+    #[serde(rename = "id")]
+    _id: u64,
     title: String,
     description: Option<String>,
     web_url: String,
@@ -238,7 +239,7 @@ mod tests {
         let json = r#"{"iid":7,"id":99999,"title":"Bug","description":null,"web_url":"https://gitlab.com/a/b/-/issues/7","labels":[],"updated_at":null}"#;
         let issue: GitLabIssueResponse = serde_json::from_str(json).unwrap();
         assert_eq!(issue.iid, 7);
-        assert_eq!(issue.id, 99999);
+        assert_eq!(issue._id, 99999);
     }
 
     #[test]

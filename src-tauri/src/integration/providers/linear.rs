@@ -17,8 +17,6 @@ struct ViewerResponseData {
 
 #[derive(serde::Deserialize)]
 struct ViewerUser {
-    #[allow(dead_code)]
-    id: String,
     name: String,
 }
 
@@ -82,7 +80,7 @@ pub struct LinearTeam {
 
 // ── Query constants ──────────────────────────────────────────────────────────
 
-const VIEWER_QUERY: &str = "{ viewer { id name } }";
+const VIEWER_QUERY: &str = "{ viewer { name } }";
 const TEAMS_QUERY: &str = "{ teams { nodes { id name key } } }";
 const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } issueType { name } } } }"#;
 const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } issueType { name } } } }"#;
