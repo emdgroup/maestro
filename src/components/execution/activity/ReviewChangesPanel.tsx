@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
 import {
   X,
   Columns2,
@@ -14,8 +15,8 @@ import { DiffViewer } from "@/components/execution/diff/DiffViewer";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import { useAcpSessionMeta } from "@/services/execution.service";
 import { UntrackedFileDiffViewer } from "@/components/execution/diff/UntrackedFileDiffViewer";
-import { api } from "@/lib/tauri-utils";
 import type { DiffFileWithName } from "@/types/review";
 
 type DisplayItem = { kind: "diff"; file: DiffFileWithName } | { kind: "untracked"; path: string };
@@ -49,30 +50,21 @@ function SelectedFileHeader({
   viewedFiles: Set<string>;
   onToggleViewed: (fileName: string) => void;
 }) {
-  const fileName =
-    selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
+  const fileName = selectedItem.kind === "diff" ? selectedItem.file.fileName : selectedItem.path;
   const status = selectedItem.kind === "diff" ? (selectedItem.file.status ?? "M") : "A";
   const stats =
     selectedItem.kind === "diff"
       ? computeFileStats(selectedItem.file.hunks)
       : { insertions: 0, deletions: 0 };
   const statusColor =
-    status === "A"
-      ? "text-success"
-      : status === "D"
-        ? "text-destructive"
-        : "text-muted-foreground";
+    status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
   const isViewed = viewedFiles.has(fileName);
   return (
     <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
       <span className="font-mono text-foreground truncate flex-1">{fileName}</span>
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-      {stats.insertions > 0 && (
-        <span className="text-success shrink-0">+{stats.insertions}</span>
-      )}
-      {stats.deletions > 0 && (
-        <span className="text-destructive shrink-0">-{stats.deletions}</span>
-      )}
+      {stats.insertions > 0 && <span className="text-success shrink-0">+{stats.insertions}</span>}
+      {stats.deletions > 0 && <span className="text-destructive shrink-0">-{stats.deletions}</span>}
       <button
         onClick={() => onToggleViewed(fileName)}
         className={cn(
@@ -117,23 +109,10 @@ export function ReviewChangesPanel({
     });
   }, []);
 
-  const [projectId, setProjectId] = useState<number | null>(null);
-  const [cwd, setCwd] = useState<string | null>(null);
-  const [startSha, setStartSha] = useState<string | null>(null);
-  const [metaError, setMetaError] = useState(false);
-
-  useEffect(() => {
-    api
-      .getAcpSessionMeta(sessionKey)
-      .then((meta) => {
-        setProjectId(meta.project_id ?? null);
-        setCwd(meta.cwd);
-        setStartSha(meta.session_start_sha ?? null);
-      })
-      .catch(() => {
-        setMetaError(true);
-      });
-  }, [sessionKey]);
+  const { data: sessionMeta, isError: metaError } = useAcpSessionMeta(sessionKey ?? null);
+  const projectId = sessionMeta?.project_id ?? null;
+  const cwd = sessionMeta?.cwd ?? null;
+  const startSha = sessionMeta?.session_start_sha ?? null;
 
   const diffTarget = useMemo(
     () => (startSha ? ({ type: "Commit", sha: startSha } as const) : ({ type: "Head" } as const)),

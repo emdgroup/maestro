@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils.ts";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
-import { api } from "@/lib/tauri-utils";
+import { useAcpSessionMeta } from "@/services/execution.service";
 import { openFileWithConnection } from "@/lib/file-opener";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -34,16 +34,11 @@ export function ArtifactsPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
-  const [cwd, setCwd] = useState<string | null>(null);
   const [dlState, setDlState] = useState<DlState>({ status: "idle" });
   const initialFileAppliedRef = useRef(false);
 
-  useEffect(() => {
-    api
-      .getAcpSessionMeta(sessionKey)
-      .then((m) => setCwd(m.cwd.replace(/\/+$/, "")))
-      .catch(() => {});
-  }, [sessionKey]);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionKey ?? null);
+  const cwd = sessionMeta ? sessionMeta.cwd.replace(/\/+$/, "") : null;
 
   const relativeFiles = useMemo(
     () => files.map((f) => (cwd && f.startsWith(cwd + "/") ? f.slice(cwd.length + 1) : f)),

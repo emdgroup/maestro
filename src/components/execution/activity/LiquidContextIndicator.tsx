@@ -4,114 +4,21 @@ import { humanizeTokenCount } from "@/lib/format-utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
 import type { UsageState } from "./types";
-
-type FillState = "critical" | "warning" | "amber" | "normal";
-
-const FILL_COLOR: Record<FillState, string> = {
-  critical: "var(--destructive)",
-  warning: "var(--warning)",
-  amber: "var(--warning)",
-  normal: "var(--success)",
-};
-
-// Softened critical for light theme — less violent red
-const FILL_COLOR_LIGHT_CRITICAL = "oklch(55% 0.14 25)";
-
-const RING_COLOR: Record<FillState, string> = {
-  critical: "var(--destructive)",
-  warning: "var(--warning)",
-  amber: "var(--border)",
-  normal: "var(--border)",
-};
-
-// Light: per-state opacity; Dark: always 0.2 (ring too prominent otherwise)
-const RING_OP_LIGHT: Record<FillState, number> = {
-  critical: 0.5,
-  warning: 0.5,
-  amber: 1,
-  normal: 1,
-};
-
-const LENS_STYLE = {
-  light: {
-    backdropFilter: "blur(0.6px) brightness(1.20) saturate(1.40)",
-    background: [
-      "radial-gradient(ellipse 60% 36% at 35% 25%, rgba(255,255,255,0.50) 0%, transparent 70%)",
-      "radial-gradient(circle at 50% 55%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.10) 45%, transparent 70%)",
-      "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0.07) 55%, transparent 100%)",
-    ].join(", "),
-    boxShadow: [
-      "inset 0 0 20px 1px rgba(255,255,255,0.30)",
-      "inset 0 0 3px 0 rgba(0,0,0,0.14)",
-      "0 0 8px 2px rgba(99,102,241,0.06)",
-    ].join(", "),
-  },
-  dark: {
-    backdropFilter: "blur(0.6px) brightness(0.90) saturate(1.40)",
-    background: [
-      "radial-gradient(ellipse 60% 36% at 35% 25%, rgba(255,255,255,0.30) 0%, transparent 70%)",
-      "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0.07) 55%, transparent 100%)",
-    ].join(", "),
-    boxShadow: ["inset 0 0 20px 1px rgba(0,0,0,0.30)", "0 0 8px 2px rgba(99,102,241,0.06)"].join(
-      ", ",
-    ),
-  },
-};
-
-const TIPS: Record<FillState, { icon: string; text: string }> = {
-  normal: { icon: "✓", text: "Plenty of room. Agent has full context for complex reasoning." },
-  amber: { icon: "→", text: "Filling up. Consider compacting if task will run longer." },
-  warning: {
-    icon: "⚠",
-    text: "Running low. Agent may lose early context soon. Compact recommended.",
-  },
-  critical: {
-    icon: "⚡",
-    text: "Near limit. Agent will auto-compact soon. Compact now to stay in control.",
-  },
-};
-
-const TIP_STYLE: Record<FillState, string> = {
-  normal: "bg-success/8 border border-success/15",
-  amber: "bg-warning/8 border border-warning/15",
-  warning: "bg-warning/12 border border-warning/20",
-  critical: "bg-destructive/10 border border-destructive/20",
-};
-
-const DOT_COLOR: Record<FillState, string> = {
-  normal: "bg-success",
-  amber: "bg-warning",
-  warning: "bg-warning",
-  critical: "bg-destructive shadow-[0_0_6px_var(--color-destructive)]",
-};
-
-const PCT_COLOR: Record<FillState, string> = {
-  normal: "text-success",
-  amber: "text-warning",
-  warning: "text-warning",
-  critical: "text-destructive",
-};
-
-const PROGRESS_COLOR: Record<FillState, string> = {
-  normal: "bg-success",
-  amber: "bg-warning",
-  warning: "bg-warning",
-  critical: "bg-destructive",
-};
-
-function stateFor(r: number): FillState {
-  if (r >= 0.85) return "critical";
-  if (r >= 0.75) return "warning";
-  if (r >= 0.6) return "amber";
-  return "normal";
-}
-
-// Wave path: 3 periods (x=-20 to x=40), amplitude ±1.1 SVG units.
-// SMIL scrolls one period (20 units) left → seamless loop.
-const WAVE_FILL =
-  "M-20 0 Q-16 -1.1 -10 0 Q-4 1.1 0 0 Q4 -1.1 10 0 Q16 1.1 20 0 Q24 -1.1 30 0 Q36 1.1 40 0 L40 20 L-20 20 Z";
-const WAVE_LINE =
-  "M-20 0 Q-16 -1.1 -10 0 Q-4 1.1 0 0 Q4 -1.1 10 0 Q16 1.1 20 0 Q24 -1.1 30 0 Q36 1.1 40 0";
+import {
+  FILL_COLOR,
+  FILL_COLOR_LIGHT_CRITICAL,
+  RING_OP_LIGHT,
+  LENS_STYLE,
+  TIPS,
+  TIP_STYLE,
+  DOT_COLOR,
+  PCT_COLOR,
+  PROGRESS_COLOR,
+  WAVE_FILL,
+  WAVE_LINE,
+  stateFor,
+} from "./liquid-indicator-data";
+import { useLiquidSpring } from "./useLiquidSpring";
 
 export function LiquidContextIndicator({
   usage,
@@ -130,86 +37,19 @@ export function LiquidContextIndicator({
   const lensRef = useRef<HTMLSpanElement>(null);
   const isDarkRef = useRef(document.documentElement.classList.contains("dark"));
 
-  // Spring state — initialized with current ratio so the mount effect needs no ratio dep
-  const animRef = useRef({
-    current: ratio,
-    target: ratio,
-    velocity: 0,
-    raf: null as number | null,
-    lastTs: null as number | null,
-    prevState: "normal" as FillState,
-  });
-  // tickRef lets the ratio-change effect restart the RAF after the setup effect defines tick
-  const tickRef = useRef<((ts: number) => void) | null>(null);
-
-  const [fillState, setFillState] = useState<FillState>(() => stateFor(ratio));
+  const { fillState, animRef } = useLiquidSpring(
+    ratio,
+    waveGroupRef,
+    fillPathRef,
+    ringRef,
+    lensRef,
+    isDarkRef,
+  );
 
   const [open, setOpen] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track whether hover opened the popover so mouse-leave can close it
   const openedByHoverRef = useRef(false);
-
-  // Setup: define applyFrame + tick once after mount, snap to initial ratio
-  useEffect(() => {
-    const anim = animRef.current;
-
-    function applyFrame(r: number) {
-      const wg = waveGroupRef.current;
-      const fp = fillPathRef.current;
-      const rg = ringRef.current;
-      const ln = lensRef.current;
-      if (!wg || !fp || !rg || !ln) return;
-
-      // SVG transform attribute positions the wave surface (0=full top, 20=empty)
-      wg.setAttribute("transform", `translate(0,${(1 - r) * 20})`);
-
-      const state = stateFor(r);
-      const isDark = isDarkRef.current;
-
-      // Use .style (not setAttribute) so CSS custom properties resolve correctly
-      fp.style.fill =
-        !isDark && state === "critical" ? FILL_COLOR_LIGHT_CRITICAL : FILL_COLOR[state];
-      rg.style.stroke = RING_COLOR[state];
-      rg.style.strokeOpacity = String(isDark ? 0.2 : RING_OP_LIGHT[state]);
-
-      if (state !== anim.prevState) {
-        setFillState(state);
-        anim.prevState = state;
-      }
-    }
-
-    function tick(ts: number) {
-      const dt = anim.lastTs ? Math.min((ts - anim.lastTs) / 1000, 0.05) : 0.016;
-      anim.lastTs = ts;
-
-      const force = (anim.target - anim.current) * 18;
-      anim.velocity = (anim.velocity + force * dt) * Math.pow(0.72, dt * 60);
-      anim.current += anim.velocity * dt;
-      anim.current = Math.max(0, Math.min(1, anim.current));
-      applyFrame(anim.current);
-
-      if (Math.abs(anim.target - anim.current) < 0.01 && Math.abs(anim.velocity) < 0.01) {
-        anim.current = anim.target;
-        applyFrame(anim.current);
-        anim.raf = null;
-        anim.lastTs = null;
-        return;
-      }
-      anim.raf = requestAnimationFrame(tick);
-    }
-
-    tickRef.current = tick;
-
-    // animRef was initialized with the initial ratio — snap DOM to match without animation
-    applyFrame(anim.current);
-
-    return () => {
-      if (anim.raf !== null) {
-        cancelAnimationFrame(anim.raf);
-        anim.raf = null;
-      }
-    };
-  }, []);
 
   // Apply theme-aware lens style + re-run applyFrame when dark/light class changes
   useEffect(() => {
@@ -246,19 +86,7 @@ export function LiquidContextIndicator({
     });
 
     return () => observer.disconnect();
-  }, []);
-
-  // Kick spring toward new ratio whenever usage changes
-  useEffect(() => {
-    const anim = animRef.current;
-    anim.velocity += (ratio - anim.current) * 4.0;
-    anim.target = ratio;
-
-    if (!anim.raf && tickRef.current) {
-      anim.lastTs = null;
-      anim.raf = requestAnimationFrame(tickRef.current);
-    }
-  }, [ratio]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
