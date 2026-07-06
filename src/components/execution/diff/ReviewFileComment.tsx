@@ -42,9 +42,7 @@ export function ReviewFileComment({
             onSubmit={(text) => {
               setComments((prev) => {
                 if (fileComment) {
-                  return prev.map((c) =>
-                    c.id === fileComment.id ? { ...c, text } : c,
-                  );
+                  return prev.map((c) => (c.id === fileComment.id ? { ...c, text } : c));
                 }
                 return [
                   ...prev,

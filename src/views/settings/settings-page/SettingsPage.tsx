@@ -66,7 +66,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const startSaveHoverTimer = () => {
       if (isIssueTrackingValid) return;
-      saveHoverTimerRef.current = setTimeout(() => issueTrackingSectionRef.current?.setAttempted(true), 500);
+      saveHoverTimerRef.current = setTimeout(
+        () => issueTrackingSectionRef.current?.setAttempted(true),
+        500,
+      );
     };
 
     const cancelSaveHoverTimer = () => {

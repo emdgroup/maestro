@@ -66,9 +66,7 @@ export function AppearanceSection() {
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="send_prompt">
-              Send prompt (Shift+Enter for new line)
-            </SelectItem>
+            <SelectItem value="send_prompt">Send prompt (Shift+Enter for new line)</SelectItem>
             <SelectItem value="new_line">New line (Ctrl+Enter to send)</SelectItem>
           </SelectContent>
         </Select>

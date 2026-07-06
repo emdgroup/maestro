@@ -28,24 +28,14 @@ export function ReviewFileHeader({
   );
   const status = selectedFile.status ?? "M";
   const statusColor =
-    status === "A"
-      ? "text-success"
-      : status === "D"
-        ? "text-destructive"
-        : "text-muted-foreground";
+    status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
   const isViewed = viewedFiles.has(selectedFile.fileName);
   return (
     <div className="px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 flex items-center gap-2 text-xs">
-      <span className="font-mono text-foreground truncate flex-1">
-        {selectedFile.fileName}
-      </span>
+      <span className="font-mono text-foreground truncate flex-1">{selectedFile.fileName}</span>
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
-      {stats.insertions > 0 && (
-        <span className="text-success shrink-0">+{stats.insertions}</span>
-      )}
-      {stats.deletions > 0 && (
-        <span className="text-destructive shrink-0">-{stats.deletions}</span>
-      )}
+      {stats.insertions > 0 && <span className="text-success shrink-0">+{stats.insertions}</span>}
+      {stats.deletions > 0 && <span className="text-destructive shrink-0">-{stats.deletions}</span>}
       <Button
         variant="ghost"
         onClick={() => onFileComment(selectedFile.fileName)}

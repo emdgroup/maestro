@@ -19,7 +19,11 @@ interface ProjectDefaultsSectionProps {
   agentsLoading: boolean;
 }
 
-export function ProjectDefaultsSection({ control, agents, agentsLoading }: ProjectDefaultsSectionProps) {
+export function ProjectDefaultsSection({
+  control,
+  agents,
+  agentsLoading,
+}: ProjectDefaultsSectionProps) {
   return (
     <>
       <div className="bg-card border border-border rounded-lg p-4 space-y-4">
@@ -42,9 +46,7 @@ export function ProjectDefaultsSection({ control, agents, agentsLoading }: Proje
               >
                 <SelectTrigger className="w-full bg-muted">
                   <SelectValue
-                    placeholder={
-                      agentsLoading ? "Loading agents…" : "None (use session default)"
-                    }
+                    placeholder={agentsLoading ? "Loading agents…" : "None (use session default)"}
                   >
                     {field.value === ""
                       ? "None (use session default)"
