@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Files, ExternalLink, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
@@ -36,6 +36,7 @@ export function ArtifactsPanel({
   const [zoom, setZoom] = useState(100);
   const [cwd, setCwd] = useState<string | null>(null);
   const [dlState, setDlState] = useState<DlState>({ status: "idle" });
+  const initialFileAppliedRef = useRef(false);
 
   useEffect(() => {
     api
@@ -60,9 +61,12 @@ export function ArtifactsPanel({
   }, [relativeFiles, selected]);
 
   useEffect(() => {
-    if (!initialFile) return;
+    if (initialFileAppliedRef.current || !initialFile) return;
     const idx = files.indexOf(initialFile);
-    if (idx >= 0 && relativeFiles[idx]) setSelected(relativeFiles[idx]);
+    if (idx >= 0 && relativeFiles[idx]) {
+      initialFileAppliedRef.current = true;
+      setSelected(relativeFiles[idx]);
+    }
   }, [initialFile, files, relativeFiles]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;

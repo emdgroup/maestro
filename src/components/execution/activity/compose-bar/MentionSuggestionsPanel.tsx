@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import type { RefObject } from "react";
 import { cn } from "@/lib/utils.ts";
 import { iconForFilePath } from "./composeUtils";
 
@@ -9,7 +10,7 @@ interface Props {
   suggestions: string[];
   highlight: number;
   panelPos: { top: number; left: number; width: number } | null;
-  buttonRefs: React.RefObject<Map<number, HTMLButtonElement>>;
+  buttonRefs: RefObject<Map<number, HTMLButtonElement>>;
   onSelect: (path: string) => void;
 }
 

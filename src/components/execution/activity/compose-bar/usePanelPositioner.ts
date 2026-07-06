@@ -1,8 +1,9 @@
 import { useState, useLayoutEffect } from "react";
+import type { RefObject } from "react";
 
 export function usePanelPositioner(
   active: boolean,
-  containerRef: React.RefObject<HTMLDivElement | null>,
+  containerRef: RefObject<HTMLDivElement | null>,
 ): { top: number; left: number; width: number } | null {
   const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(
     null,
