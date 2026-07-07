@@ -1,0 +1,6 @@
+/* display:flex on <td.diff-line-hunk-action> (hunk-selection-active feature) breaks
+   table-layout:fixed column-width scan. Auto layout reads content widths correctly.
+   Specificity 0-3-0 beats library's .diff-tailwindcss-wrapper .table-fixed (0-2-0). */
+.diff-tailwindcss-wrapper .unified-diff-table.table-fixed {
+  table-layout: auto;
+}

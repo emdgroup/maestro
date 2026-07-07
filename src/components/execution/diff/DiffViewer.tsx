@@ -6,6 +6,7 @@ import {
   type DiffHighlighterInstance,
 } from "@/utils/helpers/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
+import "./diff-viewer-overrides.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
