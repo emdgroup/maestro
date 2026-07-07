@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Files, Pin, Loader2, ExternalLink, X } from "lucide-react";
+import { Files, Pin, ExternalLink, X, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
-import { FileSelector } from "@/components/execution/diff/FileSelector";
-import { useListWorkspaceFiles, useReadFile } from "@/services/connection.service";
+import { connectionQueryKeys, useReadFile } from "@/services/connection.service";
+import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -36,8 +37,8 @@ export function WorkspaceFilesPanel({
   const [dlState, setDlState] = useState<DlState>({ status: "idle" });
   const [pinnedInitialSize, setPinnedInitialSize] = useState(224);
   const treeRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
-  const { data: allFiles = [], isLoading } = useListWorkspaceFiles(connection, projectPath);
   const fullPath = selected ? `${projectPath}/${selected}` : null;
   const {
     data: content,
@@ -49,6 +50,15 @@ export function WorkspaceFilesPanel({
   useEffect(() => {
     if (isActive && fullPath) void refetch();
   }, [isActive, fullPath, refetch]);
+
+  // Invalidate all cached dir listings for this connection when tab regains focus.
+  // Only mounted queries (root + expanded dirs) will actually refetch.
+  useEffect(() => {
+    if (!isActive) return;
+    void queryClient.invalidateQueries({
+      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
+    });
+  }, [isActive, queryClient, connection]);
 
   const showList = listOpen || listPinned;
 
@@ -73,8 +83,10 @@ export function WorkspaceFilesPanel({
     }
   }
 
-  function handleExpandedFoldersChange(folders: Set<string>) {
-    setExpandedFolders(folders);
+  function handleRefresh() {
+    void queryClient.invalidateQueries({
+      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
+    });
   }
 
   async function handleOpen() {
@@ -136,6 +148,38 @@ export function WorkspaceFilesPanel({
     >
       <Pin className="w-3.5 h-3.5" />
     </button>
+  );
+
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={handleRefresh}
+      className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+      title="Refresh files"
+    >
+      <RefreshCw className="w-3.5 h-3.5" />
+    </button>
+  );
+
+  const fileListActions = (
+    <>
+      {pinButton}
+      {refreshButton}
+    </>
+  );
+
+  const lazyTree = (
+    <LazyFileTree
+      root={projectPath}
+      connection={connection}
+      wslDistroName={wslDistroName}
+      selectedFile={selected}
+      onSelectFile={setSelected}
+      expandedFolders={expandedFolders}
+      onExpandedFoldersChange={setExpandedFolders}
+      headerRight={fileListActions}
+      className="flex-1 min-h-0"
+    />
   );
 
   return (
@@ -206,23 +250,7 @@ export function WorkspaceFilesPanel({
             className="flex flex-col min-h-0"
           >
             <div ref={treeRef} className="flex flex-col h-full min-h-0">
-              {isLoading ? (
-                <div className="flex flex-1 items-center justify-center">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <FileSelector
-                  files={allFiles.map((f) => ({ fileName: f }))}
-                  selectedFile={selected}
-                  onSelectFile={setSelected}
-                  treeOnly
-                  treeDefaultExpanded={false}
-                  headerRight={pinButton}
-                  className="flex-1 min-h-0"
-                  expandedFolders={expandedFolders}
-                  onExpandedFoldersChange={handleExpandedFoldersChange}
-                />
-              )}
+              {lazyTree}
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -237,33 +265,13 @@ export function WorkspaceFilesPanel({
         </ResizablePanelGroup>
       ) : (
         <div className="flex flex-1 min-h-0 relative">
-          {/* Overlay: shown when open but not pinned */}
           {listOpen && (
             <>
               <div
                 ref={treeRef}
                 className="absolute inset-y-0 left-0 z-10 w-auto min-w-44 max-w-72 bg-background border-r border-border flex flex-col min-h-0"
               >
-                {isLoading ? (
-                  <div className="flex flex-1 items-center justify-center">
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <FileSelector
-                    files={allFiles.map((f) => ({ fileName: f }))}
-                    selectedFile={selected}
-                    onSelectFile={(f) => {
-                      setSelected(f);
-                      setListOpen(false);
-                    }}
-                    treeOnly
-                    treeDefaultExpanded={false}
-                    headerRight={pinButton}
-                    className="flex-1 min-h-0"
-                    expandedFolders={expandedFolders}
-                    onExpandedFoldersChange={handleExpandedFoldersChange}
-                  />
-                )}
+                {lazyTree}
               </div>
               <div className="absolute inset-0 z-9" onClick={() => setListOpen(false)} />
             </>

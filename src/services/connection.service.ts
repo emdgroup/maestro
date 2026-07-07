@@ -207,6 +207,27 @@ export function useListDirectories(connectionId: number | null | undefined, path
   });
 }
 
+export function useListDirContents(
+  connection: ConnectionKey | null | undefined,
+  path: string,
+  wslDistroName?: string,
+) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path],
+    queryFn: () => {
+      if (!connection || connection.type === "local") {
+        return api.listLocalContents(path);
+      }
+      if (connection.type === "wsl") {
+        return api.listWslContents(wslDistroName!, path);
+      }
+      return api.listRemoteContents(connection.id, path);
+    },
+    enabled: !!path && (connection?.type !== "wsl" || !!wslDistroName),
+    staleTime: 10_000,
+  });
+}
+
 export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
   const isWsl = connection?.type === "wsl";
   return useQuery({
