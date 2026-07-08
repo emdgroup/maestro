@@ -14,6 +14,14 @@ vi.mock("@/services/execution.service", () => ({
   useActiveSessionsQuery: vi.fn(),
   useCancelActiveSessionMutation: vi.fn(),
   useRenameAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSessionListQuery: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  })),
+  useLoadAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/services/worktree.service", () => ({

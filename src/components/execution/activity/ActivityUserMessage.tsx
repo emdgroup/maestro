@@ -16,19 +16,12 @@ function stripContextBlocks(text: string): string {
   return text.replace(/<context(?:\s[^>]*)?>[\s\S]*?<\/context>/g, "");
 }
 
-function preprocessUserMarkdown(text: string): string {
-  return text
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/^([2-9]\d*|[1-9]\d+)\./, "$1\\.");
-}
-
 function buildTextMarkdown(blocks: ParsedContentBlock[]): string {
   return blocks
     .filter((b) => b.type === "text" || b.type === "attachment")
     .map((block) => {
       if (block.type === "text") {
-        return escapeHtml(block.text).replace(/^([2-9]\d*|[1-9]\d+)\./m, "$1\\.");
+        return block.text.replace(/^([2-9]\d*|[1-9]\d+)\./m, "$1\\.");
       }
       if (!block.uri) {
         return `<span class="text-accent/80 font-mono text-xs">@${escapeHtml(block.name)}</span>`;
@@ -127,7 +120,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             {hasAttachments ? (
               <MarkdownBlock text={buildTextMarkdown(parsed.blocks)} breaks />
             ) : (
-              <MarkdownBlock text={preprocessUserMarkdown(parsed.text)} breaks />
+              <MarkdownBlock text={parsed.text} breaks />
             )}
             {hasExtras && (
               <div className="flex flex-wrap items-start gap-2 mt-2 pt-2 border-t border-border/15">

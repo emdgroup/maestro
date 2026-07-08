@@ -21,7 +21,7 @@ interface AgentStreamContentProps {
   onOpenPlanOverlay: () => void;
   onOpenFile?: (uri: string) => void;
   inlinePermission: React.ReactNode;
-  bottomBar: React.ReactNode;
+  bottomPadding?: number;
 }
 
 export function AgentStreamContent({
@@ -31,7 +31,7 @@ export function AgentStreamContent({
   onOpenPlanOverlay,
   onOpenFile,
   inlinePermission,
-  bottomBar,
+  bottomPadding,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -41,6 +41,7 @@ export function AgentStreamContent({
       <MessageScrollerViewport className="overflow-x-hidden">
         <MessageScrollerContent
           className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
+          style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
         >
           {agentSections.map((section, sectionIndex) => {
             if (section.type === "standalone") {
@@ -105,14 +106,13 @@ export function AgentStreamContent({
             );
           })}
           <AnimatePresence>{inlinePermission}</AnimatePresence>
-          {bottomBar}
         </MessageScrollerContent>
       </MessageScrollerViewport>
     </MessageScroller>
   );
 }
 
-function getItemKey(gi: GroupedDisplayItem): string {
+export function getItemKey(gi: GroupedDisplayItem): string {
   if (gi.type === "toolGroup") return `tg-${gi.items[0].toolCallId}`;
   const item = gi.item;
   if (item.type === "toolCall") return item.item.toolCallId;

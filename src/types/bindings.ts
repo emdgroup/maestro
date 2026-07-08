@@ -1151,6 +1151,14 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async getFileSize(path: string): Promise<Result<number, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("get_file_size", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   /**
    * Delete an SSH connection from the database
    */

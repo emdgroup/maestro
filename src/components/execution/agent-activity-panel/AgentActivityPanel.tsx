@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
@@ -30,7 +30,7 @@ import { useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
 import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
-import { AgentStreamContent } from "./AgentStreamContent";
+import { AgentStreamContent, getItemKey } from "./AgentStreamContent";
 import { AgentBottomBar } from "./AgentBottomBar";
 import { AgentScrollOverlays } from "./AgentScrollOverlays";
 import {
@@ -47,6 +47,7 @@ function ScrollStateWatcher({
   sessionKey,
   markSeen,
   userMessageCount,
+  lastAgentSectionId,
 }: {
   isSelected: boolean;
   activeTab: string;
@@ -55,8 +56,9 @@ function ScrollStateWatcher({
   sessionKey: number;
   markSeen: (key: number) => void;
   userMessageCount: number;
+  lastAgentSectionId: string | null;
 }) {
-  const { scrollToEnd } = useMessageScroller();
+  const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const scrollable = useMessageScrollerScrollable();
 
   const prevCountRef = useRef(userMessageCount);
@@ -66,6 +68,23 @@ function ScrollStateWatcher({
     }
     prevCountRef.current = userMessageCount;
   }, [userMessageCount, scrollToEnd]);
+
+  const prevIsSelectedRef = useRef(isSelected);
+  useLayoutEffect(() => {
+    const wasSelected = prevIsSelectedRef.current;
+    prevIsSelectedRef.current = isSelected;
+    if (!isSelected || wasSelected) return;
+
+    scrollToEnd({ behavior: "instant" });
+
+    if (!lastAgentSectionId) return;
+    const sectionEl = document.querySelector(
+      `[data-message-id="${CSS.escape(lastAgentSectionId)}"]`,
+    );
+    if (sectionEl && sectionEl.getBoundingClientRect().top < 0) {
+      scrollToMessage(lastAgentSectionId, { align: "start", behavior: "instant" });
+    }
+  }, [isSelected, lastAgentSectionId, scrollToMessage, scrollToEnd]);
 
   useEffect(() => {
     if (
@@ -277,6 +296,14 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
+  const lastAgentSectionId = useMemo(() => {
+    for (let i = agentSections.length - 1; i >= 0; i--) {
+      const s = agentSections[i];
+      if (s.type === "agentSection") return getItemKey(s.items[0]);
+    }
+    return null;
+  }, [agentSections]);
+
   const handleForceEnd = useCallback(async () => {
     await api.cancelAcpSession(sessionKey).catch(() => {});
   }, [sessionKey]);
@@ -304,6 +331,20 @@ export function AgentActivityPanel({
     !hasInlinePermission &&
     !hasPlanOverlay &&
     !isCenteredCompose;
+
+  const [composeBarHeight, setComposeBarHeight] = useState(0);
+  useEffect(() => {
+    const el = composeBarWrapperRef.current;
+    if (!el) {
+      setComposeBarHeight(0);
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      setComposeBarHeight(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showCompose, liveState.isInitializing]);
 
   if (liveState.isInitializing) return <AgentLoadingSkeleton isNewSession={isNewSession} />;
 
@@ -358,6 +399,7 @@ export function AgentActivityPanel({
             sessionKey={sessionKey}
             userMessageCount={userMessageCount}
             markSeen={markSeen}
+            lastAgentSectionId={lastAgentSectionId}
           />
           <div className="flex-1 relative min-h-0 overflow-hidden">
             <AgentStreamContent
@@ -367,15 +409,14 @@ export function AgentActivityPanel({
               onOpenPlanOverlay={handleOpenPlanOverlaySplit}
               onOpenFile={handleOpenFile}
               inlinePermission={inlinePermission}
-              bottomBar={
-                <AgentBottomBar
-                  isSessionDead={isSessionDead}
-                  showCompose={showCompose}
-                  composeBarWrapperRef={composeBarWrapperRef}
-                  composeBarRef={composeBarRef}
-                  {...sharedComposeBarProps}
-                />
-              }
+              bottomPadding={composeBarHeight}
+            />
+            <AgentBottomBar
+              isSessionDead={isSessionDead}
+              showCompose={showCompose}
+              composeBarWrapperRef={composeBarWrapperRef}
+              composeBarRef={composeBarRef}
+              {...sharedComposeBarProps}
             />
             <AgentScrollOverlays
               lastUserMessage={lastUserMessage}

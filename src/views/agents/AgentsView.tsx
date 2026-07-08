@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
-import { SessionHistoryPanel } from "@/components/execution/session-history/SessionHistoryPanel";
+import { SessionHistoryModal } from "@/components/execution/session-history/SessionHistoryModal";
 import { SpawnSessionDialog } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
 import {
@@ -168,37 +168,39 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             )}
           </button>
           {!sidebarCollapsed && (
-            <ShortcutHint shortcutId="focus-search">
-              <InputGroup>
-                <InputGroupInput
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search sessions..."
-                  value={search}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                  className="h-8 w-48 text-sm"
-                />
-                <InputGroupAddon align="inline-start">
-                  <SearchIcon className="text-muted-foreground" />
-                </InputGroupAddon>
-              </InputGroup>
-            </ShortcutHint>
+            <>
+              <ShortcutHint shortcutId="focus-search">
+                <InputGroup>
+                  <InputGroupInput
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search sessions..."
+                    value={search}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                    className="h-8 w-48 text-sm"
+                  />
+                  <InputGroupAddon align="inline-start">
+                    <SearchIcon className="text-muted-foreground" />
+                  </InputGroupAddon>
+                </InputGroup>
+              </ShortcutHint>
+              {(discovery?.agents?.length ?? 0) > 0 && (
+                <ShortcutHint shortcutId="agents-history">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
+                    onClick={() => setShowHistory((v) => !v)}
+                  >
+                    <History className="size-3.5 mr-1" />
+                    History
+                  </Button>
+                </ShortcutHint>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {(discovery?.agents?.length ?? 0) > 0 && (
-            <ShortcutHint shortcutId="agents-history">
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
-                onClick={() => setShowHistory((v) => !v)}
-              >
-                <History className="size-3.5 mr-1" />
-                History
-              </Button>
-            </ShortcutHint>
-          )}
           <Popover>
             <PopoverTrigger
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -295,21 +297,20 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           onSpawnShell={spawnShell}
           connection={connection}
         />
-        {showHistory && visibleAgents.length > 0 && (
-          <SessionHistoryPanel
-            agents={visibleAgents}
-            defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
-            repoPath={repoPath ?? ""}
-            connection={connection}
-            projectId={projectId ?? 0}
-            worktrees={worktrees}
-            onClose={() => setShowHistory(false)}
-            onSessionLoaded={(key) => {
-              setSelectedSessionKey(key);
-              setShowHistory(false);
-            }}
-          />
-        )}
+        <SessionHistoryModal
+          open={showHistory && visibleAgents.length > 0}
+          agents={visibleAgents}
+          defaultAgentId={lastAcpAgentId ?? visibleAgents[0]?.id ?? null}
+          repoPath={repoPath ?? ""}
+          connection={connection}
+          projectId={projectId ?? 0}
+          worktrees={worktrees}
+          onClose={() => setShowHistory(false)}
+          onSessionLoaded={(key) => {
+            setSelectedSessionKey(key);
+            setShowHistory(false);
+          }}
+        />
       </div>
 
       <SpawnSessionDialog

@@ -130,7 +130,7 @@ export function OverviewPanel({
 
   return (
     <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 items-start">
         {/* Plan */}
         <Card
           available={(planEntries?.length ?? 0) > 0}
@@ -425,7 +425,7 @@ function Card({
 }) {
   if (!available) return null;
   return (
-    <div className="flex-[1_1_calc(50%-4px)] min-w-[268px]">
+    <div className="flex-[0_1_calc(50%-4px)] min-w-[268px]">
       <div
         role="button"
         tabIndex={0}

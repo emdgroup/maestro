@@ -93,6 +93,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_drives,
             crate::ipc::get_system_accent_color,
             crate::ipc::open_path_native,
+            crate::ipc::get_file_size,
             crate::ipc::delete_ssh_connection,
             crate::ipc::forget_saved_password,
             crate::ipc::rename_ssh_connection,

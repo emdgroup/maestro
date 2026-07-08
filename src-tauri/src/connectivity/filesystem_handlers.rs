@@ -304,3 +304,11 @@ pub fn open_path_native(app: tauri::AppHandle, path: String) -> Result<(), Strin
     app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn get_file_size(path: String) -> Result<u64, String> {
+    fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
+}
+

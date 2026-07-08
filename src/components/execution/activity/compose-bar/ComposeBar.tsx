@@ -15,6 +15,7 @@ import { useCommandAutocomplete } from "./useCommandAutocomplete";
 import { useAttachments } from "./useAttachments";
 import { usePanelPositioner } from "./usePanelPositioner";
 import { AttachmentPills } from "./AttachmentPills";
+import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
 
@@ -312,6 +313,10 @@ export function ComposeBar({
         buttonRefs={commandAC.commandButtonRefs}
         onSelect={selectCommand}
       />
+      <AttachmentShelf
+        attachments={attach.attachments}
+        onRemove={(id) => attach.setAttachments((prev) => prev.filter((x) => x.id !== id))}
+      />
       <div
         ref={containerRef}
         className={cn(
@@ -323,11 +328,7 @@ export function ComposeBar({
       >
         <div className="relative">
           <AttachmentPills
-            attachments={attach.attachments}
             mentions={mentionAC.mentions}
-            onRemoveAttachment={(id) =>
-              attach.setAttachments((prev) => prev.filter((x) => x.id !== id))
-            }
             onRemoveMention={(id, filePath) => {
               mentionAC.setMentions((prev) => prev.filter((x) => x.id !== id));
               setValue((v) => v.replace(`@${filePath} `, "").replace(`@${filePath}`, ""));

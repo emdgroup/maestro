@@ -23,9 +23,15 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
       const isImage = isImageExtension(path);
       if (isImage && !promptCapabilities?.image) continue;
       const displayName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+      let sizeBytes: number | undefined;
+      try {
+        sizeBytes = await api.getFileSize(path);
+      } catch {
+        // leave undefined
+      }
       setAttachments((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), displayName, localAbsPath: path, isImage },
+        { id: crypto.randomUUID(), displayName, localAbsPath: path, isImage, sizeBytes },
       ]);
     }
   }, [promptCapabilities]);
@@ -66,7 +72,13 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
         pastedCount += 1;
         setAttachments((prev) => [
           ...prev,
-          { id: crypto.randomUUID(), displayName, localAbsPath: tempPath, isImage: true },
+          {
+            id: crypto.randomUUID(),
+            displayName,
+            localAbsPath: tempPath,
+            isImage: true,
+            sizeBytes: file.size,
+          },
         ]);
       }
     },
