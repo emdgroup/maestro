@@ -56,6 +56,18 @@ function MarkdownCodeComponent({
   return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
 }
 
+function scrollToTarget(target: HTMLElement): void {
+  let container: HTMLElement | null = target.parentElement;
+  while (container && container !== document.documentElement) {
+    const { overflowY } = window.getComputedStyle(container);
+    if (overflowY === "auto" || overflowY === "scroll") break;
+    container = container.parentElement as HTMLElement | null;
+  }
+  const root = container ?? document.documentElement;
+  const offset = target.getBoundingClientRect().top - root.getBoundingClientRect().top;
+  root.scrollTo({ top: root.scrollTop + offset, behavior: "smooth" });
+}
+
 function MarkdownAnchorComponent({
   href,
   children,
@@ -74,9 +86,17 @@ function MarkdownAnchorComponent({
         e.preventDefault();
         if (!href) return;
         if (href.startsWith("#")) {
-          document
-            .getElementById(href.slice(1))
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          const anchor = href.slice(1);
+          const clicked = e.currentTarget as HTMLElement;
+          const candidates = Array.from(
+            document.querySelectorAll<HTMLElement>(`[id="${CSS.escape(anchor)}"]`),
+          );
+          if (candidates.length === 0) return;
+          const target =
+            candidates.find(
+              (el) => clicked.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ) ?? candidates[candidates.length - 1];
+          scrollToTarget(target);
         } else {
           openUrl(href);
         }

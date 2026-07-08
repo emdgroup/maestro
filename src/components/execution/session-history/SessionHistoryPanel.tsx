@@ -3,6 +3,7 @@ import { X, Pencil, Check, RefreshCw } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { ScrollArea } from "@/ui/scroll-area";
 import {
   useSessionListQuery,
   useLoadAcpSessionMutation,
@@ -284,7 +285,7 @@ export function SessionHistoryPanel({
       </div>
 
       {/* list */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <ScrollArea className="flex-1">
         {isLoading && (
           <div className="text-xs text-muted-foreground py-8 text-center">Loading...</div>
         )}
@@ -363,7 +364,7 @@ export function SessionHistoryPanel({
             ))}
           </div>
         ))}
-      </div>
+      </ScrollArea>
 
       {/* Worktree picker dialog */}
       {pendingRestore && (
@@ -397,7 +398,7 @@ export function SessionHistoryPanel({
               </div>
             )}
 
-            <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: 240 }}>
+            <ScrollArea className="max-h-[240px]">
               {filteredWorktrees.map((wt) => {
                 const isMain = wt.path === repoPath;
                 const isSelected = selectedWorktreePath === wt.path;
@@ -438,7 +439,7 @@ export function SessionHistoryPanel({
                   No worktrees match
                 </div>
               )}
-            </div>
+            </ScrollArea>
 
             <div className="px-3 py-2 border-t border-border flex justify-end gap-2">
               <Button

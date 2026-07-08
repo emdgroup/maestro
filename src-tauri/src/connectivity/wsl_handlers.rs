@@ -98,6 +98,18 @@ pub fn read_wsl_file(
     crate::connectivity::wsl::read_file(&distro, &path)
 }
 
+/// Read a file from a WSL distro as base64. Rejects files over 10 MB.
+#[tauri::command]
+#[specta::specta]
+pub fn read_wsl_file_binary(
+    app_state: State<Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<String, String> {
+    let distro = get_wsl_distro(&app_state, connection_id)?;
+    crate::connectivity::wsl::read_file_binary(&distro, &path)
+}
+
 /// List all saved WSL connections from the database.
 #[tauri::command]
 #[specta::specta]

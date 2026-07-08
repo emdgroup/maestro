@@ -5,6 +5,7 @@ import { parseDiffString, computeFileStats, countHunks } from "@/lib/diff-utils"
 import { useWorktreeDiffActions } from "./useWorktreeDiffActions";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { ScrollArea } from "@/ui/scroll-area";
 import { DiffViewer } from "./DiffViewer";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";
@@ -385,7 +386,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
               })()}
 
             {viewMode === "uncommitted" && (
-              <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+              <ScrollArea className="flex-1 min-h-0">
                 {diffLoading ? (
                   <DiffViewer diffFile={null} loading={true} diffViewMode={effectiveDiffViewMode} />
                 ) : diffFiles.length === 0 ? (
@@ -416,7 +417,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                     diffViewMode={effectiveDiffViewMode}
                   />
                 )}
-              </div>
+              </ScrollArea>
             )}
           </div>
         </div>

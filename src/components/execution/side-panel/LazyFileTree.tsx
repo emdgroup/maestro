@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Loader2, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useListDirContents } from "@/services/connection.service";
+import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";
 
 interface LazyFileTreeProps {
@@ -28,6 +28,8 @@ export function LazyFileTree({
   className,
 }: LazyFileTreeProps) {
   const [filter, setFilter] = useState("");
+  const normalizedFilter = filter.trim().toLowerCase();
+  const { data: allFiles } = useListWorkspaceFiles(connection, root);
 
   return (
     <div className={cn("flex flex-col min-h-0", className)}>
@@ -51,18 +53,43 @@ export function LazyFileTree({
         {headerRight}
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <DirContents
-          absolutePath={root}
-          relativePrefix=""
-          depth={0}
-          connection={connection}
-          wslDistroName={wslDistroName}
-          expandedFolders={expandedFolders}
-          onExpandedFoldersChange={onExpandedFoldersChange}
-          selectedFile={selectedFile}
-          onSelectFile={onSelectFile}
-          filter={filter.trim().toLowerCase()}
-        />
+        {normalizedFilter ? (
+          (allFiles ?? [])
+            .filter((p) => p.toLowerCase().includes(normalizedFilter))
+            .map((relativePath) => {
+              const name = relativePath.split("/").pop() ?? relativePath;
+              const isSelected = relativePath === selectedFile;
+              return (
+                <button
+                  key={relativePath}
+                  type="button"
+                  title={relativePath}
+                  onClick={() => onSelectFile(relativePath)}
+                  className={cn(
+                    "w-full flex items-center py-1 text-left border-l-2 transition-colors",
+                    isSelected
+                      ? "border-ring selected-file-item text-foreground"
+                      : "border-transparent text-foreground/80 hover:bg-muted/10",
+                  )}
+                  style={{ paddingLeft: "20px" }}
+                >
+                  <span className="text-xs truncate">{name}</span>
+                </button>
+              );
+            })
+        ) : (
+          <DirContents
+            absolutePath={root}
+            relativePrefix=""
+            depth={0}
+            connection={connection}
+            wslDistroName={wslDistroName}
+            expandedFolders={expandedFolders}
+            onExpandedFoldersChange={onExpandedFoldersChange}
+            selectedFile={selectedFile}
+            onSelectFile={onSelectFile}
+          />
+        )}
       </div>
     </div>
   );
@@ -78,7 +105,6 @@ interface DirContentsProps {
   onExpandedFoldersChange: (folders: Set<string>) => void;
   selectedFile: string | null;
   onSelectFile: (relativePath: string) => void;
-  filter: string;
 }
 
 function DirContents({
@@ -91,7 +117,6 @@ function DirContents({
   onExpandedFoldersChange,
   selectedFile,
   onSelectFile,
-  filter,
 }: DirContentsProps) {
   const { data: entries, isLoading } = useListDirContents(connection, absolutePath, wslDistroName);
   const indent = depth * 12;
@@ -143,14 +168,11 @@ function DirContents({
                   onExpandedFoldersChange={onExpandedFoldersChange}
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}
-                  filter={filter}
                 />
               )}
             </div>
           );
         }
-
-        if (filter && !entry.name.toLowerCase().includes(filter)) return null;
 
         const isSelected = childRelative === selectedFile;
         return (

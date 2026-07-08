@@ -1,5 +1,7 @@
 import { SubagentCard } from "@/components/execution/activity/SubagentCard";
 import type { ToolCallItem } from "@/components/execution/activity/types";
+import { Empty, EmptyDescription } from "@/ui/empty";
+import { ScrollArea } from "@/ui/scroll-area";
 
 interface SubagentsPanelProps {
   items: ToolCallItem[];
@@ -9,19 +11,19 @@ interface SubagentsPanelProps {
 export function SubagentsPanel({ items, toolCallMap }: SubagentsPanelProps) {
   if (items.length === 0) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">No subagents yet</p>
-      </div>
+      <Empty className="absolute inset-0 rounded-none p-4">
+        <EmptyDescription>No subagents yet</EmptyDescription>
+      </Empty>
     );
   }
 
   return (
-    <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
-      <div className="flex flex-col gap-2">
+    <ScrollArea className="absolute inset-0">
+      <div className="p-3 flex flex-col gap-2">
         {items.map((item) => (
           <SubagentCard key={item.toolCallId} item={item} toolCallMap={toolCallMap} />
         ))}
       </div>
-    </div>
+    </ScrollArea>
   );
 }

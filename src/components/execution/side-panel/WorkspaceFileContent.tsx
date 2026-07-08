@@ -1,13 +1,28 @@
-import { Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils.ts";
+import { Spinner } from "@/ui/spinner";
 import { langForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { HighlightedCode, MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+
+function PdfViewer({ content, fileName }: { content: string; fileName: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const bytes = Uint8Array.from(atob(content), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [content]);
+  if (!blobUrl) return null;
+  return <iframe src={blobUrl} title={fileName} className="flex-1 w-full min-h-0" />;
+}
 
 interface WorkspaceFileContentProps {
   content: string | null;
   isLoading: boolean;
   error: string | null;
   fileName: string | null;
+  mimeType?: string;
 }
 
 export function WorkspaceFileContent({
@@ -15,6 +30,7 @@ export function WorkspaceFileContent({
   isLoading,
   error,
   fileName,
+  mimeType,
 }: WorkspaceFileContentProps) {
   const lang = fileName ? (langForExtension(fileName) ?? "text") : "text";
 
@@ -29,7 +45,7 @@ export function WorkspaceFileContent({
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        <Spinner className="text-muted-foreground" />
       </div>
     );
   }
@@ -51,6 +67,34 @@ export function WorkspaceFileContent({
   }
 
   if (content === null) return null;
+
+  if (mimeType) {
+    const src = `data:${mimeType};base64,${content}`;
+    if (mimeType.startsWith("image/")) {
+      return (
+        <div className="flex-1 overflow-auto p-4 min-h-0 flex items-center justify-center">
+          <img src={src} alt={fileName} className="max-w-full block" />
+        </div>
+      );
+    }
+    if (mimeType === "application/pdf") {
+      return <PdfViewer content={content} fileName={fileName ?? ""} />;
+    }
+    if (mimeType.startsWith("audio/")) {
+      return (
+        <div className="flex-1 flex items-center justify-center p-4">
+          <audio controls src={src} className="w-full max-w-md" />
+        </div>
+      );
+    }
+    if (mimeType.startsWith("video/")) {
+      return (
+        <div className="flex-1 flex items-center justify-center overflow-auto p-4">
+          <video controls src={src} className="max-w-full max-h-full" />
+        </div>
+      );
+    }
+  }
 
   const isMarkdown = fileName?.toLowerCase().endsWith(".md") ?? false;
 

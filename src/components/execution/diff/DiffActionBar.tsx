@@ -7,9 +7,9 @@ import {
   FolderTree,
   RotateCcw,
   Archive,
-  Loader2,
   CheckCheck,
 } from "lucide-react";
+import { Spinner } from "@/ui/spinner";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -195,7 +195,7 @@ export function DiffActionBar({
                       <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
                         {isDeleting ? (
                           <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Spinner className="h-3.5 w-3.5" />
                             {dialog.actionLabel}
                           </>
                         ) : (

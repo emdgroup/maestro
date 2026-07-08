@@ -35,6 +35,7 @@ interface SidePanelContentProps {
   projectPath: string;
   connection: ConnectionKey;
   planEntries?: PlanEntry[] | null;
+  planTitle?: string | null;
   onCollapsedChange: (c: boolean) => void;
   onOpenTabKind: (kind: TabKind) => void;
   onSpawnShell?: () => Promise<number | null>;
@@ -57,6 +58,7 @@ export function SidePanelContent({
   projectPath,
   connection,
   planEntries,
+  planTitle,
   onCollapsedChange,
   onOpenTabKind,
   onSpawnShell,
@@ -183,6 +185,57 @@ export function SidePanelContent({
                     payload={sidePanelPlan.payload}
                     onRespond={onPlanRespond}
                   />
+                ) : planEntries && planEntries.length > 0 ? (
+                  <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
+                    {planTitle && (
+                      <div className="text-xs font-medium text-muted-foreground mb-3">
+                        {planTitle}
+                      </div>
+                    )}
+                    {planEntries.map((entry, i) => {
+                      const isLast = i === planEntries.length - 1;
+                      const nextStatus = !isLast ? planEntries[i + 1].status : null;
+                      return (
+                        <div key={i} className="flex items-stretch min-h-6.5">
+                          <div className="flex flex-col items-center w-4.5 shrink-0 pt-0.75">
+                            <div
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                entry.status === "completed"
+                                  ? "bg-success opacity-70"
+                                  : entry.status === "in_progress"
+                                    ? "bg-accent animate-pulse"
+                                    : "border border-muted-foreground/40"
+                              }`}
+                            />
+                            {!isLast && (
+                              <div
+                                className={`flex-1 w-0.5 rounded-sm my-0.5 ${
+                                  nextStatus === "completed"
+                                    ? "bg-success/30"
+                                    : nextStatus === "in_progress"
+                                      ? "bg-accent/30"
+                                      : "bg-muted/50"
+                                }`}
+                              />
+                            )}
+                          </div>
+                          <div className="flex-1 pb-1.5 pl-2 pt-0.5 min-w-0">
+                            <span
+                              className={`text-[11px] leading-snug ${
+                                entry.status === "completed"
+                                  ? "text-muted-foreground/55"
+                                  : entry.status === "in_progress"
+                                    ? "text-foreground font-semibold"
+                                    : "text-muted-foreground"
+                              }`}
+                            >
+                              {entry.content}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
                     <p className="text-xs text-muted-foreground">No plan yet</p>

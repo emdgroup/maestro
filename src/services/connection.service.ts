@@ -260,10 +260,15 @@ export function useListWorkspaceFiles(connection: ConnectionKey | null | undefin
   });
 }
 
+type RefetchInterval =
+  | number
+  | false
+  | ((query: { state: { error: unknown } }) => number | false | undefined);
+
 export function useReadFile(
   connection: ConnectionKey | null | undefined,
   path: string | null,
-  options?: { refetchInterval?: number },
+  options?: { refetchInterval?: RefetchInterval },
 ) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "read", connection, path],
@@ -275,6 +280,28 @@ export function useReadFile(
         return api.readWslFile(connection.id, path!);
       }
       return api.readRemoteFile(connection.id, path!);
+    },
+    enabled: !!path,
+    staleTime: 10_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+export function useReadFileBinary(
+  connection: ConnectionKey | null | undefined,
+  path: string | null,
+  options?: { refetchInterval?: RefetchInterval },
+) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), "read-binary", connection, path],
+    queryFn: () => {
+      if (!connection || connection.type === "local") {
+        return api.readLocalFileBinary(path!);
+      }
+      if (connection.type === "wsl") {
+        return api.readWslFileBinary(connection.id, path!);
+      }
+      return api.readRemoteFileBinary(connection.id, path!);
     },
     enabled: !!path,
     staleTime: 10_000,

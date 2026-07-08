@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ThinkingItem } from "./types";
 import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
 import { useSettings } from "@/services/settings.service";
@@ -58,10 +58,6 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
 
   if (visibility === "hide") return null;
 
-  function handleToggle() {
-    setUserExpanded((v) => (v === null ? !expanded : !v));
-  }
-
   if (thinking.isStreaming) {
     const textToRender = isActivelyStreaming ? completedText : thinking.text;
     return (
@@ -78,21 +74,19 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
   }
 
   return (
-    <div className="border-l-2 border-dashed border-border pl-3 py-1 opacity-60">
-      <button
-        type="button"
-        onClick={handleToggle}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/60 transition-colors"
-      >
+    <Collapsible
+      open={expanded}
+      onOpenChange={(newOpen) => setUserExpanded(newOpen)}
+      className="border-l-2 border-dashed border-border pl-3 py-1 opacity-60"
+    >
+      <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/60 transition-colors">
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <Brain className="w-3 h-3" />
         <span>Thought{expanded ? "" : " (click to expand)"}</span>
-      </button>
-      {expanded && (
-        <div className={cn("text-xs text-muted-foreground/70 leading-relaxed mt-1.5")}>
-          <MarkdownBlock text={thinking.text} />
-        </div>
-      )}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="text-xs text-muted-foreground/70 leading-relaxed mt-1.5">
+        <MarkdownBlock text={thinking.text} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

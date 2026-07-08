@@ -3,63 +3,59 @@ import { ActivityUserMessage } from "../activity/ActivityUserMessage";
 import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
-import type { ToolCallItem, CanvasSurface, UserMessageItem } from "../activity/types";
+import type { ToolCallItem, CanvasSurface } from "../activity/types";
 import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
 import React from "react";
+import {
+  MessageScroller,
+  MessageScrollerViewport,
+  MessageScrollerContent,
+  MessageScrollerItem,
+} from "@/ui/message-scroller";
 
 interface AgentStreamContentProps {
   agentSections: AgentSectionItem[];
-  lastUserMessage: UserMessageItem | null;
   toolCallMap: Map<string, ToolCallItem>;
   canvasMap: Map<string, CanvasSurface>;
   onOpenPlanOverlay: () => void;
   onOpenFile?: (uri: string) => void;
   inlinePermission: React.ReactNode;
   bottomBar: React.ReactNode;
-  chatScrollRef: React.RefObject<HTMLDivElement | null>;
-  chatContentRef: React.RefObject<HTMLDivElement | null>;
-  lastUserMsgRef: React.RefObject<HTMLDivElement | null>;
-  handleWheel: React.WheelEventHandler<HTMLDivElement>;
-  handleChatScroll: React.UIEventHandler<HTMLDivElement>;
 }
 
 export function AgentStreamContent({
   agentSections,
-  lastUserMessage,
   toolCallMap,
   canvasMap,
   onOpenPlanOverlay,
   onOpenFile,
   inlinePermission,
   bottomBar,
-  chatScrollRef,
-  chatContentRef,
-  lastUserMsgRef,
-  handleWheel,
-  handleChatScroll,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
 
   return (
-    <div
-      className="absolute inset-0 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar"
-      ref={chatScrollRef}
-      onScroll={handleChatScroll}
-      onWheel={handleWheel}
-    >
-      <div className={cn("flex-1 flex flex-col", isCompact && "max-w-3xl mx-auto w-full")}>
-        <div ref={chatContentRef} className="flex-1 p-3 space-y-3">
+    <MessageScroller className="absolute inset-0">
+      <MessageScrollerViewport className="overflow-x-hidden">
+        <MessageScrollerContent
+          className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
+        >
           {agentSections.map((section, sectionIndex) => {
             if (section.type === "standalone") {
               const gi = section.item;
               if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-              const isLast = gi.item.item.id === lastUserMessage?.id;
+              const msgId = gi.item.item.id;
               return (
-                <div key={gi.item.item.id} ref={isLast ? lastUserMsgRef : undefined}>
+                <MessageScrollerItem
+                  key={msgId}
+                  messageId={msgId}
+                  scrollAnchor={true}
+                  className="px-3"
+                >
                   <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
-                </div>
+                </MessageScrollerItem>
               );
             }
 
@@ -94,23 +90,25 @@ export function AgentStreamContent({
             };
 
             return (
-              <AgentResponseSection key={sectionKey} showConnector={showConnector}>
-                {items.map((gi, index) => (
-                  <AgentStreamItem
-                    key={getItemKey(gi)}
-                    gi={gi}
-                    index={index}
-                    {...sharedItemProps}
-                  />
-                ))}
-              </AgentResponseSection>
+              <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
+                <AgentResponseSection showConnector={showConnector}>
+                  {items.map((gi, index) => (
+                    <AgentStreamItem
+                      key={getItemKey(gi)}
+                      gi={gi}
+                      index={index}
+                      {...sharedItemProps}
+                    />
+                  ))}
+                </AgentResponseSection>
+              </MessageScrollerItem>
             );
           })}
           <AnimatePresence>{inlinePermission}</AnimatePresence>
-        </div>
-        {bottomBar}
-      </div>
-    </div>
+          {bottomBar}
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+    </MessageScroller>
   );
 }
 

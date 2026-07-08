@@ -12,6 +12,8 @@ import {
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
+import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { Checkbox } from "@/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -178,37 +180,24 @@ export function ApproveModal({
         </AlertDialogHeader>
 
         {showRadio && (
-          <div className="space-y-2">
+          <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="strategy"
-                value="merge-delete"
-                checked={strategy === "merge-delete"}
-                onChange={() => setStrategy("merge-delete")}
-              />
+              <RadioGroupItem value="merge-delete" />
               Commit + Merge + Delete worktree
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="strategy"
-                value="commit-only"
-                checked={strategy === "commit-only"}
-                onChange={() => setStrategy("commit-only")}
-              />
+              <RadioGroupItem value="commit-only" />
               Commit only (keep worktree)
             </label>
-          </div>
+          </RadioGroup>
         )}
 
         {untrackedCount > 0 && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={includeUntracked}
-                onChange={(e) => setIncludeUntracked(e.target.checked)}
+                onCheckedChange={(v) => setIncludeUntracked(v === true)}
               />
               Include {untrackedCount} untracked file{untrackedCount !== 1 ? "s" : ""} (not yet
               committed)

@@ -537,3 +537,25 @@ pub async fn read_remote_file(
     }
     Ok(content)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn read_remote_file_binary(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    path: String,
+) -> Result<String, String> {
+    let session = app_state.ssh.get_session(connection_id)
+        .await
+        .ok_or("No active SSH session found. Please connect first.")?;
+    let quoted = shell_quote(&path);
+    let cmd = format!(
+        "s=$(wc -c < {quoted} 2>/dev/null); if [ \"${{s:-0}}\" -gt 10485760 ]; then echo 'ERR:too_large'; else base64 -w0 < {quoted}; fi"
+    );
+    let output = session.execute_command(&cmd).await.map_err(|e| format!("Failed to read file: {}", e))?;
+    let output = output.trim();
+    if output == "ERR:too_large" {
+        return Err("File too large".to_string());
+    }
+    Ok(output.to_string())
+}

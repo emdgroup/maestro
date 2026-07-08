@@ -52,7 +52,7 @@ export function AgentBottomBar({
   return (
     <motion.div
       ref={composeBarWrapperRef}
-      className={cn("sticky bottom-0 z-10 pb-2.5 pt-1", isCompact ? "px-12" : "px-16")}
+      className={cn("mt-auto sticky bottom-0 z-10 pb-2.5 pt-1", isCompact ? "px-12" : "px-16")}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}

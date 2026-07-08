@@ -280,7 +280,7 @@ export function ReviewChangesPanelCompact({
                         "p-1 rounded transition-colors shrink-0",
                         isViewed
                           ? "text-success hover:bg-muted/30"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30",
+                          : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30",
                       )}
                       title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
                     >

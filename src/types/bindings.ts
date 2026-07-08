@@ -1065,6 +1065,17 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  /**
+   * Read a local file's raw content as a base64-encoded string. Rejects files over 10 MB.
+   */
+  async readLocalFileBinary(path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("read_local_file_binary", { path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async listRemoteWorkspaceFiles(
     connectionId: number,
     path: string,
@@ -1082,6 +1093,17 @@ export const commands = {
   async readRemoteFile(connectionId: number, path: string): Promise<Result<string, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("read_remote_file", { connectionId, path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async readRemoteFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("read_remote_file_binary", { connectionId, path }),
+      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -1831,6 +1853,20 @@ export const commands = {
   async readWslFile(connectionId: number, path: string): Promise<Result<string, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("read_wsl_file", { connectionId, path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Read a file from a WSL distro as base64. Rejects files over 10 MB.
+   */
+  async readWslFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("read_wsl_file_binary", { connectionId, path }),
+      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };

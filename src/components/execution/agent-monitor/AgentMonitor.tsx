@@ -4,6 +4,8 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { cn } from "@/lib/utils.ts";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Empty, EmptyDescription } from "@/ui/empty";
+import { ScrollArea } from "@/ui/scroll-area";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
@@ -318,7 +320,6 @@ export function AgentMonitor({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="w-px h-4 bg-border shrink-0" />
           {onClose && (
             <Button
               variant="ghost"
@@ -344,7 +345,7 @@ export function AgentMonitor({
           sidebarCollapsed ? "w-0" : "w-72",
         )}
       >
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <ScrollArea className="flex-1">
           {filteredSessions.length === 0 && (
             <div className="text-xs text-muted-foreground py-8 text-center">No active sessions</div>
           )}
@@ -367,7 +368,7 @@ export function AgentMonitor({
               ))}
             </div>
           ))}
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Content pane */}
@@ -406,9 +407,9 @@ export function AgentMonitor({
           />
         )}
         {!selectedSession && (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-            Select an agent to view its terminal
-          </div>
+          <Empty>
+            <EmptyDescription>Select an agent to view its terminal</EmptyDescription>
+          </Empty>
         )}
       </div>
     </div>

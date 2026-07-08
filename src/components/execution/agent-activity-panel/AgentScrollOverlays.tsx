@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
@@ -11,14 +12,14 @@ import type {
 } from "../activity/types";
 import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../activity/useAcpSessionLifecycle";
+import {
+  useMessageScroller,
+  useMessageScrollerScrollable,
+  useMessageScrollerVisibility,
+} from "@/ui/message-scroller";
 
 interface AgentScrollOverlaysProps {
-  showScrollFab: boolean;
-  hasUnread: boolean;
-  scrollToBottom: () => void;
-  isLastUserMsgPinned: boolean;
   lastUserMessage: UserMessageItem | null;
-  scrollToLastUserMsg: () => void;
   isCenteredCompose: boolean;
   planOverlay: React.ReactNode;
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
@@ -37,12 +38,7 @@ interface AgentScrollOverlaysProps {
 }
 
 export function AgentScrollOverlays({
-  showScrollFab,
-  hasUnread,
-  scrollToBottom,
-  isLastUserMsgPinned,
   lastUserMessage,
-  scrollToLastUserMsg,
   isCenteredCompose,
   planOverlay,
   composeBarRef,
@@ -59,6 +55,25 @@ export function AgentScrollOverlays({
   onConfigChange,
   promptCapabilities,
 }: AgentScrollOverlaysProps) {
+  const { scrollToEnd, scrollToMessage } = useMessageScroller();
+  const scrollable = useMessageScrollerScrollable();
+  const visibility = useMessageScrollerVisibility();
+
+  const showScrollFab = scrollable.end;
+  const hasUnread = scrollable.end && isProcessing;
+  const isLastUserMsgPinned =
+    lastUserMessage !== null &&
+    visibility.currentAnchorId === lastUserMessage.id &&
+    !visibility.visibleMessageIds.includes(lastUserMessage.id);
+
+  const scrollToBottom = useCallback(() => scrollToEnd({ behavior: "smooth" }), [scrollToEnd]);
+
+  const scrollToLastUserMsg = useCallback(() => {
+    if (lastUserMessage) {
+      scrollToMessage(lastUserMessage.id, { align: "start", behavior: "smooth" });
+    }
+  }, [lastUserMessage, scrollToMessage]);
+
   return (
     <>
       <AnimatePresence>

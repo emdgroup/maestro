@@ -100,14 +100,31 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
 #[tauri::command]
 #[specta::specta]
 pub fn read_local_file(path: String) -> Result<String, String> {
+    use std::io::Read;
+    let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut sample = [0u8; 512];
+    let n = file.read(&mut sample).map_err(|e| e.to_string())?;
+    if sample[..n].contains(&0u8) {
+        return Err("Binary file".to_string());
+    }
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
     if bytes.len() > 524_288 {
         return Err("File too large".to_string());
     }
-    if bytes.contains(&0u8) {
-        return Err("Binary file".to_string());
-    }
     String::from_utf8(bytes).map_err(|e| e.to_string())
+}
+
+/// Read a local file's raw content as a base64-encoded string. Rejects files over 10 MB.
+#[tauri::command]
+#[specta::specta]
+pub fn read_local_file_binary(path: String) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 10_485_760 {
+        return Err("File too large".to_string());
+    }
+    Ok(STANDARD.encode(&bytes))
 }
 
 /// List subdirectories in a local filesystem path

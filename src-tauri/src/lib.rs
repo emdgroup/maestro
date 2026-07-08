@@ -85,8 +85,10 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_local_contents,
             crate::ipc::list_workspace_files,
             crate::ipc::read_local_file,
+            crate::ipc::read_local_file_binary,
             crate::ipc::list_remote_workspace_files,
             crate::ipc::read_remote_file,
+            crate::ipc::read_remote_file_binary,
             crate::ipc::get_default_file_picker_path,
             crate::ipc::list_drives,
             crate::ipc::get_system_accent_color,
@@ -140,6 +142,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_wsl_connections,
             crate::ipc::list_wsl_workspace_files,
             crate::ipc::read_wsl_file,
+            crate::ipc::read_wsl_file_binary,
             // Integration management (Phase 55)
             crate::ipc::list_integrations,
             crate::ipc::save_integration,

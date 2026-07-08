@@ -198,6 +198,39 @@ pub fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, Str
     }
 }
 
+/// Read a file's raw content from a WSL distro as base64. Rejects files over 10 MB.
+pub fn read_file_binary(distro: &str, path: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        use crate::command_ext::NoConsoleWindow;
+        use crate::git::remote::shell_quote;
+        let quoted = shell_quote(path);
+        let cmd = format!(
+            "s=$(wc -c < {quoted} 2>/dev/null); if [ \"${{s:-0}}\" -gt 10485760 ]; then echo 'ERR:too_large'; else base64 -w0 < {quoted}; fi"
+        );
+        let output = std::process::Command::new("wsl.exe")
+            .args(["-d", distro, "--", "sh", "-c", &cmd])
+            .no_console_window()
+            .output()
+            .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to read file: {stderr}"));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = stdout.trim();
+        if stdout == "ERR:too_large" {
+            return Err("File too large".to_string());
+        }
+        Ok(stdout.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
+
 /// Read a file's text content from a WSL distro. Rejects binary files and files over 512 KB.
 pub fn read_file(distro: &str, path: &str) -> Result<String, String> {
     #[cfg(windows)]

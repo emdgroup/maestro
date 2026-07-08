@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MessageCircleQuestionMark, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ElicitationSummaryItem } from "./types";
 
 interface Props {
@@ -24,11 +25,12 @@ export function ActivityElicitationCard({ item }: Props) {
   const total = item.fields.length;
 
   return (
-    <div className="border border-border rounded-lg bg-card overflow-hidden">
-      <button
-        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors"
-        onClick={() => setExpanded((v) => !v)}
-      >
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="border border-border rounded-lg bg-card overflow-hidden"
+    >
+      <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
@@ -40,26 +42,24 @@ export function ActivityElicitationCard({ item }: Props) {
             expanded && "rotate-180",
           )}
         />
-      </button>
-      {expanded && (
-        <div className="border-t border-border divide-y divide-border">
-          {item.fields.map((f) => (
-            <div key={f.key} className="px-3 py-1.5 flex gap-2">
-              <span className="text-xs text-muted-foreground min-w-0 truncate shrink-0 basis-1/3">
-                {f.question}
-              </span>
-              {f.answer.map((answer) => (
-                <code
-                  key={answer}
-                  className="text-xs text-foreground min-w-0 bg-muted/60 rounded px-1 py-0.5 font-mono break-all"
-                >
-                  {answer}
-                </code>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t border-border divide-y divide-border">
+        {item.fields.map((f) => (
+          <div key={f.key} className="px-3 py-1.5 flex gap-2">
+            <span className="text-xs text-muted-foreground min-w-0 truncate shrink-0 basis-1/3">
+              {f.question}
+            </span>
+            {f.answer.map((answer) => (
+              <code
+                key={answer}
+                className="text-xs text-foreground min-w-0 bg-muted/60 rounded px-1 py-0.5 font-mono break-all"
+              >
+                {answer}
+              </code>
+            ))}
+          </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

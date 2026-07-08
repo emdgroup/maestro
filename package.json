@@ -30,6 +30,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@git-diff-view/core": "^0.1.6",
     "@git-diff-view/react": "^0.1.6",
+    "@shadcn/react": "^0.2.0",
     "@shikijs/core": "3.22.0",
     "@shikijs/engine-javascript": "3.22.0",
     "@shikijs/langs": "3.22.0",

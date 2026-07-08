@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useId } from "react";
 import { cn } from "@/lib/utils.ts";
 import { humanizeTokenCount } from "@/lib/format-utils";
+import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
 import type { UsageState } from "./types";
@@ -226,15 +227,16 @@ export function LiquidContextIndicator({
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-300",
-              PROGRESS_COLOR[fillState],
-            )}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <Progress value={pct} className="block">
+          <ProgressTrack className="h-1 rounded-full bg-white/6 overflow-hidden">
+            <ProgressIndicator
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                PROGRESS_COLOR[fillState],
+              )}
+            />
+          </ProgressTrack>
+        </Progress>
 
         {/* Token info */}
         <div className="flex justify-between text-[11px] text-muted-foreground">

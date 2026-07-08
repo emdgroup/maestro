@@ -2,6 +2,7 @@ import { User } from "lucide-react";
 import type { UserMessageItem } from "./types";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { ZoomableContent } from "@/ui/zoomable-content";
+import { Message, MessageContent } from "@/ui/message";
 
 function escapeHtml(str: string): string {
   return str
@@ -111,13 +112,13 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
   }
 
   return (
-    <div className="flex items-start gap-2.5">
+    <Message className="gap-2.5 items-start">
       <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex-shrink-0 mt-[7px]">
         <div className="w-7 h-7 rounded-full bg-card flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-accent/70" />
         </div>
       </div>
-      <div className="flex-1 min-w-0">
+      <MessageContent>
         <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
           <div
             className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words"
@@ -143,7 +144,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </MessageContent>
+    </Message>
   );
 }

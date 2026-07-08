@@ -3,7 +3,8 @@ import { Files, Pin, ExternalLink, X, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
-import { connectionQueryKeys, useReadFile } from "@/services/connection.service";
+import { connectionQueryKeys, useReadFile, useReadFileBinary } from "@/services/connection.service";
+import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
@@ -40,16 +41,26 @@ export function WorkspaceFilesPanel({
   const queryClient = useQueryClient();
 
   const fullPath = selected ? `${projectPath}/${selected}` : null;
+  const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
   const {
     data: content,
     isLoading: contentLoading,
     error: contentError,
     refetch,
-  } = useReadFile(connection, fullPath, { refetchInterval: isActive ? 3000 : undefined });
+  } = useReadFile(connection, binaryMime ? null : fullPath, {
+    refetchInterval: (query) => (query.state.error ? false : isActive ? 3000 : false),
+  });
+  const {
+    data: binaryContent,
+    isLoading: binaryLoading,
+    error: binaryError,
+  } = useReadFileBinary(connection, binaryMime ? fullPath : null);
 
   useEffect(() => {
-    if (isActive && fullPath) void refetch();
-  }, [isActive, fullPath, refetch]);
+    if (isActive && fullPath && !binaryMime) {
+      void refetch();
+    }
+  }, [isActive, fullPath, binaryMime, refetch]);
 
   // Invalidate all cached dir listings for this connection when tab regains focus.
   // Only mounted queries (root + expanded dirs) will actually refetch.
@@ -256,10 +267,19 @@ export function WorkspaceFilesPanel({
           <ResizableHandle withHandle />
           <ResizablePanel className="flex flex-col min-h-0">
             <WorkspaceFileContent
-              content={content ?? null}
-              isLoading={contentLoading}
-              error={contentError ? String(contentError) : null}
+              content={binaryMime ? (binaryContent ?? null) : (content ?? null)}
+              isLoading={binaryMime ? binaryLoading : contentLoading}
+              error={
+                binaryMime
+                  ? binaryError
+                    ? String(binaryError)
+                    : null
+                  : contentError
+                    ? String(contentError)
+                    : null
+              }
               fileName={selected}
+              mimeType={binaryMime}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -278,10 +298,19 @@ export function WorkspaceFilesPanel({
           )}
 
           <WorkspaceFileContent
-            content={content ?? null}
-            isLoading={contentLoading}
-            error={contentError ? String(contentError) : null}
+            content={binaryMime ? (binaryContent ?? null) : (content ?? null)}
+            isLoading={binaryMime ? binaryLoading : contentLoading}
+            error={
+              binaryMime
+                ? binaryError
+                  ? String(binaryError)
+                  : null
+                : contentError
+                  ? String(contentError)
+                  : null
+            }
             fileName={selected}
+            mimeType={binaryMime}
           />
         </div>
       )}

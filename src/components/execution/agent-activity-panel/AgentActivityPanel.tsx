@@ -1,9 +1,8 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
-import { useAcpScrollBehavior } from "../activity/useAcpScrollBehavior";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
@@ -34,6 +33,53 @@ import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
 import { AgentStreamContent } from "./AgentStreamContent";
 import { AgentBottomBar } from "./AgentBottomBar";
 import { AgentScrollOverlays } from "./AgentScrollOverlays";
+import {
+  MessageScrollerProvider,
+  useMessageScroller,
+  useMessageScrollerScrollable,
+} from "@/ui/message-scroller";
+
+function ScrollStateWatcher({
+  isSelected,
+  activeTab,
+  activityStatus,
+  activitySeen,
+  sessionKey,
+  markSeen,
+  userMessageCount,
+}: {
+  isSelected: boolean;
+  activeTab: string;
+  activityStatus: string | undefined;
+  activitySeen: boolean | undefined;
+  sessionKey: number;
+  markSeen: (key: number) => void;
+  userMessageCount: number;
+}) {
+  const { scrollToEnd } = useMessageScroller();
+  const scrollable = useMessageScrollerScrollable();
+
+  const prevCountRef = useRef(userMessageCount);
+  useEffect(() => {
+    if (userMessageCount > prevCountRef.current) {
+      scrollToEnd({ behavior: "instant" });
+    }
+    prevCountRef.current = userMessageCount;
+  }, [userMessageCount, scrollToEnd]);
+
+  useEffect(() => {
+    if (
+      isSelected &&
+      activeTab === "agents" &&
+      !scrollable.end &&
+      activityStatus === "idle" &&
+      !activitySeen
+    ) {
+      markSeen(sessionKey);
+    }
+  }, [isSelected, activeTab, scrollable.end, activityStatus, activitySeen, sessionKey, markSeen]);
+  return null;
+}
 
 interface AgentActivityPanelProps {
   sessionKey: number;
@@ -83,9 +129,7 @@ export function AgentActivityPanel({
     setPendingElicitation,
   } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef, sessionUpdateRef);
 
-  const isReady = !liveState.isInitializing;
-  const [scrollRestoreToken, setScrollRestoreToken] = useState(0);
-  const scroll = useAcpScrollBehavior(isReady, liveState.lastUserMessageId, scrollRestoreToken);
+  const [, setScrollRestoreToken] = useState(0);
 
   useActivityStatusManager(sessionKey, liveState);
   const { workingFiles: localWorkingFiles, sessionChangedFiles: localChangedFiles } =
@@ -182,6 +226,10 @@ export function AgentActivityPanel({
   );
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
+  const userMessageCount = useMemo(
+    () => agentSections.filter((s) => s.type === "standalone").length,
+    [agentSections],
+  );
   const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
 
   const { handleCancel, handleSendWithTransition } = useMessageSender({
@@ -219,42 +267,6 @@ export function AgentActivityPanel({
     [addDynamicTab, selectedProject, setSidePanelCollapsed],
   );
 
-  useEffect(() => {
-    if (
-      isSelected &&
-      activeTab === "agents" &&
-      !scroll.hasUnread &&
-      activityInfo?.status === "idle" &&
-      !activityInfo?.seen
-    ) {
-      markSeen(sessionKey);
-    }
-  }, [
-    isSelected,
-    activeTab,
-    scroll.hasUnread,
-    activityInfo?.status,
-    activityInfo?.seen,
-    sessionKey,
-    markSeen,
-  ]);
-
-  // When compose bar grows (multiline), keep stream tail visible if auto-scroll is active.
-  // chatScrollRef and atBottomRef are stable refs — intentionally omitted from deps.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const el = composeBarWrapperRef.current;
-    const scrollEl = scroll.chatScrollRef.current;
-    if (!el || !scrollEl) return;
-    const ro = new ResizeObserver(() => {
-      if (scroll.atBottomRef.current) {
-        scrollEl.scrollTop = scrollEl.scrollHeight;
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [isReady, isCenteredCompose, scroll]);
-
   const lastUserMessage = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
       const s = agentSections[i];
@@ -286,14 +298,6 @@ export function AgentActivityPanel({
   const hasInlinePermission = !!(pendingPermission && !isPlanPermWithBody);
   const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
 
-  // Restore scroll position after panel collapse/expand.
-  // chatScrollRef and scrollTopRef are stable refs — safe to omit from deps.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => {
-    const el = scroll.chatScrollRef.current;
-    if (el) el.scrollTop = scroll.scrollTopRef.current;
-  }, [sidePanelCollapsed, scroll.chatScrollRef, scroll.scrollTopRef]);
-
   const showCompose =
     !isSessionDead &&
     !elicitationContent &&
@@ -307,6 +311,7 @@ export function AgentActivityPanel({
     !isSessionDead && hasInlinePermission && pendingPermission ? (
       <motion.div
         key={pendingPermission.requestId}
+        className="px-3"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.15 }}
@@ -344,43 +349,43 @@ export function AgentActivityPanel({
         </div>
       )}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="flex-1 relative min-h-0 overflow-hidden">
-          <AgentStreamContent
-            agentSections={agentSections}
-            lastUserMessage={lastUserMessage}
-            toolCallMap={liveState.toolCallMap}
-            canvasMap={liveState.canvasMap}
-            onOpenPlanOverlay={handleOpenPlanOverlaySplit}
-            onOpenFile={handleOpenFile}
-            inlinePermission={inlinePermission}
-            bottomBar={
-              <AgentBottomBar
-                isSessionDead={isSessionDead}
-                showCompose={showCompose}
-                composeBarWrapperRef={composeBarWrapperRef}
-                composeBarRef={composeBarRef}
-                {...sharedComposeBarProps}
-              />
-            }
-            chatScrollRef={scroll.chatScrollRef}
-            chatContentRef={scroll.chatContentRef}
-            lastUserMsgRef={scroll.lastUserMsgRef}
-            handleWheel={scroll.handleWheel}
-            handleChatScroll={scroll.handleChatScroll}
+        <MessageScrollerProvider autoScroll scrollMargin={10} scrollPreviousItemPeek={0}>
+          <ScrollStateWatcher
+            isSelected={isSelected}
+            activeTab={activeTab}
+            activityStatus={activityInfo?.status}
+            activitySeen={activityInfo?.seen}
+            sessionKey={sessionKey}
+            userMessageCount={userMessageCount}
+            markSeen={markSeen}
           />
-          <AgentScrollOverlays
-            showScrollFab={scroll.showScrollFab}
-            hasUnread={scroll.hasUnread}
-            scrollToBottom={scroll.scrollToBottom}
-            isLastUserMsgPinned={scroll.isLastUserMsgPinned}
-            lastUserMessage={lastUserMessage}
-            scrollToLastUserMsg={scroll.scrollToLastUserMsg}
-            isCenteredCompose={isCenteredCompose}
-            planOverlay={null}
-            composeBarRef={composeBarRef}
-            {...sharedComposeBarProps}
-          />
-        </div>
+          <div className="flex-1 relative min-h-0 overflow-hidden">
+            <AgentStreamContent
+              agentSections={agentSections}
+              toolCallMap={liveState.toolCallMap}
+              canvasMap={liveState.canvasMap}
+              onOpenPlanOverlay={handleOpenPlanOverlaySplit}
+              onOpenFile={handleOpenFile}
+              inlinePermission={inlinePermission}
+              bottomBar={
+                <AgentBottomBar
+                  isSessionDead={isSessionDead}
+                  showCompose={showCompose}
+                  composeBarWrapperRef={composeBarWrapperRef}
+                  composeBarRef={composeBarRef}
+                  {...sharedComposeBarProps}
+                />
+              }
+            />
+            <AgentScrollOverlays
+              lastUserMessage={lastUserMessage}
+              isCenteredCompose={isCenteredCompose}
+              planOverlay={null}
+              composeBarRef={composeBarRef}
+              {...sharedComposeBarProps}
+            />
+          </div>
+        </MessageScrollerProvider>
         <AnimatePresence>
           {elicitationContent && !isSessionDead && (
             <motion.div
@@ -459,6 +464,7 @@ export function AgentActivityPanel({
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}
             planEntries={liveState.plan}
+            planTitle={liveState.planTitle}
             onPlanRespond={handlePlanRespond}
             collapsed={sidePanelCollapsed}
             onCollapsedChange={(v) => setSidePanelCollapsed(v)}

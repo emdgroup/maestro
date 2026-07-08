@@ -31,6 +31,7 @@ interface ExecutionSidePanelProps {
   toolCallMap: Map<string, ToolCallItem>;
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
   planEntries?: PlanEntry[] | null;
+  planTitle?: string | null;
   onPlanRespond: (requestId: string, optionId: string | null) => void;
   collapsed: boolean;
   onCollapsedChange: (c: boolean) => void;
@@ -60,6 +61,7 @@ export function ExecutionSidePanel({
   toolCallMap,
   sidePanelPlan,
   planEntries,
+  planTitle,
   onPlanRespond,
   collapsed,
   onCollapsedChange,
@@ -144,6 +146,7 @@ export function ExecutionSidePanel({
               projectPath={projectPath}
               connection={connection}
               planEntries={planEntries}
+              planTitle={planTitle}
               onCollapsedChange={onCollapsedChange}
               onOpenTabKind={onOpenTabKind}
               onSpawnShell={onSpawnShell}

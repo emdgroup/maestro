@@ -97,3 +97,26 @@ export function langForExtension(path: string): string | undefined {
 export function imageMimeForExtension(path: string): string {
   return IMAGE_MIME[extOf(path)] ?? "image/png";
 }
+
+const BINARY_EXT_MIME: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".aac": "audio/aac",
+  ".m4a": "audio/mp4",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+};
+
+export function binaryMimeForExtension(path: string): string | undefined {
+  return BINARY_EXT_MIME[extOf(path)];
+}

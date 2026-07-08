@@ -1,4 +1,5 @@
 import maestroLogoUrl from "../../../src-tauri/icons/32x32.png?url";
+import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 
 type UpdateStatus =
   | { phase: "idle" }
@@ -80,12 +81,11 @@ export function UpdateSplashScreen({ status }: { status: UpdateStatus }) {
             <span>Downloading…</span>
             <span>{progress}%</span>
           </div>
-          <div className="h-[3px] bg-border rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          <Progress value={progress} className="block">
+            <ProgressTrack className="h-[3px] bg-border rounded-full overflow-hidden">
+              <ProgressIndicator className="h-full bg-primary rounded-full transition-all duration-300" />
+            </ProgressTrack>
+          </Progress>
         </div>
       )}
 

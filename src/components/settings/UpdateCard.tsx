@@ -4,6 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
@@ -104,12 +105,11 @@ export function UpdateCard() {
             <span className="text-[10px] text-muted-foreground">
               Downloading… {status.progress}%
             </span>
-            <div className="w-24 h-1 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent rounded-full transition-all"
-                style={{ width: `${status.progress}%` }}
-              />
-            </div>
+            <Progress value={status.progress} className="block w-24">
+              <ProgressTrack className="h-1 bg-muted rounded-full overflow-hidden">
+                <ProgressIndicator className="h-full bg-accent rounded-full transition-all" />
+              </ProgressTrack>
+            </Progress>
           </div>
         ) : (
           /* Up to date / idle / checking / error */
