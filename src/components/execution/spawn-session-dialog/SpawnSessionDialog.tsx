@@ -263,8 +263,8 @@ export function SpawnSessionDialog({
                     setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
                   }
                 >
-                  <SelectTrigger id="spawn-worktree" className="w-full">
-                    <span className="flex items-center gap-1.5 min-w-0">
+                  <SelectTrigger id="spawn-worktree" className="w-full overflow-hidden">
+                    <span className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
                       <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
                       {selectedWorktree ? (
                         <>
