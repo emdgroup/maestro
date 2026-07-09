@@ -26,7 +26,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
-            patchelf
+            patchelf \
+            xdg-utils
 
       - uses: oven-sh/setup-bun@v2
 
@@ -80,7 +81,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
-            patchelf
+            patchelf \
+            xdg-utils
 
       - uses: oven-sh/setup-bun@v2
 
