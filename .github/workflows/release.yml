@@ -49,8 +49,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp target/release/maestro-server target/release/maestro-server-linux-x86_64
           gh release upload ${{ github.ref_name }} \
-            target/release/maestro-server#maestro-server-linux-x86_64 --clobber
+            target/release/maestro-server-linux-x86_64 --clobber
 
       - uses: actions/upload-artifact@v7
         with:
@@ -104,8 +105,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp target/release/maestro-server target/release/maestro-server-linux-arm64
           gh release upload ${{ github.ref_name }} \
-            target/release/maestro-server#maestro-server-linux-arm64 --clobber
+            target/release/maestro-server-linux-arm64 --clobber
 
       - uses: actions/upload-artifact@v7
         with:
@@ -146,8 +148,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp target/release/maestro-server target/release/maestro-server-macos-arm64
           gh release upload ${{ github.ref_name }} \
-            target/release/maestro-server#maestro-server-macos-arm64 --clobber
+            target/release/maestro-server-macos-arm64 --clobber
 
       - uses: actions/upload-artifact@v7
         with:
@@ -186,9 +189,11 @@ jobs:
       - name: Upload maestro-server binary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >
-          gh release upload ${{ github.ref_name }}
-          "target/release/maestro-server.exe#maestro-server-windows-x86_64.exe" --clobber
+        shell: bash
+        run: |
+          cp target/release/maestro-server.exe target/release/maestro-server-windows-x86_64.exe
+          gh release upload ${{ github.ref_name }} \
+            "target/release/maestro-server-windows-x86_64.exe" --clobber
 
       - uses: actions/upload-artifact@v7
         with:
