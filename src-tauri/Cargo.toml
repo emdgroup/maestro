@@ -21,7 +21,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-octocrab = { version = "0.53", default-features = false, features = [
+octocrab = { version = "0.54", default-features = false, features = [
   "default-client",
   "rustls",
   "jwt-rust-crypto",
