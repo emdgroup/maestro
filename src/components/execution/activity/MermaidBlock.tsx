@@ -26,7 +26,17 @@ export function MermaidBlock({ code }: { code: string }) {
         m.default
           .render(elId, code)
           .then(({ svg: rendered }) => {
-            if (!cancelled) setSvg(rendered);
+            if (!cancelled) {
+              if (rendered.includes('aria-roledescription="error"')) {
+                setError(true);
+                toast.error("Mermaid diagram syntax error", {
+                  id: elId,
+                  description: "Failed to render diagram",
+                });
+              } else {
+                setSvg(rendered);
+              }
+            }
           })
           .catch((err: unknown) => {
             if (!cancelled) {
