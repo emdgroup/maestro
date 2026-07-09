@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.7.0"
+version = "0.8.0"
 description = "Maestro: AI Agent Orchestration for Autonomous Coding"
 authors = ["you"]
 license = "Apache-2.0"
