@@ -31,12 +31,15 @@ function assetUrl(filename) {
 }
 
 // Locate updater artifacts
-const linuxDir = path.join(ARTIFACTS, "linux-updater");
+const linuxDir = path.join(ARTIFACTS, "linux-x86_64-updater");
+const linuxArmDir = path.join(ARTIFACTS, "linux-arm64-updater");
 const macArmDir = path.join(ARTIFACTS, "macos-arm64-updater");
 const winDir = path.join(ARTIFACTS, "windows-updater");
 
 const linuxAppImage = findFile(linuxDir, /\.AppImage$/);
 const linuxSig = findFile(linuxDir, /\.AppImage\.sig$/);
+const linuxArmAppImage = findFile(linuxArmDir, /\.AppImage$/);
+const linuxArmSig = findFile(linuxArmDir, /\.AppImage\.sig$/);
 const macArmTarGz = findFile(macArmDir, /\.app\.tar\.gz$/);
 const macArmSig = findFile(macArmDir, /\.app\.tar\.gz\.sig$/);
 const winExe = findFile(winDir, /-setup\.exe$/);
@@ -50,6 +53,10 @@ const manifest = {
     "linux-x86_64": {
       url: assetUrl(linuxAppImage),
       signature: readSig(linuxSig),
+    },
+    "linux-aarch64": {
+      url: assetUrl(linuxArmAppImage),
+      signature: readSig(linuxArmSig),
     },
     "darwin-aarch64": {
       url: assetUrl(macArmTarGz),
@@ -69,7 +76,16 @@ console.log("Generated latest.json:", JSON.stringify(manifest, null, 2));
 execSync(`gh release upload "${tag}" latest.json --clobber`, { stdio: "inherit" });
 
 // Also upload the updater artifacts so URLs in latest.json resolve
-const updaterFiles = [linuxAppImage, linuxSig, macArmTarGz, macArmSig, winExe, winSig]
+const updaterFiles = [
+  linuxAppImage,
+  linuxSig,
+  linuxArmAppImage,
+  linuxArmSig,
+  macArmTarGz,
+  macArmSig,
+  winExe,
+  winSig,
+]
   .filter(Boolean)
   .join(" ");
 

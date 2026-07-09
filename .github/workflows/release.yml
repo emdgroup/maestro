@@ -53,7 +53,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: linux-updater
+          name: linux-x86_64-updater
           path: |
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.AppImage.sig
@@ -65,17 +65,38 @@ jobs:
             target/release/bundle/deb/*.deb
 
   build-linux-arm64:
-    name: Build Linux (arm64) — maestro-server only
+    name: Build Linux (arm64)
     runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v7
+
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: oven-sh/setup-bun@v2
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
+      - run: bun install --frozen-lockfile
+
       - name: Build maestro-server
         run: cargo build -p maestro-server --release
+
+      - run: bun run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload maestro-server binary
         env:
@@ -83,6 +104,19 @@ jobs:
         run: |
           gh release upload ${{ github.ref_name }} \
             target/release/maestro-server#maestro-server-linux-arm64 --clobber
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-arm64-updater
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
 
   build-macos-arm64:
     name: Build macOS (arm64)
