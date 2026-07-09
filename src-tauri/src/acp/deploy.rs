@@ -2,7 +2,6 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const REMOTE_INSTALL_DIR: &str = ".maestro/bin";
 const REMOTE_BINARY_NAME: &str = "maestro-server";
-const REMOTE_TARGET: &str = "x86_64-unknown-linux-gnu";
 
 #[derive(Clone, serde::Serialize)]
 pub struct DeployStatus {
@@ -16,8 +15,31 @@ pub struct DeployResult {
     pub deployed: bool,
 }
 
-/// Ensure maestro-server exists on remote with the correct protocol version.
-/// Deploys via SFTP if missing or outdated. Returns the absolute path to use for spawning.
+/// Maps a Rust target triple to the friendly GitHub release asset filename.
+/// This is the canonical source of truth for asset naming — used both when
+/// constructing download URLs and when naming locally-cached binaries.
+pub(crate) fn asset_filename(triple: &str) -> String {
+    match triple {
+        "x86_64-unknown-linux-gnu"  => "maestro-server-linux-x86_64".to_string(),
+        "aarch64-unknown-linux-gnu" => "maestro-server-linux-arm64".to_string(),
+        "aarch64-apple-darwin"      => "maestro-server-macos-arm64".to_string(),
+        "x86_64-pc-windows-msvc"    => "maestro-server-windows-x86_64.exe".to_string(),
+        other                       => format!("maestro-server-{}", other),
+    }
+}
+
+/// Maps a uname-reported architecture string to its Rust Linux target triple.
+fn linux_triple_for_arch(arch: &str) -> Result<&'static str, String> {
+    match arch {
+        "x86_64"           => Ok("x86_64-unknown-linux-gnu"),
+        "aarch64" | "arm64" => Ok("aarch64-unknown-linux-gnu"),
+        other              => Err(format!("Unsupported remote architecture: {}", other)),
+    }
+}
+
+/// Ensure maestro-server exists on remote with the correct version.
+/// Downloads the appropriate Linux binary locally if needed, then deploys via SFTP.
+/// Returns the absolute path to use for spawning.
 pub async fn ensure_remote_server(
     ssh: &crate::connectivity::ssh::RemoteSshSession,
     app_handle: &AppHandle,
@@ -28,7 +50,7 @@ pub async fn ensure_remote_server(
     // Single SSH command combining arch check, version check, and HOME resolution.
     let probe = ssh
         .execute_command(&format!(
-            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$($HOME/.{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$HOME\"",
+            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$(~/{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$(echo ~)\"",
             REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
         ))
         .await
@@ -40,10 +62,7 @@ pub async fn ensure_remote_server(
     }
     let (arch, remote_version, home) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
 
-    if arch != "x86_64" {
-        return Err(format!("Unsupported remote architecture: {}", arch));
-    }
-
+    let remote_triple = linux_triple_for_arch(arch)?;
     let local_version = env!("CARGO_PKG_VERSION").to_string();
 
     if remote_version == local_version {
@@ -57,7 +76,7 @@ pub async fn ensure_remote_server(
 
     emit_status(app_handle, connection_id, "deploying", None);
 
-    let local_binary = resolve_bundled_linux_binary(app_handle)?;
+    let local_binary = ensure_remote_binary_local(app_handle, remote_triple).await?;
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_remote_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 
@@ -90,8 +109,8 @@ pub async fn ensure_remote_server(
     })
 }
 
-/// Ensure maestro-server exists inside a WSL distro with the correct protocol version.
-/// Deploys the bundled Linux x86_64 binary via stdin pipe if missing or outdated.
+/// Ensure maestro-server exists inside a WSL distro with the correct version.
+/// Downloads the Linux x86_64 binary locally if needed, then deploys via stdin pipe.
 /// Returns the absolute Linux path to the binary.
 #[cfg(windows)]
 pub async fn ensure_wsl_server(
@@ -134,10 +153,11 @@ pub async fn ensure_wsl_server(
         return Ok(DeployResult { path: abs_path, deployed: false });
     }
 
-    let local_binary = resolve_bundled_linux_binary(app_handle)?;
+    // WSL on Windows runs x86_64 Linux in all common configurations.
+    let local_binary = ensure_remote_binary_local(app_handle, "x86_64-unknown-linux-gnu").await?;
     let binary_bytes = tokio::fs::read(&local_binary)
         .await
-        .map_err(|e| format!("Cannot read bundled binary: {}", e))?;
+        .map_err(|e| format!("Cannot read cached binary: {}", e))?;
 
     let mut child = tokio::process::Command::new("wsl.exe")
         .args([
@@ -207,18 +227,127 @@ pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), 
     Ok(())
 }
 
-fn resolve_bundled_linux_binary(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let resource_dir = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Cannot resolve resource dir: {}", e))?;
-    let local_binary = resource_dir
-        .join("remote")
-        .join(format!("maestro-server-{}", REMOTE_TARGET));
-    if !local_binary.exists() {
-        return Err(format!("Remote binary not bundled: {}", local_binary.display()));
+/// Ensure the native platform maestro-server binary is cached in the app data dir.
+/// Downloads from GitHub releases if absent or version-mismatched.
+/// Called during preflight for local connections and as fallback in open_local_transport.
+pub async fn ensure_local_server(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    ensure_cached_binary(app_handle, crate::acp::HOST_TRIPLE, Some(0)).await
+}
+
+/// Ensure a Linux maestro-server binary for the given triple is cached in the app data dir.
+/// Downloads from GitHub releases if absent or version-mismatched.
+/// Used as the local staging binary before SSH or WSL deployment.
+async fn ensure_remote_binary_local(
+    app_handle: &AppHandle,
+    triple: &str,
+) -> Result<std::path::PathBuf, String> {
+    ensure_cached_binary(app_handle, triple, None).await
+}
+
+/// Core ensure logic: check version of the cached binary for `triple`, download if needed.
+/// `emit_connection_id` is `Some(id)` to emit deploy-status events (local preflight),
+/// or `None` for silent background downloads (SSH/WSL staging).
+async fn ensure_cached_binary(
+    app_handle: &AppHandle,
+    triple: &str,
+    emit_connection_id: Option<i32>,
+) -> Result<std::path::PathBuf, String> {
+    let dest = cached_binary_path(app_handle, triple)?;
+    let local_version = env!("CARGO_PKG_VERSION");
+
+    if let Some(id) = emit_connection_id {
+        emit_status(app_handle, id, "checking", None);
     }
-    Ok(local_binary)
+
+    if dest.exists() {
+        if let Some(cached_version) = check_cached_version(&dest).await {
+            if cached_version == local_version {
+                if let Some(id) = emit_connection_id {
+                    emit_status(app_handle, id, "up-to-date", None);
+                }
+                return Ok(dest);
+            }
+        }
+    }
+
+    if let Some(id) = emit_connection_id {
+        emit_status(app_handle, id, "deploying", None);
+    }
+    download_server_binary(triple, &dest).await?;
+    if let Some(id) = emit_connection_id {
+        emit_status(app_handle, id, "deployed", None);
+    }
+
+    Ok(dest)
+}
+
+fn cached_binary_path(app_handle: &AppHandle, triple: &str) -> Result<std::path::PathBuf, String> {
+    let dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?
+        .join("bin");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Cannot create server cache dir: {}", e))?;
+    Ok(dir.join(asset_filename(triple)))
+}
+
+async fn check_cached_version(path: &std::path::Path) -> Option<String> {
+    let output = tokio::process::Command::new(path)
+        .arg("--app-version")
+        .output()
+        .await
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+async fn download_server_binary(triple: &str, dest: &std::path::Path) -> Result<(), String> {
+    let version = env!("CARGO_PKG_VERSION");
+    let filename = asset_filename(triple);
+    let url = format!(
+        "https://github.com/emdgroup/maestro/releases/download/v{}/{}",
+        version, filename
+    );
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Download request failed for {}: {}", url, e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download returned HTTP {} for {}",
+            response.status(),
+            url
+        ));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Download read failed: {}", e))?;
+
+    // Write to a temp path then rename atomically to avoid a partial binary at dest.
+    let tmp_path = dest.with_extension("download-tmp");
+    tokio::fs::write(&tmp_path, &bytes)
+        .await
+        .map_err(|e| format!("Failed to write binary to temp file: {}", e))?;
+    tokio::fs::rename(&tmp_path, dest)
+        .await
+        .map_err(|e| format!("Failed to install binary: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755))
+            .await
+            .map_err(|e| format!("Failed to set executable permission: {}", e))?;
+    }
+
+    Ok(())
 }
 
 fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message: Option<String>) {

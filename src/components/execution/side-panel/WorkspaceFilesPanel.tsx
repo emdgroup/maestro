@@ -32,7 +32,7 @@ export function WorkspaceFilesPanel({
   initialPath,
 }: WorkspaceFilesPanelProps) {
   const [selected, setSelected] = useState<string | null>(initialPath ?? null);
-  const [listOpen, setListOpen] = useState(true);
+  const [listOpen, setListOpen] = useState(!initialPath);
   const [listPinned, setListPinned] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [dlState, setDlState] = useState<DlState>({ status: "idle" });

@@ -340,7 +340,8 @@ export function AgentActivityPanel({
       return;
     }
     const observer = new ResizeObserver(([entry]) => {
-      setComposeBarHeight(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+      const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+      if (h > 0) setComposeBarHeight(h);
     });
     observer.observe(el);
     return () => observer.disconnect();

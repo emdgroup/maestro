@@ -29,7 +29,7 @@ function imageMime(displayName: string): string {
   return "image/png";
 }
 
-function docIcon(displayName: string) {
+export function docIcon(displayName: string) {
   const ext = displayName.split(".").pop()?.toLowerCase() ?? "";
   if (["csv", "tsv", "xlsx", "xls", "ods"].includes(ext)) return FileSpreadsheet;
   if (
@@ -72,7 +72,7 @@ function docIcon(displayName: string) {
   return FileIcon;
 }
 
-function formatFileSize(bytes: number): string {
+export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

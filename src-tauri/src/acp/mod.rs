@@ -17,6 +17,17 @@ pub mod reader_task;
 pub mod connection_server;
 pub mod session_ops;
 
+/// Compile-time Rust target triple for the currently running platform.
+/// Used to select and cache the correct maestro-server binary.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub(crate) const HOST_TRIPLE: &str = "x86_64-unknown-linux-gnu";
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub(crate) const HOST_TRIPLE: &str = "aarch64-unknown-linux-gnu";
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub(crate) const HOST_TRIPLE: &str = "aarch64-apple-darwin";
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub(crate) const HOST_TRIPLE: &str = "x86_64-pc-windows-msvc";
+
 pub(crate) fn session_id_for(log_id: i32) -> String {
     format!("session-{}", log_id)
 }

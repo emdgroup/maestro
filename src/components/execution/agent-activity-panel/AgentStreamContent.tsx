@@ -49,12 +49,7 @@ export function AgentStreamContent({
               if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
               const msgId = gi.item.item.id;
               return (
-                <MessageScrollerItem
-                  key={msgId}
-                  messageId={msgId}
-                  scrollAnchor={true}
-                  className="px-3"
-                >
+                <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
                   <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
                 </MessageScrollerItem>
               );

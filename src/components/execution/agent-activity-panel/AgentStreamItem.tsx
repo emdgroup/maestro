@@ -47,7 +47,7 @@ export function AgentStreamItem({
 
     const groupKey = `tg-${gi.items[0].toolCallId}`;
     return (
-      <div key={groupKey} className="space-y-3">
+      <div key={groupKey} className="space-y-3 pb-1">
         <ActivityToolCallGroup items={gi.items} hasSubsequentMessage={hasSubsequentMessage} />
       </div>
     );

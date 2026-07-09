@@ -3,6 +3,60 @@ import type { UserMessageItem } from "./types";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import { Message, MessageContent } from "@/ui/message";
+import {
+  Attachment,
+  AttachmentMedia,
+  AttachmentContent,
+  AttachmentTitle,
+  AttachmentDescription,
+} from "@/ui/attachment";
+import { docIcon, formatFileSize } from "./compose-bar/AttachmentShelf";
+
+function fileTypeLabel(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const labels: Record<string, string> = {
+    pdf: "PDF",
+    json: "JSON",
+    md: "Markdown",
+    mdx: "MDX",
+    ts: "TypeScript",
+    tsx: "TypeScript",
+    js: "JavaScript",
+    jsx: "JavaScript",
+    mjs: "JavaScript",
+    rs: "Rust",
+    py: "Python",
+    go: "Go",
+    rb: "Ruby",
+    java: "Java",
+    c: "C",
+    cpp: "C++",
+    cs: "C#",
+    swift: "Swift",
+    kt: "Kotlin",
+    yaml: "YAML",
+    yml: "YAML",
+    toml: "TOML",
+    xml: "XML",
+    html: "HTML",
+    css: "CSS",
+    sh: "Shell",
+    bash: "Shell",
+    zsh: "Shell",
+    txt: "Text",
+    csv: "CSV",
+    xlsx: "Excel",
+    xls: "Excel",
+    docx: "Word",
+    doc: "Word",
+    pptx: "PowerPoint",
+    ppt: "PowerPoint",
+    zip: "ZIP",
+    tar: "TAR",
+    gz: "Gzip",
+  };
+  return labels[ext] ?? (ext.toUpperCase() || "File");
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -39,7 +93,8 @@ interface ActivityUserMessageProps {
 export type ParsedContentBlock =
   | { type: "text"; text: string }
   | { type: "attachment"; name: string; uri?: string }
-  | { type: "image"; data: string; mimeType: string; name: string };
+  | { type: "image"; data: string; mimeType: string; name: string }
+  | { type: "file"; name: string; uri?: string; mimeType?: string; size?: number };
 
 export interface ParsedUserContent {
   text: string;
@@ -57,27 +112,46 @@ export function parseUserContent(raw: string): ParsedUserContent {
     const textParts: string[] = [];
     const attachments: string[] = [];
     const blocks: ParsedContentBlock[] = [];
+    let seenText = false;
     for (const block of parsed) {
       if (block.type === "text" && typeof block.text === "string") {
+        seenText = true;
         const text = stripContextBlocks(block.text);
         textParts.push(text);
         blocks.push({ type: "text", text });
-      } else if (block.type === "resource" && block.resource?.uri) {
-        const uri: string = block.resource.uri;
-        const name = uri.split("/").pop() ?? uri;
-        attachments.push(name);
-        blocks.push({ type: "attachment", name, uri });
-      } else if (block.type === "resource_link" && block.name) {
-        attachments.push(block.name);
-        blocks.push({ type: "attachment", name: block.name, uri: block.uri as string | undefined });
       } else if (block.type === "image" && typeof block.data === "string") {
-        const name = (block.uri as string | undefined)?.split("/").pop() ?? "image";
+        const name = (block.uri as string | undefined)?.split(/[/\\]/).pop() ?? "image";
         blocks.push({
           type: "image",
           data: block.data,
           mimeType: (block.mimeType as string) ?? "image/png",
           name,
         });
+      } else if (!seenText && block.type === "resource" && block.resource?.uri) {
+        const uri: string = block.resource.uri;
+        const name = uri.split(/[/\\]/).pop() ?? uri;
+        blocks.push({
+          type: "file",
+          name,
+          uri,
+          mimeType: block.resource.mimeType as string | undefined,
+        });
+      } else if (!seenText && block.type === "resource_link" && block.name) {
+        blocks.push({
+          type: "file",
+          name: block.name as string,
+          uri: block.uri as string | undefined,
+          mimeType: block.mimeType as string | undefined,
+          size: block.size as number | undefined,
+        });
+      } else if (seenText && block.type === "resource" && block.resource?.uri) {
+        const uri: string = block.resource.uri;
+        const name = uri.split(/[/\\]/).pop() ?? uri;
+        attachments.push(name);
+        blocks.push({ type: "attachment", name, uri });
+      } else if (seenText && block.type === "resource_link" && block.name) {
+        attachments.push(block.name);
+        blocks.push({ type: "attachment", name: block.name, uri: block.uri as string | undefined });
       }
     }
     return { text: textParts.join(""), attachments, blocks };
@@ -93,7 +167,10 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
   const imageBlocks = parsed.blocks.filter(
     (b): b is Extract<ParsedContentBlock, { type: "image" }> => b.type === "image",
   );
-  const hasExtras = imageBlocks.length > 0;
+  const fileBlocks = parsed.blocks.filter(
+    (b): b is Extract<ParsedContentBlock, { type: "file" }> => b.type === "file",
+  );
+  const hasCards = imageBlocks.length > 0 || fileBlocks.length > 0;
 
   function handleClick(e: React.MouseEvent) {
     const a = (e.target as Element).closest("a[data-open-file-uri]");
@@ -122,17 +199,65 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             ) : (
               <MarkdownBlock text={parsed.text} breaks />
             )}
-            {hasExtras && (
-              <div className="flex flex-wrap items-start gap-2 mt-2 pt-2 border-t border-border/15">
-                {imageBlocks.map((b, i) => (
-                  <ZoomableContent key={i} ariaLabel={b.name}>
-                    <img
-                      src={`data:${b.mimeType};base64,${b.data}`}
-                      alt={b.name}
-                      className="max-w-[240px] max-h-48 rounded-md border border-border/20 object-cover"
-                    />
-                  </ZoomableContent>
-                ))}
+            {hasCards && (
+              <div className="flex flex-col gap-1.5 mt-2.5">
+                {imageBlocks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {imageBlocks.map((b, i) => {
+                      const src = `data:${b.mimeType};base64,${b.data}`;
+                      return (
+                        <ZoomableContent
+                          key={i}
+                          ariaLabel={b.name}
+                          lightboxContent={<img src={src} alt={b.name} />}
+                        >
+                          <Attachment orientation="vertical" className="bg-muted">
+                            <AttachmentMedia variant="image">
+                              <img
+                                src={src}
+                                alt={b.name}
+                                className="aspect-square w-full object-cover"
+                              />
+                            </AttachmentMedia>
+                            <AttachmentContent>
+                              <AttachmentTitle title={b.name}>{b.name}</AttachmentTitle>
+                              <AttachmentDescription>
+                                {b.mimeType.split("/").pop()?.toUpperCase()} ·{" "}
+                                {formatFileSize(Math.round(b.data.length * 0.75))}
+                              </AttachmentDescription>
+                            </AttachmentContent>
+                          </Attachment>
+                        </ZoomableContent>
+                      );
+                    })}
+                  </div>
+                )}
+                {fileBlocks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {fileBlocks.map((b, i) => {
+                      const Icon = docIcon(b.name);
+                      const type = fileTypeLabel(b.name);
+                      const meta =
+                        b.size !== undefined ? `${type} · ${formatFileSize(b.size)}` : type;
+                      return (
+                        <Attachment
+                          key={i}
+                          size="sm"
+                          className="max-w-60 cursor-pointer bg-muted"
+                          onClick={() => b.uri && onOpenFile?.(b.uri)}
+                        >
+                          <AttachmentMedia className="bg-card">
+                            <Icon />
+                          </AttachmentMedia>
+                          <AttachmentContent>
+                            <AttachmentTitle>{b.name}</AttachmentTitle>
+                            {meta && <AttachmentDescription>{meta}</AttachmentDescription>}
+                          </AttachmentContent>
+                        </Attachment>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

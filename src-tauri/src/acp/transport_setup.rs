@@ -40,7 +40,9 @@ pub(crate) async fn open_local_transport(
     app_state: &std::sync::Arc<crate::core::AppState>,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
-    let server_path = crate::acp::resolve::resolve_server_path(&app_state.app_handle)?;
+    // ensure_local_server downloads the binary if absent or outdated; returns cached path.
+    // On the normal path (preflight already ran), this is a fast version-check hit.
+    let server_path = crate::acp::deploy::ensure_local_server(&app_state.app_handle).await?;
 
     use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new(server_path)

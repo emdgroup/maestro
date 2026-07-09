@@ -72,7 +72,7 @@ export function SessionHistorySidebar({
             <PopoverTrigger
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "h-7 text-xs flex-1 justify-start font-normal",
+                "h-7 text-xs flex-1 justify-start font-normal bg-accent-foreground",
                 preset === "custom" && "border-primary/50",
               )}
             >
