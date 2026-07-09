@@ -33,7 +33,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.1
 
       - run: bun install --frozen-lockfile
 
@@ -59,7 +59,7 @@ jobs:
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.AppImage.sig
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/appimage/*.AppImage
@@ -88,7 +88,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.1
 
       - run: bun install --frozen-lockfile
 
@@ -114,7 +114,7 @@ jobs:
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.AppImage.sig
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/appimage/*.AppImage
@@ -130,7 +130,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.1
 
       - run: bun install --frozen-lockfile
 
@@ -156,7 +156,7 @@ jobs:
             target/release/bundle/macos/*.app.tar.gz
             target/release/bundle/macos/*.app.tar.gz.sig
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/dmg/*.dmg
@@ -171,7 +171,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.1
 
       - run: bun install --frozen-lockfile
 
@@ -197,7 +197,7 @@ jobs:
             target/release/bundle/nsis/*-setup.exe
             target/release/bundle/nsis/*-setup.exe.sig
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/msi/*.msi
