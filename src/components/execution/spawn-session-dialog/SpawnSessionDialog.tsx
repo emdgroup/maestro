@@ -286,7 +286,7 @@ export function SpawnSessionDialog({
                     {worktrees.map((wt) => (
                       <SelectItem key={wt.branch_name} value={wt.branch_name}>
                         <span className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="font-mono truncate">{wt.branch_name}</span>
+                          <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
                           {wt.path === repoPath && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
                               default
