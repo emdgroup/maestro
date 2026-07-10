@@ -263,7 +263,7 @@ export function SpawnSessionDialog({
                     setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
                   }
                 >
-                  <SelectTrigger id="spawn-worktree" className="w-full max-w-full">
+                  <SelectTrigger id="spawn-worktree" className="w-full max-w-sm">
                     <span className="flex items-center gap-1.5 min-w-0">
                       <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
                       {selectedWorktree ? (
@@ -285,10 +285,10 @@ export function SpawnSessionDialog({
                   <SelectContent>
                     {worktrees.map((wt) => (
                       <SelectItem key={wt.branch_name} value={wt.branch_name}>
-                        <span className="flex items-center gap-2">
-                          <span className="font-mono">{wt.branch_name}</span>
+                        <span className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="font-mono truncate">{wt.branch_name}</span>
                           {wt.path === repoPath && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
                               default
                             </span>
                           )}
