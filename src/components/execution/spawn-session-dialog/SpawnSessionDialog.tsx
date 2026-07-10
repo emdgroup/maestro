@@ -284,7 +284,7 @@ export function SpawnSessionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {worktrees.map((wt) => (
-                      <SelectItem key={wt.branch_name} value={wt.branch_name}>
+                      <SelectItem key={wt.branch_name} value={wt.branch_name} className="[&>div]:overflow-hidden">
                         <span className="flex items-center gap-2 min-w-0 overflow-hidden">
                           <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
                           {wt.path === repoPath && (
