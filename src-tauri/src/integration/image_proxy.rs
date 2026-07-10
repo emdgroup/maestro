@@ -165,7 +165,9 @@ async fn read_local_or_remote_image(
         .map_err(|e| format!("Project {} not found: {}", project_id, e))?
     };
 
-    let full_path = if std::path::Path::new(file_path).is_absolute() {
+    // std::path::Path::is_absolute() returns false on Windows for Unix-style paths like /home/...
+    // so also check starts_with('/') to handle remote/WSL project paths correctly.
+    let full_path = if file_path.starts_with('/') || std::path::Path::new(file_path).is_absolute() {
         file_path.to_string()
     } else {
         format!("{}/{}", project.path.trim_end_matches('/'), file_path)

@@ -5,6 +5,10 @@ export const sanitizeSchema = {
   ...defaultSchema,
   clobberPrefix: "",
   tagNames: [...(defaultSchema.tagNames ?? []), "mark"],
+  protocols: {
+    ...defaultSchema.protocols,
+    src: [...(defaultSchema.protocols?.src ?? []), "data"],
+  },
   attributes: {
     ...defaultSchema.attributes,
     a: [...(defaultSchema.attributes?.a ?? []), "dataOpenFileUri"],

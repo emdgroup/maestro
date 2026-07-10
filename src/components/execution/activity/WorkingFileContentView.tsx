@@ -7,15 +7,20 @@ import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./Markdo
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
 import { useAcpSessionMeta } from "@/services/execution.service";
+import { useSelectedProject } from "@/store/projectStore";
 
 function FileContentInner({
   content,
   viewType,
   path,
+  projectId,
+  baseDir,
 }: {
   content: string;
   viewType: FileViewType;
   path: string;
+  projectId?: number;
+  baseDir?: string;
 }) {
   const lang = langForExtension(path) ?? "text";
   const blobUrl = useMemo(() => {
@@ -31,7 +36,7 @@ function FileContentInner({
 
   switch (viewType) {
     case "markdown":
-      return <MarkdownBlock text={content} />;
+      return <MarkdownBlock text={content} projectId={projectId} baseDir={baseDir} />;
     case "svg":
       return <SvgBlock code={content} />;
     case "mermaid":
@@ -95,6 +100,7 @@ export function WorkingFileContentView({
 
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
   const cwd = sessionMeta?.cwd.replace(/\/+$/, "") ?? null;
+  const project = useSelectedProject();
 
   // Zoom: track { file, zoom } so selecting a new file automatically reads as 100
   // without needing a reset effect.
@@ -161,6 +167,8 @@ export function WorkingFileContentView({
 
   const viewType = filePath ? getFileViewType(filePath) : null;
   const isBinary = viewType === "image";
+
+  const baseDir = absolutePath ? absolutePath.replace(/\/[^/]+$/, "") : undefined;
 
   useEffect(() => {
     if (!relativePath) return;
@@ -239,7 +247,13 @@ export function WorkingFileContentView({
                 viewType === "html" ? (zoom !== 100 ? `${10000 / zoom}%` : "100%") : undefined,
             }}
           >
-            <FileContentInner content={content} viewType={viewType} path={filePath ?? ""} />
+            <FileContentInner
+              content={content}
+              viewType={viewType}
+              path={filePath ?? ""}
+              projectId={project?.id}
+              baseDir={baseDir}
+            />
           </div>
         )}
       </div>

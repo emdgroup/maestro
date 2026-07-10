@@ -2,30 +2,28 @@
 
 ## [0.8.0](https://github.com/emdgroup/maestro/compare/v0.7.0...v0.8.0) (2026-07-09)
 
-
 ### Features
 
-* add clickable [@filename](https://github.com/filename) links in user message bubbles ([ee5029c](https://github.com/emdgroup/maestro/commit/ee5029c4b911ab9459a7e4b52fe6ab21560dbdb8))
-* add MessageScroller primitive and binary file reading ([b94a329](https://github.com/emdgroup/maestro/commit/b94a329f014e8a86308ac11c69ed7fc9dbe7dd89))
-* graceful update UX for Linux package installs ([605d5ba](https://github.com/emdgroup/maestro/commit/605d5ba9724b6a7549713e5fd7b504ba9a12b6da))
-* improve execution side panel UX and activity rendering ([ab9a2fa](https://github.com/emdgroup/maestro/commit/ab9a2fa2685ab5150684433866d8ac0cc599df61))
-* lazy file browser with refresh on tab focus ([75d0ad5](https://github.com/emdgroup/maestro/commit/75d0ad553a4fc366b0d95b0b941e3f9a9cbf6300))
-* multi-arch deploy, file attachment cards, remove xtask ([b27ee52](https://github.com/emdgroup/maestro/commit/b27ee52646b2ad084f747004a8223d1074df95f6))
-* refactor session history to modal, extract attachment shelf, fix agent panel layout ([1f773cd](https://github.com/emdgroup/maestro/commit/1f773cdea0882b754e220ce37f7e64af83a456dd))
-* upgrade shadcn/ui to base-ui and fix visual regressions ([4a8ec6a](https://github.com/emdgroup/maestro/commit/4a8ec6a23a1de43c244375066feec136e1bc72c5))
-
+- add clickable [@filename](https://github.com/filename) links in user message bubbles ([ee5029c](https://github.com/emdgroup/maestro/commit/ee5029c4b911ab9459a7e4b52fe6ab21560dbdb8))
+- add MessageScroller primitive and binary file reading ([b94a329](https://github.com/emdgroup/maestro/commit/b94a329f014e8a86308ac11c69ed7fc9dbe7dd89))
+- graceful update UX for Linux package installs ([605d5ba](https://github.com/emdgroup/maestro/commit/605d5ba9724b6a7549713e5fd7b504ba9a12b6da))
+- improve execution side panel UX and activity rendering ([ab9a2fa](https://github.com/emdgroup/maestro/commit/ab9a2fa2685ab5150684433866d8ac0cc599df61))
+- lazy file browser with refresh on tab focus ([75d0ad5](https://github.com/emdgroup/maestro/commit/75d0ad553a4fc366b0d95b0b941e3f9a9cbf6300))
+- multi-arch deploy, file attachment cards, remove xtask ([b27ee52](https://github.com/emdgroup/maestro/commit/b27ee52646b2ad084f747004a8223d1074df95f6))
+- refactor session history to modal, extract attachment shelf, fix agent panel layout ([1f773cd](https://github.com/emdgroup/maestro/commit/1f773cdea0882b754e220ce37f7e64af83a456dd))
+- upgrade shadcn/ui to base-ui and fix visual regressions ([4a8ec6a](https://github.com/emdgroup/maestro/commit/4a8ec6a23a1de43c244375066feec136e1bc72c5))
 
 ### Bug Fixes
 
-* add clear button to file selector search and close add-tab popover on selection ([59fee40](https://github.com/emdgroup/maestro/commit/59fee40424f33dd55ea4b8ad97d742ffeb2cd7ce))
-* add initialFile ref guard in ArtifactsPanel, fix RefObject imports in compose-bar ([aea5d90](https://github.com/emdgroup/maestro/commit/aea5d90039a19919f787edf011ecea703340cbab))
-* **diff:** fix unified diff 50/50 column split in worktree panel ([b590c91](https://github.com/emdgroup/maestro/commit/b590c913b2db173e331fd791ae43652c9ca06758))
-* fix checkbox dark mode styling, add artifact deep-link from overview ([4b410f8](https://github.com/emdgroup/maestro/commit/4b410f8f5f2b63b5dec1fc7ec7af034d56fadab1))
-* fix horizontal scrollbar position in workspace file browser ([b3fedbc](https://github.com/emdgroup/maestro/commit/b3fedbc43ee0ebee2899ebdbc725e0eece2989da))
-* remove dead_code allows in linear and gitlab providers ([0a5f0d7](https://github.com/emdgroup/maestro/commit/0a5f0d7290d6f128110daf6c2867a725d786a30e))
-* replace sync-state-to-ref effects in zoomable-content, replace reset-on-prop effect in App ([a7606a2](https://github.com/emdgroup/maestro/commit/a7606a2c820f087ca905481dc2f17091066e73b0))
-* **test:** stub missing Web Animations API in JSDOM ([b039fdc](https://github.com/emdgroup/maestro/commit/b039fdc3f73c6d2342524987fd203423e3d5427e))
-* truncate long worktree names in spawn session dialog ([c9df3a1](https://github.com/emdgroup/maestro/commit/c9df3a159561fc2883c21a62c0c9a32b18b900dd))
+- add clear button to file selector search and close add-tab popover on selection ([59fee40](https://github.com/emdgroup/maestro/commit/59fee40424f33dd55ea4b8ad97d742ffeb2cd7ce))
+- add initialFile ref guard in ArtifactsPanel, fix RefObject imports in compose-bar ([aea5d90](https://github.com/emdgroup/maestro/commit/aea5d90039a19919f787edf011ecea703340cbab))
+- **diff:** fix unified diff 50/50 column split in worktree panel ([b590c91](https://github.com/emdgroup/maestro/commit/b590c913b2db173e331fd791ae43652c9ca06758))
+- fix checkbox dark mode styling, add artifact deep-link from overview ([4b410f8](https://github.com/emdgroup/maestro/commit/4b410f8f5f2b63b5dec1fc7ec7af034d56fadab1))
+- fix horizontal scrollbar position in workspace file browser ([b3fedbc](https://github.com/emdgroup/maestro/commit/b3fedbc43ee0ebee2899ebdbc725e0eece2989da))
+- remove dead_code allows in linear and gitlab providers ([0a5f0d7](https://github.com/emdgroup/maestro/commit/0a5f0d7290d6f128110daf6c2867a725d786a30e))
+- replace sync-state-to-ref effects in zoomable-content, replace reset-on-prop effect in App ([a7606a2](https://github.com/emdgroup/maestro/commit/a7606a2c820f087ca905481dc2f17091066e73b0))
+- **test:** stub missing Web Animations API in JSDOM ([b039fdc](https://github.com/emdgroup/maestro/commit/b039fdc3f73c6d2342524987fd203423e3d5427e))
+- truncate long worktree names in spawn session dialog ([c9df3a1](https://github.com/emdgroup/maestro/commit/c9df3a159561fc2883c21a62c0c9a32b18b900dd))
 
 ## [0.7.0](https://github.com/emdgroup/maestro/compare/v0.6.0...v0.7.0) (2026-07-03)
 

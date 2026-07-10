@@ -41,6 +41,7 @@ export function WorkspaceFilesPanel({
   const queryClient = useQueryClient();
 
   const fullPath = selected ? `${projectPath}/${selected}` : null;
+  const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
   const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
   const {
     data: content,
@@ -280,6 +281,7 @@ export function WorkspaceFilesPanel({
               }
               fileName={selected}
               mimeType={binaryMime}
+              fileDir={fileDir}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -311,6 +313,7 @@ export function WorkspaceFilesPanel({
             }
             fileName={selected}
             mimeType={binaryMime}
+            fileDir={fileDir}
           />
         </div>
       )}

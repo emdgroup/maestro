@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils.ts";
 import { Spinner } from "@/ui/spinner";
 import { langForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { HighlightedCode, MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { useSelectedProject } from "@/store/projectStore";
 
 function PdfViewer({ content, fileName }: { content: string; fileName: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -23,6 +24,7 @@ interface WorkspaceFileContentProps {
   error: string | null;
   fileName: string | null;
   mimeType?: string;
+  fileDir?: string;
 }
 
 export function WorkspaceFileContent({
@@ -31,7 +33,9 @@ export function WorkspaceFileContent({
   error,
   fileName,
   mimeType,
+  fileDir,
 }: WorkspaceFileContentProps) {
+  const project = useSelectedProject();
   const lang = fileName ? (langForExtension(fileName) ?? "text") : "text";
 
   if (!fileName) {
@@ -106,7 +110,7 @@ export function WorkspaceFileContent({
       )}
     >
       {isMarkdown ? (
-        <MarkdownBlock text={content} />
+        <MarkdownBlock text={content ?? ""} projectId={project?.id} baseDir={fileDir} />
       ) : (
         <div className="min-w-max file-code-view">
           <HighlightedCode code={content} lang={lang} stripContainerStyle />

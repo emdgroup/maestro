@@ -7,7 +7,7 @@ import {
   useContext,
   type ReactNode,
 } from "react";
-import Markdown from "react-markdown";
+import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkMark } from "remark-mark-highlight";
@@ -108,28 +108,44 @@ function MarkdownAnchorComponent({
   );
 }
 
+// react-markdown's defaultUrlTransform blocks data: and blob: protocols.
+// We pass data: through so ProxiedImage can convert them to blob URLs.
+// Security is preserved: rehypeSanitize still enforces protocols.src and protocols.href.
+function markdownUrlTransform(url: string): string {
+  return url.startsWith("data:") ? url : defaultUrlTransform(url);
+}
+
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
 // so the forward reference is safe — MARKDOWN_COMPONENTS is initialized before any rendering.
-export const ImageProxyContext = createContext<number | undefined>(undefined);
+type ImageProxyContextValue = { projectId: number; baseDir: string | undefined } | undefined;
+export const ImageProxyContext = createContext<ImageProxyContextValue>(undefined);
 
 export const MarkdownBlock = memo(function MarkdownBlock({
   text,
   breaks,
   projectId,
+  baseDir,
 }: {
   text: string;
   breaks?: boolean;
   projectId?: number;
+  baseDir?: string;
 }) {
   const components = useMemo(() => {
     if (!projectId) return MARKDOWN_COMPONENTS;
     return { ...MARKDOWN_COMPONENTS, img: ProxiedImage };
   }, [projectId]);
 
+  const ctxValue = useMemo(
+    () => (projectId !== undefined ? { projectId, baseDir } : undefined),
+    [projectId, baseDir],
+  );
+
   const content = (
     <Markdown
       remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}
       rehypePlugins={MARKDOWN_PLUGINS.rehype}
+      urlTransform={markdownUrlTransform}
       // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
       components={components as any}
     >
@@ -137,24 +153,52 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     </Markdown>
   );
 
-  if (!projectId) return content;
-  return <ImageProxyContext.Provider value={projectId}>{content}</ImageProxyContext.Provider>;
+  if (!ctxValue) return content;
+  return <ImageProxyContext.Provider value={ctxValue}>{content}</ImageProxyContext.Provider>;
 });
 
 const imageProxyCache = new Map<string, string>();
 
 function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
-  const projectId = useContext(ImageProxyContext);
+  const ctx = useContext(ImageProxyContext);
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!src || !projectId || src.startsWith("data:") || src.startsWith("blob:")) {
+    if (!src) {
+      setResolvedSrc(undefined);
+      return;
+    }
+    if (src.startsWith("blob:")) {
+      setResolvedSrc(src);
+      return;
+    }
+    if (src.startsWith("data:")) {
+      try {
+        const comma = src.indexOf(",");
+        const meta = src.slice(5, comma); // e.g. "image/svg+xml;base64"
+        const isBase64 = meta.endsWith(";base64");
+        const mime = isBase64 ? meta.slice(0, -7) : meta;
+        const data = src.slice(comma + 1);
+        const bytes = isBase64
+          ? Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+          : new TextEncoder().encode(decodeURIComponent(data));
+        const blob = new Blob([bytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        setResolvedSrc(url);
+        return () => URL.revokeObjectURL(url);
+      } catch {
+        setResolvedSrc(src);
+        return;
+      }
+    }
+    if (!ctx) {
       setResolvedSrc(src);
       return;
     }
 
-    const cacheKey = `${projectId}:${src}`;
+    const absolutePath = ctx.baseDir && _isLocalSrc(src) ? _resolveFilePath(src, ctx.baseDir) : src;
+    const cacheKey = `${ctx.projectId}:${absolutePath}`;
     const cached = imageProxyCache.get(cacheKey);
     if (cached) {
       setResolvedSrc(cached);
@@ -162,7 +206,7 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
     }
 
     setLoading(true);
-    commands.proxyImage(projectId, src).then((result) => {
+    commands.proxyImage(ctx.projectId, absolutePath).then((result) => {
       if (result.status === "ok") {
         imageProxyCache.set(cacheKey, result.data);
         setResolvedSrc(result.data);
@@ -171,7 +215,7 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
       }
       setLoading(false);
     });
-  }, [src, projectId]);
+  }, [src, ctx]);
 
   if (loading) {
     return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;
@@ -263,3 +307,24 @@ export const MARKDOWN_COMPONENTS = {
     <td className="border border-border px-2.5 py-1 text-foreground/80">{children}</td>
   ),
 };
+
+function _isLocalSrc(src: string) {
+  return (
+    !src.startsWith("http://") &&
+    !src.startsWith("https://") &&
+    !src.startsWith("data:") &&
+    !src.startsWith("blob:")
+  );
+}
+
+function _resolveFilePath(src: string, baseDir: string): string {
+  try {
+    const isWindows = /^[a-zA-Z]:[\\/]/.test(baseDir);
+    const normalized = baseDir.replace(/\\/g, "/");
+    const base = isWindows ? `file:///${normalized}/` : `file://${normalized}/`;
+    const resolved = new URL(src, base).pathname;
+    return isWindows ? resolved.replace(/^\/([a-zA-Z]:)/, "$1") : resolved;
+  } catch {
+    return `${baseDir}/${src}`;
+  }
+}
