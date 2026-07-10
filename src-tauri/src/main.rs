@@ -1,7 +1,7 @@
 // Tauri build script marker
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
-use maestro::core::{init_db, AppState};
+use maestro_lib::core::{init_db, AppState};
 use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;
@@ -26,7 +26,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     // Generate TypeScript bindings in debug builds
-    let builder = maestro::create_builder();
+    let builder = maestro_lib::create_builder();
 
     let app = tauri::Builder::default()
         .setup(setup)
@@ -55,7 +55,7 @@ fn main() {
                         let cancel_msg = MaestroRpcMessage::Request(
                             ServerRequest::Cancel(CancelRequest { session_id }),
                         );
-                        let _ = maestro::acp::write_to_acp_session(&state, log_id, &cancel_msg).await;
+                        let _ = maestro_lib::acp::write_to_acp_session(&state, log_id, &cancel_msg).await;
                     }
                     // Give maestro-server time to forward CloseSessionRequest to agents.
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
