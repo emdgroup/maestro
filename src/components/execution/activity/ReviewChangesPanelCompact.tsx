@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Files, CheckCheck, ChevronRight, ChevronLeft, AlignJustify, Columns2 } from "lucide-react";
+import {
+  Files,
+  CheckCheck,
+  ChevronRight,
+  ChevronLeft,
+  AlignJustify,
+  Columns2,
+  TriangleAlert,
+} from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { cn } from "@/lib/utils.ts";
 import { DiffViewer } from "@/components/execution/diff/DiffViewer";
@@ -18,6 +26,13 @@ function DiffStats({ hunks }: { hunks: string[] }) {
   );
 }
 
+interface TruncationInfo {
+  diffTruncated: boolean;
+  totalDiffBytes: number;
+  untrackedTruncated: boolean;
+  totalUntracked: number;
+}
+
 interface ReviewChangesPanelCompactProps {
   allDisplayItems: DisplayItem[];
   loading: boolean;
@@ -25,6 +40,7 @@ interface ReviewChangesPanelCompactProps {
   diffError: unknown;
   projectId: number | null;
   cwd: string | null;
+  truncationInfo?: TruncationInfo | null;
   diffViewMode: DiffModeEnum;
   setDiffViewMode: (mode: DiffModeEnum) => void;
   selectedFileIndex: number;
@@ -45,6 +61,7 @@ export function ReviewChangesPanelCompact({
   diffError,
   projectId,
   cwd,
+  truncationInfo,
   diffViewMode,
   setDiffViewMode,
   selectedFileIndex,
@@ -63,15 +80,19 @@ export function ReviewChangesPanelCompact({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const programmaticScrollRef = useRef(false);
 
-  // Auto-expand all files on first load
+  // Auto-expand all files on first load, but only for small diffs — mounting hundreds
+  // of DiffViewer components at once exhausts WebView2 memory.
+  // ponytail: collapse by default when > 20 files — prevents N DiffViewer mounts on load
   useEffect(() => {
     if (allDisplayItems.length === 0 || expandedInitRef.current) return;
     expandedInitRef.current = true;
-    setExpandedFiles(
-      new Set(
-        allDisplayItems.map((item) => (item.kind === "diff" ? item.file.fileName : item.path)),
-      ),
-    );
+    if (allDisplayItems.length <= 20) {
+      setExpandedFiles(
+        new Set(
+          allDisplayItems.map((item) => (item.kind === "diff" ? item.file.fileName : item.path)),
+        ),
+      );
+    }
   }, [allDisplayItems]);
 
   const toggleExpanded = useCallback((key: string) => {
@@ -220,6 +241,21 @@ export function ReviewChangesPanelCompact({
       </div>
 
       {filePickerOverlay}
+
+      {truncationInfo && (
+        <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0">
+          <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span className="font-medium">Diff too large — partial view</span>
+            <span className="text-amber-400/70">
+              {truncationInfo.diffTruncated &&
+                `Diff: ${Math.round(truncationInfo.totalDiffBytes / 1_048_576)} MB total, showing first 2 MB. `}
+              {truncationInfo.untrackedTruncated &&
+                `Untracked: ${truncationInfo.totalUntracked.toLocaleString()} files, showing first 500.`}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Stacked file cards with gaps */}
       <div

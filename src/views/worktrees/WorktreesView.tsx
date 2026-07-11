@@ -101,9 +101,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     return worktrees
       .filter((wt) => {
         if (statusFilter === "All") return true;
-        if (statusFilter === "Active") return wt.git_status !== "";
-        if (statusFilter === "Modified") return wt.git_status !== "";
-        if (statusFilter === "Idle") return wt.git_status === "";
+        if (statusFilter === "Active") return wt.changed_files_count > 0;
+        if (statusFilter === "Modified") return wt.changed_files_count > 0;
+        if (statusFilter === "Idle") return wt.changed_files_count === 0;
         return true;
       })
       .filter(

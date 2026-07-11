@@ -13,9 +13,8 @@ import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execut
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey, DiffTarget } from "@/types/bindings";
-import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
 import { useWslConnections } from "@/services/connection.service";
-import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { api } from "@/lib/tauri-utils";
 
 interface SidePanelContentProps {
@@ -91,25 +90,16 @@ export function SidePanelContent({
   const isDiffVisible =
     isSessionActive && (activeDiffTab?.kind === "overview" || activeDiffTab?.kind === "review");
 
-  const { data: diffResult } = useWorktreeDiffQuery(
+  const { data: diffStatsData } = useWorktreeDiffStatsQuery(
     sessionMeta.projectId,
     sessionMeta.cwd,
     diffTarget,
     { refetchInterval: isDiffVisible ? 10000 : false },
   );
 
-  const diffStats = useMemo(() => {
-    if (!diffResult?.diff) return null;
-    const files = parseDiffString(diffResult.diff);
-    let ins = 0,
-      del = 0;
-    for (const f of files) {
-      const s = computeFileStats(f.hunks);
-      ins += s.insertions;
-      del += s.deletions;
-    }
-    return { insertions: ins, deletions: del };
-  }, [diffResult]);
+  const diffStats = diffStatsData
+    ? { insertions: diffStatsData.insertions, deletions: diffStatsData.deletions }
+    : null;
 
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =

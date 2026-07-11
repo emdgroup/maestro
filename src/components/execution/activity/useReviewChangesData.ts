@@ -89,5 +89,16 @@ export function useReviewChangesData({
     onDiffStats?.(totalStats);
   }, [totalStats, onDiffStats]);
 
-  return { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError };
+  const truncationInfo = useMemo(() => {
+    if (!diffResult) return null;
+    if (!diffResult.diff_truncated && !diffResult.untracked_truncated) return null;
+    return {
+      diffTruncated: diffResult.diff_truncated,
+      totalDiffBytes: diffResult.total_diff_bytes,
+      untrackedTruncated: diffResult.untracked_truncated,
+      totalUntracked: diffResult.total_untracked,
+    };
+  }, [diffResult]);
+
+  return { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError, truncationInfo };
 }

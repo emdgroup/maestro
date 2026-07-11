@@ -14,6 +14,22 @@ pub fn resolve_server_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
+    // ~/.local/bin/maestro-server — installed by ensure_local_server after each download
+    #[cfg(windows)]
+    let home_var = "USERPROFILE";
+    #[cfg(not(windows))]
+    let home_var = "HOME";
+    if let Ok(home) = std::env::var(home_var) {
+        #[cfg(windows)]
+        let name = "maestro-server.exe";
+        #[cfg(not(windows))]
+        let name = "maestro-server";
+        let p = std::path::Path::new(&home).join(".local").join("bin").join(name);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+
     // Dev fallback: sibling of the current executable (e.g. cargo run target dir)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {

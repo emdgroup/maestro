@@ -36,7 +36,7 @@ export function ReviewChangesPanel({
     });
   }, []);
 
-  const { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError } =
+  const { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError, truncationInfo } =
     useReviewChangesData({ sessionKey, sessionChangedFiles, isActive, onDiffStats });
 
   useEffect(() => {
@@ -78,6 +78,7 @@ export function ReviewChangesPanel({
         diffError={diffError}
         projectId={projectId}
         cwd={cwd}
+        truncationInfo={truncationInfo}
         diffViewMode={diffViewMode}
         setDiffViewMode={setDiffViewMode}
         selectedFileIndex={selectedFileIndex}

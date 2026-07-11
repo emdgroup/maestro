@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager};
 
-const REMOTE_INSTALL_DIR: &str = ".maestro/bin";
+const REMOTE_INSTALL_DIR: &str = ".local/bin";
 const REMOTE_BINARY_NAME: &str = "maestro-server";
 
 #[derive(Clone, serde::Serialize)]
@@ -229,9 +229,59 @@ pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), 
 
 /// Ensure the native platform maestro-server binary is cached in the app data dir.
 /// Downloads from GitHub releases if absent or version-mismatched.
+/// Also installs a well-known symlink (Unix) or copy (Windows) at ~/.local/bin/maestro-server
+/// so agent subprocesses can resolve it via PATH.
 /// Called during preflight for local connections and as fallback in open_local_transport.
 pub async fn ensure_local_server(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
-    ensure_cached_binary(app_handle, crate::acp::HOST_TRIPLE, Some(0)).await
+    let cached = ensure_cached_binary(app_handle, crate::acp::HOST_TRIPLE, Some(0)).await?;
+    if let Err(e) = install_local_link(&cached).await {
+        eprintln!("Warning: failed to install ~/.local/bin/maestro-server: {}", e);
+    }
+    Ok(cached)
+}
+
+/// Install a well-known entry at ~/.local/bin/maestro-server pointing to the cached binary.
+/// On Unix: symlink. On Windows: rename-old + copy + delete-old.
+/// Non-fatal — callers log the error and continue.
+async fn install_local_link(src: &std::path::Path) -> Result<(), String> {
+    let home = {
+        #[cfg(windows)]
+        let var = "USERPROFILE";
+        #[cfg(not(windows))]
+        let var = "HOME";
+        std::env::var(var)
+            .map(std::path::PathBuf::from)
+            .map_err(|_| "Cannot resolve home directory".to_string())?
+    };
+    let bin_dir = home.join(".local").join("bin");
+    tokio::fs::create_dir_all(&bin_dir)
+        .await
+        .map_err(|e| format!("Cannot create ~/.local/bin: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        let dest = bin_dir.join("maestro-server");
+        // Remove stale symlink or file before recreating.
+        let _ = tokio::fs::remove_file(&dest).await;
+        tokio::fs::symlink(src, &dest)
+            .await
+            .map_err(|e| format!("Failed to create symlink ~/.local/bin/maestro-server: {}", e))?;
+    }
+
+    #[cfg(windows)]
+    {
+        let dest = bin_dir.join("maestro-server.exe");
+        let old = bin_dir.join("maestro-server.exe.old");
+        // Rename existing binary aside first so Windows doesn't block overwrite of a running file.
+        let _ = tokio::fs::rename(&dest, &old).await;
+        tokio::fs::copy(src, &dest)
+            .await
+            .map_err(|e| format!("Failed to copy maestro-server.exe to ~/.local/bin: {}", e))?;
+        // Clean up the old copy; ignore failure — it may still be in use by a running process.
+        let _ = tokio::fs::remove_file(&old).await;
+    }
+
+    Ok(())
 }
 
 /// Ensure a Linux maestro-server binary for the given triple is cached in the app data dir.

@@ -84,6 +84,26 @@ export function useWorktreeDiffQuery(
 }
 
 /**
+ * Lightweight query hook for diff stats only (file count, insertions, deletions, untracked count).
+ * Uses `git diff --stat` — payload is tiny regardless of diff size. Use this for stats display
+ * in session headers; use useWorktreeDiffQuery only when the actual diff content is needed.
+ */
+export function useWorktreeDiffStatsQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  diffTarget: DiffTarget,
+  options?: { refetchInterval?: number | false },
+) {
+  return useQuery({
+    queryKey: [...worktreeQueryKeys.base, "diff-stats", worktreePath ?? "", diffTarget] as const,
+    queryFn: () => api.getWorktreeDiffStats(projectId!, worktreePath!, diffTarget),
+    enabled: projectId != null && worktreePath != null,
+    refetchInterval: options !== undefined ? options.refetchInterval : 10000,
+    staleTime: 4000,
+  });
+}
+
+/**
  * Mutation hook for deleting a worktree.
  * Passes optional worktreeId so DB row is deleted when present (orphans skip DB deletion).
  * Invalidates worktree list on success.

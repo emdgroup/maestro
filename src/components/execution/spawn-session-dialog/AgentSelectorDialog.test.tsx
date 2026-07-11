@@ -56,7 +56,7 @@ const mockWorktrees: WorktreeWithStatus[] = [
     branch_name: "main",
     base_branch: null,
     task_id: null,
-    git_status: "clean",
+    changed_files_count: 0,
     diff_stat: "",
     ahead_behind: null,
     created_at: null,

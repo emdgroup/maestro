@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::State;
 
-use crate::models::{WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, DiffTarget, WorktreeDiffResult, DirtyStatus, CommitInfo};
+use crate::models::{WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 use crate::core::AppState;
 
 // ============================================================================
@@ -84,7 +84,7 @@ pub async fn list_worktrees_with_status(
         .collect();
 
     // Step 5: Run parallel git status + diff --shortstat + rev-list per on-disk worktree (local AND remote)
-    let mut git_info: HashMap<String, (String, Option<String>, Option<AheadBehind>)> = HashMap::new();
+    let mut git_info: HashMap<String, (u32, Option<String>, Option<AheadBehind>)> = HashMap::new();
     {
         let handles: Vec<_> = disk_worktrees
             .iter()
@@ -92,9 +92,10 @@ pub async fn list_worktrees_with_status(
                 let wt_path = wt.path.clone();
                 let conn = git_conn.clone();
                 tokio::spawn(async move {
-                    let status = crate::git::run_git_in_dir(&conn, &wt_path, &["status", "--porcelain"])
+                    let status_output = crate::git::run_git_in_dir(&conn, &wt_path, &["status", "--porcelain"])
                         .await
                         .unwrap_or_default();
+                    let changed_files_count = status_output.lines().filter(|l| !l.is_empty()).count() as u32;
                     let diff_stat_raw = crate::git::run_git_in_dir(&conn, &wt_path, &["diff", "--shortstat"])
                         .await
                         .unwrap_or_default();
@@ -109,14 +110,14 @@ pub async fn list_worktrees_with_status(
                             a.parse::<u32>().ok().zip(b.parse::<u32>().ok())
                         })
                         .map(|(ahead, behind)| AheadBehind { ahead, behind });
-                    (wt_path, status, diff_stat, ahead_behind)
+                    (wt_path, changed_files_count, diff_stat, ahead_behind)
                 })
             })
             .collect();
 
         for handle in handles {
-            if let Ok((path, status, diff_stat, ahead_behind)) = handle.await {
-                git_info.insert(path, (status, diff_stat, ahead_behind));
+            if let Ok((path, changed_files_count, diff_stat, ahead_behind)) = handle.await {
+                git_info.insert(path, (changed_files_count, diff_stat, ahead_behind));
             }
         }
     }
@@ -127,7 +128,7 @@ pub async fn list_worktrees_with_status(
     let mut result: Vec<WorktreeWithStatus> = Vec::new();
 
     for wt in &disk_worktrees {
-        let (git_status, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
+        let (changed_files_count, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
             let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
@@ -137,7 +138,7 @@ pub async fn list_worktrees_with_status(
                 task_id: db_row.task_id,
                 branch_name: db_row.branch_name.clone(),
                 path: format!("{}/{}", repo_path, db_row.path),
-                git_status,
+                changed_files_count,
                 created_at: Some(db_row.created_at.clone()),
                 task_name: db_row.task_name.clone(),
                 is_zombie,
@@ -155,7 +156,7 @@ pub async fn list_worktrees_with_status(
                 task_id: None,
                 branch_name,
                 path: wt.path.clone(),
-                git_status,
+                changed_files_count,
                 created_at: None,
                 task_name: None,
                 is_zombie: false,
@@ -192,6 +193,16 @@ pub async fn list_worktrees_with_status(
     });
 
     Ok(result)
+}
+
+const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+const MAX_UNTRACKED_FILES: usize = 500;
+
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
 }
 
 // ============================================================================
@@ -234,12 +245,89 @@ pub async fn get_worktree_diff(
         &worktree_path,
         &["ls-files", "--others", "--exclude-standard"],
     ).await.unwrap_or_default();
-    let untracked_files = untracked_output.lines()
+
+    let total_diff_bytes = diff_output.len();
+    let diff_truncated = total_diff_bytes > MAX_DIFF_BYTES;
+    let diff = if diff_truncated {
+        let cut = floor_char_boundary(&diff_output, MAX_DIFF_BYTES);
+        diff_output[..cut].to_string()
+    } else {
+        diff_output
+    };
+
+    let all_untracked: Vec<String> = untracked_output.lines()
         .filter(|l| !l.is_empty())
         .map(String::from)
         .collect();
+    let total_untracked = all_untracked.len();
+    let untracked_truncated = total_untracked > MAX_UNTRACKED_FILES;
+    let untracked_files = if untracked_truncated {
+        all_untracked.into_iter().take(MAX_UNTRACKED_FILES).collect()
+    } else {
+        all_untracked
+    };
 
-    Ok(WorktreeDiffResult { diff: diff_output, untracked_files })
+    Ok(WorktreeDiffResult {
+        diff,
+        diff_truncated,
+        total_diff_bytes,
+        untracked_files,
+        untracked_truncated,
+        total_untracked,
+    })
+}
+
+// ============================================================================
+// get_worktree_diff_stats — lightweight stats for session header display
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_worktree_diff_stats(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    diff_target: DiffTarget,
+) -> Result<WorktreeDiffStats, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let stat_args: Vec<String> = match &diff_target {
+        DiffTarget::Head => vec!["diff".into(), "--stat".into(), "HEAD".into()],
+        DiffTarget::Branch { branch } => vec!["diff".into(), "--stat".into(), format!("origin/{}..HEAD", branch)],
+        DiffTarget::Commit { sha } => vec!["diff".into(), "--stat".into(), sha.clone()],
+        DiffTarget::BranchAll { branch } => vec!["diff".into(), "--stat".into(), format!("origin/{}", branch)],
+        DiffTarget::CommitRange { from, to } => vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)],
+    };
+    let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
+
+    let stat_output = crate::git::run_git_in_dir(&git_conn, &worktree_path, &stat_args_ref)
+        .await
+        .unwrap_or_default();
+
+    let (mut file_count, mut insertions, mut deletions) = (0u32, 0u32, 0u32);
+    // The last non-empty line of `git diff --stat` is the summary, e.g.:
+    // " 3 files changed, 42 insertions(+), 7 deletions(-)"
+    if let Some(summary) = stat_output.lines().filter(|l| !l.trim().is_empty()).last() {
+        for part in summary.split(',') {
+            let part = part.trim();
+            if part.contains("file") {
+                file_count = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            } else if part.contains("insertion") {
+                insertions = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            } else if part.contains("deletion") {
+                deletions = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            }
+        }
+    }
+
+    let untracked_output = crate::git::run_git_in_dir(
+        &git_conn,
+        &worktree_path,
+        &["ls-files", "--others", "--exclude-standard"],
+    ).await.unwrap_or_default();
+    let untracked_count = untracked_output.lines().filter(|l| !l.is_empty()).count() as u32;
+
+    Ok(WorktreeDiffStats { file_count, insertions, deletions, untracked_count })
 }
 
 // ============================================================================

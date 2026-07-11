@@ -41,7 +41,7 @@ pub struct WorktreeWithStatus {
     pub task_id: Option<i32>,
     pub branch_name: String,
     pub path: String,
-    pub git_status: String,              // raw porcelain string; empty string if clean
+    pub changed_files_count: u32,        // number of changed + untracked files; 0 if clean
     pub created_at: Option<String>,
     pub task_name: Option<String>,       // from tasks table join
     pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention

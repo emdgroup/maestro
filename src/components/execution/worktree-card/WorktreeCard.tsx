@@ -35,12 +35,12 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
     <div
       className={cn(
         "relative group rounded-lg border bg-card p-4 transition-colors w-56 shrink-0",
-        worktree.git_status !== "" || worktree.diff_stat !== null
+        worktree.changed_files_count > 0 || worktree.diff_stat !== null
           ? "cursor-pointer hover:bg-muted/10"
           : "cursor-default",
       )}
       onClick={() => {
-        if (worktree.git_status === "" && worktree.diff_stat === null) return;
+        if (worktree.changed_files_count === 0 && worktree.diff_stat === null) return;
         onSelect(worktree.path);
       }}
     >

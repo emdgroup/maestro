@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, TriangleAlert } from "lucide-react";
 import { parseDiffString } from "@/lib/diff-utils";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFilePanel } from "./DiffFilePanel";
@@ -400,6 +400,21 @@ export function TaskReviewPanel({
         }
         onClose={onClose}
       />
+
+      {(diffQuery.data?.diff_truncated || diffQuery.data?.untracked_truncated) && (
+        <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0 text-xs">
+          <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">Diff too large — partial view</span>
+            <span className="text-amber-400/70">
+              {diffQuery.data.diff_truncated &&
+                `Diff: ${Math.round(diffQuery.data.total_diff_bytes / 1_048_576)} MB total, showing first 2 MB. `}
+              {diffQuery.data.untracked_truncated &&
+                `Untracked: ${diffQuery.data.total_untracked.toLocaleString()} files, showing first 500.`}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <DiffStateProvider

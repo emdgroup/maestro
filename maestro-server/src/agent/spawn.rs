@@ -29,11 +29,25 @@ pub async fn spawn_agent_subprocess(
         return Err(format!("cwd does not exist: {}", cwd));
     }
 
+    // Prepend our own directory to PATH so agents can call `maestro-server validate-canvas` etc.
+    let path_with_server = std::env::current_exe().ok()
+        .and_then(|exe| exe.parent().map(|dir| {
+            let base = env.get("PATH")
+                .cloned()
+                .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
+            let sep = if cfg!(windows) { ";" } else { ":" };
+            format!("{}{}{}", dir.display(), sep, base)
+        }));
+
     crate::send_diag("info", format!("[spawn] spawning cmd={command:?} args={args:?} cwd={cwd:?}"));
-    let child = tokio::process::Command::new(command)
-        .args(args)
+    let mut cmd = tokio::process::Command::new(command);
+    cmd.args(args)
         .current_dir(cwd_path)
-        .envs(env)
+        .envs(env);
+    if let Some(path) = path_with_server {
+        cmd.env("PATH", path);
+    }
+    let child = cmd
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

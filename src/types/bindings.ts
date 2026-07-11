@@ -379,6 +379,25 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async getWorktreeDiffStats(
+    projectId: number,
+    worktreePath: string,
+    diffTarget: DiffTarget,
+  ): Promise<Result<WorktreeDiffStats, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("get_worktree_diff_stats", {
+          projectId,
+          worktreePath,
+          diffTarget,
+        }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async createWorktree(
     projectId: number,
     taskId: number | null,
@@ -2648,8 +2667,28 @@ export type Worktree = {
 /**
  * Return type for get_worktree_diff. Bundles the unified diff string with the
  * list of untracked files (not yet `git add`-ed) so both are fetched in one IPC call.
+ *
+ * When the diff or untracked list exceeds the server-side caps, the corresponding
+ * `_truncated` flag is set to true and `total_*` reflects the actual uncapped size.
  */
-export type WorktreeDiffResult = { diff: string; untracked_files: string[] };
+export type WorktreeDiffResult = {
+  diff: string;
+  diff_truncated: boolean;
+  total_diff_bytes: number;
+  untracked_files: string[];
+  untracked_truncated: boolean;
+  total_untracked: number;
+};
+/**
+ * Lightweight summary returned by get_worktree_diff_stats — no unified diff text,
+ * just the numbers needed for stats display in the session header.
+ */
+export type WorktreeDiffStats = {
+  file_count: number;
+  insertions: number;
+  deletions: number;
+  untracked_count: number;
+};
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
@@ -2659,7 +2698,7 @@ export type WorktreeWithStatus = {
   task_id: number | null;
   branch_name: string;
   path: string;
-  git_status: string;
+  changed_files_count: number;
   created_at: string | null;
   task_name: string | null;
   is_zombie: boolean;

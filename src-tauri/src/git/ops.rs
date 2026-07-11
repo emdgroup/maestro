@@ -289,6 +289,15 @@ async fn delete_worktree_local(
     Ok(())
 }
 
+const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 async fn git_diff_local(
     path: &str,
     branch: &str,
@@ -307,7 +316,17 @@ async fn git_diff_local(
         return Err(format!("git diff failed: {}", stderr));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let raw = String::from_utf8_lossy(&output.stdout);
+    if raw.len() > MAX_DIFF_BYTES {
+        let cut = floor_char_boundary(&raw, MAX_DIFF_BYTES);
+        Ok(format!(
+            "{}\n// [diff truncated: {} MB total]\n",
+            &raw[..cut],
+            raw.len() / 1_048_576
+        ))
+    } else {
+        Ok(raw.into_owned())
+    }
 }
 
 async fn git_status_local(
