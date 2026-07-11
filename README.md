@@ -1,34 +1,47 @@
 <p align="center">
-  <img src="public/maestro-logo.png" alt="Maestro" width="200" />
+  <img src="public/maestro-logo.png" alt="Maestro" width="180" />
 </p>
 
-<p align="center">
-  <strong>Run multiple AI coding agents in parallel — without losing control.</strong>
-</p>
+<h3 align="center">Run multiple AI coding agents in parallel — without losing control.</h3>
 
 <p align="center">
-  <a href="https://github.com/m306213/maestro/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
+  <a href="https://github.com/emdgroup/maestro/releases/latest"><img src="https://img.shields.io/github/v/release/emdgroup/maestro?label=latest" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platform" />
-  <img src="https://img.shields.io/badge/built%20with-Tauri%202-orange" alt="Tauri" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
 </p>
 
 ---
 
-Maestro is a desktop app that turns your backlog into shipped code. Drop tasks onto a Kanban board, let agents execute them in parallel, then review and merge — all without leaving a single window.
+<!-- TODO: Add demo GIF — 30s recording: open project → create task → run agent → live terminal → review diff → commit -->
 
 ---
 
-## How it works
+Drop tasks onto a Kanban board. Each one gets its own agent, its own git worktree, and its own terminal. They run in parallel. Nothing conflicts. When an agent finishes, review the diff hunk by hunk and commit what you want — all without leaving the app.
 
-```
-Backlog  →  Ready  →  In Progress  →  Review  →  Done
-              ↓             ↓              ↓
-           assign        agent runs     diff viewer
-           model         in isolated    hunk staging
-                         worktree       one-click commit
-```
+---
 
-Each task gets its own agent, its own git worktree, and its own terminal. They run in parallel. Nothing conflicts.
+## Install
+
+| Platform                            | Download                                                                                                                                |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS — Apple Silicon (M1/M2/M3/M4) | [Maestro_0.8.0_aarch64.dmg](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_aarch64.dmg)                     |
+| Linux — x86_64                      | [Maestro_0.8.0_amd64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_amd64.AppImage) ✓ recommended |
+| Linux — x86_64 (no auto-update)     | [Maestro_0.8.0_amd64.deb](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_amd64.deb)                         |
+| Linux — arm64                       | [Maestro_0.8.0_aarch64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_aarch64.AppImage)           |
+| Windows — x86_64                    | [Maestro_0.8.0_x64-setup.exe](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_x64-setup.exe) ✓ recommended   |
+| Windows — x86_64 (MSI)              | [Maestro_0.8.0_x64_en-US.msi](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.8.0_x64_en-US.msi)                 |
+
+The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates. The `.deb` package does not — Maestro will prompt you to download the new version when one is available.
+
+---
+
+## Quick start
+
+1. Open Maestro and point it at a local git repository
+2. Create a task on the Kanban board — add a title and instructions
+3. Pick a model and click **Run** — the agent starts in an isolated worktree
+4. Watch the live terminal and activity feed as it works
+5. Review the diff hunk by hunk, stage what you want, commit in one click
 
 ---
 
@@ -36,21 +49,29 @@ Each task gets its own agent, its own git worktree, and its own terminal. They r
 
 ### Parallel agents, zero conflicts
 
-Each task runs in an isolated git worktree. Agents don't step on each other, and you can have as many in flight as you want.
+<!-- TODO: screenshot — Kanban board with 3+ tasks in "In Progress" simultaneously -->
 
-### Real-time visibility
+Each task runs in its own git worktree. Agents work independently — no branch conflicts, no clobbering each other's changes. Run as many as you want simultaneously.
 
-Live terminal output, a structured activity feed, and a file tree — all updating as agents work. You see exactly what's happening at every step.
+### Live visibility
+
+<!-- TODO: screenshot — execution panel with live terminal and ACP activity feed -->
+
+Live terminal output, a structured activity feed, and a file tree — all updating in real time. You see exactly what every agent is doing at every step.
 
 ### Surgical diff review
 
+<!-- TODO: screenshot — diff viewer with hunk-level staging controls -->
+
 When an agent finishes, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
 
-### Any machine, any location
+### Remote execution
 
-Runs natively on macOS and Linux. On Windows, connect to a WSL distro or SSH into a remote Linux server — agents execute there while you work locally. Password, key, and passphrase auth all supported.
+Connect Maestro to a remote Linux server over SSH, or to a WSL distro on Windows. Agents execute on the remote machine while you work locally. Password, key, and passphrase auth all supported.
 
-### Pull work from your tracker
+### Pull from your issue tracker
+
+<!-- TODO: screenshot — task import dialog showing GitHub Issues or Jira -->
 
 Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
 
@@ -60,32 +81,9 @@ Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
 
 ---
 
-## At a glance
+## Contributing
 
-| Capability        | Detail                                                       |
-| ----------------- | ------------------------------------------------------------ |
-| Kanban workflow   | Backlog → Ready → In Progress → Review → Done, drag-and-drop |
-| Parallel agents   | Multiple agents run simultaneously in isolated git worktrees |
-| Live monitoring   | Real-time terminal, ACP activity feed, file tree             |
-| Diff review       | Inline viewer with hunk-level staging, revert, and commit    |
-| SSH & WSL remotes | Connect to remote and WSL projects with full auth support    |
-| Issue import      | Sync from GitHub Issues and Jira                             |
-| Model selection   | Per-task model and MCP allowlist configuration               |
-| Themes            | Light, dark, and system                                      |
-
----
-
-## Installation
-
-Download the latest release from the [releases page](https://github.com/emdgroup/maestro/releases).
-
-**Linux**: Use the `.AppImage` for automatic in-app updates. The `.deb` package works but requires manual updates — when a new version is available, Maestro will prompt you to download it.
-
-**macOS / Windows**: Use the `.dmg` or `.exe` installer — auto-updates are built in.
-
----
-
-## For contributors
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branch conventions, and PR guidelines.
 
 ### Tech stack
 
@@ -99,20 +97,6 @@ Download the latest release from the [releases page](https://github.com/emdgroup
 | SSH      | russh                                                    |
 | Protocol | ACP (Agent Client Protocol) via `maestro-server` sidecar |
 | Type gen | ts-rs + tauri-specta                                     |
-
-### Prerequisites
-
-- [Rust toolchain](https://rustup.rs/) (stable)
-- [Node.js 20+](https://nodejs.org/) + [pnpm](https://pnpm.io/)
-- [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
-- `maestro-server` binary on `PATH` for agent execution
-
-### Getting started
-
-```bash
-pnpm install
-pnpm tauri:dev
-```
 
 ### Development commands
 
@@ -139,7 +123,7 @@ cd src-tauri && cargo check
 # Tauri
 pnpm tauri:dev        # Full dev mode (Tauri + Vite)
 pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
-pnpm tauri build      # Production bundle (all platforms)
+pnpm tauri build      # Production bundle
 
 # Cross-compile for Windows from Linux
 pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
@@ -149,31 +133,11 @@ pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
 
 Three Rust crates in a Cargo workspace:
 
-- **`src-tauri`** — Tauri backend. IPC command handlers, SQLite DB, SSH tunneling, PTY management, ACP session coordination.
-- **`maestro-server`** — Standalone binary (must be on `PATH`). ACP intermediary between Tauri and AI agents. Communicates via JSON-framed messages on stdin/stdout.
+- **`src-tauri`** — Tauri backend: IPC command handlers, SQLite DB, SSH tunneling, PTY management, ACP session coordination.
+- **`maestro-server`** — Agent runtime sidecar, automatically deployed at runtime.
 - **`maestro-protocol`** — Shared ACP protocol types.
 
-Frontend (`src/`) organized as:
-
-```
-src/
-├── components/
-│   ├── common/       # App header, review modal, theme toggle
-│   ├── execution/    # Agent terminal, diff viewer, worktree cards
-│   ├── kanban/       # Board, columns, task cards
-│   ├── project-picker/
-│   ├── task/         # Task form, settings, import
-│   └── ui/           # shadcn/ui primitives
-├── services/         # TanStack Query service layer
-├── store/            # Zustand stores
-├── types/            # Generated bindings (bindings.ts) + domain types
-├── utils/
-│   ├── helpers/
-│   └── hooks/
-└── views/            # Top-level views (Kanban, Agents, Worktrees, Settings)
-```
-
-See `CLAUDE.md` for development conventions and AI agent guidelines.
+See [`AGENTS.md`](AGENTS.md) for a full architecture walkthrough.
 
 ---
 
