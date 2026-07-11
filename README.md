@@ -102,18 +102,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branch conventions, and PR gui
 
 ```bash
 # Frontend
-pnpm dev              # Vite dev server only (localhost:5173)
-pnpm build            # TypeScript check + production build
-pnpm lint             # oxlint
-pnpm lint:fix         # Auto-fix lint issues
-pnpm format           # Check formatting (oxfmt)
-pnpm format:fix       # Fix formatting
+bun dev              # Vite dev server only (localhost:5173)
+bun build            # TypeScript check + production build
+bun lint             # oxlint
+bun lint:fix         # Auto-fix lint issues
+bun format           # Check formatting (oxfmt)
+bun format:fix       # Fix formatting
 
 # Testing
-pnpm test             # Vitest unit tests
-pnpm test <pattern>   # Single test file
-pnpm test:e2e         # Playwright E2E tests
-pnpm test:e2e:ui      # Playwright with interactive UI
+bun test             # Vitest unit tests
+bun test <pattern>   # Single test file
+bun test:e2e         # Playwright E2E tests
+bun test:e2e:ui      # Playwright with interactive UI
 
 # Rust backend
 cd src-tauri && cargo build
@@ -121,12 +121,12 @@ cd src-tauri && cargo test
 cd src-tauri && cargo check
 
 # Tauri
-pnpm tauri:dev        # Full dev mode (Tauri + Vite)
-pnpm tauri:gen        # Regenerate TypeScript bindings from Rust models
-pnpm tauri build      # Production bundle
+bun tauri:dev        # Full dev mode (Tauri + Vite)
+bun tauri:gen        # Regenerate TypeScript bindings from Rust models
+bun tauri build      # Production bundle
 
 # Cross-compile for Windows from Linux
-pnpm tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
+bun tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
 ```
 
 ### Architecture
