@@ -11,6 +11,8 @@ export const sanitizeSchema = {
   },
   attributes: {
     ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "align"],
+    img: [...(defaultSchema.attributes?.img ?? []), "width", "height"],
     a: [...(defaultSchema.attributes?.a ?? []), "dataOpenFileUri"],
     code: [...(defaultSchema.attributes?.code ?? []), "className"],
     span: [...(defaultSchema.attributes?.span ?? []), "className", "style"],

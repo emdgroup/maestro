@@ -158,7 +158,7 @@ async fn read_local_or_remote_image(
             .lock()
             .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
             Project::from_row,
         )
@@ -228,6 +228,9 @@ async fn read_local_or_remote_image(
 }
 
 fn mime_from_bytes_or_url(bytes: &[u8], url: &str) -> &'static str {
+    if bytes.starts_with(b"<svg") || bytes.starts_with(b"<SVG") {
+        return "image/svg+xml";
+    }
     if bytes.len() >= 12 {
         if bytes.starts_with(b"\x89PNG") {
             return "image/png";

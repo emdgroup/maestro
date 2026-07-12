@@ -6,6 +6,7 @@ import {
   createContext,
   useContext,
   type ReactNode,
+  type CSSProperties,
 } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -103,7 +104,7 @@ function MarkdownAnchorComponent({
       }}
       className="text-accent underline underline-offset-2 hover:text-accent/80 cursor-pointer"
     >
-      {children}
+      <InsideAnchorContext.Provider value={true}>{children}</InsideAnchorContext.Provider>
     </a>
   );
 }
@@ -119,6 +120,7 @@ function markdownUrlTransform(url: string): string {
 // so the forward reference is safe — MARKDOWN_COMPONENTS is initialized before any rendering.
 type ImageProxyContextValue = { projectId: number; baseDir: string | undefined } | undefined;
 export const ImageProxyContext = createContext<ImageProxyContextValue>(undefined);
+const InsideAnchorContext = createContext(false);
 
 export const MarkdownBlock = memo(function MarkdownBlock({
   text,
@@ -159,8 +161,17 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 
 const imageProxyCache = new Map<string, string>();
 
-function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
+function ProxiedImage({
+  src,
+  alt,
+  width,
+}: {
+  src?: string;
+  alt?: string;
+  width?: string | number;
+}) {
   const ctx = useContext(ImageProxyContext);
+  const insideAnchor = useContext(InsideAnchorContext);
   const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src);
   const [loading, setLoading] = useState(false);
 
@@ -205,12 +216,18 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
       return;
     }
 
-    setLoading(true);
+    const isHttp = absolutePath.startsWith("http://") || absolutePath.startsWith("https://");
+    if (isHttp) {
+      setResolvedSrc(src);
+    } else {
+      setLoading(true);
+    }
+
     commands.proxyImage(ctx.projectId, absolutePath).then((result) => {
       if (result.status === "ok") {
         imageProxyCache.set(cacheKey, result.data);
         setResolvedSrc(result.data);
-      } else {
+      } else if (!isHttp) {
         setResolvedSrc(src);
       }
       setLoading(false);
@@ -221,14 +238,48 @@ function ProxiedImage({ src, alt }: { src?: string; alt?: string }) {
     return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;
   }
 
+  const imgEl = (
+    <img
+      src={resolvedSrc}
+      alt={alt ?? ""}
+      width={width}
+      className="max-w-full rounded-md my-2"
+      loading="lazy"
+    />
+  );
+
+  if (insideAnchor) return imgEl;
+
   return (
-    <ZoomableContent ariaLabel={alt || "Image"}>
-      <img
-        src={resolvedSrc}
-        alt={alt ?? ""}
-        className="max-w-full rounded-md my-2"
-        loading="lazy"
-      />
+    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
+      {imgEl}
+    </ZoomableContent>
+  );
+}
+
+function MarkdownImgComponent({
+  src,
+  alt,
+  width,
+}: {
+  src?: string;
+  alt?: string;
+  width?: string | number;
+}) {
+  const insideAnchor = useContext(InsideAnchorContext);
+  const imgEl = (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      width={width}
+      className="max-w-full rounded-md my-2"
+      loading="lazy"
+    />
+  );
+  if (insideAnchor) return imgEl;
+  return (
+    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
+      {imgEl}
     </ZoomableContent>
   );
 }
@@ -273,7 +324,14 @@ export const MARKDOWN_COMPONENTS = {
     </h6>
   ),
   pre: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  p: ({ children }: { children?: ReactNode }) => <p className="mb-2 last:mb-0">{children}</p>,
+  p: ({ children, align }: { children?: ReactNode; align?: string }) => (
+    <p
+      className="mb-2 last:mb-0"
+      style={align ? { textAlign: align as CSSProperties["textAlign"] } : undefined}
+    >
+      {children}
+    </p>
+  ),
   ul: ({ children }: { children?: ReactNode }) => (
     <ul className="list-disc pl-5 mb-2">{children}</ul>
   ),
@@ -288,11 +346,7 @@ export const MARKDOWN_COMPONENTS = {
     <mark className="bg-yellow-200/60 dark:bg-yellow-500/30 rounded px-0.5">{children}</mark>
   ),
   a: MarkdownAnchorComponent,
-  img: ({ src, alt }: { src?: string; alt?: string }) => (
-    <ZoomableContent ariaLabel={alt || "Image"}>
-      <img src={src} alt={alt ?? ""} className="max-w-full rounded-md my-2" loading="lazy" />
-    </ZoomableContent>
-  ),
+  img: MarkdownImgComponent,
   table: ({ children }: { children?: ReactNode }) => (
     <InteractiveTable>{children}</InteractiveTable>
   ),
