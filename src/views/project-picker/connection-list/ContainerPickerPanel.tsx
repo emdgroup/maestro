@@ -33,39 +33,58 @@ export function ContainerPickerPanel({
             No containers found. Is Docker/Podman running?
           </p>
         ) : (
-          availableContainers.map((container) => {
-            const isStopped = container.state === "Stopped";
-            return (
-              <button
-                key={container.id}
-                type="button"
-                disabled={isStopped || saveDocker.isPending}
-                onClick={() =>
-                  saveDocker.mutate(
-                    {
-                      containerName: container.name,
-                      imageName: container.image ?? null,
-                      displayName: null,
-                    },
-                    { onSuccess: onAdded },
-                  )
-                }
-                className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors disabled:opacity-50 ${
-                  isStopped ? "cursor-not-allowed" : ""
-                }`}
-              >
-                <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-                  <Container className="w-4 h-4" />
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <div className="text-sm font-medium truncate">{container.name}</div>
-                  {container.image && (
-                    <div className="text-xs text-muted-foreground truncate">{container.image}</div>
-                  )}
-                </div>
-              </button>
-            );
-          })
+          <div className="grid grid-cols-2 gap-2.5 p-3.5">
+            {availableContainers.map((container) => {
+              const isStopped = container.state === "Stopped";
+              return (
+                <button
+                  key={container.id}
+                  type="button"
+                  disabled={isStopped || saveDocker.isPending}
+                  onClick={() =>
+                    saveDocker.mutate(
+                      {
+                        containerName: container.name,
+                        imageName: container.image ?? null,
+                        displayName: null,
+                      },
+                      { onSuccess: onAdded },
+                    )
+                  }
+                  className={`flex items-center gap-3.5 p-3.5 rounded-lg border border-border bg-muted/50 text-left transition-all duration-150 ${
+                    isStopped
+                      ? "opacity-35 cursor-not-allowed"
+                      : "cursor-pointer hover:border-accent hover:bg-accent/[0.08]"
+                  }`}
+                >
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      isStopped ? "bg-muted text-muted-foreground" : "bg-accent/15 text-accent"
+                    }`}
+                  >
+                    <Container className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{container.name}</div>
+                    {container.image && (
+                      <div className="text-xs text-muted-foreground truncate mt-0.5">
+                        {container.image}
+                      </div>
+                    )}
+                  </div>
+                  <span
+                    className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 ${
+                      isStopped
+                        ? "bg-muted-foreground/15 text-muted-foreground"
+                        : "bg-success/15 text-success"
+                    }`}
+                  >
+                    {isStopped ? "Stopped" : "Running"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </>

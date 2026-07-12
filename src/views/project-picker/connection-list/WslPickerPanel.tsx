@@ -23,27 +23,29 @@ export function WslPickerPanel({ onBack, onAdded }: { onBack: () => void; onAdde
             All WSL distros already added
           </p>
         ) : (
-          unsavedDistros.map((distro) => (
-            <button
-              key={distro.name}
-              type="button"
-              disabled={saveWsl.isPending}
-              onClick={() =>
-                saveWsl.mutate(
-                  { distroName: distro.name, displayName: null },
-                  { onSuccess: onAdded },
-                )
-              }
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-                <Terminal className="w-4 h-4" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className="text-sm font-medium">{distro.name}</div>
-              </div>
-            </button>
-          ))
+          <div className="grid grid-cols-2 gap-2.5 p-3.5">
+            {unsavedDistros.map((distro) => (
+              <button
+                key={distro.name}
+                type="button"
+                disabled={saveWsl.isPending}
+                onClick={() =>
+                  saveWsl.mutate(
+                    { distroName: distro.name, displayName: null },
+                    { onSuccess: onAdded },
+                  )
+                }
+                className="flex items-center gap-3.5 p-3.5 rounded-lg border border-border bg-muted/50 text-left cursor-pointer transition-all duration-150 hover:border-accent hover:bg-accent/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center shrink-0 text-accent">
+                  <Terminal className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{distro.name}</div>
+                </div>
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </>
