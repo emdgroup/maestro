@@ -22,6 +22,7 @@ interface OverviewPanelProps {
   canvasCount: number;
   changedFilesCount: number;
   planEntries?: PlanEntry[] | null;
+  planTitle?: string | null;
   workingFiles?: WorkingFileEntry[];
   taskId: number | null;
   onNavigate: (kind: TabKind, filePath?: string) => void;
@@ -79,6 +80,7 @@ export function OverviewPanel({
   canvasCount,
   changedFilesCount,
   planEntries,
+  planTitle,
   workingFiles,
   taskId,
   onNavigate,
@@ -133,14 +135,14 @@ export function OverviewPanel({
       <div className="flex flex-wrap gap-2 items-start">
         {/* Plan */}
         <Card
-          available={(planEntries?.length ?? 0) > 0}
+          available={(planEntries?.length ?? 0) > 0 || !!planTitle}
           onClick={() => onNavigate("plan")}
           icon={<ScrollText className="w-3.5 h-3.5 text-warning" />}
           iconBg="bg-warning/15"
           label="Plan"
           sub={
             totalPlanSteps === 0
-              ? "None"
+              ? (planTitle ?? "Approved")
               : `${donePlanSteps} of ${totalPlanSteps} step${totalPlanSteps !== 1 ? "s" : ""} complete`
           }
           badge={totalPlanSteps > 0 ? `${planPct}%` : undefined}
@@ -148,7 +150,7 @@ export function OverviewPanel({
         >
           {planEntries && planEntries.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              {planEntries.slice(0, 5).map((entry, i) => (
+              {planEntries.map((entry, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <div
                     className={cn(
@@ -177,11 +179,6 @@ export function OverviewPanel({
                   </span>
                 </div>
               ))}
-              {planEntries.length > 5 && (
-                <span className="text-[10px] text-muted-foreground/50 pl-5">
-                  +{planEntries.length - 5} more
-                </span>
-              )}
             </div>
           )}
         </Card>

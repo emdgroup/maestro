@@ -291,6 +291,9 @@ export function TaskReviewPanel({
               },
               {
                 onSuccess: () => {
+                  if (activeSession) {
+                    void api.cancelAcpSession(activeSession.session_key).catch(() => {});
+                  }
                   setApproveModalOpen(false);
                   reviewStore.clearTask(task.id);
                   onClose();

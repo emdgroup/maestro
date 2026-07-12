@@ -251,7 +251,7 @@ export function AgentActivityPanel({
   );
   const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
 
-  const { handleCancel, handleSendWithTransition } = useMessageSender({
+  const { handleSend, handleCancel, handleSendWithTransition } = useMessageSender({
     sessionKey,
     isProcessing,
     pendingPermission,
@@ -346,6 +346,24 @@ export function AgentActivityPanel({
     observer.observe(el);
     return () => observer.disconnect();
   }, [showCompose, liveState.isInitializing]);
+
+  const hasInterruptedCalls = useMemo(
+    () => [...liveState.toolCallMap.values()].some((tc) => tc.status === "interrupted"),
+    [liveState.toolCallMap],
+  );
+  const autoResumedRef = useRef(false);
+  useEffect(() => {
+    if (
+      !liveState.isInitializing &&
+      !isNewSession &&
+      hasInterruptedCalls &&
+      taskId != null &&
+      !autoResumedRef.current
+    ) {
+      autoResumedRef.current = true;
+      handleSend("resume");
+    }
+  }, [liveState.isInitializing, hasInterruptedCalls, isNewSession, taskId, handleSend]);
 
   if (liveState.isInitializing) return <AgentLoadingSkeleton isNewSession={isNewSession} />;
 

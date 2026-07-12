@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
@@ -142,6 +143,15 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
+  const planContent = useMemo(() => {
+    for (const tc of toolCallMap.values()) {
+      if (tc.kind === "switch_mode" && typeof tc.rawInput?.plan === "string") {
+        return tc.rawInput.plan as string;
+      }
+    }
+    return null;
+  }, [toolCallMap]);
+
   return (
     <>
       {tabs.map(({ id, kind, initialPath }) => {
@@ -155,6 +165,7 @@ export function SidePanelContent({
                 canvasCount={canvasMap.size}
                 changedFilesCount={changedFiles.length}
                 planEntries={planEntries}
+                planTitle={planTitle}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 onNavigate={(kind, filePath) => {
@@ -175,6 +186,10 @@ export function SidePanelContent({
                     payload={sidePanelPlan.payload}
                     onRespond={onPlanRespond}
                   />
+                ) : planContent ? (
+                  <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 text-sm">
+                    <MarkdownBlock text={planContent} />
+                  </div>
                 ) : planEntries && planEntries.length > 0 ? (
                   <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
                     {planTitle && (

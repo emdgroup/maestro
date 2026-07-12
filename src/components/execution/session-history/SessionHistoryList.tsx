@@ -214,6 +214,17 @@ export function SessionHistoryList({
         )}
       >
         <div className="flex items-center justify-between px-4 h-12">
+          {supportsSessionDelete && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={deleteMutationPending}
+              onClick={onDeleteTicked}
+            >
+              Delete
+            </Button>
+          )}
           <span className="text-xs text-muted-foreground">
             {ticked.size} session{ticked.size !== 1 ? "s" : ""} selected
           </span>
@@ -235,17 +246,6 @@ export function SessionHistoryList({
             >
               Open
             </Button>
-            {supportsSessionDelete && (
-              <Button
-                variant="destructive"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={deleteMutationPending}
-                onClick={onDeleteTicked}
-              >
-                Delete
-              </Button>
-            )}
           </div>
         </div>
       </div>
