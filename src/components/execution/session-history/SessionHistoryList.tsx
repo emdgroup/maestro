@@ -44,6 +44,12 @@ interface Props {
   onStartRename: (id: string, title: string | null, e: React.MouseEvent) => void;
   onCommitRename: (id: string) => void;
   onCancelRename: () => void;
+  allSelected: boolean;
+  someSelected: boolean;
+  onSelectAll: () => void;
+  supportsSessionDelete: boolean;
+  deleteMutationPending: boolean;
+  onDeleteTicked: () => void;
 }
 
 export function SessionHistoryList({
@@ -69,6 +75,12 @@ export function SessionHistoryList({
   onStartRename,
   onCommitRename,
   onCancelRename,
+  allSelected,
+  someSelected,
+  onSelectAll,
+  supportsSessionDelete,
+  deleteMutationPending,
+  onDeleteTicked,
 }: Props) {
   return (
     <div className="flex flex-1 flex-col min-w-0">
@@ -96,7 +108,15 @@ export function SessionHistoryList({
       </div>
 
       {/* Summary bar */}
-      <div className="px-3 py-1.5 border-b border-border shrink-0">
+      <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-2">
+        <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+          <Checkbox
+            className="border-border"
+            checked={allSelected}
+            indeterminate={someSelected}
+            onCheckedChange={onSelectAll}
+          />
+        </span>
         <span className="text-[10px] text-muted-foreground/60">{summaryLabel}</span>
       </div>
 
@@ -215,6 +235,17 @@ export function SessionHistoryList({
             >
               Open
             </Button>
+            {supportsSessionDelete && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={deleteMutationPending}
+                onClick={onDeleteTicked}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         </div>
       </div>

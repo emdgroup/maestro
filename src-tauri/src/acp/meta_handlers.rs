@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::core::AppState;
-use crate::acp::transport::SessionListRequest;
-use crate::models::worktree::{ActiveSessionInfo, ExecutionMode, SessionListEntryDto};
+use crate::acp::transport::{SessionDeleteRequest, SessionListRequest};
+use crate::models::worktree::{ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult};
 
 // Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
 // so ipc/mod.rs glob import still resolves them.
@@ -62,6 +62,7 @@ pub async fn get_active_sessions(
                 supports_session_list: proc.session_capabilities.supports_session_list,
                 supports_session_load: proc.session_capabilities.supports_session_load,
                 supports_session_close: proc.session_capabilities.supports_session_close,
+                supports_session_delete: proc.session_capabilities.supports_session_delete,
                 project_id: Some(project_id),
             });
         }
@@ -87,6 +88,7 @@ pub async fn get_active_sessions(
                 supports_session_list: false,
                 supports_session_load: false,
                 supports_session_close: false,
+                supports_session_delete: false,
                 project_id: meta.project_id,
             });
         }
@@ -105,13 +107,14 @@ pub async fn list_acp_sessions(
     cwd: String,
     connection: crate::acp::ConnectionKey,
     cursor: Option<String>,
-) -> Result<Vec<SessionListEntryDto>, String> {
+) -> Result<SessionListResult, String> {
     let resp = crate::acp::query_session_list_via_server(
         connection,
         SessionListRequest { agent_id: agent_id.clone(), cwd: cwd.clone(), cursor },
         &app_state,
     )
     .await?;
+    let supports_session_delete = resp.supports_session_delete;
     let (mut entries, next_cursor): (Vec<SessionListEntryDto>, Option<String>) = (
         resp.sessions.into_iter().map(|e| SessionListEntryDto {
             session_id: e.session_id,
@@ -171,7 +174,24 @@ pub async fn list_acp_sessions(
         }
     }
 
-    Ok(entries)
+    Ok(SessionListResult { sessions: entries, supports_session_delete })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    agent_id: String,
+    session_id: String,
+    cwd: String,
+    connection: crate::acp::ConnectionKey,
+) -> Result<(), String> {
+    crate::acp::query_session_delete_via_server(
+        connection,
+        SessionDeleteRequest { agent_id, session_id, cwd },
+        &app_state,
+    )
+    .await
 }
 
 #[tauri::command]

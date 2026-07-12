@@ -108,6 +108,12 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
             onStartRename={h.startRename}
             onCommitRename={h.commitRename}
             onCancelRename={() => h.setRenamingId(null)}
+            allSelected={h.allSelected}
+            someSelected={h.someSelected}
+            onSelectAll={h.selectAll}
+            supportsSessionDelete={h.supportsSessionDelete}
+            deleteMutationPending={h.deleteMutation.isPending}
+            onDeleteTicked={h.deleteTicked}
           />
         </div>
 

@@ -19,7 +19,7 @@ pub use maestro_protocol::{
     TurnEnded,
     SessionListRequest, SessionListOkResponse, SessionListEntry,
     SessionLoadRequest, SessionLoadOkResponse,
-    SessionCloseRequest,
+    SessionCloseRequest, SessionDeleteRequest,
     CheckToolsRequest, CheckToolsResponse, ToolCheckResult,
     PreInitializeRequest, PreInitializeResponse, AgentConnectionLost,
     write_message, read_message,

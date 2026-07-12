@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicU64;
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, ListAgentsRequest,
     PreInitializeRequest, PreInitializeResponse,
-    SessionListOkResponse, SessionCloseRequest,
+    SessionListOkResponse, SessionCloseRequest, SessionDeleteRequest,
     CheckToolsRequest, CheckToolsResponse,
 };
 use crate::acp::transport_types::serialize_message;
@@ -104,6 +104,22 @@ pub async fn query_session_list_via_server(
         "SessionList already in progress",
         MaestroRpcMessage::Request(ServerRequest::SessionList(request)),
         30, "SessionList via connection server timed out after 30s",
+    ).await
+}
+
+/// Send `SessionDelete` through the running connection server.
+pub async fn query_session_delete_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: SessionDeleteRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key, app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.session_delete.clone(),
+        "SessionDelete already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SessionDelete(request)),
+        30, "SessionDelete via connection server timed out after 30s",
     ).await
 }
 

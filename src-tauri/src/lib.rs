@@ -133,6 +133,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::prepare_external_attachments,
             crate::ipc::save_clipboard_image,
             crate::ipc::close_acp_session,
+            crate::ipc::delete_acp_session,
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
             crate::ipc::sftp_download,

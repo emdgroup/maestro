@@ -76,7 +76,16 @@ pub struct ActiveSessionInfo {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
+    pub supports_session_delete: bool,
     pub project_id: Option<i32>,
+}
+
+/// Return type for `list_acp_sessions` — includes capability flags from the live agent connection.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct SessionListResult {
+    pub sessions: Vec<SessionListEntryDto>,
+    pub supports_session_delete: bool,
 }
 
 /// TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)

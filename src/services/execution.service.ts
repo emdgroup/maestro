@@ -52,6 +52,7 @@ export function useActiveSessionsQuery(projectId: number | undefined) {
 /**
  * On-demand query for ACP session history from the agent.
  * Only fires when enabled=true (e.g. when history panel is open).
+ * Returns { sessions, supports_session_delete } via SessionListResult.
  */
 export function useSessionListQuery(
   agentId: string | null,
@@ -65,6 +66,35 @@ export function useSessionListQuery(
     queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connection, null),
     enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Delete one or more sessions from an agent's session history.
+ * Invalidates the session list query on success to refresh the panel.
+ */
+export function useDeleteAcpSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      agentId,
+      sessionId,
+      cwd,
+      connection,
+    }: {
+      agentId: string;
+      sessionId: string;
+      cwd: string;
+      connection: ConnectionKey;
+    }) => {
+      return await api.deleteAcpSession(agentId, sessionId, cwd, connection);
+    },
+    onSuccess: (_data, { agentId, cwd, connection }) => {
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.sessionList(agentId, cwd, connection),
+      });
+    },
+    onError: createErrorToastHandler("Failed to delete session"),
   });
 }
 

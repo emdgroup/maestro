@@ -1628,7 +1628,7 @@ export const commands = {
     cwd: string,
     connection: ConnectionKey,
     cursor: string | null,
-  ): Promise<Result<SessionListEntryDto[], string>> {
+  ): Promise<Result<SessionListResult, string>> {
     try {
       return {
         status: "ok",
@@ -1722,6 +1722,22 @@ export const commands = {
       return {
         status: "ok",
         data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connection }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async deleteAcpSession(
+    agentId: string,
+    sessionId: string,
+    cwd: string,
+    connection: ConnectionKey,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("delete_acp_session", { agentId, sessionId, cwd, connection }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
@@ -2423,6 +2439,7 @@ export type ActiveSessionInfo = {
   supports_session_list: boolean;
   supports_session_load: boolean;
   supports_session_close: boolean;
+  supports_session_delete: boolean;
   project_id: number | null;
 };
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide";
@@ -2678,6 +2695,13 @@ export type SessionListEntryDto = {
   session_id: string;
   title: string | null;
   updated_at: string | null;
+};
+/**
+ * Return type for `list_acp_sessions` — includes capability flags from the live agent connection.
+ */
+export type SessionListResult = {
+  sessions: SessionListEntryDto[];
+  supports_session_delete: boolean;
 };
 export type SpawnSessionResult = { log_id: number };
 /**

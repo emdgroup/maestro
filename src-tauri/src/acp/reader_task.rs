@@ -308,13 +308,14 @@ fn handle_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(spawn_ok)) => {
             eprintln!(
-                "[acp] spawn-ok log_id={log_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={}",
+                "[acp] spawn-ok log_id={log_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={} session_delete={}",
                 spawn_ok.session_id,
                 spawn_ok.acp_session_id,
                 spawn_ok.models.as_ref().map(|m| &m.current_model_id),
                 spawn_ok.supports_session_list,
                 spawn_ok.supports_session_load,
                 spawn_ok.supports_session_close,
+                spawn_ok.supports_session_delete,
             );
             emit_session_init_events(
                 spawn_ok.models.as_ref(),
@@ -476,6 +477,7 @@ pub(crate) async fn update_session_from_response(
                     supports_session_list: r.supports_session_list,
                     supports_session_load: r.supports_session_load,
                     supports_session_close: r.supports_session_close,
+                    supports_session_delete: r.supports_session_delete,
                 };
                 session.config_options = r.config_options.clone().unwrap_or_default();
             }
@@ -659,6 +661,13 @@ async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk) => {
+            if let Ok(mut guard) = pending.session_delete.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
             if let Ok(mut guard) = pending.check_tools.lock() {
                 if let Some(tx) = guard.take() {
@@ -686,7 +695,7 @@ async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
             let agent_id = resp.agent_id.clone();
-            let supports = (resp.supports_session_list, resp.supports_session_load, resp.supports_session_close);
+            let supports = (resp.supports_session_list, resp.supports_session_load, resp.supports_session_close, resp.supports_session_delete);
             let tx = pending.pre_init
                 .lock()
                 .ok()
@@ -695,8 +704,8 @@ async fn handle_shared_server_message(
                 let _ = tx.send(Ok(resp));
             }
             append_debug_log(&format!(
-                "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={}",
-                supports.0, supports.1, supports.2
+                "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={} session_delete={}",
+                supports.0, supports.1, supports.2, supports.3
             ));
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {

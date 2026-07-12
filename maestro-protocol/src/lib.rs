@@ -46,6 +46,7 @@ pub enum ServerRequest {
     SessionList(SessionListRequest),
     SessionLoad(SessionLoadRequest),
     SessionClose(SessionCloseRequest),
+    SessionDelete(SessionDeleteRequest),
     PreInitialize(PreInitializeRequest),
     CheckTools(CheckToolsRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
@@ -184,6 +185,7 @@ pub enum ServerResponse {
     SessionListOk(SessionListOkResponse),
     SessionLoadOk(SessionLoadOkResponse),
     SessionCloseOk,
+    SessionDeleteOk,
     PreInitializeOk(PreInitializeResponse),
     AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
@@ -334,6 +336,13 @@ pub struct SessionCloseRequest {
     pub cwd: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionDeleteRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub cwd: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionListEntry {
     pub session_id: String,
@@ -348,6 +357,10 @@ pub struct SessionListOkResponse {
     pub sessions: Vec<SessionListEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
+    /// Filled in by maestro-server from the live connection's capabilities.
+    /// Tauri uses this to tell the frontend whether the delete button should appear.
+    #[serde(default)]
+    pub supports_session_delete: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -380,6 +393,8 @@ pub struct SpawnResponse {
     pub supports_session_load: bool,
     #[serde(default)]
     pub supports_session_close: bool,
+    #[serde(default)]
+    pub supports_session_delete: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_options: Option<Vec<serde_json::Value>>,
 }
@@ -395,6 +410,8 @@ pub struct PreInitializeResponse {
     pub supports_session_load: bool,
     #[serde(default)]
     pub supports_session_close: bool,
+    #[serde(default)]
+    pub supports_session_delete: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

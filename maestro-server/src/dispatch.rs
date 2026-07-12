@@ -15,7 +15,7 @@ use crate::helpers::{
 };
 use crate::session::{
     create_session_on_connection, load_session_on_connection, pre_initialize_agent,
-    session_close_on_connection, session_list_on_connection,
+    session_close_on_connection, session_delete_on_connection, session_list_on_connection,
 };
 use crate::sessions::{
     ActiveSession, AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections,
@@ -128,6 +128,7 @@ pub(crate) async fn dispatch_message(
                         supports_session_list: result.supports_session_list,
                         supports_session_load: result.supports_session_load,
                         supports_session_close: result.supports_session_close,
+                        supports_session_delete: result.supports_session_delete,
                         config_options: result.config_options,
                     };
                     result.session.agent_id = req.agent_id;
@@ -344,12 +345,13 @@ pub(crate) async fn dispatch_message(
                 send_or_return!(send_response(
                     stdout,
                     &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
-                        SessionListOkResponse { sessions: vec![], next_cursor: None },
+                        SessionListOkResponse { sessions: vec![], next_cursor: None, supports_session_delete: false },
                     )),
                 )
                 .await);
                 return true;
             };
+            let supports_session_delete = conn_handle.capabilities.supports_session_delete;
             let list_result =
                 session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await;
             if list_result.is_err() {
@@ -367,7 +369,7 @@ pub(crate) async fn dispatch_message(
                     send_or_return!(send_response(
                         stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
-                            SessionListOkResponse { sessions: sessions_list, next_cursor },
+                            SessionListOkResponse { sessions: sessions_list, next_cursor, supports_session_delete },
                         )),
                     )
                     .await);
@@ -501,6 +503,52 @@ pub(crate) async fn dispatch_message(
             }
         }
 
+        MaestroRpcMessage::Request(ServerRequest::SessionDelete(req)) => {
+            let conn_handle = agent_connections
+                .lock()
+                .await
+                .get(&req.agent_id)
+                .map(AgentConnectionHandle::from);
+            let delete_result = match conn_handle {
+                Some(ref handle) => {
+                    session_delete_on_connection(handle, req.session_id.clone()).await
+                }
+                None => Err(format!(
+                    "no connection found for agent {} with session {}",
+                    req.agent_id, req.session_id
+                )),
+            };
+            if let (Some(ref handle), Err(_)) = (&conn_handle, &delete_result) {
+                let mut connections = agent_connections.lock().await;
+                if connections
+                    .get(&req.agent_id)
+                    .map(|c| Arc::ptr_eq(&c.router, &handle.router))
+                    .unwrap_or(false)
+                {
+                    connections.remove(&req.agent_id);
+                }
+            }
+            match delete_result {
+                Ok(()) => {
+                    send_or_return!(send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk),
+                    )
+                    .await);
+                }
+                Err(e) => {
+                    send_or_return!(send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: e,
+                            session_id: None,
+                        })),
+                    )
+                    .await);
+                }
+            }
+        }
+
         MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
             send_or_return!(send_response(
                 stdout,
@@ -534,6 +582,7 @@ pub(crate) async fn dispatch_message(
                         supports_session_list: conn.capabilities.supports_session_list,
                         supports_session_load: conn.capabilities.supports_session_load,
                         supports_session_close: conn.capabilities.supports_session_close,
+                        supports_session_delete: conn.capabilities.supports_session_delete,
                     };
                     agent_connections.lock().await.insert(req.agent_id, conn);
                     send_or_return!(send_response(

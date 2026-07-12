@@ -101,7 +101,7 @@ pub use session_ops::{
 };
 pub use connection_server::{
     spawn_connection_server, pre_initialize_via_connection_server,
-    query_session_list_via_server, query_session_close_via_server,
+    query_session_list_via_server, query_session_close_via_server, query_session_delete_via_server,
     query_check_tools_via_server, query_list_agents_via_connection_server,
 };
 pub use registry::{DiscoveredAgent, AgentDiscoveryResult, AgentDiscoveryCacheEntry};

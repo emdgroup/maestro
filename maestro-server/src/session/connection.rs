@@ -5,8 +5,8 @@ use agent_client_protocol as acp;
 use acp::schema::ProtocolVersion;
 use acp::schema::v1::{
     ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
-    Implementation, InitializeRequest, KillTerminalRequest, KillTerminalResponse,
-    ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
+    DeleteSessionRequest, Implementation, InitializeRequest, KillTerminalRequest,
+    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, TerminalExitStatus,
     TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
@@ -42,6 +42,7 @@ pub(crate) struct SpawnResult {
     pub(crate) supports_session_list: bool,
     pub(crate) supports_session_load: bool,
     pub(crate) supports_session_close: bool,
+    pub(crate) supports_session_delete: bool,
     pub(crate) acp_session_id: String,
     pub(crate) config_options: Option<Vec<serde_json::Value>>,
 }
@@ -84,6 +85,19 @@ pub(crate) async fn session_close_on_connection(
         .block_task()
         .await
         .map_err(|e| format!("session/close failed: {}", e))?;
+    Ok(())
+}
+
+/// Delete a session from history using an already-initialized connection (fast path for `SessionDelete`).
+pub(crate) async fn session_delete_on_connection(
+    conn: &AgentConnectionHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let cx = conn.connection.clone();
+    cx.send_request(DeleteSessionRequest::new(session_id))
+        .block_task()
+        .await
+        .map_err(|e| format!("session/delete failed: {}", e))?;
     Ok(())
 }
 
@@ -158,6 +172,7 @@ pub(crate) async fn create_session_on_connection(
     let supports_session_list = conn.capabilities.supports_session_list;
     let supports_session_load = conn.capabilities.supports_session_load;
     let supports_session_close = conn.capabilities.supports_session_close;
+    let supports_session_delete = conn.capabilities.supports_session_delete;
 
     let router = Arc::clone(&conn.router);
     let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
@@ -181,6 +196,7 @@ pub(crate) async fn create_session_on_connection(
         supports_session_list,
         supports_session_load,
         supports_session_close,
+        supports_session_delete,
         acp_session_id: acp_session_id_str,
         config_options,
     })
@@ -372,10 +388,11 @@ pub(crate) async fn pre_initialize_agent(
                     supports_session_list: init_response.agent_capabilities.session_capabilities.list.is_some(),
                     supports_session_load: init_response.agent_capabilities.load_session,
                     supports_session_close: init_response.agent_capabilities.session_capabilities.close.is_some(),
+                    supports_session_delete: init_response.agent_capabilities.session_capabilities.delete.is_some(),
                 };
                 crate::send_diag("info", format!(
-                    "[agent] initialize ok session_list={} session_load={} session_close={}",
-                    caps.supports_session_list, caps.supports_session_load, caps.supports_session_close
+                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={}",
+                    caps.supports_session_list, caps.supports_session_load, caps.supports_session_close, caps.supports_session_delete
                 ));
                 // Send the live connection handle out — caller uses it to create sessions.
                 let _ = ready_tx.send(Ok((caps, cx)));

@@ -95,6 +95,7 @@ pub struct AgentCapabilities {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
+    pub supports_session_delete: bool,
 }
 
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods

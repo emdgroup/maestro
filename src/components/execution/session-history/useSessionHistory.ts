@@ -6,6 +6,7 @@ import {
   useSessionListQuery,
   useLoadAcpSessionMutation,
   useRenameAcpSessionMutation,
+  useDeleteAcpSessionMutation,
 } from "@/services/execution.service";
 
 export type Preset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
@@ -53,14 +54,17 @@ export function useSessionHistory({
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const {
-    data: sessions = [],
+    data: sessionListResult,
     isLoading,
     isError,
     isFetching,
     refetch,
   } = useSessionListQuery(agentId, repoPath, connection, projectId, open);
+  const sessions = sessionListResult?.sessions ?? [];
+  const supportsSessionDelete = sessionListResult?.supports_session_delete ?? false;
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
+  const deleteMutation = useDeleteAcpSessionMutation();
 
   function changePreset(p: Preset) {
     setPreset(p);
@@ -129,6 +133,26 @@ export function useSessionHistory({
       else next.add(sessionId);
       return next;
     });
+  }
+
+  const allSelected = filtered.length > 0 && filtered.every((e) => ticked.has(e.session_id));
+  const someSelected = ticked.size > 0 && !allSelected;
+
+  function selectAll() {
+    if (allSelected) {
+      setTicked(new Set());
+    } else {
+      setTicked(new Set(filtered.map((e) => e.session_id)));
+    }
+  }
+
+  function deleteTicked() {
+    if (!agentId) return;
+    const ids = [...ticked];
+    for (const sessionId of ids) {
+      deleteMutation.mutate({ agentId, sessionId, cwd: repoPath, connection });
+    }
+    setTicked(new Set());
   }
 
   const openSession = useCallback(
@@ -308,5 +332,11 @@ export function useSessionHistory({
     startRename,
     commitRename,
     loadMutation,
+    supportsSessionDelete,
+    allSelected,
+    someSelected,
+    selectAll,
+    deleteTicked,
+    deleteMutation,
   };
 }

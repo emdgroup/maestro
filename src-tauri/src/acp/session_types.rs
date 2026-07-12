@@ -47,6 +47,8 @@ pub struct PendingChannels {
         oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
     pub session_close: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<(), String>>>>>,
+    pub session_delete: Arc<std::sync::Mutex<Option<
+        oneshot::Sender<Result<(), String>>>>>,
     pub check_tools: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
     pub detect_installed: Arc<std::sync::Mutex<Option<
@@ -62,6 +64,7 @@ impl PendingChannels {
             list_agents: Arc::new(std::sync::Mutex::new(None)),
             session_list: Arc::new(std::sync::Mutex::new(None)),
             session_close: Arc::new(std::sync::Mutex::new(None)),
+            session_delete: Arc::new(std::sync::Mutex::new(None)),
             check_tools: Arc::new(std::sync::Mutex::new(None)),
             detect_installed: Arc::new(std::sync::Mutex::new(None)),
             detect_project: Arc::new(std::sync::Mutex::new(None)),
@@ -93,6 +96,7 @@ pub struct SessionCapabilitiesInfo {
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,
+    pub supports_session_delete: bool,
 }
 
 /// Describes where to open a new maestro-server connection: local subprocess, remote SSH channel, or WSL distro.
