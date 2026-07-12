@@ -664,6 +664,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            supports_session_delete: false,
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
@@ -700,6 +701,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            supports_session_delete: false,
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
@@ -944,6 +946,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            supports_session_delete: false,
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
@@ -969,6 +972,7 @@ mod tests {
             supports_session_list: false,
             supports_session_load: false,
             supports_session_close: false,
+            supports_session_delete: false,
             config_options: None,
         }));
         let req_json = serde_json::to_string(&req).unwrap();
@@ -1005,6 +1009,7 @@ mod tests {
             supports_session_list: true,
             supports_session_load: true,
             supports_session_close: false,
+            supports_session_delete: false,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
