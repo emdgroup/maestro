@@ -132,7 +132,7 @@ export function OverviewPanel({
 
   return (
     <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
-      <div className="flex flex-wrap gap-2 items-start">
+      <div className="[column-count:2] [column-width:268px] gap-2">
         {/* Plan */}
         <Card
           available={(planEntries?.length ?? 0) > 0 || !!planTitle}
@@ -422,13 +422,13 @@ function Card({
 }) {
   if (!available) return null;
   return (
-    <div className="flex-[0_1_calc(50%-4px)] min-w-[268px]">
+    <div className="w-full mb-2 break-inside-avoid">
       <div
         role="button"
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => e.key === "Enter" && onClick()}
-        className="rounded-lg border border-border/50 bg-card overflow-hidden h-full cursor-pointer hover:bg-muted/50 hover:border-border transition-colors"
+        className="rounded-lg border border-border/50 bg-card overflow-hidden cursor-pointer hover:bg-muted/50 hover:border-border transition-colors"
       >
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div
