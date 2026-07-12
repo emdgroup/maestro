@@ -238,6 +238,18 @@ function ProxiedImage({
     return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;
   }
 
+  if (insideAnchor) {
+    return (
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ""}
+        width={width}
+        className="inline-block max-w-full rounded-md my-2"
+        loading="lazy"
+      />
+    );
+  }
+
   const imgEl = (
     <img
       src={resolvedSrc}
@@ -247,8 +259,6 @@ function ProxiedImage({
       loading="lazy"
     />
   );
-
-  if (insideAnchor) return imgEl;
 
   return (
     <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
@@ -267,6 +277,17 @@ function MarkdownImgComponent({
   width?: string | number;
 }) {
   const insideAnchor = useContext(InsideAnchorContext);
+  if (insideAnchor) {
+    return (
+      <img
+        src={src}
+        alt={alt ?? ""}
+        width={width}
+        className="inline-block max-w-full rounded-md my-2"
+        loading="lazy"
+      />
+    );
+  }
   const imgEl = (
     <img
       src={src}
@@ -276,7 +297,6 @@ function MarkdownImgComponent({
       loading="lazy"
     />
   );
-  if (insideAnchor) return imgEl;
   return (
     <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
       {imgEl}
