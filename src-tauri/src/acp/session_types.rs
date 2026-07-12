@@ -103,6 +103,13 @@ pub enum TransportTarget<'a> {
     /// Uses the same read/write types as Local (wsl.exe is a local subprocess).
     #[cfg(windows)]
     Wsl { distro: &'a str, server_path: &'a str },
+    /// Container: spawns `<cli> exec -i <container_name> bash -lc <server_path>`.
+    /// Cross-platform (no #[cfg] needed). Same subprocess transport types as Local.
+    Docker {
+        cli: &'a crate::connectivity::docker::ContainerCli,
+        container_name: &'a str,
+        server_path: &'a str,
+    },
 }
 
 /// A live ACP session — local subprocess or remote SSH exec channel.

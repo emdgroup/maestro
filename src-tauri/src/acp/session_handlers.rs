@@ -252,6 +252,7 @@ pub async fn restore_acp_session(
     session_name: Option<String>,
     project_id: Option<i32>,
     worktree_branch: Option<String>,
+    task_id: Option<i32>,
 ) -> Result<i32, String> {
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -263,7 +264,7 @@ pub async fn restore_acp_session(
         log_id,
         session_name: session_name.clone(),
         project_id,
-        task_id: None,
+        task_id,
         app_state: Arc::clone(app_state),
     };
 
@@ -333,6 +334,35 @@ pub async fn restore_acp_session(
                 &req,
             ).await?;
         }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [docker_id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .map_err(|e| format!("No container CLI found: {}", e))?;
+            let maestro_path = {
+                let cached = app_state.acp.discovery_cache.lock().await
+                    .get(&ConnectionKey::Docker { id: docker_id })
+                    .and_then(|e| e.maestro_server_path.clone());
+                match cached {
+                    Some(p) => p,
+                    None => crate::acp::deploy::ensure_container_server(&cli, &container_name, &app_state.app_handle)
+                        .await
+                        .map_err(|e| format!("Failed to deploy maestro-server to container: {}", e))?
+                        .path,
+                }
+            };
+            crate::acp::load_acp_session_cold(
+                crate::acp::TransportTarget::Docker { cli: &cli, container_name: &container_name, server_path: &maestro_path },
+                &acp_session_id,
+                &req,
+            ).await?;
+        }
     }
 
     if let Some(ref branch) = worktree_branch {
@@ -363,7 +393,7 @@ pub async fn load_acp_session(
     project_id: Option<i32>,
     worktree_branch: Option<String>,
 ) -> Result<i32, String> {
-    restore_acp_session(&app_state, agent_id, acp_session_id, cwd, connection, session_name, project_id, worktree_branch).await
+    restore_acp_session(&app_state, agent_id, acp_session_id, cwd, connection, session_name, project_id, worktree_branch, None).await
 }
 
 /// Close an ACP session stored on the agent server (not a live Tauri session).

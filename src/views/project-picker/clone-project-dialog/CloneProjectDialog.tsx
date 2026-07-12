@@ -17,7 +17,7 @@ import { ProviderRepoPicker } from "../provider-repo-picker/ProviderRepoPicker";
 import { useCloneProject } from "@/services/project.service";
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import { api } from "@/lib/tauri-utils";
-import type { SshConnection, WslConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection, DockerConnection } from "@/types/bindings";
 import { Check, Globe, Link, Loader2 } from "lucide-react";
 
 interface CloneProjectDialogProps {
@@ -25,6 +25,7 @@ interface CloneProjectDialogProps {
   onOpenChange: (open: boolean) => void;
   connection: SshConnection | null;
   wslConnection?: WslConnection | null;
+  dockerConnection?: DockerConnection | null;
 }
 
 export function CloneProjectDialog({
@@ -32,6 +33,7 @@ export function CloneProjectDialog({
   onOpenChange,
   connection,
   wslConnection,
+  dockerConnection,
 }: CloneProjectDialogProps) {
   const [url, setUrl] = useState("");
   const [targetPath, setTargetPath] = useState("");
@@ -101,6 +103,7 @@ export function CloneProjectDialog({
         targetPath: targetPath.trim(),
         connectionId: connection?.id ?? null,
         wslConnectionId: wslConnection?.id ?? null,
+        dockerConnectionId: dockerConnection?.id ?? null,
         provider: provider ?? null,
       });
       const project = await api.openProject(created.id);
@@ -251,6 +254,7 @@ export function CloneProjectDialog({
           <FilePicker
             connection={connection}
             wslConnection={wslConnection}
+            dockerConnection={dockerConnection}
             onProjectSelect={(path) => handleBrowse(path)}
             loading={false}
           />

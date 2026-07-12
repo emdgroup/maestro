@@ -115,6 +115,11 @@ async fn launch_cold_session(
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
             (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
         }
+        TransportTarget::Docker { cli, container_name, server_path } => {
+            let (mut stdin_writer, source, child) = crate::acp::transport_setup::open_container_transport(cli, container_name, server_path).await?;
+            write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
+            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
+        }
     };
 
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();

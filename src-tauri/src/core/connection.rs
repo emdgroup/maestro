@@ -230,6 +230,21 @@ pub async fn get_git_connection(
             distro,
             path: project.path.clone(),
         })
+    } else if project.is_docker() {
+        let docker_id = project.docker_connection_id
+            .ok_or("Docker project has no docker_connection_id")?;
+        let container_name = {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            conn.query_row(
+                "SELECT container_name FROM docker_connections WHERE id = ?",
+                [docker_id],
+                |row| row.get::<_, String>(0),
+            ).map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
+        };
+        Ok(GitConnection::Docker {
+            container_name,
+            path: project.path.clone(),
+        })
     } else {
         Ok(GitConnection::Local {
             path: project.path.clone(),
@@ -248,7 +263,7 @@ pub async fn get_project_with_git_conn(
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
             Project::from_row,
         ).map_err(|e| format!("Project {} not found: {}", project_id, e))?

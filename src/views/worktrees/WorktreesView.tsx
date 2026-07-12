@@ -148,6 +148,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
           path: repoPath,
           connectionId: selectedProject?.connection_id ?? null,
           wslConnectionId: selectedProject?.wsl_connection_id ?? null,
+          dockerConnectionId: selectedProject?.docker_connection_id ?? null,
         });
         const project = await api.openProject(projectId);
         setSelectedProject(project, true);

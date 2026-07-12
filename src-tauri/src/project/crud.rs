@@ -20,11 +20,12 @@ pub(crate) fn register_project_in_db(
     let path = path.trim_end_matches('/');
     let connection_id = connection_key.ssh_id();
     let wsl_connection_id = connection_key.wsl_id();
+    let docker_connection_id = connection_key.docker_id();
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ?",
-            params![path, connection_id, wsl_connection_id],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
+            params![path, connection_id, wsl_connection_id, docker_connection_id],
             |row| row.get(0),
         ).ok();
         match existing {
@@ -32,16 +33,15 @@ pub(crate) fn register_project_in_db(
             None => {
                 let now = chrono::Utc::now().to_rfc3339();
                 conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    params![name, path, now, now, connection_id, wsl_connection_id, now],
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, docker_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    params![name, path, now, now, connection_id, wsl_connection_id, docker_connection_id, now],
                 ).map_err(|e| format!("Failed to insert project: {}", e))?;
                 conn.last_insert_rowid() as i32
             }
         }
     };
 
-    // Init .maestro folder for local and WSL projects.
-    // WSL paths are accessible from Windows via \\wsl$\ UNC paths.
+    // Init .maestro folder for local, WSL, and Docker projects.
     match connection_key {
         ConnectionKey::Local => {
             crate::core::project_storage::create_project_maestro_folder(path)
@@ -64,13 +64,32 @@ pub(crate) fn register_project_in_db(
             crate::core::project_storage::ensure_commit_template_exists(&unc_path)
                 .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: Option<String> = app_state.db.lock().ok().and_then(|conn| {
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [docker_id],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            });
+            if let Some(container_name) = container_name {
+                let cli = crate::connectivity::docker::ContainerCli::detect()
+                    .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                let maestro_dir = format!("{}/.maestro", path);
+                let _ = std::process::Command::new(cli.binary())
+                    .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+        }
         ConnectionKey::Ssh { .. } => {}
     }
 
     // Read back full project row
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
         params![project_id],
         Project::from_row,
     ).map_err(|e| e.to_string())
@@ -83,7 +102,7 @@ fn fetch_projects_from_db(
     conn: &rusqlite::Connection,
     connection_key: ConnectionKey,
 ) -> Result<Vec<Project>, String> {
-    let select = "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects";
+    let select = "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects";
     let order = "ORDER BY last_opened DESC NULLS LAST, created_at DESC";
 
     match connection_key {
@@ -107,8 +126,18 @@ fn fetch_projects_from_db(
                 .map_err(|e: rusqlite::Error| e.to_string())?;
             Ok(projects)
         }
+        ConnectionKey::Docker { id } => {
+            let query = format!("{} WHERE docker_connection_id = ? {}", select, order);
+            let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+            let projects: Vec<Project> = stmt
+                .query_map([id], Project::from_row)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e: rusqlite::Error| e.to_string())?;
+            Ok(projects)
+        }
         ConnectionKey::Local => {
-            let query = format!("{} WHERE connection_id IS NULL AND wsl_connection_id IS NULL {}", select, order);
+            let query = format!("{} WHERE connection_id IS NULL AND wsl_connection_id IS NULL AND docker_connection_id IS NULL {}", select, order);
             let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
             let projects: Vec<Project> = stmt
                 .query_map([], Project::from_row)
@@ -127,7 +156,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
+        .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
         .map_err(|e| e.to_string())?;
 
     let projects = stmt
@@ -230,6 +259,40 @@ async fn collect_stale_project_ids(
             }
             stale
         }
+
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = {
+                let db = match app_state.db.lock() {
+                    Ok(d) => d,
+                    Err(_) => return vec![],
+                };
+                match db.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    params![docker_id],
+                    |row| row.get(0),
+                ) {
+                    Ok(name) => name,
+                    Err(_) => return vec![],
+                }
+            };
+            let cli = match crate::connectivity::docker::ContainerCli::detect() {
+                Ok(c) => c,
+                Err(_) => return vec![],
+            };
+            let mut stale = Vec::new();
+            for project in projects {
+                let output = tokio::process::Command::new(cli.binary())
+                    .args(["exec", &container_name, "test", "-d", &project.path])
+                    .output()
+                    .await;
+                match output {
+                    Ok(out) if !out.status.success() => stale.push(project.id),
+                    Err(_) => {} // On error, keep the project
+                    _ => {}
+                }
+            }
+            stale
+        }
     }
 }
 
@@ -244,7 +307,7 @@ pub fn get_project(
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
         [&project_id],
         Project::from_row
     );
@@ -279,7 +342,7 @@ pub fn open_project(
 
     let project: Project = conn
         .query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [&project_id],
             Project::from_row,
         )
@@ -302,7 +365,7 @@ pub fn open_project(
 
     // Ensure commit template exists for local/WSL projects (no-op if file already present).
     // SSH projects don't have a local .maestro/ folder.
-    if !project.is_remote() {
+    if !project.is_remote() && !project.is_docker() {
         let effective_path = if let Some(wsl_id) = project.wsl_connection_id {
             let distro: String = conn.query_row(
                 "SELECT distro_name FROM wsl_connections WHERE id = ?",
@@ -387,13 +450,14 @@ pub fn create_project(
     let path = path.trim_end_matches('/').to_string();
     let connection_id = connection.ssh_id();
     let wsl_connection_id = connection.wsl_id();
+    let docker_connection_id = connection.docker_id();
     // NOTE: This older handler has similar logic to register_project_in_db but also
     // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
-            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ?",
-            params![path, connection_id, wsl_connection_id],
+            "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
+            params![path, connection_id, wsl_connection_id, docker_connection_id],
             |row| row.get(0),
         ).ok();
         match existing {
@@ -407,8 +471,8 @@ pub fn create_project(
                     .unwrap_or("Untitled")
                     .to_string();
                 conn.execute(
-                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    params![name, path, now, now, connection_id, wsl_connection_id, now],
+                    "INSERT INTO projects (name, path, created_at, updated_at, connection_id, wsl_connection_id, docker_connection_id, last_opened) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    params![name, path, now, now, connection_id, wsl_connection_id, docker_connection_id, now],
                 ).map_err(|e| format!("Failed to insert project '{}': {}", name, e))?;
                 conn.last_insert_rowid() as i32
             }
@@ -436,6 +500,25 @@ pub fn create_project(
                 .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
             project_storage::ensure_commit_template_exists(&unc_path)
                 .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: Option<String> = app_state.db.lock().ok().and_then(|conn| {
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [docker_id],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            });
+            if let Some(container_name) = container_name {
+                let cli = crate::connectivity::docker::ContainerCli::detect()
+                    .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                let maestro_dir = format!("{}/.maestro", path);
+                let _ = std::process::Command::new(cli.binary())
+                    .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
         }
         ConnectionKey::Ssh { .. } => {}
     }

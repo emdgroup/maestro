@@ -1,6 +1,8 @@
 import type { ConnectionKey, Project } from "@/types/bindings";
 
 export function connectionKeyFromProject(project: Project): ConnectionKey {
+  if (project.docker_connection_id != null)
+    return { type: "docker", id: project.docker_connection_id };
   if (project.wsl_connection_id != null) return { type: "wsl", id: project.wsl_connection_id };
   if (project.connection_id != null) return { type: "ssh", id: project.connection_id };
   return { type: "local" };

@@ -1,5 +1,7 @@
 pub mod ssh;
 pub mod wsl;
+pub mod docker;
+pub mod docker_handlers;
 pub mod models;
 pub mod ssh_handlers;
 pub mod sftp_handlers;

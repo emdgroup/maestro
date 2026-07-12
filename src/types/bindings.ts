@@ -104,11 +104,17 @@ export const commands = {
     path: string,
     connectionId: number | null,
     wslConnectionId: number | null,
+    dockerConnectionId: number | null,
   ): Promise<Result<null, string>> {
     try {
       return {
         status: "ok",
-        data: await TAURI_INVOKE("git_init_project", { path, connectionId, wslConnectionId }),
+        data: await TAURI_INVOKE("git_init_project", {
+          path,
+          connectionId,
+          wslConnectionId,
+          dockerConnectionId,
+        }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
@@ -119,11 +125,17 @@ export const commands = {
     path: string,
     connectionId: number | null,
     wslConnectionId: number | null,
+    dockerConnectionId: number | null,
   ): Promise<Result<boolean, string>> {
     try {
       return {
         status: "ok",
-        data: await TAURI_INVOKE("check_is_git_repo", { path, connectionId, wslConnectionId }),
+        data: await TAURI_INVOKE("check_is_git_repo", {
+          path,
+          connectionId,
+          wslConnectionId,
+          dockerConnectionId,
+        }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
@@ -138,6 +150,7 @@ export const commands = {
     targetPath: string,
     connectionId: number | null,
     wslConnectionId: number | null,
+    dockerConnectionId: number | null,
     provider: string | null,
   ): Promise<Result<Project, string>> {
     try {
@@ -148,6 +161,7 @@ export const commands = {
           targetPath,
           connectionId,
           wslConnectionId,
+          dockerConnectionId,
           provider,
         }),
       };
@@ -164,6 +178,7 @@ export const commands = {
     folderName: string,
     connectionId: number | null,
     wslConnectionId: number | null,
+    dockerConnectionId: number | null,
   ): Promise<Result<Project, string>> {
     try {
       return {
@@ -173,6 +188,7 @@ export const commands = {
           folderName,
           connectionId,
           wslConnectionId,
+          dockerConnectionId,
         }),
       };
     } catch (e) {
@@ -1900,6 +1916,120 @@ export const commands = {
     }
   },
   /**
+   * List running and stopped containers using the detected container CLI.
+   */
+  async listDockerContainers(): Promise<Result<DockerContainer[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("list_docker_containers") };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Get the home directory for the default user in a container.
+   */
+  async getDockerHome(containerName: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("get_docker_home", { containerName }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * List entries in a container directory.
+   */
+  async listDockerDirectories(
+    containerName: string,
+    path: string,
+  ): Promise<Result<string[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_docker_directories", { containerName, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Upsert a container connection record and return the saved row.
+   */
+  async saveDockerConnection(
+    containerName: string,
+    imageName: string | null,
+    displayName: string | null,
+  ): Promise<Result<DockerConnection, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("save_docker_connection", {
+          containerName,
+          imageName,
+          displayName,
+        }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * List all saved container connections from the database.
+   */
+  async listDockerConnections(): Promise<Result<DockerConnection[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("list_docker_connections") };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * List all non-hidden workspace files in a container path.
+   */
+  async listDockerWorkspaceFiles(
+    connectionId: number,
+    path: string,
+  ): Promise<Result<string[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_docker_workspace_files", { connectionId, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Read a text file from a container. Rejects files over 512 KB.
+   */
+  async readDockerFile(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("read_docker_file", { connectionId, path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Read a file from a container as base64. Rejects files over 5 MB.
+   */
+  async readDockerFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("read_docker_file_binary", { connectionId, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Probe all known provider keys in the keyring and return their connection status.
    * For GitHub, also probes the gh CLI as a fallback credential source.
    * Raw tokens are never returned — only IntegrationStatus (D-01 security constraint).
@@ -2355,7 +2485,8 @@ export type CommitInfo = { sha: string; message: string; file_count: number };
 export type ConnectionKey =
   | { type: "local" }
   | { type: "ssh"; id: number }
-  | { type: "wsl"; id: number };
+  | { type: "wsl"; id: number }
+  | { type: "docker"; id: number };
 /**
  * Represents the status of a remote SSH connection for a project
  */
@@ -2399,6 +2530,21 @@ export type DirtyStatus = { modified_count: number; untracked_count: number };
  * Returned by the `discover_agents` IPC command for both local and remote connections.
  */
 export type DiscoveredAgent = { id: string; name: string; icon: string; spawn_deps?: string[] };
+export type DockerConnection = {
+  id: number;
+  container_name: string;
+  image_name: string | null;
+  display_name: string | null;
+  last_used_at: string;
+  created_at: string;
+};
+export type DockerContainer = {
+  id: string;
+  name: string;
+  image: string;
+  state: DockerContainerState;
+};
+export type DockerContainerState = "Running" | "Stopped";
 export type EnterKeyBehavior = "send_prompt" | "new_line";
 /**
  * How a session is executed: via the Agent Control Protocol or a raw PTY.
@@ -2474,6 +2620,7 @@ export type Project = {
   last_opened: string | null;
   connection_id: number | null;
   wsl_connection_id: number | null;
+  docker_connection_id: number | null;
 };
 /**
  * Project-level agent detection: which agent tools have config markers in the project dir.

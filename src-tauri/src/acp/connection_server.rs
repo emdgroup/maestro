@@ -201,6 +201,10 @@ pub async fn spawn_connection_server(
             let (stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
             (spawn_stdin_writer_task(stdin_writer), source, Some(child))
         }
+        TransportTarget::Docker { cli, container_name, server_path } => {
+            let (stdin_writer, source, child) = crate::acp::transport_setup::open_container_transport(cli, container_name, server_path).await?;
+            (spawn_stdin_writer_task(stdin_writer), source, Some(child))
+        }
     };
 
     let pending = PendingChannels::new();

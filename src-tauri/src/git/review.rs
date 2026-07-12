@@ -257,6 +257,14 @@ pub async fn reject_review(
                             .output()
                             .await;
                     }
+                    crate::models::GitConnection::Docker { container_name, path } => {
+                        let cli = crate::connectivity::docker::ContainerCli::detect()
+                            .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                        let _ = tokio::process::Command::new(cli.binary())
+                            .args(["exec", container_name, "git", "-C", path, "branch", "-D", &branch_name])
+                            .output()
+                            .await;
+                    }
                 }
 
                 // Delete worktree DB row
@@ -277,6 +285,7 @@ pub async fn reject_review(
                     crate::models::GitConnection::Local { path } => path.clone(),
                     crate::models::GitConnection::Remote { remote_path, .. } => remote_path.clone(),
                     crate::models::GitConnection::Wsl { path, .. } => path.clone(),
+                    crate::models::GitConnection::Docker { path, .. } => path.clone(),
                 };
 
                 // Reset to the start SHA

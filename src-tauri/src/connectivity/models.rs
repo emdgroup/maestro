@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 /// Represents the connection context for git operations
-/// Routes operations to either local, remote (SSH), or WSL execution
+/// Routes operations to either local, remote (SSH), WSL, or Docker execution
 #[derive(Clone)]
 pub enum GitConnection {
     Local {
@@ -19,6 +19,11 @@ pub enum GitConnection {
         distro: String,
         path: String,
     },
+    /// Container: git runs via `<cli> exec -i <container_name> git -C <path> ...`
+    Docker {
+        container_name: String,
+        path: String,
+    },
 }
 
 impl GitConnection {
@@ -27,12 +32,13 @@ impl GitConnection {
         matches!(self, GitConnection::Remote { .. })
     }
 
-    /// Get the project path (local, remote, or WSL-native)
+    /// Get the project path (local, remote, WSL-native, or container-native)
     pub fn path(&self) -> &str {
         match self {
             GitConnection::Local { path } => path,
             GitConnection::Remote { remote_path, .. } => remote_path,
             GitConnection::Wsl { path, .. } => path,
+            GitConnection::Docker { path, .. } => path,
         }
     }
 

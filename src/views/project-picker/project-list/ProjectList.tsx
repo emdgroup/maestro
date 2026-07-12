@@ -18,7 +18,7 @@ import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/proje
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { Folder, Loader2, Terminal } from "lucide-react";
+import { Folder, Loader2, Terminal, Container } from "lucide-react";
 import { ConnectionHeader } from "../connection-list/ConnectionHeader";
 import { FilePicker } from "../file-picker/FilePicker";
 import { GitInitDialog } from "./GitInitDialog";
@@ -29,11 +29,13 @@ export function ProjectList() {
   const { activeConnection, preflightStatus } = useConnectionContext();
   const { navigateToConnections } = useProjectPickerNavigation();
   const activeConnectionKey: import("@/types/bindings").ConnectionKey =
-    activeConnection?.wslConnection
-      ? { type: "wsl", id: activeConnection.wslConnection.id }
-      : activeConnection?.sshConnection
-        ? { type: "ssh", id: activeConnection.sshConnection.id }
-        : { type: "local" };
+    activeConnection?.dockerConnection
+      ? { type: "docker", id: activeConnection.dockerConnection.id }
+      : activeConnection?.wslConnection
+        ? { type: "wsl", id: activeConnection.wslConnection.id }
+        : activeConnection?.sshConnection
+          ? { type: "ssh", id: activeConnection.sshConnection.id }
+          : { type: "local" };
   const { data: recentProjects = [], isLoading: projectsLoading } =
     useRecentProjects(activeConnectionKey);
   const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
@@ -55,6 +57,7 @@ export function ProjectList() {
     path: string;
     connectionId?: number;
     wslConnectionId?: number;
+    dockerConnectionId?: number;
   } | null>(null);
   const [showGitInitDialog, setShowGitInitDialog] = useState(false);
   const [gitInitLoading, setGitInitLoading] = useState(false);
@@ -63,14 +66,17 @@ export function ProjectList() {
     selectedPath: string,
     connectionId?: number,
     wslConnectionId?: number,
+    dockerConnectionId?: number,
     isGitRepo = true,
   ) => {
     const connection: ConnectionKey =
-      wslConnectionId != null
-        ? { type: "wsl", id: wslConnectionId }
-        : connectionId != null
-          ? { type: "ssh", id: connectionId }
-          : { type: "local" };
+      dockerConnectionId != null
+        ? { type: "docker", id: dockerConnectionId }
+        : wslConnectionId != null
+          ? { type: "wsl", id: wslConnectionId }
+          : connectionId != null
+            ? { type: "ssh", id: connectionId }
+            : { type: "local" };
     const created = await createProject({ path: selectedPath, connection });
     const project = await api.openProject(created.id);
     await Promise.all([
@@ -85,6 +91,7 @@ export function ProjectList() {
     selectedPath: string,
     connectionId?: number,
     wslConnectionId?: number,
+    dockerConnectionId?: number,
   ) => {
     setProjectLoading(true);
     try {
@@ -92,11 +99,17 @@ export function ProjectList() {
         path: selectedPath,
         connectionId: connectionId ?? null,
         wslConnectionId: wslConnectionId ?? null,
+        dockerConnectionId: dockerConnectionId ?? null,
       });
       if (isGitRepo) {
-        await finalizeProjectOpen(selectedPath, connectionId, wslConnectionId);
+        await finalizeProjectOpen(selectedPath, connectionId, wslConnectionId, dockerConnectionId);
       } else {
-        setPendingSelection({ path: selectedPath, connectionId, wslConnectionId });
+        setPendingSelection({
+          path: selectedPath,
+          connectionId,
+          wslConnectionId,
+          dockerConnectionId,
+        });
         setShowGitInitDialog(true);
       }
     } catch (error) {
@@ -119,6 +132,7 @@ export function ProjectList() {
         path: pendingSelection.path,
         connectionId: pendingSelection.connectionId ?? null,
         wslConnectionId: pendingSelection.wslConnectionId ?? null,
+        dockerConnectionId: pendingSelection.dockerConnectionId ?? null,
       });
       setShowGitInitDialog(false);
       setProjectLoading(true);
@@ -126,6 +140,7 @@ export function ProjectList() {
         pendingSelection.path,
         pendingSelection.connectionId,
         pendingSelection.wslConnectionId,
+        pendingSelection.dockerConnectionId,
       );
     } catch (error) {
       toast.error(`Failed to initialize git: ${String(error)}`);
@@ -145,6 +160,7 @@ export function ProjectList() {
         pendingSelection.path,
         pendingSelection.connectionId,
         pendingSelection.wslConnectionId,
+        pendingSelection.dockerConnectionId,
         false,
       );
     } catch (error) {
@@ -169,6 +185,7 @@ export function ProjectList() {
           path: project.path,
           connectionId: project.connection_id,
           wslConnectionId: project.wsl_connection_id,
+          dockerConnectionId: project.docker_connection_id ?? null,
         }),
         api.primeProjectServer(projectId).catch(() => {}),
         applyProjectStartupTab(project.id),
@@ -211,6 +228,14 @@ export function ProjectList() {
                 <Terminal className="w-5 h-5 text-muted-foreground" />
                 <h2 className="text-lg font-semibold">
                   WSL — {activeConnection.wslConnection.distro_name}
+                </h2>
+              </>
+            ) : activeConnection.type === "docker" && activeConnection.dockerConnection ? (
+              <>
+                <Container className="w-5 h-5 text-muted-foreground" />
+                <h2 className="text-lg font-semibold">
+                  {activeConnection.dockerConnection.display_name ??
+                    activeConnection.dockerConnection.container_name}
                 </h2>
               </>
             ) : (
@@ -265,6 +290,7 @@ export function ProjectList() {
             <FilePicker
               connection={activeConnection?.sshConnection}
               wslConnection={activeConnection?.wslConnection}
+              dockerConnection={activeConnection?.dockerConnection}
               onProjectSelect={handleProjectSelect}
               loading={projectLoading}
             />
@@ -276,6 +302,7 @@ export function ProjectList() {
           onOpenChange={setShowCloneDialog}
           connection={activeConnection?.sshConnection ?? null}
           wslConnection={activeConnection?.wslConnection ?? null}
+          dockerConnection={activeConnection?.dockerConnection ?? null}
         />
 
         <CreateProjectDialog
@@ -283,6 +310,7 @@ export function ProjectList() {
           onOpenChange={setShowCreateDialog}
           connection={activeConnection?.sshConnection ?? null}
           wslConnection={activeConnection?.wslConnection ?? null}
+          dockerConnection={activeConnection?.dockerConnection ?? null}
         />
 
         <GitInitDialog

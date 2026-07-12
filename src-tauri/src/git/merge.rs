@@ -31,6 +31,7 @@ pub async fn squash_merge_to_base(
         GitConnection::Local { path } => path.as_str(),
         GitConnection::Remote { remote_path, .. } => remote_path.as_str(),
         GitConnection::Wsl { path, .. } => path.as_str(),
+        GitConnection::Docker { path, .. } => path.as_str(),
     };
 
     // Step 1: checkout target branch
@@ -145,10 +146,10 @@ pub async fn resolve_commit_message(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    let (task_name, branch_name, base_branch, external_id, description, project_path, connection_id, wsl_connection_id) = {
+    let (task_name, branch_name, base_branch, external_id, description, project_path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path, p.connection_id, p.wsl_connection_id
+            "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id
              FROM tasks t
              JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
@@ -161,15 +162,13 @@ pub async fn resolve_commit_message(
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, Option<i32>>(6)?,
-                row.get::<_, Option<i32>>(7)?,
+                ConnectionKey::from_all_ids(row.get(6)?, row.get(7)?, row.get(8)?),
             )),
         )
         .map_err(|e| format!("Task/worktree/project not found: {}", e))?
     };
 
     let template_path = format!("{}/.maestro/commit-template.txt", project_path);
-    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
     let template = match connection_key {
         ConnectionKey::Local => {
             std::fs::read_to_string(&template_path)
@@ -210,6 +209,25 @@ pub async fn resolve_commit_message(
                         }
                         _ => DEFAULT_COMMIT_TEMPLATE.to_string(),
                     }
+                }
+                Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
+            }
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name_result: Result<String, String> = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    rusqlite::params![docker_id],
+                    |row| row.get(0),
+                ).map_err(|e| format!("Docker connection not found: {}", e))
+            };
+            match container_name_result {
+                Ok(container_name) => {
+                    let cli = crate::connectivity::docker::ContainerCli::detect()
+                        .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                    crate::connectivity::docker::read_file(&cli, &container_name, &template_path)
+                        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
                 }
                 Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
             }

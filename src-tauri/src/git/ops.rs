@@ -2,7 +2,7 @@ use crate::command_ext::NoConsoleWindow;
 use crate::models::GitConnection;
 use tokio::process::Command as TokioCommand;
 use super::remote;
-use super::exec::run_wsl_git;
+use super::exec::{run_wsl_git, run_docker_git};
 
 #[derive(serde::Serialize, specta::Type)]
 pub struct BranchList {
@@ -46,6 +46,14 @@ pub async fn create_worktree(
             };
             run_wsl_git(distro, path, &args, false).await.map(|_| ())
         }
+        GitConnection::Docker { container_name, path } => {
+            let args: Vec<&str> = if let Some(nb) = new_branch {
+                vec!["worktree", "add", worktree_name, "-b", nb, branch]
+            } else {
+                vec!["worktree", "add", worktree_name, branch]
+            };
+            run_docker_git(container_name, path, &args, false).await.map(|_| ())
+        }
     }
 }
 
@@ -66,6 +74,9 @@ pub async fn delete_worktree(
         GitConnection::Wsl { distro, path } => {
             run_wsl_git(distro, path, &["worktree", "remove", worktree_name, "--force"], false).await.map(|_| ())
         }
+        GitConnection::Docker { container_name, path } => {
+            run_docker_git(container_name, path, &["worktree", "remove", worktree_name, "--force"], false).await.map(|_| ())
+        }
     }
 }
 
@@ -81,6 +92,7 @@ pub async fn git_diff(
             GitConnection::Local { path } => format!("local path={path}"),
             GitConnection::Remote { remote_path, .. } => format!("remote path={remote_path}"),
             GitConnection::Wsl { distro, path } => format!("wsl distro={distro} path={path}"),
+            GitConnection::Docker { container_name, path } => format!("docker container={container_name} path={path}"),
         }
     ));
     let result = match conn {
@@ -95,6 +107,10 @@ pub async fn git_diff(
         GitConnection::Wsl { distro, path } => {
             let range = format!("{}...{}", base_branch, branch);
             run_wsl_git(distro, path, &["diff", "--unified=6", &range], false).await
+        }
+        GitConnection::Docker { container_name, path } => {
+            let range = format!("{}...{}", base_branch, branch);
+            run_docker_git(container_name, path, &["diff", "--unified=6", &range], false).await
         }
     };
     if let Err(ref e) = result {
@@ -119,6 +135,9 @@ pub async fn git_status(
         GitConnection::Wsl { distro, path } => {
             run_wsl_git(distro, path, &["status", "--porcelain"], false).await
         }
+        GitConnection::Docker { container_name, path } => {
+            run_docker_git(container_name, path, &["status", "--porcelain"], false).await
+        }
     }
 }
 
@@ -137,6 +156,10 @@ pub async fn list_branches(
         }
         GitConnection::Wsl { distro, path } => {
             let raw = run_wsl_git(distro, path, &["branch", "-a", "--format=%(refname:short)"], false).await?;
+            Ok(parse_branch_list(raw.lines()))
+        }
+        GitConnection::Docker { container_name, path } => {
+            let raw = run_docker_git(container_name, path, &["branch", "-a", "--format=%(refname:short)"], false).await?;
             Ok(parse_branch_list(raw.lines()))
         }
     }
@@ -159,6 +182,10 @@ pub async fn get_current_branch(
             let raw = run_wsl_git(distro, path, &["symbolic-ref", "--short", "HEAD"], false).await?;
             Ok(raw.trim().to_string())
         }
+        GitConnection::Docker { container_name, path } => {
+            let raw = run_docker_git(container_name, path, &["symbolic-ref", "--short", "HEAD"], false).await?;
+            Ok(raw.trim().to_string())
+        }
     }
 }
 
@@ -177,6 +204,10 @@ pub async fn list_worktrees(
         }
         GitConnection::Wsl { distro, path } => {
             let raw = run_wsl_git(distro, path, &["worktree", "list", "--porcelain"], false).await?;
+            Ok(parse_worktree_list(&raw))
+        }
+        GitConnection::Docker { container_name, path } => {
+            let raw = run_docker_git(container_name, path, &["worktree", "list", "--porcelain"], false).await?;
             Ok(parse_worktree_list(&raw))
         }
     }

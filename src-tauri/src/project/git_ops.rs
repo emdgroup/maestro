@@ -15,7 +15,43 @@ pub async fn git_init_project(
     path: String,
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
 ) -> Result<(), String> {
+    if let Some(docker_id) = docker_connection_id {
+        let container_name: String = {
+            let db = app_state.db.lock().map_err(|e| e.to_string())?;
+            db.query_row(
+                "SELECT container_name FROM docker_connections WHERE id = ?",
+                params![docker_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Docker connection not found: {}", e))?
+        };
+        let cli = crate::connectivity::docker::ContainerCli::detect()
+            .map_err(|e| format!("No container CLI found: {}", e))?;
+        let check = tokio::process::Command::new(cli.binary())
+            .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to exec into container: {}", e))?;
+        if check.status.success() {
+            return Ok(());
+        }
+        let output = tokio::process::Command::new(cli.binary())
+            .args(["exec", &container_name, "git", "init", "-b", "main", &path])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to exec into container: {}", e))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
     if let Some(conn_id) = connection_id {
         let session = app_state
             .ssh.get_session(conn_id)
@@ -101,7 +137,30 @@ pub async fn check_is_git_repo(
     path: String,
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
 ) -> Result<bool, String> {
+    if let Some(docker_id) = docker_connection_id {
+        let container_name: String = {
+            let db = app_state.db.lock().map_err(|e| e.to_string())?;
+            db.query_row(
+                "SELECT container_name FROM docker_connections WHERE id = ?",
+                params![docker_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Docker connection not found: {}", e))?
+        };
+        let cli = crate::connectivity::docker::ContainerCli::detect()
+            .map_err(|e| format!("No container CLI found: {}", e))?;
+        let output = tokio::process::Command::new(cli.binary())
+            .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to exec into container: {}", e))?;
+        return Ok(output.status.success());
+    }
+
     if let Some(conn_id) = connection_id {
         let session = app_state
             .ssh.get_session(conn_id)
@@ -211,9 +270,10 @@ pub async fn clone_project(
     target_path: String,
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
     provider: Option<String>,
 ) -> Result<crate::models::Project, String> {
-    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
+    let connection_key = ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     let auth_header = match provider.as_deref() {
         Some(provider_key) if url.starts_with("http://") || url.starts_with("https://") => {
             build_provider_auth_header(provider_key, &app_state).await?
@@ -272,6 +332,34 @@ pub async fn clone_project(
                 return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
             }
         }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
+                    .map_err(|e| format!("Docker connection not found: {}", e))?
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .map_err(|e| format!("No container CLI found: {}", e))?;
+            let git_cmd = match &auth_header {
+                Some(header) => format!(
+                    "git -c {} clone {} {}",
+                    shell_quote(&format!("http.extraHeader={}", header)),
+                    shell_quote(&url),
+                    shell_quote(&target_path),
+                ),
+                None => format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)),
+            };
+            let output = tokio::process::Command::new(cli.binary())
+                .args(["exec", &container_name, "sh", "-c", &git_cmd])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to exec into container: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
         ConnectionKey::Local => {
             let mut args: Vec<String> = Vec::new();
             if let Some(header) = auth_header {
@@ -311,8 +399,9 @@ pub async fn create_new_project(
     folder_name: String,
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
 ) -> Result<crate::models::Project, String> {
-    let connection_key = ConnectionKey::from_ids(connection_id, wsl_connection_id);
+    let connection_key = ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     // Build full path string (works for both local and remote — remote paths are POSIX)
     let full_path_str = format!("{}/{}", parent_dir.trim_end_matches('/'), folder_name);
 
@@ -364,6 +453,26 @@ pub async fn create_new_project(
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("error:") || stderr.contains("fatal:") || !output.status.success() {
                 return Err(format!("WSL create failed: {}", stderr));
+            }
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
+                    .map_err(|e| format!("Docker connection not found: {}", e))?
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .map_err(|e| format!("No container CLI found: {}", e))?;
+            let script = format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str));
+            let output = tokio::process::Command::new(cli.binary())
+                .args(["exec", &container_name, "sh", "-c", &script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to exec into container: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("Docker create failed: {}", String::from_utf8_lossy(&output.stderr)));
             }
         }
         ConnectionKey::Local => {

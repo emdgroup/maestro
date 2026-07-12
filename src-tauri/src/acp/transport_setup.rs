@@ -122,6 +122,27 @@ pub(crate) async fn open_wsl_transport(
     handshake_local_child(child).await
 }
 
+/// Spawn a container exec subprocess running maestro-server and perform handshake.
+/// Uses `bash -lc` so login profile scripts run, giving maestro-server access to PATH tools.
+/// Returns (stdin_writer, read_source, child) — same types as `open_local_transport`.
+pub(crate) async fn open_container_transport(
+    cli: &crate::connectivity::docker::ContainerCli,
+    container_name: &str,
+    server_path: &str,
+) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
+    use std::process::Stdio;
+    let child = tokio::process::Command::new(cli.binary())
+        .args(["exec", "-i", container_name, "bash", "-lc", server_path])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn container maestro-server in {}: {}", container_name, e))?;
+
+    handshake_local_child(child).await
+}
+
 /// Wrap a subprocess's stdin in an mpsc channel so multiple senders can write to it.
 /// Returns the sender end; the write task runs until the channel is dropped.
 pub(crate) fn spawn_stdin_writer_task(mut stdin_writer: BufWriter<ChildStdin>) -> tokio::sync::mpsc::Sender<Vec<u8>> {

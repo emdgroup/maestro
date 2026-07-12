@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 23;
 
-pub const SCHEMA_V21: &str = r#"
+pub const SCHEMA_V23_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -15,6 +15,16 @@ CREATE TABLE IF NOT EXISTS wsl_connections (
     created_at TEXT NOT NULL
 );
 
+-- Docker/Podman/nerdctl container connections
+CREATE TABLE IF NOT EXISTS docker_connections (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    container_name TEXT NOT NULL UNIQUE,
+    image_name  TEXT,
+    display_name TEXT,
+    last_used_at TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
 -- Projects table: stores project metadata
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +34,8 @@ CREATE TABLE IF NOT EXISTS projects (
     updated_at TEXT NOT NULL,
     last_opened TEXT,
     connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL,
-    wsl_connection_id INTEGER REFERENCES wsl_connections(id) ON DELETE SET NULL
+    wsl_connection_id INTEGER REFERENCES wsl_connections(id) ON DELETE SET NULL,
+    docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL
 );
 
 -- Tasks table: stores individual tasks for projects
@@ -189,35 +200,81 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
         |row| row.get(0),
     ).unwrap_or(0);
 
-    // Initialize or migrate schema
-    if current_version < SCHEMA_VERSION {
-        if current_version > 0 {
-            // Drop all tables to recreate with new schema (no production data to preserve)
-            conn.execute_batch(r#"
-                PRAGMA foreign_keys = OFF;
-                DROP TABLE IF EXISTS task_attachments;
-                DROP TABLE IF EXISTS session_aliases;
-                DROP TABLE IF EXISTS review_comments;
-                DROP TABLE IF EXISTS task_reviews;
-                DROP TABLE IF EXISTS task_instructions;
-                DROP TABLE IF EXISTS task_relationships;
-                DROP TABLE IF EXISTS worktrees;
-                DROP TABLE IF EXISTS tasks;
-                DROP TABLE IF EXISTS known_hosts;
-                DROP TABLE IF EXISTS projects;
-                DROP TABLE IF EXISTS wsl_connections;
-                DROP TABLE IF EXISTS ssh_connections;
-                DROP TABLE IF EXISTS settings;
-                PRAGMA foreign_keys = ON;
-            "#)?;
-        }
-        conn.execute_batch(SCHEMA_V21)?;
-        conn.execute(
-            &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
-            [],
-        )?;
+    if current_version == SCHEMA_VERSION {
+        return Ok(());
     }
 
+    if current_version == 0 {
+        // Fresh install: create full schema
+        conn.execute_batch(SCHEMA_V23_FULL)?;
+    } else if current_version < 22 {
+        // Legacy drop-recreate: no data to preserve before V22
+        conn.execute_batch(r#"
+            PRAGMA foreign_keys = OFF;
+            DROP TABLE IF EXISTS task_attachments;
+            DROP TABLE IF EXISTS session_aliases;
+            DROP TABLE IF EXISTS review_comments;
+            DROP TABLE IF EXISTS task_reviews;
+            DROP TABLE IF EXISTS task_instructions;
+            DROP TABLE IF EXISTS task_relationships;
+            DROP TABLE IF EXISTS worktrees;
+            DROP TABLE IF EXISTS tasks;
+            DROP TABLE IF EXISTS known_hosts;
+            DROP TABLE IF EXISTS projects;
+            DROP TABLE IF EXISTS docker_connections;
+            DROP TABLE IF EXISTS wsl_connections;
+            DROP TABLE IF EXISTS ssh_connections;
+            DROP TABLE IF EXISTS settings;
+            PRAGMA foreign_keys = ON;
+        "#)?;
+        conn.execute_batch(SCHEMA_V23_FULL)?;
+    } else {
+        // current_version == 22: apply incremental migrations
+        run_migrations(conn, current_version)?;
+    }
+
+    conn.execute(
+        &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
+    if from < 23 {
+        migrate_to_v23(conn)?;
+    }
+    Ok(())
+}
+
+fn migrate_to_v23(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS docker_connections (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            container_name TEXT NOT NULL UNIQUE,
+            image_name     TEXT,
+            display_name   TEXT,
+            last_used_at   TEXT NOT NULL,
+            created_at     TEXT NOT NULL
+        );",
+    )?;
+
+    let col_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'docker_connection_id'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if !col_exists {
+        conn.execute_batch(
+            "ALTER TABLE projects ADD COLUMN \
+             docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL;",
+        )?;
+    }
     Ok(())
 }
 
@@ -267,7 +324,8 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 21);
+        assert_eq!(version, 23);
+        assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

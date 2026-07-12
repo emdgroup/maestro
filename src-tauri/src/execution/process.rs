@@ -66,5 +66,8 @@ pub async fn spawn_agent_execution(
         GitConnection::Wsl { .. } => {
             Err("WSL agent execution is handled via ACP/maestro-server, not direct process spawn".to_string())
         }
+        GitConnection::Docker { .. } => {
+            Err("Docker agent execution is handled via ACP/maestro-server, not direct process spawn".to_string())
+        }
     }
 }

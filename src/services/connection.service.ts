@@ -211,19 +211,30 @@ export function useListDirContents(
   connection: ConnectionKey | null | undefined,
   path: string,
   wslDistroName?: string,
+  dockerContainerName?: string,
 ) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path],
-    queryFn: () => {
+    queryFn: async () => {
       if (!connection || connection.type === "local") {
         return api.listLocalContents(path);
       }
       if (connection.type === "wsl") {
         return api.listWslContents(wslDistroName!, path);
       }
+      if (connection.type === "docker") {
+        const names = await api.listDockerDirectories(dockerContainerName!, path);
+        return names.map((name) => ({
+          name: name.endsWith("/") ? name.slice(0, -1) : name,
+          is_dir: name.endsWith("/"),
+        }));
+      }
       return api.listRemoteContents(connection.id, path);
     },
-    enabled: !!path && (connection?.type !== "wsl" || !!wslDistroName),
+    enabled:
+      !!path &&
+      (connection?.type !== "wsl" || !!wslDistroName) &&
+      (connection?.type !== "docker" || !!dockerContainerName),
     staleTime: 10_000,
   });
 }
@@ -253,6 +264,9 @@ export function useListWorkspaceFiles(connection: ConnectionKey | null | undefin
       if (connection.type === "wsl") {
         return api.listWslWorkspaceFiles(connection.id, path);
       }
+      if (connection.type === "docker") {
+        return api.listDockerWorkspaceFiles(connection.id, path);
+      }
       return api.listRemoteWorkspaceFiles(connection.id, path);
     },
     enabled: !!path,
@@ -279,6 +293,9 @@ export function useReadFile(
       if (connection.type === "wsl") {
         return api.readWslFile(connection.id, path!);
       }
+      if (connection.type === "docker") {
+        return api.readDockerFile(connection.id, path!);
+      }
       return api.readRemoteFile(connection.id, path!);
     },
     enabled: !!path,
@@ -300,6 +317,9 @@ export function useReadFileBinary(
       }
       if (connection.type === "wsl") {
         return api.readWslFileBinary(connection.id, path!);
+      }
+      if (connection.type === "docker") {
+        return api.readDockerFileBinary(connection.id, path!);
       }
       return api.readRemoteFileBinary(connection.id, path!);
     },
@@ -415,6 +435,65 @@ export function useSaveWslConnection() {
       api.saveWslConnection(distroName, displayName),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() });
+    },
+  });
+}
+
+export const dockerQueryKeys = {
+  base: ["docker"] as const,
+  containers: () => [...dockerQueryKeys.base, "containers"] as const,
+  connections: () => [...dockerQueryKeys.base, "connections"] as const,
+  dirs: (name: string, path: string) => [...dockerQueryKeys.base, "dirs", name, path] as const,
+  home: (name: string) => [...dockerQueryKeys.base, "home", name] as const,
+};
+
+export function useDockerContainers() {
+  return useQuery({
+    queryKey: dockerQueryKeys.containers(),
+    queryFn: () => api.listDockerContainers(),
+    staleTime: 15_000,
+  });
+}
+
+export function useDockerConnections() {
+  return useQuery({
+    queryKey: dockerQueryKeys.connections(),
+    queryFn: () => api.listDockerConnections(),
+    staleTime: 30_000,
+  });
+}
+
+export function useDockerDirectories(containerName: string, path: string) {
+  return useQuery({
+    queryKey: dockerQueryKeys.dirs(containerName, path),
+    queryFn: () => api.listDockerDirectories(containerName, path),
+    enabled: !!containerName && !!path,
+  });
+}
+
+export function useDockerHome(containerName: string) {
+  return useQuery({
+    queryKey: dockerQueryKeys.home(containerName),
+    queryFn: () => api.getDockerHome(containerName),
+    enabled: !!containerName,
+    staleTime: Infinity,
+  });
+}
+
+export function useSaveDockerConnection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      containerName,
+      imageName,
+      displayName,
+    }: {
+      containerName: string;
+      imageName: string | null;
+      displayName: string | null;
+    }) => api.saveDockerConnection(containerName, imageName, displayName),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() });
     },
   });
 }

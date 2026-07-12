@@ -16,6 +16,7 @@ pub struct Project {
     pub last_opened: Option<String>, // ISO 8601
     pub connection_id: Option<i32>,  // Foreign key to ssh_connections; None = local project
     pub wsl_connection_id: Option<i32>, // Foreign key to wsl_connections; None = non-WSL project
+    pub docker_connection_id: Option<i32>, // Foreign key to docker_connections; None = non-Docker project
 }
 
 impl Project {
@@ -29,8 +30,13 @@ impl Project {
         self.wsl_connection_id.is_some()
     }
 
+    /// Check if this is a Docker/Podman/nerdctl container project
+    pub fn is_docker(&self) -> bool {
+        self.docker_connection_id.is_some()
+    }
+
     /// Parse a Project from a rusqlite Row.
-    /// Expects columns: id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id
+    /// Expects columns: id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id
     pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
         Ok(Project {
             id: row.get(0)?,
@@ -41,6 +47,7 @@ impl Project {
             last_opened: row.get(5)?,
             connection_id: row.get(6)?,
             wsl_connection_id: row.get(7)?,
+            docker_connection_id: row.get(8)?,
         })
     }
 }
@@ -172,6 +179,8 @@ pub struct SessionSnapshot {
     pub session_name: Option<String>,
     pub connection_key: crate::acp::ConnectionKey,
     pub branch_name: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<i32>,
 }
 
 /// Project-level state stored in .maestro/state.json

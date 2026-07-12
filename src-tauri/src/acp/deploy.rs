@@ -188,6 +188,98 @@ pub async fn ensure_wsl_server(
     Ok(DeployResult { path: abs_path, deployed: true })
 }
 
+/// Ensure maestro-server exists inside a container with the correct version.
+/// Probes via a single exec, downloads the Linux binary locally if needed, then deploys via stdin pipe.
+/// Returns the absolute Linux path to the binary inside the container.
+pub async fn ensure_container_server(
+    cli: &crate::connectivity::docker::ContainerCli,
+    container_name: &str,
+    app_handle: &AppHandle,
+) -> Result<DeployResult, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let probe_out = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tokio::process::Command::new(cli.binary())
+            .args([
+                "exec", container_name,
+                "sh", "-c",
+                &format!(
+                    "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
+                    REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
+                ),
+            ])
+            .output(),
+    )
+    .await
+    .map_err(|_| format!("Container probe timed out for {}", container_name))?
+    .map_err(|e| format!("Failed to probe container {}: {}", container_name, e))?;
+
+    if !probe_out.status.success() {
+        return Err(format!(
+            "Container probe failed for {}: {}",
+            container_name,
+            String::from_utf8_lossy(&probe_out.stderr)
+        ));
+    }
+
+    let text = String::from_utf8_lossy(&probe_out.stdout);
+    let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
+    if parts.len() != 2 {
+        return Err(format!("Unexpected container probe output: {}", text.trim()));
+    }
+    let (home, remote_version) = (parts[0].trim(), parts[1].trim());
+
+    let local_version = env!("CARGO_PKG_VERSION").to_string();
+    let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
+    let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
+
+    if remote_version == local_version {
+        return Ok(DeployResult { path: abs_path, deployed: false });
+    }
+
+    // Detect the container arch via uname before downloading the right binary.
+    let arch_out = tokio::process::Command::new(cli.binary())
+        .args(["exec", container_name, "uname", "-m"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to probe container arch: {}", e))?;
+    let arch = String::from_utf8_lossy(&arch_out.stdout).trim().to_string();
+    let triple = linux_triple_for_arch(&arch)?;
+
+    let local_binary = ensure_remote_binary_local(app_handle, triple).await?;
+    let binary_bytes = tokio::fs::read(&local_binary)
+        .await
+        .map_err(|e| format!("Cannot read cached binary: {}", e))?;
+
+    let mut child = tokio::process::Command::new(cli.binary())
+        .args([
+            "exec", "-i", container_name,
+            "sh", "-c",
+            &format!("mkdir -p '{}' && cat > '{}' && chmod +x '{}'", abs_dir, abs_path, abs_path),
+        ])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn container deploy shell: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(&binary_bytes).await.map_err(|e| format!("Binary pipe write failed: {}", e))?;
+    }
+
+    let status = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        child.wait(),
+    )
+    .await
+    .map_err(|_| format!("Container deploy timed out for {}", container_name))?
+    .map_err(|e| format!("Container deploy process failed: {}", e))?;
+    if !status.success() {
+        return Err(format!("Container deploy exited with status: {}", status));
+    }
+
+    Ok(DeployResult { path: abs_path, deployed: true })
+}
+
 /// Write the bundled canvas catalog to `.maestro/canvas-catalog.json` on a remote host.
 /// Uses base64 encoding to safely transfer the JSON over the SSH channel.
 pub async fn ensure_remote_catalog(

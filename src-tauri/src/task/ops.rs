@@ -17,7 +17,7 @@ pub async fn list_project_branches(
     let project = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
             crate::models::Project::from_row,
         )

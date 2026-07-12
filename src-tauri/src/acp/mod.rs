@@ -43,11 +43,25 @@ pub enum ConnectionKey {
     Ssh { id: i32 },
     #[serde(rename = "wsl")]
     Wsl { id: i32 },
+    #[serde(rename = "docker")]
+    Docker { id: i32 },
 }
 
 impl ConnectionKey {
     pub fn from_ids(ssh_id: Option<i32>, wsl_id: Option<i32>) -> Self {
         if let Some(id) = wsl_id {
+            ConnectionKey::Wsl { id }
+        } else if let Some(id) = ssh_id {
+            ConnectionKey::Ssh { id }
+        } else {
+            ConnectionKey::Local
+        }
+    }
+
+    pub fn from_all_ids(ssh_id: Option<i32>, wsl_id: Option<i32>, docker_id: Option<i32>) -> Self {
+        if let Some(id) = docker_id {
+            ConnectionKey::Docker { id }
+        } else if let Some(id) = wsl_id {
             ConnectionKey::Wsl { id }
         } else if let Some(id) = ssh_id {
             ConnectionKey::Ssh { id }
@@ -64,10 +78,16 @@ impl ConnectionKey {
         match self { ConnectionKey::Wsl { id } => Some(*id), _ => None }
     }
 
+    pub fn docker_id(&self) -> Option<i32> {
+        match self { ConnectionKey::Docker { id } => Some(*id), _ => None }
+    }
+
     pub fn is_remote(&self) -> bool {
-        matches!(self, ConnectionKey::Ssh { .. } | ConnectionKey::Wsl { .. })
+        matches!(self, ConnectionKey::Ssh { .. } | ConnectionKey::Wsl { .. } | ConnectionKey::Docker { .. })
     }
 }
+
+
 
 pub use session_types::{
     AcpProcess, AcpProcessParams, SessionRequest, AcpTransportWriter,

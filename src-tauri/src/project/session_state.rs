@@ -12,18 +12,17 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
     if app_state.is_closing.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
-    let enabled = app_state.acp.reopen_sessions.lock().await
+    // Task-linked sessions are always persisted for crash recovery.
+    // Manually-spawned sessions (no task_id) are only persisted when reopen_sessions is enabled.
+    let reopen_enabled = app_state.acp.reopen_sessions.lock().await
         .get(&project_id).copied().unwrap_or(false);
-    if !enabled {
-        return;
-    }
 
     let (project_path, connection_key) = {
         match app_state.db.lock() {
             Ok(conn) => match conn.query_row(
-                "SELECT path, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+                "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
                 [project_id],
-                |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_ids(row.get(1)?, row.get(2)?))),
+                |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?))),
             ) {
                 Ok(row) => row,
                 Err(_) => return,
@@ -36,6 +35,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
         let sessions = app_state.acp.sessions.lock().await;
         sessions.values()
             .filter(|proc| proc.project_id == Some(project_id))
+            .filter(|proc| proc.task_id.is_some() || reopen_enabled)
             .filter_map(|proc| {
                 let acp_session_id = proc.acp_session_id.lock().ok()?.clone()?;
                 Some(crate::project::models::SessionSnapshot {
@@ -45,10 +45,15 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
                     session_name: proc.session_name.clone(),
                     connection_key: proc.connection_key,
                     branch_name: proc.branch_name.clone(),
+                    task_id: proc.task_id,
                 })
             })
             .collect()
     };
+
+    if snapshots.is_empty() {
+        return;
+    }
 
     let project_state = crate::project::models::ProjectState {
         restorable_sessions: snapshots,
@@ -98,50 +103,37 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
                     .ok();
             }
         }
-        ConnectionKey::Local => {
-            project_state.save_to_project(&project_path).ok();
-        }
-    }
-}
-
-pub(crate) async fn delete_state_json_for_project(
-    app_state: &Arc<AppState>,
-    project_path: &str,
-    connection_key: ConnectionKey,
-) {
-    let state_path = format!("{}/.maestro/state.json", project_path);
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            if let Some(session) = app_state.ssh.get_session(conn_id).await {
-                session.execute_command(&format!("rm -f {}", shell_quote(&state_path))).await.ok();
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: Option<String> = app_state.db.lock().ok().and_then(|db| {
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: Option<String> = app_state.db.lock().ok().and_then(|db| {
                 db.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    params![wsl_id],
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    params![docker_id],
                     |row| row.get(0),
                 ).ok()
             });
-            if let Some(distro) = distro {
-                tokio::process::Command::new("wsl.exe")
-                    .args(["-d", &distro, "--", "rm", "-f", &state_path])
+            if let Some(container_name) = container_name {
+                let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                let script = format!(
+                    "mkdir -p {} && printf '%s' {} > {}",
+                    shell_quote(&maestro_dir),
+                    shell_quote(&json),
+                    shell_quote(&state_path),
+                );
+                tokio::process::Command::new(cli.binary())
+                    .args(["exec", &container_name, "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
-                    .no_console_window()
                     .output()
                     .await
                     .ok();
             }
         }
         ConnectionKey::Local => {
-            match std::fs::remove_file(&state_path) {
-                Ok(()) | Err(_) => {}
-            }
+            project_state.save_to_project(&project_path).ok();
         }
     }
 }
+
 
 /// Read `.maestro/state.json` for a project, extract restorable sessions, and save back cleared state.
 /// Returns an empty vec if state.json is missing, unreadable, or has no sessions.
@@ -189,6 +181,24 @@ pub(crate) async fn read_and_clear_restorable_sessions(
                     serde_json::from_str(&text).unwrap_or_default()
                 }
                 _ => return vec![],
+            }
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = match app_state.db.lock() {
+                Ok(db) => match db.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    params![docker_id],
+                    |row| row.get(0),
+                ) {
+                    Ok(n) => n,
+                    Err(_) => return vec![],
+                },
+                Err(_) => return vec![],
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+            match crate::connectivity::docker::read_file(&cli, &container_name, &state_path) {
+                Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+                Err(_) => return vec![],
             }
         }
         ConnectionKey::Local => {
@@ -241,6 +251,30 @@ pub(crate) async fn read_and_clear_restorable_sessions(
                     .await;
             }
         }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: Option<String> = app_state.db.lock().ok().and_then(|db| {
+                db.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    params![docker_id],
+                    |row| row.get(0),
+                ).ok()
+            });
+            if let Some(container_name) = container_name {
+                let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+                let script = format!(
+                    "mkdir -p {} && printf '%s' {} > {}",
+                    shell_quote(&maestro_dir),
+                    shell_quote(&json),
+                    shell_quote(&state_path),
+                );
+                let _ = tokio::process::Command::new(cli.binary())
+                    .args(["exec", &container_name, "sh", "-c", &script])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .output()
+                    .await;
+            }
+        }
         ConnectionKey::Local => {
             let _ = project_state.save_to_project(project_path);
         }
@@ -268,6 +302,7 @@ pub(crate) fn spawn_session_restores(
                 snapshot.session_name,
                 Some(project_id),
                 snapshot.branch_name,
+                snapshot.task_id,
             ).await;
         });
     }

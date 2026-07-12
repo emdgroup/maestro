@@ -3,7 +3,7 @@ use tauri::State;
 use crate::core::AppState;
 use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
-use super::session_state::{delete_state_json_for_project, read_and_clear_restorable_sessions, spawn_session_restores};
+use super::session_state::{read_and_clear_restorable_sessions, spawn_session_restores};
 #[cfg(windows)]
 use rusqlite::params;
 #[cfg(windows)]
@@ -25,9 +25,9 @@ pub async fn prime_project_server(
     let (project_path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id FROM projects WHERE id = ?",
+            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_ids(row.get(1)?, row.get(2)?))),
+            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?))),
         )
         .map_err(|_| format!("Project {} not found", project_id))?
     };
@@ -86,12 +86,14 @@ pub async fn prime_project_server(
                 )
                 .await?;
             }
-            if config.reopen_sessions == Some(true) {
-                let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-                spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
+            let reopen = config.reopen_sessions.unwrap_or(false);
+            let to_restore: Vec<_> = if reopen {
+                snapshots
             } else {
-                delete_state_json_for_project(&app_state, &project_path, connection_key).await;
-            }
+                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
+            };
+            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
         }
 
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -147,17 +149,73 @@ pub async fn prime_project_server(
                     )
                     .await?;
                 }
-                if config.reopen_sessions == Some(true) {
-                    let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-                    spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+                let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
+                let reopen = config.reopen_sessions.unwrap_or(false);
+                let to_restore: Vec<_> = if reopen {
+                    snapshots
                 } else {
-                    delete_state_json_for_project(&app_state, &project_path, connection_key).await;
-                }
+                    snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
+                };
+                spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
             }
             #[cfg(not(windows))]
             {
                 let _ = wsl_id;
             }
+        }
+
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = {
+                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                db.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    rusqlite::params![docker_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Docker connection not found: {}", e))?
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .map_err(|e| format!("No container CLI found: {}", e))?;
+            let maestro_path = crate::acp::deploy::ensure_container_server(&cli, &container_name, &app_state.app_handle).await?.path;
+
+            crate::acp::spawn_connection_server(
+                ConnectionKey::Docker { id: docker_id },
+                crate::acp::TransportTarget::Docker { cli: &cli, container_name: &container_name, server_path: &maestro_path },
+                &app_state,
+            ).await?;
+
+            let (_, config) = tokio::join!(
+                crate::acp::discovery_handlers::prefetch_agent_discovery(
+                    Arc::clone(&*app_state),
+                    ConnectionKey::Docker { id: docker_id },
+                    Some(maestro_path.clone()),
+                ),
+                async {
+                    let settings_path = format!("{}/.maestro/settings.json", project_path);
+                    crate::connectivity::docker::read_file(&cli, &container_name, &settings_path).ok()
+                        .and_then(|text| serde_json::from_str::<crate::models::ProjectConfig>(&text).ok())
+                }
+            );
+            let config = config.unwrap_or_default();
+            app_state.acp.reopen_sessions.lock().await
+                .insert(project_id, config.reopen_sessions.unwrap_or(false));
+            if let Some(agent_id) = config.default_agent {
+                crate::acp::pre_initialize_via_connection_server(
+                    ConnectionKey::Docker { id: docker_id },
+                    &agent_id,
+                    &project_path,
+                    &app_state,
+                )
+                .await?;
+            }
+            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
+            let reopen = config.reopen_sessions.unwrap_or(false);
+            let to_restore: Vec<_> = if reopen {
+                snapshots
+            } else {
+                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
+            };
+            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
         }
 
         ConnectionKey::Local => {
@@ -176,12 +234,14 @@ pub async fn prime_project_server(
                 )
                 .await?;
             }
-            if config.reopen_sessions == Some(true) {
-                let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-                spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
+            let reopen = config.reopen_sessions.unwrap_or(false);
+            let to_restore: Vec<_> = if reopen {
+                snapshots
             } else {
-                delete_state_json_for_project(&app_state, &project_path, connection_key).await;
-            }
+                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
+            };
+            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
         }
     }
 

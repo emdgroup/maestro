@@ -37,6 +37,7 @@ export function useProjects() {
 }
 
 export function connectionQueryKey(connection: ConnectionKey): number | string {
+  if (connection.type === "docker") return `docker-${connection.id}`;
   if (connection.type === "wsl") return `wsl-${connection.id}`;
   if (connection.type === "ssh") return connection.id;
   return localConnectionId;
@@ -154,11 +155,13 @@ export function useGitInitProject() {
       path,
       connectionId,
       wslConnectionId,
+      dockerConnectionId,
     }: {
       path: string;
       connectionId: number | null;
       wslConnectionId: number | null;
-    }) => api.gitInitProject(path, connectionId, wslConnectionId),
+      dockerConnectionId: number | null;
+    }) => api.gitInitProject(path, connectionId, wslConnectionId, dockerConnectionId),
     // No cache invalidation needed — this is a pre-step before createProject
     // No toast on success — this is a silent auto-init
     onError: createErrorToastHandler("Failed to initialize git"),
@@ -171,11 +174,13 @@ export function useCheckIsGitRepo() {
       path,
       connectionId,
       wslConnectionId,
+      dockerConnectionId,
     }: {
       path: string;
       connectionId: number | null;
       wslConnectionId: number | null;
-    }) => api.checkIsGitRepo(path, connectionId, wslConnectionId),
+      dockerConnectionId: number | null;
+    }) => api.checkIsGitRepo(path, connectionId, wslConnectionId, dockerConnectionId),
   });
 }
 
@@ -187,19 +192,31 @@ export function useCloneProject() {
       targetPath,
       connectionId,
       wslConnectionId,
+      dockerConnectionId,
       provider,
     }: {
       url: string;
       targetPath: string;
       connectionId: number | null;
       wslConnectionId: number | null;
+      dockerConnectionId: number | null;
       provider?: string | null;
-    }) => api.cloneProject(url, targetPath, connectionId, wslConnectionId, provider ?? null),
-    onSuccess: (_, { connectionId, wslConnectionId }) => {
+    }) =>
+      api.cloneProject(
+        url,
+        targetPath,
+        connectionId,
+        wslConnectionId,
+        dockerConnectionId,
+        provider ?? null,
+      ),
+    onSuccess: (_, { connectionId, wslConnectionId, dockerConnectionId }) => {
       const key =
-        wslConnectionId != null
-          ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
-          : projectQueryKeys.listByConnection(connectionId ?? "local");
+        dockerConnectionId != null
+          ? projectQueryKeys.listByConnection(`docker-${dockerConnectionId}`)
+          : wslConnectionId != null
+            ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
+            : projectQueryKeys.listByConnection(connectionId ?? "local");
       void queryClient.invalidateQueries({ queryKey: key });
       toast.success("Project cloned successfully");
     },
@@ -220,17 +237,28 @@ export function useCreateNewProject() {
       folderName,
       connectionId,
       wslConnectionId,
+      dockerConnectionId,
     }: {
       parentDir: string;
       folderName: string;
       connectionId: number | null;
       wslConnectionId: number | null;
-    }) => api.createNewProject(parentDir, folderName, connectionId, wslConnectionId),
-    onSuccess: (_, { connectionId, wslConnectionId }) => {
+      dockerConnectionId: number | null;
+    }) =>
+      api.createNewProject(
+        parentDir,
+        folderName,
+        connectionId,
+        wslConnectionId,
+        dockerConnectionId,
+      ),
+    onSuccess: (_, { connectionId, wslConnectionId, dockerConnectionId }) => {
       const key =
-        wslConnectionId != null
-          ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
-          : projectQueryKeys.listByConnection(connectionId ?? "local");
+        dockerConnectionId != null
+          ? projectQueryKeys.listByConnection(`docker-${dockerConnectionId}`)
+          : wslConnectionId != null
+            ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
+            : projectQueryKeys.listByConnection(connectionId ?? "local");
       void queryClient.invalidateQueries({ queryKey: key });
       toast.success("Project created successfully");
     },

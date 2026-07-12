@@ -177,6 +177,24 @@ pub async fn read_session_file_binary(
                     .map_err(|e| format!("Cannot read downloaded file: {e}"))?
             }
         }
+        ConnectionKey::Docker { id: docker_id } => {
+            let (container_name, path_in_container) = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                let container_name: String = conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [docker_id],
+                    |row| row.get(0),
+                ).map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?;
+                (container_name, format!("{}/{}", cwd, relative_path))
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+            let b64 = crate::connectivity::docker::read_file_binary(&cli, &container_name, &path_in_container)
+                .map_err(|e| format!("Cannot read file from container: {e}"))?;
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.decode(b64.trim())
+                .map_err(|e| format!("Base64 decode failed: {e}"))?
+        }
     };
 
     use base64::Engine;

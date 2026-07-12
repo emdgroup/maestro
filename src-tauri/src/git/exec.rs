@@ -3,6 +3,47 @@ use crate::models::GitConnection;
 use tokio::process::Command as TokioCommand;
 use super::remote;
 
+pub(super) async fn run_docker_git(container_name: &str, path: &str, args: &[&str], ignore_exit_code: bool) -> Result<String, String> {
+    let cli = crate::connectivity::docker::ContainerCli::detect()
+        .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+    let mut cmd_args = vec!["exec", "-i", container_name, "git", "-C", path];
+    cmd_args.extend_from_slice(args);
+    let output = TokioCommand::new(cli.binary())
+        .args(&cmd_args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run {} exec git: {}", cli.binary(), e))?;
+    if !ignore_exit_code && !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Docker git error: {}", stderr));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+async fn run_docker_git_with_stdin(container_name: &str, path: &str, args: &[&str], stdin_data: &[u8]) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    let cli = crate::connectivity::docker::ContainerCli::detect()
+        .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+    let mut cmd_args = vec!["exec", "-i", container_name, "git", "-C", path];
+    cmd_args.extend_from_slice(args);
+    let mut child = TokioCommand::new(cli.binary())
+        .args(&cmd_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run {} exec git: {}", cli.binary(), e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(stdin_data).await.map_err(|e| format!("Failed to write git stdin: {}", e))?;
+    }
+    let output = child.wait_with_output().await.map_err(|e| format!("Failed to wait for docker git: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("Docker git error: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 pub(super) async fn run_wsl_git(distro: &str, path: &str, args: &[&str], ignore_exit_code: bool) -> Result<String, String> {
     // Disable SSL verification so git operations against internal servers with
     // self-signed certs work. WSL has a separate cert store from Windows.
@@ -86,6 +127,9 @@ pub async fn run_git_in_dir_with_stdin(
         GitConnection::Wsl { distro, .. } => {
             run_wsl_git_with_stdin(distro, abs_path, args, stdin_data).await
         }
+        GitConnection::Docker { container_name, .. } => {
+            run_docker_git_with_stdin(container_name, abs_path, args, stdin_data).await
+        }
     }
 }
 
@@ -124,6 +168,9 @@ async fn run_git_in_dir_inner(
         }
         GitConnection::Wsl { distro, .. } => {
             run_wsl_git(distro, abs_path, args, ignore_exit_code).await
+        }
+        GitConnection::Docker { container_name, .. } => {
+            run_docker_git(container_name, abs_path, args, ignore_exit_code).await
         }
     }
 }

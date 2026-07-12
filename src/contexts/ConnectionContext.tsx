@@ -3,6 +3,7 @@ import type {
   ConnectionKey,
   SshConnection,
   WslConnection,
+  DockerConnection,
   PreflightResult,
 } from "@/types/bindings";
 import { commands } from "@/types/bindings";
@@ -10,7 +11,7 @@ import { useConfigStore } from "@/store/configStore";
 
 type View = "connections" | "projects";
 
-type ConnectionType = "local" | "ssh" | "wsl";
+type ConnectionType = "local" | "ssh" | "wsl" | "docker";
 
 export type PreflightStatus = "idle" | "checking" | "passed" | "failed" | "failed-ignored";
 
@@ -22,6 +23,7 @@ export interface Connection {
   metadata?: string;
   sshConnection?: SshConnection;
   wslConnection?: WslConnection;
+  dockerConnection?: DockerConnection;
 }
 
 interface ConnectionContextValue {
@@ -55,11 +57,13 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
       if (preflightStatus === "checking") return;
 
       const connectionKey: ConnectionKey =
-        connection.type === "wsl" && connection.wslConnection
-          ? { type: "wsl", id: connection.wslConnection.id }
-          : connection.type === "ssh" && connection.sshConnection
-            ? { type: "ssh", id: connection.sshConnection.id }
-            : { type: "local" };
+        connection.type === "docker" && connection.dockerConnection
+          ? { type: "docker", id: connection.dockerConnection.id }
+          : connection.type === "wsl" && connection.wslConnection
+            ? { type: "wsl", id: connection.wslConnection.id }
+            : connection.type === "ssh" && connection.sshConnection
+              ? { type: "ssh", id: connection.sshConnection.id }
+              : { type: "local" };
 
       setPreflightStatus("checking");
       setPreflightResult(null);

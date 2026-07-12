@@ -1,5 +1,10 @@
 import { useState, useRef, useMemo, useCallback } from "react";
-import type { SshConnection, WslConnection } from "@/types/bindings";
+import type {
+  SshConnection,
+  WslConnection,
+  DockerConnection,
+  SshAuthMethod,
+} from "@/types/bindings";
 import { Connection, localConnectionId } from "@/contexts/ConnectionContext";
 import {
   useSshConnections,
@@ -12,6 +17,7 @@ import {
   useWslDistros,
   useWslConnections,
   useSaveWslConnection,
+  useDockerConnections,
 } from "@/services/connection.service";
 import type { AuthSubmission } from "@/views/project-picker/ssh-auth-modal/SshAuthModal";
 
@@ -19,29 +25,26 @@ interface sshConnectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
 }
 
-/**
- * Custom hook for managing SSH connections and authentication flow.
- *
- * Handles:
- * - Loading and managing SSH connections list
- * - Creating new SSH connections with parsing and validation
- * - Password authentication flow with modal management
- * - Building unified connections list (Local + SSH)
- *
- * @returns SSH connection state, handlers, and unified connections list
- */
+function toSshAuthMethod(auth: AuthSubmission): SshAuthMethod {
+  if (auth.method === "password") return { Password: { save_password: auth.savePassword } };
+  if (auth.method === "key-file")
+    return { KeyFile: { path: auth.keyPath, save_passphrase: auth.savePassphrase } };
+  return "Agent";
+}
+
 export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionManagerProps) {
   const [username, setUsername] = useState("");
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isNewConnection, setIsNewConnection] = useState(false);
+  const [pendingConnectionString, setPendingConnectionString] = useState<string | null>(null);
   const { data: sshConnections = [], refetch: refetchConnections } = useSshConnections();
   const { data: wslDistros = [] } = useWslDistros();
   const { data: wslConnections = [] } = useWslConnections();
   const { mutateAsync: saveWslConnection } = useSaveWslConnection();
+  const { data: dockerConnections = [] } = useDockerConnections();
 
-  // Service mutation hooks for SSH operations
   const { mutate: connectSsh } = useConnectSsh();
   const { mutate: connectSshWithAgent } = useConnectSshWithAgent();
   const { mutate: createSshConnection } = useCreateSshConnection();
@@ -79,13 +82,33 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     [],
   );
 
+  const buildDockerConnection = useCallback(
+    (dockerConn: DockerConnection): Connection => ({
+      type: "docker" as const,
+      id: `docker-${dockerConn.id}`,
+      displayName: dockerConn.display_name ?? dockerConn.container_name,
+      subtitle: dockerConn.image_name ?? dockerConn.container_name,
+      dockerConnection: dockerConn,
+    }),
+    [],
+  );
+
   const connections = useMemo(() => {
     const wslItems = wslDistros.map((distro) => {
       const saved = wslConnections.find((c) => c.distro_name === distro.name);
       return buildWslConnection(distro.name, saved);
     });
-    return [local.current, ...wslItems, ...sshConnections.map(buildConnection)];
-  }, [sshConnections, wslDistros, wslConnections, buildConnection, buildWslConnection]);
+    const dockerItems = dockerConnections.map(buildDockerConnection);
+    return [local.current, ...wslItems, ...dockerItems, ...sshConnections.map(buildConnection)];
+  }, [
+    sshConnections,
+    wslDistros,
+    wslConnections,
+    dockerConnections,
+    buildConnection,
+    buildWslConnection,
+    buildDockerConnection,
+  ]);
 
   const savedKeyFiles = useMemo(() => {
     const keyMap = new Map<string, boolean>();
@@ -104,9 +127,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
 
   const getConnectionById = async (id: number): Promise<Connection | null> => {
     try {
-      // Refetch to ensure we have the latest data (TanStack Query will update cache)
       const { data } = await refetchConnections();
-
       const sshConn = data?.find((conn) => conn.id === id);
       return sshConn ? buildConnection(sshConn) : null;
     } catch (error) {
@@ -115,6 +136,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     }
   };
 
+  // Used for reconnecting to existing saved connections.
   const initiateConnection = async (connId: number) => {
     setLoading(true);
     setConnectionId(connId);
@@ -123,9 +145,7 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
       {
         onSuccess: async () => {
           const connection = await getConnectionById(connId);
-          if (connection) {
-            onConnectionSuccess(connection);
-          }
+          if (connection) onConnectionSuccess(connection);
         },
         onError: () => setShowAuthModal(true),
         onSettled: () => setLoading(false),
@@ -133,11 +153,55 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     );
   };
 
+  // Shared connect-with-method logic for both paths.
+  // isNew=true: delete record on connect failure (new connection rollback).
+  // isNew=false: keep record on failure (reconnect to existing connection).
+  const connectWithAuth = (connId: number, auth: AuthSubmission, isNew: boolean) => {
+    const options = {
+      onSuccess: async () => {
+        const connection = await getConnectionById(connId);
+        if (connection) onConnectionSuccess(connection);
+        setShowAuthModal(false);
+        setIsNewConnection(false);
+        setPendingConnectionString(null);
+      },
+      onError: () => {
+        if (isNew) {
+          deleteSshConnection(connId);
+          setConnectionId(null);
+          // Keep modal open — user can retry with a different method.
+        }
+      },
+      onSettled: () => setLoading(false),
+    };
+
+    if (auth.method === "password") {
+      connectSshWithCreds(
+        { connectionId: connId, password: auth.password, savePassword: auth.savePassword },
+        options,
+      );
+    } else if (auth.method === "key-file") {
+      connectSshWithKey(
+        {
+          connectionId: connId,
+          keyPath: auth.keyPath,
+          passphrase: auth.passphrase,
+          savePassphrase: auth.savePassphrase,
+        },
+        options,
+      );
+    } else {
+      connectSshWithAgent({ connectionId: connId }, options);
+    }
+  };
+
   const handleConnection = async (connection: Connection) => {
     setIsNewConnection(false);
     setUsername(connection.sshConnection?.username ?? "");
     if (connection.type === "local") {
       onConnectionSuccess(local.current);
+    } else if (connection.type === "docker") {
+      onConnectionSuccess(connection);
     } else if (connection.type === "wsl") {
       setLoading(true);
       try {
@@ -155,69 +219,75 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     }
   };
 
-  const handleNewConnection = async (connectionString: string) => {
-    setLoading(true);
+  // Try SSH agent silently first. Modal only appears if agent auth fails.
+  // This way agent users get a transparent connection experience.
+  const handleNewConnection = (connectionString: string) => {
     setIsNewConnection(true);
     setUsername(connectionString.split("@")[0]);
+    setPendingConnectionString(connectionString);
+    setConnectionId(null);
+    setLoading(true);
+
     createSshConnection(
+      { connectionString, authMethod: "Agent" },
       {
-        connectionString,
-        authMethod: "Agent", // Default to Agent auth
-      },
-      {
-        onSuccess: async (connectionIdResult) => {
-          await initiateConnection(connectionIdResult);
+        onSuccess: (connId) => {
+          setConnectionId(connId);
+          connectSsh(
+            { connectionId: connId },
+            {
+              onSuccess: async () => {
+                const conn = await getConnectionById(connId);
+                if (conn) onConnectionSuccess(conn);
+                setIsNewConnection(false);
+                setPendingConnectionString(null);
+              },
+              onError: () => setShowAuthModal(true),
+              onSettled: () => setLoading(false),
+            },
+          );
         },
-        onSettled: () => setLoading(false),
+        onError: () => setLoading(false),
       },
     );
   };
 
   const handleAuthSubmit = async (auth: AuthSubmission) => {
-    if (connectionId === null) return;
-    const options = {
-      onSuccess: async () => {
-        const connection = await getConnectionById(connectionId);
-        if (connection) onConnectionSuccess(connection);
-        setShowAuthModal(false);
-      },
-      onSettled: () => {
-        setLoading(false);
-      },
-    };
-
-    setLoading(true);
-
-    if (auth.method === "password") {
-      connectSshWithCreds(
-        {
-          connectionId,
-          password: auth.password,
-          savePassword: auth.savePassword,
-        },
-        { ...options },
-      );
-    } else if (auth.method === "key-file") {
-      connectSshWithKey(
-        {
-          connectionId,
-          keyPath: auth.keyPath,
-          passphrase: auth.passphrase,
-          savePassphrase: auth.savePassphrase,
-        },
-        { ...options },
-      );
-    } else {
-      // agent — use dedicated agent auth handler
-      connectSshWithAgent({ connectionId }, { ...options });
+    if (isNewConnection) {
+      setLoading(true);
+      if (connectionId !== null) {
+        // Record exists from the agent attempt — connect with the chosen method.
+        connectWithAuth(connectionId, auth, true);
+      } else if (pendingConnectionString !== null) {
+        // Previous connect attempt failed and rolled back the record — re-create.
+        createSshConnection(
+          { connectionString: pendingConnectionString, authMethod: toSshAuthMethod(auth) },
+          {
+            onSuccess: (connId) => {
+              setConnectionId(connId);
+              connectWithAuth(connId, auth, true);
+            },
+            onError: () => setLoading(false),
+          },
+        );
+      }
+      return;
     }
+
+    // Reconnect path: record already exists, just re-authenticate. Never delete.
+    if (connectionId === null) return;
+    setLoading(true);
+    connectWithAuth(connectionId, auth, false);
   };
 
   const handleAuthCancel = () => {
-    if (isNewConnection && !!connectionId) {
+    if (isNewConnection && connectionId !== null) {
       void deleteSshConnection(connectionId);
     }
     setShowAuthModal(false);
+    setIsNewConnection(false);
+    setPendingConnectionString(null);
+    setConnectionId(null);
   };
 
   return {
@@ -230,6 +300,6 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     handleNewConnection,
     handleAuthSubmit,
     handleAuthCancel,
-    refetchConnections, // Export for manual refetch if needed
+    refetchConnections,
   };
 }

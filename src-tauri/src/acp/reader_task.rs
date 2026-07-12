@@ -107,11 +107,6 @@ pub(crate) fn spawn_reader_task(
         }
 
         app_state.acp.sessions.lock().await.remove(&log_id);
-        if let Some(tid) = task_id {
-            if try_complete_task(&app_state, tid).await {
-                app_state.app_handle.emit("tasks-changed", ()).ok();
-            }
-        }
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
             eprintln!("[acp] emit session-ended/{log_id} failed: {e}");
@@ -132,21 +127,21 @@ async fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> b
 }
 
 async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i32) -> bool {
-    let result: Option<(i32, String, Option<i32>, Option<i32>)> = app_state.db.lock().ok().and_then(|conn| {
+    let result: Option<(i32, String, Option<i32>, Option<i32>, Option<i32>)> = app_state.db.lock().ok().and_then(|conn| {
         conn.query_row(
-            "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id \
+            "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id \
              FROM tasks t JOIN projects p ON t.project_id = p.id \
              WHERE t.id = ?",
             [task_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         ).ok()
     });
 
-    let Some((project_id, path, connection_id, wsl_connection_id)) = result else {
+    let Some((project_id, path, connection_id, wsl_connection_id, docker_connection_id)) = result else {
         return true;
     };
 
-    if connection_id.is_none() && wsl_connection_id.is_none() {
+    if connection_id.is_none() && wsl_connection_id.is_none() && docker_connection_id.is_none() {
         return std::path::Path::new(&path).join(".git").exists();
     }
 
@@ -705,32 +700,18 @@ async fn handle_shared_server_message(
             ));
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
-            let mut task_ids: Vec<i32> = Vec::new();
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {
-                    let tid = {
-                        let sessions = app_state.acp.sessions.lock().await;
-                        sessions.get(&log_id).and_then(|s| s.task_id)
-                    };
-                    if let Some(tid) = tid {
-                        task_ids.push(tid);
-                    }
                     app_state.acp.sessions.lock().await.remove(&log_id);
                     if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
                         eprintln!("[acp] emit session-ended/{log_id} failed: {e}");
                     }
                 }
             }
-            for tid in task_ids {
-                try_complete_task(app_state, tid).await;
-            }
             append_debug_log(&format!(
                 "[acp] agent-connection-lost agent={} reason={} sessions={:?}",
                 lost.agent_id, lost.reason, lost.affected_session_ids
             ));
-            if !lost.affected_session_ids.is_empty() {
-                app_state.app_handle.emit("tasks-changed", ()).ok();
-            }
             app_state.app_handle.emit("sessions-changed", ()).ok();
         }
         MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
@@ -990,12 +971,10 @@ pub(crate) fn spawn_shared_reader_task(
         // Snapshot restorable metadata before removing sessions from the map.
         // Sessions without an acp_session_id haven't received SpawnOk yet and cannot
         // be restored — emit session-ended for those immediately.
-        // Collect task_ids for sessions that will end now (not parked for SSH restore).
-        let (to_restore, to_end_now, end_now_task_ids): (Vec<RestorableSession>, Vec<i32>, Vec<i32>) = {
+        let (to_restore, to_end_now): (Vec<RestorableSession>, Vec<i32>) = {
             let sessions = app_state.acp.sessions.lock().await;
             let mut restorable: Vec<RestorableSession> = Vec::new();
             let mut unrestorable: Vec<i32> = Vec::new();
-            let mut task_ids: Vec<i32> = Vec::new();
             let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. });
             for (log_id, s) in sessions.iter().filter(|(_, s)| s.connection_key == connection_key) {
                 let acp_session_id = s.acp_session_id.lock().ok().and_then(|g| g.clone());
@@ -1011,12 +990,9 @@ pub(crate) fn spawn_shared_reader_task(
                     });
                 } else {
                     unrestorable.push(*log_id);
-                    if let Some(tid) = s.task_id {
-                        task_ids.push(tid);
-                    }
                 }
             }
-            (restorable, unrestorable, task_ids)
+            (restorable, unrestorable)
         };
 
         // Remove all affected sessions from the map.
@@ -1036,9 +1012,6 @@ pub(crate) fn spawn_shared_reader_task(
                 eprintln!("[acp] emit session-ended/{log_id} failed: {e}");
             }
         }
-        for tid in &end_now_task_ids {
-            try_complete_task(&app_state, *tid).await;
-        }
 
         // SSH connections only: park restorable sessions for the reconnect handler.
         // Local and WSL have no reconnect path — end immediately.
@@ -1053,9 +1026,6 @@ pub(crate) fn spawn_shared_reader_task(
                     }
                 }
             }
-        }
-        if !end_now_task_ids.is_empty() {
-            app_state.app_handle.emit("tasks-changed", ()).ok();
         }
 
         app_state.app_handle.emit("sessions-changed", ()).ok();

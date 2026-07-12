@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from "react";
 import { Button } from "@/ui/button";
-import type { SshConnection, WslConnection } from "@/types/bindings";
+import type { SshConnection, WslConnection, DockerConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
@@ -14,12 +14,24 @@ import {
 import { usePathNavigation } from "@/utils/hooks/usePathNavigation";
 import { useKeyboardNavigation } from "@/utils/hooks/useKeyboardNavigation";
 import { useFilePickerInitialization } from "@/utils/hooks/useFilePickerInitialization";
-import { useListDirectories, useWslDirectories, useWslHome } from "@/services/connection.service";
+import {
+  useListDirectories,
+  useWslDirectories,
+  useWslHome,
+  useDockerDirectories,
+  useDockerHome,
+} from "@/services/connection.service";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
   wslConnection?: WslConnection | null;
-  onProjectSelect: (path: string, connectionId?: number, wslConnectionId?: number) => void;
+  dockerConnection?: DockerConnection | null;
+  onProjectSelect: (
+    path: string,
+    connectionId?: number,
+    wslConnectionId?: number,
+    dockerConnectionId?: number,
+  ) => void;
   loading?: boolean;
 }
 
@@ -28,10 +40,11 @@ const DRIVES_ROOT = "<<DRIVES>>";
 export function FilePicker({
   connection,
   wslConnection,
+  dockerConnection,
   onProjectSelect,
   loading: externalLoading = false,
 }: FilePickerProps) {
-  const isLocal = !connection && !wslConnection;
+  const isLocal = !connection && !wslConnection && !dockerConnection;
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Custom hooks handle all business logic
@@ -39,6 +52,7 @@ export function FilePicker({
   const { setSelectedIndex: resetKeyboardIndex } = keyboard;
   const initialization = useFilePickerInitialization(isLocal, connection);
   const { data: wslHome } = useWslHome(wslConnection?.distro_name ?? "");
+  const { data: dockerHome } = useDockerHome(dockerConnection?.container_name ?? "");
   const navigation = usePathNavigation(isLocal, initialization.drives);
   const { data: sshDirectories = [], isLoading: sshLoading } = useListDirectories(
     connection?.id,
@@ -48,16 +62,36 @@ export function FilePicker({
     wslConnection?.distro_name ?? "",
     navigation.currentPath,
   );
-  const directories = wslConnection ? wslDirectories : sshDirectories;
-  const directoriesLoading = wslConnection ? wslLoading : sshLoading;
+  const { data: dockerDirectories = [], isLoading: dockerLoading } = useDockerDirectories(
+    dockerConnection?.container_name ?? "",
+    navigation.currentPath,
+  );
+  const directories = wslConnection
+    ? wslDirectories
+    : dockerConnection
+      ? dockerDirectories
+      : sshDirectories;
+  const directoriesLoading = wslConnection
+    ? wslLoading
+    : dockerConnection
+      ? dockerLoading
+      : sshLoading;
 
-  // Set initial path when initialization completes (WSL uses home dir, local/SSH use standard init)
+  // Set initial path when initialization completes (WSL/Docker use home dir, local/SSH use standard init)
   const prevInitialized = useRef(false);
   if (!prevInitialized.current && !navigation.currentPath) {
     if (wslConnection && wslHome) {
       prevInitialized.current = true;
       navigation.setCurrentPath(wslHome);
-    } else if (!wslConnection && initialization.isInitialized && initialization.initialPath) {
+    } else if (dockerConnection && dockerHome) {
+      prevInitialized.current = true;
+      navigation.setCurrentPath(dockerHome);
+    } else if (
+      !wslConnection &&
+      !dockerConnection &&
+      initialization.isInitialized &&
+      initialization.initialPath
+    ) {
       prevInitialized.current = true;
       navigation.setCurrentPath(initialization.initialPath);
     }
@@ -134,8 +168,19 @@ export function FilePicker({
   }, [keyboard, navigation, initialization.drives, visibleDirectories, isLocal]);
 
   const handleSelectCurrentDirectory = useCallback(() => {
-    onProjectSelect(navigation.currentPath, connection?.id, wslConnection?.id);
-  }, [navigation.currentPath, connection?.id, wslConnection?.id, onProjectSelect]);
+    onProjectSelect(
+      navigation.currentPath,
+      connection?.id,
+      wslConnection?.id,
+      dockerConnection?.id,
+    );
+  }, [
+    navigation.currentPath,
+    connection?.id,
+    wslConnection?.id,
+    dockerConnection?.id,
+    onProjectSelect,
+  ]);
 
   // Compute loading state
   const loading = directoriesLoading || initialization.isLoading;
@@ -155,6 +200,11 @@ export function FilePicker({
         )}
         {wslConnection && (
           <p className="text-sm text-muted-foreground">WSL: {wslConnection.distro_name}</p>
+        )}
+        {dockerConnection && (
+          <p className="text-sm text-muted-foreground">
+            Container: {dockerConnection.container_name}
+          </p>
         )}
       </div>
 
