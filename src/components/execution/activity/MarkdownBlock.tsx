@@ -244,7 +244,7 @@ function ProxiedImage({
         src={resolvedSrc}
         alt={alt ?? ""}
         width={width}
-        className="inline-block max-w-full rounded-md my-2"
+        className="inline-block align-middle max-w-full rounded-md my-2"
         loading="lazy"
       />
     );
@@ -261,7 +261,7 @@ function ProxiedImage({
   );
 
   return (
-    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
+    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block align-middle">
       {imgEl}
     </ZoomableContent>
   );
@@ -283,7 +283,7 @@ function MarkdownImgComponent({
         src={src}
         alt={alt ?? ""}
         width={width}
-        className="inline-block max-w-full rounded-md my-2"
+        className="inline-block align-middle max-w-full rounded-md my-2"
         loading="lazy"
       />
     );
@@ -298,7 +298,7 @@ function MarkdownImgComponent({
     />
   );
   return (
-    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block">
+    <ZoomableContent ariaLabel={alt || "Image"} className="inline-block align-middle">
       {imgEl}
     </ZoomableContent>
   );
