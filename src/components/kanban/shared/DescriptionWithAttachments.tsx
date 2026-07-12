@@ -1,7 +1,7 @@
 import { Paperclip, Upload } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
-import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";
+import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 
 interface DescriptionWithAttachmentsProps {
   value: string;
@@ -25,8 +25,7 @@ export function DescriptionWithAttachments({
       <div
         className={cn("flex-1 min-h-0 overflow-y-auto custom-scrollbar", isDragging && "invisible")}
       >
-        <EditableField
-          multiline
+        <MarkdownEditor
           value={value}
           onSave={onSave}
           isEditable={isEditable}
