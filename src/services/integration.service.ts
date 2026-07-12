@@ -69,7 +69,8 @@ export function useSaveIntegration() {
 export function useDeleteIntegration() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (provider: string) => api.deleteIntegration(provider),
+    mutationFn: ({ provider, id }: { provider: string; id: string }) =>
+      api.deleteIntegration(provider, id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: integrationQueryKeys.list() });
     },

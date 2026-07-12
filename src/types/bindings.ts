@@ -2030,7 +2030,9 @@ export const commands = {
     }
   },
   /**
-   * Probe all known provider keys in the keyring and return their connection status.
+   * List all connected integrations from the registry.
+   * Runs a silent one-time migration: if the registry is empty for a known provider
+   * but a legacy key exists, moves it to the new keyed format.
    * For GitHub, also probes the gh CLI as a fallback credential source.
    * Raw tokens are never returned — only IntegrationStatus (D-01 security constraint).
    */
@@ -2044,7 +2046,7 @@ export const commands = {
   },
   /**
    * Validate credentials against the provider API and store them globally in the keyring.
-   * Returns the display name from the provider on success.
+   * Generates a new UUID for this account. Returns the display name from the provider.
    * Raw tokens are never returned to the frontend (D-01).
    */
   async saveIntegration(
@@ -2064,11 +2066,11 @@ export const commands = {
     }
   },
   /**
-   * Remove stored credentials for a provider from the keyring and file fallback.
+   * Remove stored credentials for a specific account (provider + id).
    */
-  async deleteIntegration(provider: string): Promise<Result<null, string>> {
+  async deleteIntegration(provider: string, id: string): Promise<Result<null, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("delete_integration", { provider }) };
+      return { status: "ok", data: await TAURI_INVOKE("delete_integration", { provider, id }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -2566,6 +2568,7 @@ export type GitLabProjectOption = {
  * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */
 export type IntegrationStatus = {
+  id: string;
   provider: string;
   connected: boolean;
   display_name: string | null;
@@ -2638,6 +2641,7 @@ export type ProjectConfigResponse = {
 };
 export type ProjectIssueTrackingConfig = {
   provider: string;
+  integration_id?: string | null;
   owner?: string | null;
   repo?: string | null;
   project_path?: string | null;

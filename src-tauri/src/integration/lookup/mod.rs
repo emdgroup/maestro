@@ -1,5 +1,4 @@
 use crate::core::AppState;
-use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 
 pub mod atlassian;
 pub mod forgejo_gitea;
@@ -65,11 +64,9 @@ pub(crate) async fn fetch_all_pages<T: serde::de::DeserializeOwned>(
 }
 
 pub(crate) async fn get_github_token(app_state: &AppState) -> Result<String, String> {
-    match KeychainStore::get_integration("github", &app_state.app_data_dir)? {
-        KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
-            Ok(creds.token)
-        }
-        KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
+    match crate::integration::issue_tracking_handlers::get_integration_creds("github", app_state) {
+        Ok(creds) => Ok(creds.token),
+        Err(_) => {
             crate::integration::github::try_gh_cli_token()
                 .await
                 .ok_or_else(|| "No GitHub credentials found".to_string())

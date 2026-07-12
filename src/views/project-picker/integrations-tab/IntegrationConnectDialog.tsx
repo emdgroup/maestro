@@ -19,6 +19,7 @@ interface IntegrationConnectDialogProps {
   provider: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: (id: string) => void;
 }
 
 function BitbucketModeToggle({
@@ -55,6 +56,7 @@ export function IntegrationConnectDialog({
   provider,
   open,
   onOpenChange,
+  onSuccess,
 }: IntegrationConnectDialogProps) {
   const [token, setToken] = useState("");
   const [instanceUrl, setInstanceUrl] = useState("");
@@ -131,7 +133,7 @@ export function IntegrationConnectDialog({
     if (isSubmitDisabled) return;
     setError(null);
     try {
-      await saveIntegration({
+      const id = await saveIntegration({
         provider,
         token: token.trim(),
         instanceUrl: isBitbucket
@@ -146,6 +148,7 @@ export function IntegrationConnectDialog({
           : email.trim() || null,
       });
       handleOpenChange(false);
+      onSuccess?.(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

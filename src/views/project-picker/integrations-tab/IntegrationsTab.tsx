@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { X, CircleDot, GitBranch } from "lucide-react";
-import { Button } from "@/ui/button";
+import { Plus, CircleDot, GitBranch } from "lucide-react";
 import {
   useListIntegrations,
   useDeleteIntegration,
   PROVIDER_NAMES,
   PROVIDER_CAPABILITIES,
 } from "@/services/integration.service";
+import type { IntegrationStatus } from "@/services/integration.service";
 import { IntegrationConnectDialog } from "./IntegrationConnectDialog";
+import { IntegrationDetailModal } from "./IntegrationDetailModal";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
+import { PanelHeader } from "@/views/project-picker/connection-list/PanelHeader";
 
-// Ordered as: row 1: Jira Cloud, Bitbucket | row 2: GitHub, GitLab | row 3: Gitea, Forgejo | row 4: Azure DevOps, Linear
 const ALL_PROVIDERS = [
   "jira_cloud",
   "bitbucket",
@@ -35,102 +36,138 @@ function CapabilityTag({ capability }: { capability: string }) {
   );
 }
 
-export function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
-  return <BrandIcon slug={provider} className={className} width={28} height={28} />;
-}
+type Screen = "list" | "provider-picker";
 
 export function IntegrationsTab() {
+  const [screen, setScreen] = useState<Screen>("list");
   const [connectProvider, setConnectProvider] = useState<string | null>(null);
-  const { data: integrations, isLoading } = useListIntegrations();
+  const [detailIntegration, setDetailIntegration] = useState<IntegrationStatus | null>(null);
+  const { data: integrations = [], isLoading } = useListIntegrations();
   const { mutate: deleteIntegration } = useDeleteIntegration();
 
-  const statusMap = new Map(integrations?.map((s) => [s.provider, s]) ?? []);
+  const panelOffset = screen === "list" ? 0 : -50;
 
   return (
-    <div className="flex flex-col h-full">
-      {isLoading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-          Loading...
-        </div>
-      ) : (
-        <div className="flex-1 overflow-auto px-1 py-1 custom-scrollbar">
-          <div className="grid grid-cols-2 gap-2">
-            {ALL_PROVIDERS.map((provider) => {
-              const status = statusMap.get(provider);
-              const connected = status?.connected ?? false;
-              const displayName = status?.display_name ?? null;
-              const source = status?.source ?? null;
-              const isGhCli = source === "gh_cli";
+    <>
+      <div className="h-full overflow-hidden">
+        <div
+          className="flex h-full transition-transform duration-300 ease-in-out"
+          style={{ width: "200%", transform: `translateX(${panelOffset}%)` }}
+        >
+          {/* Panel 0 — integration list */}
+          <div className="w-1/2 h-full flex flex-col min-w-0">
+            {isLoading ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto px-1 py-1 custom-scrollbar">
+                <ul className="space-y-2">
+                  {integrations.map((integration) => (
+                    <li key={integration.id}>
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-accent transition-colors text-left group"
+                        onClick={() => setDetailIntegration(integration)}
+                      >
+                        <div className="relative shrink-0">
+                          <BrandIcon slug={integration.provider} className="w-7 h-7" />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+                        </div>
 
-              return (
-                <div
-                  key={provider}
-                  className={`flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors ${!connected ? "cursor-pointer" : ""}`}
-                  onClick={!connected ? () => setConnectProvider(provider) : undefined}
-                >
-                  <div className="relative shrink-0">
-                    <ProviderIcon provider={provider} className="w-7 h-7" />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-background ${
-                        connected ? "bg-emerald-500" : "bg-muted-foreground/40"
-                      }`}
-                    />
-                  </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium group-hover:text-accent transition-colors">
+                            {PROVIDER_NAMES[integration.provider] ?? integration.provider}
+                          </p>
+                          {integration.display_name && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {integration.display_name}
+                              {integration.source === "gh_cli" && (
+                                <span className="ml-1 bg-muted rounded px-1">gh cli</span>
+                              )}
+                            </p>
+                          )}
+                          <div className="flex gap-1 mt-0.5">
+                            {(PROVIDER_CAPABILITIES[integration.provider] ?? []).map((cap) => (
+                              <CapabilityTag key={cap} capability={cap} />
+                            ))}
+                          </div>
+                        </div>
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {PROVIDER_NAMES[provider] ?? provider}
-                    </p>
-                    {connected && (displayName || isGhCli) && (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        {displayName && (
-                          <p className="text-xs text-muted-foreground truncate">{displayName}</p>
-                        )}
-                        {isGhCli && (
-                          <span className="text-xs text-muted-foreground bg-muted rounded px-1 shrink-0">
-                            gh cli
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex gap-1 mt-0.5">
-                      {(PROVIDER_CAPABILITIES[provider] ?? []).map((cap) => (
-                        <CapabilityTag key={cap} capability={cap} />
-                      ))}
-                    </div>
-                  </div>
+                        <span className="text-muted-foreground shrink-0 text-xs">›</span>
+                      </button>
+                    </li>
+                  ))}
 
-                  {connected && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 h-6 w-6"
-                      disabled={isGhCli}
-                      title={
-                        isGhCli ? "Managed by gh CLI" : `Disconnect ${PROVIDER_NAMES[provider]}`
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteIntegration(provider);
-                      }}
+                  <li key="add">
+                    <button
+                      type="button"
+                      onClick={() => setScreen("provider-picker")}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-border/50 text-muted-foreground hover:border-accent hover:text-accent transition-colors"
                     >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
+                      <Plus className="w-4 h-4 shrink-0" />
+                      <span className="text-sm">Add integration</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Panel 1 — provider picker */}
+          <div className="w-1/2 h-full flex flex-col min-w-0">
+            <PanelHeader onBack={() => setScreen("list")} title="Add integration" />
+            <div className="flex-1 overflow-auto p-2 custom-scrollbar">
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_PROVIDERS.map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-accent transition-colors text-left"
+                    onClick={() => setConnectProvider(provider)}
+                  >
+                    <BrandIcon slug={provider} className="w-7 h-7 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {PROVIDER_NAMES[provider] ?? provider}
+                      </p>
+                      <div className="flex gap-1 mt-0.5">
+                        {(PROVIDER_CAPABILITIES[provider] ?? []).map((cap) => (
+                          <CapabilityTag key={cap} capability={cap} />
+                        ))}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
       <IntegrationConnectDialog
         provider={connectProvider ?? ""}
         open={connectProvider !== null}
-        onOpenChange={(open: boolean) => {
+        onOpenChange={(open) => {
           if (!open) setConnectProvider(null);
         }}
+        onSuccess={(_id) => {
+          setConnectProvider(null);
+          setScreen("list");
+        }}
       />
-    </div>
+
+      <IntegrationDetailModal
+        integration={detailIntegration}
+        open={detailIntegration !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailIntegration(null);
+        }}
+        onDisconnect={(integration) => {
+          deleteIntegration({ provider: integration.provider, id: integration.id });
+          setDetailIntegration(null);
+        }}
+      />
+    </>
   );
 }

@@ -5,6 +5,7 @@ use specta::Type;
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct IntegrationStatus {
+    pub id: String,
     pub provider: String,
     pub connected: bool,
     pub display_name: Option<String>,
@@ -25,6 +26,9 @@ pub enum CredentialSource {
 /// Stored as JSON blob in keyring or encrypted file fallback. NOT exported to TS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrationCredentials {
+    /// Empty string means this record was migrated from legacy storage and needs a UUID assigned.
+    #[serde(default)]
+    pub id: String,
     pub token: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instance_url: Option<String>,

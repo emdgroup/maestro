@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use aes_gcm::{
@@ -22,8 +23,22 @@ pub enum KeychainOutcome<T> {
 
 const SERVICE: &str = "maestro.ticketing";
 
-fn integration_key(provider: &str) -> String {
+fn integration_key_legacy(provider: &str) -> String {
     format!("maestro:integration:{}", provider)
+}
+
+fn integration_key(provider: &str, id: &str) -> String {
+    format!("maestro:integration:{}:{}", provider, id)
+}
+
+fn integration_file_path_for_id(provider: &str, id: &str, app_data_dir: &Path) -> PathBuf {
+    app_data_dir
+        .join("tokens")
+        .join(format!("{}_{}.enc", provider, id))
+}
+
+fn registry_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("integrations_registry.json")
 }
 
 fn username(project_id: i32) -> String {
@@ -33,32 +48,70 @@ fn username(project_id: i32) -> String {
 pub struct KeychainStore;
 
 impl KeychainStore {
-    // ── New provider-keyed API (Phase 55) ────────────────────────────────────
+    // ── Registry helpers ──────────────────────────────────────────────────────
 
-    pub fn store_integration(
+    pub fn read_registry(app_data_dir: &Path) -> HashMap<String, Vec<String>> {
+        let path = registry_path(app_data_dir);
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn write_registry(registry: &HashMap<String, Vec<String>>, app_data_dir: &Path) -> Result<(), String> {
+        let json = serde_json::to_string(registry)
+            .map_err(|e| format!("Registry serialization failed: {}", e))?;
+        std::fs::write(registry_path(app_data_dir), json)
+            .map_err(|e| format!("Failed to write registry: {}", e))
+    }
+
+    fn registry_add(provider: &str, id: &str, app_data_dir: &Path) -> Result<(), String> {
+        let mut registry = Self::read_registry(app_data_dir);
+        let ids = registry.entry(provider.to_string()).or_default();
+        if !ids.contains(&id.to_string()) {
+            ids.push(id.to_string());
+        }
+        Self::write_registry(&registry, app_data_dir)
+    }
+
+    fn registry_remove(provider: &str, id: &str, app_data_dir: &Path) -> Result<(), String> {
+        let mut registry = Self::read_registry(app_data_dir);
+        if let Some(ids) = registry.get_mut(provider) {
+            ids.retain(|existing_id| existing_id != id);
+        }
+        Self::write_registry(&registry, app_data_dir)
+    }
+
+    // ── ID-keyed integration API ──────────────────────────────────────────────
+
+    pub fn store_integration_by_id(
         provider: &str,
+        id: &str,
         creds: &IntegrationCredentials,
         app_data_dir: &Path,
     ) -> Result<KeychainOutcome<()>, String> {
         let json = serde_json::to_string(creds)
             .map_err(|e| format!("Serialization failed: {}", e))?;
-        let entry = Entry::new(SERVICE, &integration_key(provider))
+        let entry = Entry::new(SERVICE, &integration_key(provider, id))
             .map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.set_password(&json) {
-            Ok(()) => Ok(KeychainOutcome::Keychain(())),
+        let outcome = match entry.set_password(&json) {
+            Ok(()) => KeychainOutcome::Keychain(()),
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
-                Self::write_integration_to_file(provider, creds, app_data_dir)?;
-                Ok(KeychainOutcome::FileFallback(()))
+                Self::write_integration_to_file_by_id(provider, id, creds, app_data_dir)?;
+                KeychainOutcome::FileFallback(())
             }
-            Err(e) => Err(format!("Failed to save integration: {}", e)),
-        }
+            Err(e) => return Err(format!("Failed to save integration: {}", e)),
+        };
+        Self::registry_add(provider, id, app_data_dir)?;
+        Ok(outcome)
     }
 
-    pub fn get_integration(
+    pub fn get_integration_by_id(
         provider: &str,
+        id: &str,
         app_data_dir: &Path,
     ) -> Result<KeychainOutcome<Option<IntegrationCredentials>>, String> {
-        let entry = Entry::new(SERVICE, &integration_key(provider))
+        let entry = Entry::new(SERVICE, &integration_key(provider, id))
             .map_err(|e| format!("Keyring error: {}", e))?;
         match entry.get_password() {
             Ok(json) => {
@@ -68,25 +121,24 @@ impl KeychainStore {
             }
             Err(keyring::Error::NoEntry) => Ok(KeychainOutcome::Keychain(None)),
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
-                let result = Self::read_integration_from_file(provider, app_data_dir)?;
+                let result = Self::read_integration_from_file_by_id(provider, id, app_data_dir)?;
                 Ok(KeychainOutcome::FileFallback(result))
             }
             Err(e) => Err(format!("Keyring error: {}", e)),
         }
     }
 
-    pub fn delete_integration(
+    pub fn delete_integration_by_id(
         provider: &str,
+        id: &str,
         app_data_dir: &Path,
     ) -> Result<KeychainOutcome<()>, String> {
-        let entry = Entry::new(SERVICE, &integration_key(provider))
+        let entry = Entry::new(SERVICE, &integration_key(provider, id))
             .map_err(|e| format!("Keyring error: {}", e))?;
         let keyring_result = entry.delete_credential();
-        // Always attempt to clean up the file fallback too, regardless of whether
-        // the keyring had an entry — a token may have been written to the file
-        // fallback on a previous run where the keyring was unavailable, and later
-        // the keyring became accessible again.
-        let _ = Self::delete_integration_file(provider, app_data_dir);
+        // Clean up file fallback regardless of keyring result.
+        let _ = std::fs::remove_file(integration_file_path_for_id(provider, id, app_data_dir));
+        let _ = Self::registry_remove(provider, id, app_data_dir);
         match keyring_result {
             Ok(()) => Ok(KeychainOutcome::Keychain(())),
             Err(keyring::Error::NoEntry) => Ok(KeychainOutcome::Keychain(())),
@@ -97,12 +149,9 @@ impl KeychainStore {
         }
     }
 
-    fn integration_file_path(provider: &str, app_data_dir: &Path) -> PathBuf {
-        app_data_dir.join("tokens").join(format!("{}.enc", provider))
-    }
-
-    fn write_integration_to_file(
+    fn write_integration_to_file_by_id(
         provider: &str,
+        id: &str,
         creds: &IntegrationCredentials,
         app_data_dir: &Path,
     ) -> Result<(), String> {
@@ -121,20 +170,65 @@ impl KeychainStore {
             .map_err(|e| format!("Encryption failed: {}", e))?;
         let mut output = nonce.to_vec();
         output.extend_from_slice(&ciphertext);
-        std::fs::write(Self::integration_file_path(provider, app_data_dir), &output)
+        std::fs::write(integration_file_path_for_id(provider, id, app_data_dir), &output)
             .map_err(|e| format!("Failed to write integration file: {}", e))?;
         Ok(())
     }
 
-    fn read_integration_from_file(
+    fn read_integration_from_file_by_id(
+        provider: &str,
+        id: &str,
+        app_data_dir: &Path,
+    ) -> Result<Option<IntegrationCredentials>, String> {
+        Self::decrypt_integration_file(&integration_file_path_for_id(provider, id, app_data_dir), app_data_dir)
+    }
+
+    // ── Legacy provider-keyed API (for one-time migration) ────────────────────
+
+    /// Reads from the old `maestro:integration:{provider}` key (no UUID). Used
+    /// only by `list_integrations` during the one-time migration on first launch.
+    pub fn get_legacy_integration(
         provider: &str,
         app_data_dir: &Path,
     ) -> Result<Option<IntegrationCredentials>, String> {
-        let path = Self::integration_file_path(provider, app_data_dir);
+        let entry = Entry::new(SERVICE, &integration_key_legacy(provider))
+            .map_err(|e| format!("Keyring error: {}", e))?;
+        match entry.get_password() {
+            Ok(json) => {
+                let creds = serde_json::from_str::<IntegrationCredentials>(&json)
+                    .map_err(|e| format!("Integration deserialization failed: {}", e))?;
+                Ok(Some(creds))
+            }
+            Err(keyring::Error::NoEntry) => {
+                // Try file fallback at old path: tokens/{provider}.enc
+                let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+                Self::decrypt_integration_file(&legacy_path, app_data_dir)
+            }
+            Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
+                let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+                Self::decrypt_integration_file(&legacy_path, app_data_dir)
+            }
+            Err(e) => Err(format!("Keyring error: {}", e)),
+        }
+    }
+
+    /// Deletes the old `maestro:integration:{provider}` key and legacy file.
+    pub fn delete_legacy_integration(provider: &str, app_data_dir: &Path) {
+        if let Ok(entry) = Entry::new(SERVICE, &integration_key_legacy(provider)) {
+            let _ = entry.delete_credential();
+        }
+        let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+        let _ = std::fs::remove_file(&legacy_path);
+    }
+
+    fn decrypt_integration_file(
+        path: &Path,
+        app_data_dir: &Path,
+    ) -> Result<Option<IntegrationCredentials>, String> {
         if !path.exists() {
             return Ok(None);
         }
-        let data = match std::fs::read(&path) {
+        let data = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(_) => return Ok(None),
         };
@@ -156,15 +250,6 @@ impl KeychainStore {
         serde_json::from_slice::<IntegrationCredentials>(&plaintext)
             .map(Some)
             .map_err(|e| format!("Integration deserialization failed: {}", e))
-    }
-
-    fn delete_integration_file(provider: &str, app_data_dir: &Path) -> Result<(), String> {
-        let path = Self::integration_file_path(provider, app_data_dir);
-        if !path.exists() {
-            return Ok(());
-        }
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete integration file: {}", e))
     }
 
     // ── Legacy project-id-keyed API (Phase 52/53/54 compatibility) ───────────
@@ -358,6 +443,7 @@ mod tests {
 
     fn test_credentials(provider: &str) -> IntegrationCredentials {
         IntegrationCredentials {
+            id: format!("test-id-{}", provider),
             token: "test_token".to_string(),
             instance_url: None,
             email: None,
@@ -371,8 +457,8 @@ mod tests {
     fn test_integration_file_roundtrip() {
         let dir = tempfile::tempdir().expect("tempdir");
         let creds = test_credentials("github");
-        KeychainStore::write_integration_to_file("github", &creds, dir.path()).expect("write");
-        let result = KeychainStore::read_integration_from_file("github", dir.path()).expect("read");
+        KeychainStore::write_integration_to_file_by_id("github", "test-id-github", &creds, dir.path()).expect("write");
+        let result = KeychainStore::read_integration_from_file_by_id("github", "test-id-github", dir.path()).expect("read");
         let retrieved = result.expect("creds present");
         assert_eq!(retrieved.token, "test_token");
         assert_eq!(retrieved.display_name.as_deref(), Some("github_user"));
@@ -382,8 +468,8 @@ mod tests {
     fn test_integration_file_roundtrip_linear() {
         let dir = tempfile::tempdir().expect("tempdir");
         let creds = test_credentials("linear");
-        KeychainStore::write_integration_to_file("linear", &creds, dir.path()).expect("write");
-        let result = KeychainStore::read_integration_from_file("linear", dir.path()).expect("read");
+        KeychainStore::write_integration_to_file_by_id("linear", "test-id-linear", &creds, dir.path()).expect("write");
+        let result = KeychainStore::read_integration_from_file_by_id("linear", "test-id-linear", dir.path()).expect("read");
         let retrieved = result.expect("creds present");
         assert_eq!(retrieved.token, "test_token");
         assert_eq!(retrieved.display_name.as_deref(), Some("linear_user"));
@@ -392,7 +478,7 @@ mod tests {
     #[test]
     fn test_integration_file_roundtrip_missing_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let result = KeychainStore::read_integration_from_file("github", dir.path()).expect("no error on absent");
+        let result = KeychainStore::read_integration_from_file_by_id("github", "nonexistent-id", dir.path()).expect("no error on absent");
         assert!(result.is_none());
     }
 
@@ -400,16 +486,28 @@ mod tests {
     fn test_integration_file_roundtrip_corrupted_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("tokens")).unwrap();
-        std::fs::write(dir.path().join("tokens/github.enc"), b"corrupted_data_not_encrypted").unwrap();
-        let result = KeychainStore::read_integration_from_file("github", dir.path()).expect("no error on corrupted");
+        std::fs::write(dir.path().join("tokens/github_some-id.enc"), b"corrupted_data_not_encrypted").unwrap();
+        let result = KeychainStore::read_integration_from_file_by_id("github", "some-id", dir.path()).expect("no error on corrupted");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_integration_key_format() {
-        assert_eq!(integration_key("github"), "maestro:integration:github");
-        assert_eq!(integration_key("linear"), "maestro:integration:linear");
-        assert_eq!(integration_key("jira_cloud"), "maestro:integration:jira_cloud");
+        assert_eq!(integration_key("github", "abc"), "maestro:integration:github:abc");
+        assert_eq!(integration_key("linear", "uuid-1"), "maestro:integration:linear:uuid-1");
+        assert_eq!(integration_key("jira_cloud", "uuid-2"), "maestro:integration:jira_cloud:uuid-2");
+    }
+
+    #[test]
+    fn test_registry_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        KeychainStore::registry_add("github", "id-1", dir.path()).expect("add");
+        KeychainStore::registry_add("github", "id-2", dir.path()).expect("add");
+        let registry = KeychainStore::read_registry(dir.path());
+        assert_eq!(registry.get("github").map(|v| v.len()), Some(2));
+        KeychainStore::registry_remove("github", "id-1", dir.path()).expect("remove");
+        let registry = KeychainStore::read_registry(dir.path());
+        assert_eq!(registry.get("github").unwrap(), &vec!["id-2".to_string()]);
     }
 
     #[test]

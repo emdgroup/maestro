@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use base64::Engine as _;
+use rand::RngCore;
 use tauri::{Emitter, State};
 
 use crate::core::AppState;
@@ -20,7 +21,15 @@ const KNOWN_PROVIDERS: &[&str] = &[
     "bitbucket",
 ];
 
-/// Probe all known provider keys in the keyring and return their connection status.
+fn generate_id() -> String {
+    let mut buf = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut buf);
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// List all connected integrations from the registry.
+/// Runs a silent one-time migration: if the registry is empty for a known provider
+/// but a legacy key exists, moves it to the new keyed format.
 /// For GitHub, also probes the gh CLI as a fallback credential source.
 /// Raw tokens are never returned — only IntegrationStatus (D-01 security constraint).
 #[tauri::command]
@@ -28,50 +37,58 @@ const KNOWN_PROVIDERS: &[&str] = &[
 pub async fn list_integrations(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<IntegrationStatus>, String> {
-    let mut statuses = Vec::with_capacity(KNOWN_PROVIDERS.len());
+    let app_data_dir = &app_state.app_data_dir;
+    let mut registry = KeychainStore::read_registry(app_data_dir);
+
+    // One-time migration: promote legacy provider-keyed entries into the registry.
+    for &provider in KNOWN_PROVIDERS {
+        if provider == "github" {
+            continue; // gh CLI is ephemeral, no legacy keyring key to migrate
+        }
+        if !registry.contains_key(provider) || registry[provider].is_empty() {
+            if let Ok(Some(mut creds)) = KeychainStore::get_legacy_integration(provider, app_data_dir) {
+                let new_id = generate_id();
+                creds.id = new_id.clone();
+                if let Ok(outcome) = KeychainStore::store_integration_by_id(provider, &new_id, &creds, app_data_dir) {
+                    registry.entry(provider.to_string()).or_default().push(new_id);
+                    // Suppress "keyring unavailable" event during migration to avoid spam.
+                    let _ = outcome;
+                }
+                KeychainStore::delete_legacy_integration(provider, app_data_dir);
+            }
+        }
+    }
+
+    let mut statuses: Vec<IntegrationStatus> = Vec::new();
 
     for &provider in KNOWN_PROVIDERS {
-        let outcome = KeychainStore::get_integration(provider, &app_state.app_data_dir);
-        match outcome {
-            Ok(KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds))) => {
-                statuses.push(IntegrationStatus {
-                    provider: provider.to_string(),
-                    connected: true,
-                    display_name: creds.display_name,
-                    source: Some(creds.source),
-                    instance_url: creds.instance_url,
-                });
-            }
-            Ok(KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None)) => {
-                if provider == "github" {
-                    // gh CLI is an ephemeral credential source — re-probed each call,
-                    // never stored in keyring (per D-18 and RESEARCH.md Pitfall 3).
-                    if let Some(_token) = crate::integration::github::try_gh_cli_token().await {
-                        let display_name = crate::integration::github::try_gh_cli_display_name().await;
-                        statuses.push(IntegrationStatus {
-                            provider: provider.to_string(),
-                            connected: true,
-                            display_name,
-                            source: Some(CredentialSource::GhCli),
-                            instance_url: None,
-                        });
-                        continue;
-                    }
+        let ids = registry.get(provider).cloned().unwrap_or_default();
+        for id in ids {
+            match KeychainStore::get_integration_by_id(provider, &id, app_data_dir) {
+                Ok(KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds))) => {
+                    statuses.push(IntegrationStatus {
+                        id,
+                        provider: provider.to_string(),
+                        connected: true,
+                        display_name: creds.display_name,
+                        source: Some(creds.source),
+                        instance_url: creds.instance_url,
+                    });
                 }
-                statuses.push(IntegrationStatus {
-                    provider: provider.to_string(),
-                    connected: false,
-                    display_name: None,
-                    source: None,
-                    instance_url: None,
-                });
+                _ => {}
             }
-            Err(_) => {
+        }
+
+        // gh CLI: ephemeral, not stored in keyring — probe each call
+        if provider == "github" {
+            if let Some(_token) = crate::integration::github::try_gh_cli_token().await {
+                let display_name = crate::integration::github::try_gh_cli_display_name().await;
                 statuses.push(IntegrationStatus {
-                    provider: provider.to_string(),
-                    connected: false,
-                    display_name: None,
-                    source: None,
+                    id: "gh_cli".to_string(),
+                    provider: "github".to_string(),
+                    connected: true,
+                    display_name,
+                    source: Some(CredentialSource::GhCli),
                     instance_url: None,
                 });
             }
@@ -82,7 +99,7 @@ pub async fn list_integrations(
 }
 
 /// Validate credentials against the provider API and store them globally in the keyring.
-/// Returns the display name from the provider on success.
+/// Generates a new UUID for this account. Returns the display name from the provider.
 /// Raw tokens are never returned to the frontend (D-01).
 #[tauri::command]
 #[specta::specta]
@@ -101,7 +118,9 @@ pub async fn save_integration(
     let display_name =
         validate_credentials(&provider, &token, instance_url.as_deref(), email.as_deref()).await?;
 
+    let id = generate_id();
     let creds = IntegrationCredentials {
+        id: id.clone(),
         token,
         instance_url,
         email,
@@ -110,7 +129,7 @@ pub async fn save_integration(
         source: CredentialSource::Manual,
     };
 
-    let outcome = KeychainStore::store_integration(&provider, &creds, &app_state.app_data_dir)?;
+    let outcome = KeychainStore::store_integration_by_id(&provider, &id, &creds, &app_state.app_data_dir)?;
 
     if matches!(outcome, KeychainOutcome::FileFallback(_)) {
         app_state
@@ -122,14 +141,15 @@ pub async fn save_integration(
     Ok(display_name)
 }
 
-/// Remove stored credentials for a provider from the keyring and file fallback.
+/// Remove stored credentials for a specific account (provider + id).
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_integration(
     app_state: State<'_, Arc<AppState>>,
     provider: String,
+    id: String,
 ) -> Result<(), String> {
-    KeychainStore::delete_integration(&provider, &app_state.app_data_dir)?;
+    KeychainStore::delete_integration_by_id(&provider, &id, &app_state.app_data_dir)?;
     Ok(())
 }
 

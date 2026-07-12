@@ -1,13 +1,25 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import { CircleDot, Plus } from "lucide-react";
 import { Button } from "@/ui/button";
-import { CircleDot } from "lucide-react";
+import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
+import { IntegrationConnectDialog } from "@/views/project-picker/integrations-tab/IntegrationConnectDialog";
 import {
   useProjectIssueTrackingConfig,
   useSaveProjectIssueTrackingConfig,
   PROVIDER_NAMES,
 } from "@/services/integration.service";
 import type { IntegrationStatus, ProjectIssueTrackingConfig } from "@/types/bindings";
+
+const ISSUE_PROVIDERS = [
+  "jira_cloud",
+  "github",
+  "gitlab",
+  "gitea",
+  "forgejo",
+  "azuredevops",
+  "linear",
+];
 
 function getRequiredIntegrationFields(provider: string): string[] {
   switch (provider) {
@@ -42,33 +54,41 @@ export const IssueTrackingSection = forwardRef<
   IssueTrackingSectionHandle,
   IssueTrackingSectionProps
 >(({ projectId, issueTrackingIntegrations, onValidityChange }, ref) => {
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState<string | null>(null);
   const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
-  const [issueTrackingConfigured, setIssueTrackingConfigured] = useState(false);
-  const [issueTrackingEditing, setIssueTrackingEditing] = useState(false);
   const [issueTrackingAttempted, setIssueTrackingAttempted] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [connectProvider, setConnectProvider] = useState<string | null>(null);
 
   const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
   const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
 
+  const selectedIntegration =
+    issueTrackingIntegrations.find((i) => i.id === selectedIntegrationId) ?? null;
+
   const isIssueTrackingValid =
-    !selectedProvider ||
-    getRequiredIntegrationFields(selectedProvider).every((f) => issueTrackingFields[f]?.trim());
+    !selectedIntegration ||
+    getRequiredIntegrationFields(selectedIntegration.provider).every((f) =>
+      issueTrackingFields[f]?.trim(),
+    );
 
   useEffect(() => {
     onValidityChange(isIssueTrackingValid);
   }, [isIssueTrackingValid, onValidityChange]);
 
   useEffect(() => {
-    if (!projectIssueTrackingQuery.data) {
-      setIssueTrackingConfigured(false);
-      setSelectedProvider(null);
-      setIssueTrackingFields({});
-      return;
-    }
+    setSelectedIntegrationId(null);
+    setIssueTrackingFields({});
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectIssueTrackingQuery.data) return;
     const config = projectIssueTrackingQuery.data;
-    setIssueTrackingConfigured(true);
-    setSelectedProvider(config.provider);
+    const match =
+      issueTrackingIntegrations.find((i) => i.id === config.integration_id) ??
+      issueTrackingIntegrations.find((i) => i.provider === config.provider) ??
+      null;
+    if (match) setSelectedIntegrationId(match.id);
     setIssueTrackingFields({
       owner: config.owner ?? "",
       repo: config.repo ?? "",
@@ -77,13 +97,14 @@ export const IssueTrackingSection = forwardRef<
       project_key: config.project_key ?? "",
       project_name: config.project_name ?? "",
     });
-  }, [projectIssueTrackingQuery.data]);
+  }, [projectIssueTrackingQuery.data, issueTrackingIntegrations]);
 
   useImperativeHandle(ref, () => ({
     save: async () => {
-      if (selectedProvider) {
+      if (selectedIntegration) {
         const config: ProjectIssueTrackingConfig = {
-          provider: selectedProvider,
+          provider: selectedIntegration.provider,
+          integration_id: selectedIntegrationId,
           owner: issueTrackingFields.owner || null,
           repo: issueTrackingFields.repo || null,
           project_path: issueTrackingFields.project_path || null,
@@ -106,107 +127,131 @@ export const IssueTrackingSection = forwardRef<
         Issue Tracking
       </h3>
 
-      {issueTrackingIntegrations.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No integrations connected. Add integrations from the project picker screen.
-        </p>
-      ) : issueTrackingConfigured && !issueTrackingEditing ? (
-        /* State C: Configured read-only */
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {issueTrackingIntegrations.map((integration) => (
-              <div
-                key={integration.provider}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-default ${
-                  integration.provider === selectedProvider
-                    ? "border-primary ring-2 ring-primary bg-primary/5"
-                    : "border-border bg-muted/30 opacity-50"
-                }`}
-              >
-                <span className="text-sm font-medium">
-                  {PROVIDER_NAMES[integration.provider] ?? integration.provider}
-                </span>
-              </div>
-            ))}
-          </div>
-          {selectedProvider && Object.values(issueTrackingFields).some(Boolean) && (
-            <div className="space-y-1">
-              {Object.entries(issueTrackingFields)
-                .filter(([, v]) => v)
-                .map(([key, value]) => (
-                  <p key={key} className="text-sm text-muted-foreground">
-                    {value}
-                  </p>
-                ))}
+      {/* When integration selected: show only that chip. When unset: show all chips + Add + picker. */}
+      {selectedIntegration ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary ring-2 ring-primary bg-primary/5 cursor-default"
+          >
+            <div className="relative shrink-0">
+              <BrandIcon slug={selectedIntegration.provider} className="w-4 h-4" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-background" />
             </div>
-          )}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIssueTrackingEditing(true)}
-            >
-              Change
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await saveIssueTrackingMutation.mutateAsync({
-                  projectId,
-                  issueTracking: null,
-                });
-                setIssueTrackingConfigured(false);
-                setSelectedProvider(null);
-                setIssueTrackingFields({});
-                setIssueTrackingEditing(false);
-              }}
-              disabled={saveIssueTrackingMutation.isPending}
-            >
-              Remove
-            </Button>
-          </div>
+            <span className="text-sm font-medium">
+              {selectedIntegration.display_name ??
+                PROVIDER_NAMES[selectedIntegration.provider] ??
+                selectedIntegration.provider}
+            </span>
+          </button>
         </div>
       ) : (
-        /* State B: Picker (not configured or editing) */
-        <div className="space-y-3">
+        <>
           <div className="flex flex-wrap gap-2">
             {issueTrackingIntegrations.map((integration) => (
               <button
-                key={integration.provider}
+                key={integration.id}
                 type="button"
                 onClick={() => {
-                  setSelectedProvider(integration.provider);
+                  setSelectedIntegrationId(integration.id);
+                  setPickerOpen(false);
                   setIssueTrackingAttempted(false);
                 }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                  selectedProvider === integration.provider
-                    ? "border-primary ring-2 ring-primary bg-primary/5"
-                    : "border-border bg-card hover:bg-muted/50 opacity-70 hover:opacity-100"
-                }`}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted/50 transition-colors"
               >
+                <div className="relative shrink-0">
+                  <BrandIcon slug={integration.provider} className="w-4 h-4" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-background" />
+                </div>
                 <span className="text-sm font-medium">
-                  {PROVIDER_NAMES[integration.provider] ?? integration.provider}
+                  {integration.display_name ??
+                    PROVIDER_NAMES[integration.provider] ??
+                    integration.provider}
                 </span>
               </button>
             ))}
-          </div>
-          {selectedProvider && (
-            <IssueTrackingProviderForm
-              provider={selectedProvider}
-              integration={issueTrackingIntegrations.find((i) => i.provider === selectedProvider)!}
-              fields={issueTrackingFields}
-              onFieldsChange={(f) => {
-                setIssueTrackingFields(f);
+
+            <button
+              type="button"
+              onClick={() => {
+                setPickerOpen((open) => !open);
                 setIssueTrackingAttempted(false);
               }}
-              showValidation={issueTrackingAttempted}
-            />
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
+                pickerOpen
+                  ? "border-primary bg-primary/5"
+                  : "border-dashed border-border/70 text-muted-foreground hover:border-accent hover:text-accent"
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="text-sm">Add</span>
+            </button>
+          </div>
+
+          {pickerOpen && (
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground mb-2">Select a provider to connect</p>
+              <div className="grid grid-cols-4 gap-2">
+                {ISSUE_PROVIDERS.map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    onClick={() => setConnectProvider(provider)}
+                    className="flex flex-col items-center gap-1.5 p-2 rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-accent transition-colors"
+                  >
+                    <BrandIcon slug={provider} className="w-6 h-6" />
+                    <span className="text-xs font-medium text-center leading-tight">
+                      {PROVIDER_NAMES[provider] ?? provider}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
+        </>
+      )}
+
+      {/* Provider form when chip is selected */}
+      {selectedIntegration && (
+        <div className="space-y-3">
+          <IssueTrackingProviderForm
+            provider={selectedIntegration.provider}
+            integration={selectedIntegration}
+            fields={issueTrackingFields}
+            onFieldsChange={(f) => {
+              setIssueTrackingFields(f);
+              setIssueTrackingAttempted(false);
+            }}
+            showValidation={issueTrackingAttempted}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: null });
+              setSelectedIntegrationId(null);
+              setIssueTrackingFields({});
+            }}
+            disabled={saveIssueTrackingMutation.isPending}
+          >
+            Remove
+          </Button>
         </div>
       )}
+
+      <IntegrationConnectDialog
+        provider={connectProvider ?? ""}
+        open={connectProvider !== null}
+        onOpenChange={(open) => {
+          if (!open) setConnectProvider(null);
+        }}
+        onSuccess={(id) => {
+          setSelectedIntegrationId(id);
+          setConnectProvider(null);
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 });

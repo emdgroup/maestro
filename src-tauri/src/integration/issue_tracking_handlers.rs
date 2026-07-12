@@ -5,6 +5,7 @@ use tauri::State;
 use crate::core::AppState;
 use crate::models::project::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
 use crate::models::issue_tracking::RemoteIssue;
+use crate::models::integration::IntegrationCredentials;
 use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 
 pub use super::issue_sync::*;
@@ -71,11 +72,10 @@ pub async fn list_remote_issues(
 
     match provider.as_str() {
         "github" => {
-            let token = match KeychainStore::get_integration("github", &app_state.app_data_dir)? {
-                KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
-                    creds.token
-                }
-                KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
+            // Try stored account first (by integration_id or first-available), then gh CLI.
+            let token = match get_integration_creds_for_project("github", &ticketing, &app_state) {
+                Ok(creds) => creds.token,
+                Err(_) => {
                     crate::integration::github::try_gh_cli_token()
                         .await
                         .ok_or_else(|| "No GitHub credentials found".to_string())?
@@ -93,7 +93,7 @@ pub async fn list_remote_issues(
         }
 
         "gitlab" => {
-            let creds = get_integration_creds("gitlab", &app_state)?;
+            let creds = get_integration_creds_for_project("gitlab", &ticketing, &app_state)?;
             let instance_url = creds
                 .instance_url
                 .as_deref()
@@ -108,7 +108,7 @@ pub async fn list_remote_issues(
         }
 
         "forgejo" => {
-            let creds = get_integration_creds("forgejo", &app_state)?;
+            let creds = get_integration_creds_for_project("forgejo", &ticketing, &app_state)?;
             let instance_url = creds
                 .instance_url
                 .as_deref()
@@ -125,12 +125,12 @@ pub async fn list_remote_issues(
         }
 
         "linear" => {
-            let creds = get_integration_creds("linear", &app_state)?;
+            let creds = get_integration_creds_for_project("linear", &ticketing, &app_state)?;
             crate::integration::linear::fetch_issues(&creds.token, ticketing.team_id.as_deref()).await
         }
 
         "jira_cloud" => {
-            let creds = get_integration_creds("jira_cloud", &app_state)?;
+            let creds = get_integration_creds_for_project("jira_cloud", &ticketing, &app_state)?;
             let site_url = creds
                 .instance_url
                 .as_deref()
@@ -149,7 +149,7 @@ pub async fn list_remote_issues(
         "jira_server" => Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string()),
 
         "azuredevops" => {
-            let creds = get_integration_creds("azuredevops", &app_state)?;
+            let creds = get_integration_creds_for_project("azuredevops", &ticketing, &app_state)?;
             let org_url = creds
                 .instance_url
                 .as_deref()
@@ -162,7 +162,7 @@ pub async fn list_remote_issues(
         }
 
         "gitea" => {
-            let creds = get_integration_creds("gitea", &app_state)?;
+            let creds = get_integration_creds_for_project("gitea", &ticketing, &app_state)?;
             let instance_url = creds
                 .instance_url
                 .as_deref()
@@ -184,16 +184,56 @@ pub async fn list_remote_issues(
     }
 }
 
+/// Returns the first available credentials for a provider (for lookups that don't
+/// belong to a specific project — e.g. project picker, image proxy).
 pub(crate) fn get_integration_creds(
     provider: &str,
     app_state: &AppState,
-) -> Result<crate::models::integration::IntegrationCredentials, String> {
-    match KeychainStore::get_integration(provider, &app_state.app_data_dir)? {
-        KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
-            Ok(creds)
-        }
-        KeychainOutcome::Keychain(None) | KeychainOutcome::FileFallback(None) => {
-            Err(format!("No credentials found for {}", provider))
+) -> Result<IntegrationCredentials, String> {
+    let app_data_dir = &app_state.app_data_dir;
+    let registry = KeychainStore::read_registry(app_data_dir);
+    if let Some(ids) = registry.get(provider) {
+        for id in ids {
+            if let Ok(KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds))) =
+                KeychainStore::get_integration_by_id(provider, id, app_data_dir)
+            {
+                return Ok(creds);
+            }
         }
     }
+    Err(format!("No credentials found for {}", provider))
+}
+
+/// Resolve credentials for a project's issue tracking config.
+/// If `ticketing.integration_id` is set, loads that specific account.
+/// Otherwise falls back to the first account in the registry for the provider.
+pub(crate) fn get_integration_creds_for_project(
+    provider: &str,
+    ticketing: &ProjectIssueTrackingConfig,
+    app_state: &AppState,
+) -> Result<IntegrationCredentials, String> {
+    let app_data_dir = &app_state.app_data_dir;
+
+    if let Some(id) = &ticketing.integration_id {
+        match KeychainStore::get_integration_by_id(provider, id, app_data_dir)? {
+            KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)) => {
+                return Ok(creds);
+            }
+            _ => {}
+        }
+    }
+
+    // Fall back to first available account in registry (covers legacy configs without integration_id).
+    let registry = KeychainStore::read_registry(app_data_dir);
+    if let Some(ids) = registry.get(provider) {
+        for id in ids {
+            if let Ok(KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds))) =
+                KeychainStore::get_integration_by_id(provider, id, app_data_dir)
+            {
+                return Ok(creds);
+            }
+        }
+    }
+
+    Err(format!("No credentials found for {}", provider))
 }
