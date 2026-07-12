@@ -24,12 +24,12 @@ Drop tasks onto a Kanban board. Each one gets its own agent, its own git worktre
 
 | Platform                            | Download                                                                                                                                |
 | ----------------------------------- |-----------------------------------------------------------------------------------------------------------------------------------------|
-| macOS — Apple Silicon (M1/M2/M3/M4) | [Maestro_0.8.0_aarch64.dmg](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_aarch64.dmg)                     |
-| Linux — x86_64                      | [Maestro_0.8.0_amd64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_amd64.AppImage) ✓ recommended |
-| Linux — x86_64 (no auto-update)     | [Maestro_0.8.0_amd64.deb](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_amd64.deb)                         |
-| Linux — arm64                       | [Maestro_0.8.0_aarch64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_aarch64.AppImage)           |
-| Windows — x86_64                    | [Maestro_0.8.0_x64-setup.exe](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_x64-setup.exe) ✓ recommended   |
-| Windows — x86_64 (MSI)              | [Maestro_0.8.0_x64_en-US.msi](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_x64_en-US.msi)                 |
+| macOS — Apple Silicon (M1/M2/M3/M4) | [Maestro_0.9.0_aarch64.dmg](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_aarch64.dmg)                     |
+| Linux — x86_64                      | [Maestro_0.9.0_amd64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_amd64.AppImage) ✓ recommended |
+| Linux — x86_64 (no auto-update)     | [Maestro_0.9.0_amd64.deb](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_amd64.deb)                         |
+| Linux — arm64                       | [Maestro_0.9.0_aarch64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_aarch64.AppImage)           |
+| Windows — x86_64                    | [Maestro_0.9.0_x64-setup.exe](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_x64-setup.exe) ✓ recommended   |
+| Windows — x86_64 (MSI)              | [Maestro_0.9.0_x64_en-US.msi](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.9.0_x64_en-US.msi)                 |
 
 The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates. The `.deb` package does not — Maestro will prompt you to download the new version when one is available.
 
