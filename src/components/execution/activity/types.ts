@@ -24,6 +24,7 @@ export type AgentMessageChunk = {
 export type AgentThoughtChunk = {
   sessionUpdate: "agent_thought_chunk";
   content: { type: "text"; text: string };
+  messageId?: string;
 };
 
 export type ToolCallLocation = {
@@ -151,6 +152,7 @@ export type ThinkingItem = {
   id: string;
   text: string;
   isStreaming: boolean;
+  messageId?: string;
 };
 
 export type UserMessageItem = {
