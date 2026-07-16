@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
@@ -14,6 +15,7 @@ import {
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
+import { useBoardStore, useBoardActions } from "@/store/boardStore";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -21,12 +23,26 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { History, PanelLeftClose, PanelLeftOpen, Plus, SearchIcon, Settings2 } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ActivityVisibility } from "@/types/bindings";
 
 interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
   connection: ConnectionKey;
+}
+
+function connIdMatches(connection: ConnectionKey, connId: string): boolean {
+  switch (connection.type) {
+    case "local":
+      return connId === "local";
+    case "ssh":
+      return connId === `ssh-${connection.id}`;
+    case "wsl":
+      return connId === `wsl-${connection.id}`;
+    case "docker":
+      return connId === `docker-${connection.id}`;
+  }
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
@@ -96,6 +112,46 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
+  const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
+  const { clearAuthRequired, setAuthTerminalIdle, setPendingAuthRetry } = useBoardActions();
+  const authRequiredTasksRef = useRef(authRequiredTasks);
+  authRequiredTasksRef.current = authRequiredTasks;
+
+  useEffect(() => {
+    const connId = (() => {
+      switch (connection.type) {
+        case "local":
+          return "local";
+        case "ssh":
+          return `ssh-${connection.id}`;
+        case "wsl":
+          return `wsl-${connection.id}`;
+        case "docker":
+          return `docker-${connection.id}`;
+      }
+    })();
+    const unlisten = listen<{ exit_code: number | null }>(
+      `acp://auth-pty-exit/${connId}`,
+      (event) => {
+        const tasks = authRequiredTasksRef.current;
+        const found = Object.entries(tasks).find(
+          ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
+        );
+        if (!found) return;
+        const taskId = Number(found[0]);
+        if (event.payload.exit_code === 0) {
+          clearAuthRequired(taskId);
+          setPendingAuthRetry(taskId);
+        } else {
+          setAuthTerminalIdle(taskId);
+        }
+      },
+    ).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [connection, clearAuthRequired, setAuthTerminalIdle, setPendingAuthRetry]);
+
   const visibleAgents = discovery?.agents ?? [];
   const agentIcons: Record<string, string> = Object.fromEntries(
     visibleAgents.filter((a) => a.icon).map((a) => [a.id, a.icon]),
@@ -155,18 +211,22 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       {/* Action bar */}
       <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            title={sidebarCollapsed ? "Expand session list" : "Collapse session list"}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeftOpen className="w-4 h-4" />
-            ) : (
-              <PanelLeftClose className="w-4 h-4" />
-            )}
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </TooltipTrigger>
+            <TooltipContent>
+              {sidebarCollapsed ? "Expand session list" : "Collapse session list"}
+            </TooltipContent>
+          </Tooltip>
           {!sidebarCollapsed && (
             <>
               <ShortcutHint shortcutId="focus-search">

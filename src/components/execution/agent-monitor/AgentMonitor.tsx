@@ -6,6 +6,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
 import { ScrollArea } from "@/ui/scroll-area";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
@@ -321,15 +322,24 @@ export function AgentMonitor({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {onClose && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-              title="Close session"
-              onClick={() => onClose(session)}
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<span />}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  disabled={session.task_id != null}
+                  onClick={() => onClose(session)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              {session.task_id != null && (
+                <TooltipContent>
+                  Task sessions can only be stopped from the task card
+                </TooltipContent>
+              )}
+            </Tooltip>
           )}
         </div>
       </div>

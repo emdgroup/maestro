@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, type ReactNode } from "react"
 import { ZoomIn, ZoomOut, Fullscreen, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 
 interface ZoomableContentProps {
@@ -314,15 +315,17 @@ export function ZoomableContent({
                 <ZoomOut />
               </Button>
 
-              <button
-                type="button"
-                onClick={resetState}
-                className="min-w-[3rem] text-center font-mono text-[11px] text-muted-foreground tabular-nums select-none hover:text-foreground transition-colors cursor-pointer rounded px-1"
-                aria-label="Reset to 100%"
-                title="Reset to 100%"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  onClick={resetState}
+                  className="min-w-[3rem] text-center font-mono text-[11px] text-muted-foreground tabular-nums select-none hover:text-foreground transition-colors cursor-pointer rounded px-1"
+                  aria-label="Reset to 100%"
+                >
+                  {Math.round(zoom * 100)}%
+                </TooltipTrigger>
+                <TooltipContent>Reset to 100%</TooltipContent>
+              </Tooltip>
 
               <Button
                 variant="ghost"

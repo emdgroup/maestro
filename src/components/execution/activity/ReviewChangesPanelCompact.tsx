@@ -15,6 +15,7 @@ import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { computeFileStats } from "@/lib/diff-utils";
 import { UntrackedFileDiffViewer } from "@/components/execution/diff/UntrackedFileDiffViewer";
 import type { DisplayItem } from "./useReviewChangesData";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 function DiffStats({ hunks }: { hunks: string[] }) {
   const s = computeFileStats(hunks);
@@ -173,19 +174,21 @@ export function ReviewChangesPanelCompact({
     <div className="absolute inset-0 flex flex-col bg-background">
       {/* Compact header: [Files] | [‹ name ›] | [unified/split] */}
       <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={() => setListOpen((v) => !v)}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            listOpen
-              ? "text-foreground bg-muted/60"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-          )}
-          title="File list"
-        >
-          <Files className="w-4 h-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              listOpen
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <Files className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>File list</TooltipContent>
+        </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
           <button
@@ -211,32 +214,36 @@ export function ReviewChangesPanelCompact({
         </div>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setDiffViewMode(DiffModeEnum.Unified)}
-            className={cn(
-              "p-1.5 rounded transition-colors",
-              diffViewMode === DiffModeEnum.Unified
-                ? "text-foreground bg-muted/60"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-            )}
-            title="Unified diff"
-          >
-            <AlignJustify className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDiffViewMode(DiffModeEnum.SplitGitHub)}
-            className={cn(
-              "p-1.5 rounded transition-colors",
-              diffViewMode !== DiffModeEnum.Unified
-                ? "text-foreground bg-muted/60"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-            )}
-            title="Split diff"
-          >
-            <Columns2 className="w-3.5 h-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              onClick={() => setDiffViewMode(DiffModeEnum.Unified)}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                diffViewMode === DiffModeEnum.Unified
+                  ? "text-foreground bg-muted/60"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+            >
+              <AlignJustify className="w-3.5 h-3.5" />
+            </TooltipTrigger>
+            <TooltipContent>Unified diff</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              onClick={() => setDiffViewMode(DiffModeEnum.SplitGitHub)}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                diffViewMode !== DiffModeEnum.Unified
+                  ? "text-foreground bg-muted/60"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              )}
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+            </TooltipTrigger>
+            <TooltipContent>Split diff</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -306,22 +313,26 @@ export function ReviewChangesPanelCompact({
                       {key}
                     </span>
                     {item.kind === "diff" && <DiffStats hunks={item.file.hunks} />}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleViewed(key);
-                      }}
-                      className={cn(
-                        "p-1 rounded transition-colors shrink-0",
-                        isViewed
-                          ? "text-success hover:bg-muted/30"
-                          : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30",
-                      )}
-                      title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                    >
-                      <CheckCheck className="size-3" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleViewed(key);
+                        }}
+                        className={cn(
+                          "p-1 rounded transition-colors shrink-0",
+                          isViewed
+                            ? "text-success hover:bg-muted/30"
+                            : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30",
+                        )}
+                      >
+                        <CheckCheck className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 {isExpanded && (

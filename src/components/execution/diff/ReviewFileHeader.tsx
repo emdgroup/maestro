@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils.ts";
 import { MessageSquare, CheckCheck } from "lucide-react";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { DiffFileWithName } from "@/types/review";
 
 interface ReviewFileHeaderProps {
@@ -36,26 +37,38 @@ export function ReviewFileHeader({
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
       {stats.insertions > 0 && <span className="text-success shrink-0">+{stats.insertions}</span>}
       {stats.deletions > 0 && <span className="text-destructive shrink-0">-{stats.deletions}</span>}
-      <Button
-        variant="ghost"
-        onClick={() => onFileComment(selectedFile.fileName)}
-        className="flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30"
-        title="Add file comment"
-      >
-        <MessageSquare className="size-3" />
-      </Button>
-      <Button
-        variant="ghost"
-        onClick={() => onToggleViewed(selectedFile.fileName)}
-        className={cn(
-          "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
-          isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
-        )}
-        title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-      >
-        <CheckCheck className="size-3" />
-        <span className="text-[10px]">Viewed</span>
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              onClick={() => onFileComment(selectedFile.fileName)}
+              className="flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            />
+          }
+        >
+          <MessageSquare className="size-3" />
+        </TooltipTrigger>
+        <TooltipContent>Add file comment</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              onClick={() => onToggleViewed(selectedFile.fileName)}
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
+                isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
+              )}
+            />
+          }
+        >
+          <CheckCheck className="size-3" />
+          <span className="text-[10px]">Viewed</span>
+        </TooltipTrigger>
+        <TooltipContent>{isViewed ? "Mark as unviewed" : "Mark as viewed"}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

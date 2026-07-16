@@ -4,7 +4,6 @@ import type { TaskStatus, TaskPriority } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { TooltipProvider } from "@/ui/tooltip";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import {
   AlertDialog,
@@ -199,231 +198,229 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
 
   return (
-    <TooltipProvider>
-      <Dialog
-        open={taskId !== null}
-        onOpenChange={(open) => {
-          if (!open) handleRequestClose();
-        }}
-        disablePointerDismissal={isEditable ?? false}
+    <Dialog
+      open={taskId !== null}
+      onOpenChange={(open) => {
+        if (!open) handleRequestClose();
+      }}
+      disablePointerDismissal={isEditable ?? false}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
-        <DialogContent
-          showCloseButton={false}
-          className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
-        >
-          {task === null ? (
-            <div className="flex flex-col items-center justify-center gap-4 py-16">
-              <p className="text-muted-foreground">Task not found</p>
-              <Button variant="outline" onClick={() => setActiveTaskId(null)}>
-                Close
-              </Button>
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <DialogHeader className="flex-row items-center gap-3 px-6 pt-3 shrink-0">
-                <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
-                  {isEditable ? "EDIT TASK" : "TASK DETAIL"}
-                </DialogTitle>
-                <div className="flex-1" />
-                <Select value={task.status} onValueChange={handleStatusChange}>
-                  <SelectTrigger size="sm" className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
-                      <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <ShortcutHint shortcutId="task-back">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={handleRequestClose}
-                  >
-                    <X className="size-4" />
-                    <span className="sr-only">Close</span>
-                  </Button>
-                </ShortcutHint>
-              </DialogHeader>
+        {task === null ? (
+          <div className="flex flex-col items-center justify-center gap-4 py-16">
+            <p className="text-muted-foreground">Task not found</p>
+            <Button variant="outline" onClick={() => setActiveTaskId(null)}>
+              Close
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* Header */}
+            <DialogHeader className="flex-row items-center gap-3 px-6 pt-3 shrink-0">
+              <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
+                {isEditable ? "EDIT TASK" : "TASK DETAIL"}
+              </DialogTitle>
+              <div className="flex-1" />
+              <Select value={task.status} onValueChange={handleStatusChange}>
+                <SelectTrigger size="sm" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
+                    <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ShortcutHint shortcutId="task-back">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={handleRequestClose}
+                >
+                  <X className="size-4" />
+                  <span className="sr-only">Close</span>
+                </Button>
+              </ShortcutHint>
+            </DialogHeader>
 
-              {/* Body */}
-              <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
-                <div className="shrink-0">
-                  <EditableField
-                    value={draft.title}
-                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
-                    isEditable={isEditable ?? false}
-                    placeholder="Add a title..."
-                    className="text-xl font-semibold"
-                  />
-                </div>
-
-                {/* Description + attachment */}
-                <DescriptionWithAttachments
-                  value={draft.description}
-                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
+            {/* Body */}
+            <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
+              <div className="shrink-0">
+                <EditableField
+                  value={draft.title}
+                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
                   isEditable={isEditable ?? false}
-                  isDragging={isDragging}
-                  onPickFiles={pickFiles}
-                  placeholder="Add a description..."
+                  placeholder="Add a title..."
+                  className="text-xl font-semibold"
                 />
+              </div>
 
-                {/* Labels */}
-                {draft.labels.length > 0 && (
-                  <div className="flex flex-wrap gap-1 shrink-0">
-                    {draft.labels.map((label) => (
-                      <IssueTypeChip
-                        key={label}
-                        type={label}
-                        onRemove={
-                          isEditable
-                            ? () =>
-                                markDirtySetDraft((d) => ({
-                                  ...d,
-                                  labels: d.labels.filter((l) => l !== label),
-                                }))
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
+              {/* Description + attachment */}
+              <DescriptionWithAttachments
+                value={draft.description}
+                onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
+                isEditable={isEditable ?? false}
+                isDragging={isDragging}
+                onPickFiles={pickFiles}
+                placeholder="Add a description..."
+              />
 
-                {/* Branch */}
-                {isGitRepo && (
-                  <div className="shrink-0">
-                    <BranchSection
-                      value={draft.baseBranch}
-                      onChange={
+              {/* Labels */}
+              {draft.labels.length > 0 && (
+                <div className="flex flex-wrap gap-1 shrink-0">
+                  {draft.labels.map((label) => (
+                    <IssueTypeChip
+                      key={label}
+                      type={label}
+                      onRemove={
                         isEditable
-                          ? (b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                          ? () =>
+                              markDirtySetDraft((d) => ({
+                                ...d,
+                                labels: d.labels.filter((l) => l !== label),
+                              }))
                           : undefined
                       }
                     />
-                  </div>
-                )}
-
-                {/* Metadata pills */}
-                <div className="shrink-0 space-y-3 pt-2 border-t border-border">
-                  <TaskMetadataPills
-                    priority={draft.priority}
-                    onPriorityChange={
-                      isEditable
-                        ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
-                        : undefined
-                    }
-                    agentId={draft.agentId}
-                    agents={agents}
-                    onAgentChange={
-                      isEditable
-                        ? (id) => markDirtySetDraft((d) => ({ ...d, agentId: id }))
-                        : undefined
-                    }
-                    isolatedWorktree={draft.isolatedWorktree}
-                    onIsolatedWorktreeChange={
-                      isEditable
-                        ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
-                        : undefined
-                    }
-                    autoApprove={draft.autoApprove}
-                    onAutoApproveChange={
-                      isEditable
-                        ? (v) => markDirtySetDraft((d) => ({ ...d, autoApprove: v }))
-                        : undefined
-                    }
-                    isGitRepo={isGitRepo ?? false}
-                  />
-
-                  {agentError && <p className="text-xs text-destructive">{agentError}</p>}
+                  ))}
                 </div>
+              )}
+
+              {/* Branch */}
+              {isGitRepo && (
+                <div className="shrink-0">
+                  <BranchSection
+                    value={draft.baseBranch}
+                    onChange={
+                      isEditable
+                        ? (b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+
+              {/* Metadata pills */}
+              <div className="shrink-0 space-y-3 pt-2 border-t border-border">
+                <TaskMetadataPills
+                  priority={draft.priority}
+                  onPriorityChange={
+                    isEditable
+                      ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
+                      : undefined
+                  }
+                  agentId={draft.agentId}
+                  agents={agents}
+                  onAgentChange={
+                    isEditable
+                      ? (id) => markDirtySetDraft((d) => ({ ...d, agentId: id }))
+                      : undefined
+                  }
+                  isolatedWorktree={draft.isolatedWorktree}
+                  onIsolatedWorktreeChange={
+                    isEditable
+                      ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
+                      : undefined
+                  }
+                  autoApprove={draft.autoApprove}
+                  onAutoApproveChange={
+                    isEditable
+                      ? (v) => markDirtySetDraft((d) => ({ ...d, autoApprove: v }))
+                      : undefined
+                  }
+                  isGitRepo={isGitRepo ?? false}
+                />
+
+                {agentError && <p className="text-xs text-destructive">{agentError}</p>}
               </div>
+            </div>
 
-              {/* Footer */}
-              <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
-                {/* Left: delete */}
-                {task.status !== "Done" && (
-                  <>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={isPendingDeleteOrArchive}
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash2 className="size-4" />
-                      Delete task
-                    </Button>
-                    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete this task?</AlertDialogTitle>
-                          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel onClick={() => setDeleteOpen(false)}>
-                            Keep Task
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            variant="destructive"
-                            onClick={() => {
-                              setDeleteOpen(false);
-                              deleteTask.mutate(task.id, {
-                                onSuccess: () => setActiveTaskId(null),
-                              });
-                            }}
-                          >
-                            Delete Task
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </>
-                )}
-
-                <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Discard changes?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Your unsaved changes will be lost.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel onClick={() => setDiscardOpen(false)}>
-                        Keep editing
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => {
-                          setDiscardOpen(false);
-                          setActiveTaskId(null);
-                        }}
-                      >
-                        Discard
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-
-                <div className="flex-1" />
-
-                {isEditable && (
+            {/* Footer */}
+            <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
+              {/* Left: delete */}
+              {task.status !== "Done" && (
+                <>
                   <Button
+                    variant="destructive"
                     size="sm"
-                    onClick={handleSave}
-                    disabled={updateTask.isPending || draft.title.trim().length < 3}
+                    disabled={isPendingDeleteOrArchive}
+                    onClick={() => setDeleteOpen(true)}
                   >
-                    {updateTask.isPending ? "Saving..." : "Save"}
+                    <Trash2 className="size-4" />
+                    Delete task
                   </Button>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </TooltipProvider>
+                  <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+                        <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setDeleteOpen(false)}>
+                          Keep Task
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="destructive"
+                          onClick={() => {
+                            setDeleteOpen(false);
+                            deleteTask.mutate(task.id, {
+                              onSuccess: () => setActiveTaskId(null),
+                            });
+                          }}
+                        >
+                          Delete Task
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              )}
+
+              <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Your unsaved changes will be lost.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setDiscardOpen(false)}>
+                      Keep editing
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        setDiscardOpen(false);
+                        setActiveTaskId(null);
+                      }}
+                    >
+                      Discard
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              <div className="flex-1" />
+
+              {isEditable && (
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={updateTask.isPending || draft.title.trim().length < 3}
+                >
+                  {updateTask.isPending ? "Saving..." : "Save"}
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 };

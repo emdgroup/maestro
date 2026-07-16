@@ -1,6 +1,6 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { SelectContent } from "@/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import type { ConfigOption, ConfigOptionValue } from "../types";
 
@@ -46,38 +46,36 @@ export function BaseDropdownSelector({
   renderItem,
 }: BaseDropdownSelectorProps) {
   return (
-    <TooltipProvider delay={700}>
-      <SelectPrimitive.Root
-        name={option.name}
-        value={value}
-        onValueChange={(v) => v !== null && onChange(v)}
-        disabled={disabled}
+    <SelectPrimitive.Root
+      name={option.name}
+      value={value}
+      onValueChange={(v) => v !== null && onChange(v)}
+      disabled={disabled}
+    >
+      <Tooltip>
+        <TooltipTrigger render={<span className="inline-flex items-center" />}>
+          <SelectPrimitive.Trigger className={TRIGGER_CLASS}>
+            {triggerContent}
+          </SelectPrimitive.Trigger>
+        </TooltipTrigger>
+        {option.description && (
+          <TooltipContent side="top" sideOffset={6}>
+            {option.description}
+          </TooltipContent>
+        )}
+      </Tooltip>
+      <SelectContent
+        align="start"
+        alignItemWithTrigger={false}
+        sideOffset={4}
+        className={cn(
+          GLASS_CONTENT_CLASS,
+          "p-1 max-h-128 overflow-y-auto custom-scrollbar",
+          contentClassName,
+        )}
       >
-        <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex items-center" />}>
-            <SelectPrimitive.Trigger className={TRIGGER_CLASS}>
-              {triggerContent}
-            </SelectPrimitive.Trigger>
-          </TooltipTrigger>
-          {option.description && (
-            <TooltipContent side="top" sideOffset={6}>
-              {option.description}
-            </TooltipContent>
-          )}
-        </Tooltip>
-        <SelectContent
-          align="start"
-          alignItemWithTrigger={false}
-          sideOffset={4}
-          className={cn(
-            GLASS_CONTENT_CLASS,
-            "p-1 max-h-128 overflow-y-auto custom-scrollbar",
-            contentClassName,
-          )}
-        >
-          {option.options.map((opt, i) => renderItem(opt, i))}
-        </SelectContent>
-      </SelectPrimitive.Root>
-    </TooltipProvider>
+        {option.options.map((opt, i) => renderItem(opt, i))}
+      </SelectContent>
+    </SelectPrimitive.Root>
   );
 }

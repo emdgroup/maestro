@@ -4,6 +4,7 @@ import { ListCollapse, ChevronLeft, ChevronRight, List, FolderTree, FileCode } f
 import { cn } from "@/lib/utils.ts";
 import { FileTree } from "@/components/execution/diff/FileTree";
 import { Slider } from "@/ui/slider";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { FileViewType } from "./fileViewUtils";
 
 interface WorkingFilesPanelCompactProps {
@@ -44,19 +45,21 @@ export function WorkingFilesPanelCompact({
     <div ref={panelRef} className="absolute inset-0 flex flex-col bg-background">
       {/* Header: [LayoutList] | [‹] [basename] [›] | [zoom slider] [zoom%] */}
       <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={() => setListOpen((v) => !v)}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            listOpen
-              ? "text-foreground bg-muted/60"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-          )}
-          title="File list"
-        >
-          <ListCollapse className="w-4 h-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              listOpen
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <ListCollapse className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>File list</TooltipContent>
+        </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
           <button
@@ -115,32 +118,36 @@ export function WorkingFilesPanelCompact({
               className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
             />
             <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setFileListMode("flat")}
-                className={cn(
-                  "p-1.5 rounded text-xs transition-colors",
-                  fileListMode === "flat"
-                    ? "text-foreground bg-muted"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-                title="Flat list"
-              >
-                <List className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setFileListMode("tree")}
-                className={cn(
-                  "p-1.5 rounded text-xs transition-colors",
-                  fileListMode === "tree"
-                    ? "text-foreground bg-muted"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-                title="Tree view"
-              >
-                <FolderTree className="w-3.5 h-3.5" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  onClick={() => setFileListMode("flat")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "flat"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                >
+                  <List className="w-3.5 h-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Flat list</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  onClick={() => setFileListMode("tree")}
+                  className={cn(
+                    "p-1.5 rounded text-xs transition-colors",
+                    fileListMode === "tree"
+                      ? "text-foreground bg-muted"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                >
+                  <FolderTree className="w-3.5 h-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Tree view</TooltipContent>
+              </Tooltip>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">

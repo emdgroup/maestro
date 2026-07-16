@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Dumbbell } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import type { SelectorProps } from "./BaseDropdownSelector";
 
@@ -19,32 +19,30 @@ export function EffortSelector({ option, value, onChange, disabled }: SelectorPr
   }
 
   return (
-    <TooltipProvider delay={700}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <div
-              className={cn(
-                "group inline-flex items-center gap-1 py-0.5 pl-1.5 pr-1.5 text-[11px] rounded border border-transparent",
-                "text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors select-none",
-                disabled ? "opacity-40 cursor-not-allowed" : "cursor-default",
-              )}
-            />
-          }
-        >
-          <Dumbbell className="size-3 shrink-0" />
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div
+            className={cn(
+              "group inline-flex items-center gap-1 py-0.5 pl-1.5 pr-1.5 text-[11px] rounded border border-transparent",
+              "text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors select-none",
+              disabled ? "opacity-40 cursor-not-allowed" : "cursor-default",
+            )}
+          />
+        }
+      >
+        <Dumbbell className="size-3 shrink-0" />
 
-          {/* Growing bars — slide in on hover */}
-          <div className="flex items-end gap-0.5 overflow-hidden max-w-0 group-hover:max-w-20 transition-[max-width] duration-200 ease-out ml-0.5">
-            {options.map((opt, i) => {
-              const filled = i <= displayIdx;
-              const height = barHeight(i);
-              return (
-                <button
-                  key={opt.value}
+        {/* Growing bars — slide in on hover */}
+        <div className="flex items-end gap-0.5 overflow-hidden max-w-0 group-hover:max-w-20 transition-[max-width] duration-200 ease-out ml-0.5">
+          {options.map((opt, i) => {
+            const filled = i <= displayIdx;
+            const height = barHeight(i);
+            return (
+              <Tooltip key={opt.value}>
+                <TooltipTrigger
                   type="button"
                   disabled={disabled}
-                  title={opt.name}
                   onClick={() => !disabled && onChange(opt.value)}
                   onMouseEnter={() => setHoveredIdx(i)}
                   onMouseLeave={() => setHoveredIdx(null)}
@@ -57,19 +55,20 @@ export function EffortSelector({ option, value, onChange, disabled }: SelectorPr
                       "hover:bg-accent hover:scale-x-125 cursor-pointer",
                   )}
                 />
-              );
-            })}
-          </div>
+                <TooltipContent>{opt.name}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
 
-          <span>{displayName}</span>
-        </TooltipTrigger>
+        <span>{displayName}</span>
+      </TooltipTrigger>
 
-        {option.description && (
-          <TooltipContent side="top" sideOffset={6}>
-            {option.description}
-          </TooltipContent>
-        )}
-      </Tooltip>
-    </TooltipProvider>
+      {option.description && (
+        <TooltipContent side="top" sideOffset={6}>
+          {option.description}
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 }

@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openFileWithConnection } from "@/lib/file-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
@@ -266,44 +267,48 @@ export function OverviewPanel({
                       const name = parts[parts.length - 1] ?? path;
                       return (
                         <div key={path} className="flex items-center gap-2 min-w-0 group">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onNavigate("artifacts", path);
-                            }}
-                            title={path}
-                            className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"
-                          >
-                            {name}
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigate("artifacts", path);
+                              }}
+                              className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"
+                            >
+                              {name}
+                            </TooltipTrigger>
+                            <TooltipContent>{path}</TooltipContent>
+                          </Tooltip>
                           <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
                             {timeAgo(now - addedAt)}
                           </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRowOpen(path);
-                            }}
-                            title={
-                              errorPaths.has(path)
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRowOpen(path);
+                              }}
+                              className={cn(
+                                "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                                errorPaths.has(path)
+                                  ? "text-destructive opacity-100"
+                                  : "text-muted-foreground/50 hover:text-foreground",
+                              )}
+                            >
+                              {errorPaths.has(path) ? (
+                                <X className="w-2.5 h-2.5" />
+                              ) : (
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {errorPaths.has(path)
                                 ? "Failed to open"
-                                : "Open in default application"
-                            }
-                            className={cn(
-                              "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
-                              errorPaths.has(path)
-                                ? "text-destructive opacity-100"
-                                : "text-muted-foreground/50 hover:text-foreground",
-                            )}
-                          >
-                            {errorPaths.has(path) ? (
-                              <X className="w-2.5 h-2.5" />
-                            ) : (
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            )}
-                          </button>
+                                : "Open in default application"}
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                       );
                     })}
@@ -334,17 +339,19 @@ export function OverviewPanel({
                   <div className="flex flex-col gap-1">
                     {visibleUserFiles.map((att) => (
                       <div key={att.id} className="flex items-baseline gap-2 min-w-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigate("artifacts", att.file_path);
-                          }}
-                          title={att.file_path}
-                          className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"
-                        >
-                          {att.filename}
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigate("artifacts", att.file_path);
+                            }}
+                            className="text-[10px] font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left flex-1 min-w-0"
+                          >
+                            {att.filename}
+                          </TooltipTrigger>
+                          <TooltipContent>{att.file_path}</TooltipContent>
+                        </Tooltip>
                         <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
                           {fmtSize(att.file_size)}
                         </span>

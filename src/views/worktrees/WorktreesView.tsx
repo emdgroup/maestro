@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -223,16 +224,22 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               </div>
               <div className="flex items-center gap-2">
                 <ShortcutHint shortcutId="wt-refresh">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="h-8 w-8"
-                    title="Refresh worktrees"
-                    disabled={isFetching}
-                    onClick={() => void refetchWorktrees()}
-                  >
-                    <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-8 w-8"
+                          disabled={isFetching}
+                          onClick={() => void refetchWorktrees()}
+                        />
+                      }
+                    >
+                      <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+                    </TooltipTrigger>
+                    <TooltipContent>Refresh worktrees</TooltipContent>
+                  </Tooltip>
                 </ShortcutHint>
                 {viewMode === "grouped" && (
                   <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
