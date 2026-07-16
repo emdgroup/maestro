@@ -34,8 +34,10 @@ export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean 
           </div>
         </div>
       </div>
-      <div className={cn("pb-2.5 pt-1", isCompact ? "px-3" : "px-16")}>
-        <Skeleton className="h-18 w-full rounded-3xl" />
+      <div className="pb-2.5 pt-1">
+        <div className={cn(isCompact ? "max-w-3xl mx-auto w-full px-12" : "px-16")}>
+          <Skeleton className="h-18 w-full rounded-3xl" />
+        </div>
       </div>
     </div>
   );
