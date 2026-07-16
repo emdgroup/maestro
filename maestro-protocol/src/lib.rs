@@ -5,6 +5,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
 pub const PROTOCOL_VERSION: u32 = 1;
+/// Canonical error string returned by spawn when the agent requires authentication.
+/// Both Rust (session_ops) and TypeScript frontends check for this exact value.
+pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
 
 // --- Top-level envelope ---
 
@@ -25,6 +28,19 @@ pub struct HandshakeRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct HandshakeResponse {
     pub protocol_version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AuthMethodInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub method_type: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_cmd: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -48,9 +64,14 @@ pub enum ServerRequest {
     SessionClose(SessionCloseRequest),
     SessionDelete(SessionDeleteRequest),
     PreInitialize(PreInitializeRequest),
+    Authenticate(AuthenticateRequest),
+    Logout(LogoutRequest),
     CheckTools(CheckToolsRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
     DetectProjectAgents(DetectProjectAgentsRequest),
+    SpawnAuthTerminal(SpawnAuthTerminalRequest),
+    KillAuthTerminal(KillAuthTerminalRequest),
+    AuthTerminalInput(AuthTerminalInputRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong { seq: u64 },
 }
@@ -162,6 +183,38 @@ pub struct PreInitializeRequest {
     pub cwd: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AuthenticateRequest {
+    pub agent_id: String,
+    pub method_id: String,
+    #[serde(default)]
+    pub force_no_browser: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SpawnAuthTerminalRequest {
+    pub agent_id: String,
+    pub method_id: String,
+    pub terminal_id: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct KillAuthTerminalRequest {
+    pub terminal_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AuthTerminalInputRequest {
+    pub terminal_id: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LogoutRequest {
+    pub agent_id: String,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -187,6 +240,9 @@ pub enum ServerResponse {
     SessionCloseOk,
     SessionDeleteOk,
     PreInitializeOk(PreInitializeResponse),
+    AuthenticateOk,
+    LogoutOk,
+    AuthTerminalExit(AuthTerminalExitResponse),
     AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
@@ -412,6 +468,17 @@ pub struct PreInitializeResponse {
     pub supports_session_close: bool,
     #[serde(default)]
     pub supports_session_delete: bool,
+    #[serde(default)]
+    pub auth_methods: Vec<AuthMethodInfo>,
+    #[serde(default)]
+    pub supports_auth_logout: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AuthTerminalExitResponse {
+    pub terminal_id: String,
+    pub agent_id: String,
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1010,6 +1077,8 @@ mod tests {
             supports_session_load: true,
             supports_session_close: false,
             supports_session_delete: false,
+            auth_methods: vec![],
+            supports_auth_logout: false,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

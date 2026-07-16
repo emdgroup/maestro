@@ -135,6 +135,86 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
 }
 
 
+/// Read `.maestro/state.json` for a project and return stored session snapshots without clearing.
+/// Returns an empty vec if state.json is missing, unreadable, or has no sessions.
+pub(crate) async fn read_session_snapshots(
+    app_state: &Arc<AppState>,
+    project_path: &str,
+    connection_key: ConnectionKey,
+) -> Vec<crate::project::models::SessionSnapshot> {
+    let state_path = format!("{}/.maestro/state.json", project_path);
+
+    match connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
+            let session = match app_state.ssh.get_session(conn_id).await {
+                Some(s) => s,
+                None => return vec![],
+            };
+            match session.execute_command(&format!("cat {}", shell_quote(&state_path))).await {
+                Ok(output) => serde_json::from_str::<crate::project::models::ProjectState>(&output)
+                    .unwrap_or_default()
+                    .restorable_sessions,
+                Err(_) => vec![],
+            }
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let distro: String = match app_state.db.lock() {
+                Ok(db) => match db.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    params![wsl_id],
+                    |row| row.get(0),
+                ) {
+                    Ok(d) => d,
+                    Err(_) => return vec![],
+                },
+                Err(_) => return vec![],
+            };
+            let output = tokio::process::Command::new("wsl.exe")
+                .args(["-d", &distro, "--", "cat", &state_path])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .no_console_window()
+                .output()
+                .await;
+            match output {
+                Ok(out) if out.status.success() => {
+                    let text = String::from_utf8_lossy(&out.stdout);
+                    serde_json::from_str::<crate::project::models::ProjectState>(&text)
+                        .unwrap_or_default()
+                        .restorable_sessions
+                }
+                _ => vec![],
+            }
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let container_name: String = match app_state.db.lock() {
+                Ok(db) => match db.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    params![docker_id],
+                    |row| row.get(0),
+                ) {
+                    Ok(n) => n,
+                    Err(_) => return vec![],
+                },
+                Err(_) => return vec![],
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+            match crate::connectivity::docker::read_file(&cli, &container_name, &state_path) {
+                Ok(text) => serde_json::from_str::<crate::project::models::ProjectState>(&text)
+                    .unwrap_or_default()
+                    .restorable_sessions,
+                Err(_) => vec![],
+            }
+        }
+        ConnectionKey::Local => {
+            crate::project::models::ProjectState::load_from_project(project_path)
+                .unwrap_or_default()
+                .restorable_sessions
+        }
+    }
+}
+
 /// Read `.maestro/state.json` for a project, extract restorable sessions, and save back cleared state.
 /// Returns an empty vec if state.json is missing, unreadable, or has no sessions.
 pub(crate) async fn read_and_clear_restorable_sessions(

@@ -745,6 +745,24 @@ async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(exit)) => {
+            let conn_key_id = match connection_key {
+                crate::acp::ConnectionKey::Local => "local".to_string(),
+                crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
+                crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
+                crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
+            };
+            app_handle.emit(
+                &format!("acp://auth-pty-exit/{}", conn_key_id),
+                &serde_json::json!({ "exit_code": exit.exit_code }),
+            ).ok();
+            if exit.exit_code == Some(0) {
+                let mut map = app_state.acp.agent_auth_info.lock().await;
+                if let Some(info) = map.get_mut(&(connection_key, exit.agent_id.clone())) {
+                    info.authenticated = true;
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {

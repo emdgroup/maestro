@@ -37,6 +37,8 @@ export function AgentStreamContent({
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
+  const thinkingHidden = appSettings?.thinking_visibility === "hide";
+  const toolCallsHidden = appSettings?.tool_call_visibility === "hide";
 
   return (
     <MessageScroller className="absolute inset-0">
@@ -46,12 +48,21 @@ export function AgentStreamContent({
           style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
         >
           {agentSections.map((section, sectionIndex) => {
+            if (section.type === "agentSection") {
+              const allHidden = section.items.every((gi) => {
+                if (gi.type === "toolGroup") return toolCallsHidden;
+                if (gi.item.type === "thinking") return thinkingHidden;
+                return false;
+              });
+              if (allHidden) return null;
+            }
+
             if (section.type === "standalone") {
               const gi = section.item;
               if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
               const msgId = gi.item.item.id;
               return (
-                <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
+                <MessageScrollerItem key={msgId} messageId={msgId} scrollAnchor className="px-3">
                   <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
                 </MessageScrollerItem>
               );

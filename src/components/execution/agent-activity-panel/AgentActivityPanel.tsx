@@ -19,7 +19,7 @@ import type { UsageState, ToolCallItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
-import { useBoardActions } from "@/store/boardStore";
+import { useBoardActions, useBoardStore } from "@/store/boardStore";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -125,7 +125,9 @@ export function AgentActivityPanel({
   onSpawnShell,
 }: AgentActivityPanelProps) {
   const { markSeen } = useSessionActivityActions();
-  const { setAuthRequired, clearAuthRequired } = useBoardActions();
+  const { setAuthRequired, clearAuthRequired, setAuthTerminalInterrupted, setAuthTerminalIdle } =
+    useBoardActions();
+  const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
   const activityInfo = useSessionActivity(sessionKey);
   const activeTab = useActiveTab();
   const selectedProject = useSelectedProject();
@@ -329,13 +331,56 @@ export function AgentActivityPanel({
           terminalId: event.payload.terminal_id,
           output: event.payload.output,
         });
-        openAcpTerminalTab(event.payload.terminal_id);
+        const isAuth = event.payload.terminal_id.startsWith("auth-terminal-");
+        openAcpTerminalTab(event.payload.terminal_id, { isAuthTerminal: isAuth });
       },
     ).catch(console.error);
     return () => {
       unlisten.then((fn) => fn?.());
     };
   }, [sessionKey, liveDispatch, openAcpTerminalTab]);
+
+  // Detect when auth terminal tab is closed before PTY exits.
+  useEffect(() => {
+    if (taskId == null) return;
+    const entry = authRequiredTasks[taskId];
+    if (!entry?.terminalId || entry.terminalState !== "running") return;
+    const isOpen = tabs.some((t) => t.acpTerminalId === entry.terminalId);
+    if (!isOpen) {
+      setAuthTerminalInterrupted(taskId);
+    }
+  }, [tabs, taskId, authRequiredTasks, setAuthTerminalInterrupted]);
+
+  // Listen for auth PTY exit event.
+  useEffect(() => {
+    if (taskId == null) return;
+    const connId = (() => {
+      switch (connection.type) {
+        case "local":
+          return "local";
+        case "ssh":
+          return `ssh-${connection.id}`;
+        case "wsl":
+          return `wsl-${connection.id}`;
+        case "docker":
+          return `docker-${connection.id}`;
+      }
+    })();
+    const unlisten = listen<{ exit_code: number | null }>(
+      `acp://auth-pty-exit/${connId}`,
+      (event) => {
+        if (event.payload.exit_code === 0) {
+          clearAuthRequired(taskId);
+          if (lastUserMessage) void handleSend(lastUserMessage.content);
+        } else {
+          setAuthTerminalIdle(taskId);
+        }
+      },
+    ).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [taskId, connection, clearAuthRequired, setAuthTerminalIdle, lastUserMessage, handleSend]);
 
   const lastAgentSectionId = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {

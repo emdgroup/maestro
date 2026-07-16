@@ -30,7 +30,18 @@ export function useAcpActivity(
       listen<null>(`acp://session-ended/${logId}`, () => {
         dispatch({ type: "session_ended" });
       }),
-      listen<string>(`acp://turn-ended/${logId}`, () => {
+      listen<string>(`acp://turn-ended/${logId}`, (e) => {
+        const stopReason = e.payload;
+        if (stopReason === "error" || stopReason === "auth_required") {
+          dispatch({
+            type: "append_error",
+            stopReason,
+            message:
+              stopReason === "auth_required"
+                ? "Authentication required — log in and resend your message."
+                : "Agent encountered an error and could not respond.",
+          });
+        }
         dispatch({ type: "turn_ended" });
       }),
       listen<null>(`acp://replay-drained/${logId}`, () => {

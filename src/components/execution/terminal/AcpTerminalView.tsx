@@ -11,13 +11,19 @@ interface AcpTerminalViewProps {
   logId: number;
   terminalId: string;
   initialOutput: string;
+  onInput?: (data: string) => void;
 }
 
 function toTerminalOutput(s: string): string {
   return s.replace(/\r?\n/g, "\r\n");
 }
 
-export function AcpTerminalView({ logId, terminalId, initialOutput }: AcpTerminalViewProps) {
+export function AcpTerminalView({
+  logId,
+  terminalId,
+  initialOutput,
+  onInput,
+}: AcpTerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const { data: settings } = useSettings();
@@ -30,7 +36,7 @@ export function AcpTerminalView({ logId, terminalId, initialOutput }: AcpTermina
       cursorBlink: false,
       scrollback: 5000,
       allowProposedApi: true,
-      disableStdin: true,
+      disableStdin: !onInput,
       ...getTerminalTheme(terminalColorMode),
     });
 
@@ -57,6 +63,12 @@ export function AcpTerminalView({ logId, terminalId, initialOutput }: AcpTermina
     });
     resizeObserver.observe(containerRef.current);
 
+    let disposeOnData: (() => void) | undefined;
+    if (onInput) {
+      const d = terminal.onData(onInput);
+      disposeOnData = () => d.dispose();
+    }
+
     const unlisten = listen<{ terminal_id: string; output: string }>(
       `acp://terminal-output/${logId}`,
       (event) => {
@@ -68,6 +80,7 @@ export function AcpTerminalView({ logId, terminalId, initialOutput }: AcpTermina
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      disposeOnData?.();
       unlisten.then((fn) => fn?.());
       terminal.dispose();
     };

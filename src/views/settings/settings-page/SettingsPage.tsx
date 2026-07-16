@@ -119,6 +119,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 control={control}
                 agents={agents}
                 agentsLoading={agentsLoading}
+                connection={connection}
               />
               <AppearanceSection />
               <IssueTrackingSection

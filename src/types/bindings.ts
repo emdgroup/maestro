@@ -1728,6 +1728,21 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  /**
+   * Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
+   * Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
+   */
+  async recoverTaskSession(taskId: number, projectId: number): Promise<Result<number, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("recover_task_session", { taskId, projectId }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async deleteAcpSession(
     agentId: string,
     sessionId: string,
@@ -2410,6 +2425,99 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async getAgentAuthInfo(
+    agentId: string,
+    connection: ConnectionKey,
+  ): Promise<Result<AgentAuthInfo | null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("get_agent_auth_info", { agentId, connection }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async acpAuthenticate(
+    agentId: string,
+    methodId: string,
+    connection: ConnectionKey,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("acp_authenticate", { agentId, methodId, connection }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async acpLogout(agentId: string, connection: ConnectionKey): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("acp_logout", { agentId, connection }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Remove a session that never completed spawn (e.g., auth_required) from in-memory state
+   * without sending a Cancel to maestro-server and without tearing down the connection server.
+   * This preserves the connection server so that Authenticate can be called afterward.
+   */
+  async discardFailedSpawn(logId: number): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("discard_failed_spawn", { logId }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async acpStartAuthTerminal(
+    agentId: string,
+    methodId: string,
+    connection: ConnectionKey,
+    sessionKey: number,
+  ): Promise<Result<string, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("acp_start_auth_terminal", {
+          agentId,
+          methodId,
+          connection,
+          sessionKey,
+        }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async acpSendAuthPtyInput(
+    connection: ConnectionKey,
+    data: number[],
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("acp_send_auth_pty_input", { connection, data }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async acpAbortAuthTerminal(connection: ConnectionKey): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("acp_abort_auth_terminal", { connection }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
 };
 
 /** user-defined events **/
@@ -2444,6 +2552,14 @@ export type ActiveSessionInfo = {
 };
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide";
 /**
+ * Authentication state for a pre-initialized agent connection.
+ */
+export type AgentAuthInfo = {
+  authMethods: AuthMethodDto[];
+  supportsLogout: boolean;
+  authenticated: boolean;
+};
+/**
  * Unified discovery result returned to the frontend via IPC.
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
@@ -2469,6 +2585,16 @@ export type AppSettings = {
   agent_stream_width?: AgentStreamWidth;
   updated_at: string;
   auto_update?: boolean;
+};
+/**
+ * Single authentication method exposed to the frontend.
+ */
+export type AuthMethodDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  methodType: string;
+  args?: string[];
 };
 /**
  * An Azure DevOps project option for combobox display.

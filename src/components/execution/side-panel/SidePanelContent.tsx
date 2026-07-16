@@ -18,6 +18,7 @@ import type { ConnectionKey, DiffTarget } from "@/types/bindings";
 import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
 import { useWslConnections } from "@/services/connection.service";
 import { api } from "@/lib/tauri-utils";
+import { commands } from "@/types/bindings";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -158,7 +159,7 @@ export function SidePanelContent({
 
   return (
     <>
-      {tabs.map(({ id, kind, initialPath, acpTerminalId }) => {
+      {tabs.map(({ id, kind, initialPath, acpTerminalId, isAuthTerminal }) => {
         const isActive = isSessionActive && activeTabId === id;
         const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
@@ -328,6 +329,16 @@ export function SidePanelContent({
                     logId={sessionKey}
                     terminalId={acpTerminalId}
                     initialOutput={terminalBuffers?.get(acpTerminalId) ?? ""}
+                    onInput={
+                      isAuthTerminal
+                        ? (data) => {
+                            void commands.acpSendAuthPtyInput(
+                              connection,
+                              Array.from(new TextEncoder().encode(data)),
+                            );
+                          }
+                        : undefined
+                    }
                   />
                 ) : ptyEntry?.key != null ? (
                   <TerminalComponent taskId={ptyEntry.key} />

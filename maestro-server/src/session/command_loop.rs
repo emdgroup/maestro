@@ -37,7 +37,12 @@ pub(crate) async fn handle_prompt_result(
         .to_string(),
         Err(e) => {
             crate::send_diag("error", format!("[prompt] ACP error for session {session_id}: {e}"));
-            "error".to_string()
+            if e.code == acp::schema::v1::ErrorCode::AuthRequired {
+                "auth_required"
+            } else {
+                "error"
+            }
+            .to_string()
         }
     };
     let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {

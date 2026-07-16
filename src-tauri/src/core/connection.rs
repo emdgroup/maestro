@@ -8,6 +8,7 @@ use tauri::AppHandle;
 use crate::project::lock as project_lock;
 
 use crate::acp::{AcpProcess, ConnectionServer, RestorableSession, ConnectionKey};
+use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::core::schema::{initialize_schema};
 use crate::execution::PtySession;
@@ -105,6 +106,8 @@ pub struct AcpState {
     /// and kept in sync by update_project_settings. Avoids re-reading settings.json
     /// on every session spawn/cancel.
     pub reopen_sessions: tokio::sync::Mutex<HashMap<i32, bool>>,
+    /// Auth state per (connection, agent_id). Populated on PreInitializeOk.
+    pub agent_auth_info: tokio::sync::Mutex<HashMap<(ConnectionKey, String), AgentAuthInfo>>,
 }
 
 pub struct PtyState {
@@ -155,6 +158,7 @@ impl AppState {
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 reopen_sessions: tokio::sync::Mutex::new(HashMap::new()),
+                agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),
