@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
@@ -18,6 +19,7 @@ import type { UsageState, ToolCallItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
+import { useBoardActions } from "@/store/boardStore";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -33,6 +35,7 @@ import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
 import { AgentStreamContent, getItemKey } from "./AgentStreamContent";
 import { AgentBottomBar } from "./AgentBottomBar";
 import { AgentScrollOverlays } from "./AgentScrollOverlays";
+import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import {
   MessageScrollerProvider,
   useMessageScroller,
@@ -113,6 +116,7 @@ interface AgentActivityPanelProps {
 
 export function AgentActivityPanel({
   sessionKey,
+  agentId,
   connection,
   isSelected = false,
   isNewSession = false,
@@ -121,6 +125,7 @@ export function AgentActivityPanel({
   onSpawnShell,
 }: AgentActivityPanelProps) {
   const { markSeen } = useSessionActivityActions();
+  const { setAuthRequired, clearAuthRequired } = useBoardActions();
   const activityInfo = useSessionActivity(sessionKey);
   const activeTab = useActiveTab();
   const selectedProject = useSelectedProject();
@@ -161,6 +166,13 @@ export function AgentActivityPanel({
   }, [activeSessions, sessionKey]);
 
   const isSessionActive = isSelected && activeTab === "agents";
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const lastItem = liveState.items[liveState.items.length - 1];
+  const hasAuthError = liveState.items.some(
+    (item) => item.type === "error" && item.item.stopReason === "auth_required",
+  );
 
   const {
     liveElicitationSummaries,
@@ -224,6 +236,7 @@ export function AgentActivityPanel({
     closeTab,
     addDynamicTab,
     openTabKind,
+    openAcpTerminalTab,
     latestCanvasSurfaceId,
   } = useSidePanelTabs({
     hasPlan: !!sidePanelPlan,
@@ -295,6 +308,34 @@ export function AgentActivityPanel({
     }
     return null;
   }, [agentSections]);
+
+  useEffect(() => {
+    if (
+      lastItem?.type === "error" &&
+      lastItem.item.stopReason === "auth_required" &&
+      taskId != null &&
+      agentId
+    ) {
+      setAuthRequired(taskId, agentId, connection, lastUserMessage?.content ?? null);
+    }
+  }, [lastItem, taskId, agentId, connection, lastUserMessage, setAuthRequired]);
+
+  useEffect(() => {
+    const unlisten = listen<{ terminal_id: string; output: string }>(
+      `acp://terminal-output/${sessionKey}`,
+      (event) => {
+        liveDispatch({
+          type: "terminal_output",
+          terminalId: event.payload.terminal_id,
+          output: event.payload.output,
+        });
+        openAcpTerminalTab(event.payload.terminal_id);
+      },
+    ).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [sessionKey, liveDispatch, openAcpTerminalTab]);
 
   const lastAgentSectionId = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
@@ -429,6 +470,7 @@ export function AgentActivityPanel({
               onOpenFile={handleOpenFile}
               inlinePermission={inlinePermission}
               bottomPadding={composeBarHeight}
+              onAuthLogin={hasAuthError ? () => setIsAuthModalOpen(true) : undefined}
             />
             <AgentBottomBar
               isSessionDead={isSessionDead}
@@ -483,6 +525,20 @@ export function AgentActivityPanel({
           </button>
         </div>
       )}
+      {agentId && (
+        <AgentAuthModal
+          agentId={agentId}
+          agentName={agentId}
+          connection={connection}
+          open={isAuthModalOpen}
+          onAuthSuccess={() => {
+            setIsAuthModalOpen(false);
+            if (taskId != null) clearAuthRequired(taskId);
+            if (lastUserMessage) void handleSend(lastUserMessage.content);
+          }}
+          onClose={() => setIsAuthModalOpen(false)}
+        />
+      )}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
         <ResizablePanel
           panelRef={leftPanelRef}
@@ -532,6 +588,7 @@ export function AgentActivityPanel({
             onMaximizedChange={handleMaximizedChange}
             onSpawnShell={onSpawnShell}
             isSessionActive={isSessionActive}
+            terminalBuffers={liveState.terminalBuffers}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

@@ -197,6 +197,12 @@ export type CanvasItem = {
   surfaceId: string;
 };
 
+export type ErrorItem = {
+  id: string;
+  stopReason: "error" | "auth_required";
+  message: string;
+};
+
 export type ActivityItem =
   | { type: "message"; item: MessageItem }
   | { type: "thinking"; item: ThinkingItem }
@@ -204,7 +210,8 @@ export type ActivityItem =
   | { type: "toolCall"; item: ToolCallItem }
   | { type: "permissionResponse"; item: PermissionResponseItem }
   | { type: "elicitationSummary"; item: ElicitationSummaryItem }
-  | { type: "canvas"; item: CanvasItem };
+  | { type: "canvas"; item: CanvasItem }
+  | { type: "error"; item: ErrorItem };
 
 export type ActivityState = {
   items: ActivityItem[];
@@ -219,6 +226,7 @@ export type ActivityState = {
   endReason: "completed" | "failed" | "cancelled" | null;
   suppressUserChunks: boolean;
   canvasMap: Map<string, CanvasSurface>;
+  terminalBuffers: Map<string, string>;
 };
 
 export type AvailableCommand = {
@@ -239,4 +247,5 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   endReason: null,
   suppressUserChunks: false,
   canvasMap: new Map(),
+  terminalBuffers: new Map(),
 };

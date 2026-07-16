@@ -40,6 +40,7 @@ interface ExecutionSidePanelProps {
   fill?: boolean;
   isSessionActive?: boolean;
   onSpawnShell?: () => Promise<number | null>;
+  terminalBuffers?: Map<string, string>;
 }
 
 export function ExecutionSidePanel({
@@ -70,6 +71,7 @@ export function ExecutionSidePanel({
   fill = false,
   isSessionActive = true,
   onSpawnShell,
+  terminalBuffers,
 }: ExecutionSidePanelProps) {
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
@@ -150,6 +152,7 @@ export function ExecutionSidePanel({
               onCollapsedChange={onCollapsedChange}
               onOpenTabKind={onOpenTabKind}
               onSpawnShell={onSpawnShell}
+              terminalBuffers={terminalBuffers}
             />
           </div>
         </div>

@@ -7,6 +7,7 @@ import type {
   ThinkingItem,
   UserMessageItem,
   CanvasSurface,
+  ErrorItem,
 } from "./types";
 import { extractAgentMeta } from "./agentMeta";
 
@@ -15,7 +16,9 @@ export type ActivityAction =
   | { type: "session_ended" }
   | { type: "turn_ended" }
   | { type: "finalize_streaming" }
-  | { type: "set_initialized" };
+  | { type: "set_initialized" }
+  | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
+  | { type: "terminal_output"; terminalId: string; output: string };
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
@@ -41,10 +44,23 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
         isTurnActive: false,
       };
     }
+    case "append_error": {
+      const errorItem: ErrorItem = {
+        id: `error-${crypto.randomUUID()}`,
+        stopReason: action.stopReason,
+        message: action.message,
+      };
+      return { ...state, items: [...state.items, { type: "error", item: errorItem }] };
+    }
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "set_initialized":
       return { ...state, isInitializing: false };
+    case "terminal_output": {
+      const newBuffers = new Map(state.terminalBuffers);
+      newBuffers.set(action.terminalId, (newBuffers.get(action.terminalId) ?? "") + action.output);
+      return { ...state, terminalBuffers: newBuffers };
+    }
     default:
       return state;
   }

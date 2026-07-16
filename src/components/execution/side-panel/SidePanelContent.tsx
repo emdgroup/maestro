@@ -6,6 +6,7 @@ import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChange
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { PermissionPrompt } from "@/components/execution/activity/PermissionPrompt";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
+import { AcpTerminalView } from "@/components/execution/terminal/AcpTerminalView";
 import { OverviewPanel } from "./OverviewPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
@@ -39,6 +40,7 @@ interface SidePanelContentProps {
   onCollapsedChange: (c: boolean) => void;
   onOpenTabKind: (kind: TabKind) => void;
   onSpawnShell?: () => Promise<number | null>;
+  terminalBuffers?: Map<string, string>;
 }
 
 export function SidePanelContent({
@@ -62,6 +64,7 @@ export function SidePanelContent({
   onCollapsedChange,
   onOpenTabKind,
   onSpawnShell,
+  terminalBuffers,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const [sessionMeta, setSessionMeta] = useState<{
@@ -118,6 +121,7 @@ export function SidePanelContent({
     if (!onSpawnShell) return;
     for (const tab of tabs) {
       if (tab.kind !== "terminal") continue;
+      if (tab.acpTerminalId) continue; // ACP-managed terminal, no PTY needed
       if (ptyState.has(tab.id)) continue;
       if (spawningRef.current.has(tab.id)) continue;
       const tabId = tab.id;
@@ -154,9 +158,9 @@ export function SidePanelContent({
 
   return (
     <>
-      {tabs.map(({ id, kind, initialPath }) => {
+      {tabs.map(({ id, kind, initialPath, acpTerminalId }) => {
         const isActive = isSessionActive && activeTabId === id;
-        const ptyEntry = kind === "terminal" ? ptyState.get(id) : undefined;
+        const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
           <div key={id} className={cn("absolute inset-0", !isActive && "hidden")}>
             {kind === "overview" && (
@@ -319,7 +323,13 @@ export function SidePanelContent({
             )}
             {kind === "terminal" && (
               <div className="absolute inset-0">
-                {ptyEntry?.key != null ? (
+                {acpTerminalId ? (
+                  <AcpTerminalView
+                    logId={sessionKey}
+                    terminalId={acpTerminalId}
+                    initialOutput={terminalBuffers?.get(acpTerminalId) ?? ""}
+                  />
+                ) : ptyEntry?.key != null ? (
                   <TerminalComponent taskId={ptyEntry.key} />
                 ) : ptyEntry?.failed ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

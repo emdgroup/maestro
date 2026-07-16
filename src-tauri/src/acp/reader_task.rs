@@ -292,7 +292,16 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
-            if let Err(e) = app_handle.emit(&format!("acp://terminal-output/{}", log_id), &out.bytes) {
+            #[derive(serde::Serialize)]
+            struct Payload<'a> {
+                terminal_id: &'a str,
+                output: String,
+            }
+            let payload = Payload {
+                terminal_id: &out.terminal_id,
+                output: String::from_utf8_lossy(&out.bytes).into_owned(),
+            };
+            if let Err(e) = app_handle.emit(&format!("acp://terminal-output/{}", log_id), &payload) {
                 eprintln!("[acp] emit terminal-output/{log_id} failed: {e}");
             }
         }
@@ -696,6 +705,20 @@ async fn handle_shared_server_message(
         MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
             let agent_id = resp.agent_id.clone();
             let supports = (resp.supports_session_list, resp.supports_session_load, resp.supports_session_close, resp.supports_session_delete);
+            // Store auth info before sending the response to avoid a race.
+            let auth_info = crate::acp::session_types::AgentAuthInfo {
+                auth_methods: resp.auth_methods.iter().map(|m| crate::acp::session_types::AuthMethodDto {
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    description: m.description.clone(),
+                    method_type: m.method_type.clone(),
+                    args: m.args.clone(),
+                }).collect(),
+                supports_logout: resp.supports_auth_logout,
+                authenticated: false,
+            };
+            app_state.acp.agent_auth_info.lock().await
+                .insert((connection_key, agent_id.clone()), auth_info);
             let tx = pending.pre_init
                 .lock()
                 .ok()
@@ -707,6 +730,20 @@ async fn handle_shared_server_message(
                 "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={} session_delete={}",
                 supports.0, supports.1, supports.2, supports.3
             ));
+        }
+        MaestroRpcMessage::Response(ServerResponse::AuthenticateOk) => {
+            if let Ok(mut guard) = pending.authenticate.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::LogoutOk) => {
+            if let Ok(mut guard) = pending.logout.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             for session_id_str in &lost.affected_session_ids {
@@ -764,6 +801,9 @@ async fn handle_shared_server_message(
             for lid in log_ids {
                 let _ = app_handle.emit(&format!("acp://diagnostic/{}", lid), &diag);
             }
+            // Connection-scoped event so the auth modal can receive output even when the
+            // session that triggered auth was discarded before the modal opened.
+            app_handle.emit(&format!("acp://auth-output/{}", connection_key_id(&connection_key)), &diag).ok();
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
             // Try pending session ops first, then file ops, then PreInitialize, then emit globally.
@@ -851,6 +891,26 @@ async fn handle_shared_server_message(
                 if let Ok(mut guard) = pending.list_agents.lock() {
                     if let Some(tx) = guard.take() {
                         let _ = tx.send(Err(err.message.clone()));
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending.authenticate.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending.logout.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
                         resolved = true;
                     }
                 }
@@ -1039,4 +1099,13 @@ pub(crate) fn spawn_shared_reader_task(
 
         app_state.app_handle.emit("sessions-changed", ()).ok();
     });
+}
+
+fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
+    match key {
+        crate::acp::ConnectionKey::Local => "local".to_string(),
+        crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
+        crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
+        crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
+    }
 }

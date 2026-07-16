@@ -22,6 +22,7 @@ interface AgentStreamContentProps {
   onOpenFile?: (uri: string) => void;
   inlinePermission: React.ReactNode;
   bottomPadding?: number;
+  onAuthLogin?: () => void;
 }
 
 export function AgentStreamContent({
@@ -32,6 +33,7 @@ export function AgentStreamContent({
   onOpenFile,
   inlinePermission,
   bottomPadding,
+  onAuthLogin,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -83,6 +85,7 @@ export function AgentStreamContent({
               onOpenPlanOverlay,
               toolCallMap,
               canvasMap,
+              onAuthLogin,
             };
 
             return (
