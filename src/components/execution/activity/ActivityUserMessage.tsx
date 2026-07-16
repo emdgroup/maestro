@@ -182,13 +182,13 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
   }
 
   return (
-    <Message className="gap-2.5 items-start">
+    <Message align="end" className="gap-2.5 items-start">
       <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex-shrink-0 mt-[7px]">
         <div className="w-7 h-7 rounded-full bg-card flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-accent/70" />
         </div>
       </div>
-      <MessageContent>
+      <MessageContent className="w-fit max-w-[80%]">
         <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
           <div
             className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words"
