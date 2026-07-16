@@ -54,7 +54,14 @@ function MarkdownCodeComponent({
     if (lang === "mermaid") return <MermaidBlock code={rawCode} />;
     return <CodeBlockWrapper code={rawCode} lang={lang} />;
   }
-  return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
+  return (
+    <code
+      style={{ background: "color-mix(in oklch, var(--foreground) 15%, var(--muted))" }}
+      className="px-1 py-0.5 rounded text-xs font-mono"
+    >
+      {children}
+    </code>
+  );
 }
 
 function scrollToTarget(target: HTMLElement): void {
@@ -379,6 +386,11 @@ export const MARKDOWN_COMPONENTS = {
   ),
   td: ({ children }: { children?: ReactNode }) => (
     <td className="border border-border px-2.5 py-1 text-foreground/80">{children}</td>
+  ),
+  blockquote: ({ children }: { children?: ReactNode }) => (
+    <blockquote className="border-l-2 border-muted-foreground pl-3 italic text-muted-foreground my-1.5">
+      {children}
+    </blockquote>
   ),
 };
 
