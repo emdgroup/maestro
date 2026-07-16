@@ -48,15 +48,6 @@ export function AgentStreamContent({
           style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
         >
           {agentSections.map((section, sectionIndex) => {
-            if (section.type === "agentSection") {
-              const allHidden = section.items.every((gi) => {
-                if (gi.type === "toolGroup") return toolCallsHidden;
-                if (gi.item.type === "thinking") return thinkingHidden;
-                return false;
-              });
-              if (allHidden) return null;
-            }
-
             if (section.type === "standalone") {
               const gi = section.item;
               if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
@@ -69,6 +60,14 @@ export function AgentStreamContent({
             }
 
             const { items, showConnector } = section;
+
+            const visibleItems = items.filter((gi) => {
+              if (gi.type === "toolGroup") return !toolCallsHidden;
+              if (gi.item.type === "thinking") return !thinkingHidden;
+              return true;
+            });
+            if (visibleItems.length === 0) return null;
+
             const firstItem = items[0];
             const sectionKey =
               firstItem.type === "toolGroup"
@@ -91,7 +90,7 @@ export function AgentStreamContent({
             })();
 
             const sharedItemProps = {
-              allItems: items,
+              allItems: visibleItems,
               nextSectionStartsWithMessage,
               onOpenPlanOverlay,
               toolCallMap,
@@ -102,7 +101,7 @@ export function AgentStreamContent({
             return (
               <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
                 <AgentResponseSection showConnector={showConnector}>
-                  {items.map((gi, index) => (
+                  {visibleItems.map((gi, index) => (
                     <AgentStreamItem
                       key={getItemKey(gi)}
                       gi={gi}
