@@ -19,6 +19,8 @@ export interface BoardState {
   isTerminalOpen: boolean;
   reviewPanelTaskId: number | null;
   authRequiredTasks: Record<number, AuthRequiredEntry>;
+  pendingAuthRetry: number | null;
+  pendingSessionRetry: { sessionKey: number; lastPrompt: unknown } | null;
   openTerminal: (taskId: number) => void;
   closeTerminal: () => Promise<void>;
   openReview: (taskId: number) => void;
@@ -33,6 +35,10 @@ export interface BoardState {
   setAuthTerminalRunning: (taskId: number, terminalId: string) => void;
   setAuthTerminalInterrupted: (taskId: number) => void;
   setAuthTerminalIdle: (taskId: number) => void;
+  setPendingAuthRetry: (taskId: number) => void;
+  clearPendingAuthRetry: () => void;
+  setPendingSessionRetry: (payload: { sessionKey: number; lastPrompt: unknown }) => void;
+  clearPendingSessionRetry: () => void;
 }
 
 export const useBoardStore = create<BoardState>()(
@@ -41,6 +47,8 @@ export const useBoardStore = create<BoardState>()(
     isTerminalOpen: false,
     reviewPanelTaskId: null,
     authRequiredTasks: {} as Record<number, AuthRequiredEntry>,
+    pendingAuthRetry: null,
+    pendingSessionRetry: null,
 
     openTerminal: (taskId: number) => {
       set((state) => {
@@ -115,6 +123,26 @@ export const useBoardStore = create<BoardState>()(
           entry.terminalId = null;
         }
       }),
+
+    setPendingAuthRetry: (taskId) =>
+      set((state) => {
+        state.pendingAuthRetry = taskId;
+      }),
+
+    clearPendingAuthRetry: () =>
+      set((state) => {
+        state.pendingAuthRetry = null;
+      }),
+
+    setPendingSessionRetry: (payload) =>
+      set((state) => {
+        state.pendingSessionRetry = payload;
+      }),
+
+    clearPendingSessionRetry: () =>
+      set((state) => {
+        state.pendingSessionRetry = null;
+      }),
   })),
 );
 
@@ -136,5 +164,9 @@ export const useBoardActions = () =>
       setAuthTerminalRunning: s.setAuthTerminalRunning,
       setAuthTerminalInterrupted: s.setAuthTerminalInterrupted,
       setAuthTerminalIdle: s.setAuthTerminalIdle,
+      setPendingAuthRetry: s.setPendingAuthRetry,
+      clearPendingAuthRetry: s.clearPendingAuthRetry,
+      setPendingSessionRetry: s.setPendingSessionRetry,
+      clearPendingSessionRetry: s.clearPendingSessionRetry,
     })),
   );

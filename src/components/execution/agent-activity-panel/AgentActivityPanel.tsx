@@ -20,6 +20,7 @@ import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
+import { commands } from "@/types/bindings";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -125,8 +126,13 @@ export function AgentActivityPanel({
   onSpawnShell,
 }: AgentActivityPanelProps) {
   const { markSeen } = useSessionActivityActions();
-  const { setAuthRequired, clearAuthRequired, setAuthTerminalInterrupted, setAuthTerminalIdle } =
-    useBoardActions();
+  const {
+    setAuthRequired,
+    clearAuthRequired,
+    setAuthTerminalInterrupted,
+    setAuthTerminalIdle,
+    setPendingSessionRetry,
+  } = useBoardActions();
   const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
   const activityInfo = useSessionActivity(sessionKey);
   const activeTab = useActiveTab();
@@ -170,6 +176,9 @@ export function AgentActivityPanel({
   const isSessionActive = isSelected && activeTab === "agents";
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [hasPreSpawnAuthError, setHasPreSpawnAuthError] = useState(false);
+
+  const effectiveAuthKey = taskId ?? sessionKey;
 
   const lastItem = liveState.items[liveState.items.length - 1];
   const hasAuthError = liveState.items.some(
@@ -312,15 +321,10 @@ export function AgentActivityPanel({
   }, [agentSections]);
 
   useEffect(() => {
-    if (
-      lastItem?.type === "error" &&
-      lastItem.item.stopReason === "auth_required" &&
-      taskId != null &&
-      agentId
-    ) {
-      setAuthRequired(taskId, agentId, connection, lastUserMessage?.content ?? null);
+    if (lastItem?.type === "error" && lastItem.item.stopReason === "auth_required" && agentId) {
+      setAuthRequired(effectiveAuthKey, agentId, connection, lastUserMessage?.content ?? null);
     }
-  }, [lastItem, taskId, agentId, connection, lastUserMessage, setAuthRequired]);
+  }, [lastItem, effectiveAuthKey, agentId, connection, lastUserMessage, setAuthRequired]);
 
   useEffect(() => {
     const unlisten = listen<{ terminal_id: string; output: string }>(
@@ -340,47 +344,26 @@ export function AgentActivityPanel({
     };
   }, [sessionKey, liveDispatch, openAcpTerminalTab]);
 
-  // Detect when auth terminal tab is closed before PTY exits.
   useEffect(() => {
-    if (taskId == null) return;
-    const entry = authRequiredTasks[taskId];
-    if (!entry?.terminalId || entry.terminalState !== "running") return;
-    const isOpen = tabs.some((t) => t.acpTerminalId === entry.terminalId);
-    if (!isOpen) {
-      setAuthTerminalInterrupted(taskId);
-    }
-  }, [tabs, taskId, authRequiredTasks, setAuthTerminalInterrupted]);
-
-  // Listen for auth PTY exit event.
-  useEffect(() => {
-    if (taskId == null) return;
-    const connId = (() => {
-      switch (connection.type) {
-        case "local":
-          return "local";
-        case "ssh":
-          return `ssh-${connection.id}`;
-        case "wsl":
-          return `wsl-${connection.id}`;
-        case "docker":
-          return `docker-${connection.id}`;
+    const unlisten = listen<string>(`acp://session-error/${sessionKey}`, (e) => {
+      if (e.payload === "auth_required" && agentId) {
+        setAuthRequired(effectiveAuthKey, agentId, connection, null);
+        setHasPreSpawnAuthError(true);
       }
-    })();
-    const unlisten = listen<{ exit_code: number | null }>(
-      `acp://auth-pty-exit/${connId}`,
-      (event) => {
-        if (event.payload.exit_code === 0) {
-          clearAuthRequired(taskId);
-          if (lastUserMessage) void handleSend(lastUserMessage.content);
-        } else {
-          setAuthTerminalIdle(taskId);
-        }
-      },
-    ).catch(console.error);
+    }).catch(console.error);
     return () => {
       unlisten.then((fn) => fn?.());
     };
-  }, [taskId, connection, clearAuthRequired, setAuthTerminalIdle, lastUserMessage, handleSend]);
+  }, [sessionKey, agentId, connection, effectiveAuthKey, setAuthRequired]);
+
+  // Detect when auth terminal tab is closed before PTY exits.
+  useEffect(() => {
+    const entry = authRequiredTasks[effectiveAuthKey];
+    if (!entry?.terminalId || entry.terminalState !== "running") return;
+    if (!tabs.some((t) => t.acpTerminalId === entry.terminalId)) {
+      setAuthTerminalInterrupted(effectiveAuthKey);
+    }
+  }, [tabs, effectiveAuthKey, authRequiredTasks, setAuthTerminalInterrupted]);
 
   const lastAgentSectionId = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
@@ -515,7 +498,9 @@ export function AgentActivityPanel({
               onOpenFile={handleOpenFile}
               inlinePermission={inlinePermission}
               bottomPadding={composeBarHeight}
-              onAuthLogin={hasAuthError ? () => setIsAuthModalOpen(true) : undefined}
+              onAuthLogin={
+                hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
+              }
             />
             <AgentBottomBar
               isSessionDead={isSessionDead}
@@ -575,11 +560,24 @@ export function AgentActivityPanel({
           agentId={agentId}
           agentName={agentId}
           connection={connection}
+          taskId={effectiveAuthKey}
+          sessionKey={sessionKey}
+          terminalState={authRequiredTasks[effectiveAuthKey]?.terminalState ?? "idle"}
           open={isAuthModalOpen}
           onAuthSuccess={() => {
             setIsAuthModalOpen(false);
-            if (taskId != null) clearAuthRequired(taskId);
-            if (lastUserMessage) void handleSend(lastUserMessage.content);
+            setHasPreSpawnAuthError(false);
+            clearAuthRequired(effectiveAuthKey);
+            if (lastUserMessage) {
+              void handleSend(lastUserMessage.content);
+            } else if (taskId === null) {
+              setPendingSessionRetry({ sessionKey, lastPrompt: null });
+            }
+          }}
+          onRetry={() => {
+            const entry = authRequiredTasks[effectiveAuthKey];
+            if (entry?.terminalId) void commands.acpAbortAuthTerminal(connection);
+            setAuthTerminalIdle(effectiveAuthKey);
           }}
           onClose={() => setIsAuthModalOpen(false)}
         />

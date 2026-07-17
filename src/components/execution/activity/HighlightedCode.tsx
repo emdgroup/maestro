@@ -60,7 +60,7 @@ export const HighlightedCode = memo(function HighlightedCode({
   if (html) {
     return (
       <div
-        className="text-xs overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
+        className="text-xs [&_pre]:overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );

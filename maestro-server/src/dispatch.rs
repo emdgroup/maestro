@@ -783,6 +783,7 @@ pub(crate) async fn dispatch_message(
             let all_args: Vec<String> = spawn_args.into_iter().chain(method.args.into_iter()).collect();
             let stdout_task = Arc::clone(stdout);
             let auth_terminals_task = Arc::clone(auth_terminals);
+            let agent_connections_task = Arc::clone(agent_connections);
             let terminal_id = req.terminal_id.clone();
             let session_id = req.session_id.clone();
             let agent_id = req.agent_id.clone();
@@ -900,6 +901,11 @@ pub(crate) async fn dispatch_message(
                     }
                 };
                 auth_terminals_task.lock().await.remove(&terminal_id);
+                // Evict the old agent connection on successful auth so the next Spawn
+                // starts a fresh process that reads the newly written credentials from disk.
+                if exit_code == Some(0) {
+                    agent_connections_task.lock().await.remove(&agent_id);
+                }
                 send_response(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(AuthTerminalExitResponse {

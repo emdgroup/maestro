@@ -597,6 +597,38 @@ async fn handle_shared_server_message(
                 }
             }
 
+            // If the agent completed a turn without needing auth, it has valid credentials.
+            // This covers token-configured agents that never go through the explicit auth flow.
+            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+                if turn_ended.stop_reason != "auth_required" {
+                    let needs_auth_event = {
+                        let mut auth_map = app_state.acp.agent_auth_info.lock().await;
+                        if let Some(info) = auth_map.get_mut(&(connection_key, agent_id.clone())) {
+                            if !info.authenticated {
+                                info.authenticated = true;
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    };
+                    if needs_auth_event {
+                        let conn_key_id = match connection_key {
+                            crate::acp::ConnectionKey::Local => "local".to_string(),
+                            crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
+                            crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
+                            crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
+                        };
+                        app_handle.emit(
+                            &format!("acp://auth-state-changed/{}", conn_key_id),
+                            &serde_json::json!({ "agentId": agent_id }),
+                        ).ok();
+                    }
+                }
+            }
+
             let is_permission_request = matches!(msg, MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_)));
             let is_session_load_error = matches!(&msg, MaestroRpcMessage::Response(ServerResponse::Error(e)) if e.session_id.is_some());
             let native_id = handle_server_message(
@@ -706,6 +738,12 @@ async fn handle_shared_server_message(
             let agent_id = resp.agent_id.clone();
             let supports = (resp.supports_session_list, resp.supports_session_load, resp.supports_session_close, resp.supports_session_delete);
             // Store auth info before sending the response to avoid a race.
+            // Preserve authenticated=true if the agent was already authenticated this session
+            // (e.g., after terminal auth, the retry spawns a new session and re-sends PreInitializeOk).
+            let mut auth_map = app_state.acp.agent_auth_info.lock().await;
+            let prev_authenticated = auth_map.get(&(connection_key, agent_id.clone()))
+                .map(|info| info.authenticated)
+                .unwrap_or(false);
             let auth_info = crate::acp::session_types::AgentAuthInfo {
                 auth_methods: resp.auth_methods.iter().map(|m| crate::acp::session_types::AuthMethodDto {
                     id: m.id.clone(),
@@ -715,10 +753,10 @@ async fn handle_shared_server_message(
                     args: m.args.clone(),
                 }).collect(),
                 supports_logout: resp.supports_auth_logout,
-                authenticated: false,
+                authenticated: prev_authenticated,
             };
-            app_state.acp.agent_auth_info.lock().await
-                .insert((connection_key, agent_id.clone()), auth_info);
+            auth_map.insert((connection_key, agent_id.clone()), auth_info);
+            drop(auth_map);
             let tx = pending.pre_init
                 .lock()
                 .ok()
@@ -757,10 +795,16 @@ async fn handle_shared_server_message(
                 &serde_json::json!({ "exit_code": exit.exit_code }),
             ).ok();
             if exit.exit_code == Some(0) {
-                let mut map = app_state.acp.agent_auth_info.lock().await;
-                if let Some(info) = map.get_mut(&(connection_key, exit.agent_id.clone())) {
-                    info.authenticated = true;
+                {
+                    let mut map = app_state.acp.agent_auth_info.lock().await;
+                    if let Some(info) = map.get_mut(&(connection_key, exit.agent_id.clone())) {
+                        info.authenticated = true;
+                    }
                 }
+                app_handle.emit(
+                    &format!("acp://auth-state-changed/{}", conn_key_id),
+                    &serde_json::json!({ "agentId": exit.agent_id }),
+                ).ok();
             }
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {

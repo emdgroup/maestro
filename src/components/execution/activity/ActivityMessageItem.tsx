@@ -100,7 +100,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         <Button
           variant="ghost"
           onClick={handleCopyMessage}
-          className="sticky bottom-14.5 float-right -mt-5 p-1 h-auto rounded text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
+          className="sticky bottom-14.5 float-right -mt-5 p-1 h-auto rounded-md text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
           aria-label={messageCopied ? "Copied" : "Copy response"}
         >
           {messageCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}

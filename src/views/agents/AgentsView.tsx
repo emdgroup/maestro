@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
@@ -9,6 +10,7 @@ import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore
 import {
   useActiveSessionsQuery,
   useSpawnInteractiveExecutionMutation,
+  useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
@@ -16,6 +18,7 @@ import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
+import { api } from "@/lib/tauri-utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -32,17 +35,21 @@ interface AgentsViewProps {
   connection: ConnectionKey;
 }
 
-function connIdMatches(connection: ConnectionKey, connId: string): boolean {
+function connKeyToId(connection: ConnectionKey): string {
   switch (connection.type) {
     case "local":
-      return connId === "local";
+      return "local";
     case "ssh":
-      return connId === `ssh-${connection.id}`;
+      return `ssh-${connection.id}`;
     case "wsl":
-      return connId === `wsl-${connection.id}`;
+      return `wsl-${connection.id}`;
     case "docker":
-      return connId === `docker-${connection.id}`;
+      return `docker-${connection.id}`;
   }
+}
+
+function connIdMatches(connection: ConnectionKey, connId: string): boolean {
+  return connKeyToId(connection) === connId;
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
@@ -112,24 +119,24 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
+  const queryClient = useQueryClient();
   const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
-  const { clearAuthRequired, setAuthTerminalIdle, setPendingAuthRetry } = useBoardActions();
+  const pendingSessionRetry = useBoardStore((s) => s.pendingSessionRetry);
+  const {
+    clearAuthRequired,
+    setAuthTerminalIdle,
+    setPendingAuthRetry,
+    setPendingSessionRetry,
+    clearPendingSessionRetry,
+  } = useBoardActions();
   const authRequiredTasksRef = useRef(authRequiredTasks);
   authRequiredTasksRef.current = authRequiredTasks;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const spawnAcpMutation = useSpawnAcpSessionMutation();
 
   useEffect(() => {
-    const connId = (() => {
-      switch (connection.type) {
-        case "local":
-          return "local";
-        case "ssh":
-          return `ssh-${connection.id}`;
-        case "wsl":
-          return `wsl-${connection.id}`;
-        case "docker":
-          return `docker-${connection.id}`;
-      }
-    })();
+    const connId = connKeyToId(connection);
     const unlisten = listen<{ exit_code: number | null }>(
       `acp://auth-pty-exit/${connId}`,
       (event) => {
@@ -140,8 +147,16 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         if (!found) return;
         const taskId = Number(found[0]);
         if (event.payload.exit_code === 0) {
+          const lastPrompt = authRequiredTasksRef.current[taskId]?.lastPrompt;
           clearAuthRequired(taskId);
-          setPendingAuthRetry(taskId);
+          const isManualSession = sessionsRef.current.some(
+            (s) => s.session_key === taskId && !s.task_id,
+          );
+          if (isManualSession) {
+            setPendingSessionRetry({ sessionKey: taskId, lastPrompt: lastPrompt ?? null });
+          } else {
+            setPendingAuthRetry(taskId);
+          }
         } else {
           setAuthTerminalIdle(taskId);
         }
@@ -150,7 +165,64 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     return () => {
       unlisten.then((fn) => fn?.());
     };
-  }, [connection, clearAuthRequired, setAuthTerminalIdle, setPendingAuthRetry]);
+  }, [
+    connection,
+    clearAuthRequired,
+    setAuthTerminalIdle,
+    setPendingAuthRetry,
+    setPendingSessionRetry,
+  ]);
+
+  useEffect(() => {
+    const connId = connKeyToId(connection);
+    const unlisten = listen<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (event) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["agentAuthInfo", event.payload.agentId, connection],
+      });
+    }).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [connection, queryClient]);
+
+  useEffect(() => {
+    if (!pendingSessionRetry || !projectId) return;
+    const { sessionKey, lastPrompt } = pendingSessionRetry;
+    clearPendingSessionRetry();
+    void (async () => {
+      const session = sessionsRef.current.find((s) => s.session_key === sessionKey);
+      if (!session) return;
+      const meta = await api.getAcpSessionMeta(sessionKey).catch(() => null);
+      if (!meta) return;
+      await api.discardFailedSpawn(sessionKey).catch(() => {});
+      const result = await spawnAcpMutation.mutateAsync({
+        agentId: session.agent_id ?? "",
+        cwd: meta.cwd,
+        sessionName: session.session_name ?? null,
+        projectId: meta.project_id ?? projectId,
+        connection,
+        worktreeBranch: session.branch_name ?? null,
+      });
+      setSelectedSessionKey(result.log_id);
+      if (lastPrompt != null) {
+        const logId = result.log_id;
+        void (async () => {
+          const unlisten = await listen<null>(`acp://spawn-ok/${logId}`, async () => {
+            unlisten();
+            try {
+              if (Array.isArray(lastPrompt)) {
+                await api.sendAcpPromptStructured(logId, lastPrompt);
+              } else {
+                await api.sendAcpPrompt(logId, lastPrompt as string);
+              }
+            } catch (e) {
+              console.error("[auth-retry] sendAcpPrompt failed:", e);
+            }
+          });
+        })().catch(console.error);
+      }
+    })().catch(console.error);
+  }, [pendingSessionRetry, projectId, connection, clearPendingSessionRetry, spawnAcpMutation]);
 
   const visibleAgents = discovery?.agents ?? [];
   const agentIcons: Record<string, string> = Object.fromEntries(

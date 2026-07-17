@@ -7,7 +7,7 @@ import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog"
 import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
-import { useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
+import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
@@ -177,8 +177,8 @@ function FooterCTAs({
   if (task.status === "InProgress") {
     if (sessionLostStable) {
       return (
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <span className="text-[10px] font-bold text-destructive">Session lost</span>
+        <div className="flex flex-col gap-1 mt-1.5">
+          <p className="text-[10px] font-bold text-destructive text-center">Session lost</p>
           <Button
             onClick={(e) => {
               e.stopPropagation();
@@ -314,7 +314,9 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const { projectId, projectPath, connection } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
-  const { openReview, clearAuthRequired, setAuthTerminalIdle } = useBoardActions();
+  const { openReview, clearAuthRequired, setAuthTerminalIdle, clearPendingAuthRetry } =
+    useBoardActions();
+  const pendingAuthRetry = useBoardStore((s) => s.pendingAuthRetry);
   const authRequired = useAuthRequiredTask(task.id);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const {
@@ -336,6 +338,15 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const activityInfo = useSessionActivity(activeSession?.session_key);
   const activityStatus = activityInfo?.status ?? null;
   const isAwaiting = task.status === "InProgress" && activityStatus === "awaiting_input";
+
+  useEffect(() => {
+    if (pendingAuthRetry !== task.id) return;
+    clearPendingAuthRetry();
+    if (activeSession) {
+      void api.discardFailedSpawn(activeSession.session_key);
+    }
+    void handleExecute(task);
+  }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isDraggable = task.status === "Backlog" || task.status === "Ready";
 
@@ -486,7 +497,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
                 authRequired.lastPrompt as import("@/types/bindings").JsonValue,
               );
               navigate({ agentId: String(task.id) });
-            } else if (!authRequired.lastPrompt) {
+            } else {
               void handleExecute(task);
             }
           }}

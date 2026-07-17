@@ -328,13 +328,13 @@ export function AgentMonitor({
                   variant="ghost"
                   size="sm"
                   className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  disabled={session.task_id != null}
+                  disabled={session.task_prevents_close}
                   onClick={() => onClose(session)}
                 >
                   <X className="w-4 h-4" />
                 </Button>
               </TooltipTrigger>
-              {session.task_id != null && (
+              {session.task_prevents_close && (
                 <TooltipContent>
                   Task sessions can only be stopped from the task card
                 </TooltipContent>

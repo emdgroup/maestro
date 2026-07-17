@@ -2549,6 +2549,7 @@ export type ActiveSessionInfo = {
   supports_session_close: boolean;
   supports_session_delete: boolean;
   project_id: number | null;
+  task_prevents_close: boolean;
 };
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide";
 /**

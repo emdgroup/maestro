@@ -4,11 +4,10 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { Label } from "@/ui/label";
 import { Switch } from "@/ui/switch";
 import { Button } from "@/ui/button";
-import { Bot, RotateCcw, LogIn, LogOut, CheckCircle, Loader2 } from "lucide-react";
+import { Bot, RotateCcw, LogOut, Loader2, Check } from "lucide-react";
 import type { ConnectionKey, DiscoveredAgent } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
-import { AgentAuthModal } from "@/components/common/AgentAuthModal";
-import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 export interface ProjectSettingsFormData {
   default_agent: string;
@@ -33,96 +32,70 @@ interface AgentAuthRowProps {
 function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthRowProps) {
   const { data: authInfo } = useAgentAuthInfoQuery(agent.id, connection);
   const logout = useAcpLogoutMutation();
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const hasAuth = authInfo && authInfo.authMethods.length > 0;
+  const isAuthenticated = authInfo?.authenticated ?? false;
+  const supportsLogout = authInfo?.supportsLogout ?? false;
 
   return (
-    <>
-      <div className="flex items-center gap-2 py-2 px-3 rounded-lg border border-border bg-muted/20 hover:bg-muted/40 transition-colors">
-        <div className="shrink-0">
-          {hasBrandIcon(agent.id) ? (
-            <BrandIcon slug={agent.id} className="w-5 h-5" />
-          ) : agent.icon ? (
-            <img
-              src={agent.icon}
-              className="w-5 h-5 rounded-sm dark:filter-[invert(1)]"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-              alt={agent.name}
-            />
-          ) : (
-            <Bot className="w-5 h-5 text-muted-foreground" />
-          )}
-        </div>
-
-        <span className="flex-1 text-sm font-medium truncate">{agent.name}</span>
-
-        {isDefault ? (
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-            Default
-          </span>
+    <div
+      className={cn(
+        "group flex items-center gap-2 py-2 px-3 rounded-lg border border-border bg-muted/20 transition-colors",
+        isDefault ? "cursor-default" : "cursor-pointer hover:bg-muted/40 hover:border-primary/20",
+      )}
+      onClick={() => {
+        if (!isDefault) onSetDefault();
+      }}
+    >
+      <div className="relative shrink-0">
+        {hasBrandIcon(agent.id) ? (
+          <BrandIcon slug={agent.id} className="w-5 h-5" />
+        ) : agent.icon ? (
+          <img
+            src={agent.icon}
+            className="w-5 h-5 rounded-sm dark:filter-[invert(1)]"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+            alt={agent.name}
+          />
         ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-[10px] px-2 text-muted-foreground hover:text-foreground"
-            onClick={onSetDefault}
-          >
-            Set default
-          </Button>
+          <Bot className="w-5 h-5 text-muted-foreground" />
         )}
-
-        {hasAuth && !authInfo.authenticated && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-[10px] px-2 text-warning hover:text-warning hover:bg-warning/10"
-            onClick={() => setIsAuthModalOpen(true)}
-          >
-            <LogIn className="w-3 h-3" />
-            Login
-          </Button>
-        )}
-
-        {hasAuth && authInfo.authenticated && (
-          <div className="flex items-center gap-1">
-            <span className="flex items-center gap-1 text-[10px] text-success">
-              <CheckCircle className="w-3 h-3" />
-              Logged in
-            </span>
-            {authInfo.supportsLogout && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-[10px] px-2 text-muted-foreground"
-                disabled={logout.isPending}
-                onClick={() => logout.mutate({ agentId: agent.id, connection })}
-              >
-                {logout.isPending ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <LogOut className="w-3 h-3" />
-                )}
-                Logout
-              </Button>
-            )}
-          </div>
+        {isAuthenticated && (
+          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-success border-2 border-card" />
         )}
       </div>
 
-      {hasAuth && (
-        <AgentAuthModal
-          agentId={agent.id}
-          agentName={agent.name}
-          connection={connection}
-          open={isAuthModalOpen}
-          onAuthSuccess={() => setIsAuthModalOpen(false)}
-          onClose={() => setIsAuthModalOpen(false)}
-        />
+      <span className="flex-1 text-sm font-medium truncate">{agent.name}</span>
+
+      {!isDefault && (
+        <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          Click to set as default
+        </span>
       )}
-    </>
+
+      {isAuthenticated && supportsLogout && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="opacity-0 group-hover:opacity-100 h-6 text-[11px] px-2 text-destructive border-destructive/40 hover:bg-destructive/10 hover:border-destructive/70 hover:text-destructive transition-opacity"
+          disabled={logout.isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            logout.mutate({ agentId: agent.id, connection });
+          }}
+        >
+          {logout.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <LogOut className="w-3 h-3" />
+          )}
+          Logout
+        </Button>
+      )}
+
+      {isDefault && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+    </div>
   );
 }
 

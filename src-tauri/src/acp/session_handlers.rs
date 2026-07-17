@@ -203,6 +203,22 @@ pub async fn cancel_acp_session(
 ) -> Result<(), String> {
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
 
+    let maybe_task_id: Option<i32> = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).and_then(|p| p.task_id)
+    };
+    if let Some(task_id) = maybe_task_id {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
+        let status: String = conn.query_row(
+            "SELECT status FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get(0),
+        ).unwrap_or_default();
+        if status == "InProgress" || status == "Review" {
+            return Err("Cannot cancel a task session while the task is in progress — use the Stop button on the task card".to_string());
+        }
+    }
+
     let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;

@@ -26,6 +26,7 @@ const baseSession = {
   supports_session_close: false,
   supports_session_delete: false,
   project_id: null,
+  task_prevents_close: false,
 };
 
 const defaultProps = {
