@@ -1,8 +1,7 @@
 import { useMemo, useState, useCallback, useRef, memo } from "react";
-import { X } from "lucide-react";
+import { Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
-import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
 import { ScrollArea } from "@/ui/scroll-area";
@@ -79,6 +78,7 @@ interface SessionRowProps {
   onSelect: (sessionKey: number) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
+  sidebarCollapsed?: boolean;
 }
 
 const SessionRow = memo(function SessionRow({
@@ -86,67 +86,77 @@ const SessionRow = memo(function SessionRow({
   isSelected,
   onSelect,
   agentIcons,
-  agentNames,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
+  const name =
+    session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
+
   return (
     <div
       onClick={() => onSelect(session.session_key)}
       className={cn(
-        "group px-3 py-3 cursor-pointer transition-colors",
-        isSelected ? "selected-session-item" : "hover:bg-muted/10",
+        "pr-row flex items-stretch cursor-pointer transition-colors",
+        isSelected ? "selected-session-item selected" : "hover:bg-muted/10",
       )}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        {session.execution_mode === "acp" && (
-          <span
-            className={cn(
-              "inline-block w-2 h-2 rounded-full shrink-0",
-              getStatusDot(session, activityInfo),
+      {/* Avatar column */}
+      <div className="pr-avatar-col flex items-center shrink-0 p-2.5">
+        <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
+          {/* Icon + #N strip inside overflow:hidden */}
+          <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative">
+            {session.execution_mode === "acp" && session.agent_id ? (
+              <AgentIcon
+                agentId={session.agent_id}
+                src={agentIcons?.[session.agent_id]}
+                className="w-8 h-8 rounded-md"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-md bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+                <Terminal className="w-4 h-4 text-accent" />
+              </div>
             )}
-          />
-        )}
-        <span className="session-item-name text-sm font-medium truncate">
-          {session.session_name ??
-            session.task_name ??
-            session.branch_name ??
-            "Interactive session"}
-        </span>
-        <Badge
-          variant="outline"
-          className="text-[10px] px-1.5 py-0.5 shrink-0 flex items-center gap-1 ml-auto [&>svg]:size-4!"
-        >
-          {session.execution_mode === "acp" && session.agent_id && (
-            <AgentIcon
-              agentId={session.agent_id}
-              src={agentIcons?.[session.agent_id]}
-              className="w-4 h-4 rounded-sm"
-            />
-          )}
-          {session.execution_mode === "acp"
-            ? session.agent_id
-              ? (agentNames?.[session.agent_id] ??
-                session.agent_id
-                  .split(/[-_]/)
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(" "))
-              : "ACP"
-            : "Terminal"}
-        </Badge>
-      </div>
-      {session.execution_mode === "acp" && (
-        <div className="text-xs text-muted-foreground mt-0.5 pl-4 flex items-center justify-between gap-2 min-w-0">
-          <span className="truncate">
-            {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
-          </span>
-          {activityInfo && (
-            <ElapsedTime
-              status={activityInfo.status}
-              stateChangedAt={activityInfo.stateChangedAt}
+            {/* #N strip — shown in collapsed rail via CSS, hidden by default */}
+            <div
+              className="session-id-strip hidden absolute bottom-0 left-0 right-0 text-center text-[9px] font-mono font-semibold leading-none py-0.5 text-white/93 rounded-b-md backdrop-blur-sm"
+              style={{ background: "rgba(0,0,0,0.22)" }}
+            >
+              #{session.session_key}
+            </div>
+          </div>
+          {/* Status dot — outside overflow:hidden */}
+          {session.execution_mode === "acp" && (
+            <span
+              className={cn(
+                "absolute -bottom-0.75 -right-0.75 w-2.75 h-2.75 rounded-full border-2 border-card",
+                getStatusDot(session, activityInfo),
+              )}
             />
           )}
         </div>
-      )}
+      </div>
+
+      {/* Text column */}
+      <div className="session-text-col flex-1 min-w-0 py-2.5 pr-3 pl-2 flex flex-col justify-center gap-0.75">
+        <div className="flex items-baseline justify-between gap-2 min-w-0">
+          <span className="session-item-name text-sm font-medium truncate">{name}</span>
+          <span className="text-xs font-mono text-muted-foreground/40 shrink-0">
+            #{session.session_key}
+          </span>
+        </div>
+        {session.execution_mode === "acp" && (
+          <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
+            <span className="truncate">
+              {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+            </span>
+            {activityInfo && (
+              <ElapsedTime
+                status={activityInfo.status}
+                stateChangedAt={activityInfo.stateChangedAt}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 });
@@ -243,14 +253,18 @@ export function AgentMonitor({
   const selectedSession = sessions.find((s) => s.session_key === selectedSessionKey);
 
   const renderSessionHeader = (session: ActiveSessionInfo) => (
-    <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
+    <div className="px-4 py-3 border-b border-border bg-background shrink-0">
       <div className="flex items-center justify-between gap-2">
-        {session.execution_mode === "acp" && session.agent_id && (
+        {session.execution_mode === "acp" && session.agent_id ? (
           <AgentIcon
             agentId={session.agent_id}
             src={agentIcons?.[session.agent_id]}
             className="w-10 h-10 rounded-sm shrink-0"
           />
+        ) : (
+          <div className="w-10 h-10 rounded-sm shrink-0 bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+            <Terminal className="w-5 h-5 text-accent" />
+          </div>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -351,8 +365,9 @@ export function AgentMonitor({
       {/* Sidebar */}
       <div
         className={cn(
-          "flex flex-col border-r border-border bg-card shrink-0 transition-[width] duration-200 overflow-hidden",
-          sidebarCollapsed ? "w-0" : "w-72",
+          "session-sidebar flex flex-col bg-card shrink-0 overflow-hidden",
+          "transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]",
+          sidebarCollapsed ? "session-sidebar-collapsed w-13" : "w-72",
         )}
       >
         <ScrollArea className="flex-1">
@@ -362,7 +377,7 @@ export function AgentMonitor({
           {grouped.map(([branchName, sessionList]) => (
             <div key={branchName || "_none"}>
               {grouped.length > 1 && (
-                <div className="px-3 py-1 text-[10px] font-mono text-muted-foreground/50 bg-muted/10 border-b border-border/30 sticky top-0">
+                <div className="session-group-label px-3 py-1 text-[10px] font-mono text-muted-foreground/50 bg-muted/10 border-b border-border/30 sticky top-0">
                   {branchName || "no branch"}
                 </div>
               )}
@@ -374,6 +389,7 @@ export function AgentMonitor({
                   onSelect={onSelect}
                   agentIcons={agentIcons}
                   agentNames={agentNames}
+                  sidebarCollapsed={sidebarCollapsed}
                 />
               ))}
             </div>
@@ -411,10 +427,17 @@ export function AgentMonitor({
           ))}
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
-          <TerminalComponent
-            key={selectedSession.session_key}
-            taskId={selectedSession.session_key}
-          />
+          <div className="flex-1 flex flex-col min-h-0 bg-card">
+            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_7px]">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+                {renderSessionHeader(selectedSession)}
+                <TerminalComponent
+                  key={selectedSession.session_key}
+                  taskId={selectedSession.session_key}
+                />
+              </div>
+            </div>
+          </div>
         )}
         {!selectedSession && (
           <Empty>

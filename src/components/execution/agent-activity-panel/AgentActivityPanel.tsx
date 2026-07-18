@@ -78,17 +78,21 @@ function ScrollStateWatcher({
     const wasSelected = prevIsSelectedRef.current;
     prevIsSelectedRef.current = isSelected;
     if (!isSelected || wasSelected) return;
-
     scrollToEnd({ behavior: "instant" });
+  }, [isSelected, scrollToEnd]);
 
-    if (!lastAgentSectionId) return;
-    const sectionEl = document.querySelector(
-      `[data-message-id="${CSS.escape(lastAgentSectionId)}"]`,
-    );
-    if (sectionEl && sectionEl.getBoundingClientRect().top < 0) {
-      scrollToMessage(lastAgentSectionId, { align: "start", behavior: "instant" });
-    }
-  }, [isSelected, lastAgentSectionId, scrollToMessage, scrollToEnd]);
+  useEffect(() => {
+    if (!isSelected || !lastAgentSectionId) return;
+    const id = requestAnimationFrame(() => {
+      const sectionEl = document.querySelector(
+        `[data-message-id="${CSS.escape(lastAgentSectionId)}"]`,
+      );
+      if (sectionEl && sectionEl.getBoundingClientRect().top < 0) {
+        scrollToMessage(lastAgentSectionId, { align: "start", behavior: "instant" });
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isSelected, lastAgentSectionId, scrollToMessage]);
 
   useEffect(() => {
     if (
@@ -434,8 +438,6 @@ export function AgentActivityPanel({
     }
   }, [liveState.isInitializing, hasInterruptedCalls, isNewSession, taskId, handleSend]);
 
-  if (liveState.isInitializing) return <AgentLoadingSkeleton isNewSession={isNewSession} />;
-
   const inlinePermission =
     !isSessionDead && hasInlinePermission && pendingPermission ? (
       <motion.div
@@ -470,7 +472,9 @@ export function AgentActivityPanel({
 
   const isStale = activityInfo?.status === "stale";
 
-  const streamContent = (
+  const streamContent = liveState.isInitializing ? (
+    <AgentLoadingSkeleton isNewSession={isNewSession} />
+  ) : (
     <>
       {liveState.plan && (
         <div className="shrink-0 bg-card border-b border-border">
@@ -588,10 +592,14 @@ export function AgentActivityPanel({
           minSize="42rem"
           collapsible
           collapsedSize={0}
-          className="flex flex-col min-h-0 overflow-hidden"
+          className="flex flex-col min-h-0 overflow-hidden bg-card"
         >
-          {headerSlot}
-          {streamContent}
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+              {headerSlot}
+              {streamContent}
+            </div>
+          </div>
         </ResizablePanel>
         {!maximized && <ResizableHandle withHandle />}
         <ResizablePanel

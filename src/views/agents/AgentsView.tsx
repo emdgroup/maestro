@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
@@ -24,7 +24,7 @@ import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { History, PanelLeftClose, PanelLeftOpen, Plus, SearchIcon, Settings2 } from "lucide-react";
+import { History, Menu, Plus, SearchIcon, Settings2 } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ActivityVisibility } from "@/types/bindings";
@@ -281,55 +281,52 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   return (
     <div className="flex flex-col h-full">
       {/* Action bar */}
-      <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
+      <div className="h-12 bg-card flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger
               type="button"
               onClick={() => setSidebarCollapsed((v) => !v)}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            >
-              {sidebarCollapsed ? (
-                <PanelLeftOpen className="w-4 h-4" />
-              ) : (
-                <PanelLeftClose className="w-4 h-4" />
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                sidebarCollapsed
+                  ? "bg-muted/60 text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
               )}
+            >
+              <Menu className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>
               {sidebarCollapsed ? "Expand session list" : "Collapse session list"}
             </TooltipContent>
           </Tooltip>
-          {!sidebarCollapsed && (
-            <>
-              <ShortcutHint shortcutId="focus-search">
-                <InputGroup>
-                  <InputGroupInput
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Search sessions..."
-                    value={search}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                    className="h-8 w-48 text-sm"
-                  />
-                  <InputGroupAddon align="inline-start">
-                    <SearchIcon className="text-muted-foreground" />
-                  </InputGroupAddon>
-                </InputGroup>
-              </ShortcutHint>
-              {(discovery?.agents?.length ?? 0) > 0 && (
-                <ShortcutHint shortcutId="agents-history">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
-                    onClick={() => setShowHistory((v) => !v)}
-                  >
-                    <History className="size-3.5 mr-1" />
-                    History
-                  </Button>
-                </ShortcutHint>
-              )}
-            </>
+          <ShortcutHint shortcutId="focus-search">
+            <InputGroup className="bg-border!">
+              <InputGroupInput
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search sessions..."
+                value={search}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                className="h-8 w-48 text-sm"
+              />
+              <InputGroupAddon align="inline-start">
+                <SearchIcon className="text-muted-foreground" />
+              </InputGroupAddon>
+            </InputGroup>
+          </ShortcutHint>
+          {(discovery?.agents?.length ?? 0) > 0 && (
+            <ShortcutHint shortcutId="agents-history">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
+                onClick={() => setShowHistory((v) => !v)}
+              >
+                <History className="size-3.5 mr-1" />
+                History
+              </Button>
+            </ShortcutHint>
           )}
         </div>
         <div className="flex items-center gap-2">
