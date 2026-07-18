@@ -339,9 +339,8 @@ export function ComposeBar({
             {logId && (
               <Tooltip>
                 <TooltipTrigger
-                  type="button"
+                  render={<button type="button" disabled={isProcessing || isSending} />}
                   onClick={() => void attach.handleAttach()}
-                  disabled={isProcessing || isSending}
                   className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
                 >
                   <Paperclip className="w-3.5 h-3.5" />
@@ -418,9 +417,8 @@ export function ComposeBar({
               ) : (
                 <Tooltip>
                   <TooltipTrigger
-                    type="button"
+                    render={<button type="button" disabled={sendDisabled} />}
                     onClick={() => void handleSend()}
-                    disabled={sendDisabled}
                     className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
                   >
                     <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />

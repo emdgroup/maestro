@@ -76,6 +76,8 @@ function scrollToTarget(target: HTMLElement): void {
   root.scrollTo({ top: root.scrollTop + offset, behavior: "smooth" });
 }
 
+export const OpenFileContext = createContext<((uri: string) => void) | undefined>(undefined);
+
 function MarkdownAnchorComponent({
   href,
   children,
@@ -85,6 +87,7 @@ function MarkdownAnchorComponent({
   children?: ReactNode;
   "data-open-file-uri"?: string;
 }) {
+  const openFile = useContext(OpenFileContext);
   return (
     <a
       href={href}
@@ -105,6 +108,8 @@ function MarkdownAnchorComponent({
               (el) => clicked.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
             ) ?? candidates[candidates.length - 1];
           scrollToTarget(target);
+        } else if (href.startsWith("file://") && openFile) {
+          openFile(href);
         } else {
           openUrl(href);
         }
@@ -120,7 +125,8 @@ function MarkdownAnchorComponent({
 // We pass data: through so ProxiedImage can convert them to blob URLs.
 // Security is preserved: rehypeSanitize still enforces protocols.src and protocols.href.
 function markdownUrlTransform(url: string): string {
-  return url.startsWith("data:") ? url : defaultUrlTransform(url);
+  if (url.startsWith("data:") || url.startsWith("file://")) return url;
+  return defaultUrlTransform(url);
 }
 
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
