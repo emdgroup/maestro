@@ -545,6 +545,37 @@
   animation: glow-ring-warning 2s ease-in-out infinite;
 }
 
+@property --avatar-breathe-alpha {
+  syntax: "<percentage>";
+  initial-value: 12%;
+  inherits: false;
+}
+
+@keyframes breathe-warning {
+  0%,
+  100% {
+    --avatar-breathe-alpha: 12%;
+  }
+  50% {
+    --avatar-breathe-alpha: 40%;
+  }
+}
+
+@utility animate-breathe-warning {
+  animation: breathe-warning 2.5s ease-in-out infinite;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--warning) var(--avatar-breathe-alpha), transparent),
+      transparent 70%
+    ),
+    var(--card);
+}
+
+@utility ring-awaiting {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 60%, transparent);
+}
+
 @keyframes rail-comet {
   0% {
     left: -60%;

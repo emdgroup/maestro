@@ -5,7 +5,7 @@ export const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
   spawning: "bg-muted-foreground/60 animate-pulse",
   thinking: "bg-purple animate-glow-purple",
   acting: "bg-info animate-glow-info",
-  awaiting_input: "",
+  awaiting_input: "bg-warning animate-pulse",
   idle: "bg-muted-foreground/40",
   stale: "bg-destructive animate-pulse",
 };

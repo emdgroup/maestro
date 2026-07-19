@@ -107,8 +107,8 @@ const SessionRow = memo(function SessionRow({
           {/* Icon + #N strip inside overflow:hidden */}
           <div
             className={cn(
-              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card",
-              isAwaiting && "animate-glow-warning",
+              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative",
+              isAwaiting ? "ring-awaiting animate-breathe-warning" : "bg-card",
             )}
           >
             {session.execution_mode === "acp" && session.agent_id ? (
@@ -131,7 +131,7 @@ const SessionRow = memo(function SessionRow({
             </div>
           </div>
           {/* Status dot — outside overflow:hidden */}
-          {dotClass && (
+          {session.execution_mode === "acp" && !isAwaiting && (
             <span
               className={cn(
                 "absolute -bottom-0.75 -right-0.75 w-2.75 h-2.75 rounded-full border-2 border-card",
@@ -317,14 +317,12 @@ export function AgentMonitor({
           <div className="flex items-center gap-2 mt-0.5">
             {session.execution_mode === "acp" && (
               <>
-                {getStatusDot(session, selectedActivityInfo) && (
-                  <span
-                    className={cn(
-                      "inline-block w-2 h-2 rounded-full shrink-0",
-                      getStatusDot(session, selectedActivityInfo),
-                    )}
-                  />
-                )}
+                <span
+                  className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0",
+                    getStatusDot(session, selectedActivityInfo),
+                  )}
+                />
                 <span className="text-xs text-muted-foreground truncate">
                   {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
                 </span>
