@@ -390,6 +390,26 @@
   );
 }
 
+@property --ha {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
+}
+
+.pr-row:not(.selected) {
+  --ha: 0%;
+  transition: --ha 0.15s ease;
+  background: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--muted) var(--ha), transparent),
+    color-mix(in oklch, var(--muted) calc(var(--ha) * 0.3), transparent) 55%,
+    transparent
+  );
+}
+.pr-row:not(.selected):hover {
+  --ha: 100%;
+}
+
 /* ── Collapsed session rail ── */
 .session-sidebar-collapsed {
   width: 52px;
@@ -417,12 +437,6 @@
   box-shadow:
     0 0 0 2px var(--card),
     0 0 0 3.5px var(--accent);
-}
-.session-sidebar-collapsed .pr-row:not(.selected) {
-  opacity: 0.55;
-}
-.session-sidebar-collapsed .pr-row:not(.selected):hover {
-  opacity: 1;
 }
 .session-sidebar-collapsed .session-group-label {
   display: none;
@@ -543,37 +557,6 @@
 
 @utility animate-glow-warning {
   animation: glow-ring-warning 2s ease-in-out infinite;
-}
-
-@property --avatar-breathe-alpha {
-  syntax: "<percentage>";
-  initial-value: 12%;
-  inherits: false;
-}
-
-@keyframes breathe-warning {
-  0%,
-  100% {
-    --avatar-breathe-alpha: 12%;
-  }
-  50% {
-    --avatar-breathe-alpha: 40%;
-  }
-}
-
-@utility animate-breathe-warning {
-  animation: breathe-warning 2.5s ease-in-out infinite;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in oklch, var(--warning) var(--avatar-breathe-alpha), transparent),
-      transparent 70%
-    ),
-    var(--card);
-}
-
-@utility ring-awaiting {
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 60%, transparent);
 }
 
 @keyframes rail-comet {

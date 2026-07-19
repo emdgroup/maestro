@@ -98,7 +98,7 @@ const SessionRow = memo(function SessionRow({
       onClick={() => onSelect(session.session_key)}
       className={cn(
         "pr-row flex items-stretch cursor-pointer transition-colors",
-        isSelected ? "selected-session-item selected" : "hover:bg-muted/10",
+        isSelected && "selected-session-item selected",
       )}
     >
       {/* Avatar column */}
@@ -107,8 +107,8 @@ const SessionRow = memo(function SessionRow({
           {/* Icon + #N strip inside overflow:hidden */}
           <div
             className={cn(
-              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative",
-              isAwaiting ? "ring-awaiting animate-breathe-warning" : "bg-card",
+              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card",
+              isAwaiting && "animate-glow-warning",
             )}
           >
             {session.execution_mode === "acp" && session.agent_id ? (
