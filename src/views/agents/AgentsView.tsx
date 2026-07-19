@@ -301,7 +301,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             </TooltipContent>
           </Tooltip>
           <ShortcutHint shortcutId="focus-search">
-            <InputGroup className="bg-border!">
+            <InputGroup
+              className={cn(
+                "overflow-hidden transition-[width] duration-200",
+                sidebarCollapsed
+                  ? "w-8 hover:w-48 focus-within:w-48 hover:bg-border! focus-within:bg-border!"
+                  : "w-48 bg-border!",
+              )}
+            >
               <InputGroupInput
                 ref={searchInputRef}
                 type="text"

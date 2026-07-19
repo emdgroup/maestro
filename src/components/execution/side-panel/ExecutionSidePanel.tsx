@@ -130,30 +130,32 @@ export function ExecutionSidePanel({
             maximized={maximized}
             addTabContent={addTabPopoverContent}
           />
-          <div className="flex-1 relative min-h-0">
-            <SidePanelContent
-              tabs={tabs}
-              activeTabId={activeTabId}
-              isSessionActive={isSessionActive}
-              sessionKey={sessionKey}
-              subagentItems={subagentItems}
-              toolCallMap={toolCallMap}
-              sidePanelPlan={sidePanelPlan}
-              onPlanRespond={onPlanRespond}
-              canvasMap={canvasMap}
-              latestCanvasSurfaceId={latestCanvasSurfaceId}
-              changedFiles={changedFiles}
-              workingFiles={workingFiles}
-              taskId={taskId}
-              projectPath={projectPath}
-              connection={connection}
-              planEntries={planEntries}
-              planTitle={planTitle}
-              onCollapsedChange={onCollapsedChange}
-              onOpenTabKind={onOpenTabKind}
-              onSpawnShell={onSpawnShell}
-              terminalBuffers={terminalBuffers}
-            />
+          <div className="flex-1 min-h-0 flex flex-col pl-[10px]">
+            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border bg-background overflow-hidden">
+              <SidePanelContent
+                tabs={tabs}
+                activeTabId={activeTabId}
+                isSessionActive={isSessionActive}
+                sessionKey={sessionKey}
+                subagentItems={subagentItems}
+                toolCallMap={toolCallMap}
+                sidePanelPlan={sidePanelPlan}
+                onPlanRespond={onPlanRespond}
+                canvasMap={canvasMap}
+                latestCanvasSurfaceId={latestCanvasSurfaceId}
+                changedFiles={changedFiles}
+                workingFiles={workingFiles}
+                taskId={taskId}
+                projectPath={projectPath}
+                connection={connection}
+                planEntries={planEntries}
+                planTitle={planTitle}
+                onCollapsedChange={onCollapsedChange}
+                onOpenTabKind={onOpenTabKind}
+                onSpawnShell={onSpawnShell}
+                terminalBuffers={terminalBuffers}
+              />
+            </div>
           </div>
         </div>
       )}

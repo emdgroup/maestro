@@ -21,7 +21,7 @@ const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
   thinking: "Thinking",
   acting: "Calling tool",
-  awaiting_input: "Waiting",
+  awaiting_input: "Needs your input",
   idle: "Ready",
   stale: "Connection lost",
 };
@@ -88,6 +88,7 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
+  const isAwaiting = activityInfo?.status === "awaiting_input";
   const name =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
 
@@ -103,7 +104,12 @@ const SessionRow = memo(function SessionRow({
       <div className="pr-avatar-col flex items-center shrink-0 p-2.5">
         <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
           {/* Icon + #N strip inside overflow:hidden */}
-          <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative">
+          <div
+            className={cn(
+              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card",
+              isAwaiting && "animate-glow-warning",
+            )}
+          >
             {session.execution_mode === "acp" && session.agent_id ? (
               <AgentIcon
                 agentId={session.agent_id}
@@ -145,7 +151,7 @@ const SessionRow = memo(function SessionRow({
         </div>
         {session.execution_mode === "acp" && (
           <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
-            <span className="truncate">
+            <span className={cn("truncate", isAwaiting && "text-warning font-medium")}>
               {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
             </span>
             {activityInfo && (
@@ -440,9 +446,15 @@ export function AgentMonitor({
           </div>
         )}
         {!selectedSession && (
-          <Empty>
-            <EmptyDescription>Select an agent to view its terminal</EmptyDescription>
-          </Empty>
+          <div className="flex-1 flex flex-col min-h-0 bg-card">
+            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_7px]">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+                <Empty>
+                  <EmptyDescription>Select an agent to view its terminal</EmptyDescription>
+                </Empty>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

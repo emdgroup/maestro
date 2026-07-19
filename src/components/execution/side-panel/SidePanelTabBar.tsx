@@ -52,7 +52,7 @@ export function SidePanelTabBar({
   addTabContent,
 }: SidePanelTabBarProps) {
   return (
-    <div className="flex items-center border-b border-border shrink-0 bg-card px-2 py-1.5 gap-2">
+    <div className="flex items-center shrink-0 bg-card px-2 py-1.5 gap-2">
       {!maximized && (
         <Tooltip>
           <TooltipTrigger

@@ -148,7 +148,7 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
-  const { planContent, planReviewState } = useMemo(() => {
+  const { planContent, planReviewState, derivedPlanTitle } = useMemo(() => {
     let content: string | null = null;
     let state: "waiting" | "accepted" | "rejected" | null = null;
     for (const tc of toolCallMap.values()) {
@@ -158,7 +158,12 @@ export function SidePanelContent({
           tc.status === "completed" ? "accepted" : tc.status === "pending" ? "waiting" : "rejected";
       }
     }
-    return { planContent: content, planReviewState: state };
+    const titleMatch = content?.match(/^#\s+(.+)/m);
+    return {
+      planContent: content,
+      planReviewState: state,
+      derivedPlanTitle: titleMatch ? titleMatch[1].trim() : null,
+    };
   }, [toolCallMap]);
 
   return (
@@ -174,7 +179,7 @@ export function SidePanelContent({
                 canvasCount={canvasMap.size}
                 changedFilesCount={changedFiles.length}
                 planEntries={planEntries}
-                planTitle={planTitle}
+                planTitle={planTitle ?? derivedPlanTitle}
                 planReviewState={planReviewState}
                 workingFiles={workingFiles}
                 taskId={taskId}

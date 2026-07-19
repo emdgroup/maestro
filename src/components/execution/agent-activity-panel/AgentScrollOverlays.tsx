@@ -62,9 +62,7 @@ export function AgentScrollOverlays({
   const showScrollFab = scrollable.end;
   const hasUnread = scrollable.end && isProcessing;
   const isLastUserMsgPinned =
-    lastUserMessage !== null &&
-    visibility.currentAnchorId === lastUserMessage.id &&
-    !visibility.visibleMessageIds.includes(lastUserMessage.id);
+    lastUserMessage !== null && !visibility.visibleMessageIds.includes(lastUserMessage.id);
 
   const scrollToBottom = useCallback(() => scrollToEnd({ behavior: "smooth" }), [scrollToEnd]);
 
