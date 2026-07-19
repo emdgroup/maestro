@@ -24,6 +24,7 @@ interface OverviewPanelProps {
   changedFilesCount: number;
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
+  planReviewState?: "waiting" | "accepted" | "rejected" | null;
   workingFiles?: WorkingFileEntry[];
   taskId: number | null;
   onNavigate: (kind: TabKind, filePath?: string) => void;
@@ -82,6 +83,7 @@ export function OverviewPanel({
   changedFilesCount,
   planEntries,
   planTitle,
+  planReviewState,
   workingFiles,
   taskId,
   onNavigate,
@@ -136,7 +138,7 @@ export function OverviewPanel({
       <div className="[column-count:2] [column-width:268px] gap-2">
         {/* Plan */}
         <Card
-          available={(planEntries?.length ?? 0) > 0 || !!planTitle}
+          available={(planEntries?.length ?? 0) > 0 || !!planTitle || !!planReviewState}
           onClick={() => onNavigate("plan")}
           icon={<ScrollText className="w-3.5 h-3.5 text-warning" />}
           iconBg="bg-warning/15"
@@ -146,8 +148,26 @@ export function OverviewPanel({
               ? (planTitle ?? "Approved")
               : `${donePlanSteps} of ${totalPlanSteps} step${totalPlanSteps !== 1 ? "s" : ""} complete`
           }
-          badge={totalPlanSteps > 0 ? `${planPct}%` : undefined}
-          badgeClass="bg-warning/15 text-warning"
+          badge={
+            planReviewState === "waiting"
+              ? "Pending"
+              : planReviewState === "accepted"
+                ? "Accepted"
+                : planReviewState === "rejected"
+                  ? "Rejected"
+                  : totalPlanSteps > 0
+                    ? `${planPct}%`
+                    : undefined
+          }
+          badgeClass={
+            planReviewState === "waiting"
+              ? "bg-warning/15 text-warning"
+              : planReviewState === "accepted"
+                ? "bg-success/15 text-success"
+                : planReviewState === "rejected"
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-warning/15 text-warning"
+          }
         >
           {planEntries && planEntries.length > 0 && (
             <div className="flex flex-col gap-1.5">

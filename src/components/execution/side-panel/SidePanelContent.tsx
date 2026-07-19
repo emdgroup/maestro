@@ -148,13 +148,17 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
-  const planContent = useMemo(() => {
+  const { planContent, planReviewState } = useMemo(() => {
+    let content: string | null = null;
+    let state: "waiting" | "accepted" | "rejected" | null = null;
     for (const tc of toolCallMap.values()) {
-      if (tc.kind === "switch_mode" && typeof tc.rawInput?.plan === "string") {
-        return tc.rawInput.plan as string;
+      if (tc.kind === "switch_mode") {
+        if (typeof tc.rawInput?.plan === "string") content = tc.rawInput.plan as string;
+        state =
+          tc.status === "completed" ? "accepted" : tc.status === "pending" ? "waiting" : "rejected";
       }
     }
-    return null;
+    return { planContent: content, planReviewState: state };
   }, [toolCallMap]);
 
   return (
@@ -171,6 +175,7 @@ export function SidePanelContent({
                 changedFilesCount={changedFiles.length}
                 planEntries={planEntries}
                 planTitle={planTitle}
+                planReviewState={planReviewState}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 onNavigate={(kind, filePath) => {
