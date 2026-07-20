@@ -22,8 +22,8 @@ Drop tasks onto a Kanban board. Each one gets its own agent, its own git worktre
 
 ## Install
 
-| Platform                            | Download                                                                                                                                |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform                            | Download                                                                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | macOS — Apple Silicon (M1/M2/M3/M4) | [Maestro_0.10.0_aarch64.dmg](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.10.0_aarch64.dmg)                     |
 | Linux — x86_64                      | [Maestro_0.10.0_amd64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.10.0_amd64.AppImage) ✓ recommended |
 | Linux — x86_64 (no auto-update)     | [Maestro_0.10.0_amd64.deb](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_0.10.0_amd64.deb)                         |
