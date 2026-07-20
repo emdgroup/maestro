@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
-import { DiffViewer } from "./DiffViewer";
+import { DiffViewer, type PendingComment } from "./DiffViewer";
 import { useUntrackedFileContentQuery } from "@/services/worktree.service";
 
 interface UntrackedFileDiffViewerProps {
@@ -9,6 +9,15 @@ interface UntrackedFileDiffViewerProps {
   worktreePath: string | null;
   filePath: string | null;
   showHeader?: boolean;
+  // Review mode props
+  reviewMode?: boolean;
+  comments?: PendingComment[];
+  activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
+  onAddComment?: (lineNumber: number, side: "old" | "new") => void;
+  onRemoveComment?: (commentId: string) => void;
+  onEditComment?: (commentId: string, newText: string) => void;
+  onCancelComment?: () => void;
+  onSubmitComment?: (text: string) => void;
 }
 
 export function UntrackedFileDiffViewer({
@@ -16,6 +25,14 @@ export function UntrackedFileDiffViewer({
   worktreePath,
   filePath,
   showHeader = true,
+  reviewMode,
+  comments,
+  activeCommentLine,
+  onAddComment,
+  onRemoveComment,
+  onEditComment,
+  onCancelComment,
+  onSubmitComment,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
 
@@ -36,7 +53,19 @@ export function UntrackedFileDiffViewer({
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-        <DiffViewer diffFile={diffFile} loading={isLoading} diffViewMode={DiffModeEnum.Unified} />
+        <DiffViewer
+          diffFile={diffFile}
+          loading={isLoading}
+          diffViewMode={DiffModeEnum.Unified}
+          reviewMode={reviewMode}
+          comments={comments}
+          activeCommentLine={activeCommentLine}
+          onAddComment={onAddComment}
+          onRemoveComment={onRemoveComment}
+          onEditComment={onEditComment}
+          onCancelComment={onCancelComment}
+          onSubmitComment={onSubmitComment}
+        />
       </div>
     </div>
   );

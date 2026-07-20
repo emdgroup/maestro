@@ -178,8 +178,12 @@ export function TaskReviewPanel({
 
   const handleSubmitComment = useCallback(
     (text: string) => {
-      if (!activeCommentLine || selectedFileIndex == null) return;
-      const filePath = filteredDiffFiles[selectedFileIndex]?.fileName || "";
+      if (!activeCommentLine) return;
+      const filePath =
+        viewMode === "untracked"
+          ? (selectedUntrackedPath ?? "")
+          : (filteredDiffFiles[selectedFileIndex ?? -1]?.fileName ?? "");
+      if (!filePath) return;
       setComments((prev) => {
         const existing = prev.findIndex(
           (c) =>
@@ -203,7 +207,7 @@ export function TaskReviewPanel({
       });
       setActiveCommentLine(null);
     },
-    [activeCommentLine, selectedFileIndex, filteredDiffFiles],
+    [activeCommentLine, selectedFileIndex, filteredDiffFiles, viewMode, selectedUntrackedPath],
   );
 
   const handleRemoveComment = useCallback((commentId: string) => {
@@ -220,9 +224,11 @@ export function TaskReviewPanel({
       if (fileIndex >= 0) {
         setSelectedFileIndex(fileIndex);
         setActiveFileComment(true);
+      } else if (untrackedFiles.includes(fileName)) {
+        setActiveFileComment(true);
       }
     },
-    [filteredDiffFiles],
+    [filteredDiffFiles, untrackedFiles],
   );
 
   // Multi-state button logic
@@ -474,11 +480,37 @@ export function TaskReviewPanel({
             )}
 
             {viewMode === "untracked" && selectedUntrackedPath && (
-              <UntrackedFileDiffViewer
-                projectId={projectId}
-                worktreePath={worktreePath}
-                filePath={selectedUntrackedPath}
-              />
+              <>
+                <ReviewFileHeader
+                  selectedFile={{ fileName: selectedUntrackedPath, hunks: [], status: "A" }}
+                  viewedFiles={viewedFiles}
+                  onToggleViewed={toggleViewed}
+                  onFileComment={handleFileComment}
+                />
+                <ReviewFileComment
+                  selectedFile={{ fileName: selectedUntrackedPath, hunks: [], status: "A" }}
+                  comments={comments}
+                  activeFileComment={activeFileComment}
+                  setActiveFileComment={setActiveFileComment}
+                  onRemoveComment={handleRemoveComment}
+                  onEditComment={handleEditComment}
+                  setComments={setComments}
+                />
+                <UntrackedFileDiffViewer
+                  projectId={projectId}
+                  worktreePath={worktreePath}
+                  filePath={selectedUntrackedPath}
+                  showHeader={false}
+                  reviewMode={true}
+                  comments={comments.filter((c) => c.filePath === selectedUntrackedPath)}
+                  activeCommentLine={activeCommentLine}
+                  onAddComment={handleAddComment}
+                  onRemoveComment={handleRemoveComment}
+                  onEditComment={handleEditComment}
+                  onCancelComment={() => setActiveCommentLine(null)}
+                  onSubmitComment={handleSubmitComment}
+                />
+              </>
             )}
 
             {viewMode === "uncommitted" && (
