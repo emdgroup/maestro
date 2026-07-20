@@ -54,7 +54,7 @@
     "date-fns": "^4.4.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.42.2",
-    "immer": "^10.2.0",
+    "immer": "^11.1.15",
     "input-otp": "^1.4.2",
     "katex": "^0.16.47",
     "lucide-react": "^1.23.0",
