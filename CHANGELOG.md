@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.10.0](https://github.com/emdgroup/maestro/compare/v0.9.0...v0.10.0) (2026-07-19)
+
+
+### Features
+
+* agent authentication flow with auth terminal ([c3e2dea](https://github.com/emdgroup/maestro/commit/c3e2dea138771b08bdae6795917f0d10eea7d449))
+* agent authentication flow with auth terminal ([ec792b1](https://github.com/emdgroup/maestro/commit/ec792b1861e544e9a8778cd7c817fdbc128a9a71))
+* agents tab UX polish — awaiting_input treatment, search collapse, side panel arch ([f5dd20b](https://github.com/emdgroup/maestro/commit/f5dd20bbcd82a0c52e412980c5cc8b803db97075))
+* awaiting ring on avatar, muted hover gradient for session rows ([0667bbe](https://github.com/emdgroup/maestro/commit/0667bbeac97c97e99fb93ee1f6cfd7d80e30f89f))
+* awaiting-input visual treatment — breathe overlay and ring in agent monitor ([2417b74](https://github.com/emdgroup/maestro/commit/2417b74ceaca37e34dc42a4c6c89f2a5fec81e93))
+* implement ACP terminal capability ([9b0d77e](https://github.com/emdgroup/maestro/commit/9b0d77e139e9c60fb20f4488056a705d677db7e3))
+* redesign Agents tab — unified chrome arch, session rail, shell parity ([e313146](https://github.com/emdgroup/maestro/commit/e313146421c2997f011d8a49e9651b0c20766726))
+* show plan review state badge on Overview panel plan card ([22f2fb1](https://github.com/emdgroup/maestro/commit/22f2fb11696fcd00919d23e7207abb96db8101a5))
+* support file:// links in markdown activity stream ([607c84a](https://github.com/emdgroup/maestro/commit/607c84ac2284241a218f16d76fd76973d9a95f1d))
+
+
+### Bug Fixes
+
+* constrain compose bar width to stream content width in compact mode ([315085a](https://github.com/emdgroup/maestro/commit/315085a362b929c90b3d4fcfed35fd910df748ba))
+* group thought chunks by messageId across interleaved tool calls ([0ab8c5f](https://github.com/emdgroup/maestro/commit/0ab8c5f5c360bf7e577e72677c02d686ebca2c94))
+* improve inline code and code block header contrast using color-mix ([c8f6a43](https://github.com/emdgroup/maestro/commit/c8f6a43c20f2d7887640125a6c704962e10e3fa3))
+* increase user bubble max width to 90% ([e1cf9d2](https://github.com/emdgroup/maestro/commit/e1cf9d2fa5ce63fcfbaf29130cbf870180851a17))
+* remove empty avatar rows and gaps when hiding thoughts or tool calls ([426f267](https://github.com/emdgroup/maestro/commit/426f267ec48e58feb1166a9e3640575403e032a5))
+* right-align user bubbles in agent stream ([060e564](https://github.com/emdgroup/maestro/commit/060e56427bf2cc5547b74b3fd4248ad6e9a2ab45))
+* support all SSH remote platforms in maestro-server deploy ([3ef19b4](https://github.com/emdgroup/maestro/commit/3ef19b47f6f6108373299782331b40e2746f9539))
+* theme-aware iframe background and conditional status dot in agent monitor ([120c899](https://github.com/emdgroup/maestro/commit/120c89956079c6bccfec0e5650f14b0b91ca2094))
+
 ## [0.9.0](https://github.com/emdgroup/maestro/compare/v0.8.0...v0.9.0) (2026-07-12)
 
 ### Features
