@@ -3,6 +3,7 @@ import { Files, Pin, ExternalLink, X, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { connectionQueryKeys, useReadFile, useReadFileBinary } from "@/services/connection.service";
 import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { LazyFileTree } from "./LazyFileTree";
@@ -141,36 +142,40 @@ export function WorkspaceFilesPanel({
   }
 
   const pinButton = (
-    <button
-      type="button"
-      onClick={() => {
-        if (!listPinned && treeRef.current) {
-          setPinnedInitialSize(treeRef.current.offsetWidth);
-        }
-        setListPinned((v) => !v);
-        setListOpen(false);
-      }}
-      className={cn(
-        "p-1.5 rounded-md transition-colors shrink-0",
-        listPinned
-          ? "text-foreground bg-muted/60"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-      )}
-      title={listPinned ? "Unpin file list" : "Pin file list"}
-    >
-      <Pin className="w-3.5 h-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        onClick={() => {
+          if (!listPinned && treeRef.current) {
+            setPinnedInitialSize(treeRef.current.offsetWidth);
+          }
+          setListPinned((v) => !v);
+          setListOpen(false);
+        }}
+        className={cn(
+          "p-1.5 rounded-md transition-colors shrink-0",
+          listPinned
+            ? "text-foreground bg-muted/60"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+        )}
+      >
+        <Pin className="w-3.5 h-3.5" />
+      </TooltipTrigger>
+      <TooltipContent>{listPinned ? "Unpin file list" : "Pin file list"}</TooltipContent>
+    </Tooltip>
   );
 
   const refreshButton = (
-    <button
-      type="button"
-      onClick={handleRefresh}
-      className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
-      title="Refresh files"
-    >
-      <RefreshCw className="w-3.5 h-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        onClick={handleRefresh}
+        className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+      </TooltipTrigger>
+      <TooltipContent>Refresh files</TooltipContent>
+    </Tooltip>
   );
 
   const fileListActions = (
@@ -198,19 +203,21 @@ export function WorkspaceFilesPanel({
     <div className="relative flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={toggleList}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            showList
-              ? "text-foreground bg-muted/60"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-          )}
-          title="File list"
-        >
-          <Files className="w-4 h-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={toggleList}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              showList
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <Files className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>File list</TooltipContent>
+        </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center min-w-0">
           <span className="text-xs font-mono text-muted-foreground truncate">
@@ -220,34 +227,36 @@ export function WorkspaceFilesPanel({
         {selected && (
           <>
             <div className="w-px h-4 bg-border shrink-0 mx-1" />
-            <button
-              type="button"
-              onClick={() => void handleOpen()}
-              disabled={dlState.status === "downloading"}
-              className={cn(
-                "p-1.5 rounded-md transition-colors shrink-0",
-                dlState.status === "error"
-                  ? "text-destructive"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-              )}
-              title={
-                dlState.status === "error"
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                onClick={() => void handleOpen()}
+                disabled={dlState.status === "downloading"}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors shrink-0",
+                  dlState.status === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                {dlState.status === "downloading" ? (
+                  <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
+                    {dlState.progress}%
+                  </span>
+                ) : dlState.status === "error" ? (
+                  <X className="w-3.5 h-3.5" />
+                ) : (
+                  <ExternalLink className="w-3.5 h-3.5" />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {dlState.status === "error"
                   ? "Download failed"
                   : connection.type === "ssh"
                     ? "Download and open"
-                    : "Open in default application"
-              }
-            >
-              {dlState.status === "downloading" ? (
-                <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
-                  {dlState.progress}%
-                </span>
-              ) : dlState.status === "error" ? (
-                <X className="w-3.5 h-3.5" />
-              ) : (
-                <ExternalLink className="w-3.5 h-3.5" />
-              )}
-            </button>
+                    : "Open in default application"}
+              </TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>

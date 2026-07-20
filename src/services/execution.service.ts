@@ -6,6 +6,7 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import type { ConnectionKey } from "@/types/bindings";
+import { commands } from "@/types/bindings";
 
 export const executionQueryKeys = {
   activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
@@ -403,5 +404,22 @@ export function useResizeTerminalMutation() {
       return await api.resizeTerminal(taskId, cols, rows);
     },
     onError: createErrorToastHandler("Failed to resize terminal"),
+  });
+}
+
+export function useRecoverTaskSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ taskId, projectId }: { taskId: number; projectId: number }) => {
+      const result = await commands.recoverTaskSession(taskId, projectId);
+      if (result.status === "error") throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: (_logId, { projectId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to recover session"),
   });
 }

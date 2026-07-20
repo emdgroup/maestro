@@ -52,26 +52,28 @@ export function AgentBottomBar({
   return (
     <motion.div
       ref={composeBarWrapperRef}
-      className={cn("absolute inset-x-0 bottom-0 z-10 pb-2.5 pt-1", isCompact ? "px-12" : "px-16")}
+      className={cn("absolute inset-x-0 bottom-0 z-10 pb-2.5 pt-1", !isCompact && "px-16")}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      <ComposeBar
-        ref={composeBarRef}
-        onSend={onSend}
-        onCancel={onCancel}
-        isProcessing={isProcessing}
-        commands={commands}
-        embeddedContext={embeddedContext}
-        logId={logId}
-        projectPath={projectPath}
-        configOptions={configOptions}
-        configValues={configValues}
-        usageState={usageState}
-        onConfigChange={onConfigChange}
-        promptCapabilities={promptCapabilities}
-      />
+      <div className={cn(isCompact && "max-w-3xl mx-auto w-full px-12")}>
+        <ComposeBar
+          ref={composeBarRef}
+          onSend={onSend}
+          onCancel={onCancel}
+          isProcessing={isProcessing}
+          commands={commands}
+          embeddedContext={embeddedContext}
+          logId={logId}
+          projectPath={projectPath}
+          configOptions={configOptions}
+          configValues={configValues}
+          usageState={usageState}
+          onConfigChange={onConfigChange}
+          promptCapabilities={promptCapabilities}
+        />
+      </div>
     </motion.div>
   );
 }

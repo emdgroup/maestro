@@ -182,85 +182,83 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
   }
 
   return (
-    <Message className="gap-2.5 items-start">
-      <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex-shrink-0 mt-[7px]">
-        <div className="w-7 h-7 rounded-full bg-card flex items-center justify-center">
+    <Message align="end" className="gap-2.5 items-start">
+      <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 shrink-0 mt-1.75">
+        <div className="w-7 h-7 rounded-full bg-background flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-accent/70" />
         </div>
       </div>
-      <MessageContent>
-        <div className="p-px rounded-[10px] bg-gradient-to-br from-accent/60 to-accent/15">
-          <div
-            className="bg-card rounded-[9px] px-3.5 py-2.5 text-sm leading-relaxed text-foreground break-words"
-            onClick={handleClick}
-          >
-            {hasAttachments ? (
-              <MarkdownBlock text={buildTextMarkdown(parsed.blocks)} breaks />
-            ) : (
-              <MarkdownBlock text={parsed.text} breaks />
-            )}
-            {hasCards && (
-              <div className="flex flex-col gap-1.5 mt-2.5">
-                {imageBlocks.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {imageBlocks.map((b, i) => {
-                      const src = `data:${b.mimeType};base64,${b.data}`;
-                      return (
-                        <ZoomableContent
-                          key={i}
-                          ariaLabel={b.name}
-                          lightboxContent={<img src={src} alt={b.name} />}
-                        >
-                          <Attachment orientation="vertical" className="bg-muted">
-                            <AttachmentMedia variant="image">
-                              <img
-                                src={src}
-                                alt={b.name}
-                                className="aspect-square w-full object-cover"
-                              />
-                            </AttachmentMedia>
-                            <AttachmentContent>
-                              <AttachmentTitle title={b.name}>{b.name}</AttachmentTitle>
-                              <AttachmentDescription>
-                                {b.mimeType.split("/").pop()?.toUpperCase()} ·{" "}
-                                {formatFileSize(Math.round(b.data.length * 0.75))}
-                              </AttachmentDescription>
-                            </AttachmentContent>
-                          </Attachment>
-                        </ZoomableContent>
-                      );
-                    })}
-                  </div>
-                )}
-                {fileBlocks.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {fileBlocks.map((b, i) => {
-                      const Icon = docIcon(b.name);
-                      const type = fileTypeLabel(b.name);
-                      const meta =
-                        b.size !== undefined ? `${type} · ${formatFileSize(b.size)}` : type;
-                      return (
-                        <Attachment
-                          key={i}
-                          size="sm"
-                          className="max-w-60 cursor-pointer bg-muted"
-                          onClick={() => b.uri && onOpenFile?.(b.uri)}
-                        >
-                          <AttachmentMedia className="bg-card">
-                            <Icon />
+      <MessageContent className="w-fit max-w-[90%]">
+        <div
+          className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word"
+          onClick={handleClick}
+        >
+          {hasAttachments ? (
+            <MarkdownBlock text={buildTextMarkdown(parsed.blocks)} breaks />
+          ) : (
+            <MarkdownBlock text={parsed.text} breaks />
+          )}
+          {hasCards && (
+            <div className="flex flex-col gap-1.5 mt-2.5">
+              {imageBlocks.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {imageBlocks.map((b, i) => {
+                    const src = `data:${b.mimeType};base64,${b.data}`;
+                    return (
+                      <ZoomableContent
+                        key={i}
+                        ariaLabel={b.name}
+                        lightboxContent={<img src={src} alt={b.name} />}
+                      >
+                        <Attachment orientation="vertical">
+                          <AttachmentMedia variant="image">
+                            <img
+                              src={src}
+                              alt={b.name}
+                              className="aspect-square w-full object-cover"
+                            />
                           </AttachmentMedia>
                           <AttachmentContent>
-                            <AttachmentTitle>{b.name}</AttachmentTitle>
-                            {meta && <AttachmentDescription>{meta}</AttachmentDescription>}
+                            <AttachmentTitle title={b.name}>{b.name}</AttachmentTitle>
+                            <AttachmentDescription>
+                              {b.mimeType.split("/").pop()?.toUpperCase()} ·{" "}
+                              {formatFileSize(Math.round(b.data.length * 0.75))}
+                            </AttachmentDescription>
                           </AttachmentContent>
                         </Attachment>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                      </ZoomableContent>
+                    );
+                  })}
+                </div>
+              )}
+              {fileBlocks.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {fileBlocks.map((b, i) => {
+                    const Icon = docIcon(b.name);
+                    const type = fileTypeLabel(b.name);
+                    const meta =
+                      b.size !== undefined ? `${type} · ${formatFileSize(b.size)}` : type;
+                    return (
+                      <Attachment
+                        key={i}
+                        size="sm"
+                        className="max-w-60 cursor-pointer"
+                        onClick={() => b.uri && onOpenFile?.(b.uri)}
+                      >
+                        <AttachmentMedia>
+                          <Icon />
+                        </AttachmentMedia>
+                        <AttachmentContent>
+                          <AttachmentTitle>{b.name}</AttachmentTitle>
+                          {meta && <AttachmentDescription>{meta}</AttachmentDescription>}
+                        </AttachmentContent>
+                      </Attachment>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </MessageContent>
     </Message>

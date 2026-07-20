@@ -2,33 +2,31 @@
 
 ## [0.9.0](https://github.com/emdgroup/maestro/compare/v0.8.0...v0.9.0) (2026-07-12)
 
-
 ### Features
 
-* card grid layout for WSL and container pickers ([6338e9f](https://github.com/emdgroup/maestro/commit/6338e9f5d001eb2ac4ea36a5e654b16446f6f103))
-* docker/container connections, incremental DB migration, SSH auth improvements ([d2803d7](https://github.com/emdgroup/maestro/commit/d2803d76d4a31388b5f1a4e09002b2ca76ecbad4))
-* implement session delete and select-all in history panel ([7d04cd2](https://github.com/emdgroup/maestro/commit/7d04cd2ce3e898f97c9622e63d93f93fed62fe18))
-* improve plan panel, session UX, and checkbox indeterminate state ([e10da92](https://github.com/emdgroup/maestro/commit/e10da92d90264e790678d6d877007c12f9cd22fa))
-* maestro-server PATH resolution, diff truncation, and worktree stats ([aed4096](https://github.com/emdgroup/maestro/commit/aed40966896b7243a88fab8ab0c0d78f665a5d01))
-* multi-account integration support ([43245ee](https://github.com/emdgroup/maestro/commit/43245ee5ce8ac290bfce8340d1cf614b3c2ce270))
-* resolve relative and data-URI images in markdown blocks ([ca2f553](https://github.com/emdgroup/maestro/commit/ca2f553ff55bcb0000c404a3b9bcb09a499bf864))
-
+- card grid layout for WSL and container pickers ([6338e9f](https://github.com/emdgroup/maestro/commit/6338e9f5d001eb2ac4ea36a5e654b16446f6f103))
+- docker/container connections, incremental DB migration, SSH auth improvements ([d2803d7](https://github.com/emdgroup/maestro/commit/d2803d76d4a31388b5f1a4e09002b2ca76ecbad4))
+- implement session delete and select-all in history panel ([7d04cd2](https://github.com/emdgroup/maestro/commit/7d04cd2ce3e898f97c9622e63d93f93fed62fe18))
+- improve plan panel, session UX, and checkbox indeterminate state ([e10da92](https://github.com/emdgroup/maestro/commit/e10da92d90264e790678d6d877007c12f9cd22fa))
+- maestro-server PATH resolution, diff truncation, and worktree stats ([aed4096](https://github.com/emdgroup/maestro/commit/aed40966896b7243a88fab8ab0c0d78f665a5d01))
+- multi-account integration support ([43245ee](https://github.com/emdgroup/maestro/commit/43245ee5ce8ac290bfce8340d1cf614b3c2ce270))
+- resolve relative and data-URI images in markdown blocks ([ca2f553](https://github.com/emdgroup/maestro/commit/ca2f553ff55bcb0000c404a3b9bcb09a499bf864))
 
 ### Bug Fixes
 
-* add missing supports_session_delete to test initializers and mock ([65a8282](https://github.com/emdgroup/maestro/commit/65a82824ed980c3404cfb0170d07cee10d01d16d))
-* add tooltip to worktree select items in spawn session dialog ([a925ee0](https://github.com/emdgroup/maestro/commit/a925ee04851f79d468564dd4136b6cf0426e1f19))
-* display linked badge images inline for single-row centering ([ee276e8](https://github.com/emdgroup/maestro/commit/ee276e8717b2547203dcf84caf67067c282ea842))
-* handle mermaid v11 error SVG resolved as success ([02f3bf3](https://github.com/emdgroup/maestro/commit/02f3bf30da87a0f88affba892ad3eeced5de81de))
-* markdown image rendering for badges, centering, and anchor links ([689df12](https://github.com/emdgroup/maestro/commit/689df12a1c6cbc9a384e1ff802f985dc3cb3c80c))
-* resolve lib/bin output filename collision in Cargo ([5104882](https://github.com/emdgroup/maestro/commit/5104882fde3b8ecab019f6e60012c99c8e8e1e14))
-* truncate long branch names in spawn session dialog ([36dcf53](https://github.com/emdgroup/maestro/commit/36dcf53e087e16023c6854b507f7bc71181a6601))
-* truncate long branch names in spawn session dialog ([40d1c5e](https://github.com/emdgroup/maestro/commit/40d1c5e453f46d4317a27fa17f3019de9f46de01))
-* truncate long branch names in worktree dropdown list ([3d3959f](https://github.com/emdgroup/maestro/commit/3d3959f8ea62ad22bc610852e43a131cd90de239))
-* truncate long branch names in worktree dropdown list ([cd0b6e7](https://github.com/emdgroup/maestro/commit/cd0b6e709a790cbdcbb7df701621acde21805be4))
-* truncate long branch names in worktree dropdown list ([80d6daa](https://github.com/emdgroup/maestro/commit/80d6daa47102464a32618482fc36fc3799574126))
-* use CSS columns layout for overview cards and round checkbox corners ([397c036](https://github.com/emdgroup/maestro/commit/397c036cc036d1c8bd0b5a6879d027da4d303015))
-* vertical alignment of badge images to middle of line box ([66b84f0](https://github.com/emdgroup/maestro/commit/66b84f0a38762841c36f2a53fa26df2a2eeff97d))
+- add missing supports_session_delete to test initializers and mock ([65a8282](https://github.com/emdgroup/maestro/commit/65a82824ed980c3404cfb0170d07cee10d01d16d))
+- add tooltip to worktree select items in spawn session dialog ([a925ee0](https://github.com/emdgroup/maestro/commit/a925ee04851f79d468564dd4136b6cf0426e1f19))
+- display linked badge images inline for single-row centering ([ee276e8](https://github.com/emdgroup/maestro/commit/ee276e8717b2547203dcf84caf67067c282ea842))
+- handle mermaid v11 error SVG resolved as success ([02f3bf3](https://github.com/emdgroup/maestro/commit/02f3bf30da87a0f88affba892ad3eeced5de81de))
+- markdown image rendering for badges, centering, and anchor links ([689df12](https://github.com/emdgroup/maestro/commit/689df12a1c6cbc9a384e1ff802f985dc3cb3c80c))
+- resolve lib/bin output filename collision in Cargo ([5104882](https://github.com/emdgroup/maestro/commit/5104882fde3b8ecab019f6e60012c99c8e8e1e14))
+- truncate long branch names in spawn session dialog ([36dcf53](https://github.com/emdgroup/maestro/commit/36dcf53e087e16023c6854b507f7bc71181a6601))
+- truncate long branch names in spawn session dialog ([40d1c5e](https://github.com/emdgroup/maestro/commit/40d1c5e453f46d4317a27fa17f3019de9f46de01))
+- truncate long branch names in worktree dropdown list ([3d3959f](https://github.com/emdgroup/maestro/commit/3d3959f8ea62ad22bc610852e43a131cd90de239))
+- truncate long branch names in worktree dropdown list ([cd0b6e7](https://github.com/emdgroup/maestro/commit/cd0b6e709a790cbdcbb7df701621acde21805be4))
+- truncate long branch names in worktree dropdown list ([80d6daa](https://github.com/emdgroup/maestro/commit/80d6daa47102464a32618482fc36fc3799574126))
+- use CSS columns layout for overview cards and round checkbox corners ([397c036](https://github.com/emdgroup/maestro/commit/397c036cc036d1c8bd0b5a6879d027da4d303015))
+- vertical alignment of badge images to middle of line box ([66b84f0](https://github.com/emdgroup/maestro/commit/66b84f0a38762841c36f2a53fa26df2a2eeff97d))
 
 ## [0.8.0](https://github.com/emdgroup/maestro/compare/v0.7.0...v0.8.0) (2026-07-09)
 

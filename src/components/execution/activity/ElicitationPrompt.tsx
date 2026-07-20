@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { parseElicitationFields } from "./elicitation-utils";
 import type { ElicitationField } from "./elicitation-utils";
 
@@ -141,13 +142,15 @@ export function ElicitationPrompt({
               {currentIndex + 1} / {fields.length}
             </span>
           )}
-          <button
-            onClick={() => onDecline(requestId)}
-            className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title="Decline"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => onDecline(requestId)}
+              className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </TooltipTrigger>
+            <TooltipContent>Decline</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -155,19 +158,20 @@ export function ElicitationPrompt({
       {isMultiField && (
         <div className="flex gap-1.5 px-3.5 pb-2">
           {fields.map((field, i) => (
-            <button
-              key={field.key}
-              onClick={() => goTo(i)}
-              className={cn(
-                "w-2 h-2 rounded-full transition-all duration-200 border-none p-0 cursor-pointer",
-                i === currentIndex
-                  ? "bg-accent scale-125 shadow-[0_0_0_3px_hsl(var(--accent)/0.25)]"
-                  : isAnswered(field)
-                    ? "bg-accent/50"
-                    : "bg-muted-foreground/30",
-              )}
-              title={field.title ?? field.key}
-            />
+            <Tooltip key={field.key}>
+              <TooltipTrigger
+                onClick={() => goTo(i)}
+                className={cn(
+                  "w-2 h-2 rounded-full transition-all duration-200 border-none p-0 cursor-pointer",
+                  i === currentIndex
+                    ? "bg-accent scale-125 shadow-[0_0_0_3px_hsl(var(--accent)/0.25)]"
+                    : isAnswered(field)
+                      ? "bg-accent/50"
+                      : "bg-muted-foreground/30",
+                )}
+              />
+              <TooltipContent>{field.title ?? field.key}</TooltipContent>
+            </Tooltip>
           ))}
         </div>
       )}

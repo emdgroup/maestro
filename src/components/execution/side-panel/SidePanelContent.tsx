@@ -6,6 +6,7 @@ import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChange
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { PermissionPrompt } from "@/components/execution/activity/PermissionPrompt";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
+import { AcpTerminalView } from "@/components/execution/terminal/AcpTerminalView";
 import { OverviewPanel } from "./OverviewPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
@@ -17,6 +18,7 @@ import type { ConnectionKey, DiffTarget } from "@/types/bindings";
 import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
 import { useWslConnections } from "@/services/connection.service";
 import { api } from "@/lib/tauri-utils";
+import { commands } from "@/types/bindings";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -39,6 +41,7 @@ interface SidePanelContentProps {
   onCollapsedChange: (c: boolean) => void;
   onOpenTabKind: (kind: TabKind) => void;
   onSpawnShell?: () => Promise<number | null>;
+  terminalBuffers?: Map<string, string>;
 }
 
 export function SidePanelContent({
@@ -62,6 +65,7 @@ export function SidePanelContent({
   onCollapsedChange,
   onOpenTabKind,
   onSpawnShell,
+  terminalBuffers,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const [sessionMeta, setSessionMeta] = useState<{
@@ -118,6 +122,7 @@ export function SidePanelContent({
     if (!onSpawnShell) return;
     for (const tab of tabs) {
       if (tab.kind !== "terminal") continue;
+      if (tab.acpTerminalId) continue; // ACP-managed terminal, no PTY needed
       if (ptyState.has(tab.id)) continue;
       if (spawningRef.current.has(tab.id)) continue;
       const tabId = tab.id;
@@ -143,20 +148,29 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
-  const planContent = useMemo(() => {
+  const { planContent, planReviewState, derivedPlanTitle } = useMemo(() => {
+    let content: string | null = null;
+    let state: "waiting" | "accepted" | "rejected" | null = null;
     for (const tc of toolCallMap.values()) {
-      if (tc.kind === "switch_mode" && typeof tc.rawInput?.plan === "string") {
-        return tc.rawInput.plan as string;
+      if (tc.kind === "switch_mode") {
+        if (typeof tc.rawInput?.plan === "string") content = tc.rawInput.plan as string;
+        state =
+          tc.status === "completed" ? "accepted" : tc.status === "pending" ? "waiting" : "rejected";
       }
     }
-    return null;
+    const titleMatch = content?.match(/^#\s+(.+)/m);
+    return {
+      planContent: content,
+      planReviewState: state,
+      derivedPlanTitle: titleMatch ? titleMatch[1].trim() : null,
+    };
   }, [toolCallMap]);
 
   return (
     <>
-      {tabs.map(({ id, kind, initialPath }) => {
+      {tabs.map(({ id, kind, initialPath, acpTerminalId, isAuthTerminal }) => {
         const isActive = isSessionActive && activeTabId === id;
-        const ptyEntry = kind === "terminal" ? ptyState.get(id) : undefined;
+        const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
           <div key={id} className={cn("absolute inset-0", !isActive && "hidden")}>
             {kind === "overview" && (
@@ -165,7 +179,8 @@ export function SidePanelContent({
                 canvasCount={canvasMap.size}
                 changedFilesCount={changedFiles.length}
                 planEntries={planEntries}
-                planTitle={planTitle}
+                planTitle={planTitle ?? derivedPlanTitle}
+                planReviewState={planReviewState}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 onNavigate={(kind, filePath) => {
@@ -319,7 +334,23 @@ export function SidePanelContent({
             )}
             {kind === "terminal" && (
               <div className="absolute inset-0">
-                {ptyEntry?.key != null ? (
+                {acpTerminalId ? (
+                  <AcpTerminalView
+                    logId={sessionKey}
+                    terminalId={acpTerminalId}
+                    initialOutput={terminalBuffers?.get(acpTerminalId) ?? ""}
+                    onInput={
+                      isAuthTerminal
+                        ? (data) => {
+                            void commands.acpSendAuthPtyInput(
+                              connection,
+                              Array.from(new TextEncoder().encode(data)),
+                            );
+                          }
+                        : undefined
+                    }
+                  />
+                ) : ptyEntry?.key != null ? (
                   <TerminalComponent taskId={ptyEntry.key} />
                 ) : ptyEntry?.failed ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

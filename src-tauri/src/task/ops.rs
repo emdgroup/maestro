@@ -95,6 +95,7 @@ pub async fn interrupt_task(
                 }
             }
             conn_key
+                .filter(|k| *k != crate::acp::ConnectionKey::Local)
                 .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()))
         };
 

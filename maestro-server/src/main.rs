@@ -33,7 +33,7 @@ use maestro_protocol::{
 use tokio::sync::Mutex;
 
 use agent_restart::handle_agent_restart;
-use dispatch::dispatch_message;
+use dispatch::{dispatch_message, AuthTerminalState};
 use sessions::{ActiveSession, AgentConnectionMap, SessionMap, SharedAgentConnections};
 
 // Re-export so that `crate::send_response` and `crate::send_diag` still resolve
@@ -160,6 +160,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
         agent::discover_agents(&registry);
+    let auth_terminals: Arc<tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>> =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     // Heartbeat: send Ping every 10s so the parent (Tauri) can detect stale connections.
     tokio::spawn({
@@ -274,6 +276,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             &mut agents_with_spawn,
             &stdout,
             &spawn_result_tx,
+            &auth_terminals,
         )
         .await
         {

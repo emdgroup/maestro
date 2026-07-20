@@ -100,6 +100,16 @@ pub async fn spawn_acp_session(
         task_id: None,
         app_state: Arc::clone(&*app_state),
     };
+    // Ensure the shared Local maestro-server is running before the fast path so that all
+    // Local sessions go through a single process. This keeps agent_connections alive across
+    // auth_required, allowing acp_authenticate/acp_start_auth_terminal to succeed.
+    if matches!(connection_key, ConnectionKey::Local) {
+        crate::acp::spawn_connection_server(
+            ConnectionKey::Local,
+            crate::acp::TransportTarget::Local,
+            &*app_state,
+        ).await?;
+    }
     if crate::acp::try_spawn_via_connection_server(
         &session_id,
         TaskMetadata { task_id, task_name: task_name.clone(), branch_name: branch_name.clone(), session_start_sha: session_start_sha.clone() },
@@ -193,6 +203,22 @@ pub async fn cancel_acp_session(
 ) -> Result<(), String> {
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
 
+    let maybe_task_id: Option<i32> = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).and_then(|p| p.task_id)
+    };
+    if let Some(task_id) = maybe_task_id {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
+        let status: String = conn.query_row(
+            "SELECT status FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get(0),
+        ).unwrap_or_default();
+        if status == "InProgress" || status == "Review" {
+            return Err("Cannot cancel a task session while the task is in progress — use the Stop button on the task card".to_string());
+        }
+    }
+
     let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
@@ -210,6 +236,7 @@ pub async fn cancel_acp_session(
             }
         }
         let teardown = conn_key
+            .filter(|k| *k != ConnectionKey::Local)
             .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()));
         (teardown, project_id_for_save)
     };
@@ -394,6 +421,48 @@ pub async fn load_acp_session(
     worktree_branch: Option<String>,
 ) -> Result<i32, String> {
     restore_acp_session(&app_state, agent_id, acp_session_id, cwd, connection, session_name, project_id, worktree_branch, None).await
+}
+
+/// Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
+/// Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
+#[tauri::command]
+#[specta::specta]
+pub async fn recover_task_session(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    project_id: i32,
+) -> Result<i32, String> {
+    let (project_path, connection_key) = {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?)
+            )),
+        ).map_err(|e| format!("Project not found: {}", e))?
+    };
+
+    let snapshots = crate::project::session_state::read_session_snapshots(
+        &app_state, &project_path, connection_key,
+    ).await;
+
+    let snapshot = snapshots.into_iter()
+        .find(|s| s.task_id == Some(task_id))
+        .ok_or_else(|| format!("No recoverable session for task {}", task_id))?;
+
+    restore_acp_session(
+        &app_state,
+        snapshot.agent_id,
+        snapshot.acp_session_id,
+        snapshot.cwd,
+        snapshot.connection_key,
+        snapshot.session_name,
+        Some(project_id),
+        snapshot.branch_name,
+        Some(task_id),
+    ).await
 }
 
 /// Close an ACP session stored on the agent server (not a live Tauri session).

@@ -12,10 +12,10 @@ use acp::schema::v1::{
     TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
     WaitForTerminalExitResponse,
 };
-use agent_client_protocol_schema::v1::{ElicitationCapabilities, ElicitationFormCapabilities};
+use agent_client_protocol_schema::v1::{AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities};
 use maestro_protocol::{
-    ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerResponse, SessionListEntry,
-    SessionModeState as ProtocolSessionModeState,
+    AUTH_REQUIRED_ERROR, AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo,
+    ServerResponse, SessionListEntry, SessionModeState as ProtocolSessionModeState,
     SessionModelState as ProtocolSessionModelState,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
@@ -105,12 +105,15 @@ pub(crate) async fn session_delete_on_connection(
 ///
 /// Sends `session/new` on the existing connection instead of spawning a fresh agent process.
 /// Registers the session route in the agent's router so shared handlers dispatch correctly.
+/// Returns `Ok(SpawnResult)` on success.
+/// Returns `Err(message)` on failure; the error response has already been sent to stdout.
+/// The caller must NOT evict the agent connection when the message is `AUTH_REQUIRED_ERROR`.
 pub(crate) async fn create_session_on_connection(
     conn: &AgentConnectionHandle,
     maestro_session_id: String,
     cwd: &str,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Option<SpawnResult> {
+) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
     crate::send_diag("info", format!("[session] session/new maestro_id={maestro_session_id}"));
     let session_response = match cx
@@ -120,15 +123,20 @@ pub(crate) async fn create_session_on_connection(
     {
         Ok(r) => r,
         Err(e) => {
+            let message = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
+                AUTH_REQUIRED_ERROR.to_string()
+            } else {
+                format!("ACP new_session failed: {}", e)
+            };
             let _ = send_response(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: format!("ACP new_session failed: {}", e),
+                    message: message.clone(),
                     session_id: None,
                 })),
             )
             .await;
-            return None;
+            return Err(message);
         }
     };
 
@@ -177,7 +185,7 @@ pub(crate) async fn create_session_on_connection(
     let router = Arc::clone(&conn.router);
     let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
 
-    Some(SpawnResult {
+    Ok(SpawnResult {
         session: ActiveSession {
             cmd_tx,
             pending_permissions,
@@ -368,6 +376,7 @@ pub(crate) async fn pre_initialize_agent(
                             .client_capabilities(
                                 ClientCapabilities::new()
                                     .terminal(true)
+                                    .auth(AuthCapabilities::new().terminal(true))
                                     .elicitation(
                                         ElicitationCapabilities::new()
                                             .form(ElicitationFormCapabilities::new()),
@@ -383,16 +392,49 @@ pub(crate) async fn pre_initialize_agent(
                         return Ok(());
                     }
                 };
+                let auth_methods: Vec<AuthMethodInfo> = init_response.auth_methods
+                    .iter()
+                    .filter_map(|m| match m {
+                        AuthMethod::Agent(a) => Some(AuthMethodInfo {
+                            id: a.id.0.to_string(),
+                            name: a.name.clone(),
+                            description: a.description.clone(),
+                            method_type: "agent".to_string(),
+                            args: Vec::new(),
+                            terminal_cmd: None,
+                        }),
+                        AuthMethod::Terminal(t) => {
+                            let terminal_cmd = t.meta.as_ref()
+                                .and_then(|meta| meta.get("terminal-auth"))
+                                .and_then(|ta| ta.get("command"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                            Some(AuthMethodInfo {
+                                id: t.id.0.to_string(),
+                                name: t.name.clone(),
+                                description: t.description.clone(),
+                                method_type: "terminal".to_string(),
+                                args: t.args.clone(),
+                                terminal_cmd,
+                            })
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                let supports_auth_logout = init_response.agent_capabilities.auth.logout.is_some();
                 let caps = AgentCapabilities {
                     prompt_capabilities: Some(extract_prompt_capabilities(&init_response)),
                     supports_session_list: init_response.agent_capabilities.session_capabilities.list.is_some(),
                     supports_session_load: init_response.agent_capabilities.load_session,
                     supports_session_close: init_response.agent_capabilities.session_capabilities.close.is_some(),
                     supports_session_delete: init_response.agent_capabilities.session_capabilities.delete.is_some(),
+                    auth_methods,
+                    supports_auth_logout,
                 };
                 crate::send_diag("info", format!(
-                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={}",
-                    caps.supports_session_list, caps.supports_session_load, caps.supports_session_close, caps.supports_session_delete
+                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={}",
+                    caps.supports_session_list, caps.supports_session_load, caps.supports_session_close, caps.supports_session_delete,
+                    caps.auth_methods.len(), caps.supports_auth_logout
                 ));
                 // Send the live connection handle out — caller uses it to create sessions.
                 let _ = ready_tx.send(Ok((caps, cx)));

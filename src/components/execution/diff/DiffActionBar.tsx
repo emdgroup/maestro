@@ -26,6 +26,7 @@ import {
   AlertDialogCancel,
 } from "@/ui/alert-dialog";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 function getDialogContent(
   isDeleting: boolean,
@@ -166,19 +167,27 @@ export function DiffActionBar({
                   }
             }
           >
-            <AlertDialogTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={revertDisabled}
-                  className="h-8 w-8 p-0"
-                  title={isDeleteMode ? "Delete selected files" : "Revert selected changes"}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
-              }
-            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <AlertDialogTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={revertDisabled}
+                        className="h-8 w-8 p-0"
+                      />
+                    }
+                  />
+                }
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>
+                {isDeleteMode ? "Delete selected files" : "Revert selected changes"}
+              </TooltipContent>
+            </Tooltip>
             <AlertDialogContent>
               {(() => {
                 const dialog = getDialogContent(isDeleting, deleteError, isDeleteMode);
@@ -213,19 +222,25 @@ export function DiffActionBar({
         {/* Worktree-only: Shelve button with name popover */}
         {mode === "worktree" && (
           <Popover open={shelvePopoverOpen} onOpenChange={onShelvePopoverOpenChange ?? (() => {})}>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!hasAnyStaged || isShelving}
-                  className="h-8 w-8 p-0"
-                  title="Shelve selected changes"
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                </Button>
-              }
-            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={!hasAnyStaged || isShelving}
+                        className="h-8 w-8 p-0"
+                      />
+                    }
+                  />
+                }
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Shelve selected changes</TooltipContent>
+            </Tooltip>
             <PopoverContent className="w-64 p-3">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium">Stash name</label>

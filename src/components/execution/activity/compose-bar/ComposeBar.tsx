@@ -18,6 +18,7 @@ import { AttachmentPills } from "./AttachmentPills";
 import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 export interface ComposeBarHandle {
   focus(): void;
@@ -336,15 +337,16 @@ export function ComposeBar({
           />
           <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1">
             {logId && (
-              <button
-                type="button"
-                onClick={() => void attach.handleAttach()}
-                disabled={isProcessing || isSending}
-                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
-                title="Attach external files"
-              >
-                <Paperclip className="w-3.5 h-3.5" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<button type="button" disabled={isProcessing || isSending} />}
+                  onClick={() => void attach.handleAttach()}
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Attach external files</TooltipContent>
+              </Tooltip>
             )}
             <textarea
               ref={textareaRef}
@@ -378,48 +380,51 @@ export function ComposeBar({
             ))}
             <div className="ml-auto">
               {isProcessing ? (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
-                  title="Cancel"
-                >
-                  <svg
-                    viewBox="0 0 42 42"
-                    className="absolute pointer-events-none"
-                    style={{ inset: "-5px", width: "42px", height: "42px", overflow: "visible" }}
+                <Tooltip>
+                  <TooltipTrigger
+                    type="button"
+                    onClick={onCancel}
+                    className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
                   >
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeOpacity={1}
-                      strokeWidth={1.8}
-                      strokeLinecap="round"
-                      strokeDasharray="22 79"
-                      style={{
-                        transformBox: "fill-box",
-                        transformOrigin: "center",
-                        animation: "arc-spin-cw 0.9s linear infinite",
-                      }}
-                    />
-                  </svg>
-                  <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="4" y="4" width="16" height="16" rx="2.5" />
-                  </svg>
-                </button>
+                    <svg
+                      viewBox="0 0 42 42"
+                      className="absolute pointer-events-none"
+                      style={{ inset: "-5px", width: "42px", height: "42px", overflow: "visible" }}
+                    >
+                      <circle
+                        cx="20"
+                        cy="20"
+                        r="16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeOpacity={1}
+                        strokeWidth={1.8}
+                        strokeLinecap="round"
+                        strokeDasharray="22 79"
+                        style={{
+                          transformBox: "fill-box",
+                          transformOrigin: "center",
+                          animation: "arc-spin-cw 0.9s linear infinite",
+                        }}
+                      />
+                    </svg>
+                    <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+                    </svg>
+                  </TooltipTrigger>
+                  <TooltipContent>Cancel</TooltipContent>
+                </Tooltip>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={sendDisabled}
-                  className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
-                  title="Send (Enter)"
-                >
-                  <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<button type="button" disabled={sendDisabled} />}
+                    onClick={() => void handleSend()}
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
+                  >
+                    <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
+                  </TooltipTrigger>
+                  <TooltipContent>Send (Enter)</TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>

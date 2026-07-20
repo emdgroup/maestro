@@ -2,7 +2,7 @@ import { Sun, Moon, SunMoon } from "lucide-react";
 import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
 import type { ReactElement } from "react";
 import { useState, useRef } from "react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { buttonVariants } from "@/ui/button";
 import { cn } from "@/lib/utils.ts";
 
@@ -43,28 +43,26 @@ export function ThemeToggle() {
   };
 
   return (
-    <TooltipProvider delay={150}>
-      <Tooltip open={open} onOpenChange={setOpen}>
-        <TooltipTrigger
-          render={
-            <button
-              onClick={handleClick}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-              className={cn(
-                buttonVariants({ variant: "ghost" }),
-                "h-7 w-7 rounded-full [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground",
-              )}
-              aria-label={`Current theme: ${theme}. Click to cycle`}
-            >
-              {icon}
-            </button>
-          }
-        />
-        <TooltipContent side="bottom" sideOffset={8} alignOffset={0}>
-          <p className="text-xs">{title}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger
+        render={
+          <button
+            onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            className={cn(
+              buttonVariants({ variant: "ghost" }),
+              "h-7 w-7 rounded-full [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground",
+            )}
+            aria-label={`Current theme: ${theme}. Click to cycle`}
+          >
+            {icon}
+          </button>
+        }
+      />
+      <TooltipContent side="bottom" sideOffset={8} alignOffset={0}>
+        <p className="text-xs">{title}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

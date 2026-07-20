@@ -28,18 +28,59 @@ pub(crate) fn asset_filename(triple: &str) -> String {
     }
 }
 
-/// Maps a uname-reported architecture string to its Rust Linux target triple.
-fn linux_triple_for_arch(arch: &str) -> Result<&'static str, String> {
-    match arch {
-        "x86_64"           => Ok("x86_64-unknown-linux-gnu"),
-        "aarch64" | "arm64" => Ok("aarch64-unknown-linux-gnu"),
-        other              => Err(format!("Unsupported remote architecture: {}", other)),
+/// Maps uname-reported OS and architecture strings to their Rust target triple.
+/// For native Windows remotes (PowerShell/cmd default shell), the OS field is "Windows_NT"
+/// (reported by the PowerShell probe). For MSYS2/Git Bash on Windows, uname -s returns a
+/// string containing "NT" (e.g. "MINGW64_NT-10.0-19041").
+fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
+    match (os, arch) {
+        ("Darwin", "arm64") | ("Darwin", "aarch64") => Ok("aarch64-apple-darwin"),
+        ("Darwin", other) => Err(format!("Unsupported macOS architecture: {}", other)),
+        (os, "x86_64") if os.contains("NT") => Ok("x86_64-pc-windows-msvc"),
+        (os, arch) if os.contains("NT") => Err(format!("Unsupported Windows architecture: {}", arch)),
+        (_, "x86_64")                 => Ok("x86_64-unknown-linux-gnu"),
+        (_, "aarch64") | (_, "arm64") => Ok("aarch64-unknown-linux-gnu"),
+        (_, other)                    => Err(format!("Unsupported remote architecture: {}", other)),
     }
 }
 
+/// Maps a uname-reported architecture string to its Rust Linux target triple.
+/// Used for container remotes, which are always Linux.
+fn linux_triple_for_arch(arch: &str) -> Result<&'static str, String> {
+    match arch {
+        "x86_64"            => Ok("x86_64-unknown-linux-gnu"),
+        "aarch64" | "arm64" => Ok("aarch64-unknown-linux-gnu"),
+        other               => Err(format!("Unsupported remote architecture: {}", other)),
+    }
+}
+
+/// Returns the platform-appropriate binary name for the remote target.
+fn remote_binary_name(triple: &str) -> &'static str {
+    match triple {
+        "x86_64-pc-windows-msvc" => "maestro-server.exe",
+        _ => REMOTE_BINARY_NAME,
+    }
+}
+
+/// Encodes a PowerShell script as a base64 UTF-16LE -EncodedCommand invocation.
+/// Avoids all shell-quoting issues regardless of whether the SSH default shell is
+/// cmd.exe or PowerShell — base64 contains only alphanumeric characters and +/=.
+fn powershell_encoded(script: &str) -> String {
+    use base64::Engine;
+    let utf16: Vec<u16> = script.encode_utf16().collect();
+    let bytes: Vec<u8> = utf16.iter().flat_map(|w| w.to_le_bytes()).collect();
+    format!(
+        "powershell -EncodedCommand {}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    )
+}
+
 /// Ensure maestro-server exists on remote with the correct version.
-/// Downloads the appropriate Linux binary locally if needed, then deploys via SFTP.
+/// Downloads the appropriate binary locally if needed, then deploys via SFTP.
 /// Returns the absolute path to use for spawning.
+///
+/// Uses a two-phase probe: Unix first (uname), then a PowerShell fallback for
+/// native Windows remotes (PowerShell or cmd.exe as the SSH default shell).
 pub async fn ensure_remote_server(
     ssh: &crate::connectivity::ssh::RemoteSshSession,
     app_handle: &AppHandle,
@@ -47,26 +88,60 @@ pub async fn ensure_remote_server(
 ) -> Result<DeployResult, String> {
     emit_status(app_handle, connection_id, "checking", None);
 
-    // Single SSH command combining arch check, version check, and HOME resolution.
-    let probe = ssh
-        .execute_command(&format!(
-            "printf '%s|||%s|||%s' \"$(uname -m)\" \"$(~/{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$(echo ~)\"",
-            REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
-        ))
-        .await
-        .map_err(|e| format!("Failed to probe remote host: {}", e))?;
+    // Phase 1: Unix probe — works on Linux, macOS, and MSYS2/Git Bash on Windows.
+    // Try both binary names: uname -s is unknown before the probe succeeds, so we
+    // cannot know ahead of time whether the Windows .exe variant is installed.
+    let unix_probe = format!(
+        "printf '%s|||%s|||%s|||%s' \"$(uname -s)\" \"$(uname -m)\" \
+         \"$(~/{dir}/{name} --app-version 2>/dev/null \
+            || ~/{dir}/{name}.exe --app-version 2>/dev/null \
+            || echo MISSING)\" \
+         \"$(echo ~)\"",
+        dir = REMOTE_INSTALL_DIR,
+        name = REMOTE_BINARY_NAME,
+    );
 
-    let parts: Vec<&str> = probe.trim().splitn(3, "|||").collect();
-    if parts.len() != 3 {
-        return Err(format!("Unexpected probe output: {}", probe.trim()));
+    // Phase 2: Windows PowerShell probe — used when the Unix probe fails entirely
+    // (i.e. the SSH default shell is PowerShell or cmd.exe, neither of which has uname).
+    // Encoded as base64 UTF-16LE via -EncodedCommand to avoid all shell-quoting issues
+    // regardless of whether the outer shell is cmd.exe or PowerShell.
+    // $env:PROCESSOR_ARCHITECTURE returns AMD64 (x86-64) or ARM64 on Windows.
+    // Backslashes in USERPROFILE are replaced with / so the path is usable as an SFTP path.
+    let windows_ps_probe = "\
+        $a=$env:PROCESSOR_ARCHITECTURE; \
+        $h=($env:USERPROFILE -replace [char]92,[char]47); \
+        $p=$env:USERPROFILE+[char]92+'.local'+[char]92+'bin'+[char]92+'maestro-server.exe'; \
+        $v=if(Test-Path $p){try{(& $p --app-version 2>$null).Trim()}catch{'MISSING'}}else{'MISSING'}; \
+        Write-Output ('Windows_NT|||' + $a + '|||' + $v + '|||' + $h)";
+
+    let (probe_output, is_windows_native) = match ssh.execute_command(&unix_probe).await {
+        Ok(output) if output.contains("|||") => (output, false),
+        _ => {
+            let output = ssh
+                .execute_command(&powershell_encoded(windows_ps_probe))
+                .await
+                .map_err(|e| format!("Remote probe failed: {}", e))?;
+            (output, true)
+        }
+    };
+
+    let parts: Vec<&str> = probe_output.trim().splitn(4, "|||").collect();
+    if parts.len() != 4 {
+        return Err(format!("Unexpected probe output: {}", probe_output.trim()));
     }
-    let (arch, remote_version, home) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
+    let (os, arch, remote_version, home) = (
+        parts[0].trim(),
+        parts[1].trim(),
+        parts[2].trim(),
+        parts[3].trim(),
+    );
 
-    let remote_triple = linux_triple_for_arch(arch)?;
+    let remote_triple = triple_for_remote(os, arch)?;
+    let binary_name = remote_binary_name(remote_triple);
     let local_version = env!("CARGO_PKG_VERSION").to_string();
 
     if remote_version == local_version {
-        let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME);
+        let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, binary_name);
         emit_status(app_handle, connection_id, "up-to-date", None);
         return Ok(DeployResult {
             path: abs_path,
@@ -78,28 +153,52 @@ pub async fn ensure_remote_server(
 
     let local_binary = ensure_remote_binary_local(app_handle, remote_triple).await?;
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
-    let abs_remote_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
+    let abs_remote_path = format!("{}/{}", abs_dir, binary_name);
 
-    ssh.execute_command(&format!("mkdir -p {}", abs_dir))
+    if is_windows_native {
+        ssh.execute_command(&powershell_encoded(&format!(
+            "New-Item -ItemType Directory -Force -Path '{}' | Out-Null",
+            abs_dir
+        )))
         .await
         .map_err(|e| format!("Failed to create remote dir: {}", e))?;
 
-    // Remove any existing binary before upload. If it's currently running (e.g. an
-    // orphaned connection server), Linux's sftp create would return ETXTBSY. Unlinking
-    // first lets the kernel keep the inode alive for the running process while freeing
-    // the path for the new file.
-    ssh.execute_command(&format!("rm -f {}", abs_remote_path))
+        ssh.execute_command(&powershell_encoded(&format!(
+            "if (Test-Path '{}') {{ Remove-Item -Force '{}' }}",
+            abs_remote_path, abs_remote_path
+        )))
         .await
         .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
+    } else {
+        ssh.execute_command(&format!("mkdir -p {}", abs_dir))
+            .await
+            .map_err(|e| format!("Failed to create remote dir: {}", e))?;
+
+        // Remove any existing binary before upload. If it's currently running (e.g. an
+        // orphaned connection server), Linux's sftp create would return ETXTBSY. Unlinking
+        // first lets the kernel keep the inode alive for the running process while freeing
+        // the path for the new file.
+        ssh.execute_command(&format!("rm -f {}", abs_remote_path))
+            .await
+            .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
+    }
 
     let transfer_id = format!("deploy-maestro-server-{}", connection_id);
-    crate::connectivity::ssh::sftp::upload_file(ssh, &local_binary, &abs_remote_path, &transfer_id, app_handle)
-        .await
-        .map_err(|e| format!("SFTP upload failed: {}", e))?;
+    crate::connectivity::ssh::sftp::upload_file(
+        ssh,
+        &local_binary,
+        &abs_remote_path,
+        &transfer_id,
+        app_handle,
+    )
+    .await
+    .map_err(|e| format!("SFTP upload failed: {}", e))?;
 
-    ssh.execute_command(&format!("chmod +x {}", abs_remote_path))
-        .await
-        .map_err(|e| format!("chmod failed: {}", e))?;
+    if !is_windows_native {
+        ssh.execute_command(&format!("chmod +x {}", abs_remote_path))
+            .await
+            .map_err(|e| format!("chmod failed: {}", e))?;
+    }
 
     emit_status(app_handle, connection_id, "deployed", None);
 
@@ -376,7 +475,7 @@ async fn install_local_link(src: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Ensure a Linux maestro-server binary for the given triple is cached in the app data dir.
+/// Ensure the maestro-server binary for the given triple is cached in the app data dir.
 /// Downloads from GitHub releases if absent or version-mismatched.
 /// Used as the local staging binary before SSH or WSL deployment.
 async fn ensure_remote_binary_local(

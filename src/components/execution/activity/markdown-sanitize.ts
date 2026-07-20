@@ -8,6 +8,7 @@ export const sanitizeSchema = {
   protocols: {
     ...defaultSchema.protocols,
     src: [...(defaultSchema.protocols?.src ?? []), "data"],
+    href: [...(defaultSchema.protocols?.href ?? []), "file"],
   },
   attributes: {
     ...defaultSchema.attributes,

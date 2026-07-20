@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Files, ExternalLink, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
@@ -108,19 +109,21 @@ export function ArtifactsPanel({
     <div className="relative flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="flex items-center h-10 px-2 border-b border-border bg-card/50 shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={() => setListOpen((v) => !v)}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            listOpen
-              ? "text-foreground bg-muted/60"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-          )}
-          title="File list"
-        >
-          <Files className="w-4 h-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              listOpen
+                ? "text-foreground bg-muted/60"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+            )}
+          >
+            <Files className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>File list</TooltipContent>
+        </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center min-w-0">
           <span className="text-xs font-mono text-muted-foreground truncate">
@@ -145,34 +148,36 @@ export function ArtifactsPanel({
               {zoom}%
             </button>
             <div className="w-px h-4 bg-border shrink-0 mx-1" />
-            <button
-              type="button"
-              onClick={() => void handleOpen()}
-              disabled={dlState.status === "downloading"}
-              className={cn(
-                "p-1.5 rounded-md transition-colors shrink-0",
-                dlState.status === "error"
-                  ? "text-destructive"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-              )}
-              title={
-                dlState.status === "error"
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                onClick={() => void handleOpen()}
+                disabled={dlState.status === "downloading"}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors shrink-0",
+                  dlState.status === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                {dlState.status === "downloading" ? (
+                  <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
+                    {dlState.progress}%
+                  </span>
+                ) : dlState.status === "error" ? (
+                  <X className="w-3.5 h-3.5" />
+                ) : (
+                  <ExternalLink className="w-3.5 h-3.5" />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {dlState.status === "error"
                   ? "Failed to open"
                   : connection.type === "ssh"
                     ? "Download and open"
-                    : "Open in default application"
-              }
-            >
-              {dlState.status === "downloading" ? (
-                <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
-                  {dlState.progress}%
-                </span>
-              ) : dlState.status === "error" ? (
-                <X className="w-3.5 h-3.5" />
-              ) : (
-                <ExternalLink className="w-3.5 h-3.5" />
-              )}
-            </button>
+                    : "Open in default application"}
+              </TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>

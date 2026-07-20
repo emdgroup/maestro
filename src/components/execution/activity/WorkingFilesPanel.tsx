@@ -54,7 +54,7 @@ function FileContentView({
         <iframe
           src={blobUrl ?? undefined}
           sandbox="allow-scripts"
-          className="w-full h-full border-0 bg-white rounded-md"
+          className="w-full h-full border-0 bg-background custom-scrollbar"
           title={path.split("/").pop()}
         />
       );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
@@ -18,6 +19,8 @@ import type { UsageState, ToolCallItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
+import { useBoardActions, useBoardStore } from "@/store/boardStore";
+import { commands } from "@/types/bindings";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -33,6 +36,7 @@ import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
 import { AgentStreamContent, getItemKey } from "./AgentStreamContent";
 import { AgentBottomBar } from "./AgentBottomBar";
 import { AgentScrollOverlays } from "./AgentScrollOverlays";
+import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import {
   MessageScrollerProvider,
   useMessageScroller,
@@ -74,17 +78,21 @@ function ScrollStateWatcher({
     const wasSelected = prevIsSelectedRef.current;
     prevIsSelectedRef.current = isSelected;
     if (!isSelected || wasSelected) return;
-
     scrollToEnd({ behavior: "instant" });
+  }, [isSelected, scrollToEnd]);
 
-    if (!lastAgentSectionId) return;
-    const sectionEl = document.querySelector(
-      `[data-message-id="${CSS.escape(lastAgentSectionId)}"]`,
-    );
-    if (sectionEl && sectionEl.getBoundingClientRect().top < 0) {
-      scrollToMessage(lastAgentSectionId, { align: "start", behavior: "instant" });
-    }
-  }, [isSelected, lastAgentSectionId, scrollToMessage, scrollToEnd]);
+  useEffect(() => {
+    if (!isSelected || !lastAgentSectionId) return;
+    const id = requestAnimationFrame(() => {
+      const sectionEl = document.querySelector(
+        `[data-message-id="${CSS.escape(lastAgentSectionId)}"]`,
+      );
+      if (sectionEl && sectionEl.getBoundingClientRect().top < 0) {
+        scrollToMessage(lastAgentSectionId, { align: "start", behavior: "instant" });
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isSelected, lastAgentSectionId, scrollToMessage]);
 
   useEffect(() => {
     if (
@@ -113,6 +121,7 @@ interface AgentActivityPanelProps {
 
 export function AgentActivityPanel({
   sessionKey,
+  agentId,
   connection,
   isSelected = false,
   isNewSession = false,
@@ -121,6 +130,14 @@ export function AgentActivityPanel({
   onSpawnShell,
 }: AgentActivityPanelProps) {
   const { markSeen } = useSessionActivityActions();
+  const {
+    setAuthRequired,
+    clearAuthRequired,
+    setAuthTerminalInterrupted,
+    setAuthTerminalIdle,
+    setPendingSessionRetry,
+  } = useBoardActions();
+  const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
   const activityInfo = useSessionActivity(sessionKey);
   const activeTab = useActiveTab();
   const selectedProject = useSelectedProject();
@@ -161,6 +178,16 @@ export function AgentActivityPanel({
   }, [activeSessions, sessionKey]);
 
   const isSessionActive = isSelected && activeTab === "agents";
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [hasPreSpawnAuthError, setHasPreSpawnAuthError] = useState(false);
+
+  const effectiveAuthKey = taskId ?? sessionKey;
+
+  const lastItem = liveState.items[liveState.items.length - 1];
+  const hasAuthError = liveState.items.some(
+    (item) => item.type === "error" && item.item.stopReason === "auth_required",
+  );
 
   const {
     liveElicitationSummaries,
@@ -224,6 +251,7 @@ export function AgentActivityPanel({
     closeTab,
     addDynamicTab,
     openTabKind,
+    openAcpTerminalTab,
     latestCanvasSurfaceId,
   } = useSidePanelTabs({
     hasPlan: !!sidePanelPlan,
@@ -296,6 +324,51 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
+  useEffect(() => {
+    if (lastItem?.type === "error" && lastItem.item.stopReason === "auth_required" && agentId) {
+      setAuthRequired(effectiveAuthKey, agentId, connection, lastUserMessage?.content ?? null);
+    }
+  }, [lastItem, effectiveAuthKey, agentId, connection, lastUserMessage, setAuthRequired]);
+
+  useEffect(() => {
+    const unlisten = listen<{ terminal_id: string; output: string }>(
+      `acp://terminal-output/${sessionKey}`,
+      (event) => {
+        liveDispatch({
+          type: "terminal_output",
+          terminalId: event.payload.terminal_id,
+          output: event.payload.output,
+        });
+        const isAuth = event.payload.terminal_id.startsWith("auth-terminal-");
+        openAcpTerminalTab(event.payload.terminal_id, { isAuthTerminal: isAuth });
+      },
+    ).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [sessionKey, liveDispatch, openAcpTerminalTab]);
+
+  useEffect(() => {
+    const unlisten = listen<string>(`acp://session-error/${sessionKey}`, (e) => {
+      if (e.payload === "auth_required" && agentId) {
+        setAuthRequired(effectiveAuthKey, agentId, connection, null);
+        setHasPreSpawnAuthError(true);
+      }
+    }).catch(console.error);
+    return () => {
+      unlisten.then((fn) => fn?.());
+    };
+  }, [sessionKey, agentId, connection, effectiveAuthKey, setAuthRequired]);
+
+  // Detect when auth terminal tab is closed before PTY exits.
+  useEffect(() => {
+    const entry = authRequiredTasks[effectiveAuthKey];
+    if (!entry?.terminalId || entry.terminalState !== "running") return;
+    if (!tabs.some((t) => t.acpTerminalId === entry.terminalId)) {
+      setAuthTerminalInterrupted(effectiveAuthKey);
+    }
+  }, [tabs, effectiveAuthKey, authRequiredTasks, setAuthTerminalInterrupted]);
+
   const lastAgentSectionId = useMemo(() => {
     for (let i = agentSections.length - 1; i >= 0; i--) {
       const s = agentSections[i];
@@ -303,10 +376,6 @@ export function AgentActivityPanel({
     }
     return null;
   }, [agentSections]);
-
-  const handleForceEnd = useCallback(async () => {
-    await api.cancelAcpSession(sessionKey).catch(() => {});
-  }, [sessionKey]);
 
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
@@ -365,8 +434,6 @@ export function AgentActivityPanel({
     }
   }, [liveState.isInitializing, hasInterruptedCalls, isNewSession, taskId, handleSend]);
 
-  if (liveState.isInitializing) return <AgentLoadingSkeleton isNewSession={isNewSession} />;
-
   const inlinePermission =
     !isSessionDead && hasInlinePermission && pendingPermission ? (
       <motion.div
@@ -399,9 +466,9 @@ export function AgentActivityPanel({
     promptCapabilities,
   };
 
-  const isStale = activityInfo?.status === "stale";
-
-  const streamContent = (
+  const streamContent = liveState.isInitializing ? (
+    <AgentLoadingSkeleton isNewSession={isNewSession} />
+  ) : (
     <>
       {liveState.plan && (
         <div className="shrink-0 bg-card border-b border-border">
@@ -429,6 +496,9 @@ export function AgentActivityPanel({
               onOpenFile={handleOpenFile}
               inlinePermission={inlinePermission}
               bottomPadding={composeBarHeight}
+              onAuthLogin={
+                hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
+              }
             />
             <AgentBottomBar
               isSessionDead={isSessionDead}
@@ -472,16 +542,32 @@ export function AgentActivityPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {isStale && (
-        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
-          <span>Connection lost — agent may be stuck</span>
-          <button
-            onClick={handleForceEnd}
-            className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 hover:bg-destructive/20 transition-colors"
-          >
-            Force end session
-          </button>
-        </div>
+      {agentId && (
+        <AgentAuthModal
+          agentId={agentId}
+          agentName={agentId}
+          connection={connection}
+          taskId={effectiveAuthKey}
+          sessionKey={sessionKey}
+          terminalState={authRequiredTasks[effectiveAuthKey]?.terminalState ?? "idle"}
+          open={isAuthModalOpen}
+          onAuthSuccess={() => {
+            setIsAuthModalOpen(false);
+            setHasPreSpawnAuthError(false);
+            clearAuthRequired(effectiveAuthKey);
+            if (lastUserMessage) {
+              void handleSend(lastUserMessage.content);
+            } else if (taskId === null) {
+              setPendingSessionRetry({ sessionKey, lastPrompt: null });
+            }
+          }}
+          onRetry={() => {
+            const entry = authRequiredTasks[effectiveAuthKey];
+            if (entry?.terminalId) void commands.acpAbortAuthTerminal(connection);
+            setAuthTerminalIdle(effectiveAuthKey);
+          }}
+          onClose={() => setIsAuthModalOpen(false)}
+        />
       )}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
         <ResizablePanel
@@ -489,10 +575,14 @@ export function AgentActivityPanel({
           minSize="42rem"
           collapsible
           collapsedSize={0}
-          className="flex flex-col min-h-0 overflow-hidden"
+          className="flex flex-col min-h-0 overflow-hidden bg-card"
         >
-          {headerSlot}
-          {streamContent}
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+              {headerSlot}
+              {streamContent}
+            </div>
+          </div>
         </ResizablePanel>
         {!maximized && <ResizableHandle withHandle />}
         <ResizablePanel
@@ -532,6 +622,7 @@ export function AgentActivityPanel({
             onMaximizedChange={handleMaximizedChange}
             onSpawnShell={onSpawnShell}
             isSessionActive={isSessionActive}
+            terminalBuffers={liveState.terminalBuffers}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

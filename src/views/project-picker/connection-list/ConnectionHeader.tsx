@@ -3,6 +3,7 @@ import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
 import { Server, Pencil, MoreVertical, Trash2, KeyRound, AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
   DropdownMenu,
@@ -138,14 +139,18 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
           </h2>
           {failedTools.length > 0 && (
             <Popover>
-              <PopoverTrigger
-                className="p-1 rounded-md transition-colors cursor-pointer shrink-0"
-                title="Environment warnings"
-              >
-                <AlertTriangle
-                  className={`size-4 ${hasMandatoryFail ? "text-destructive" : "text-amber-400"}`}
-                />
-              </PopoverTrigger>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <PopoverTrigger className="p-1 rounded-md transition-colors cursor-pointer shrink-0" />
+                  }
+                >
+                  <AlertTriangle
+                    className={`size-4 ${hasMandatoryFail ? "text-destructive" : "text-amber-400"}`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Environment warnings</TooltipContent>
+              </Tooltip>
               <PopoverContent side="bottom" align="end" className="w-64 gap-2">
                 <p className="text-xs font-medium text-muted-foreground">Environment warnings</p>
                 <ul className="flex flex-col gap-1.5">
@@ -180,12 +185,16 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
             <Pencil className="size-3.5" />
           </Button>
           <DropdownMenu>
-            <DropdownMenuTrigger
-              className="p-1.5 rounded-md hover:text-accent transition-colors cursor-pointer"
-              title="Connection actions"
-            >
-              <MoreVertical className="size-3.5" />
-            </DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger className="p-1.5 rounded-md hover:text-accent transition-colors cursor-pointer" />
+                }
+              >
+                <MoreVertical className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Connection actions</TooltipContent>
+            </Tooltip>
             <DropdownMenuContent className="w-auto" align="end">
               {hasSavedPassword && (
                 <>

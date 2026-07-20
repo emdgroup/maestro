@@ -133,6 +133,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::prepare_external_attachments,
             crate::ipc::save_clipboard_image,
             crate::ipc::close_acp_session,
+            crate::ipc::recover_task_session,
             crate::ipc::delete_acp_session,
             crate::ipc::rename_acp_session,
             crate::ipc::sftp_upload,
@@ -187,6 +188,14 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::interrupt_task,
             // Task detail screen (Phase 62)
             crate::ipc::cancel_task,
+            // ACP authentication
+            crate::ipc::get_agent_auth_info,
+            crate::ipc::acp_authenticate,
+            crate::ipc::acp_logout,
+            crate::ipc::discard_failed_spawn,
+            crate::ipc::acp_start_auth_terminal,
+            crate::ipc::acp_send_auth_pty_input,
+            crate::ipc::acp_abort_auth_terminal,
         ])
 }
 

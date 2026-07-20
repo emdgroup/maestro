@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AgentMonitor } from "./AgentMonitor";
@@ -26,6 +26,7 @@ const baseSession = {
   supports_session_close: false,
   supports_session_delete: false,
   project_id: null,
+  task_prevents_close: false,
 };
 
 const defaultProps = {
@@ -47,28 +48,28 @@ function renderMonitor(props: Parameters<typeof AgentMonitor>[0]) {
   );
 }
 
-describe("AgentMonitor session-type badge (SPAWN-03)", () => {
-  it("renders agent name badge for execution_mode 'acp' with agent_id", () => {
+describe("AgentMonitor session-type icon (SPAWN-03)", () => {
+  it("renders brand icon for execution_mode 'acp' with known agent_id", () => {
     renderMonitor({
       ...defaultProps,
-      sessions: [{ ...baseSession, execution_mode: "acp", agent_id: "claude-code" }],
+      sessions: [{ ...baseSession, execution_mode: "acp", agent_id: "claude-acp" }],
     });
-    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(document.querySelector(".pr-avatar-icon svg")).toBeInTheDocument();
   });
 
-  it("renders 'Terminal' badge for execution_mode 'pty'", () => {
+  it("renders terminal icon for execution_mode 'pty'", () => {
     renderMonitor({
       ...defaultProps,
       sessions: [{ ...baseSession, execution_mode: "pty" }],
     });
-    expect(screen.getByText("Terminal")).toBeInTheDocument();
+    expect(document.querySelector(".pr-avatar-icon svg")).toBeInTheDocument();
   });
 
-  it("renders 'Terminal' badge for null execution_mode", () => {
+  it("renders terminal icon for execution_mode 'pty' without agent_id", () => {
     renderMonitor({
       ...defaultProps,
-      sessions: [{ ...baseSession, execution_mode: "pty" }],
+      sessions: [{ ...baseSession, execution_mode: "pty", agent_id: null }],
     });
-    expect(screen.getByText("Terminal")).toBeInTheDocument();
+    expect(document.querySelector(".pr-avatar-icon svg")).toBeInTheDocument();
   });
 });

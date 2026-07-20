@@ -19,7 +19,7 @@ interface ActivityMessageItemProps {
 export function TypingDots({ className }: { className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-[2px] align-middle${className ? ` ${className}` : ""}`}
+      className={`inline-flex items-center gap-0.5 align-middle${className ? ` ${className}` : ""}`}
       aria-label="typing"
     >
       {[0, 1, 2].map((i) => (
@@ -100,7 +100,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         <Button
           variant="ghost"
           onClick={handleCopyMessage}
-          className="sticky bottom-[58px] float-right -mt-5 p-1 h-auto rounded text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
+          className="sticky bottom-14.5 float-right -mt-5 p-1 h-auto rounded-md text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
           aria-label={messageCopied ? "Copied" : "Copy response"}
         >
           {messageCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}

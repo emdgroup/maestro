@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
@@ -225,28 +226,34 @@ export function AppHeader({
       {/* Right section: Auto/Manual toggle + Status indicator + Theme switcher */}
       <div className="flex items-center justify-end gap-2">
         {/* Auto/Manual mode toggle */}
-        <Button
-          variant="ghost"
-          onClick={handleAutoModeToggle}
-          title={
-            autoMode
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                onClick={handleAutoModeToggle}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2 py-1 h-auto text-xs font-medium",
+                  autoMode
+                    ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80",
+                )}
+              />
+            }
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                autoMode ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"
+              }`}
+            />
+            {autoMode ? "Auto" : "Manual"}
+          </TooltipTrigger>
+          <TooltipContent>
+            {autoMode
               ? "Auto mode: tasks in Ready are executed automatically. Click to switch to Manual."
-              : "Manual mode: tasks must be started manually. Click to enable Auto mode."
-          }
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-2 py-1 h-auto text-xs font-medium",
-            autoMode
-              ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
-              : "bg-muted text-muted-foreground hover:bg-muted/80",
-          )}
-        >
-          <span
-            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-              autoMode ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"
-            }`}
-          />
-          {autoMode ? "Auto" : "Manual"}
-        </Button>
+              : "Manual mode: tasks must be started manually. Click to enable Auto mode."}
+          </TooltipContent>
+        </Tooltip>
 
         {/* Running agent count */}
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
