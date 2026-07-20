@@ -6,6 +6,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
+import { useTheme } from "@/providers/ThemeProvider";
 import "@xterm/xterm/css/xterm.css";
 
 interface AcpTerminalViewProps {
@@ -29,6 +30,8 @@ export function AcpTerminalView({
   const xtermRef = useRef<Terminal | null>(null);
   const { data: settings } = useSettings();
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
+  const { theme, systemTheme } = useTheme();
+  const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -97,7 +100,7 @@ export function AcpTerminalView({
     const terminal = xtermRef.current;
     if (!terminal) return;
     terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
-  }, [terminalColorMode]);
+  }, [terminalColorMode, effectiveTheme]);
 
   return (
     <div className="pt-2 pl-2 h-full w-full">
