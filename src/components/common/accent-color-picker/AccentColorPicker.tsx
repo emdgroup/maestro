@@ -1,5 +1,6 @@
 import { Palette, Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useTheme } from "@/providers/ThemeProvider";
 
 const COLORS: Array<{ name: string; hue: number }> = [
@@ -24,13 +25,19 @@ export function AccentColorPicker() {
 
   return (
     <Popover>
-      <PopoverTrigger
-        className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
-        aria-label="Accent color"
-        title="Accent color"
-      >
-        <Palette />
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
+              aria-label="Accent color"
+            />
+          }
+        >
+          <Palette />
+        </TooltipTrigger>
+        <TooltipContent>Accent color</TooltipContent>
+      </Tooltip>
 
       <PopoverContent align="end" className="w-48 gap-3 p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -63,19 +70,20 @@ export function AccentColorPicker() {
         {/* Color swatches */}
         <div className="grid grid-cols-4 gap-2">
           {COLORS.map(({ name, hue }) => (
-            <button
-              key={hue}
-              title={name}
-              onClick={() => void setAccentColor(hue)}
-              className={`h-7 w-7 rounded-full flex items-center justify-center transition-transform cursor-pointer border-0 p-0 ${
-                accentHue === hue
-                  ? "scale-110 ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                  : "hover:scale-110"
-              }`}
-              style={{ background: swatchColor(hue, isDark) }}
-            >
-              {accentHue === hue && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
-            </button>
+            <Tooltip key={hue}>
+              <TooltipTrigger
+                onClick={() => void setAccentColor(hue)}
+                className={`h-7 w-7 rounded-full flex items-center justify-center transition-transform cursor-pointer border-0 p-0 ${
+                  accentHue === hue
+                    ? "scale-110 ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                    : "hover:scale-110"
+                }`}
+                style={{ background: swatchColor(hue, isDark) }}
+              >
+                {accentHue === hue && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+              </TooltipTrigger>
+              <TooltipContent>{name}</TooltipContent>
+            </Tooltip>
           ))}
         </div>
       </PopoverContent>

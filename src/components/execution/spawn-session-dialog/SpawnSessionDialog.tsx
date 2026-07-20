@@ -8,7 +8,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
@@ -149,8 +149,8 @@ export function SpawnSessionDialog({
                       : "border-border/60 hover:bg-muted/20 hover:border-border",
                   )}
                 >
-                  <div className="w-7 h-7 rounded-md bg-muted/40 flex items-center justify-center shrink-0">
-                    <TerminalIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <div className="w-7 h-7 rounded-md bg-[oklch(23%_0.01_250)] flex items-center justify-center shrink-0">
+                    <TerminalIcon className="w-3.5 h-3.5 text-accent" />
                   </div>
                   <div className="min-w-0">
                     <p
@@ -284,33 +284,31 @@ export function SpawnSessionDialog({
                     </span>
                   </SelectTrigger>
                   <SelectContent>
-                    <TooltipProvider delay={300}>
-                      {worktrees.map((wt) => (
-                        <SelectItem
-                          key={wt.branch_name}
-                          value={wt.branch_name}
-                          className="[&>div]:overflow-hidden"
-                        >
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
-                              }
-                            >
-                              <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
-                              {wt.path === repoPath && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
-                                  default
-                                </span>
-                              )}
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={8} className="max-w-none">
-                              <span className="font-mono">{wt.branch_name}</span>
-                            </TooltipContent>
-                          </Tooltip>
-                        </SelectItem>
-                      ))}
-                    </TooltipProvider>
+                    {worktrees.map((wt) => (
+                      <SelectItem
+                        key={wt.branch_name}
+                        value={wt.branch_name}
+                        className="[&>div]:overflow-hidden"
+                      >
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
+                            }
+                          >
+                            <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
+                            {wt.path === repoPath && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
+                                default
+                              </span>
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={8} className="max-w-none">
+                            <span className="font-mono">{wt.branch_name}</span>
+                          </TooltipContent>
+                        </Tooltip>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

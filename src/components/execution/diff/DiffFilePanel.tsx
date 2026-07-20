@@ -2,6 +2,7 @@ import { Check, Minus, CheckCheck } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Textarea } from "@/ui/textarea";
 import { FileTree } from "./FileTree";
 import { useDiffState } from "./DiffStateContext";
@@ -181,17 +182,23 @@ export function DiffFilePanel({
                     <span className="text-xs font-medium shrink-0 text-muted-foreground">U</span>
                     <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
                     {onToggleViewed && viewedFiles?.has(filePath) && (
-                      <Button
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleViewed(filePath);
-                        }}
-                        className="shrink-0 text-success hover:text-foreground h-auto p-0"
-                        title="Mark as unviewed"
-                      >
-                        <CheckCheck className="size-3.5" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleViewed(filePath);
+                              }}
+                              className="shrink-0 text-success hover:text-foreground h-auto p-0"
+                            />
+                          }
+                        >
+                          <CheckCheck className="size-3.5" />
+                        </TooltipTrigger>
+                        <TooltipContent>Mark as unviewed</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -266,17 +273,23 @@ export function DiffFilePanel({
                   <span className={cn("text-xs font-medium shrink-0", statusColor)}>{status}</span>
                   <span className="text-xs font-mono truncate flex-1 min-w-0">{basename}</span>
                   {onToggleViewed && viewedFiles?.has(file.fileName) && (
-                    <Button
-                      variant="ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleViewed(file.fileName);
-                      }}
-                      className="shrink-0 text-success hover:text-foreground h-auto p-0"
-                      title="Mark as unviewed"
-                    >
-                      <CheckCheck className="size-3.5" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleViewed(file.fileName);
+                            }}
+                            className="shrink-0 text-success hover:text-foreground h-auto p-0"
+                          />
+                        }
+                      >
+                        <CheckCheck className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipContent>Mark as unviewed</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               </div>

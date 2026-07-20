@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { api } from "@/lib/tauri-utils";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 interface ExecutionTerminalProps {
   taskId: number;
@@ -188,9 +189,12 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         <div className="execution-terminal-container">
           <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
             <h2>{taskName}</h2>
-            <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close terminal">
-              ✕
-            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}>
+                ✕
+              </TooltipTrigger>
+              <TooltipContent>Close terminal</TooltipContent>
+            </Tooltip>
           </div>
           <div className="terminal-content">
             <div className="loading-state">Connecting to terminal...</div>
@@ -206,9 +210,12 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         <div className="execution-terminal-container">
           <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
             <h2>{taskName}</h2>
-            <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close terminal">
-              ✕
-            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}>
+                ✕
+              </TooltipTrigger>
+              <TooltipContent>Close terminal</TooltipContent>
+            </Tooltip>
           </div>
           <div className="terminal-content">
             <div className="error-state">
@@ -237,9 +244,12 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
             <h2>{taskName}</h2>
             {error && <div className="terminal-error-banner">{error}</div>}
           </div>
-          <button onClick={onClose} className="terminal-close-button" title="Close terminal">
-            ✕
-          </button>
+          <Tooltip>
+            <TooltipTrigger onClick={onClose} className="terminal-close-button">
+              ✕
+            </TooltipTrigger>
+            <TooltipContent>Close terminal</TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="terminal-content">
@@ -260,24 +270,36 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
               disabled={sending}
               autoFocus
             />
-            <Button
-              variant="default"
-              size="icon-sm"
-              onClick={handleSendInput}
-              disabled={sending || !inputValue}
-              title="Send command"
-            >
-              ↓
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSendCtrlC}
-              disabled={sending}
-              title="Send Ctrl+C (SIGINT)"
-            >
-              Ctrl+C
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="default"
+                    size="icon-sm"
+                    onClick={handleSendInput}
+                    disabled={sending || !inputValue}
+                  />
+                }
+              >
+                ↓
+              </TooltipTrigger>
+              <TooltipContent>Send command</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSendCtrlC}
+                    disabled={sending}
+                  />
+                }
+              >
+                Ctrl+C
+              </TooltipTrigger>
+              <TooltipContent>Send Ctrl+C (SIGINT)</TooltipContent>
+            </Tooltip>
           </div>
           <div className="input-help">Enter: send command | Ctrl+C: interrupt | ↑↓: history</div>
         </div>

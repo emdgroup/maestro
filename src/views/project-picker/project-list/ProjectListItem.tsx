@@ -2,7 +2,7 @@ import { Button } from "@/ui/button";
 import { Lock, X } from "lucide-react";
 import { getFolderName } from "@/lib/path-utils";
 import { cn } from "@/lib/utils.ts";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import React from "react";
 
 interface ProjectListItemProps {
@@ -53,12 +53,10 @@ export function ProjectListItem({
   return (
     <li className="relative group">
       {locked ? (
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger render={<div className="w-full">{button}</div>} />
-            <TooltipContent side="top">Project already open in another instance</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger render={<div className="w-full">{button}</div>} />
+          <TooltipContent side="top">Project already open in another instance</TooltipContent>
+        </Tooltip>
       ) : (
         button
       )}

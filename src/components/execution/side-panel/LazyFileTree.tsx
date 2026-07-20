@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Loader2, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -41,14 +42,16 @@ export function LazyFileTree({
           className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
         />
         {filter && (
-          <button
-            type="button"
-            onClick={() => setFilter("")}
-            className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-            title="Clear filter"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              onClick={() => setFilter("")}
+              className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </TooltipTrigger>
+            <TooltipContent>Clear filter</TooltipContent>
+          </Tooltip>
         )}
         {headerRight}
       </div>
@@ -60,21 +63,22 @@ export function LazyFileTree({
               const name = relativePath.split("/").pop() ?? relativePath;
               const isSelected = relativePath === selectedFile;
               return (
-                <button
-                  key={relativePath}
-                  type="button"
-                  title={relativePath}
-                  onClick={() => onSelectFile(relativePath)}
-                  className={cn(
-                    "w-full flex items-center py-1 text-left border-l-2 transition-colors",
-                    isSelected
-                      ? "border-ring selected-file-item text-foreground"
-                      : "border-transparent text-foreground/80 hover:bg-muted/10",
-                  )}
-                  style={{ paddingLeft: "20px" }}
-                >
-                  <span className="text-xs truncate">{name}</span>
-                </button>
+                <Tooltip key={relativePath}>
+                  <TooltipTrigger
+                    type="button"
+                    onClick={() => onSelectFile(relativePath)}
+                    className={cn(
+                      "w-full flex items-center py-1 text-left border-l-2 transition-colors",
+                      isSelected
+                        ? "border-ring selected-file-item text-foreground"
+                        : "border-transparent text-foreground/80 hover:bg-muted/10",
+                    )}
+                    style={{ paddingLeft: "20px" }}
+                  >
+                    <span className="text-xs truncate">{name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent>{relativePath}</TooltipContent>
+                </Tooltip>
               );
             })
         ) : (

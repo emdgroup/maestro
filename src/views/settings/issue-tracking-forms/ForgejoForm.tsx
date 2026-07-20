@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Label } from "@/ui/label";
 import { Input } from "@/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   Combobox,
   ComboboxInput,
@@ -72,14 +73,16 @@ function RepoProviderForm({
             Repository
           </Label>
           {ownerSet && (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              onClick={refreshRepos}
-              title="Refresh repositories"
-            >
-              <RefreshCw className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                onClick={refreshRepos}
+              >
+                <RefreshCw className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Refresh repositories</TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Combobox

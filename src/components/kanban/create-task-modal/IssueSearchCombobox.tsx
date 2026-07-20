@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/ui/tooltip";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import {
   Combobox,
@@ -79,14 +79,14 @@ export function IssueSearchCombobox({
           {!issuesFetching && filteredIssues.length === 0 && (
             <ComboboxEmpty>No issues found.</ComboboxEmpty>
           )}
-          <TooltipPrimitive.Provider delay={400}>
+          <TooltipProvider delay={400}>
             {filteredIssues.map((issue) => (
-              <TooltipPrimitive.Root key={issue.external_id}>
+              <Tooltip key={issue.external_id}>
                 <ComboboxItem
                   value={`#${issue.external_id} ${issue.title}`}
                   className="p-0 px-1 rounded-md focus:outline-none hover:bg-transparent data-highlighted:bg-transparent data-highlighted:text-inherit data-highlighted:**:text-inherit not-data-[variant=destructive]:data-highlighted:**:text-inherit"
                 >
-                  <TooltipPrimitive.Trigger
+                  <TooltipTrigger
                     render={<div />}
                     className="w-full rounded-md p-2 bg-muted/60 hover:bg-muted transition-colors cursor-default"
                   >
@@ -134,30 +134,30 @@ export function IssueSearchCombobox({
                         ))}
                       </div>
                     )}
-                  </TooltipPrimitive.Trigger>
+                  </TooltipTrigger>
                 </ComboboxItem>
-                <TooltipPrimitive.Portal>
-                  <TooltipPrimitive.Positioner side="right" sideOffset={8} className="z-50">
-                    <TooltipPrimitive.Popup className="w-72 p-3 bg-popover text-popover-foreground rounded-lg shadow-md ring-1 ring-foreground/10 origin-(--transform-origin) data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
-                      <p className="text-sm font-medium leading-snug mb-2">{issue.title}</p>
-                      {issue.labels.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {issue.labels.map((label) => (
-                            <span
-                              key={label}
-                              className="rounded px-1.5 py-0.5 text-[10px] border border-border text-muted-foreground"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </TooltipPrimitive.Popup>
-                  </TooltipPrimitive.Positioner>
-                </TooltipPrimitive.Portal>
-              </TooltipPrimitive.Root>
+                <TooltipContent
+                  side="right"
+                  sideOffset={8}
+                  className="w-72 p-3 bg-popover text-popover-foreground rounded-lg shadow-md ring-1 ring-foreground/10"
+                >
+                  <p className="text-sm font-medium leading-snug mb-2">{issue.title}</p>
+                  {issue.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {issue.labels.map((label) => (
+                        <span
+                          key={label}
+                          className="rounded px-1.5 py-0.5 text-[10px] border border-border text-muted-foreground"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
             ))}
-          </TooltipPrimitive.Provider>
+          </TooltipProvider>
         </ComboboxList>
       </ComboboxContent>
     </Combobox>

@@ -8,6 +8,7 @@ import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktre
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
 import { useUpdateTask } from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
+import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
 
 interface DirtyState {
@@ -116,11 +117,13 @@ export function useExecuteTask(
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           unlistenSpawnOk();
+          unlistenSessionError();
           reject(new Error("Agent spawn timed out after 30s"));
         }, 30_000);
 
         let unlistenSpawnOk: () => void = () => {};
         let unlistenModes: () => void = () => {};
+        let unlistenSessionError: () => void = () => {};
 
         listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
           `acp://session-modes/${logId}`,
@@ -136,9 +139,20 @@ export function useExecuteTask(
           clearTimeout(timer);
           unlistenSpawnOk();
           unlistenModes();
+          unlistenSessionError();
           resolve();
         }).then((fn) => {
           unlistenSpawnOk = fn;
+        });
+
+        listen<string>(`acp://session-error/${logId}`, (e) => {
+          clearTimeout(timer);
+          unlistenSpawnOk();
+          unlistenModes();
+          unlistenSessionError();
+          reject(new Error(e.payload));
+        }).then((fn) => {
+          unlistenSessionError = fn;
         });
       });
 
@@ -234,6 +248,15 @@ export function useExecuteTask(
 
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      if (errorMsg === "auth_required") {
+        // Remove zombie session but keep the connection server alive for authentication.
+        api.discardFailedSpawn(logId!).catch(() => {});
+        useBoardStore.getState().setAuthRequired(task.id, agentId!, connection, null);
+        return;
+      }
+
       if (logId !== null) {
         try {
           await api.cancelAcpSession(logId);
@@ -241,7 +264,7 @@ export function useExecuteTask(
           // best-effort
         }
       }
-      toast.error(`Execution failed: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Execution failed: ${errorMsg}`);
     } finally {
       setIsExecuting(false);
     }

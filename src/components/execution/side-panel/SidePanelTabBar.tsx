@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger } from "@/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 
 const KIND_ICON: Record<TabKind, React.ElementType> = {
@@ -51,16 +52,18 @@ export function SidePanelTabBar({
   addTabContent,
 }: SidePanelTabBarProps) {
   return (
-    <div className="flex items-center border-b border-border shrink-0 bg-card px-2 py-1.5 gap-2">
+    <div className="flex items-center shrink-0 bg-card px-2 py-1.5 gap-2">
       {!maximized && (
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(true)}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-          title="Collapse panel"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => onCollapsedChange(true)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>Collapse panel</TooltipContent>
+        </Tooltip>
       )}
       <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
         {tabs.map(({ id, kind, label, closeable }) => {
@@ -110,24 +113,30 @@ export function SidePanelTabBar({
           );
         })}
         <Popover>
-          <PopoverTrigger
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0"
-            title="Add tab"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </PopoverTrigger>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PopoverTrigger className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0" />
+              }
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </TooltipTrigger>
+            <TooltipContent>Add tab</TooltipContent>
+          </Tooltip>
           {addTabContent("bottom")}
         </Popover>
       </div>
       {onMaximizedChange && (
-        <button
-          type="button"
-          onClick={() => onMaximizedChange(!maximized)}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-          title={maximized ? "Restore panel" : "Maximize panel"}
-        >
-          {maximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => onMaximizedChange(!maximized)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+          >
+            {maximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </TooltipTrigger>
+          <TooltipContent>{maximized ? "Restore panel" : "Maximize panel"}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

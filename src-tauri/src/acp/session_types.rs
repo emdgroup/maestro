@@ -10,6 +10,27 @@ use crate::acp::transport::{PreInitializeResponse, SessionListOkResponse, CheckT
 use crate::acp::canvas::{PreambleFilterState, CanvasFenceExtractor};
 use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
 
+/// Single authentication method exposed to the frontend.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthMethodDto {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub method_type: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+/// Authentication state for a pre-initialized agent connection.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAuthInfo {
+    pub auth_methods: Vec<AuthMethodDto>,
+    pub supports_logout: bool,
+    pub authenticated: bool,
+}
+
 /// Metadata captured for sessions that were active when the connection server died.
 /// Used to reload them after SSH reconnects via the session/load mechanism.
 pub struct RestorableSession {
@@ -55,6 +76,8 @@ pub struct PendingChannels {
         oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
     pub detect_project: Arc<std::sync::Mutex<Option<
         oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
+    pub authenticate: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<(), String>>>>>,
+    pub logout: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<(), String>>>>>,
 }
 
 impl PendingChannels {
@@ -68,6 +91,8 @@ impl PendingChannels {
             check_tools: Arc::new(std::sync::Mutex::new(None)),
             detect_installed: Arc::new(std::sync::Mutex::new(None)),
             detect_project: Arc::new(std::sync::Mutex::new(None)),
+            authenticate: Arc::new(std::sync::Mutex::new(None)),
+            logout: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }

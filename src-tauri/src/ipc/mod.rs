@@ -18,3 +18,4 @@ pub use crate::acp::prompt_handlers::*;
 pub use crate::acp::discovery_handlers::*;
 pub use crate::acp::file_handlers::*;
 pub use crate::acp::meta_handlers::*;
+pub use crate::acp::auth_handlers::*;

@@ -5,6 +5,9 @@ edition = "2021"
 description = "Maestro remote headless server — spawns ACP agents on SSH hosts"
 license = "Apache-2.0"
 
+[features]
+unstable_auth_methods = []
+
 [[bin]]
 name = "maestro-server"
 path = "src/main.rs"
@@ -12,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 maestro-protocol = { path = "../maestro-protocol" }
 agent-client-protocol = { version = "1.2.0", features = ["unstable_elicitation"] }
-agent-client-protocol-schema = { version = "1.4.0" }
+agent-client-protocol-schema = { version = "1.4.0", features = ["unstable_auth_methods"] }
 tokio = { version = "1", features = [
   "rt",
   "io-util",

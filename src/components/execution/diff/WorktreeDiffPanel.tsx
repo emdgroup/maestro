@@ -5,6 +5,7 @@ import { parseDiffString, computeFileStats, countHunks } from "@/lib/diff-utils"
 import { useWorktreeDiffActions } from "./useWorktreeDiffActions";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { DiffViewer } from "./DiffViewer";
 import { DiffActionBar } from "./DiffActionBar";
@@ -369,18 +370,28 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
                     {stats.deletions > 0 && (
                       <span className="text-destructive shrink-0">-{stats.deletions}</span>
                     )}
-                    <Button
-                      variant="ghost"
-                      onClick={() => toggleViewed(selectedFile.fileName)}
-                      className={cn(
-                        "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
-                        isViewed ? "text-success" : "text-muted-foreground hover:text-foreground",
-                      )}
-                      title={isViewed ? "Mark as unviewed" : "Mark as viewed"}
-                    >
-                      <CheckCheck className="size-3" />
-                      <span className="text-[10px]">Viewed</span>
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            onClick={() => toggleViewed(selectedFile.fileName)}
+                            className={cn(
+                              "flex items-center gap-1 px-1.5 py-0.5 h-auto rounded border border-border hover:bg-muted/30",
+                              isViewed
+                                ? "text-success"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          />
+                        }
+                      >
+                        <CheckCheck className="size-3" />
+                        <span className="text-[10px]">Viewed</span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isViewed ? "Mark as unviewed" : "Mark as viewed"}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 );
               })()}

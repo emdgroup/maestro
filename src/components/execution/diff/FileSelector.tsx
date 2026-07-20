@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { List, FolderTree, CheckCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { FileTree } from "./FileTree";
 
 interface FileSelectorFile {
@@ -59,43 +60,49 @@ export function FileSelector({
           className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
         />
         {search && (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-            title="Clear filter"
-          >
-            <X className="w-3 h-3" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              onClick={() => setSearch("")}
+              className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </TooltipTrigger>
+            <TooltipContent>Clear filter</TooltipContent>
+          </Tooltip>
         )}
         {!treeOnly && (
           <div className="flex items-center gap-0.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setFileListMode("flat")}
-              className={cn(
-                "p-1.5 rounded text-xs transition-colors",
-                mode === "flat"
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-              )}
-              title="Flat list"
-            >
-              <List className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setFileListMode("tree")}
-              className={cn(
-                "p-1.5 rounded text-xs transition-colors",
-                mode === "tree"
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-              )}
-              title="Tree view"
-            >
-              <FolderTree className="w-3.5 h-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                onClick={() => setFileListMode("flat")}
+                className={cn(
+                  "p-1.5 rounded text-xs transition-colors",
+                  mode === "flat"
+                    ? "text-foreground bg-muted"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                <List className="w-3.5 h-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Flat list</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                onClick={() => setFileListMode("tree")}
+                className={cn(
+                  "p-1.5 rounded text-xs transition-colors",
+                  mode === "tree"
+                    ? "text-foreground bg-muted"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                <FolderTree className="w-3.5 h-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Tree view</TooltipContent>
+            </Tooltip>
           </div>
         )}
         {headerRight}

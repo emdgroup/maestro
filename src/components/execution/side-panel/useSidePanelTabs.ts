@@ -17,6 +17,8 @@ export interface SidePanelTab {
   label: string;
   closeable: boolean;
   initialPath?: string;
+  acpTerminalId?: string;
+  isAuthTerminal?: boolean;
 }
 
 const LABELS: Record<TabKind, string> = {
@@ -56,6 +58,7 @@ export interface UseSidePanelTabsResult {
   closeTab: (id: string) => void;
   addDynamicTab: (kind: "terminal" | "files", initialPath?: string) => string;
   openTabKind: (kind: TabKind) => void;
+  openAcpTerminalTab: (terminalId: string, opts?: { isAuthTerminal?: boolean }) => void;
   latestCanvasSurfaceId: string | null;
 }
 
@@ -72,6 +75,7 @@ export function useSidePanelTabs({
   const [activeTabId, setActiveTabId] = useState("overview");
   const [latestCanvasSurfaceId, setLatestCanvasSurfaceId] = useState<string | null>(null);
   const counterRef = useRef(0);
+  const acpTerminalTabsRef = useRef<Map<string, string>>(new Map());
   const prevPlanRef = useRef(false);
   const prevCanvasSizeRef = useRef(0);
   const prevArtifactsRef = useRef(false);
@@ -125,7 +129,13 @@ export function useSidePanelTabs({
   }, [hasArtifacts]);
 
   const closeTab = useCallback((id: string) => {
-    setTabs((prev) => prev.filter((t) => t.id !== id));
+    setTabs((prev) => {
+      const tab = prev.find((t) => t.id === id);
+      if (tab?.acpTerminalId) {
+        acpTerminalTabsRef.current.delete(tab.acpTerminalId);
+      }
+      return prev.filter((t) => t.id !== id);
+    });
     setActiveTabId((prev) => (prev === id ? "overview" : prev));
   }, []);
 
@@ -136,6 +146,29 @@ export function useSidePanelTabs({
     setActiveTabId(id);
     return id;
   }, []);
+
+  const openAcpTerminalTab = useCallback(
+    (terminalId: string, opts?: { isAuthTerminal?: boolean }) => {
+      const existingId = acpTerminalTabsRef.current.get(terminalId);
+      if (existingId) {
+        setActiveTabId(existingId);
+        return;
+      }
+      counterRef.current += 1;
+      const id = `terminal-${counterRef.current}`;
+      acpTerminalTabsRef.current.set(terminalId, id);
+      setTabs((prev) => [
+        ...prev,
+        {
+          ...makeTab("terminal", id),
+          acpTerminalId: terminalId,
+          isAuthTerminal: opts?.isAuthTerminal,
+        },
+      ]);
+      setActiveTabId(id);
+    },
+    [],
+  );
 
   const openTabKind = useCallback(
     (kind: TabKind) => {
@@ -159,6 +192,7 @@ export function useSidePanelTabs({
     closeTab,
     addDynamicTab,
     openTabKind,
+    openAcpTerminalTab,
     latestCanvasSurfaceId,
   };
 }

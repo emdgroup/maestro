@@ -1,5 +1,6 @@
 import { Server, ChevronRight } from "lucide-react";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSshConnectionStatus } from "@/services/connection.service";
 import type { Connection } from "@/contexts/ConnectionContext";
 
@@ -25,12 +26,18 @@ export function SshConnectionItem({
         <div className="flex items-start gap-2 w-full">
           <div className="relative shrink-0">
             <Server className="w-4 h-4 mt-0.5" />
-            <span
-              title={connected ? "Connected" : "Not connected"}
-              className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-background ${
-                connected ? "bg-emerald-500" : "bg-muted-foreground/40"
-              }`}
-            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-background ${
+                      connected ? "bg-emerald-500" : "bg-muted-foreground/40"
+                    }`}
+                  />
+                }
+              />
+              <TooltipContent>{connected ? "Connected" : "Not connected"}</TooltipContent>
+            </Tooltip>
           </div>
           <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
             <span className="font-semibold">{connection.displayName}</span>

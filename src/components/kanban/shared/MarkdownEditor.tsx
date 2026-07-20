@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils.ts";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 import { Bold, Code, Heading2, Info, Italic, Link, List, ListOrdered, Quote } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 interface MarkdownEditorProps {
   value: string;
@@ -295,13 +296,17 @@ export function MarkdownEditor({
           />
         </div>
 
-        <span
-          className="flex items-center gap-1 text-xs text-muted-foreground pr-2 select-none shrink-0"
-          title="Markdown is rendered when not editing"
-        >
-          <Info className="size-3" />
-          Markdown
-        </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex items-center gap-1 text-xs text-muted-foreground pr-2 select-none shrink-0" />
+            }
+          >
+            <Info className="size-3" />
+            Markdown
+          </TooltipTrigger>
+          <TooltipContent>Markdown is rendered when not editing</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Content area: textarea always in DOM, preview overlaid on top */}
@@ -344,16 +349,18 @@ interface ToolbarButtonProps {
 
 function ToolbarButton({ icon: Icon, label, onMouseDown, onClick }: ToolbarButtonProps) {
   return (
-    <button
-      type="button"
-      tabIndex={-1}
-      title={label}
-      onMouseDown={onMouseDown}
-      onClick={onClick}
-      className="flex items-center justify-center size-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
-    >
-      <Icon className="size-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        tabIndex={-1}
+        onMouseDown={onMouseDown}
+        onClick={onClick}
+        className="flex items-center justify-center size-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+      >
+        <Icon className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
