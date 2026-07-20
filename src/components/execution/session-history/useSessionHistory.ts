@@ -60,7 +60,7 @@ export function useSessionHistory({
     isFetching,
     refetch,
   } = useSessionListQuery(agentId, repoPath, connection, projectId, open);
-  const sessions = sessionListResult?.sessions ?? [];
+  const sessions = useMemo(() => sessionListResult?.sessions ?? [], [sessionListResult]);
   const supportsSessionDelete = sessionListResult?.supports_session_delete ?? false;
   const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();

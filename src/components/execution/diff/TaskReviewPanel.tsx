@@ -141,7 +141,10 @@ export function TaskReviewPanel({
   }, [uncommittedDiffQuery.data]);
 
   // Untracked files from diff result
-  const untrackedFiles = diffQuery.data?.untracked_files || [];
+  const untrackedFiles = useMemo(
+    () => diffQuery.data?.untracked_files ?? [],
+    [diffQuery.data],
+  );
   const totalFileCount = diffFiles.length + untrackedFiles.length;
 
   // Filter files by search
@@ -310,7 +313,7 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task.id, saveReview, approveAndMerge, onClose, reviewStore],
+    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession],
   );
 
   const handleDiscardConfirm = useCallback(
