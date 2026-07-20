@@ -24,8 +24,10 @@ export function getTerminalThemeOnly(colorMode?: TerminalColorMode): ITheme | un
 
 export function getTerminalTheme(colorMode?: TerminalColorMode): ITerminalOptions {
   const base: ITerminalOptions = {
-    fontFamily: '"FiraCode Nerd Font Mono", "Fira Code", monospace',
+    fontFamily:
+      '"JetBrainsMono Nerd Font Mono", "JetBrains Mono", "FiraCode Nerd Font Mono", "Fira Code", monospace',
     fontSize: 13,
+    letterSpacing: 0,
   };
   const theme = getTerminalThemeOnly(colorMode);
   return theme ? { ...base, theme } : base;

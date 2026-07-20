@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import "@xterm/xterm/css/xterm.css";
@@ -48,6 +49,11 @@ export function AcpTerminalView({
     terminal.unicode.activeVersion = "11";
 
     terminal.open(containerRef.current);
+
+    const webglAddon = new WebglAddon();
+    webglAddon.onContextLoss(() => webglAddon.dispose());
+    terminal.loadAddon(webglAddon);
+
     xtermRef.current = terminal;
 
     if (initialOutput) {
