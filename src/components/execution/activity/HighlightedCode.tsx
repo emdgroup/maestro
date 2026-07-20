@@ -60,7 +60,7 @@ export const HighlightedCode = memo(function HighlightedCode({
   if (html) {
     return (
       <div
-        className="text-xs overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
+        className="text-xs [&_pre]:overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
@@ -86,7 +86,10 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
 
   return (
     <div className="relative group/code my-2 rounded-md border border-border overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border">
+      <div
+        className="flex items-center justify-between px-3 py-1.5 border-b border-border"
+        style={{ background: "color-mix(in oklch, var(--foreground) 15%, var(--muted))" }}
+      >
         <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wide">
           {lang || "text"}
         </span>

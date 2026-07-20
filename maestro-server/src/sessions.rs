@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 
 use agent_client_protocol as acp;
-use maestro_protocol::PromptCapabilitiesInfo;
+use maestro_protocol::{AuthMethodInfo, PromptCapabilitiesInfo};
 
 pub enum SessionCommand {
     Prompt(String),
@@ -17,7 +18,7 @@ pub enum SessionCommand {
 
 pub struct TerminalHandle {
     pub output_buf: Arc<Mutex<String>>,
-    pub output_byte_limit: Option<u64>,
+    pub truncated: Arc<AtomicBool>,
     pub exit_status: Arc<Mutex<Option<TerminalExitInfo>>>,
     pub exit_notify: Arc<Notify>,
     pub kill_tx: Mutex<Option<oneshot::Sender<()>>>,
@@ -96,6 +97,8 @@ pub struct AgentCapabilities {
     pub supports_session_load: bool,
     pub supports_session_close: bool,
     pub supports_session_delete: bool,
+    pub auth_methods: Vec<AuthMethodInfo>,
+    pub supports_auth_logout: bool,
 }
 
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods
@@ -143,6 +146,7 @@ impl AgentConnection {
             connection_task,
         }
     }
+
 }
 
 /// Cleanup metadata for fast-path (shared connection server) sessions.

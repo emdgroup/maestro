@@ -7,6 +7,7 @@ import type {
   ThinkingItem,
   UserMessageItem,
   CanvasSurface,
+  ErrorItem,
 } from "./types";
 import { extractAgentMeta } from "./agentMeta";
 
@@ -15,7 +16,9 @@ export type ActivityAction =
   | { type: "session_ended" }
   | { type: "turn_ended" }
   | { type: "finalize_streaming" }
-  | { type: "set_initialized" };
+  | { type: "set_initialized" }
+  | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
+  | { type: "terminal_output"; terminalId: string; output: string };
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
@@ -41,10 +44,23 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
         isTurnActive: false,
       };
     }
+    case "append_error": {
+      const errorItem: ErrorItem = {
+        id: `error-${crypto.randomUUID()}`,
+        stopReason: action.stopReason,
+        message: action.message,
+      };
+      return { ...state, items: [...state.items, { type: "error", item: errorItem }] };
+    }
     case "finalize_streaming":
       return { ...state, items: finalizeLastStreaming(state.items) };
     case "set_initialized":
       return { ...state, isInitializing: false };
+    case "terminal_output": {
+      const newBuffers = new Map(state.terminalBuffers);
+      newBuffers.set(action.terminalId, (newBuffers.get(action.terminalId) ?? "") + action.output);
+      return { ...state, terminalBuffers: newBuffers };
+    }
     default:
       return state;
   }
@@ -98,21 +114,50 @@ function processEvent(
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
+      const messageId = payload.messageId;
+
+      // Fast path: last item is the streaming thought (no interleaving, common case)
       const lastItem = newState.items[newState.items.length - 1];
-      if (lastItem && lastItem.type === "thinking" && lastItem.item.isStreaming) {
+      if (lastItem?.type === "thinking" && lastItem.item.isStreaming) {
         const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
         newState.items = [...newState.items.slice(0, -1), { type: "thinking", item: updated }];
-      } else {
-        const thought: ThinkingItem = {
-          id: `thought-${crypto.randomUUID()}`,
-          text: payload.content.text,
-          isStreaming: true,
-        };
-        newState.items = [
-          ...finalizeLastStreaming(newState.items),
-          { type: "thinking", item: thought },
-        ];
+        return newState;
       }
+
+      // Interleaved tool calls: a thought can't split across another thought or resume after a
+      // message chunk, so the only candidate is the most recent ThinkingItem in the list.
+      if (messageId) {
+        let idx = newState.items.length - 1;
+        while (idx >= 0 && newState.items[idx].type !== "thinking") idx--;
+        if (idx >= 0) {
+          const existing = newState.items[idx].item as ThinkingItem;
+          if (existing.messageId === messageId) {
+            const updated = {
+              ...existing,
+              text: existing.text + payload.content.text,
+              isStreaming: true,
+            };
+            newState.items = [
+              ...newState.items.slice(0, idx),
+              { type: "thinking", item: updated },
+              ...newState.items.slice(idx + 1),
+            ];
+            return newState;
+          }
+        }
+      }
+
+      // New thought
+      const thought: ThinkingItem = {
+        id: `thought-${crypto.randomUUID()}`,
+        messageId,
+        text: payload.content.text,
+        isStreaming: true,
+      };
+      newState.items = [
+        ...finalizeLastStreaming(newState.items),
+        { type: "thinking", item: thought },
+      ];
       return newState;
     }
 

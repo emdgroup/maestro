@@ -3,7 +3,7 @@ import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
@@ -148,18 +148,16 @@ export function UpdateCard() {
       <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
         <span className="text-xs text-muted-foreground">Auto-update</span>
         {isPackageInstall ? (
-          <TooltipProvider delay={400}>
-            <Tooltip>
-              <TooltipTrigger render={<span className="inline-flex cursor-not-allowed" />}>
-                <Switch
-                  checked={autoUpdate}
-                  disabled
-                  className="data-unchecked:bg-muted data-unchecked:border-border/50 opacity-50 pointer-events-none"
-                />
-              </TooltipTrigger>
-              <TooltipContent side="left">Auto-update requires the AppImage install</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger render={<span className="inline-flex cursor-not-allowed" />}>
+              <Switch
+                checked={autoUpdate}
+                disabled
+                className="data-unchecked:bg-muted data-unchecked:border-border/50 opacity-50 pointer-events-none"
+              />
+            </TooltipTrigger>
+            <TooltipContent side="left">Auto-update requires the AppImage install</TooltipContent>
+          </Tooltip>
         ) : (
           <Switch
             checked={autoUpdate}

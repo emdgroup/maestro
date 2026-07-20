@@ -78,6 +78,7 @@ pub struct ActiveSessionInfo {
     pub supports_session_close: bool,
     pub supports_session_delete: bool,
     pub project_id: Option<i32>,
+    pub task_prevents_close: bool,
 }
 
 /// Return type for `list_acp_sessions` — includes capability flags from the live agent connection.

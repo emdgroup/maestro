@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::process::Stdio;
 use crate::command_ext::NoConsoleWindow;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
@@ -55,6 +55,9 @@ pub(crate) async fn handle_create_terminal(
     // T-42-02: Use Command::new(program).args(args) — never shell strings
     let mut cmd = tokio::process::Command::new(&args.command);
     cmd.args(&args.args);
+    for var in &args.env {
+        cmd.env(&var.name, &var.value);
+    }
     if let Some(ref cwd) = args.cwd {
         cmd.current_dir(cwd);
     }
@@ -72,11 +75,13 @@ pub(crate) async fn handle_create_terminal(
     let stderr_pipe = child.stderr.take();
 
     let output_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let truncated: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let exit_status: Arc<Mutex<Option<TerminalExitInfo>>> = Arc::new(Mutex::new(None));
     let exit_notify: Arc<Notify> = Arc::new(Notify::new());
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
 
     let output_buf_bg = Arc::clone(&output_buf);
+    let truncated_bg = Arc::clone(&truncated);
     let exit_status_bg = Arc::clone(&exit_status);
     let exit_notify_bg = Arc::clone(&exit_notify);
     let stdout_bg = Arc::clone(&stdout);
@@ -129,7 +134,10 @@ pub(crate) async fn handle_create_terminal(
                                 let mut buf = output_buf_bg.lock().await;
                                 buf.push_str(&chunk);
                                 if let Some(limit) = output_byte_limit {
-                                    truncate_buf(&mut buf, limit as usize);
+                                    if buf.len() > limit as usize {
+                                        truncate_buf(&mut buf, limit as usize);
+                                        truncated_bg.store(true, Ordering::Relaxed);
+                                    }
                                 }
                             }
                             let msg = MaestroRpcMessage::Response(
@@ -177,7 +185,7 @@ pub(crate) async fn handle_create_terminal(
 
     let handle = TerminalHandle {
         output_buf,
-        output_byte_limit: args.output_byte_limit,
+        truncated,
         exit_status,
         exit_notify,
         kill_tx: Mutex::new(Some(kill_tx)),

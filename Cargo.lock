@@ -2825,9 +2825,9 @@ dependencies = [
 
 [[package]]
 name = "ignore"
-version = "0.4.27"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe112b004901c62c2faa11f4f75e9864e0cc5af8da71c9115d184a3aa888749f"
+checksum = "d4ffa3a0547a138e59ddd6fa3b7c672ed47e6ad6a3cd177984ff1116aa5ba742"
 dependencies = [
  "crossbeam-deque",
  "globset",
@@ -3349,7 +3349,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -3392,7 +3392,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-protocol"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3401,7 +3401,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-server"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -7585,9 +7585,9 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "8.0.4"
+version = "8.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48d7cd18d4acb58fb3cdfe9ea54e6cd96a4e7d4cc45c56338b236e82dad47248"
+checksum = "8f3ef584124b911bcc3875c2f1472e80f24361ceb789bd1c62b3e9a3df9ff43c"
 dependencies = [
  "libc",
 ]

@@ -78,10 +78,7 @@ macro_rules! configure_acp_builder {
                                 acp::Error::new(-32603, "unknown terminal")
                             })?;
                             let output = handle.output_buf.lock().await.clone();
-                            let truncated = handle
-                                .output_byte_limit
-                                .map(|limit| output.len() >= limit as usize)
-                                .unwrap_or(false);
+                            let truncated = handle.truncated.load(std::sync::atomic::Ordering::Relaxed);
                             let exit_status =
                                 handle.exit_status.lock().await.as_ref().map(|info| {
                                     TerminalExitStatus::new()

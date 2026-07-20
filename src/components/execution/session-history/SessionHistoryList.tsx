@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { Check, Pencil, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Checkbox } from "@/ui/checkbox";
 
@@ -96,15 +97,21 @@ export function SessionHistoryList({
             className="w-full h-8 bg-muted/30 border border-border rounded pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
           />
         </div>
-        <Button
-          variant="ghost"
-          onClick={onRefetch}
-          disabled={isFetching}
-          className="h-8 w-8 shrink-0 border border-border text-muted-foreground hover:text-foreground"
-          title="Refresh"
-        >
-          <RefreshCw className={cn("size-3.5", isFetching && "animate-spin")} />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                onClick={onRefetch}
+                disabled={isFetching}
+                className="h-8 w-8 shrink-0 border border-border text-muted-foreground hover:text-foreground"
+              />
+            }
+          >
+            <RefreshCw className={cn("size-3.5", isFetching && "animate-spin")} />
+          </TooltipTrigger>
+          <TooltipContent>Refresh</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Summary bar */}
@@ -183,15 +190,21 @@ export function SessionHistoryList({
                   <span className="flex-1 min-w-0 text-xs font-medium text-foreground truncate">
                     {entry.title ?? entry.session_id}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-muted/40"
-                    onClick={(e) => onStartRename(entry.session_id, entry.title, e)}
-                    title="Rename"
-                  >
-                    <Pencil className="size-2.5 text-muted-foreground" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-muted/40"
+                          onClick={(e) => onStartRename(entry.session_id, entry.title, e)}
+                        />
+                      }
+                    >
+                      <Pencil className="size-2.5 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>Rename</TooltipContent>
+                  </Tooltip>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {entry.updated_at && (
                       <span className="text-[10px] text-muted-foreground/60">

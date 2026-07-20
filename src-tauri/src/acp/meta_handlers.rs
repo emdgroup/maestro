@@ -64,6 +64,7 @@ pub async fn get_active_sessions(
                 supports_session_close: proc.session_capabilities.supports_session_close,
                 supports_session_delete: proc.session_capabilities.supports_session_delete,
                 project_id: Some(project_id),
+                task_prevents_close: false,
             });
         }
     }
@@ -90,11 +91,27 @@ pub async fn get_active_sessions(
                 supports_session_close: false,
                 supports_session_delete: false,
                 project_id: meta.project_id,
+                task_prevents_close: false,
             });
         }
     }
 
     sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
+        for session in &mut sessions {
+            if let Some(task_id) = session.task_id {
+                let status: String = conn.query_row(
+                    "SELECT status FROM tasks WHERE id = ?",
+                    [task_id],
+                    |row| row.get(0),
+                ).unwrap_or_default();
+                session.task_prevents_close = status == "InProgress" || status == "Review";
+            }
+        }
+    }
+
     Ok(sessions)
 }
 

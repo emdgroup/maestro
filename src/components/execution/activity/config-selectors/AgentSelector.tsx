@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils.ts";
 import { TRIGGER_CLASS, GLASS_CONTENT_CLASS } from "./BaseDropdownSelector";
 import type { SelectorProps } from "./BaseDropdownSelector";
 import type { ConfigOptionValue } from "../types";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip.tsx";
 
 function deriveGroup(value: string): string {
   if (value === "default") return "built-in";
@@ -64,10 +65,20 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger disabled={disabled} className={TRIGGER_CLASS}>
-        <Bot className="size-3 shrink-0" />
-        <span>{currentOption?.name ?? value}</span>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger render={<span className="inline-flex items-center" />}>
+          <PopoverTrigger disabled={disabled} className={TRIGGER_CLASS}>
+            <Bot className="size-3 shrink-0" />
+            <span>{currentOption?.name ?? value}</span>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        {option.description && (
+          <TooltipContent side="top" sideOffset={6}>
+            {option.description}
+          </TooltipContent>
+        )}
+      </Tooltip>
+
       <PopoverContent
         side="top"
         align="start"
@@ -84,7 +95,7 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
             autoFocus
           />
         </div>
-        <div className="custom-scrollbar max-h-[400px] overflow-y-auto overflow-x-visible p-1">
+        <div className="custom-scrollbar max-h-100 overflow-y-auto overflow-x-visible p-1">
           {grouped.length === 0 && (
             <p className="py-4 text-left text-xs text-muted-foreground px-2">No agents match</p>
           )}

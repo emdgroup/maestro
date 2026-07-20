@@ -9,6 +9,7 @@ pub mod discovery_handlers;
 pub mod file_handlers;
 pub mod meta_handlers;
 pub mod attachment_handlers;
+pub mod auth_handlers;
 pub mod canvas;
 pub mod transport_types;
 pub mod session_types;

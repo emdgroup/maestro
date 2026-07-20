@@ -3,6 +3,7 @@ import { LayoutDashboard, ChevronDown, ChevronUp, Code } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/ui/button";
 import { ScrollArea } from "@/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { CanvasItem, CanvasSurface } from "../types";
 import { CanvasRenderer } from "./CanvasRenderer";
 
@@ -42,15 +43,21 @@ export function CanvasCard({ surface }: Props) {
         </button>
         <div className="flex items-center gap-1 shrink-0">
           {expanded && !isEmpty && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => setShowJson((v) => !v)}
-              title={showJson ? "Show preview" : "Show JSON"}
-            >
-              <Code className="w-3.5 h-3.5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setShowJson((v) => !v)}
+                  />
+                }
+              >
+                <Code className="w-3.5 h-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>{showJson ? "Show preview" : "Show JSON"}</TooltipContent>
+            </Tooltip>
           )}
           <button
             type="button"

@@ -54,7 +54,14 @@ function MarkdownCodeComponent({
     if (lang === "mermaid") return <MermaidBlock code={rawCode} />;
     return <CodeBlockWrapper code={rawCode} lang={lang} />;
   }
-  return <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
+  return (
+    <code
+      style={{ background: "color-mix(in oklch, var(--foreground) 15%, var(--muted))" }}
+      className="px-1 py-0.5 rounded text-xs font-mono"
+    >
+      {children}
+    </code>
+  );
 }
 
 function scrollToTarget(target: HTMLElement): void {
@@ -69,6 +76,8 @@ function scrollToTarget(target: HTMLElement): void {
   root.scrollTo({ top: root.scrollTop + offset, behavior: "smooth" });
 }
 
+export const OpenFileContext = createContext<((uri: string) => void) | undefined>(undefined);
+
 function MarkdownAnchorComponent({
   href,
   children,
@@ -78,6 +87,7 @@ function MarkdownAnchorComponent({
   children?: ReactNode;
   "data-open-file-uri"?: string;
 }) {
+  const openFile = useContext(OpenFileContext);
   return (
     <a
       href={href}
@@ -98,6 +108,8 @@ function MarkdownAnchorComponent({
               (el) => clicked.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
             ) ?? candidates[candidates.length - 1];
           scrollToTarget(target);
+        } else if (href.startsWith("file://") && openFile) {
+          openFile(href);
         } else {
           openUrl(href);
         }
@@ -113,7 +125,8 @@ function MarkdownAnchorComponent({
 // We pass data: through so ProxiedImage can convert them to blob URLs.
 // Security is preserved: rehypeSanitize still enforces protocols.src and protocols.href.
 function markdownUrlTransform(url: string): string {
-  return url.startsWith("data:") ? url : defaultUrlTransform(url);
+  if (url.startsWith("data:") || url.startsWith("file://")) return url;
+  return defaultUrlTransform(url);
 }
 
 // MarkdownBlock body references MARKDOWN_COMPONENTS at render time (not definition time),
@@ -379,6 +392,11 @@ export const MARKDOWN_COMPONENTS = {
   ),
   td: ({ children }: { children?: ReactNode }) => (
     <td className="border border-border px-2.5 py-1 text-foreground/80">{children}</td>
+  ),
+  blockquote: ({ children }: { children?: ReactNode }) => (
+    <blockquote className="border-l-2 border-muted-foreground pl-3 italic text-muted-foreground my-1.5">
+      {children}
+    </blockquote>
   ),
 };
 

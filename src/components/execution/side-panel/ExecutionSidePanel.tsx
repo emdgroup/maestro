@@ -40,6 +40,7 @@ interface ExecutionSidePanelProps {
   fill?: boolean;
   isSessionActive?: boolean;
   onSpawnShell?: () => Promise<number | null>;
+  terminalBuffers?: Map<string, string>;
 }
 
 export function ExecutionSidePanel({
@@ -70,6 +71,7 @@ export function ExecutionSidePanel({
   fill = false,
   isSessionActive = true,
   onSpawnShell,
+  terminalBuffers,
 }: ExecutionSidePanelProps) {
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
@@ -99,7 +101,7 @@ export function ExecutionSidePanel({
   return (
     <div
       className={cn(
-        "flex flex-col border-l border-border bg-card/40 overflow-hidden",
+        "flex flex-col bg-card overflow-hidden",
         fill
           ? "h-full w-full"
           : collapsed
@@ -128,29 +130,32 @@ export function ExecutionSidePanel({
             maximized={maximized}
             addTabContent={addTabPopoverContent}
           />
-          <div className="flex-1 relative min-h-0">
-            <SidePanelContent
-              tabs={tabs}
-              activeTabId={activeTabId}
-              isSessionActive={isSessionActive}
-              sessionKey={sessionKey}
-              subagentItems={subagentItems}
-              toolCallMap={toolCallMap}
-              sidePanelPlan={sidePanelPlan}
-              onPlanRespond={onPlanRespond}
-              canvasMap={canvasMap}
-              latestCanvasSurfaceId={latestCanvasSurfaceId}
-              changedFiles={changedFiles}
-              workingFiles={workingFiles}
-              taskId={taskId}
-              projectPath={projectPath}
-              connection={connection}
-              planEntries={planEntries}
-              planTitle={planTitle}
-              onCollapsedChange={onCollapsedChange}
-              onOpenTabKind={onOpenTabKind}
-              onSpawnShell={onSpawnShell}
-            />
+          <div className="flex-1 min-h-0 flex flex-col pl-[10px]">
+            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border bg-background overflow-hidden">
+              <SidePanelContent
+                tabs={tabs}
+                activeTabId={activeTabId}
+                isSessionActive={isSessionActive}
+                sessionKey={sessionKey}
+                subagentItems={subagentItems}
+                toolCallMap={toolCallMap}
+                sidePanelPlan={sidePanelPlan}
+                onPlanRespond={onPlanRespond}
+                canvasMap={canvasMap}
+                latestCanvasSurfaceId={latestCanvasSurfaceId}
+                changedFiles={changedFiles}
+                workingFiles={workingFiles}
+                taskId={taskId}
+                projectPath={projectPath}
+                connection={connection}
+                planEntries={planEntries}
+                planTitle={planTitle}
+                onCollapsedChange={onCollapsedChange}
+                onOpenTabKind={onOpenTabKind}
+                onSpawnShell={onSpawnShell}
+                terminalBuffers={terminalBuffers}
+              />
+            </div>
           </div>
         </div>
       )}
