@@ -1,5 +1,14 @@
 import React, { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Check, Minus, CheckCheck } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Minus,
+  CheckCheck,
+  Folder,
+  FolderOpen,
+  File,
+} from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -150,13 +159,18 @@ const DirectoryNode: React.FC<{
       <Button
         variant="ghost"
         onClick={handleToggle}
-        className="flex items-center gap-1 w-full px-2 py-1 h-auto text-xs text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors justify-start"
+        className="flex items-center gap-1 w-full px-2 py-1 h-auto text-xs text-muted-foreground hover:text-foreground file-tree-item transition-colors justify-start"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
         {isExpanded ? (
           <ChevronDown className="h-3 w-3 shrink-0" />
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {isExpanded ? (
+          <FolderOpen className="h-3 w-3 shrink-0" />
+        ) : (
+          <Folder className="h-3 w-3 shrink-0" />
         )}
         {/* Folder tri-state checkbox — only when checkedFiles + onToggleFolder provided */}
         {folderCheckState !== null && checkedFiles && onToggleFolder && (
@@ -268,7 +282,7 @@ const FileNode: React.FC<{
       onClick={() => node.fileName && onSelectFile(node.fileName)}
       className={cn(
         "flex items-center gap-1.5 px-2 py-1.5 cursor-pointer border-l-2 transition-colors text-xs",
-        isSelected ? "border-ring selected-file-item" : "border-transparent hover:bg-muted/10",
+        isSelected ? "border-ring selected-file-item" : "border-transparent file-tree-item",
       )}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
     >
@@ -290,6 +304,7 @@ const FileNode: React.FC<{
           </CheckboxPrimitive.Indicator>
         </CheckboxPrimitive.Root>
       )}
+      <File className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
       <span className="font-mono truncate">{node.name}</span>
       {viewedFiles?.has(node.fileName!) && (
