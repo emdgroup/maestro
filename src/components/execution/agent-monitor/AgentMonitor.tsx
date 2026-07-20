@@ -148,10 +148,10 @@ const SessionRow = memo(function SessionRow({
               <AgentIcon
                 agentId={session.agent_id}
                 src={agentIcons?.[session.agent_id]}
-                className="w-8 h-8 rounded-md"
+                className="w-8 h-8 rounded-md bg-muted/40"
               />
             ) : (
-              <div className="w-8 h-8 rounded-md bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
                 <Terminal className="w-4 h-4 text-accent" />
               </div>
             )}
@@ -293,7 +293,7 @@ export function AgentMonitor({
             className="w-10 h-10 rounded-sm shrink-0"
           />
         ) : (
-          <div className="w-10 h-10 rounded-sm shrink-0 bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-sm shrink-0 bg-muted/40 border border-border flex items-center justify-center">
             <Terminal className="w-5 h-5 text-accent" />
           </div>
         )}

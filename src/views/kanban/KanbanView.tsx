@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { Plus, Archive } from "lucide-react";
+import { Plus, Archive, Search } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -10,7 +10,7 @@ import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
 import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
-import { Input } from "@/ui/input";
+import { InputGroup, InputGroupInput, InputGroupAddon } from "@/ui/input-group";
 import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Checkbox } from "@/ui/checkbox";
@@ -83,16 +83,22 @@ export const KanbanView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="h-12 border-b border-border bg-muted/30 flex items-center px-4 gap-2 shrink-0">
+      <div className="h-12 bg-card flex items-center px-4 gap-2 shrink-0">
         {/* Search */}
         <ShortcutHint shortcutId="focus-search">
-          <Input
-            ref={searchInputRef}
-            placeholder="Search tasks..."
-            className="h-8 w-48"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <InputGroup className="w-48 bg-muted!">
+            <InputGroupInput
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search tasks..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-8 w-48 text-sm"
+            />
+            <InputGroupAddon align="inline-start">
+              <Search className="text-muted-foreground" />
+            </InputGroupAddon>
+          </InputGroup>
         </ShortcutHint>
 
         {/* Priority filter */}

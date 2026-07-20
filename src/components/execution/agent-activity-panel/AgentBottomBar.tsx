@@ -57,7 +57,10 @@ export function AgentBottomBar({
       animate={{ opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      <div className={cn(isCompact && "max-w-3xl mx-auto w-full px-12")}>
+      <div
+        className={cn(isCompact && "mx-auto w-full px-12")}
+        style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
+      >
         <ComposeBar
           ref={composeBarRef}
           onSend={onSend}

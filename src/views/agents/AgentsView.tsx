@@ -272,7 +272,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       { sessionKey: session.session_key, executionMode: session.execution_mode },
       {
         onSuccess: () => {
-          if (selectedSessionKey === session.session_key) setSelectedSessionKey(null);
+          if (selectedSessionKey === session.session_key) {
+            const remaining = visibleSessions.filter((s) => s.session_key !== session.session_key);
+            setSelectedSessionKey(remaining.length > 0 ? remaining[0].session_key : null);
+          }
         },
       },
     );

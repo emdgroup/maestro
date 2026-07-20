@@ -65,7 +65,7 @@ export function KanbanColumn({
   return (
     <div
       style={{ "--column-border-color": colors[status] } as CSSProperties}
-      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-card shadow-sm overflow-hidden border-t-4 border-t-(--column-border-color) transition-all duration-150 ${isDimmed ? "opacity-35" : ""}`}
+      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-background shadow-sm overflow-hidden border-t-4 border-t-(--column-border-color) transition-all duration-150 ${isDimmed ? "opacity-35" : ""}`}
     >
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
         <h3 className="font-semibold text-base text-foreground">{columnTitle}</h3>
