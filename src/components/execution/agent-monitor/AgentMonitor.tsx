@@ -16,6 +16,7 @@ import {
 } from "@/store/sessionActivityStore";
 import { useRenameAcpSessionMutation } from "@/services/execution.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import { api } from "@/lib/tauri-utils";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
@@ -36,6 +37,42 @@ function getStatusDot(
     return "bg-success animate-pulse";
   }
   return ACTIVITY_DOT[status];
+}
+
+function getStatusLabelClass(activityInfo: SessionActivityInfo | undefined): string {
+  if (!activityInfo) return "";
+  const { status, seen } = activityInfo;
+  switch (status) {
+    case "awaiting_input":
+      return "text-warning font-medium";
+    case "idle":
+      return seen ? "" : "text-success";
+    case "stale":
+      return "text-destructive";
+    default:
+      return "";
+  }
+}
+
+function getAvatarRingClass(activityInfo: SessionActivityInfo | undefined): string | null {
+  if (!activityInfo) return null;
+  const { status, seen } = activityInfo;
+  switch (status) {
+    case "thinking":
+      return "av-ring av-ring-thinking";
+    case "acting":
+      return "av-ring av-ring-acting";
+    case "spawning":
+      return "av-ring av-ring-spawning";
+    case "awaiting_input":
+      return "av-ring av-ring-awaiting";
+    case "idle":
+      return seen ? null : "av-ring av-ring-done";
+    case "stale":
+      return "av-ring av-ring-stale";
+    default:
+      return null;
+  }
 }
 
 function getStatusLabel(activityInfo: SessionActivityInfo): string {
@@ -88,8 +125,7 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
-  const isAwaiting = activityInfo?.status === "awaiting_input";
-  const dotClass = getStatusDot(session, activityInfo);
+  const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
   const name =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
 
@@ -104,13 +140,10 @@ const SessionRow = memo(function SessionRow({
       {/* Avatar column */}
       <div className="pr-avatar-col flex items-center shrink-0 p-2.5">
         <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
+          {/* Ring rendered first — avatar (later in DOM) sits on top, covering center */}
+          {ringClass && <div className={ringClass} />}
           {/* Icon + #N strip inside overflow:hidden */}
-          <div
-            className={cn(
-              "pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card",
-              isAwaiting && "animate-glow-warning",
-            )}
-          >
+          <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card">
             {session.execution_mode === "acp" && session.agent_id ? (
               <AgentIcon
                 agentId={session.agent_id}
@@ -130,15 +163,6 @@ const SessionRow = memo(function SessionRow({
               #{session.session_key}
             </div>
           </div>
-          {/* Status dot — outside overflow:hidden */}
-          {session.execution_mode === "acp" && !isAwaiting && (
-            <span
-              className={cn(
-                "absolute -bottom-0.75 -right-0.75 w-2.75 h-2.75 rounded-full border-2 border-card",
-                dotClass,
-              )}
-            />
-          )}
         </div>
       </div>
 
@@ -152,7 +176,7 @@ const SessionRow = memo(function SessionRow({
         </div>
         {session.execution_mode === "acp" && (
           <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
-            <span className={cn("truncate", isAwaiting && "text-warning font-medium")}>
+            <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
               {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
             </span>
             {activityInfo && (
@@ -315,29 +339,45 @@ export function AgentMonitor({
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            {session.execution_mode === "acp" && (
+            {selectedActivityInfo?.status === "stale" ? (
               <>
-                <span
-                  className={cn(
-                    "inline-block w-2 h-2 rounded-full shrink-0",
-                    getStatusDot(session, selectedActivityInfo),
-                  )}
-                />
-                <span className="text-xs text-muted-foreground truncate">
-                  {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
+                <span className="text-xs text-destructive truncate">
+                  Connection lost — agent may be stuck
                 </span>
-                {selectedActivityInfo && (
-                  <ElapsedTime
-                    status={selectedActivityInfo.status}
-                    stateChangedAt={selectedActivityInfo.stateChangedAt}
-                  />
+                <button
+                  onClick={() => api.cancelAcpSession(session.session_key).catch(() => {})}
+                  className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 text-destructive hover:bg-destructive/20 transition-colors"
+                >
+                  Force end session
+                </button>
+              </>
+            ) : (
+              <>
+                {session.execution_mode === "acp" && (
+                  <>
+                    <span
+                      className={cn(
+                        "inline-block w-2 h-2 rounded-full shrink-0",
+                        getStatusDot(session, selectedActivityInfo),
+                      )}
+                    />
+                    <span className="text-xs text-muted-foreground truncate">
+                      {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
+                    </span>
+                    {selectedActivityInfo && (
+                      <ElapsedTime
+                        status={selectedActivityInfo.status}
+                        stateChangedAt={selectedActivityInfo.stateChangedAt}
+                      />
+                    )}
+                  </>
+                )}
+                {session.branch_name && (
+                  <span className="text-xs text-muted-foreground font-mono truncate">
+                    {session.branch_name}
+                  </span>
                 )}
               </>
-            )}
-            {session.branch_name && (
-              <span className="text-xs text-muted-foreground font-mono truncate">
-                {session.branch_name}
-              </span>
             )}
           </div>
         </div>

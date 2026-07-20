@@ -377,10 +377,6 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
-  const handleForceEnd = useCallback(async () => {
-    await api.cancelAcpSession(sessionKey).catch(() => {});
-  }, [sessionKey]);
-
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
     ? (() => {
@@ -470,8 +466,6 @@ export function AgentActivityPanel({
     promptCapabilities,
   };
 
-  const isStale = activityInfo?.status === "stale";
-
   const streamContent = liveState.isInitializing ? (
     <AgentLoadingSkeleton isNewSession={isNewSession} />
   ) : (
@@ -548,17 +542,6 @@ export function AgentActivityPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {isStale && (
-        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
-          <span>Connection lost — agent may be stuck</span>
-          <button
-            onClick={handleForceEnd}
-            className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 hover:bg-destructive/20 transition-colors"
-          >
-            Force end session
-          </button>
-        </div>
-      )}
       {agentId && (
         <AgentAuthModal
           agentId={agentId}
