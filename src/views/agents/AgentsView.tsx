@@ -305,8 +305,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               className={cn(
                 "overflow-hidden transition-[width] duration-200",
                 sidebarCollapsed
-                  ? "w-8 hover:w-48 focus-within:w-48 hover:bg-border! focus-within:bg-border!"
-                  : "w-48 bg-border!",
+                  ? "w-8 hover:w-48 focus-within:w-48 hover:bg-muted! focus-within:bg-muted!"
+                  : "w-48 bg-muted!",
               )}
             >
               <InputGroupInput

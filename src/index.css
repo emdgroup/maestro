@@ -559,6 +559,135 @@
   animation: glow-ring-warning 2s ease-in-out infinite;
 }
 
+/* ── Avatar activity rings ──
+   Ring div rendered BEFORE avatar in DOM. Avatar (later = higher stack) covers the center.
+   The 3px band outside the avatar (inset: -3px on 38×38 vs 32×32 avatar) stays visible. */
+.av-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9px;
+  pointer-events: none;
+}
+
+@keyframes av-ring-shimmer {
+  0% {
+    background-position:
+      200% 200%,
+      0% 0%;
+  }
+  100% {
+    background-position:
+      -100% -100%,
+      0% 0%;
+  }
+}
+
+.av-ring-thinking {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 42%,
+      oklch(100% 0 0 / 0.55) 50%,
+      transparent 58%,
+      transparent 100%
+    ),
+    color-mix(in oklch, var(--purple) 65%, transparent);
+  background-size:
+    300% 300%,
+    100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  animation: av-ring-shimmer 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.av-ring-acting {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 42%,
+      oklch(100% 0 0 / 0.55) 50%,
+      transparent 58%,
+      transparent 100%
+    ),
+    color-mix(in oklch, var(--info) 65%, transparent);
+  background-size:
+    300% 300%,
+    100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  animation: av-ring-shimmer 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.av-ring-spawning {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 42%,
+      oklch(100% 0 0 / 0.4) 50%,
+      transparent 58%,
+      transparent 100%
+    ),
+    color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+  background-size:
+    300% 300%,
+    100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  animation: av-ring-shimmer 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Pulsing rings — border-based, follows rounded-rect naturally */
+@keyframes av-pulse-warning {
+  0%,
+  100% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--warning) 90%, transparent);
+    box-shadow: 0 0 10px color-mix(in oklch, var(--warning) 40%, transparent);
+  }
+}
+
+@keyframes av-pulse-success {
+  0%,
+  100% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--success) 80%, transparent);
+    box-shadow: 0 0 8px color-mix(in oklch, var(--success) 30%, transparent);
+  }
+}
+
+@keyframes av-pulse-destructive {
+  0%,
+  100% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--destructive) 80%, transparent);
+    box-shadow: 0 0 8px color-mix(in oklch, var(--destructive) 30%, transparent);
+  }
+}
+
+.av-ring-awaiting {
+  border: 2.5px solid transparent;
+  animation: av-pulse-warning 2s ease-in-out infinite;
+}
+
+.av-ring-done {
+  border: 2.5px solid transparent;
+  animation: av-pulse-success 2s ease-in-out infinite;
+}
+
+.av-ring-stale {
+  border: 2.5px solid transparent;
+  animation: av-pulse-destructive 2s ease-in-out infinite;
+}
+
 @keyframes rail-comet {
   0% {
     left: -60%;
