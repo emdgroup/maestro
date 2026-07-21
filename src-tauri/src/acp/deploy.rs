@@ -418,6 +418,44 @@ pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), 
     Ok(())
 }
 
+/// Write the bundled canvas base skill to `.maestro/canvas-base-skill.md` on a remote host.
+pub async fn ensure_remote_base_skill(
+    ssh: &crate::connectivity::ssh::RemoteSshSession,
+    project_path: &str,
+) -> Result<(), String> {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
+    let dest = format!("{}/.maestro/canvas-base-skill.md", project_path);
+    ssh.execute_command(&format!(
+        "printf '%s' '{}' | base64 -d > '{}'",
+        encoded, dest
+    ))
+    .await
+    .map_err(|e| format!("Failed to write remote canvas base skill: {}", e))?;
+    Ok(())
+}
+
+/// Write the bundled canvas base skill to `.maestro/canvas-base-skill.md` inside a WSL distro.
+#[cfg(windows)]
+pub async fn ensure_wsl_base_skill(distro: &str, project_path: &str) -> Result<(), String> {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
+    let dest = format!("{}/.maestro/canvas-base-skill.md", project_path);
+    let status = tokio::process::Command::new("wsl.exe")
+        .args([
+            "-d", distro, "--",
+            "sh", "-c",
+            &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
+        ])
+        .status()
+        .await
+        .map_err(|e| format!("Failed to spawn WSL base skill write: {}", e))?;
+    if !status.success() {
+        return Err(format!("WSL base skill write exited with status: {}", status));
+    }
+    Ok(())
+}
+
 /// Ensure the native platform maestro-server binary is cached in the app data dir.
 /// Downloads from GitHub releases if absent or version-mismatched.
 /// Also installs a well-known symlink (Unix) or copy (Windows) at ~/.local/bin/maestro-server

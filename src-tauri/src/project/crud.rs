@@ -380,6 +380,8 @@ pub fn open_project(
             .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
         crate::core::project_storage::write_canvas_catalog(&effective_path)
             .map_err(|e| format!("Failed to write canvas catalog: {}", e))?;
+        crate::core::project_storage::write_canvas_base_skill(&effective_path)
+            .map_err(|e| format!("Failed to write canvas base skill: {}", e))?;
     }
 
     Ok(project)

@@ -2,6 +2,7 @@ use std::path::Path;
 use crate::models::{ProjectConfig, ProjectState};
 
 pub const CANVAS_CATALOG: &str = include_str!("../../assets/canvas-catalog.json");
+pub const CANVAS_BASE_SKILL: &str = include_str!("../../assets/canvas-base-skill.md");
 
 const DEFAULT_COMMIT_TEMPLATE: &str = "\
 Merge task #{task_id}: {task_name}
@@ -93,6 +94,13 @@ pub fn write_canvas_catalog(project_path: &str) -> Result<(), String> {
     let catalog_path = Path::new(project_path).join(".maestro").join("canvas-catalog.json");
     std::fs::write(&catalog_path, CANVAS_CATALOG)
         .map_err(|e| format!("Failed to write canvas catalog: {}", e))
+}
+
+/// Write the bundled canvas base skill to .maestro/canvas-base-skill.md, overwriting any existing file.
+pub fn write_canvas_base_skill(project_path: &str) -> Result<(), String> {
+    let skill_path = Path::new(project_path).join(".maestro").join("canvas-base-skill.md");
+    std::fs::write(&skill_path, CANVAS_BASE_SKILL)
+        .map_err(|e| format!("Failed to write canvas base skill: {}", e))
 }
 
 /// Ensure the .maestro folder exists, creating it if necessary

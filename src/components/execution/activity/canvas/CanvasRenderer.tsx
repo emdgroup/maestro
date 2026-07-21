@@ -16,6 +16,7 @@ import { CanvasChoicePicker } from "./components/CanvasChoicePicker";
 import { CanvasSlider } from "./components/CanvasSlider";
 import { CanvasDateTimeInput } from "./components/CanvasDateTimeInput";
 import { CanvasDataTable } from "./components/CanvasDataTable";
+import { CanvasChart } from "./components/CanvasChart";
 import { CanvasMarkdown } from "./components/CanvasMarkdown";
 import { CanvasAudioPlayer } from "./components/CanvasAudioPlayer";
 import { CanvasModal } from "./components/CanvasModal";
@@ -95,6 +96,8 @@ export function CanvasComponentNode({ surface, componentId, depth = 0 }: Rendere
       return <CanvasDateTimeInput {...props} />;
     case "DataTable":
       return <CanvasDataTable {...props} surface={surface} />;
+    case "Chart":
+      return <CanvasChart {...props} surface={surface} />;
     case "Markdown":
       return <CanvasMarkdown {...props} />;
     case "AudioPlayer":

@@ -1,5 +1,5 @@
 {
-  "version": "5",
+  "version": "6",
   "catalogId": "maestro-canvas/v1",
   "description": "Render interactive UI inline by writing canvas messages as ```maestro-canvas code fences in your response.",
   "protocol": {
@@ -67,6 +67,7 @@
                       "AudioPlayer",
                       "Markdown",
                       "DataTable",
+                      "Chart",
                       "Html",
                       "Button",
                       "TextField",
@@ -163,6 +164,16 @@
           "columns": "[{ key: string, label: string, width?: string }]",
           "rows": "string (JSON Pointer path to row data e.g. /rows) or array"
         }
+      },
+      "Chart": {
+        "props": {
+          "type": "\"line\" | \"bar\" | \"area\" | \"pie\" (default: line)",
+          "data": "string (JSON Pointer path to array of data objects e.g. /chartData)",
+          "xKey": "string (object key used for x-axis labels or pie slice names, default: x)",
+          "series": "[{ key: string, label: string, color?: string }] — each entry becomes one line/bar/area; pie uses series[0].key as the value field",
+          "title": "string (optional label rendered above the chart)"
+        },
+        "note": "Send data with canvas_data before canvas_update. Cartesian data format: [{ xKeyValue, seriesKey: number, ... }]. Pie format: [{ xKeyValue, valueKey: number }]."
       },
       "Html": {
         "props": {

@@ -58,6 +58,8 @@ pub async fn prime_project_server(
 
             crate::acp::deploy::ensure_remote_catalog(&ssh, &project_path).await
                 .unwrap_or_else(|e| eprintln!("Warning: failed to deploy canvas catalog: {}", e));
+            crate::acp::deploy::ensure_remote_base_skill(&ssh, &project_path).await
+                .unwrap_or_else(|e| eprintln!("Warning: failed to deploy canvas base skill: {}", e));
 
             crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
@@ -112,6 +114,8 @@ pub async fn prime_project_server(
 
                 crate::acp::deploy::ensure_wsl_catalog(&distro, &project_path).await
                     .unwrap_or_else(|e| eprintln!("Warning: failed to deploy WSL canvas catalog: {}", e));
+                crate::acp::deploy::ensure_wsl_base_skill(&distro, &project_path).await
+                    .unwrap_or_else(|e| eprintln!("Warning: failed to deploy WSL canvas base skill: {}", e));
 
                 crate::acp::spawn_connection_server(
                     ConnectionKey::Wsl { id: wsl_id },
