@@ -165,23 +165,29 @@ export function WorkingFileContentView({
         : null
     : null;
 
+  const isAbsoluteOutsideCwd = absolutePath !== null && relativePath === null;
+
   const viewType = filePath ? getFileViewType(filePath) : null;
   const isBinary = viewType === "image";
 
   const baseDir = absolutePath ? absolutePath.replace(/\/[^/]+$/, "") : undefined;
 
   useEffect(() => {
-    if (!relativePath) return;
+    if (!relativePath && !isAbsoluteOutsideCwd) return;
     setLoading(true);
     setContent(null);
     setLoadError(null);
-  }, [relativePath, sessionKey, isBinary]);
+  }, [relativePath, isAbsoluteOutsideCwd, sessionKey, isBinary]);
 
   useEffect(() => {
-    if (!relativePath) return;
-    const loader = isBinary
-      ? api.readSessionFileBinary(sessionKey, relativePath)
-      : api.readSessionFile(sessionKey, relativePath);
+    if (!relativePath && !isAbsoluteOutsideCwd) return;
+    const loader = isAbsoluteOutsideCwd
+      ? isBinary
+        ? api.readLocalFileBinary(absolutePath!)
+        : api.readLocalFile(absolutePath!)
+      : isBinary
+        ? api.readSessionFileBinary(sessionKey, relativePath!)
+        : api.readSessionFile(sessionKey, relativePath!);
     loader
       .then((data) => {
         setLoading(false);
@@ -191,7 +197,7 @@ export function WorkingFileContentView({
         setLoadError(String(err));
         setLoading(false);
       });
-  }, [relativePath, sessionKey, isBinary, refreshTick]);
+  }, [relativePath, isAbsoluteOutsideCwd, absolutePath, sessionKey, isBinary, refreshTick]);
 
   function copyPath() {
     if (!absolutePath) return;
@@ -228,7 +234,7 @@ export function WorkingFileContentView({
         )}
       >
         {loading && <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>}
-        {!loading && filePath && !relativePath && !loadError && (
+        {!loading && filePath && !relativePath && !isAbsoluteOutsideCwd && !loadError && (
           <div className="text-xs text-muted-foreground animate-pulse">Resolving path...</div>
         )}
         {!loading && !filePath && (

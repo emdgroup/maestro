@@ -95,7 +95,10 @@ export function OverviewPanel({
   const { data: attachments } = useTaskAttachmentsQuery(taskId);
 
   function handleRowOpen(path: string) {
-    void openFileWithConnection(connection, path, { wslDistroName }).catch(() => {
+    void openFileWithConnection(connection, path, {
+      wslDistroName,
+      sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+    }).catch(() => {
       setErrorPaths((prev) => new Set([...prev, path]));
       setTimeout(
         () =>
