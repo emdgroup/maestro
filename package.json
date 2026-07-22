@@ -57,7 +57,7 @@
     "framer-motion": "^12.42.2",
     "immer": "^11.1.15",
     "input-otp": "^1.4.2",
-    "katex": "^0.17.0",
+    "katex": "^0.18.1",
     "lucide-react": "^1.25.0",
     "mermaid": "^11.16.0",
     "next-themes": "^0.4.6",
