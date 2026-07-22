@@ -1894,6 +1894,17 @@ export const commands = {
     }
   },
   /**
+   * Delete a WSL connection and its associated project history.
+   */
+  async deleteWslConnection(connectionId: number): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("delete_wsl_connection", { connectionId }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * List all saved WSL connections from the database.
    */
   async listWslConnections(): Promise<Result<WslConnection[], string>> {

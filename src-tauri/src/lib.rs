@@ -143,6 +143,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_wsl_contents,
             crate::ipc::get_wsl_home,
             crate::ipc::save_wsl_connection,
+            crate::ipc::delete_wsl_connection,
             crate::ipc::list_wsl_connections,
             crate::ipc::list_wsl_workspace_files,
             crate::ipc::read_wsl_file,
