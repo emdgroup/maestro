@@ -181,6 +181,10 @@ export function WorkingFileContentView({
 
   useEffect(() => {
     if (!relativePath && !isAbsoluteOutsideCwd) return;
+    // Wait for session cwd before loading absolute paths — without cwd we can't
+    // determine if the path is inside the session, and a local read of a remote
+    // path produces a spurious "path not found" error.
+    if (filePath?.startsWith("/") && cwd === null) return;
     const loader = isAbsoluteOutsideCwd
       ? isBinary
         ? api.readLocalFileBinary(absolutePath!)
@@ -192,12 +196,22 @@ export function WorkingFileContentView({
       .then((data) => {
         setLoading(false);
         setContent((prev) => (prev === data ? prev : data));
+        setLoadError(null);
       })
       .catch((err) => {
         setLoadError(String(err));
         setLoading(false);
       });
-  }, [relativePath, isAbsoluteOutsideCwd, absolutePath, sessionKey, isBinary, refreshTick]);
+  }, [
+    relativePath,
+    isAbsoluteOutsideCwd,
+    absolutePath,
+    sessionKey,
+    isBinary,
+    refreshTick,
+    filePath,
+    cwd,
+  ]);
 
   function copyPath() {
     if (!absolutePath) return;
@@ -240,7 +254,7 @@ export function WorkingFileContentView({
         {!loading && !filePath && (
           <div className="text-xs text-muted-foreground">No file selected</div>
         )}
-        {!loading && filePath && loadError && (
+        {!loading && filePath && loadError && content === null && (
           <div className="text-xs text-destructive">{loadError}</div>
         )}
         {!loading && content !== null && viewType !== null && (
