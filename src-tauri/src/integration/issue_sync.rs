@@ -73,7 +73,7 @@ pub async fn import_tasks(
             "INSERT INTO tasks (project_id, title, description, status, priority, base_branch, \
              is_imported, import_source, external_id, external_url, external_updated_at, \
              labels, skills, created_at, updated_at) \
-             VALUES (?, ?, ?, 'Backlog', ?, ?, 1, ?, ?, ?, ?, ?, '[]', ?, ?)",
+             VALUES (?, ?, ?, 'Planning', ?, ?, 1, ?, ?, ?, ?, ?, '[]', ?, ?)",
             rusqlite::params![
                 project_id,
                 &issue.title,

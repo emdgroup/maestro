@@ -10,23 +10,23 @@ import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerm
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { useUpdateTask } from "@/services/task.service";
 
-const BOARD_STATUSES: Array<TaskStatus> = ["Backlog", "Ready", "InProgress", "Review", "Done"];
+const BOARD_STATUSES: Array<TaskStatus> = ["Planning", "Queue", "InProgress", "Review", "Done"];
 
 const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
-  Backlog: "Backlog",
-  Ready: "Ready",
+  Planning: "Planning",
+  Queue: "Queue",
   InProgress: "In Progress",
   Review: "Review",
   Done: "Done",
 };
 
-type DndGroup = "Backlog" | "Ready";
+type DndGroup = "Planning" | "Queue";
 type DndItems = Record<DndGroup, number[]>;
 
 function buildDndItems(tasks: Task[]): DndItems {
   return {
-    Backlog: tasks.filter((t) => t.status === "Backlog").map((t) => t.id),
-    Ready: tasks.filter((t) => t.status === "Ready").map((t) => t.id),
+    Planning: tasks.filter((t) => t.status === "Planning").map((t) => t.id),
+    Queue: tasks.filter((t) => t.status === "Queue").map((t) => t.id),
   };
 }
 
@@ -57,9 +57,9 @@ export function BoardView({ tasks }: BoardViewProps) {
 
   const highlightedColumn: DndGroup | null =
     isDragActive && draggingTask
-      ? dndItems.Ready.includes(draggingTask.id)
-        ? "Ready"
-        : "Backlog"
+      ? dndItems.Queue.includes(draggingTask.id)
+        ? "Queue"
+        : "Planning"
       : null;
 
   const liveDndRef = useRef<DndItems>(dndItems);
@@ -78,7 +78,7 @@ export function BoardView({ tasks }: BoardViewProps) {
     if (status === "Done") {
       return tasks.filter((t) => t.status === status && !t.archived_at);
     }
-    if (status === "Backlog" || status === "Ready") {
+    if (status === "Planning" || status === "Queue") {
       return dndItems[status]
         .map((id) => tasks.find((t) => t.id === id))
         .filter((t): t is Task => t != null);
@@ -100,9 +100,9 @@ export function BoardView({ tasks }: BoardViewProps) {
           if (source?.type !== "item") return;
           const taskId = source.id as number;
           const tentative = move(liveDndRef.current, event);
-          const wasInBacklog = liveDndRef.current.Backlog.includes(taskId);
-          const nowInBacklog = tentative.Backlog.includes(taskId);
-          if (wasInBacklog === nowInBacklog) return;
+          const wasInPlanning = liveDndRef.current.Planning.includes(taskId);
+          const nowInPlanning = tentative.Planning.includes(taskId);
+          if (wasInPlanning === nowInPlanning) return;
           liveDndRef.current = tentative;
           setDndItems({ ...tentative });
         }}
@@ -122,12 +122,12 @@ export function BoardView({ tasks }: BoardViewProps) {
           const final = liveDndRef.current;
           const prev = previousDndRef.current;
 
-          const newStatus: DndGroup | null = final.Ready.includes(taskId)
-            ? "Ready"
-            : final.Backlog.includes(taskId)
-              ? "Backlog"
+          const newStatus: DndGroup | null = final.Queue.includes(taskId)
+            ? "Queue"
+            : final.Planning.includes(taskId)
+              ? "Planning"
               : null;
-          const oldStatus: DndGroup = prev.Ready.includes(taskId) ? "Ready" : "Backlog";
+          const oldStatus: DndGroup = prev.Queue.includes(taskId) ? "Queue" : "Planning";
 
           if (!newStatus || newStatus === oldStatus) return;
 
@@ -143,7 +143,7 @@ export function BoardView({ tasks }: BoardViewProps) {
             );
 
           const task = tasks.find((t) => t.id === taskId);
-          if (newStatus === "Ready" && !task?.agent_id && !defaultAgent) {
+          if (newStatus === "Queue" && !task?.agent_id && !defaultAgent) {
             setAgentPickerState({ task: task!, proceed: doUpdate });
           } else {
             doUpdate();

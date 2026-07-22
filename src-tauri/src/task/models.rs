@@ -123,15 +123,13 @@ impl FromStr for TaskStatus {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "Backlog" => Ok(TaskStatus::Backlog),
-            "Ready" => Ok(TaskStatus::Ready),
+            "Planning" => Ok(TaskStatus::Planning),
+            "Queue" => Ok(TaskStatus::Queue),
             "InProgress" => Ok(TaskStatus::InProgress),
             "Review" => Ok(TaskStatus::Review),
             "Done" => Ok(TaskStatus::Done),
             "Cancelled" => Ok(TaskStatus::Cancelled),
-            _ => {
-                Ok(TaskStatus::Backlog)
-            }
+            _ => Ok(TaskStatus::Planning),
         }
     }
 }
@@ -143,7 +141,7 @@ impl Task {
             project_id: row.get(1)?,
             title: row.get(2)?,
             description: row.get(3)?,
-            status: row.get::<_, String>(4)?.parse().unwrap_or(TaskStatus::Backlog),
+            status: row.get::<_, String>(4)?.parse().unwrap_or(TaskStatus::Planning),
             priority: row.get::<_, String>(5)?.parse().unwrap_or(TaskPriority::Medium),
             base_branch: row.get::<_, String>(6)?,
             archived_at: row.get(7)?,
@@ -182,8 +180,8 @@ pub struct CreateTaskRequest {
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskStatus {
-    Backlog,
-    Ready,
+    Planning,
+    Queue,
     InProgress,
     Review,
     Done,

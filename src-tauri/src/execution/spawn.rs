@@ -150,7 +150,7 @@ pub async fn spawn_interactive_execution(
     if let Some(tid) = task_id {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let changed = conn.execute(
-            "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Ready'",
+            "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Queue'",
             rusqlite::params![&now, tid],
         ).map_err(|e| format!("Failed to update task status: {}", e))?;
         if changed > 0 {

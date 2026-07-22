@@ -155,7 +155,7 @@ function FooterCTAs({
     return () => clearTimeout(t);
   }, [isSessionLost]);
 
-  if (task.status === "Ready") {
+  if (task.status === "Queue") {
     return (
       <div className="flex gap-1 mt-1.5">
         <Button
@@ -348,7 +348,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     void handleExecute(task);
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDraggable = task.status === "Backlog" || task.status === "Ready";
+  const isDraggable = task.status === "Planning" || task.status === "Queue";
 
   const { ref, isDragging } = useSortable({
     id: task.id,

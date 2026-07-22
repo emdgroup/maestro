@@ -213,7 +213,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 ### Status Enums
 
-- TaskStatus: Backlog, Ready, InProgress, Review, Done
+- TaskStatus: Planning, Queue, InProgress, Review, Done
 - Serialized PascalCase in JSON (`#[serde(rename_all = "PascalCase")]`)
 - Used for Kanban column organization
 

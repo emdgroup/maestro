@@ -5,5 +5,5 @@ export function useIsTaskEditable(taskId: number | null): boolean {
   const project = useSelectedProject();
   const { data: tasks } = useTasksQuery(project?.id ?? null);
   const task = taskId != null ? (tasks ?? []).find((t) => t.id === taskId) : undefined;
-  return task?.status === "Backlog";
+  return task?.status === "Planning";
 }
