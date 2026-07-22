@@ -75,18 +75,55 @@ Component: `{ "component": "Chart", "type": "pie", "data": "/slices", "xKey": "n
 
 ## Component Selection
 
-| Use case                  | Component                                                 |
-| ------------------------- | --------------------------------------------------------- |
-| Numeric trends over time  | `Chart` type line or area                                 |
-| Category comparisons      | `Chart` type bar                                          |
-| Proportions / breakdown   | `Chart` type pie                                          |
-| Tabular data, many rows   | `DataTable`                                               |
-| Prose, formatted text     | `Markdown`                                                |
-| Stat callout (KPI)        | `Row` of `Card` each containing `Text` variant subheading |
-| Multi-section layout      | `Tabs` with one child per tab, or `Column` of `Card`      |
-| Custom viz not in catalog | `Html` — last resort only                                 |
+| Use case                  | Component                                                           |
+| ------------------------- | ------------------------------------------------------------------- |
+| Numeric trends over time  | `Chart` type line or area                                           |
+| Category comparisons      | `Chart` type bar                                                    |
+| Proportions / breakdown   | `Chart` type pie                                                    |
+| X/Y point clouds          | `Chart` type scatter — data `[{x, y}]`, xKey="x", series key="y"    |
+| Multi-axis comparisons    | `Chart` type radar — data `[{subject, val1, val2}]`                 |
+| Progress / ranking bars   | `Chart` type radialBar — data `[{name, value}]`                     |
+| Conversion steps          | `Chart` type funnel — data `[{name, value}]`                        |
+| Part-of-whole hierarchy   | `Chart` type treemap — data `[{name, size, children?}]`             |
+| Mixed line + bar + area   | `Chart` type composed — add `seriesType` per series item            |
+| Hierarchical radial       | `Chart` type sunburst — single root `{name, value, children:[...]}` |
+| Tabular data, many rows   | `DataTable`                                                         |
+| Prose, formatted text     | `Markdown`                                                          |
+| Stat callout (KPI)        | `Row` of `Card` each containing `Text` variant subheading           |
+| Multi-section layout      | `Tabs` with one child per tab, or `Column` of `Card`                |
+| Custom viz not in catalog | `Html` — last resort only                                           |
 
 Prefer catalog components over `Html` whenever they cover the use case. `Html` has restrictions: no double-quotes or backslashes in `srcdoc` — escape all data as single-quoted JS or use JSON.stringify carefully.
+
+## Tabs Layout Rule
+
+Always add a `children` array to any `Tabs` component that mirrors its `tabs[].childId` values:
+
+```json
+{
+  "id": "my-tabs",
+  "component": "Tabs",
+  "children": ["tab-a", "tab-b"],
+  "tabs": [
+    { "label": "A", "childId": "tab-a" },
+    { "label": "B", "childId": "tab-b" }
+  ]
+}
+```
+
+The root-detection pass only scans `children` arrays to find owned nodes. Without this, tab content is treated as a root and rendered flat below the tabs widget. `CanvasTabs` ignores `children` (it reads `tabs[].childId`), so adding it is harmless — it only affects root-detection.
+
+## Chart Color Rule
+
+Always pass an explicit `color` hex value on every series item:
+
+```json
+"series": [{ "key": "revenue", "label": "Revenue", "color": "#6366f1" }]
+```
+
+The fallback PALETTE (`--chart-N` CSS vars) is greyscale in this theme regardless of light/dark mode. Without explicit colors every series renders in grey. `ChartContainer` injects `--color-<key>: <color>` from the series color, which the chart then uses via `var(--color-<key>)`.
+
+Pie chart slices use the internal PALETTE directly (not series color) — they will always be grey. Prefer `bar` over `pie` when color variety matters.
 
 ## Anti-patterns
 
@@ -95,3 +132,5 @@ Prefer catalog components over `Html` whenever they cover the use case. `Html` h
 - **New surfaceId per update** — reuse the same surfaceId; `canvas_update` merges by component id. Creating a new surface per tool call produces many disconnected panels.
 - **Html when Chart/DataTable covers it** — adds boilerplate and breaks on data with special characters.
 - **Skipping validate-canvas** — always run `maestro-server validate-canvas` before emitting a fence. Catch schema errors before the user sees a broken canvas.
+- **Tabs without `children` array** — tab content renders as roots below the widget. Always mirror `tabs[].childId` into `children`.
+- **Chart series without `color`** — all series render grey. Always pass explicit hex colors.
